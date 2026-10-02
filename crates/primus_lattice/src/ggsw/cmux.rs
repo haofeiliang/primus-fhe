@@ -159,7 +159,7 @@ where
         B: Data<Elem = T>,
         C: DataMut<Elem = T>,
     {
-        let poly_length = workspace.size().glwe_size().poly_length();
+        let poly_length = workspace.size().glwe_size().poly_length().get();
 
         input.mul_monomial_sub_one_to(exponent, output, poly_length, NativeModulus::new());
         workspace.fourier_accumulator.set_zero();
@@ -335,7 +335,7 @@ where
         B: Data<Elem = T>,
         C: DataMut<Elem = T>,
     {
-        let poly_length = workspace.size().glwe_size().poly_length();
+        let poly_length = workspace.size().glwe_size().poly_length().get();
 
         input.mul_monomial_sub_one_to(exponent, output, poly_length, modulus);
         let mut workspace = workspace.as_mut();

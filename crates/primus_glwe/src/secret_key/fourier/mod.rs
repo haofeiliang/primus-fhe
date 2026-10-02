@@ -2,6 +2,7 @@
 
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
 use primus_integer::SignedInteger;
+use primus_lattice::GlweDimension;
 use primus_lattice::GlweSize;
 use primus_modulus::NativeModulus;
 use primus_poly::FourierPolynomialIter;
@@ -85,13 +86,13 @@ impl FourierGlweSecretKey {
     #[inline]
     #[must_use]
     pub fn poly_length(&self) -> usize {
-        self.size.poly_length()
+        self.size.poly_length().get()
     }
 
     /// Returns the GLWE dimension.
     #[inline]
     #[must_use]
-    pub fn dimension(&self) -> usize {
+    pub fn dimension(&self) -> GlweDimension {
         self.size.dimension()
     }
 
@@ -124,7 +125,7 @@ impl FourierGlweSecretKey {
         Table: FftTable,
     {
         let size = secret_key.glwe_size();
-        assert_eq!(size.poly_length(), fft.poly_length());
+        assert_eq!(size.poly_length().get(), fft.poly_length());
 
         let fourier_length = fft.fourier_length();
         let mut key = Self::new(
@@ -132,7 +133,7 @@ impl FourierGlweSecretKey {
             size,
             secret_key.distr(),
         );
-        let mut native_coefficients = Zeroizing::new(vec![T::ZERO; size.poly_length()]);
+        let mut native_coefficients = Zeroizing::new(vec![T::ZERO; size.poly_length().get()]);
         for (coefficients, fourier) in secret_key
             .iter()
             .zip(key.key.chunks_exact_mut(fourier_length))
@@ -171,7 +172,7 @@ impl FourierGlweSecretKey {
     {
         assert_eq!(
             fft.poly_length(),
-            params.poly_length(),
+            params.poly_length().get(),
             "FFT polynomial length mismatch"
         );
         let coefficients = GlweSecretKey::generate(params.size(), params.secret_key_sampler(), rng);

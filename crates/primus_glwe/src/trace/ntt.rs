@@ -76,7 +76,7 @@ impl<T: FheUint> NttGlweTraceKey<T> {
             modulus.value() < (T::ONE << (T::BITS - 1)),
             "trace normalization requires modulus below 2^(T::BITS - 1)"
         );
-        let log_n = glwe_size.poly_length().trailing_zeros();
+        let log_n = glwe_size.poly_length().log_n();
         let automorphism_keys = (1..=log_n)
             .rev()
             .map(|shift| (1usize << shift) + 1)

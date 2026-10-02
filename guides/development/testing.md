@@ -197,7 +197,7 @@ cargo +nightly nextest run -p primus_encoding --lib --tests --features simd
 
 | 契约 | 维护入口与精简边界 |
 | --- | --- |
-| 布局与存储 | [layout.rs](../../crates/primus_lattice/tests/layout.rs) 检查 size 拒绝、ABox 消费后保留分配、偏移 slice 写回、串行工作区 rebind 拒绝/异常恢复及 RNS limb 宽度相容性；不测试 aligned-vec 本身或迭代器计数 |
+| 布局与存储 | [layout.rs](../../crates/primus_lattice/tests/layout.rs) 检查 PolyLength 的支持范围/单位派生、size 拒绝、ABox 消费后保留分配、偏移 slice 写回、串行工作区 rebind 拒绝/异常恢复及 RNS limb 宽度相容性；不测试 aligned-vec 本身或迭代器计数 |
 | 共享算术与 gadget 布局 | [arithmetic.rs](../../crates/primus_lattice/tests/arithmetic.rs) 以 65 元素和偏移哨兵覆盖向量/尾部；[RNS](../../crates/primus_lattice/tests/rns_arithmetic.rs) 保留两模数的不同因子与 row/level/component 顺序。[明文和对角注入](../../crates/primus_lattice/tests/plaintext_and_gadget.rs) 使用 N=4、独立扁平索引 oracle，每个共享宏保留一个包装类型，Fourier 的复数契约单独验证 |
 | 多项式乘法与旋转 | [polynomial_products.rs](../../crates/primus_lattice/tests/polynomial_products.rs) 保留 NTRU 单多项式和 GGSW 批次遍历，NTT 的 N=32 保留向量长度；八个指数覆盖符号/环绕和脏 scratch 后零指数。CRT 以 N=4 穷举八个指数；配对旋转的纯转发不重复 [poly 的独立穷举](../../crates/primus_poly/tests/monomial.rs)。[Fourier](../../crates/primus_lattice/tests/fourier.rs) 的 N=8 整数卷积 oracle 保留两个 FFT 后端 |
 | 外积与 CMux | [external_product.rs](../../crates/primus_lattice/tests/external_product.rs) 保留 NLev/NGSW 的层序、控制与输出不同层数、变换域/系数域输出、短输出拒绝前不写入及非零→零复用。[ternary_cmux.rs](../../crates/primus_lattice/tests/ternary_cmux.rs) 保留 ±1/0 控制、两种分解深度、NTT/Fourier 及 Fourier 的 u32/u64 和两个 FFT 后端，指数按边界选择 |

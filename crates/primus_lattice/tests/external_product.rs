@@ -3,9 +3,11 @@
 //! outputs without retaining contributions from the preceding call.
 
 use primus_decompose::primitive::ApproxSignedBasis;
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable};
+use primus_lattice::GlweDimension;
 use primus_lattice::{
-    GadgetSize, GlweSize,
+    GadgetSize, GlweSize, PolyLength,
     ggsw::{FourierGgswOwned, Ggsw},
     glwe::Glwe,
     ngsw::{FourierNgswOwned, Ngsw},
@@ -28,8 +30,8 @@ fn fourier_ggsw_workspace_reuse<Table: FftTable>() {
     let mut engine = FftEngine::new(&fft);
     let components = 3;
     let n = fft.poly_length();
-    let basis = ApproxSignedBasis::<u32>::new(None, 8, None);
-    let levels = basis.decompose_length();
+    let basis = ApproxSignedBasis::<u32>::new(None, DecompositionBaseLog::new(8), None);
+    let levels = basis.decompose_length().get();
     let mut gadget = Ggsw::new(vec![0u32; components * levels * components * n]);
     for row in 0..components {
         for (level, scalar) in basis.scalar_iter().enumerate() {
@@ -44,8 +46,8 @@ fn fourier_ggsw_workspace_reuse<Table: FftTable>() {
     let input = Glwe::new(values.clone());
     let mut output = Glwe::new(vec![u32::MAX; values.len()]);
     let mut workspace = FourierGlweExternalProductWorkspace::new(GadgetSize::new(
-        GlweSize::new(components - 1, n),
-        levels,
+        GlweSize::new(GlweDimension::new(components - 1), PolyLength::new(n)),
+        DecompositionLevelCount::new(levels),
     ));
     key.external_product_to(&input, &mut output, &basis, &mut engine, &mut workspace);
     assert_eq!(output.as_ref(), values);
@@ -68,7 +70,7 @@ fn ntt_ntru_gadget_products_match_negacyclic_product() {
 
     let modulus = BarrettModulus::new(Q);
     let ntt = UintNttTable::<u32>::new(LOG_N, modulus).unwrap();
-    let basis = ApproxSignedBasis::new(Some(Q), 3, None);
+    let basis = ApproxSignedBasis::new(Some(Q), DecompositionBaseLog::new(3), None);
 
     let alpha = Polynomial::<Vec<u32>>::new(vec![
         0, 1, 8, 63, 64, 127, 128, 192, 255, 256, 17, 33, 65, 129, 193, 241,
@@ -76,14 +78,14 @@ fn ntt_ntru_gadget_products_match_negacyclic_product() {
     let mut beta = Polynomial::<Vec<u32>>::zero(N);
 
     let make_nlev = |message: &Polynomial<Vec<u32>>, basis: &ApproxSignedBasis<u32>| {
-        let mut nlev = Nlev::<Vec<u32>>::zero(basis.decompose_length() * N);
+        let mut nlev = Nlev::<Vec<u32>>::zero(basis.decompose_length().get() * N);
         for (scalar, mut level) in basis.scalar_iter().zip(nlev.iter_ntru_mut(N)) {
             message.mul_scalar_to(scalar, &mut Polynomial(level.as_mut()), modulus);
         }
         nlev
     };
 
-    let mut workspace = NttNtruExternalProductWorkspace::new(N);
+    let mut workspace = NttNtruExternalProductWorkspace::new(PolyLength::new(N));
     let mut nlev_product = Ntru::new(vec![u32::MAX; N]);
     let input_ntru = Ntru::new(alpha.as_ref());
     let mut ngsw_product = Ntru::new(vec![u32::MAX; N]);
@@ -172,8 +174,12 @@ fn ntt_ntru_gadget_products_match_negacyclic_product() {
         // The control basis decomposes each row's coefficients; it does not
         // determine how many rows the input NLev contains or their gadget scales.
         for log_basis in [2, 6] {
-            let output_basis = ApproxSignedBasis::new(Some(Q), log_basis, None);
-            assert_ne!(output_basis.decompose_length(), basis.decompose_length());
+            let output_basis =
+                ApproxSignedBasis::new(Some(Q), DecompositionBaseLog::new(log_basis), None);
+            assert_ne!(
+                output_basis.decompose_length().get(),
+                basis.decompose_length().get()
+            );
             let input_nlev = make_nlev(&alpha, &output_basis);
             let expected_nlev = make_nlev(&expected, &output_basis);
             let mut output_nlev = Nlev::new(vec![u32::MAX; input_nlev.as_ref().len()]);
@@ -199,7 +205,7 @@ fn fourier_ntru_gadget_products<Table: FftTable>() {
     const N: usize = 1 << LOG_N;
 
     let modulus = NativeModulus::<u32>::new();
-    let basis = ApproxSignedBasis::<u32>::new(None, 8, None);
+    let basis = ApproxSignedBasis::<u32>::new(None, DecompositionBaseLog::new(8), None);
     let fft = Table::new(LOG_N).unwrap();
     let mut engine = FftEngine::new(&fft);
 
@@ -224,14 +230,14 @@ fn fourier_ntru_gadget_products<Table: FftTable>() {
     let mut beta = Polynomial::<Vec<u32>>::zero(N);
 
     let make_nlev = |message: &Polynomial<Vec<u32>>, basis: &ApproxSignedBasis<u32>| {
-        let mut nlev = Nlev::<Vec<u32>>::zero(basis.decompose_length() * N);
+        let mut nlev = Nlev::<Vec<u32>>::zero(basis.decompose_length().get() * N);
         for (scalar, mut level) in basis.scalar_iter().zip(nlev.iter_ntru_mut(N)) {
             message.mul_scalar_to(scalar, &mut Polynomial(level.as_mut()), modulus);
         }
         nlev
     };
 
-    let mut workspace = FourierNtruExternalProductWorkspace::new(N);
+    let mut workspace = FourierNtruExternalProductWorkspace::new(PolyLength::new(N));
     let mut nlev_product = Ntru::new(vec![u32::MAX; N]);
     let input_ntru = Ntru::new(alpha.as_ref());
     let mut ngsw_product = Ntru::new(vec![u32::MAX; N]);
@@ -245,11 +251,11 @@ fn fourier_ntru_gadget_products<Table: FftTable>() {
         let coeff_nlev = make_nlev(&beta, &basis);
         let coeff_ngsw = Ngsw::new(coeff_nlev.as_ref().to_vec());
 
-        let fourier_length = basis.decompose_length() * fft.fourier_length();
+        let fourier_length = basis.decompose_length().get() * fft.fourier_length();
         let mut fourier_nlev = FourierNlevOwned::zero(fourier_length);
         coeff_nlev.write_fourier_form(&mut fourier_nlev, &mut engine);
         let mut fourier_ngsw =
-            FourierNgswOwned::zero(basis.decompose_length() * fft.fourier_length());
+            FourierNgswOwned::zero(basis.decompose_length().get() * fft.fourier_length());
         coeff_ngsw.write_fourier_form(&mut fourier_ngsw, &mut engine);
 
         if amplitude != 0 {
@@ -328,8 +334,12 @@ fn fourier_ntru_gadget_products<Table: FftTable>() {
         assert_eq!(ngsw_product.as_ref(), expected.as_ref());
 
         for log_basis in [4, 12] {
-            let output_basis = ApproxSignedBasis::new(None, log_basis, None);
-            assert_ne!(output_basis.decompose_length(), basis.decompose_length());
+            let output_basis =
+                ApproxSignedBasis::new(None, DecompositionBaseLog::new(log_basis), None);
+            assert_ne!(
+                output_basis.decompose_length().get(),
+                basis.decompose_length().get()
+            );
             let input_nlev = make_nlev(&alpha, &output_basis);
             let expected_nlev = make_nlev(&expected, &output_basis);
             let mut output_nlev = Nlev::new(vec![u32::MAX; input_nlev.as_ref().len()]);

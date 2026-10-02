@@ -1,5 +1,6 @@
 //! Coefficient-domain bucket selections for experimental sparse NTRU PBS.
 
+use primus_lattice::LweDimension;
 use std::alloc::Layout;
 
 use num_traits::{ConstOne, ConstZero};
@@ -31,7 +32,7 @@ use crate::{ClientKey, KeyGenerationError, KeyGenerator, ServerKey, SparseBootst
 pub struct SparseNtruBootstrappingKey<T: FheUint> {
     data: Vec<T>,
     map: BucketMap,
-    input_dimension: usize,
+    input_dimension: LweDimension,
     hamming_weight: usize,
     copy_count: usize,
     pub(crate) control_len: usize,
@@ -40,7 +41,7 @@ pub struct SparseNtruBootstrappingKey<T: FheUint> {
 impl<T: FheUint> SparseNtruBootstrappingKey<T> {
     /// Returns the external LWE dimension.
     #[must_use]
-    pub fn input_dimension(&self) -> usize {
+    pub fn input_dimension(&self) -> LweDimension {
         self.input_dimension
     }
 
@@ -149,7 +150,7 @@ where
         else {
             return Err(Error::UnsupportedSecretDistribution.into());
         };
-        let dimension = parameters.external_lwe_dimension();
+        let dimension = parameters.external_lwe_dimension().get();
         if hamming_weight == 0 || hamming_weight >= dimension {
             return Err(Error::InvalidHammingWeight.into());
         }
@@ -234,14 +235,14 @@ where
                     rng,
                 );
             }
-            for polynomial in output.chunks_exact_mut(parameters.poly_length()) {
+            for polynomial in output.chunks_exact_mut(parameters.poly_length().get()) {
                 ntt.inverse_transform_slice(polynomial);
             }
         }
         let controls = SparseNtruBootstrappingKey {
             data,
             map,
-            input_dimension: dimension,
+            input_dimension: LweDimension::new(dimension),
             hamming_weight,
             copy_count,
             control_len,

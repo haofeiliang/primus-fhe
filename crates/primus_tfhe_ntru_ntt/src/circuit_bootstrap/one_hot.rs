@@ -71,7 +71,7 @@ where
             .ok_or(TfheEvaluationError::MissingCircuitBootstrapKey)?;
         let lookup_table =
             OneHotLookupTable::try_new(pbs.context.parameters(), circuit_key.parameters())?;
-        let n = pbs.context.parameters().poly_length();
+        let n = pbs.context.parameters().poly_length().get();
         Ok(Self {
             pbs,
             circuit_key,
@@ -242,7 +242,7 @@ where
         let parameters = self.circuit_key.parameters();
         assert_eq!(
             input.dimension(),
-            tfhe.external_lwe_dimension(),
+            tfhe.external_lwe_dimension().get(),
             "one-hot input dimension mismatch"
         );
 
@@ -297,7 +297,7 @@ where
                 .trace_key()
                 .project_prefix_coefficients_with_scratch_to(
                     &self.pbs.blind_rotation.scratch,
-                    self.lookup_table.level_count(),
+                    self.lookup_table.level_count().get(),
                     projected,
                     tfhe.accumulator_ntru().cipher_modulus(),
                     self.pbs.context.table(),

@@ -4,8 +4,11 @@
 //! Fourier native torus. These workloads do not compare matched security.
 //!
 //! cargo bench -p primus_ntru --bench constant_gadget
+
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
+use primus_decompose::DecompositionBaseLog;
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable};
+use primus_lattice::PolyLength;
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{
     FourierNlevCiphertext, FourierNtruGadgetEncryptWorkspace, FourierNtruSecretKey, NlevParameters,
@@ -25,9 +28,13 @@ fn ntt(c: &mut Criterion) {
         let params = NtruParameters::new(n, 16, modulus, SecretKeyDistr::SparseTernary, 3.2);
         let table = UintNttTable::new(n.trailing_zeros(), modulus).unwrap();
         let (_, key) = NttNtruSecretKey::generate_pair(&params, &table, &mut rng).unwrap();
-        let mut workspace = NttNtruGadgetEncryptWorkspace::new(n);
+        let mut workspace = NttNtruGadgetEncryptWorkspace::new(PolyLength::new(n));
         for log_basis in [3, 10] {
-            let gadget = NlevParameters::with_ntru_params(&params, log_basis, None);
+            let gadget = NlevParameters::with_ntru_params(
+                &params,
+                DecompositionBaseLog::new(log_basis),
+                None,
+            );
             let mut nlev = NttNlevCiphertext::<Vec<u64>>::zero(gadget.nlev_len());
             let mut batch = vec![0; CONSTANTS.len() * gadget.nlev_len()];
             let mut group = c.benchmark_group(format!("ntru/ntt/n{n}/log_basis{log_basis}"));
@@ -76,9 +83,13 @@ fn fourier(c: &mut Criterion) {
         let table = RustFftTable::new(n.trailing_zeros()).unwrap();
         let mut fft = FftEngine::new(&table);
         let (_, key) = FourierNtruSecretKey::generate_pair(&params, &mut fft, &mut rng).unwrap();
-        let mut workspace = FourierNtruGadgetEncryptWorkspace::new(n);
+        let mut workspace = FourierNtruGadgetEncryptWorkspace::new(PolyLength::new(n));
         for log_basis in [3, 10] {
-            let gadget = NlevParameters::with_ntru_params(&params, log_basis, None);
+            let gadget = NlevParameters::with_ntru_params(
+                &params,
+                DecompositionBaseLog::new(log_basis),
+                None,
+            );
             let mut nlev = FourierNlevCiphertext::<Vec<Complex64>>::zero(gadget.fourier_nlev_len());
             let mut batch = vec![Complex64::default(); CONSTANTS.len() * gadget.fourier_nlev_len()];
             let mut group = c.benchmark_group(format!("ntru/fourier/n{n}/log_basis{log_basis}"));

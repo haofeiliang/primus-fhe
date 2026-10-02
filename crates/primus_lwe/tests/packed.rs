@@ -1,6 +1,7 @@
 //! Small functional dimensions include vector blocks and incomplete tails.
 use primus_encoding::PlaintextEmbedding;
 use primus_integer::FheUint;
+use primus_lattice::LweDimension;
 use primus_lattice::lwe::MultiMsgLwe;
 use primus_lwe::{LweParameters, LweSecretKey, MultiMsgLweCiphertext, SecretKeyDistr};
 use primus_modulus::{BarrettModulus, NativeModulus};
@@ -12,7 +13,7 @@ fn packed_capacity_is_enforced() {
     use std::panic::{AssertUnwindSafe, catch_unwind};
 
     let params = LweParameters::new(
-        4,
+        LweDimension::new(4),
         4u32,
         NativeModulus::new(),
         SecretKeyDistr::UniformBinary,
@@ -22,7 +23,7 @@ fn packed_capacity_is_enforced() {
     let key = LweSecretKey::generate(&params, &mut rng);
 
     // The first disallowed body reuses a mask up to sign.
-    let count = params.dimension() + 1;
+    let count = params.dimension().ciphertext_len();
     assert!(
         catch_unwind(AssertUnwindSafe(|| {
             key.encrypt_multi_messages(&vec![0u32; count], &params, &mut rng)
@@ -35,7 +36,7 @@ fn packed_capacity_is_enforced() {
         }))
         .is_err()
     );
-    let malformed = MultiMsgLweCiphertext::new(vec![0u32; params.dimension() + count]);
+    let malformed = MultiMsgLweCiphertext::new(vec![0u32; params.dimension().get() + count]);
     assert!(catch_unwind(|| key.decrypt_multi_messages(&malformed, &params)).is_err());
 }
 
@@ -51,7 +52,7 @@ fn check_packed_samples<T: FheUint, M: RingContext<T>>(modulus: M) {
     // Moving rotation splits exercise vector blocks and tails in both word widths.
     let dimension = 65;
     let params = LweParameters::new(
-        dimension,
+        LweDimension::new(dimension),
         T::as_from(4u32),
         modulus,
         SecretKeyDistr::UniformTernary,

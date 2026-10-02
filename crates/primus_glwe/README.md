@@ -73,6 +73,16 @@ NTT `encrypt_truncated_zeros`, `phase_truncated` and `decrypt_truncated` operate
 
 ## Evaluation primitives
 
+`GlweKeySwitchingParameters::try_new(GlweDimension::new(input_dimension), output)` checks and retains
+the complete input GLWE layout at construction, returning `GlweSizeError` on
+input-layout or combined key-storage overflow. `new` panics on the same errors. Input and
+output share the ring geometry from `output`; `input_size()` returns the stored
+layout. Ordinary and gadget parameters retain the checked
+[PolyLength](../primus_lattice/README.md#storage-and-layout) through `GlweSize`;
+their `poly_length()` accessors return this checked value. Pass it directly to
+workspace constructors, and use `.get()` at scalar kernel/transform boundaries.
+Dimension arguments and accessors use `GlweDimension`, re-exported from `primus_lattice`; `.get()` returns `k`. `primus_lattice::LweDimension::from(glwe_size)` explicitly derives the checked extracted LWE dimension `kN` from a GLWE size. Gadget constructors use `DecompositionBaseLog` and `Option<DecompositionLevelCount>` from `primus_decompose`. The top-level encryption parameter constructors still accept an integer `N`.
+
 Evaluation keys own their layouts and decomposition bases. NTT evaluation takes `input, output, modulus, ntt, workspace`; Fourier evaluation omits `modulus`. Workspaces are reusable workspaces. Preserve the key's transform representation: matching lengths and moduli alone do not prove compatibility.
 
 Both automorphism keys provide coefficient-domain `apply_to`. `NttGlweAutomorphismKey::apply_ntt_to` and `FourierGlweAutomorphismKey::apply_fourier_to` reuse the same key for transform-domain input/output. Fourier evaluation requires the exact FFT table instance used at key generation; direct Fourier input/output can round differently from a coefficient roundtrip.

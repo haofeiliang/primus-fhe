@@ -1,8 +1,10 @@
 //! Public GGSW encryption and external product across two wide CRT limbs.
+use primus_decompose::DecompositionBaseLog;
 use primus_glwe_rns::{
     CrtGlevParameters, CrtGlweParameters, DcrtGlweCiphertext, DcrtGlweDecryptWorkspace,
     DcrtGlwePublicKey, DcrtGlweSecretKey, GlweSecretKey, SecretKeyDistr,
 };
+use primus_lattice::GlweDimension;
 use primus_lattice::{glwe::DcrtGlwe, workspace::DcrtGlevMulWorkspace};
 use primus_modulus::BarrettModulus;
 use primus_ntt::UintDcrtTable;
@@ -37,7 +39,7 @@ fn test_external_product() {
     let mut rng = StdRng::seed_from_u64(42);
 
     let glwe_params = CrtGlweParameters::new(
-        dimension,
+        GlweDimension::new(dimension),
         poly_length,
         mod_t,
         mod_gamma,
@@ -56,7 +58,8 @@ fn test_external_product() {
     );
     let dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&sk, &table);
 
-    let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, 30, None);
+    let glev_params =
+        CrtGlevParameters::with_glwe_params(&glwe_params, DecompositionBaseLog::new(30), None);
 
     let pk = DcrtGlwePublicKey::new(&dcrt_sk, &glwe_params, &table, &mut rng);
 

@@ -54,7 +54,7 @@ where
         C: Data<Elem = T>,
         D: DataMut<Elem = T>,
     {
-        let poly_length = workspace.poly_length();
+        let poly_length = workspace.poly_length().get();
         debug_assert_eq!(ct0.as_ref().len(), poly_length);
         debug_assert_eq!(ct1.as_ref().len(), poly_length);
         debug_assert_eq!(output.as_ref().len(), poly_length);
@@ -151,7 +151,7 @@ where
         C: Data<Elem = T>,
         D: DataMut<Elem = T>,
     {
-        let poly_length = workspace.poly_length();
+        let poly_length = workspace.poly_length().get();
         debug_assert_eq!(ct0.as_ref().len(), poly_length);
         debug_assert_eq!(ct1.as_ref().len(), poly_length);
         debug_assert_eq!(output.as_ref().len(), poly_length);

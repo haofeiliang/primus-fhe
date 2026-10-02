@@ -9,6 +9,9 @@
 //! [`Encryptor`], [`Decryptor`] and their Boolean wrappers share external LWE
 //! workflows through [`LweClientParameters`], without a transform backend.
 //!
+//! Ring-length arguments use the checked [`PolyLength`] shared with GLWE/NTRU.
+//! LUT compilation additionally checks rotation-domain and encoding requirements.
+//!
 //! Raw PBS inputs and outputs use [`LweCiphertext`] directly. Encoding and
 //! Boolean evaluators bind encoding and reusable workspace around these raw values.
 
@@ -36,5 +39,6 @@ pub use lookup_table::{
     front_half_domain_len,
 };
 pub use parameters::CircuitBootstrapConfig;
-pub use primus_decompose::DecompositionConfig;
+pub use primus_decompose::{DecompositionBaseLog, DecompositionConfig, DecompositionLevelCount};
+pub use primus_lattice::PolyLength;
 pub use primus_lwe::{LweCiphertext, LweSecretKeyRef};

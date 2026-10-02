@@ -1,3 +1,4 @@
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_fft::{FftEngine, FftTable, RustFftTable, TfheFftTable};
 use primus_glwe::{
     FourierGlweGadgetEncryptWorkspace, FourierGlweKeySwitchingWorkspace, FourierGlweSecretKey,
@@ -5,7 +6,8 @@ use primus_glwe::{
     NttGlweGadgetEncryptWorkspace, NttGlweKeySwitchingWorkspace, NttGlweSecretKey,
     NttLwePackingKeySwitchingKey, SecretKeyDistr,
 };
-use primus_lattice::{glwe::Glwe, lwe::Lwe};
+use primus_lattice::GlweDimension;
+use primus_lattice::{PolyLength, glwe::Glwe, lwe::Lwe};
 use primus_lwe::LweSecretKeyRef;
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntt::{NttTable, U64NttTable};
@@ -51,7 +53,7 @@ fn inputs(q: u128, digit_unit: u64, rng: &mut StdRng) -> Vec<u64> {
 }
 
 fn check_packing(q: u128, batch: &[u64], mut pack: impl FnMut(&[u64], &mut Glwe<Vec<u64>>)) {
-    let size = GlweSize::new(K, N);
+    let size = GlweSize::new(GlweDimension::new(K), PolyLength::new(N));
     let mut output = Glwe::new(vec![7; size.glwe_len()]);
     // Reuse the same scratch with shrinking/growing batches; stale tails must not leak.
     for count in [N, 3, 1, N - 1] {
@@ -80,8 +82,19 @@ fn check_packing(q: u128, batch: &[u64], mut pack: impl FnMut(&[u64], &mut Glwe<
 fn ntt_packing(log_basis: u32, levels: usize) {
     let modulus = BarrettModulus::new(Q);
     let ntt = U64NttTable::new(N.trailing_zeros(), modulus).unwrap();
-    let params = GlweParameters::new(K, N, 64, modulus, SecretKeyDistr::UniformTernary, 0.7);
-    let glev = GlevParameters::with_glwe_params(&params, log_basis, Some(levels));
+    let params = GlweParameters::new(
+        GlweDimension::new(K),
+        N,
+        64,
+        modulus,
+        SecretKeyDistr::UniformTernary,
+        0.7,
+    );
+    let glev = GlevParameters::with_glwe_params(
+        &params,
+        DecompositionBaseLog::new(log_basis),
+        Some(DecompositionLevelCount::new(levels)),
+    );
     let coeff = GlweSecretKey::<u64>::new(secret(), params.size(), SecretKeyDistr::UniformTernary);
     let sk = NttGlweSecretKey::from_coeff_secret_key(&coeff, &ntt);
     let mut rng = StdRng::seed_from_u64(0x5041434b);
@@ -113,8 +126,16 @@ fn ntt_packing(log_basis: u32, levels: usize) {
         (wrong_modulus, &ntt, params.size()),
         (modulus, &wrong_table, params.size()),
         (modulus, &wrong_length, params.size()),
-        (modulus, &ntt, GlweSize::new(K + 1, N)),
-        (modulus, &ntt, GlweSize::new(K, 2 * N)),
+        (
+            modulus,
+            &ntt,
+            GlweSize::new(GlweDimension::new(K + 1), PolyLength::new(N)),
+        ),
+        (
+            modulus,
+            &ntt,
+            GlweSize::new(GlweDimension::new(K), PolyLength::new(2 * N)),
+        ),
     ] {
         let mut output = Glwe::new(vec![7; params.glwe_len()]);
         let mut workspace = NttGlweKeySwitchingWorkspace::new(size);
@@ -140,14 +161,18 @@ fn fourier_packing<Table: FftTable>(log_basis: u32, levels: usize) {
     let table = Table::new(N.trailing_zeros()).unwrap();
     let mut fft = FftEngine::new(&table);
     let params = GlweParameters::new(
-        K,
+        GlweDimension::new(K),
         N,
         64u64,
         NativeModulus::new(),
         SecretKeyDistr::UniformTernary,
         0.7,
     );
-    let glev = GlevParameters::with_glwe_params(&params, log_basis, Some(levels));
+    let glev = GlevParameters::with_glwe_params(
+        &params,
+        DecompositionBaseLog::new(log_basis),
+        Some(DecompositionLevelCount::new(levels)),
+    );
     let coeff = GlweSecretKey::<u64>::new(secret(), params.size(), SecretKeyDistr::UniformTernary);
     let sk = FourierGlweSecretKey::from_coeff_secret_key(&coeff, &mut fft);
     let mut rng = StdRng::seed_from_u64(0x5041434b);
@@ -177,7 +202,10 @@ fn fourier_packing<Table: FftTable>(log_basis: u32, levels: usize) {
     let mut wrong_fft = FftEngine::new(&wrong_table);
     for (fft, size) in [
         (&mut wrong_fft, params.size()),
-        (&mut fft, GlweSize::new(K + 1, N)),
+        (
+            &mut fft,
+            GlweSize::new(GlweDimension::new(K + 1), PolyLength::new(N)),
+        ),
     ] {
         let mut output = Glwe::new(vec![7; params.glwe_len()]);
         let mut workspace = FourierGlweKeySwitchingWorkspace::new(size);

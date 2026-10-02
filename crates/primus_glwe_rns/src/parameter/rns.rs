@@ -1,10 +1,12 @@
 //! RNS (Residue Number System) multi-modulus GLWE / GLev / GGSW parameters.
 
 use primus_decompose::big_integer::BigUintApproxSignedBasis;
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_distr::{SecretKeySampler, SignedDiscreteGaussian};
 use primus_factor::ShoupFactor;
 use primus_integer::{BigUint, FheUint, UnsignedInteger};
-use primus_lattice::{GlweSize, RnsGadgetSize, RnsGlweSize};
+use primus_lattice::GlweDimension;
+use primus_lattice::{GlweSize, PolyLength, RnsGadgetSize, RnsGlweSize};
 use primus_reduce::FieldContext;
 use primus_rns::{RNSBase, ResidueFactors, Residues};
 use rand::distr::Uniform;
@@ -50,7 +52,7 @@ where
     /// invalid, or if the secret-key or noise magnitude bound is not strictly
     /// less than every ciphertext modulus.
     pub fn new(
-        dimension: usize,
+        dimension: GlweDimension,
         poly_length: usize,
         plain_modulus: M,
         gamma_modulus: M,
@@ -92,7 +94,10 @@ where
             "noise magnitude bound must be less than every ciphertext modulus"
         );
 
-        let size = RnsGlweSize::new(GlweSize::new(dimension, poly_length), cipher_moduli.len());
+        let size = RnsGlweSize::new(
+            GlweSize::new(dimension, PolyLength::new(poly_length)),
+            cipher_moduli.len(),
+        );
 
         let secret_key_sampler = SecretKeySampler::new(secret_key_distr);
         for (index, &modulus_minus_one) in cipher_moduli_minus_one.iter().enumerate() {
@@ -116,14 +121,16 @@ where
     }
 
     /// Returns the dimension of this [`CrtGlweParameters<T, M>`].
+    #[must_use]
     #[inline]
-    pub fn dimension(&self) -> usize {
+    pub fn dimension(&self) -> GlweDimension {
         self.size.dimension()
     }
 
     /// Returns the poly length of this [`CrtGlweParameters<T, M>`].
+    #[must_use]
     #[inline]
-    pub fn poly_length(&self) -> usize {
+    pub fn poly_length(&self) -> PolyLength {
         self.size.poly_length()
     }
 
@@ -230,7 +237,7 @@ where
 
     /// Returns the limb length of one polynomial in big-integer representation.
     pub fn big_uint_poly_len(&self) -> usize {
-        self.poly_length() * self.big_uint_value_len()
+        self.poly_length().get() * self.big_uint_value_len()
     }
 
     /// Returns the coefficient count of one RNS polynomial.
@@ -295,8 +302,8 @@ where
     #[inline]
     pub fn with_glwe_params(
         glwe_params: &CrtGlweParameters<T, M>,
-        log_basis: u32,
-        reverse_length: Option<usize>,
+        log_basis: DecompositionBaseLog,
+        reverse_length: Option<DecompositionLevelCount>,
     ) -> Self {
         Self::try_with_glwe_params(glwe_params, log_basis, reverse_length)
             .unwrap_or_else(|error| panic!("failed to construct CRT GLev parameters: {error}"))
@@ -310,12 +317,13 @@ where
     ///
     /// # Errors
     ///
-    /// Returns [`CrtGlevParametersError`] if decomposition construction fails
-    /// or a modulus does not satisfy the centered-lift precondition.
+    /// Returns [`CrtGlevParametersError`] if decomposition construction fails,
+    /// a modulus does not satisfy the centered-lift precondition, or a derived
+    /// gadget storage length overflows.
     pub fn try_with_glwe_params(
         glwe_params: &CrtGlweParameters<T, M>,
-        log_basis: u32,
-        reverse_length: Option<usize>,
+        log_basis: DecompositionBaseLog,
+        reverse_length: Option<DecompositionLevelCount>,
     ) -> Result<Self, CrtGlevParametersError<T>> {
         let basis = BigUintApproxSignedBasis::try_new(
             glwe_params.cipher_modulus(),
@@ -331,9 +339,11 @@ where
                 });
             }
         }
-        let decompose_length = basis.decompose_length();
+        let size = RnsGadgetSize::try_new(glwe_params.size(), basis.decompose_length())?;
+        // L*m weights fit because the checked gadget layout contains
+        // L*m*(k+1)*N coefficients. Validate that layout before allocating.
         let mut scalar_residues =
-            vec![T::ZERO; decompose_length * glwe_params.cipher_moduli_count()];
+            vec![T::ZERO; basis.decompose_length().get() * glwe_params.cipher_moduli_count()];
         for (scalar, residues) in basis
             .scalar_iter()
             .zip(scalar_residues.chunks_exact_mut(glwe_params.cipher_moduli_count()))
@@ -352,19 +362,21 @@ where
             noise_distribution: glwe_params.noise_distribution().clone(),
             basis,
             scalar_residues,
-            size: RnsGadgetSize::new(glwe_params.size(), decompose_length),
+            size,
         })
     }
 
     /// Returns the dimension of this [`CrtGlevParameters<T, M>`].
+    #[must_use]
     #[inline]
-    pub fn dimension(&self) -> usize {
+    pub fn dimension(&self) -> GlweDimension {
         self.size.rns_glwe_size().dimension()
     }
 
     /// Returns the poly length of this [`CrtGlevParameters<T, M>`].
+    #[must_use]
     #[inline]
-    pub fn poly_length(&self) -> usize {
+    pub fn poly_length(&self) -> PolyLength {
         self.size.rns_glwe_size().poly_length()
     }
 
@@ -483,13 +495,14 @@ where
     }
 
     /// Returns the number of decomposition levels.
-    pub fn decompose_length(&self) -> usize {
+    #[must_use]
+    pub fn decompose_length(&self) -> DecompositionLevelCount {
         self.basis.decompose_length()
     }
 
     /// Returns the limb length of one polynomial in big-integer representation.
     pub fn big_uint_poly_len(&self) -> usize {
-        self.poly_length() * self.big_uint_value_len()
+        self.poly_length().get() * self.big_uint_value_len()
     }
 }
 

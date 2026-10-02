@@ -164,7 +164,7 @@ where
     ) -> Vec<LweCiphertext<T>> {
         let dimension = self.evaluator.context.parameters().external_lwe_dimension();
         let mut outputs = (0..lookup_table.output_count())
-            .map(|_| LweCiphertext::zero(dimension))
+            .map(|_| LweCiphertext::zero(dimension.get()))
             .collect::<Vec<_>>();
         self.apply_lookup_table_to(input, lookup_table, &mut outputs);
         outputs
@@ -202,14 +202,20 @@ where
         );
         let parameters = evaluator.context.parameters();
         let dimension = parameters.external_lwe_dimension();
-        assert_eq!(input.dimension(), dimension, "MVB input dimension mismatch");
+        assert_eq!(
+            input.dimension(),
+            dimension.get(),
+            "MVB input dimension mismatch"
+        );
         assert_eq!(
             outputs.len(),
             lookup_table.output_count(),
             "MVB output count mismatch"
         );
         assert!(
-            outputs.iter().all(|output| output.dimension() == dimension),
+            outputs
+                .iter()
+                .all(|output| output.dimension() == dimension.get()),
             "MVB output ciphertext dimension mismatch"
         );
 
@@ -219,7 +225,7 @@ where
         evaluator
             .main_glwe
             .write_ntt_form(&mut self.shared_rotation, table);
-        let factors = NttPolynomialIter::new(&lookup_table.factors, glwe.poly_length());
+        let factors = NttPolynomialIter::new(&lookup_table.factors, glwe.poly_length().get());
         for (factor, output) in factors.zip(outputs) {
             // Borrow the existing main buffer in NTT form, then restore its
             // coefficient representation before KS/extraction. The shared BR
@@ -236,14 +242,14 @@ where
                     let switched = evaluator.keyswitch_accumulator();
                     switched.extract_compact_lwe_to(
                         output,
-                        glwe.poly_length(),
+                        glwe.poly_length().get(),
                         glwe.cipher_modulus(),
                     );
                 }
                 PbsOrder::KeyswitchBootstrap => {
                     evaluator.main_glwe.extract_lwe_to(
                         output,
-                        glwe.poly_length(),
+                        glwe.poly_length().get(),
                         glwe.cipher_modulus(),
                     );
                 }

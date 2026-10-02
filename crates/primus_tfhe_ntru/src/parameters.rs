@@ -1,8 +1,9 @@
 use primus_decompose::{DecompositionConfig, primitive::ApproxSignedBasis};
 use primus_encoding::RoundedCodec;
 use primus_integer::FheUint;
+use primus_lwe::LweDimension;
 use primus_lwe::LweParameters;
-use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
+use primus_ntru::{NlevParameters, NtruParameters, PolyLength, SecretKeyDistr};
 use primus_reduce::RingContext;
 use primus_tfhe::rotation::RotationQuantizer;
 
@@ -97,11 +98,8 @@ where
         if external_lwe.plain_modulus_value() != blind_rotation.ntru().plain_modulus() {
             return Err(TfheParameterError::PlainModulusMismatch);
         }
-        let two_n = blind_rotation
-            .poly_length()
-            .checked_mul(2)
-            .filter(|&n| T::try_from(n).is_ok())
-            .ok_or(TfheParameterError::RotationDomainTooLarge)?;
+        let two_n = 2 * blind_rotation.poly_length().get();
+        T::try_from(two_n).map_err(|_| TfheParameterError::RotationDomainTooLarge)?;
         let key_switching_basis = key_switching
             .try_build(external_lwe.cipher_modulus_value())
             .map_err(TfheParameterError::KeySwitchingParameters)?;
@@ -154,7 +152,7 @@ where
     /// Returns the dimension of externally visible LWE ciphertexts.
     #[must_use]
     #[inline]
-    pub fn external_lwe_dimension(&self) -> usize {
+    pub fn external_lwe_dimension(&self) -> LweDimension {
         self.external_lwe.dimension()
     }
 
@@ -180,7 +178,7 @@ where
     /// Returns the common NTRU polynomial length.
     #[must_use]
     #[inline]
-    pub fn poly_length(&self) -> usize {
+    pub fn poly_length(&self) -> PolyLength {
         self.blind_rotation.poly_length()
     }
 

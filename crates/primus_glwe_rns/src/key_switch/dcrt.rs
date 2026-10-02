@@ -27,6 +27,13 @@ pub struct DcrtGlweKeySwitchingKey<T: FheUint> {
 
 impl<T: FheUint> DcrtGlweKeySwitchingKey<T> {
     /// Generates a key from a coefficient-domain input key to a DCRT output key.
+    ///
+    /// # Panics
+    /// Panics if secret-key layouts differ from their parameters or the combined
+    /// key storage length overflows.
+    ///
+    /// # Correctness
+    /// Input and output parameters must use the same polynomial length and RNS base.
     pub fn generate<R, M, Table>(
         input_sk: &GlweSecretKey<T>,
         input_params: &CrtGlweParameters<T, M>,
@@ -46,7 +53,12 @@ impl<T: FheUint> DcrtGlweKeySwitchingKey<T> {
         assert_eq!(output_sk.rns_glwe_size(), ksk_params.size().rns_glwe_size());
 
         let dcrt_glev_len = ksk_params.rns_glev_len();
-        let mut key = vec![T::ZERO; input_params.dimension() * dcrt_glev_len];
+        let key_len = input_params
+            .dimension()
+            .get()
+            .checked_mul(dcrt_glev_len)
+            .expect("DCRT GLWE key-switching key length overflow");
+        let mut key = vec![T::ZERO; key_len];
 
         let key_iter = DcrtGlevIterMut::new(key.as_mut_slice(), dcrt_glev_len);
         let mut secret_buffer = Zeroizing::new(vec![T::ZERO; input_params.rns_poly_len()]);
@@ -124,7 +136,7 @@ impl<T: FheUint> DcrtGlweKeySwitchingKey<T> {
         let table = domain.table();
         let rns_base = domain.rns_base();
         let basis = parameters.basis();
-        let poly_length = self.input_size.poly_length();
+        let poly_length = self.input_size.poly_length().get();
         let rns_poly_len = self.input_size.rns_poly_len();
         let DcrtGlweKeySwitchingWorkspace {
             transformed_polynomial,

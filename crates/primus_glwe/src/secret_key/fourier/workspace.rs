@@ -2,7 +2,7 @@
 
 use primus_fft::Complex64;
 use primus_integer::FheUint;
-use primus_lattice::{GadgetSize, MAX_POLY_LENGTH, MIN_POLY_LENGTH};
+use primus_lattice::{GadgetSize, PolyLength};
 use primus_poly::{FourierPolynomialOwned, PolynomialOwned};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
@@ -13,29 +13,17 @@ pub struct FourierGlweEncryptWorkspace<T: FheUint> {
 
 impl<T: FheUint> FourierGlweEncryptWorkspace<T> {
     /// Creates an encryption workspace for coefficient polynomials of length `poly_length`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the length is not a power of two in the supported GLWE range.
     #[inline]
     #[must_use]
-    pub fn new(poly_length: usize) -> Self {
-        assert!(
-            (MIN_POLY_LENGTH..=MAX_POLY_LENGTH).contains(&poly_length)
-                && poly_length.is_power_of_two(),
-            "invalid Fourier workspace polynomial length"
-        );
+    pub fn new(poly_length: PolyLength) -> Self {
+        let poly_length = poly_length.get();
         Self {
             coeff: PolynomialOwned::zero(poly_length),
         }
     }
 
-    fn resize(&mut self, poly_length: usize) {
-        assert!(
-            (MIN_POLY_LENGTH..=MAX_POLY_LENGTH).contains(&poly_length)
-                && poly_length.is_power_of_two(),
-            "invalid Fourier workspace polynomial length"
-        );
+    fn resize(&mut self, poly_length: PolyLength) {
+        let poly_length = poly_length.get();
         if self.coeff.as_ref().len() != poly_length {
             self.coeff.0.resize(poly_length, T::ZERO);
         }
@@ -72,18 +60,10 @@ pub struct FourierGlweDecryptWorkspace {
 
 impl FourierGlweDecryptWorkspace {
     /// Creates a decryption workspace for coefficient polynomials of length `poly_length`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the length is not a power of two in the supported GLWE range.
     #[inline]
     #[must_use]
-    pub fn new(poly_length: usize) -> Self {
-        assert!(
-            (MIN_POLY_LENGTH..=MAX_POLY_LENGTH).contains(&poly_length)
-                && poly_length.is_power_of_two(),
-            "invalid Fourier workspace polynomial length"
-        );
+    pub fn new(poly_length: PolyLength) -> Self {
+        let poly_length = poly_length.get();
         Self {
             phase: FourierPolynomialOwned::zero(poly_length / 2),
         }
@@ -123,33 +103,33 @@ impl<T: FheUint> FourierGlweGadgetEncryptWorkspace<T> {
     #[must_use]
     pub fn new(size: GadgetSize) -> Self {
         let glwe_size = size.glwe_size();
-        let poly_length = glwe_size.poly_length();
-        let decompose_length = size.decompose_length();
+        let poly_length = glwe_size.poly_length().get();
+        let decompose_length = size.decompose_length().get();
         Self {
             encoded: PolynomialOwned::zero(poly_length),
             level_transforms: vec![
                 Complex64::default();
                 decompose_length * glwe_size.fourier_poly_len()
             ],
-            glwe: FourierGlweEncryptWorkspace::new(poly_length),
+            glwe: FourierGlweEncryptWorkspace::new(glwe_size.poly_length()),
         }
     }
 
     /// Rebinds this workspace to another checked gadget layout.
     pub fn resize(&mut self, size: GadgetSize) {
         let glwe_size = size.glwe_size();
-        let poly_length = glwe_size.poly_length();
+        let poly_length = glwe_size.poly_length().get();
 
         self.encoded.0.resize(poly_length, T::ZERO);
         self.level_transforms.resize(
-            size.decompose_length() * glwe_size.fourier_poly_len(),
+            size.decompose_length().get() * glwe_size.fourier_poly_len(),
             Complex64::default(),
         );
-        self.glwe.resize(poly_length);
+        self.glwe.resize(glwe_size.poly_length());
     }
 
     pub(crate) fn assert_glev_compatible(&self, size: GadgetSize) {
-        let poly_length = size.glwe_size().poly_length();
+        let poly_length = size.glwe_size().poly_length().get();
         assert_eq!(
             self.encoded.as_ref().len(),
             poly_length,
@@ -162,7 +142,7 @@ impl<T: FheUint> FourierGlweGadgetEncryptWorkspace<T> {
         self.assert_glev_compatible(size);
         assert_eq!(
             self.level_transforms.len(),
-            size.decompose_length() * size.glwe_size().fourier_poly_len(),
+            size.decompose_length().get() * size.glwe_size().fourier_poly_len(),
             "gadget level workspace length mismatch"
         );
     }

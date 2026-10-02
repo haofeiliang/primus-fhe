@@ -4,6 +4,7 @@ use primus_data::{Data, DataMut};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_factor::{FactorSliceOps, ShoupFactor};
 use primus_integer::FheUint;
+use primus_lattice::PolyLength;
 use primus_modulus::PowOf2Modulus;
 use primus_ntt::NttTable;
 use primus_reduce::{FieldContext, ReduceNeg};
@@ -22,14 +23,11 @@ pub struct NttNtruTraceWorkspace<T: FheUint> {
 
 impl<T: FheUint> NttNtruTraceWorkspace<T> {
     /// Allocates workspace for one polynomial length.
-    ///
-    /// # Panics
-    /// Inherits [`NttNtruAutomorphismWorkspace::new`]'s supported-length check.
     #[must_use]
-    pub fn new(poly_length: usize) -> Self {
+    pub fn new(poly_length: PolyLength) -> Self {
         let automorphism = NttNtruAutomorphismWorkspace::new(poly_length);
         Self {
-            automorphism_output: NtruCiphertext::zero(poly_length),
+            automorphism_output: NtruCiphertext::zero(poly_length.get()),
             automorphism,
         }
     }
@@ -75,7 +73,7 @@ impl<T: FheUint> NttNtruTraceKey<T> {
             q & T::ONE == T::ONE && q < T::ONE << (T::BITS - 1),
             "trace normalization requires an odd modulus below 2^(T::BITS-1)"
         );
-        let log_n = parameters.poly_length().trailing_zeros();
+        let log_n = parameters.poly_length().log_n();
         let automorphism_keys = (1..=log_n)
             .rev()
             .map(|shift| {

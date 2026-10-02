@@ -2,6 +2,7 @@ use primus_data::{Data, DataMut};
 use primus_fft::{Complex64, FftTable, TorusFftValue};
 use primus_glwe::GlweCiphertext;
 use primus_glwe::{FourierGlweTraceWorkspace, GlevCiphertext};
+use primus_lattice::LweDimension;
 use primus_lattice::ggsw::FourierGgsw;
 use primus_lwe::LweCiphertext;
 use primus_reduce::ReduceMul;
@@ -25,7 +26,7 @@ where
     pbs: Evaluator<'a, T, Table>,
     parameters: &'a CircuitBootstrapParameters<T>,
     circuit_key: &'a CircuitBootstrapKey<T>,
-    input_dimension: usize,
+    input_dimension: LweDimension,
     lookup_table: InterleavedLookupTable<T>,
     trace: FourierGlweTraceWorkspace<T>,
     projected: GlevCiphertext<Vec<T>>,
@@ -296,7 +297,7 @@ where
     ) {
         assert_eq!(
             input.dimension(),
-            self.input_dimension,
+            self.input_dimension.get(),
             "circuit-bootstrap input dimension mismatch"
         );
         assert_eq!(
@@ -314,7 +315,7 @@ where
         // replace full coefficient projection here.
         self.circuit_key.trace_key().project_prefix_coefficients_to(
             accumulator,
-            self.parameters.output_basis().decompose_length(),
+            self.parameters.output_basis().decompose_length().get(),
             self.projected.as_mut(),
             fft,
             &mut self.trace,

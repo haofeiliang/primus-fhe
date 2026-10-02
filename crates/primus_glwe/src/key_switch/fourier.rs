@@ -5,6 +5,7 @@ use primus_data::{Data, DataMut};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
 use primus_integer::SignedInteger;
+use primus_lattice::GlweDimension;
 use primus_lattice::{
     GadgetSize, GlweSize,
     glev::FourierGlev,
@@ -38,7 +39,8 @@ impl<T: TorusFftValue> FourierGlweKeySwitchingKey<T> {
     /// # Panics
     ///
     /// Panics if input/output polynomial lengths, the output key layout, FFT,
-    /// or gadget workspace do not match `parameters`.
+    /// or gadget workspace do not match `parameters`, or the combined key
+    /// storage length overflows.
     pub fn generate<Table, R>(
         input_secret_key: &GlweSecretKey<T>,
         output_secret_key: &FourierGlweSecretKey,
@@ -52,16 +54,23 @@ impl<T: TorusFftValue> FourierGlweKeySwitchingKey<T> {
         R: rand::Rng + rand::CryptoRng,
     {
         let output = parameters;
-        assert_eq!(input_secret_key.poly_length(), output.poly_length());
+        assert_eq!(input_secret_key.poly_length(), output.poly_length().get());
         assert_eq!(output_secret_key.glwe_size(), output.glwe_size());
-        assert_eq!(fft.poly_length(), output.poly_length());
+        assert_eq!(fft.poly_length(), output.poly_length().get());
 
         let input_size = input_secret_key.glwe_size();
         let output_size = output.size();
         let fourier_glev_len = output_size.fourier_glev_len();
 
-        let mut data = vec![Complex64::default(); input_size.dimension() * fourier_glev_len];
-        let mut encoded_secret = Zeroizing::new(vec![T::ZERO; output.poly_length()]);
+        let mut data = vec![
+            Complex64::default();
+            input_size
+                .dimension()
+                .get()
+                .checked_mul(fourier_glev_len)
+                .expect("Fourier GLWE key-switching key length overflow")
+        ];
+        let mut encoded_secret = Zeroizing::new(vec![T::ZERO; output.poly_length().get()]);
 
         for (secret_poly, entry) in input_secret_key
             .iter()
@@ -93,21 +102,23 @@ impl<T: TorusFftValue> FourierGlweKeySwitchingKey<T> {
     }
 
     /// Returns the input GLWE dimension.
+    #[must_use]
     #[inline]
-    pub fn input_dimension(&self) -> usize {
+    pub fn input_dimension(&self) -> GlweDimension {
         self.input_size.dimension()
     }
 
     /// Returns the output GLWE dimension.
+    #[must_use]
     #[inline]
-    pub fn output_dimension(&self) -> usize {
+    pub fn output_dimension(&self) -> GlweDimension {
         self.output_size.glwe_size().dimension()
     }
 
     /// Returns the polynomial length.
     #[inline]
     pub fn poly_length(&self) -> usize {
-        self.input_size.poly_length()
+        self.input_size.poly_length().get()
     }
 
     /// Returns the output gadget layout bound to this key.
@@ -167,7 +178,7 @@ impl<T: TorusFftValue> FourierGlweKeySwitchingKey<T> {
         fft: &FftEngine<'_, Table>,
         workspace: &FourierGlweKeySwitchingWorkspace<T>,
     ) {
-        let poly_length = self.input_size.poly_length();
+        let poly_length = self.input_size.poly_length().get();
         assert_eq!(
             fft.poly_length(),
             poly_length,
@@ -310,7 +321,7 @@ pub struct FourierGlweKeySwitchingWorkspace<T: TorusFftValue> {
 impl<T: TorusFftValue> FourierGlweKeySwitchingWorkspace<T> {
     /// Creates a workspace for the output GLWE layout.
     pub fn new(glwe_size: GlweSize) -> Self {
-        let poly_length = glwe_size.poly_length();
+        let poly_length = glwe_size.poly_length().get();
         Self {
             carries: vec![false; poly_length].into_boxed_slice(),
             decomposed_poly: vec![T::ZERO; poly_length].into_boxed_slice(),

@@ -1,5 +1,8 @@
 //! Constant and signed gadget batches compared with polynomial encryption and RNG order.
+
+use primus_decompose::DecompositionBaseLog;
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable};
+use primus_lattice::PolyLength;
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{
     FourierNgswCiphertext, FourierNlevCiphertext, FourierNtruGadgetEncryptWorkspace,
@@ -26,10 +29,10 @@ fn constant_nlev_matches_polynomial_encryption() {
         SecretKeyDistr::SparseTernary,
         0.7,
     );
-    let gadget = NlevParameters::with_ntru_params(&params, 9, None);
+    let gadget = NlevParameters::with_ntru_params(&params, DecompositionBaseLog::new(9), None);
     let mut rng = StdRng::seed_from_u64(75);
     let key = NttNtruSecretKey::generate(&params, &ntt, &mut rng).unwrap();
-    let mut workspace = NttNtruGadgetEncryptWorkspace::new(POLY_LENGTH);
+    let mut workspace = NttNtruGadgetEncryptWorkspace::new(PolyLength::new(POLY_LENGTH));
     let mut expected = NttNlevCiphertext::<Vec<u32>>::zero(gadget.nlev_len());
     let mut actual = expected.clone();
     for constant in [0, 1, EXPLICIT_MODULUS - 1] {
@@ -96,10 +99,10 @@ fn check_fourier_constant_nlev<Table: FftTable>() {
         SecretKeyDistr::SparseTernary,
         0.7,
     );
-    let gadget = NlevParameters::with_ntru_params(&params, 8, None);
+    let gadget = NlevParameters::with_ntru_params(&params, DecompositionBaseLog::new(8), None);
     let mut rng = StdRng::seed_from_u64(75);
     let key = FourierNtruSecretKey::generate(&params, &mut fft, &mut rng).unwrap();
-    let mut workspace = FourierNtruGadgetEncryptWorkspace::new(POLY_LENGTH);
+    let mut workspace = FourierNtruGadgetEncryptWorkspace::new(PolyLength::new(POLY_LENGTH));
     let mut expected = FourierNlevCiphertext::<Vec<Complex64>>::zero(gadget.fourier_nlev_len());
     let mut actual = expected.clone();
     for constant in [0, 1, u32::MAX] {
@@ -149,10 +152,10 @@ fn signed_ngsw_batches_match_polynomial_encryption() {
         SecretKeyDistr::SparseTernary,
         0.7,
     );
-    let gadget = NlevParameters::with_ntru_params(&params, 9, None);
+    let gadget = NlevParameters::with_ntru_params(&params, DecompositionBaseLog::new(9), None);
     let mut rng = StdRng::seed_from_u64(79);
     let key = NttNtruSecretKey::generate(&params, &ntt, &mut rng).unwrap();
-    let mut workspace = NttNtruGadgetEncryptWorkspace::new(POLY_LENGTH);
+    let mut workspace = NttNtruGadgetEncryptWorkspace::new(PolyLength::new(POLY_LENGTH));
     for input in [&[][..], &[1][..], &[0, 1, -1, 2][..]] {
         let mut expected = vec![0; input.len() * gadget.nlev_len()];
         let mut actual = vec![17; expected.len()];
@@ -223,10 +226,10 @@ fn check_fourier_ngsw_batch<Table: FftTable>() {
         SecretKeyDistr::SparseTernary,
         0.7,
     );
-    let gadget = NlevParameters::with_ntru_params(&params, 8, None);
+    let gadget = NlevParameters::with_ntru_params(&params, DecompositionBaseLog::new(8), None);
     let mut rng = StdRng::seed_from_u64(79);
     let key = FourierNtruSecretKey::generate(&params, &mut fft, &mut rng).unwrap();
-    let mut workspace = FourierNtruGadgetEncryptWorkspace::new(POLY_LENGTH);
+    let mut workspace = FourierNtruGadgetEncryptWorkspace::new(PolyLength::new(POLY_LENGTH));
     for input in [&[][..], &[1][..], &[0, 1, -1, 2][..]] {
         let mut expected = vec![Complex64::default(); input.len() * gadget.fourier_nlev_len()];
         let mut actual = vec![Complex64::new(17.0, 17.0); expected.len()];
@@ -275,7 +278,8 @@ fn check_fourier_ngsw_batch<Table: FftTable>() {
         (&[1][..], gadget.fourier_nlev_len() + 1, POLY_LENGTH),
     ] {
         let mut output = vec![Complex64::new(17.0, 17.0); length];
-        let mut workspace = FourierNtruGadgetEncryptWorkspace::new(workspace_length);
+        let mut workspace =
+            FourierNtruGadgetEncryptWorkspace::new(PolyLength::new(workspace_length));
         let mut rng = StdRng::seed_from_u64(89);
         let mut expected_rng = StdRng::seed_from_u64(89);
         assert!(

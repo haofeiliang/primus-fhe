@@ -1,6 +1,7 @@
 //! Public LUT-construction checks without keys, encryption or transform tables.
 //! An explicit power-of-two modulus here checks the compiler, not FFT support.
 
+use primus_glwe::PolyLength;
 use primus_integer::FheUint;
 use primus_modulus::{NativeModulus, PowOf2Modulus};
 use primus_reduce::RingContext;
@@ -33,12 +34,20 @@ where
             let domain = t.div_ceil(2);
             let t = T::as_from(t);
             if count == 1 {
-                LookupTable::try_new(domain, n, t, modulus, modulus, |m| Ok(T::as_from(13 * m)))
-                    .unwrap();
-            } else {
-                InterleavedLookupTable::try_new(domain, n, count, t, modulus, modulus, |m, i| {
-                    Ok(T::as_from(13 * m + i))
+                LookupTable::try_new(domain, PolyLength::new(n), t, modulus, modulus, |m| {
+                    Ok(T::as_from(13 * m))
                 })
+                .unwrap();
+            } else {
+                InterleavedLookupTable::try_new(
+                    domain,
+                    PolyLength::new(n),
+                    count,
+                    t,
+                    modulus,
+                    modulus,
+                    |m, i| Ok(T::as_from(13 * m + i)),
+                )
                 .unwrap();
             }
         }

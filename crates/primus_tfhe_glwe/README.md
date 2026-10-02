@@ -15,6 +15,8 @@ The shared layer and both backends use the same role names: `Encryptor`, `Decryp
 
 Prefer `TfheParameters::try_from_config(TfheConfig { .. })`: specify `t/q` once in `small_lwe`, then name the accumulator dimension, length, secret distribution and noise, the blind-rotation/key-switch `DecompositionConfig { log_basis, level_count }`, and PBS order. `level_count: None` selects the maximum supported level count, which may still omit low bits (see [decomposition precision](../primus_decompose/README.md)); bases inherit the shared modulus. GLWE evaluation keys inherit accumulator noise. Use the direct constructor below when supplying existing ring parameters or prepared bases.
 
+Dimension choices use `LweDimension` and, for GLWE, `GlweDimension`; decomposition choices use `DecompositionBaseLog` and `Option<DecompositionLevelCount>`. Construct these checked units once and pass parameter accessors directly to workspaces. `.get()` exposes the integer at raw storage or kernel boundaries; composed lengths and basis/modulus compatibility remain constructor checks.
+
 `TfheParameters::try_new(small_lwe, accumulator_glwe, blind_rotation_basis, key_switching_basis, order)` derives BSK layout from the accumulator and the padded key-switch target from the small LWE. Plaintext and ciphertext moduli must match, the small secret must belong to a binary or ternary family, and `n <= kN`. The rotation domain `2N` must be representable by the input coefficient type `T`. Ternary LWE keys store `0/1/q-1`; padded GLWE key construction maps `q-1` to signed `-1`. Uniform, custom-probability, fixed-weight and fixed-composition distributions use the same workflow. Gaussian small secrets are unsupported.
 
 | `PbsOrder` | Complete PBS chain | External LWE secret / dimension |

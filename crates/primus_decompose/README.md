@@ -11,6 +11,7 @@ English | [简体中文](README.zh_CN.md)
 
 | Type | Role |
 | --- | --- |
+| `DecompositionBaseLog` / `DecompositionLevelCount` | Checked radix logarithm and positive retained-level count |
 | `DecompositionConfig` | Radix and retained-level choices before binding a modulus; `try_build` prepares a primitive basis |
 | `primitive::ApproxSignedBasis<T>` | Single-limb inputs with an explicit modulus or the implicit native modulus `2^T::BITS` |
 | `big_integer::BigUintApproxSignedBasis<T>` | Fixed-width, multi-limb inputs with an explicit integer modulus |
@@ -45,7 +46,9 @@ Despite its name, `unsigned_decompose*` still represents a **signed** digit. For
 
 ## Construction and retained levels
 
-Both bases require `2 <= log_basis < T::BITS` and a modulus at least `B`. `new` panics on invalid parameters; `try_new` returns `ApproxSignedBasisError`.
+`DecompositionBaseLog` checks `log_basis >= 2`; `DecompositionLevelCount` checks `L >= 1`. Construct them with `new`, `try_new` or `TryFrom`, and read the integer with `.get()`. They add no fixed upper bounds. Basis constructors and their `log_basis()` / `decompose_length()` accessors use these types.
+
+Both bases additionally require `log_basis < T::BITS`, a modulus at least `B`, and a retained count that fits the decomposition width. A multi-limb basis can have more levels than one limb has bits. Basis `new` panics on these contextual errors; `try_new` returns `ApproxSignedBasisError`.
 
 `DecompositionConfig { log_basis, level_count }` keeps these choices independent of the modulus. `config.try_build::<u32>(None)` prepares a native basis, while `config.try_build(Some(q))` uses an explicit modulus. `level_count` has the same meaning as `reverse_length` below. Validation and errors come from `primitive::ApproxSignedBasis::try_new`; the config itself has no precomputed storage.
 
@@ -67,9 +70,9 @@ A BigUint modulus must have a nonempty little-endian limb slice with a nonzero m
 Initialize a batch once, then pass the same adjusted values and advancing carry buffer through every level. Consume each level before overwriting its output:
 
 ```rust
-use primus_decompose::primitive::ApproxSignedBasis;
+use primus_decompose::{DecompositionBaseLog, primitive::ApproxSignedBasis};
 
-let basis = ApproxSignedBasis::new(Some(97_u32), 2, None);
+let basis = ApproxSignedBasis::new(Some(97_u32), DecompositionBaseLog::new(2), None);
 let values = [42_u32, 96];
 let mut adjusted = [0_u32; 2];
 let mut carries = [false; 2];
@@ -92,9 +95,13 @@ assert_eq!(reconstructed, [42, 0]); // Circular errors modulo 97: 0 and 1.
 Power-of-two inputs need no adjusted-value buffer. Use `init_carry_slice` and pass the original input to each operator; this is the native Fourier path:
 
 ```rust
-use primus_decompose::primitive::ApproxSignedBasis;
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount, primitive::ApproxSignedBasis};
 
-let basis = ApproxSignedBasis::<u32>::new(None, 8, Some(3));
+let basis = ApproxSignedBasis::<u32>::new(
+    None,
+    DecompositionBaseLog::new(8),
+    Some(DecompositionLevelCount::new(3)),
+);
 let values = [0x1234_5678_u32, u32::MAX];
 let mut carries = [false; 2];
 let mut digits = [0_u32; 2];
@@ -124,11 +131,11 @@ For `N` values and `W = big_uint_value_len()` limbs per value, full-width buffer
 Carry buffers contain `N` booleans. Full-width digit outputs contain `N * W` limbs; compact `unsigned_decompose_slice_to` outputs contain only `N` limbs. BigUint initialization is required even when `Q` is a power of two.
 
 ```rust
-use primus_decompose::big_integer::BigUintApproxSignedBasis;
+use primus_decompose::{DecompositionBaseLog, big_integer::BigUintApproxSignedBasis};
 use primus_integer::BigUint;
 
 let modulus = [1_u32, 1]; // Q = 2^32 + 1, little-endian limbs.
-let basis = BigUintApproxSignedBasis::new(BigUint(&modulus[..]), 8, None);
+let basis = BigUintApproxSignedBasis::new(BigUint(&modulus[..]), DecompositionBaseLog::new(8), None);
 let values = [42_u32, 0, u32::MAX, 0]; // Two values: 42 and Q - 2.
 let mut adjusted = [0_u32; 4];
 let mut carries = [false; 2];

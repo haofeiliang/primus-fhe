@@ -10,11 +10,11 @@
 
 #![deny(missing_docs)]
 
-mod config;
 mod error;
+mod parameters;
 
-pub use config::DecompositionConfig;
-pub use error::ApproxSignedBasisError;
+pub use error::{ApproxSignedBasisError, DecompositionBaseLogError, DecompositionLevelCountError};
+pub use parameters::{DecompositionBaseLog, DecompositionConfig, DecompositionLevelCount};
 
 /// Smallest supported base-2 logarithm of a decomposition basis.
 pub const MIN_DECOMPOSITION_LOG_BASIS: u32 = 2;
@@ -28,19 +28,20 @@ pub mod primitive;
 /// Callers have already validated `0 < log_basis <= value_bits`.
 fn decomposition_length_and_drop_bits(
     value_bits: u32,
-    log_basis: u32,
-    reverse_length: Option<usize>,
-) -> Result<(usize, u32), ApproxSignedBasisError> {
+    log_basis: DecompositionBaseLog,
+    reverse_length: Option<DecompositionLevelCount>,
+) -> Result<(DecompositionLevelCount, u32), ApproxSignedBasisError> {
+    let log_basis = log_basis.get();
     let full_length = (value_bits / log_basis) as usize;
-    let length = reverse_length.unwrap_or(full_length);
-    if length == 0 {
-        return Err(ApproxSignedBasisError::ZeroReverseLength);
-    }
+    let length = reverse_length.map_or(full_length, DecompositionLevelCount::get);
     if length > full_length {
         return Err(ApproxSignedBasisError::ReverseLengthTooLarge {
             reverse_length: length,
             full_length,
         });
     }
-    Ok((length, value_bits - length as u32 * log_basis))
+    Ok((
+        DecompositionLevelCount::new(length),
+        value_bits - length as u32 * log_basis,
+    ))
 }

@@ -71,7 +71,8 @@ impl<T: FheUint> NttGlweTernaryCmuxWorkspace<T> {
     pub fn new(size: GadgetSize) -> Self {
         Self {
             combined_control: NttGgsw::zero(size.ggsw_len()),
-            control_factor_ntt: vec![T::ZERO; size.glwe_size().poly_length()].into_boxed_slice(),
+            control_factor_ntt: vec![T::ZERO; size.glwe_size().poly_length().get()]
+                .into_boxed_slice(),
             external_product: NttGlweExternalProductWorkspace::new(size),
         }
     }

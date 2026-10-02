@@ -1,9 +1,11 @@
 //! Encoding entry points, NTRU key acceptance and validation before mutation.
 //! Arithmetic kernels and fused-lift phase identities have separate oracles.
+
 use primus_distr::sample_gaussian_values_to;
 use primus_encoding::PlaintextEmbedding;
 use primus_fft::{FftEngine, FftTable, RustFftTable, TorusFftValue};
 use primus_integer::FheUint;
+use primus_lattice::PolyLength;
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{
     FourierNtruDecryptWorkspace, FourierNtruEncryptWorkspace, FourierNtruSecretKey, NtruError,
@@ -118,8 +120,8 @@ where
     );
     let mut rng = StdRng::seed_from_u64(42);
     let secret_key = FourierNtruSecretKey::generate(&params, &mut fft, &mut rng).unwrap();
-    let mut encrypt_workspace = FourierNtruEncryptWorkspace::new(POLY_LENGTH);
-    let mut decrypt_workspace = FourierNtruDecryptWorkspace::new(POLY_LENGTH);
+    let mut encrypt_workspace = FourierNtruEncryptWorkspace::new(PolyLength::new(POLY_LENGTH));
+    let mut decrypt_workspace = FourierNtruDecryptWorkspace::new(PolyLength::new(POLY_LENGTH));
     let messages = messages::<T>();
     let message = Polynomial::new(messages.as_slice());
 
@@ -306,11 +308,15 @@ fn fallible_parameters_check_ring_codec_and_samplers() {
     let make = |n, t, distr, noise| {
         NtruParameters::try_new(n, t, NativeModulus::<u32>::new(), distr, noise)
     };
-    for n in [0, 3, usize::MAX] {
+    for n in [0, 1, 3, primus_lattice::MAX_POLY_LENGTH << 1, usize::MAX] {
         assert_eq!(
             make(n, 4, SecretKeyDistr::UniformBinary, 0.7).err(),
             Some(Error::InvalidPolynomialLength)
         );
+    }
+    for n in [2, primus_lattice::MAX_POLY_LENGTH] {
+        let parameters = make(n, 4, SecretKeyDistr::UniformBinary, 0.7).unwrap();
+        assert_eq!(parameters.poly_length(), PolyLength::new(n));
     }
     assert!(matches!(
         make(8, 1, SecretKeyDistr::UniformBinary, 0.7),
@@ -405,8 +411,8 @@ fn ordinary_operations_validate_before_sampling_or_writing() {
         0.7,
     );
     let key = FourierNtruSecretKey::generate(&params, &mut fft, &mut rng).unwrap();
-    let mut encrypt = FourierNtruEncryptWorkspace::new(POLY_LENGTH);
-    let mut decrypt = FourierNtruDecryptWorkspace::new(POLY_LENGTH);
+    let mut encrypt = FourierNtruEncryptWorkspace::new(PolyLength::new(POLY_LENGTH));
+    let mut decrypt = FourierNtruDecryptWorkspace::new(PolyLength::new(POLY_LENGTH));
     let mut input = key.encrypt_zeros(&params, &mut fft, &mut rng, &mut encrypt);
     assert!(
         catch_unwind(AssertUnwindSafe(|| key.decrypt_to(
@@ -420,7 +426,7 @@ fn ordinary_operations_validate_before_sampling_or_writing() {
     );
     assert!(output.iter().all(|&value| value == 7));
     let before = input.as_ref().to_vec();
-    let mut short_encrypt = FourierNtruEncryptWorkspace::new(POLY_LENGTH / 2);
+    let mut short_encrypt = FourierNtruEncryptWorkspace::new(PolyLength::new(POLY_LENGTH / 2));
     let mut rng = StdRng::seed_from_u64(91);
     let mut expected_rng = StdRng::seed_from_u64(91);
     assert!(

@@ -33,7 +33,7 @@ impl<T: FheUint> DcrtGlweExpandCoeffKey<T> {
         Table: MonomialNttTable<ValueT = T>,
     {
         let params = domain.parameters();
-        let log_n = params.poly_length().trailing_zeros();
+        let log_n = params.poly_length().log_n();
         let auto_keys: Vec<DcrtGlweAutoKey<T>> = (1..=log_n)
             .rev()
             .map(|x| (1usize << x) + 1)
@@ -59,7 +59,7 @@ impl<T: FheUint> DcrtGlweExpandCoeffKey<T> {
         M: FieldContext<T>,
         Table: MonomialNttTable<ValueT = T>,
     {
-        let poly_length = params.poly_length();
+        let poly_length = params.poly_length().get();
         let rns_poly_len = params.rns_poly_len();
         let moduli = params.cipher_moduli_value();
         let twice_poly_length = poly_length * 2;
@@ -90,7 +90,7 @@ impl<T: FheUint> DcrtGlweExpandCoeffKey<T> {
         M: FieldContext<T>,
     {
         let big_uint_value_len = params.big_uint_value_len();
-        let log_n = params.poly_length().trailing_zeros() as usize;
+        let log_n = params.poly_length().log_n() as usize;
 
         (0..=log_n)
             .map(|log_count| {
@@ -126,7 +126,7 @@ impl<T: FheUint> DcrtGlweExpandCoeffKey<T> {
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        assert_eq!(result.len(), domain.parameters().poly_length());
+        assert_eq!(result.len(), domain.parameters().poly_length().get());
         self.expand_partial_coefficients_inplace(ciphertext, result, domain, workspace)
     }
 
@@ -146,7 +146,7 @@ impl<T: FheUint> DcrtGlweExpandCoeffKey<T> {
         B: DataMut<Elem = T>,
     {
         let params = domain.parameters();
-        let poly_length = params.poly_length();
+        let poly_length = params.poly_length().get();
         let count = result.len();
         assert!(count.is_power_of_two() && count <= poly_length);
 
@@ -195,7 +195,7 @@ impl<T: FheUint> DcrtGlweExpandCoeffKey<T> {
         B: DataMut<Elem = T> + Send,
         Table: NttTable<ValueT = T>,
     {
-        assert_eq!(result.len(), domain.parameters().poly_length());
+        assert_eq!(result.len(), domain.parameters().poly_length().get());
         self.expand_partial_coefficients_inplace_parallel(
             ciphertext,
             result,
@@ -220,7 +220,7 @@ impl<T: FheUint> DcrtGlweExpandCoeffKey<T> {
         Table: NttTable<ValueT = T>,
     {
         let params = domain.parameters();
-        let poly_length = params.poly_length();
+        let poly_length = params.poly_length().get();
         let count = result.len();
         assert!(count.is_power_of_two() && count <= poly_length);
 

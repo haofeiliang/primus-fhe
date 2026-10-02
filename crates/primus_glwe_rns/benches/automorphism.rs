@@ -1,3 +1,5 @@
+use primus_decompose::DecompositionBaseLog;
+use primus_lattice::GlweDimension;
 use rand::{SeedableRng, rngs::StdRng};
 use std::hint::black_box;
 
@@ -33,7 +35,7 @@ fn bench_automorphism(c: &mut Criterion) {
         let table = U64DcrtTable::new(log_n, &moduli).unwrap();
 
         let glwe_params = CrtGlweParameters::new(
-            dimension,
+            GlweDimension::new(dimension),
             poly_length,
             mod_t,
             mod_gamma,
@@ -53,7 +55,8 @@ fn bench_automorphism(c: &mut Criterion) {
         );
         let dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&sk, &table);
 
-        let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, 20, None);
+        let glev_params =
+            CrtGlevParameters::with_glwe_params(&glwe_params, DecompositionBaseLog::new(20), None);
 
         let domain = DcrtGadgetDomain::try_new(&glev_params, &table).unwrap();
 

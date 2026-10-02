@@ -2,7 +2,9 @@
 //! client/server keys in both GLWE PBS orders.
 
 use primus_decompose::primitive::ApproxSignedBasis;
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_glwe::{GlweParameters, SecretKeyDistr};
+use primus_lattice::{GlweDimension, LweDimension};
 use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
@@ -26,9 +28,9 @@ fn parameters_with_bases(
     distribution: SecretKeyDistr,
 ) -> TfheParameters<u32> {
     let modulus = BarrettModulus::new(MODULUS);
-    let lwe = LweParameters::new(4, 4, modulus, distribution, 0.7);
+    let lwe = LweParameters::new(LweDimension::new(4), 4, modulus, distribution, 0.7);
     let glwe = GlweParameters::new(
-        1,
+        GlweDimension::new(1),
         POLY_LENGTH,
         4,
         modulus,
@@ -37,14 +39,18 @@ fn parameters_with_bases(
     );
     let bootstrapping = ApproxSignedBasis::new(
         glwe.cipher_modulus_value(),
-        bootstrapping_log_basis,
-        Some(3),
+        DecompositionBaseLog::new(bootstrapping_log_basis),
+        Some(DecompositionLevelCount::new(3)),
     );
     TfheParameters::try_new(
         lwe,
         glwe,
         bootstrapping,
-        ApproxSignedBasis::new(Some(MODULUS), key_switching_log_basis, Some(4)),
+        ApproxSignedBasis::new(
+            Some(MODULUS),
+            DecompositionBaseLog::new(key_switching_log_basis),
+            Some(DecompositionLevelCount::new(4)),
+        ),
         order,
     )
     .unwrap()

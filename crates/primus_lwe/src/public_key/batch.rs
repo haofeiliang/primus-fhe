@@ -65,7 +65,7 @@ impl<T: FheUint> LwePublicKey<T> {
         M: RingContext<T>,
         R: rand::Rng + rand::CryptoRng,
     {
-        let mut output = vec![T::ZERO; batch_len(self.dimension(), messages.len())];
+        let mut output = vec![T::ZERO; batch_len(self.dimension().get(), messages.len())];
         self.encrypt_batch_with_embedding_to(messages, &mut output, params, rng, embedding);
         output
     }
@@ -106,7 +106,7 @@ impl<T: FheUint> LwePublicKey<T> {
             self.dimension(),
             "LWE batch parameter dimension mismatch"
         );
-        check_batch(output, self.dimension(), messages.len());
+        check_batch(output, self.dimension().get(), messages.len());
         self.check_modulus(params.cipher_modulus());
         let plaintexts = messages
             .iter()
@@ -137,7 +137,7 @@ impl<T: FheUint> LwePublicKey<T> {
         M: RingContext<T>,
         R: rand::Rng + rand::CryptoRng,
     {
-        let mut output = vec![T::ZERO; batch_len(self.dimension(), plaintexts.len())];
+        let mut output = vec![T::ZERO; batch_len(self.dimension().get(), plaintexts.len())];
         self.encrypt_encoded_batch_to(plaintexts, &mut output, modulus, noise, rng);
         output
     }
@@ -169,7 +169,7 @@ impl<T: FheUint> LwePublicKey<T> {
         M: RingContext<T>,
         R: rand::Rng + rand::CryptoRng,
     {
-        check_batch(output, self.dimension(), plaintexts.len());
+        check_batch(output, self.dimension().get(), plaintexts.len());
         self.check_modulus(modulus);
         self.encrypt_batch_iter_to(plaintexts.iter().copied(), output, modulus, noise, rng);
     }
@@ -192,7 +192,7 @@ impl<T: FheUint> LwePublicKey<T> {
         M: RingContext<T>,
         R: rand::Rng + rand::CryptoRng,
     {
-        let row_len = self.dimension + 1;
+        let row_len = self.dimension.ciphertext_len();
         // Clamp before multiplication: even enormous dimensions cannot overflow
         // the tile length when a smaller output fits the validated allocation.
         let tile_count = (output.len() / row_len).min(TILE_COUNT);
@@ -226,14 +226,14 @@ impl<T: FheUint> LwePublicKey<T> {
         M: RingContext<T>,
         R: rand::Rng + rand::CryptoRng,
     {
-        let row_len = self.dimension + 1;
+        let row_len = self.dimension.ciphertext_len();
         for mut ciphertext in LweIterMut::new(tile, row_len) {
             let (mask, body) = ciphertext.a_b_mut();
             noise.sample_to(mask, rng);
             modulus.reduce_add_assign(body, noise.sample(rng));
         }
         let tile_count = tile.len() / row_len;
-        let block_len = self.dimension.min(ROWS_PER_BLOCK) * row_len;
+        let block_len = self.dimension.get().min(ROWS_PER_BLOCK) * row_len;
         let mut ephemeral = [0i8; ROWS_PER_BLOCK * TILE_COUNT];
         for rows in self.data.chunks(block_len) {
             // Sixteen rows use whole words even for a short ciphertext tile.

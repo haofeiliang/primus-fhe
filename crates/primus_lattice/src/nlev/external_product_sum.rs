@@ -70,7 +70,7 @@ where
             polynomials.len(),
             "external-product sum requires one gadget per polynomial"
         );
-        let poly_length = workspace.poly_length();
+        let poly_length = workspace.poly_length().get();
         assert_eq!(
             output.as_ref().len(),
             poly_length,
@@ -82,6 +82,7 @@ where
         }
         let gadget_len = basis
             .decompose_length()
+            .get()
             .checked_mul(poly_length / 2)
             .expect("external-product gadget length overflow");
         // One clearing and one torus conversion for the entire sum; rounding
@@ -161,7 +162,7 @@ where
             polynomials.len(),
             "external-product sum requires one gadget per polynomial"
         );
-        let poly_length = workspace.poly_length();
+        let poly_length = workspace.poly_length().get();
         assert_eq!(
             output.as_ref().len(),
             poly_length,
@@ -173,6 +174,7 @@ where
         }
         let gadget_len = basis
             .decompose_length()
+            .get()
             .checked_mul(poly_length)
             .expect("external-product gadget length overflow");
         // Share coefficient/NTT storage and invert in place after all terms.

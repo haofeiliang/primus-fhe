@@ -1,9 +1,11 @@
 //! Single-modulus GLWE / GLev / GGSW parameters.
 
 use primus_decompose::{ApproxSignedBasisError, primitive::ApproxSignedBasis};
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_distr::{DiscreteGaussian, SecretKeySampler};
 use primus_integer::FheUint;
-use primus_lattice::{GadgetSize, GlweSize, GlweSizeError};
+use primus_lattice::GlweDimension;
+use primus_lattice::{GadgetSize, GlweSize, GlweSizeError, PolyLength};
 use primus_reduce::RingContext;
 use rand::distr::Uniform;
 
@@ -191,7 +193,7 @@ where
     /// including fixed secret weights exceeding the complete `kN` key length.
     #[must_use]
     pub fn new(
-        dimension: usize,
+        dimension: GlweDimension,
         poly_length: usize,
         plain_modulus_value: T,
         cipher_modulus: M,
@@ -213,13 +215,15 @@ where
     /// Noise standard deviation is in coefficient units at the ciphertext modulus.
     /// This validates construction, not transform availability or a noise/security budget.
     pub fn try_new(
-        dimension: usize,
+        dimension: GlweDimension,
         poly_length: usize,
         plain_modulus_value: T,
         cipher_modulus: M,
         secret_key_distr: SecretKeyDistr,
         noise_standard_deviation: f64,
     ) -> Result<Self, GlweParameterError> {
+        let poly_length =
+            PolyLength::try_new(poly_length).map_err(|_| GlweSizeError::InvalidPolynomialLength)?;
         let size = GlweSize::try_new(dimension, poly_length)?;
         let plaintext_codec = ScaledCodec::try_new(plain_modulus_value, cipher_modulus)?;
 
@@ -246,14 +250,16 @@ where
     }
 
     /// Returns the dimension of this [`GlweParameters<T, M>`].
+    #[must_use]
     #[inline]
-    pub fn dimension(&self) -> usize {
+    pub fn dimension(&self) -> GlweDimension {
         self.size.dimension()
     }
 
     /// Returns the poly length of this [`GlweParameters<T, M>`].
+    #[must_use]
     #[inline]
-    pub fn poly_length(&self) -> usize {
+    pub fn poly_length(&self) -> PolyLength {
         self.size.poly_length()
     }
 
@@ -416,8 +422,8 @@ where
     #[inline]
     pub fn with_glwe_params(
         glwe_params: &GlweParameters<T, M>,
-        log_basis: u32,
-        reverse_length: Option<usize>,
+        log_basis: DecompositionBaseLog,
+        reverse_length: Option<DecompositionLevelCount>,
     ) -> Self {
         Self::try_with_glwe_params(glwe_params, log_basis, reverse_length)
             .unwrap_or_else(|message| panic!("failed to construct GLev parameters: {message}"))
@@ -432,8 +438,8 @@ where
     #[inline]
     pub fn try_with_glwe_params(
         glwe_params: &GlweParameters<T, M>,
-        log_basis: u32,
-        reverse_length: Option<usize>,
+        log_basis: DecompositionBaseLog,
+        reverse_length: Option<DecompositionLevelCount>,
     ) -> Result<Self, GlevParameterError> {
         let basis = ApproxSignedBasis::try_new(
             glwe_params.cipher_modulus_value(),
@@ -462,14 +468,16 @@ where
     }
 
     /// Returns the dimension of this [`GlevParameters<T, M>`].
+    #[must_use]
     #[inline]
-    pub fn dimension(&self) -> usize {
+    pub fn dimension(&self) -> GlweDimension {
         self.size.glwe_size().dimension()
     }
 
     /// Returns the poly length of this [`GlevParameters<T, M>`].
+    #[must_use]
     #[inline]
-    pub fn poly_length(&self) -> usize {
+    pub fn poly_length(&self) -> PolyLength {
         self.size.glwe_size().poly_length()
     }
 
@@ -507,8 +515,9 @@ where
     }
 
     /// Returns the decomposition length.
+    #[must_use]
     #[inline]
-    pub fn decompose_length(&self) -> usize {
+    pub fn decompose_length(&self) -> DecompositionLevelCount {
         self.size.decompose_length()
     }
 
@@ -576,7 +585,7 @@ where
     T: FheUint,
     M: RingContext<T>,
 {
-    input_dimension: usize,
+    input_size: GlweSize,
     output: GlevParameters<T, M>,
 }
 
@@ -590,46 +599,74 @@ where
     /// `input_dimension` is the number of mask polynomials in the input GLWE
     /// key. The output dimension and polynomial length are taken from
     /// `output`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if [`Self::try_new`] rejects the input layout.
+    #[must_use]
     #[inline]
-    pub fn new(input_dimension: usize, output: GlevParameters<T, M>) -> Self {
-        assert!(input_dimension > 0, "input GLWE dimension must be non-zero");
-        Self {
-            input_dimension,
-            output,
-        }
+    pub fn new(input_dimension: GlweDimension, output: GlevParameters<T, M>) -> Self {
+        Self::try_new(input_dimension, output)
+            .unwrap_or_else(|error| panic!("invalid GLWE key-switching input layout: {error}"))
+    }
+
+    /// Checks the input GLWE layout using the output ring's polynomial length.
+    ///
+    /// The output gadget layout is already checked by [`GlevParameters`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GlweSizeError`] for an overflowing input mask, ciphertext or
+    /// combined key storage length.
+    pub fn try_new(
+        input_dimension: GlweDimension,
+        output: GlevParameters<T, M>,
+    ) -> Result<Self, GlweSizeError> {
+        let input_size = GlweSize::try_new(input_dimension, output.poly_length())?;
+        input_dimension
+            .get()
+            .checked_mul(output.glev_len())
+            .ok_or(GlweSizeError::LengthOverflow("GLWE key-switching key"))?;
+        Ok(Self { input_size, output })
     }
 
     /// Returns the input GLWE dimension.
+    #[must_use]
     #[inline]
-    pub fn input_dimension(&self) -> usize {
-        self.input_dimension
+    pub fn input_dimension(&self) -> GlweDimension {
+        self.input_size.dimension()
     }
 
     /// Returns the input GLWE layout.
+    #[must_use]
     #[inline]
     pub fn input_size(&self) -> GlweSize {
-        GlweSize::new(self.input_dimension, self.poly_length())
+        self.input_size
     }
 
     /// Returns the output GLWE dimension.
+    #[must_use]
     #[inline]
-    pub fn output_dimension(&self) -> usize {
+    pub fn output_dimension(&self) -> GlweDimension {
         self.output.dimension()
     }
 
     /// Returns the common polynomial length of the input and output keys.
+    #[must_use]
     #[inline]
-    pub fn poly_length(&self) -> usize {
+    pub fn poly_length(&self) -> PolyLength {
         self.output.poly_length()
     }
 
     /// Returns the GLev parameters used for every key-switching entry.
+    #[must_use]
     #[inline]
     pub fn output(&self) -> &GlevParameters<T, M> {
         &self.output
     }
 
     /// Returns the output gadget layout.
+    #[must_use]
     #[inline]
     pub fn output_size(&self) -> GadgetSize {
         self.output.size()

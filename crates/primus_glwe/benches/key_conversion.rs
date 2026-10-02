@@ -8,6 +8,7 @@
 //!
 //! cargo bench -p primus_glwe --bench key_conversion
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_glwe::{
     FourierGlweGadgetEncryptWorkspace, FourierGlweKeySwitchingWorkspace,
@@ -15,6 +16,7 @@ use primus_glwe::{
     GlevParameters, GlweParameters, NttGlweGadgetEncryptWorkspace, NttGlweKeySwitchingWorkspace,
     NttGlweSchemeSwitchKey, NttGlweSecretKey, NttLwePackingKeySwitchingKey, SecretKeyDistr,
 };
+use primus_lattice::GlweDimension;
 use primus_lattice::{
     ggsw::{FourierGgsw, NttGgsw},
     glev::{FourierGlev, Glev, NttGlev},
@@ -37,10 +39,21 @@ fn ntt_conversion(c: &mut Criterion) {
         let mut rng = StdRng::seed_from_u64(42);
         let modulus = BarrettModulus::new(1_125_899_906_826_241u64);
         let table = U64NttTable::new(n.trailing_zeros(), modulus).unwrap();
-        let params = GlweParameters::new(k, n, 64, modulus, SecretKeyDistr::UniformBinary, 3.2);
+        let params = GlweParameters::new(
+            GlweDimension::new(k),
+            n,
+            64,
+            modulus,
+            SecretKeyDistr::UniformBinary,
+            3.2,
+        );
         let size = params.size();
         let (coeff, sk) = NttGlweSecretKey::generate_pair(&params, &table, &mut rng);
-        let glev = GlevParameters::with_glwe_params(&params, 10, Some(3));
+        let glev = GlevParameters::with_glwe_params(
+            &params,
+            DecompositionBaseLog::new(10),
+            Some(DecompositionLevelCount::new(3)),
+        );
         let mut gadget = NttGlweGadgetEncryptWorkspace::new(glev.size());
         let source = params
             .secret_key_sampler()
@@ -92,7 +105,11 @@ fn ntt_conversion(c: &mut Criterion) {
         drop(key);
         // Keep a small-basis single-LWE case: its frequent 0/±1/±2 digits
         // exercise a different accumulation cost than the large-basis path.
-        let small_glev = GlevParameters::with_glwe_params(&params, 3, Some(10));
+        let small_glev = GlevParameters::with_glwe_params(
+            &params,
+            DecompositionBaseLog::new(3),
+            Some(DecompositionLevelCount::new(10)),
+        );
         let key = NttLwePackingKeySwitchingKey::generate(
             source,
             &sk,
@@ -156,10 +173,21 @@ fn fourier_conversion(c: &mut Criterion) {
         let modulus = NativeModulus::<u64>::new();
         let table = RustFftTable::new(n.trailing_zeros()).unwrap();
         let mut fft = FftEngine::new(&table);
-        let params = GlweParameters::new(k, n, 64, modulus, SecretKeyDistr::UniformBinary, 3.2);
+        let params = GlweParameters::new(
+            GlweDimension::new(k),
+            n,
+            64,
+            modulus,
+            SecretKeyDistr::UniformBinary,
+            3.2,
+        );
         let size = params.size();
         let (coeff, sk) = FourierGlweSecretKey::generate_pair(&params, &mut fft, &mut rng);
-        let glev = GlevParameters::with_glwe_params(&params, 10, Some(3));
+        let glev = GlevParameters::with_glwe_params(
+            &params,
+            DecompositionBaseLog::new(10),
+            Some(DecompositionLevelCount::new(3)),
+        );
         let mut gadget = FourierGlweGadgetEncryptWorkspace::new(glev.size());
         let source = params
             .secret_key_sampler()
@@ -204,7 +232,11 @@ fn fourier_conversion(c: &mut Criterion) {
         }
         drop(key);
         // Track zero-skipping with frequent zeros as well as the rare-zero large basis.
-        let small_glev = GlevParameters::with_glwe_params(&params, 3, Some(10));
+        let small_glev = GlevParameters::with_glwe_params(
+            &params,
+            DecompositionBaseLog::new(3),
+            Some(DecompositionLevelCount::new(10)),
+        );
         let key = FourierLwePackingKeySwitchingKey::generate(
             source,
             &sk,

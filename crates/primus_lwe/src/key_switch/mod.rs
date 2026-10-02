@@ -1,6 +1,7 @@
 use primus_data::{Data, DataMut};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_integer::FheUint;
+use primus_lattice::LweDimension;
 use primus_lattice::lwe::Lwe;
 use primus_reduce::RingContext;
 
@@ -15,8 +16,8 @@ use crate::{LweParameters, LweSecretKey, LweSecretKeyRef};
 #[derive(Clone)]
 pub struct LweKeySwitchingKey<T: FheUint> {
     data: Vec<T>,
-    input_dimension: usize,
-    output_dimension: usize,
+    input_dimension: LweDimension,
+    output_dimension: LweDimension,
     basis: ApproxSignedBasis<T>,
 }
 
@@ -52,12 +53,11 @@ impl<T: FheUint> LweKeySwitchingKey<T> {
         R: rand::Rng + rand::CryptoRng,
         M: RingContext<T>,
     {
-        let input_dimension = input_secret_key.dimension();
+        let input_dimension = LweDimension::new(input_secret_key.dimension());
         let output_dimension = output_secret_key.dimension();
-        assert!(input_dimension != 0, "input LWE dimension must be non-zero");
         assert_eq!(
             output_dimension,
-            output_parameters.dimension(),
+            output_parameters.dimension().get(),
             "output LWE key dimension mismatch"
         );
         assert_eq!(
@@ -66,11 +66,13 @@ impl<T: FheUint> LweKeySwitchingKey<T> {
             "LWE key switching currently requires matching input and output ciphertext moduli"
         );
 
-        let output_lwe_len = output_dimension + 1;
+        let output_dimension = output_parameters.dimension();
+        let output_lwe_len = output_dimension.ciphertext_len();
         let coefficient_len = output_lwe_len
-            .checked_mul(basis.decompose_length())
+            .checked_mul(basis.decompose_length().get())
             .expect("LWE key-switching coefficient block length overflow");
         let length = input_dimension
+            .get()
             .checked_mul(coefficient_len)
             .expect("LWE key-switching key length overflow");
         let mut data = vec![T::ZERO; length];
@@ -121,14 +123,16 @@ impl<T: FheUint> LweKeySwitchingKey<T> {
     }
 
     /// Returns the input LWE dimension.
+    #[must_use]
     #[inline]
-    pub fn input_dimension(&self) -> usize {
+    pub fn input_dimension(&self) -> LweDimension {
         self.input_dimension
     }
 
     /// Returns the output LWE dimension.
+    #[must_use]
     #[inline]
-    pub fn output_dimension(&self) -> usize {
+    pub fn output_dimension(&self) -> LweDimension {
         self.output_dimension
     }
 
@@ -170,12 +174,12 @@ impl<T: FheUint> LweKeySwitchingKey<T> {
         let (output_mask, output_body) = output.a_b_mut();
         assert_eq!(
             input_mask.len(),
-            self.input_dimension,
+            self.input_dimension.get(),
             "input LWE ciphertext dimension mismatch"
         );
         assert_eq!(
             output_mask.len(),
-            self.output_dimension,
+            self.output_dimension.get(),
             "output LWE ciphertext dimension mismatch"
         );
         assert_eq!(
@@ -206,8 +210,8 @@ impl<T: FheUint> LweKeySwitchingKey<T> {
         output: &mut [T],
         modulus: M,
     ) {
-        let output_lwe_len = self.output_dimension + 1;
-        let coefficient_len = output_lwe_len * self.basis.decompose_length();
+        let output_lwe_len = self.output_dimension.ciphertext_len();
+        let coefficient_len = output_lwe_len * self.basis.decompose_length().get();
         for (&coefficient, block) in input_mask
             .iter()
             .zip(self.data.chunks_exact(coefficient_len))
@@ -234,7 +238,7 @@ impl<T: FheUint> LweKeySwitchingKey<T> {
         M: RingContext<T>,
         A: Data<Elem = T>,
     {
-        let mut output = Lwe::zero(self.output_dimension());
+        let mut output = Lwe::zero(self.output_dimension().get());
         self.key_switch_to(input, &mut output, modulus);
         output
     }

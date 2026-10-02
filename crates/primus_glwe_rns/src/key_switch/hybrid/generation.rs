@@ -34,7 +34,7 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
     {
         let input_size = input_parameters.size();
         let input_dimension = input_size.dimension();
-        let poly_length = input_size.poly_length();
+        let poly_length = input_size.poly_length().get();
         let q_moduli_count = input_size.moduli_count();
 
         let hybrid_rns = domain.hybrid_rns();
@@ -78,6 +78,7 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
             .checked_mul(qp_size.rns_glwe_len())
             .expect("hybrid QP gadget length overflow");
         let key_len = input_dimension
+            .get()
             .checked_mul(qp_gadget_len)
             .expect("hybrid key-switching key length overflow");
         let mut key = vec![T::ZERO; key_len];

@@ -1,9 +1,11 @@
 //! CRT/DCRT trace and reverse trace, including modular-inverse normalization.
+use primus_decompose::DecompositionBaseLog;
 use primus_glwe_rns::{
     CrtGlevParameters, CrtGlweParameters, CrtGlweTraceKey, CrtGlweTraceWorkspace, DcrtGadgetDomain,
     DcrtGlweCiphertext, DcrtGlweDecryptWorkspace, DcrtGlweRevTraceKey, DcrtGlweRevTraceWorkspace,
     DcrtGlweSecretKey, DcrtGlweTraceKey, DcrtGlweTraceWorkspace, GlweSecretKey, SecretKeyDistr,
 };
+use primus_lattice::GlweDimension;
 use primus_lattice::glwe::CrtGlwe;
 use primus_modulus::BarrettModulus;
 use primus_ntt::UintDcrtTable;
@@ -40,7 +42,7 @@ fn test_crt_glwe_trace() {
     let mut rng = StdRng::seed_from_u64(42);
 
     let glwe_params = CrtGlweParameters::new(
-        dimension,
+        GlweDimension::new(dimension),
         poly_length,
         mod_t,
         mod_gamma,
@@ -60,7 +62,8 @@ fn test_crt_glwe_trace() {
     );
     let dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&sk, &table);
 
-    let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, 20, None);
+    let glev_params =
+        CrtGlevParameters::with_glwe_params(&glwe_params, DecompositionBaseLog::new(20), None);
     let domain = DcrtGadgetDomain::try_new(&glev_params, &table).unwrap();
 
     let trace_key = CrtGlweTraceKey::new(&domain, &sk, &dcrt_sk, &mut rng);
@@ -139,7 +142,7 @@ fn test_dcrt_glwe_trace() {
     let mut rng = StdRng::seed_from_u64(42);
 
     let glwe_params = CrtGlweParameters::new(
-        dimension,
+        GlweDimension::new(dimension),
         poly_length,
         mod_t,
         mod_gamma,
@@ -159,7 +162,8 @@ fn test_dcrt_glwe_trace() {
     );
     let dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&sk, &table);
 
-    let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, 20, None);
+    let glev_params =
+        CrtGlevParameters::with_glwe_params(&glwe_params, DecompositionBaseLog::new(20), None);
     let domain = DcrtGadgetDomain::try_new(&glev_params, &table).unwrap();
 
     let trace_key = DcrtGlweTraceKey::new(&domain, &dcrt_sk, &mut rng);
@@ -229,7 +233,7 @@ fn test_dcrt_glwe_rev_trace() {
     let mut rng = StdRng::seed_from_u64(42);
 
     let glwe_params = CrtGlweParameters::new(
-        dimension,
+        GlweDimension::new(dimension),
         poly_length,
         mod_t,
         mod_gamma,
@@ -247,7 +251,8 @@ fn test_dcrt_glwe_rev_trace() {
     );
     let dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&sk, &table);
 
-    let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, 20, None);
+    let glev_params =
+        CrtGlevParameters::with_glwe_params(&glwe_params, DecompositionBaseLog::new(20), None);
     let domain = DcrtGadgetDomain::try_new(&glev_params, &table).unwrap();
 
     let rev_trace_key = DcrtGlweRevTraceKey::new(&domain, &dcrt_sk, &mut rng);

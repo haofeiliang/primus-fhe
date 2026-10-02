@@ -1,6 +1,7 @@
 //! Small functional dimensions include vector blocks and incomplete tails.
 use primus_encoding::PlaintextEmbedding;
 use primus_integer::FheUint;
+use primus_lattice::LweDimension;
 use primus_lattice::lwe::LweIter;
 use primus_lwe::{LweParameters, LwePublicKey, LweSecretKey, SecretKeyDistr};
 use primus_modulus::{BarrettModulus, NativeModulus, PowOf2Modulus};
@@ -19,7 +20,7 @@ fn public_batch_matches_independent_matrix_arithmetic() {
             .take(dimension)
             .collect();
         let params = LweParameters::new(
-            dimension,
+            LweDimension::new(dimension),
             4,
             modulus,
             SecretKeyDistr::gaussian(2.0),
@@ -94,7 +95,7 @@ fn public_batch_matches_independent_matrix_arithmetic() {
 fn check_batches<T: FheUint, M: RingContext<T>>(modulus: M, dimension: usize) {
     let lwe_len = dimension + 1;
     let params = LweParameters::new(
-        dimension,
+        LweDimension::new(dimension),
         T::as_from(4u32),
         modulus,
         SecretKeyDistr::UniformTernary,
@@ -186,7 +187,13 @@ fn raw_secret_batch_accepts_zero_dimension() {
     let modulus = BarrettModulus::new(97u32);
     let key = LweSecretKey::new(vec![], SecretKeyDistr::UniformTernary);
     // Message-level parameters disallow dimension zero; raw APIs permit it.
-    let params = LweParameters::new(1, 4, modulus, SecretKeyDistr::UniformTernary, 0.7);
+    let params = LweParameters::new(
+        LweDimension::new(1),
+        4,
+        modulus,
+        SecretKeyDistr::UniformTernary,
+        0.7,
+    );
     let plaintexts = [0, 96];
     let mut rng = StdRng::seed_from_u64(0x1_ee23);
     let mut oracle_rng = StdRng::seed_from_u64(0x1_ee23);
@@ -211,7 +218,7 @@ fn raw_secret_batch_accepts_zero_dimension() {
 fn batch_boundaries_validate_layout_and_reject_invalid_messages() {
     use std::panic::{AssertUnwindSafe, catch_unwind};
     let params = LweParameters::new(
-        3,
+        LweDimension::new(3),
         4u32,
         NativeModulus::new(),
         SecretKeyDistr::UniformBinary,

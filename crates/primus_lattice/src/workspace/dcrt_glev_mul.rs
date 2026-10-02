@@ -53,7 +53,7 @@ impl<T: FheUint> DcrtGlevMulWorkspace<T> {
             rns_base.moduli_count(),
             "DCRT workspace size and RNS base must have equal modulus counts"
         );
-        let poly_length = rns_glwe_size.poly_length();
+        let poly_length = rns_glwe_size.poly_length().get();
         let big_uint_poly_len = poly_length * rns_base.big_uint_value_len();
 
         Self {
@@ -82,6 +82,7 @@ impl<T: FheUint> DcrtGlevMulWorkspace<T> {
             && glwe_size.moduli_count() == rns_base.moduli_count()
             && glwe_size
                 .poly_length()
+                .get()
                 .checked_mul(rns_base.big_uint_value_len())
                 == Some(self.adjust_big_uint_values.len())
     }

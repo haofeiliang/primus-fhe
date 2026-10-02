@@ -2,6 +2,7 @@
 
 use primus_encoding::{PlaintextEmbedding, RoundedCodec};
 use primus_integer::FheUint;
+use primus_lattice::PolyLength;
 use primus_poly::PolynomialOwned;
 use primus_reduce::{PrepareModulusSwitch, ReduceAdd, RingContext};
 
@@ -11,7 +12,7 @@ use crate::{LookupTableError, rotation::RotationQuantizer};
 /// Compiles all t messages; the returned domain length is the validated usize t.
 /// Upper-half centers carry negated values so negacyclic extraction restores them.
 pub(in crate::lookup_table) fn compile<T, LM, M, F>(
-    poly_length: usize,
+    poly_length: PolyLength,
     input_plaintext_modulus: T,
     input_ciphertext_modulus: LM,
     coefficient_modulus: M,
@@ -28,6 +29,7 @@ where
         input_plaintext_modulus,
         input_ciphertext_modulus.explicit_value(),
     )?;
+    let poly_length = poly_length.get();
     if input_plaintext_modulus & T::ONE == T::ZERO {
         return Err(LookupTableError::EvenPlaintextModulus);
     }

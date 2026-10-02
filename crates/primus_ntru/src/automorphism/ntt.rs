@@ -3,7 +3,7 @@
 use primus_data::{Data, DataMut};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_integer::FheUint;
-use primus_lattice::{MAX_POLY_LENGTH, MIN_POLY_LENGTH, nlev::NttNlev};
+use primus_lattice::{PolyLength, nlev::NttNlev};
 use primus_ntt::{NttAutomorphismPermutation, NttTable};
 use primus_poly::{CoeffAutomorphismPermutation, Polynomial};
 use primus_reduce::FieldContext;
@@ -24,19 +24,10 @@ pub struct NttNtruAutomorphismWorkspace<T: FheUint> {
 
 impl<T: FheUint> NttNtruAutomorphismWorkspace<T> {
     /// Allocates workspace for a supported power-of-two NTRU polynomial length.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the length is outside the supported NTRU range or not a power of two.
     #[must_use]
-    pub fn new(poly_length: usize) -> Self {
-        assert!(
-            (MIN_POLY_LENGTH..=MAX_POLY_LENGTH).contains(&poly_length)
-                && poly_length.is_power_of_two(),
-            "automorphism polynomial length must be a supported power of two"
-        );
+    pub fn new(poly_length: PolyLength) -> Self {
         Self {
-            coefficients: NtruCiphertext::zero(poly_length),
+            coefficients: NtruCiphertext::zero(poly_length.get()),
             external_product: NttNtruExternalProductWorkspace::new(poly_length),
         }
     }
@@ -84,7 +75,7 @@ impl<T: FheUint> NttNtruAutomorphismKey<T> {
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
     {
-        let n = parameters.poly_length();
+        let n = parameters.poly_length().get();
         assert_eq!(
             secret_key.poly_length(),
             n,

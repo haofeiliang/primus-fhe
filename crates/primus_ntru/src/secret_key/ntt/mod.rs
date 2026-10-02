@@ -172,7 +172,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
     {
-        Self::generate_padded_pair(params, params.poly_length(), ntt_table, rng)
+        Self::generate_padded_pair(params, params.poly_length().get(), ntt_table, rng)
     }
 
     /// Rejection-samples an invertible coefficient prefix padded to the NTRU ring.
@@ -208,15 +208,15 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         R: rand::Rng + rand::CryptoRng,
     {
         assert!(
-            (1..=params.poly_length()).contains(&active_length),
+            (1..=params.poly_length().get()).contains(&active_length),
             "NTRU active length must belong to 1..=N"
         );
-        assert_eq!(ntt_table.poly_length(), params.poly_length());
+        assert_eq!(ntt_table.poly_length(), params.poly_length().get());
         assert_eq!(ntt_table.modulus(), params.cipher_modulus().value());
 
         let mut coefficient_key =
-            NtruSecretKey::allocate(params.poly_length(), params.secret_key_distr());
-        let mut transformed = Self::allocate(params.poly_length(), params.secret_key_distr());
+            NtruSecretKey::allocate(params.poly_length().get(), params.secret_key_distr());
+        let mut transformed = Self::allocate(params.poly_length().get(), params.secret_key_distr());
         let sampler = params.secret_key_sampler();
         for _ in 0..KEY_GENERATION_ATTEMPTS {
             sampler.sample_signed_to(&mut coefficient_key.key[..active_length], rng);
@@ -238,7 +238,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
     {
-        assert_eq!(params.poly_length(), self.poly_length());
+        assert_eq!(params.poly_length().get(), self.poly_length());
         assert_eq!(ntt_table.poly_length(), self.poly_length());
         assert_eq!(ntt_table.modulus(), params.cipher_modulus().value());
     }

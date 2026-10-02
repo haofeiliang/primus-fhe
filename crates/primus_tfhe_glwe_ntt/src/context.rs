@@ -37,7 +37,7 @@ where
     pub fn try_from_parameters(parameters: TfheParameters<T>) -> Result<Self, TfheContextError<T>> {
         let accumulator = parameters.accumulator_glwe();
         let table = Table::new(
-            accumulator.poly_length().trailing_zeros(),
+            accumulator.poly_length().log_n(),
             accumulator.cipher_modulus(),
         )?;
         Ok(Self { parameters, table })
@@ -48,7 +48,7 @@ where
         parameters: TfheParameters<T>,
         table: Table,
     ) -> Result<Self, TfheContextError<T>> {
-        let expected = parameters.accumulator_glwe().poly_length();
+        let expected = parameters.accumulator_glwe().poly_length().get();
         let actual = table.poly_length();
         if actual != expected {
             return Err(TfheContextError::PolynomialLengthMismatch { expected, actual });
@@ -79,7 +79,7 @@ where
     /// Uses the dimension selected by the parameters; no key or encryption is involved.
     #[must_use]
     pub fn allocate_lwe_ciphertext(&self) -> LweCiphertext<T> {
-        LweCiphertext::zero(self.parameters.external_lwe_dimension())
+        LweCiphertext::zero(self.parameters.external_lwe_dimension().get())
     }
 
     /// Allocates a zeroed coefficient-domain GLWE with the accumulator layout.

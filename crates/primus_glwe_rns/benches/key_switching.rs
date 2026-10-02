@@ -1,5 +1,7 @@
 // cargo bench -p primus_glwe_rns --bench key_switching
 
+use primus_decompose::DecompositionBaseLog;
+use primus_lattice::GlweDimension;
 use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
@@ -43,7 +45,7 @@ fn bench_key_switching(c: &mut Criterion) {
         let qp_table = U64DcrtTable::new(log_n, &qp_moduli).unwrap();
 
         let glwe_params = CrtGlweParameters::new(
-            DIMENSION,
+            GlweDimension::new(DIMENSION),
             poly_length,
             mod_t,
             mod_gamma,
@@ -64,8 +66,11 @@ fn bench_key_switching(c: &mut Criterion) {
         );
         let output_dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&output_sk, &q_table);
 
-        let glev_params =
-            CrtGlevParameters::with_glwe_params(&glwe_params, DECOMPOSITION_BASE_LOG, None);
+        let glev_params = CrtGlevParameters::with_glwe_params(
+            &glwe_params,
+            DecompositionBaseLog::new(DECOMPOSITION_BASE_LOG),
+            None,
+        );
         let dcrt_domain = DcrtGadgetDomain::try_new(&glev_params, &q_table).unwrap();
 
         // Key generation is intentionally outside the timed region.

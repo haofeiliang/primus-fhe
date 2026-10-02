@@ -3,6 +3,7 @@
 use num_traits::ConstZero;
 use primus_distr::SecretKeySampler;
 use primus_integer::FheUint;
+use primus_lattice::GlweDimension;
 use primus_lattice::GlweSize;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
@@ -66,13 +67,13 @@ impl<T: FheUint> GlweSecretKey<T> {
     #[inline]
     #[must_use]
     pub fn poly_length(&self) -> usize {
-        self.glwe_size.poly_length()
+        self.glwe_size.poly_length().get()
     }
 
     /// Returns the GLWE dimension.
     #[inline]
     #[must_use]
-    pub fn dimension(&self) -> usize {
+    pub fn dimension(&self) -> GlweDimension {
         self.glwe_size.dimension()
     }
 
@@ -93,7 +94,7 @@ impl<T: FheUint> GlweSecretKey<T> {
     /// Iterates over the coefficient-domain secret polynomials.
     #[inline]
     pub fn iter(&self) -> impl ExactSizeIterator<Item = &[T::SignedInteger]> + DoubleEndedIterator {
-        self.key.chunks_exact(self.glwe_size.poly_length())
+        self.key.chunks_exact(self.glwe_size.poly_length().get())
     }
 
     /// Generates a canonical signed GLWE secret key using borrowed precomputation.

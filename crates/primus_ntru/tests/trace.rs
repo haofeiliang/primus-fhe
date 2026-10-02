@@ -1,3 +1,5 @@
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_lattice::PolyLength;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable};
@@ -165,7 +167,7 @@ fn ntt_trace_projection_and_expansion_match_ring_phases() {
     let modulus = BarrettModulus::new(Q);
     let table = U64NttTable::new(N.trailing_zeros(), modulus).unwrap();
     let parameters = NtruParameters::new(N, 64, modulus, SecretKeyDistr::SparseTernary, 0.7);
-    let gadget = NlevParameters::with_ntru_params(&parameters, 10, None);
+    let gadget = NlevParameters::with_ntru_params(&parameters, DecompositionBaseLog::new(10), None);
     let secret = secret();
     let key = NttNtruSecretKey::try_from_coeff_secret_key(&secret, modulus, &table).unwrap();
     let mut rng = StdRng::seed_from_u64(0x4e54_545f_5452_4143);
@@ -175,11 +177,12 @@ fn ntt_trace_projection_and_expansion_match_ring_phases() {
         &gadget,
         &table,
         &mut rng,
-        &mut NttNtruGadgetEncryptWorkspace::new(N),
+        &mut NttNtruGadgetEncryptWorkspace::new(PolyLength::new(N)),
     );
-    let mut workspace = NttNtruTraceWorkspace::new(N);
+    let mut workspace = NttNtruTraceWorkspace::new(PolyLength::new(N));
     let mut coefficients = vec![0; 2 * N];
-    let mut external_product = primus_ntru::NttNtruExternalProductWorkspace::new(N);
+    let mut external_product =
+        primus_ntru::NttNtruExternalProductWorkspace::new(PolyLength::new(N));
     let m = message(Q.into());
     let mut transformed = NttNtruCiphertext::<Vec<u64>>::zero(N);
     key.encrypt_encoded_to(
@@ -289,7 +292,11 @@ fn fourier_trace<Table: FftTable>() {
         SecretKeyDistr::SparseTernary,
         0.7,
     );
-    let gadget = NlevParameters::with_ntru_params(&parameters, 8, Some(7));
+    let gadget = NlevParameters::with_ntru_params(
+        &parameters,
+        DecompositionBaseLog::new(8),
+        Some(DecompositionLevelCount::new(7)),
+    );
     let secret = secret();
     let key = FourierNtruSecretKey::try_from_coeff_secret_key(&secret, &mut fft).unwrap();
     let mut rng = StdRng::seed_from_u64(0x4646_545f_5452_4143);
@@ -299,14 +306,15 @@ fn fourier_trace<Table: FftTable>() {
         &gadget,
         &mut fft,
         &mut rng,
-        &mut FourierNtruGadgetEncryptWorkspace::new(N),
+        &mut FourierNtruGadgetEncryptWorkspace::new(PolyLength::new(N)),
     );
-    let mut workspace = FourierNtruTraceWorkspace::new(N);
+    let mut workspace = FourierNtruTraceWorkspace::new(PolyLength::new(N));
     let mut coefficients = vec![0; 2 * N];
-    let mut external_product = primus_ntru::FourierNtruExternalProductWorkspace::new(N);
+    let mut external_product =
+        primus_ntru::FourierNtruExternalProductWorkspace::new(PolyLength::new(N));
     let m = message(q);
     let mut transformed = FourierNtruCiphertext::<Vec<Complex64>>::zero(N / 2);
-    let mut encrypt = FourierNtruEncryptWorkspace::new(N);
+    let mut encrypt = FourierNtruEncryptWorkspace::new(PolyLength::new(N));
     key.encrypt_encoded_to(
         &Polynomial(m.as_slice()),
         &mut transformed,
@@ -424,7 +432,7 @@ fn reverse_trace_preserves_the_distinct_modular_and_native_halving_paths() {
     let modulus = BarrettModulus::new(257u32);
     let table = primus_ntt::UintNttTable::new(N.trailing_zeros(), modulus).unwrap();
     let params = NtruParameters::new(N, 4, modulus, SecretKeyDistr::UniformBinary, 0.7);
-    let params = NlevParameters::with_ntru_params(&params, 3, None);
+    let params = NlevParameters::with_ntru_params(&params, DecompositionBaseLog::new(3), None);
     let key = NttNtruSecretKey::try_from_coeff_secret_key(&secret, modulus, &table).unwrap();
     let trace = NttNtruTraceKey::generate(
         &secret,
@@ -432,14 +440,14 @@ fn reverse_trace_preserves_the_distinct_modular_and_native_halving_paths() {
         &params,
         &table,
         &mut ZeroRng,
-        &mut NttNtruGadgetEncryptWorkspace::new(N),
+        &mut NttNtruGadgetEncryptWorkspace::new(PolyLength::new(N)),
     );
     let input = NtruCiphertext::new(vec![1u32, 2, 256, 255]);
     let mut output = NtruCiphertext::new(vec![7; N]);
-    let mut workspace = NttNtruTraceWorkspace::new(N);
+    let mut workspace = NttNtruTraceWorkspace::new(PolyLength::new(N));
     trace.apply_reverse_partial_to(&input, 2, &mut output, modulus, &table, &mut workspace);
     assert_eq!(output.as_ref(), &[1, 0, 256, 0]);
-    let mut wrong = NttNtruTraceWorkspace::new(2 * N);
+    let mut wrong = NttNtruTraceWorkspace::new(PolyLength::new(2 * N));
     output.as_mut().fill(7);
     assert!(
         catch_unwind(AssertUnwindSafe(|| {
@@ -458,7 +466,7 @@ fn reverse_trace_preserves_the_distinct_modular_and_native_halving_paths() {
         SecretKeyDistr::UniformBinary,
         0.7,
     );
-    let params = NlevParameters::with_ntru_params(&params, 8, None);
+    let params = NlevParameters::with_ntru_params(&params, DecompositionBaseLog::new(8), None);
     let key = FourierNtruSecretKey::try_from_coeff_secret_key(&secret, &mut fft).unwrap();
     let trace = FourierNtruTraceKey::generate(
         &secret,
@@ -466,14 +474,14 @@ fn reverse_trace_preserves_the_distinct_modular_and_native_halving_paths() {
         &params,
         &mut fft,
         &mut ZeroRng,
-        &mut FourierNtruGadgetEncryptWorkspace::new(N),
+        &mut FourierNtruGadgetEncryptWorkspace::new(PolyLength::new(N)),
     );
     let input = NtruCiphertext::new(vec![1u32, 0, u32::MAX, 0]);
-    let mut workspace = FourierNtruTraceWorkspace::new(N);
+    let mut workspace = FourierNtruTraceWorkspace::new(PolyLength::new(N));
     trace.apply_reverse_partial_to(&input, 2, &mut output, &mut fft, &mut workspace);
     // floor(1/2) and floor((2^32-1)/2), then the even projection doubles them.
     assert_eq!(output.as_ref(), &[0, 0, u32::MAX - 1, 0]);
-    let mut wrong = FourierNtruTraceWorkspace::new(2 * N);
+    let mut wrong = FourierNtruTraceWorkspace::new(PolyLength::new(2 * N));
     output.as_mut().fill(7);
     assert!(
         catch_unwind(AssertUnwindSafe(|| {

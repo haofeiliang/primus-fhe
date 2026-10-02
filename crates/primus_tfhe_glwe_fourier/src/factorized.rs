@@ -41,10 +41,10 @@ impl<'a, T: TorusFftValue, Table: FftTable> FourierFactorizedLookupTable<'a, T, 
             "Fourier MVB requires u32 or u64 coefficients"
         );
         let parameters = context.parameters();
-        let n = parameters.accumulator_glwe().poly_length();
+        let n = parameters.accumulator_glwe().poly_length().get();
         assert!(
             lookup_table.is_compatible(
-                n,
+                parameters.accumulator_glwe().poly_length(),
                 parameters.plain_modulus_value(),
                 parameters.small_lwe().cipher_modulus_value(),
                 parameters.accumulator_glwe().cipher_modulus_value(),
@@ -128,7 +128,11 @@ impl<'a, T: TorusFftValue, Table: FftTable> FactorizedEvaluator<'a, T, Table> {
                 context.parameters().accumulator_glwe().glwe_len() / 2,
             ),
             product: FourierPolynomial::zero(
-                context.parameters().accumulator_glwe().poly_length() / 2,
+                context
+                    .parameters()
+                    .accumulator_glwe()
+                    .poly_length()
+                    .fourier_poly_len(),
             ),
         }
     }
@@ -159,7 +163,7 @@ impl<'a, T: TorusFftValue, Table: FftTable> FactorizedEvaluator<'a, T, Table> {
         lookup_table: &FourierFactorizedLookupTable<'_, T, Table>,
     ) -> Vec<LweCiphertext<T>> {
         let dimension = self.evaluator.context.parameters().external_lwe_dimension();
-        let mut outputs = vec![LweCiphertext::zero(dimension); lookup_table.output_count()];
+        let mut outputs = vec![LweCiphertext::zero(dimension.get()); lookup_table.output_count()];
         self.apply_lookup_table_to(input, lookup_table, &mut outputs);
         outputs
     }
@@ -198,19 +202,23 @@ impl<'a, T: TorusFftValue, Table: FftTable> FactorizedEvaluator<'a, T, Table> {
         );
         let parameters = evaluator.context.parameters();
         let dimension = parameters.external_lwe_dimension();
-        assert_eq!(input.dimension(), dimension, "MVB input dimension mismatch");
+        assert_eq!(
+            input.dimension(),
+            dimension.get(),
+            "MVB input dimension mismatch"
+        );
         assert_eq!(
             outputs.len(),
             lookup_table.output_count(),
             "MVB output count mismatch"
         );
         assert!(
-            outputs.iter().all(|out| out.dimension() == dimension),
+            outputs.iter().all(|out| out.dimension() == dimension.get()),
             "MVB output ciphertext dimension mismatch"
         );
 
         let glwe = parameters.accumulator_glwe();
-        let n = glwe.poly_length();
+        let n = glwe.poly_length().get();
         evaluator.blind_rotate(input, &lookup_table.common_polynomial, 1);
         evaluator
             .main_glwe

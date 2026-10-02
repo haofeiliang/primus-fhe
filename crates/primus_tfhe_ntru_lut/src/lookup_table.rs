@@ -148,7 +148,7 @@ impl Layout {
         self,
         input: &[LweCiphertext<T>],
         output: &[LweCiphertext<T>],
-        dimension: usize,
+        dimension: primus_lattice::LweDimension,
     ) {
         assert_eq!(
             input.len(),
@@ -160,7 +160,7 @@ impl Layout {
             self.config.output_chunk_count,
             "lookup output chunk count mismatch"
         );
-        let len = dimension + 1;
+        let len = dimension.ciphertext_len();
         assert!(
             input.iter().all(|c| c.lwe_len() == len),
             "lookup input LWE dimension mismatch"
@@ -233,7 +233,7 @@ impl<T: FheUint> HighPrecisionLookupTable<T> {
     {
         let layout = Layout::try_new(
             parameters.plain_modulus_value(),
-            parameters.poly_length(),
+            parameters.poly_length().get(),
             config,
         )?;
         Self::compile(parameters, layout, function)
@@ -332,7 +332,7 @@ impl<T: FheUint> HighPrecisionLookupTable<T> {
         &self,
         parameters: &TfheParameters<T, M, LM>,
     ) -> bool {
-        self.layout.polynomial_length == parameters.poly_length()
+        self.layout.polynomial_length == parameters.poly_length().get()
             && self.plaintext_modulus == parameters.plain_modulus_value()
             && self.input_modulus == parameters.external_lwe().cipher_modulus_value()
             && self.ring_modulus == parameters.accumulator_ntru().cipher_modulus_value()

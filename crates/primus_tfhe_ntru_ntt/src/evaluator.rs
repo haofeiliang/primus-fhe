@@ -71,7 +71,8 @@ where
         input: &LweCiphertext<T>,
         lookup_table: &LookupTable<T>,
     ) -> LweCiphertext<T> {
-        let mut output = LweCiphertext::zero(self.context.parameters().external_lwe_dimension());
+        let mut output =
+            LweCiphertext::zero(self.context.parameters().external_lwe_dimension().get());
         self.apply_lookup_table_to(input, lookup_table, &mut output);
         output
     }
@@ -104,12 +105,12 @@ where
         let lwe_dimension = parameters.external_lwe_dimension();
         assert_eq!(
             input.dimension(),
-            lwe_dimension,
+            lwe_dimension.get(),
             "PBS input dimension mismatch"
         );
         assert_eq!(
             output.dimension(),
-            lwe_dimension,
+            lwe_dimension.get(),
             "PBS output dimension mismatch"
         );
 
@@ -135,7 +136,7 @@ where
     ) -> Vec<LweCiphertext<T>> {
         let dimension = self.context.parameters().external_lwe_dimension();
         let mut outputs = (0..lookup_table.output_count())
-            .map(|_| LweCiphertext::zero(dimension))
+            .map(|_| LweCiphertext::zero(dimension.get()))
             .collect::<Vec<_>>();
         self.apply_interleaved_lookup_table_to(input, lookup_table, &mut outputs);
         outputs
@@ -171,7 +172,7 @@ where
         let lwe_dimension = parameters.external_lwe_dimension();
         assert_eq!(
             input.dimension(),
-            lwe_dimension,
+            lwe_dimension.get(),
             "PBS input dimension mismatch"
         );
         assert_eq!(
@@ -182,7 +183,7 @@ where
         assert!(
             outputs
                 .iter()
-                .all(|output| output.dimension() == lwe_dimension),
+                .all(|output| output.dimension() == lwe_dimension.get()),
             "PBSManyLUT output ciphertext dimension mismatch"
         );
 

@@ -2,7 +2,9 @@
 //! use integer convolution, not the production polynomial/transform kernels.
 
 use primus_decompose::primitive::ApproxSignedBasis;
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_fft::{FftEngine, FftTable, RustFftTable, TfheFftTable};
+use primus_lattice::PolyLength;
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{
     FourierNtruGadgetEncryptWorkspace, FourierNtruSecretKey, FourierNtruTraceKey,
@@ -134,7 +136,7 @@ fn project(input: Poly, retained: usize) -> Poly {
 fn digits(ring: Ring, input: Poly, basis: &ApproxSignedBasis<u32>) -> Vec<Poly> {
     let radix = i128::from(basis.basis_value());
     let delta = 1i128 << basis.drop_bits();
-    let levels = basis.decompose_length();
+    let levels = basis.decompose_length().get();
     let max_positive: i128 = (0..levels)
         .map(|i| (radix / 2 - 1) * radix.pow(i as u32) * delta)
         .sum();
@@ -164,9 +166,16 @@ fn fused_public_initialization_has_the_predicted_decomposition_residual() {
     let e_plus = [0, 1, 0, -1, 0, 0, 0, 0];
     let e_minus = [-1, 0, 1, 0, 0, 0, 0, 0];
     for levels in [2, 3] {
-        let basis = ApproxSignedBasis::new(Some(257u32), 3, Some(levels));
+        let basis = ApproxSignedBasis::new(
+            Some(257u32),
+            DecompositionBaseLog::new(3),
+            Some(DecompositionLevelCount::new(levels)),
+        );
         let weights: Vec<_> = basis.scalar_iter().map(i128::from).collect();
-        let mut workspace = primus_ntru::NttNtruCmuxWorkspace::new(N, levels);
+        let mut workspace = primus_ntru::NttNtruCmuxWorkspace::new(
+            PolyLength::new(N),
+            DecompositionLevelCount::new(levels),
+        );
         let mut output = NtruCiphertext::<Vec<u32>>::zero(N);
         for input in [
             [0, 1, 3, 4, 7, 8, 219, 256],
@@ -254,7 +263,7 @@ fn fused_public_initialization_has_the_predicted_decomposition_residual() {
                             &basis,
                             modulus,
                             &ntt,
-                            &mut NttNtruExternalProductWorkspace::new(N),
+                            &mut NttNtruExternalProductWorkspace::new(PolyLength::new(N)),
                         );
                         polynomial(output.as_ref())
                     };
@@ -317,12 +326,19 @@ fn check_native_lift<Table: FftTable>() {
         SecretKeyDistr::SparseTernary,
         0.7,
     );
-    let mut encryption = FourierNtruGadgetEncryptWorkspace::new(N);
+    let mut encryption = FourierNtruGadgetEncryptWorkspace::new(PolyLength::new(N));
     let mut output = NtruCiphertext::<Vec<u32>>::zero(N);
     for levels in [3, 4] {
-        let gadget = NlevParameters::with_ntru_params(&params, 8, Some(levels));
+        let gadget = NlevParameters::with_ntru_params(
+            &params,
+            DecompositionBaseLog::new(8),
+            Some(DecompositionLevelCount::new(levels)),
+        );
         let basis = gadget.basis();
-        let mut workspace = primus_ntru::FourierNtruCmuxWorkspace::new(N, levels);
+        let mut workspace = primus_ntru::FourierNtruCmuxWorkspace::new(
+            PolyLength::new(N),
+            DecompositionLevelCount::new(levels),
+        );
         let mut initializer =
             primus_lattice::nlev::FourierNlev::<Vec<_>>::zero(gadget.fourier_nlev_len());
         let mut positive = initializer.clone();
@@ -439,7 +455,7 @@ fn native_trace(ring: Ring, input: Poly, retained: usize) -> Poly {
     let numerator = [7, -2, 3, 4, -6, 9, -5, -1];
     const DENOMINATOR: i128 = 17;
     assert_eq!(integer_mul(SECRET, numerator), ONE.map(|x| x * DENOMINATOR));
-    let basis = ApproxSignedBasis::<u32>::new(None, 8, None);
+    let basis = ApproxSignedBasis::<u32>::new(None, DecompositionBaseLog::new(8), None);
     let mut output = input;
     let mut expected_phase = project(ring.mul(SECRET, input), retained);
     for k in retained.trailing_zeros() + 1..=N.trailing_zeros() {
@@ -538,7 +554,7 @@ fn ntt_reverse_trace_matches_exact_same_secret_oracle() {
         SecretKeyDistr::SparseTernary,
     );
     let params = NtruParameters::new(N, 4, modulus, SecretKeyDistr::SparseTernary, 0.7);
-    let gadget = NlevParameters::with_ntru_params(&params, 3, None);
+    let gadget = NlevParameters::with_ntru_params(&params, DecompositionBaseLog::new(3), None);
     let key = NttNtruSecretKey::try_from_coeff_secret_key(&secret, modulus, &table).unwrap();
     let trace = NttNtruTraceKey::generate(
         &secret,
@@ -546,9 +562,9 @@ fn ntt_reverse_trace_matches_exact_same_secret_oracle() {
         &gadget,
         &table,
         &mut ZeroRng,
-        &mut NttNtruGadgetEncryptWorkspace::new(N),
+        &mut NttNtruGadgetEncryptWorkspace::new(PolyLength::new(N)),
     );
-    let mut workspace = NttNtruTraceWorkspace::new(N);
+    let mut workspace = NttNtruTraceWorkspace::new(PolyLength::new(N));
     for input in trace_inputs(ring) {
         for retained in [1, 2, 4, N] {
             let expected = modular_trace(ring, input, retained);
@@ -584,7 +600,7 @@ fn check_native_trace<Table: FftTable>() {
         SecretKeyDistr::SparseTernary,
         0.7,
     );
-    let gadget = NlevParameters::with_ntru_params(&params, 8, None);
+    let gadget = NlevParameters::with_ntru_params(&params, DecompositionBaseLog::new(8), None);
     let key = FourierNtruSecretKey::try_from_coeff_secret_key(&secret, &mut fft).unwrap();
     let trace = FourierNtruTraceKey::generate(
         &secret,
@@ -592,9 +608,9 @@ fn check_native_trace<Table: FftTable>() {
         &gadget,
         &mut fft,
         &mut ZeroRng,
-        &mut FourierNtruGadgetEncryptWorkspace::new(N),
+        &mut FourierNtruGadgetEncryptWorkspace::new(PolyLength::new(N)),
     );
-    let mut workspace = FourierNtruTraceWorkspace::new(N);
+    let mut workspace = FourierNtruTraceWorkspace::new(PolyLength::new(N));
     // Exhaust parity patterns at three ranges, plus explicit boundary cases.
     let parity_inputs = [0, ring.0 / 2 - 2, ring.0 - 2]
         .into_iter()

@@ -1,11 +1,14 @@
 //! Classic and hybrid switching retain wide Q, independent keys and auxiliary-modulus checks.
+
+use primus_decompose::DecompositionBaseLog;
 use primus_glwe_rns::{
     CrtGlevParameters, CrtGlweParameters, DcrtGadgetDomain, DcrtGlweCiphertext,
     DcrtGlweDecryptWorkspace, DcrtGlweKeySwitchingKey, DcrtGlweKeySwitchingWorkspace,
     DcrtGlweSecretKey, GlweSecretKey, HybridRnsGlweKeySwitchingKey,
     HybridRnsGlweKeySwitchingWorkspace, HybridRnsKeySwitchDomain, SecretKeyDistr,
 };
-use primus_lattice::{GlweSize, glwe::DcrtGlwe};
+use primus_lattice::GlweDimension;
+use primus_lattice::{GlweSize, PolyLength, glwe::DcrtGlwe};
 use primus_modulus::BarrettModulus;
 use primus_ntt::UintDcrtTable;
 use primus_poly::Polynomial;
@@ -20,7 +23,7 @@ fn hybrid_generation_rejects_input_secret_layout_before_sampling() {
     let hybrid = primus_rns::HybridRNS::new(&q, &p, 1).unwrap();
     let domain = HybridRnsKeySwitchDomain::try_new(&hybrid, &table).unwrap();
     let parameters = CrtGlweParameters::new(
-        2,
+        GlweDimension::new(2),
         8,
         BarrettModulus::new(3),
         BarrettModulus::new(101),
@@ -28,7 +31,7 @@ fn hybrid_generation_rejects_input_secret_layout_before_sampling() {
         SecretKeyDistr::UniformBinary,
         1.0,
     );
-    let output_size = GlweSize::new(1, 8);
+    let output_size = GlweSize::new(GlweDimension::new(1), PolyLength::new(8));
     let output_secret = GlweSecretKey::<u64>::new(
         vec![1; output_size.mask_len()],
         output_size,
@@ -37,7 +40,7 @@ fn hybrid_generation_rejects_input_secret_layout_before_sampling() {
 
     // Missing/extra mask polynomials and shorter/longer ring polynomials.
     for (dimension, poly_length) in [(1, 8), (3, 8), (2, 4), (2, 16)] {
-        let input_size = GlweSize::new(dimension, poly_length);
+        let input_size = GlweSize::new(GlweDimension::new(dimension), PolyLength::new(poly_length));
         let input_secret = GlweSecretKey::<u64>::new(
             vec![1; input_size.mask_len()],
             input_size,
@@ -74,7 +77,7 @@ fn hybrid_noise_support_must_fit_auxiliary_moduli() {
     let mut rng = StdRng::seed_from_u64(0x5150);
     for (sigma, valid) in [(1.375, true), (1.4375, false), (1.5, false)] {
         let params = CrtGlweParameters::new(
-            1,
+            GlweDimension::new(1),
             8,
             BarrettModulus::new(3),
             BarrettModulus::new(101),
@@ -123,7 +126,7 @@ fn test_rns_glwe_ksk() {
     let mut rng = StdRng::seed_from_u64(0x005e_ed4b_534b);
 
     let glwe_params = CrtGlweParameters::new(
-        dimension,
+        GlweDimension::new(dimension),
         poly_length,
         mod_t,
         mod_gamma,
@@ -148,7 +151,8 @@ fn test_rns_glwe_ksk() {
     );
     let dcrt_sk_2 = DcrtGlweSecretKey::from_coeff_secret_key(&sk_2, &table);
 
-    let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, 20, None);
+    let glev_params =
+        CrtGlevParameters::with_glwe_params(&glwe_params, DecompositionBaseLog::new(20), None);
     let domain = DcrtGadgetDomain::try_new(&glev_params, &table).unwrap();
 
     let key_switching_key =
@@ -203,7 +207,7 @@ fn test_rns_glwe_ksk_hybrid() {
     let mut rng = StdRng::seed_from_u64(42);
 
     let glwe_params = CrtGlweParameters::new(
-        dimension,
+        GlweDimension::new(dimension),
         poly_length,
         mod_t,
         mod_gamma,

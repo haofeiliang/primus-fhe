@@ -9,7 +9,7 @@ use crate::{LweParameters, MultiMsgLweCiphertext, PlaintextEmbedding};
 use super::LweSecretKey;
 
 impl<T: FheUint> LweSecretKey<T> {
-    /// Encrypts at most `params.dimension()` messages with unsigned embedding.
+    /// Encrypts at most `params.dimension().get()` messages with unsigned embedding.
     ///
     /// See [`Self::encrypt_multi_messages_with_embedding`] for the layout,
     /// correctness and panic conditions.
@@ -35,7 +35,7 @@ impl<T: FheUint> LweSecretKey<T> {
     /// Encrypts multiple messages using the selected plaintext embedding.
     ///
     /// Stores a length-`n` mask followed by `messages.len()` bodies, where
-    /// `n = params.dimension()`. Body `i` uses the mask rotated right by `i`
+    /// `n = params.dimension().get()`. Body `i` uses the mask rotated right by `i`
     /// with the first `i` coefficients negated. An empty message slice is allowed.
     ///
     /// # Correctness
@@ -59,9 +59,9 @@ impl<T: FheUint> LweSecretKey<T> {
         R: rand::Rng + rand::CryptoRng,
         M: RingContext<T>,
     {
-        debug_assert_eq!(self.dimension(), params.dimension());
-        let mut output = allocate_packed(params.dimension(), messages.len());
-        let (_, bodies) = output.a_b_mut(params.dimension());
+        debug_assert_eq!(self.dimension(), params.dimension().get());
+        let mut output = allocate_packed(params.dimension().get(), messages.len());
+        let (_, bodies) = output.a_b_mut(params.dimension().get());
         // Bodies start at zero: encode directly into the final storage before sampling.
         params
             .plaintext_codec()
@@ -77,7 +77,7 @@ impl<T: FheUint> LweSecretKey<T> {
     ///
     /// # Panics
     ///
-    /// Panics if `zero_count` exceeds `params.dimension()` or the storage length
+    /// Panics if `zero_count` exceeds `params.dimension().get()` or the storage length
     /// overflows.
     #[inline]
     pub fn encrypt_multi_zeros<R, Modulus>(
@@ -90,8 +90,8 @@ impl<T: FheUint> LweSecretKey<T> {
         R: rand::Rng + rand::CryptoRng,
         Modulus: RingContext<T>,
     {
-        debug_assert_eq!(self.dimension(), params.dimension());
-        let mut output = allocate_packed(params.dimension(), zero_count);
+        debug_assert_eq!(self.dimension(), params.dimension().get());
+        let mut output = allocate_packed(params.dimension().get(), zero_count);
         self.encrypt_packed_bodies_assign(&mut output, params, rng);
         output
     }
@@ -109,7 +109,7 @@ impl<T: FheUint> LweSecretKey<T> {
         R: rand::Rng + rand::CryptoRng,
         M: RingContext<T>,
     {
-        let dimension = params.dimension();
+        let dimension = params.dimension().get();
         let modulus = params.cipher_modulus();
         let (mask, bodies) = output.a_b_mut(dimension);
         mask.iter_mut()
@@ -143,7 +143,7 @@ impl<T: FheUint> LweSecretKey<T> {
     ///
     /// # Panics
     ///
-    /// Panics if storage is shorter than `params.dimension()`, the body count
+    /// Panics if storage is shorter than `params.dimension().get()`, the body count
     /// exceeds that dimension, or a nonempty ciphertext has a mask/key length mismatch.
     #[inline]
     pub fn decrypt_multi_messages<M>(
@@ -155,7 +155,7 @@ impl<T: FheUint> LweSecretKey<T> {
         M: RingContext<T>,
     {
         let modulus = params.cipher_modulus();
-        let dimension = params.dimension();
+        let dimension = params.dimension().get();
 
         debug_assert_eq!(self.dimension(), dimension);
 

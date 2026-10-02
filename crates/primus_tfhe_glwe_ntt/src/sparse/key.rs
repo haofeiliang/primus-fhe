@@ -1,3 +1,4 @@
+use primus_lattice::LweDimension;
 use std::alloc::Layout;
 
 use primus_decompose::primitive::ApproxSignedBasis;
@@ -31,7 +32,7 @@ use crate::{ClientKey, KeyGenerationError, KeyGenerator, SparseBootstrappingKeyE
 pub struct SparseGlweBootstrappingKey<T: FheUint> {
     data: Vec<T>,
     map: BucketMap,
-    input_dimension: usize,
+    input_dimension: LweDimension,
     hamming_weight: usize,
     copy_count: usize,
     modulus: BarrettModulus<T>,
@@ -43,7 +44,7 @@ pub struct SparseGlweBootstrappingKey<T: FheUint> {
 impl<T: FheUint> SparseGlweBootstrappingKey<T> {
     /// Returns the dimension of the actual blind-rotation input secret.
     #[must_use]
-    pub fn input_dimension(&self) -> usize {
+    pub fn input_dimension(&self) -> LweDimension {
         self.input_dimension
     }
 
@@ -257,13 +258,13 @@ where
         Ok(SparseGlweBootstrappingKey {
             data,
             map,
-            input_dimension,
+            input_dimension: LweDimension::new(input_dimension),
             hamming_weight,
             copy_count,
             modulus: parameters.small_lwe().cipher_modulus(),
             input_quantizer: RotationQuantizer::new(
                 parameters.small_lwe().cipher_modulus(),
-                2 * size.glwe_size().poly_length(),
+                2 * size.glwe_size().poly_length().get(),
                 1,
             ),
             size,

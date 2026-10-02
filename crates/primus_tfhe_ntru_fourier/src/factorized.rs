@@ -51,10 +51,10 @@ impl<'a, T: TorusFftValue, Table: FftTable, LM: primus_reduce::RingContext<T>>
             "Fourier MVB requires u32 or u64 coefficients"
         );
         let parameters = context.parameters();
-        let n = parameters.accumulator_ntru().poly_length();
+        let n = parameters.accumulator_ntru().poly_length().get();
         assert!(
             lookup_table.is_compatible(
-                n,
+                parameters.accumulator_ntru().poly_length(),
                 parameters.plain_modulus_value(),
                 parameters.external_lwe().cipher_modulus_value(),
                 parameters.accumulator_ntru().cipher_modulus_value(),
@@ -144,8 +144,10 @@ impl<'a, T: TorusFftValue, Table: FftTable, LM: primus_reduce::RingContext<T>>
         let context = evaluator.context;
         Ok(Self {
             evaluator,
-            shared_rotation: FourierNtru::zero(context.parameters().poly_length() / 2),
-            product: FourierNtru::zero(context.parameters().poly_length() / 2),
+            shared_rotation: FourierNtru::zero(
+                context.parameters().poly_length().fourier_poly_len(),
+            ),
+            product: FourierNtru::zero(context.parameters().poly_length().fourier_poly_len()),
         })
     }
 
@@ -175,7 +177,7 @@ impl<'a, T: TorusFftValue, Table: FftTable, LM: primus_reduce::RingContext<T>>
         lookup_table: &FourierFactorizedLookupTable<'_, T, Table, LM>,
     ) -> Vec<LweCiphertext<T>> {
         let dimension = self.evaluator.context.parameters().external_lwe_dimension();
-        let mut outputs = vec![LweCiphertext::zero(dimension); lookup_table.output_count()];
+        let mut outputs = vec![LweCiphertext::zero(dimension.get()); lookup_table.output_count()];
         self.apply_lookup_table_to(input, lookup_table, &mut outputs);
         outputs
     }
@@ -211,7 +213,7 @@ impl<'a, T: TorusFftValue, Table: FftTable, LM: primus_reduce::RingContext<T>>
         self.check_io(input, lookup_table, outputs);
         self.prepare_shared_rotation(input, &lookup_table.common_polynomial);
 
-        let n = self.evaluator.context.parameters().poly_length();
+        let n = self.evaluator.context.parameters().poly_length().get();
         let batch_size = self.evaluator.lwe_return_batch_capacity();
         let mut factors = FourierPolynomialIter::new(&lookup_table.factors, n / 2);
         for outputs in outputs.chunks_mut(batch_size) {
@@ -237,14 +239,18 @@ impl<'a, T: TorusFftValue, Table: FftTable, LM: primus_reduce::RingContext<T>>
         );
         let parameters = evaluator.context.parameters();
         let dimension = parameters.external_lwe_dimension();
-        assert_eq!(input.dimension(), dimension, "MVB input dimension mismatch");
+        assert_eq!(
+            input.dimension(),
+            dimension.get(),
+            "MVB input dimension mismatch"
+        );
         assert_eq!(
             outputs.len(),
             lookup_table.output_count(),
             "MVB output count mismatch"
         );
         assert!(
-            outputs.iter().all(|out| out.dimension() == dimension),
+            outputs.iter().all(|out| out.dimension() == dimension.get()),
             "MVB output ciphertext dimension mismatch"
         );
     }

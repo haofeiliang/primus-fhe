@@ -3,7 +3,10 @@ use primus_data::DataMut;
 use primus_fft::{Complex64, TorusFftValue};
 use primus_integer::FheUint;
 
-use crate::ntru::{FourierNtru, NttNtru};
+use crate::{
+    PolyLength,
+    ntru::{FourierNtru, NttNtru},
+};
 
 /// Pre-allocated scratch buffers for native-torus Fourier NTRU gadget products.
 /// Owned Fourier buffers use cache-line alignment for repeated FFT and product passes.
@@ -23,7 +26,7 @@ use crate::ntru::{FourierNtru, NttNtru};
 /// Fourier data must use a compatible FFT layout, and the basis must use the
 /// implicit native-torus modulus.
 pub struct FourierNtruExternalProductWorkspace<T: TorusFftValue> {
-    poly_length: usize,
+    poly_length: PolyLength,
     /// Carry bits reused while decomposing one coefficient polynomial.
     carries: Box<[bool]>,
     /// Coefficient-domain digits produced for one decomposition level.
@@ -57,18 +60,17 @@ impl<T: TorusFftValue> FourierNtruExternalProductWorkspace<T> {
     ///
     /// # Correctness
     ///
-    /// `poly_length` must be a power of two of at least two, supported by the
-    /// transform table used by subsequent operations. This is only
-    /// debug-asserted here; construction does not bind or validate a table.
+    /// The transform table used by subsequent operations must support
+    /// `poly_length`. Construction does not bind or validate a table;
+    /// [`PolyLength`] already establishes the supported layout range.
     #[inline]
     #[must_use]
-    pub fn new(poly_length: usize) -> Self {
-        debug_assert!(poly_length >= 2 && poly_length.is_power_of_two());
-        let fourier_length = poly_length / 2;
+    pub fn new(poly_length: PolyLength) -> Self {
+        let fourier_length = poly_length.fourier_poly_len();
         Self {
             poly_length,
-            carries: vec![false; poly_length].into_boxed_slice(),
-            decomposed_poly: vec![T::ZERO; poly_length].into_boxed_slice(),
+            carries: vec![false; poly_length.get()].into_boxed_slice(),
+            decomposed_poly: vec![T::ZERO; poly_length.get()].into_boxed_slice(),
             decomposed_fourier: avec![Complex64::default(); fourier_length].into_boxed_slice(),
             fourier_accumulator: FourierNtru(
                 avec![Complex64::default(); fourier_length].into_boxed_slice(),
@@ -79,7 +81,7 @@ impl<T: TorusFftValue> FourierNtruExternalProductWorkspace<T> {
     /// Returns the coefficient polynomial length bound to this workspace.
     #[must_use]
     #[inline]
-    pub fn poly_length(&self) -> usize {
+    pub fn poly_length(&self) -> PolyLength {
         self.poly_length
     }
 
@@ -87,7 +89,7 @@ impl<T: TorusFftValue> FourierNtruExternalProductWorkspace<T> {
     #[inline]
     pub(crate) fn as_mut(&mut self) -> FourierNtruExternalProductWorkspaceRefMut<'_, T> {
         FourierNtruExternalProductWorkspaceRefMut {
-            poly_length: self.poly_length,
+            poly_length: self.poly_length.get(),
             carries: &mut self.carries,
             decomposed_poly: &mut self.decomposed_poly,
             decomposed_fourier: &mut self.decomposed_fourier,
@@ -106,7 +108,7 @@ impl<T: TorusFftValue> FourierNtruExternalProductWorkspace<T> {
         S: DataMut<Elem = Complex64>,
     {
         FourierNtruExternalProductWorkspaceRefMut {
-            poly_length: self.poly_length,
+            poly_length: self.poly_length.get(),
             carries: &mut self.carries,
             decomposed_poly: &mut self.decomposed_poly,
             decomposed_fourier: &mut self.decomposed_fourier,
@@ -132,7 +134,7 @@ impl<T: TorusFftValue> FourierNtruExternalProductWorkspace<T> {
 /// use, and no manual reset is needed between operations.
 /// The basis, NTT table, and modular arithmetic must use the same modulus.
 pub struct NttNtruExternalProductWorkspace<T: FheUint> {
-    poly_length: usize,
+    poly_length: PolyLength,
     /// Modulus-adjusted coefficients reused as decomposition input.
     adjusted_poly: ABox<[T]>,
     /// Carry bits reused while decomposing `adjusted_poly`.
@@ -166,26 +168,25 @@ impl<T: FheUint> NttNtruExternalProductWorkspace<T> {
     ///
     /// # Correctness
     ///
-    /// `poly_length` must be a power of two of at least two, supported by the
-    /// transform table used by subsequent operations. This is only
-    /// debug-asserted here; construction does not bind or validate a table.
+    /// The transform table used by subsequent operations must support
+    /// `poly_length`. Construction does not bind or validate a table;
+    /// [`PolyLength`] already establishes the supported layout range.
     #[inline]
     #[must_use]
-    pub fn new(poly_length: usize) -> Self {
-        debug_assert!(poly_length >= 2 && poly_length.is_power_of_two());
+    pub fn new(poly_length: PolyLength) -> Self {
         Self {
             poly_length,
-            adjusted_poly: avec![T::ZERO; poly_length].into_boxed_slice(),
-            carries: vec![false; poly_length].into_boxed_slice(),
-            decomposed_ntt: avec![T::ZERO; poly_length].into_boxed_slice(),
-            ntt_accumulator: NttNtru(avec![T::ZERO; poly_length].into_boxed_slice()),
+            adjusted_poly: avec![T::ZERO; poly_length.get()].into_boxed_slice(),
+            carries: vec![false; poly_length.get()].into_boxed_slice(),
+            decomposed_ntt: avec![T::ZERO; poly_length.get()].into_boxed_slice(),
+            ntt_accumulator: NttNtru(avec![T::ZERO; poly_length.get()].into_boxed_slice()),
         }
     }
 
     /// Returns the coefficient polynomial length bound to this workspace.
     #[must_use]
     #[inline]
-    pub fn poly_length(&self) -> usize {
+    pub fn poly_length(&self) -> PolyLength {
         self.poly_length
     }
 
@@ -193,7 +194,7 @@ impl<T: FheUint> NttNtruExternalProductWorkspace<T> {
     #[inline]
     pub(crate) fn as_mut(&mut self) -> NttNtruExternalProductWorkspaceRefMut<'_, T> {
         NttNtruExternalProductWorkspaceRefMut {
-            poly_length: self.poly_length,
+            poly_length: self.poly_length.get(),
             adjusted_poly: &mut self.adjusted_poly,
             carries: &mut self.carries,
             decomposed_ntt: &mut self.decomposed_ntt,
@@ -212,7 +213,7 @@ impl<T: FheUint> NttNtruExternalProductWorkspace<T> {
         S: DataMut<Elem = T>,
     {
         NttNtruExternalProductWorkspaceRefMut {
-            poly_length: self.poly_length,
+            poly_length: self.poly_length.get(),
             adjusted_poly: &mut self.adjusted_poly,
             carries: &mut self.carries,
             decomposed_ntt: &mut self.decomposed_ntt,

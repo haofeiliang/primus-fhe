@@ -1,4 +1,6 @@
+use primus_decompose::DecompositionBaseLog;
 use primus_decompose::primitive::ApproxSignedBasis;
+use primus_lattice::LweDimension;
 use primus_lwe::{
     LweKeySwitchingKey, LweParameters, LweSecretKey, LweSecretKeyRef, SecretKeyDistr,
 };
@@ -14,13 +16,24 @@ fn signed_input_generation_matches_encoded() {
 
 fn check_signed_generation<M: RingContext<u32>>(modulus: M) {
     let q = modulus.explicit_value().map_or(1i64 << 32, i64::from);
-    let input_parameters =
-        LweParameters::new(8, 4u32, modulus, SecretKeyDistr::UniformTernary, 0.7);
-    let output_parameters =
-        LweParameters::new(5, 4u32, modulus, SecretKeyDistr::UniformTernary, 0.7);
+    let input_parameters = LweParameters::new(
+        LweDimension::new(8),
+        4u32,
+        modulus,
+        SecretKeyDistr::UniformTernary,
+        0.7,
+    );
+    let output_parameters = LweParameters::new(
+        LweDimension::new(5),
+        4u32,
+        modulus,
+        SecretKeyDistr::UniformTernary,
+        0.7,
+    );
     // Base sixteen also exercises general digits in the end-to-end check;
     // the exact entry-sum test below covers both base four and base sixteen.
-    let basis = ApproxSignedBasis::new(modulus.explicit_value(), 4, None);
+    let basis =
+        ApproxSignedBasis::new(modulus.explicit_value(), DecompositionBaseLog::new(4), None);
     let mut rng = StdRng::seed_from_u64(0x1_ee06);
     let signed_key = [-1, 0, 1, -1, 1, 0, -1, 1];
     let input_secret_key = LweSecretKey::new(
@@ -62,7 +75,8 @@ fn check_signed_generation<M: RingContext<u32>>(modulus: M) {
     );
     assert_eq!(signed_rng.next_u64(), expected_next_random);
 
-    let mut output = primus_lwe::LweCiphertext::new(vec![17u32; output_parameters.dimension() + 1]);
+    let mut output =
+        primus_lwe::LweCiphertext::new(vec![17u32; output_parameters.dimension().ciphertext_len()]);
     *output.b_mut() = (q / 2) as u32;
     for message in 0u32..4 {
         let input = input_secret_key.encrypt(message, &input_parameters, &mut rng);
@@ -80,8 +94,14 @@ fn key_switch_validates_before_writing() {
     use std::panic::{AssertUnwindSafe, catch_unwind};
 
     let modulus = BarrettModulus::new(97u32);
-    let output_parameters = LweParameters::new(2, 4, modulus, SecretKeyDistr::UniformBinary, 0.7);
-    let basis = ApproxSignedBasis::new(Some(97), 2, None);
+    let output_parameters = LweParameters::new(
+        LweDimension::new(2),
+        4,
+        modulus,
+        SecretKeyDistr::UniformBinary,
+        0.7,
+    );
+    let basis = ApproxSignedBasis::new(Some(97), DecompositionBaseLog::new(2), None);
     let output_key = LweSecretKey::new(vec![1, 0], SecretKeyDistr::UniformBinary);
     let mut rng = StdRng::seed_from_u64(0x1_ee09);
     let key = LweKeySwitchingKey::generate(
@@ -135,7 +155,7 @@ fn generation_validates_before_sampling() {
     use std::panic::{AssertUnwindSafe, catch_unwind};
 
     let parameters = LweParameters::new(
-        2,
+        LweDimension::new(2),
         4u32,
         BarrettModulus::new(97),
         SecretKeyDistr::UniformBinary,
@@ -150,7 +170,7 @@ fn generation_validates_before_sampling() {
     ] {
         let output_key =
             LweSecretKey::new(vec![1; output_dimension], SecretKeyDistr::UniformBinary);
-        let basis = ApproxSignedBasis::new(Some(basis_modulus), 2, None);
+        let basis = ApproxSignedBasis::new(Some(basis_modulus), DecompositionBaseLog::new(2), None);
         let mut rng = StdRng::seed_from_u64(0x1_ee0a);
         let mut expected_rng = StdRng::seed_from_u64(0x1_ee0a);
         assert!(
@@ -176,10 +196,20 @@ fn check_batch_sum<T: primus_integer::FheUint, M: RingContext<T>>(modulus: M) {
     use rand::distr::Distribution;
 
     let mut rng = StdRng::seed_from_u64(0x1_ee10);
-    let params = LweParameters::new(65, T::TWO, modulus, SecretKeyDistr::UniformBinary, 0.7);
+    let params = LweParameters::new(
+        LweDimension::new(65),
+        T::TWO,
+        modulus,
+        SecretKeyDistr::UniformBinary,
+        0.7,
+    );
     let output_key = LweSecretKey::generate(&params, &mut rng);
     for log_basis in [2, 4] {
-        let basis = ApproxSignedBasis::new(modulus.explicit_value(), log_basis, None);
+        let basis = ApproxSignedBasis::new(
+            modulus.explicit_value(),
+            DecompositionBaseLog::new(log_basis),
+            None,
+        );
         let key = LweKeySwitchingKey::generate(
             LweSecretKeyRef::Encoded(&[T::ONE; 7]),
             &output_key,
@@ -206,7 +236,7 @@ fn check_batch_sum<T: primus_integer::FheUint, M: RingContext<T>>(modulus: M) {
                 output[65] = input.b();
                 for (&coefficient, block) in input.a().iter().zip(
                     key.as_slice()
-                        .chunks_exact(66 * key.basis().decompose_length()),
+                        .chunks_exact(66 * key.basis().decompose_length().get()),
                 ) {
                     let (adjusted, mut carry) = key.basis().init_value_carry(coefficient);
                     for (decomposer, entry) in

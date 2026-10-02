@@ -1,6 +1,7 @@
 //! Single-modulus NTT-domain GLWE secret key with encryption and decryption.
 
 use primus_integer::FheUint;
+use primus_lattice::GlweDimension;
 use primus_lattice::GlweSize;
 use primus_modulus::UintModulus;
 use primus_ntt::NttTable;
@@ -80,13 +81,13 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     #[inline]
     #[must_use]
     pub fn poly_length(&self) -> usize {
-        self.size.poly_length()
+        self.size.poly_length().get()
     }
 
     /// Returns the GLWE dimension.
     #[inline]
     #[must_use]
-    pub fn dimension(&self) -> usize {
+    pub fn dimension(&self) -> GlweDimension {
         self.size.dimension()
     }
 
@@ -101,7 +102,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     /// Iterates over the NTT-domain secret polynomials in GLWE component order.
     #[must_use]
     pub fn iter(&self) -> NttPolynomialIter<'_, T> {
-        NttPolynomialIter::new(self.key.as_slice(), self.size.poly_length())
+        NttPolynomialIter::new(self.key.as_slice(), self.size.poly_length().get())
     }
 
     /// Encodes and transforms a signed coefficient-domain secret key.
@@ -131,7 +132,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         Table: NttTable<ValueT = T>,
     {
         let size = secret_key.glwe_size();
-        let poly_length = size.poly_length();
+        let poly_length = size.poly_length().get();
         let mut key = Self {
             key: vec![T::ZERO; size.mask_len()],
             size,
@@ -166,7 +167,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     {
         assert_eq!(
             ntt_table.poly_length(),
-            params.poly_length(),
+            params.poly_length().get(),
             "NTT polynomial length mismatch"
         );
         assert_eq!(

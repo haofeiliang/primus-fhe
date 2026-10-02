@@ -4,6 +4,7 @@ use primus_glwe_rns::{
     CrtGlweParameters, DcrtGlweCiphertext, DcrtGlweDecryptWorkspace, DcrtGlwePublicKey,
     DcrtGlweSecretKey, GlweSecretKey, SecretKeyDistr,
 };
+use primus_lattice::GlweDimension;
 use primus_lattice::glwe::DcrtGlwe;
 use primus_modulus::BarrettModulus;
 use primus_ntt::UintDcrtTable;
@@ -58,7 +59,7 @@ fn assert_dcrt_glwe_secret_key_enc_dec(secret_key_distr: SecretKeyDistr, plain_m
     let mut rng = StdRng::seed_from_u64(42);
 
     let params = CrtGlweParameters::new(
-        DIMENSION,
+        GlweDimension::new(DIMENSION),
         POLY_LENGTH,
         mod_t,
         mod_gamma,
@@ -139,7 +140,7 @@ fn public_encrypt_accepts_unscaled_crt_plaintexts() {
         let moduli = &moduli[..count];
         let table = UintDcrtTable::new(POLY_LENGTH.trailing_zeros(), moduli).unwrap();
         let params = CrtGlweParameters::new(
-            DIMENSION,
+            GlweDimension::new(DIMENSION),
             POLY_LENGTH,
             BarrettModulus::new(t),
             BarrettModulus::new(GAMMA_MODULUS),
@@ -207,7 +208,7 @@ fn dcrt_polynomial_product_preserves_bfv_scaling() {
     let mut rng = StdRng::seed_from_u64(42);
 
     let params = CrtGlweParameters::new(
-        DIMENSION,
+        GlweDimension::new(DIMENSION),
         POLY_LENGTH,
         mod_t,
         mod_gamma,

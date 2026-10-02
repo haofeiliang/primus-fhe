@@ -2,9 +2,11 @@
 //! bucket layouts and quantization margins are part of the fixture.
 
 use primus_decompose::primitive::ApproxSignedBasis;
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_encoding::{PlaintextEmbedding, RoundedCodec};
 use primus_fft::{FftTable, RustFftTable, TfheFftTable};
 use primus_glwe::{GlweParameters, SecretKeyDistr};
+use primus_lattice::{GlweDimension, LweDimension};
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::NativeModulus;
 use primus_test_allocations as allocations;
@@ -27,15 +29,30 @@ fn context<Table: FftTable>(
     let modulus = NativeModulus::new();
     let parameters = TfheParameters::try_new(
         LweParameters::new(
-            16,
+            LweDimension::new(16),
             15,
             modulus,
             SecretKeyDistr::fixed_hamming_weight_binary(16, weight),
             0.7,
         ),
-        GlweParameters::new(1, N, 15, modulus, SecretKeyDistr::UniformTernary, 0.7),
-        ApproxSignedBasis::new(None, log_basis, Some(6)),
-        ApproxSignedBasis::new(None, 8, Some(6)),
+        GlweParameters::new(
+            GlweDimension::new(1),
+            N,
+            15,
+            modulus,
+            SecretKeyDistr::UniformTernary,
+            0.7,
+        ),
+        ApproxSignedBasis::new(
+            None,
+            DecompositionBaseLog::new(log_basis),
+            Some(DecompositionLevelCount::new(6)),
+        ),
+        ApproxSignedBasis::new(
+            None,
+            DecompositionBaseLog::new(8),
+            Some(DecompositionLevelCount::new(6)),
+        ),
         order,
     )
     .unwrap();
@@ -56,14 +73,15 @@ fn check_pbs<Table: FftTable>() {
             .unwrap();
         let mut sparse = context.evaluator(&sparse_key).unwrap();
         let mut classic = context.evaluator(&classic_key).unwrap();
-        let dimension = context.parameters().external_lwe_dimension();
+        let dimension = context.parameters().external_lwe_dimension().get();
         assert_eq!(
             dimension,
-            if order == PbsOrder::BootstrapKeyswitch {
+            (LweDimension::new(if order == PbsOrder::BootstrapKeyswitch {
                 16
             } else {
                 N
-            }
+            }))
+            .get()
         );
         let encryptor = context.encryptor(&client).unwrap();
         let decryptor = context.decryptor(&client).unwrap();

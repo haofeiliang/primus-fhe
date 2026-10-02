@@ -71,10 +71,12 @@ impl<T: TorusFftValue> FourierGlweSchemeSwitchKey<T> {
         let length = key_size
             .glwe_size()
             .dimension()
+            .get()
             .checked_mul(key_size.fourier_ggsw_len())
             .expect("scheme-switch key length overflow");
         let mut data = vec![Complex64::default(); length];
-        let mut negated_secret = Zeroizing::new(vec![T::ZERO; key_size.glwe_size().poly_length()]);
+        let mut negated_secret =
+            Zeroizing::new(vec![T::ZERO; key_size.glwe_size().poly_length().get()]);
         for (secret, entry) in secret_key
             .iter()
             .zip(data.chunks_exact_mut(key_size.fourier_ggsw_len()))
@@ -159,7 +161,7 @@ impl<T: TorusFftValue> FourierGlweSchemeSwitchKey<T> {
         );
         assert_eq!(
             fft.poly_length(),
-            self.key_size.glwe_size().poly_length(),
+            self.key_size.glwe_size().poly_length().get(),
             "scheme-switch FFT polynomial length mismatch"
         );
         assert_eq!(
@@ -191,7 +193,7 @@ impl<T: TorusFftValue> FourierGlweSchemeSwitchKey<T> {
             .expect("scheme-switch output is missing its body row");
         for (input, output) in input
             .as_ref()
-            .chunks_exact(size.poly_length())
+            .chunks_exact(size.poly_length().get())
             .zip(body.as_mut().chunks_exact_mut(size.fourier_poly_len()))
         {
             fft.forward_as_torus(input, output);

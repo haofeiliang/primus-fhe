@@ -1,5 +1,6 @@
 //! Packed one-hot geometry shared by the NTT and Fourier CBS backends.
 
+use primus_decompose::DecompositionLevelCount;
 use primus_integer::FheUint;
 use primus_poly::PolynomialOwned;
 use primus_reduce::RingContext;
@@ -37,7 +38,7 @@ pub enum OneHotBootstrapError {
 pub struct OneHotLookupTable<T: FheUint> {
     polynomial: PolynomialOwned<T>,
     selector_count: usize,
-    level_count: usize,
+    level_count: DecompositionLevelCount,
     output_nlev_len: usize,
 }
 
@@ -66,10 +67,10 @@ impl<T: FheUint> OneHotLookupTable<T> {
         if t < 4 || !t.is_power_of_two() {
             return Err(OneHotBootstrapError::InvalidPlaintextModulus);
         }
-        let n = tfhe.poly_length();
+        let n = tfhe.poly_length().get();
         let selector_count = t / 2;
         let level_count = cbs.output_basis().decompose_length();
-        let w = level_count.next_power_of_two();
+        let w = level_count.get().next_power_of_two();
         if selector_count > n / (2 * w) {
             return Err(OneHotBootstrapError::InsufficientCapacity);
         }
@@ -119,14 +120,14 @@ impl<T: FheUint> OneHotLookupTable<T> {
 
     /// Returns L, in `output_basis.scalar_iter()` order, excluding padding.
     #[must_use]
-    pub fn level_count(&self) -> usize {
+    pub fn level_count(&self) -> DecompositionLevelCount {
         self.level_count
     }
 
     /// Returns W, the power-of-two BR quantization step and padded gadget width.
     #[must_use]
     pub fn rotation_step(&self) -> usize {
-        self.level_count.next_power_of_two()
+        self.level_count.get().next_power_of_two()
     }
 
     /// Returns S=N/M, the spacing between selector groups.

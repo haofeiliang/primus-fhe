@@ -3,7 +3,7 @@
 use primus_data::{Data, DataMut};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
-use primus_lattice::{MAX_POLY_LENGTH, MIN_POLY_LENGTH, nlev::FourierNlev};
+use primus_lattice::{PolyLength, nlev::FourierNlev};
 use primus_modulus::NativeModulus;
 use primus_poly::{CoeffAutomorphismPermutation, Polynomial};
 use primus_reduce::EncodeSigned;
@@ -25,19 +25,11 @@ pub struct FourierNtruAutomorphismWorkspace<T: TorusFftValue> {
 
 impl<T: TorusFftValue> FourierNtruAutomorphismWorkspace<T> {
     /// Allocates workspace for a supported power-of-two NTRU polynomial length.
-    ///
-    /// # Panics
-    /// Panics if the length is outside the supported NTRU range or not a power of two.
     #[must_use]
-    pub fn new(poly_length: usize) -> Self {
-        assert!(
-            (MIN_POLY_LENGTH..=MAX_POLY_LENGTH).contains(&poly_length)
-                && poly_length.is_power_of_two(),
-            "automorphism polynomial length must be a supported power of two"
-        );
+    pub fn new(poly_length: PolyLength) -> Self {
         Self {
-            coefficients: NtruCiphertext::zero(poly_length),
-            permuted: vec![Complex64::default(); poly_length / 2],
+            coefficients: NtruCiphertext::zero(poly_length.get()),
+            permuted: vec![Complex64::default(); poly_length.fourier_poly_len()],
             external_product: FourierNtruExternalProductWorkspace::new(poly_length),
         }
     }
@@ -82,7 +74,7 @@ impl<T: TorusFftValue> FourierNtruAutomorphismKey<T> {
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
     {
-        let n = parameters.poly_length();
+        let n = parameters.poly_length().get();
         assert_eq!(
             secret_key.poly_length(),
             n,

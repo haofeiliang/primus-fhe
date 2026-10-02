@@ -9,6 +9,7 @@ pub use error::{BooleanError, ClientError};
 use primus_distr::DiscreteGaussian;
 use primus_encoding::{PlaintextEmbedding, RoundedCodec};
 use primus_integer::FheUint;
+use primus_lattice::LweDimension;
 use primus_lwe::{LweCiphertext, LweSecretKeyRef};
 use primus_reduce::RingContext;
 use rand::distr::Uniform;
@@ -26,7 +27,7 @@ use rand::distr::Uniform;
 #[derive(Clone, Copy)]
 pub struct LweClientParameters<'a, T: FheUint, M: RingContext<T>> {
     /// External LWE dimension.
-    pub dimension: usize,
+    pub dimension: LweDimension,
     /// Input message encoding and ciphertext modulus.
     pub codec: &'a RoundedCodec<T, M>,
     /// Prepared uniform sampler for ciphertext masks.
@@ -177,8 +178,11 @@ impl<'a, T: FheUint, M: RingContext<T>, Key: EncryptionKey<T, M>> Encryptor<'a, 
     {
         let expected = self.parameters.dimension;
         let actual = output.dimension();
-        if actual != expected {
-            return Err(ClientError::CiphertextDimensionMismatch { expected, actual });
+        if actual != expected.get() {
+            return Err(ClientError::CiphertextDimensionMismatch {
+                expected: expected.get(),
+                actual,
+            });
         }
         let plaintext = self.parameters.codec.encode_value(message, embedding);
         self.key

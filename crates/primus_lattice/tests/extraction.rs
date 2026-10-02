@@ -1,7 +1,8 @@
 //! Sample order and phase signs, compact padding, and packed allocation reuse.
 
+use primus_lattice::GlweDimension;
 use primus_lattice::{
-    GlweSize,
+    GlweSize, PolyLength,
     glwe::{Glwe, TruncatedGlwe},
     lwe::{Lwe, MultiMsgLwe},
     ntru::Ntru,
@@ -140,16 +141,20 @@ fn indexed_extraction_preserves_ntru_and_dimension_one_glwe_phases() {
 fn packed_extraction_rejects_multiple_glwe_masks() {
     // Packed extraction owns its layout boundary and supports exactly one mask.
     let ciphertext = TruncatedGlwe::new(vec![1u32, 2, 3, 4, 5, 6, 7, 8, 10, 20]);
-    let _ = ciphertext.into_multi_msg_lwe(2, GlweSize::new(2, 4), NativeModulus::new());
+    let _ = ciphertext.into_multi_msg_lwe(
+        2,
+        GlweSize::new(GlweDimension::new(2), PolyLength::new(4)),
+        NativeModulus::new(),
+    );
 }
 
 #[test]
 fn packed_and_consuming_extraction_match_individual_samples() {
     let modulus = BarrettModulus::new(97u32);
     let ciphertext = Glwe(vec![1u32, 2, 3, 4, 11, 12, 13, 14]);
-    let size = GlweSize::new(1, 4);
+    let size = GlweSize::new(GlweDimension::new(1), PolyLength::new(4));
     let mut sample = Lwe::zero(size.mask_len());
-    ciphertext.extract_lwe_to(&mut sample, size.poly_length(), modulus);
+    ciphertext.extract_lwe_to(&mut sample, size.poly_length().get(), modulus);
     let truncated = TruncatedGlwe(ciphertext.as_ref()[..6].to_vec());
     assert_eq!(truncated.clone().into_lwe(size, modulus), sample);
 
@@ -173,7 +178,7 @@ fn packed_and_consuming_extraction_match_individual_samples() {
             let all = borrowed.extract_all(count, modulus);
             assert_eq!(all.len(), count);
             for (index, extracted) in all.iter().enumerate() {
-                ciphertext.extract_lwe_at_to(index, &mut sample, size.poly_length(), modulus);
+                ciphertext.extract_lwe_at_to(index, &mut sample, size.poly_length().get(), modulus);
                 assert_eq!(*extracted, sample);
                 assert_eq!(borrowed.extract_lwe_at(index, 4, modulus), sample);
             }

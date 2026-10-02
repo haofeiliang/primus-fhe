@@ -1,4 +1,5 @@
 //! Native-torus automorphisms using Fourier key switching.
+
 use crate::{
     FourierGlweGadgetEncryptWorkspace, FourierGlweKeySwitchingKey,
     FourierGlweKeySwitchingWorkspace, FourierGlweSecretKey, GlevParameters, GlweSecretKey,
@@ -70,11 +71,11 @@ impl<T: TorusFftValue> FourierGlweAutomorphismKey<T> {
             size,
             "automorphism output key layout mismatch"
         );
-        let permutation = CoeffAutomorphismPermutation::new(degree, size.poly_length());
+        let permutation = CoeffAutomorphismPermutation::new(degree, size.poly_length().get());
         let mut transformed = vec![T::SignedInteger::ZERO; size.mask_len()];
         for (input, output) in secret
             .iter()
-            .zip(transformed.chunks_exact_mut(size.poly_length()))
+            .zip(transformed.chunks_exact_mut(size.poly_length().get()))
         {
             permutation.apply_signed_to::<T>(input, output);
         }

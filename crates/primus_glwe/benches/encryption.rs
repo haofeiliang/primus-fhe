@@ -10,6 +10,7 @@
 //! cargo bench -p primus_glwe --bench encryption -- encrypt_ggsw_to
 
 use criterion::{Criterion, criterion_group, criterion_main};
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_glwe::{
     FourierGgswCiphertext, FourierGlevCiphertext, FourierGlweDecryptWorkspace,
@@ -18,6 +19,8 @@ use primus_glwe::{
     NttGlweGadgetEncryptWorkspace, NttGlwePublicEncryptWorkspace, NttGlwePublicKey,
     NttGlweSecretKey, SecretKeyDistr,
 };
+use primus_lattice::GlweDimension;
+use primus_lattice::PolyLength;
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntt::{NttTable, UintNttTable};
 use primus_poly::Polynomial;
@@ -36,7 +39,7 @@ fn ntt_encryption(c: &mut Criterion) {
         let mut plaintext = Polynomial::new(vec![0u64; n]);
         let modulus = BarrettModulus::new(1_125_899_906_826_241u64);
         let params = GlweParameters::new(
-            dimension,
+            GlweDimension::new(dimension),
             n,
             16,
             modulus,
@@ -46,12 +49,16 @@ fn ntt_encryption(c: &mut Criterion) {
         let ntt = UintNttTable::new(n.trailing_zeros(), modulus).unwrap();
         let (_, sk) = NttGlweSecretKey::generate_pair(&params, &ntt, &mut rng);
         let pk = NttGlwePublicKey::generate(&sk, &params, &ntt, &mut rng);
-        let mut public_workspace = NttGlwePublicEncryptWorkspace::new(n);
+        let mut public_workspace = NttGlwePublicEncryptWorkspace::new(PolyLength::new(n));
         let mut ciphertext = sk.encrypt(&message, &params, &ntt, &mut rng);
         sk.decrypt_to(&ciphertext, &mut plaintext, &params, &ntt);
         assert_eq!(plaintext.as_ref(), message.as_ref());
         let decrypt_input = ciphertext.clone();
-        let gadget = GlevParameters::with_glwe_params(&params, LOG_BASE, Some(LEVELS));
+        let gadget = GlevParameters::with_glwe_params(
+            &params,
+            DecompositionBaseLog::new(LOG_BASE),
+            Some(DecompositionLevelCount::new(LEVELS)),
+        );
         let mut gadget_workspace = NttGlweGadgetEncryptWorkspace::new(gadget.size());
         let mut glev = NttGlevCiphertext::<Vec<u64>>::zero(gadget.glev_len());
         let mut ggsw = NttGgswCiphertext::<Vec<u64>>::zero(gadget.ggsw_len());
@@ -196,7 +203,7 @@ fn fourier_encryption(c: &mut Criterion) {
         let message = Polynomial::new((0..n).map(|i| (i % 16) as u64).collect::<Vec<_>>());
         let mut plaintext = Polynomial::new(vec![0u64; n]);
         let params = GlweParameters::new(
-            dimension,
+            GlweDimension::new(dimension),
             n,
             16,
             NativeModulus::<u64>::new(),
@@ -206,8 +213,8 @@ fn fourier_encryption(c: &mut Criterion) {
         let table = RustFftTable::new(n.trailing_zeros()).unwrap();
         let mut fft = FftEngine::new(&table);
         let (_, sk) = FourierGlweSecretKey::generate_pair(&params, &mut fft, &mut rng);
-        let mut encrypt_workspace = FourierGlweEncryptWorkspace::new(n);
-        let mut decrypt_workspace = FourierGlweDecryptWorkspace::new(n);
+        let mut encrypt_workspace = FourierGlweEncryptWorkspace::new(PolyLength::new(n));
+        let mut decrypt_workspace = FourierGlweDecryptWorkspace::new(PolyLength::new(n));
         let mut ciphertext = sk.encrypt(
             &message,
             &params,
@@ -224,7 +231,11 @@ fn fourier_encryption(c: &mut Criterion) {
         );
         assert_eq!(plaintext.as_ref(), message.as_ref());
         let decrypt_input = ciphertext.clone();
-        let gadget = GlevParameters::with_glwe_params(&params, LOG_BASE, Some(LEVELS));
+        let gadget = GlevParameters::with_glwe_params(
+            &params,
+            DecompositionBaseLog::new(LOG_BASE),
+            Some(DecompositionLevelCount::new(LEVELS)),
+        );
         let mut gadget_workspace = FourierGlweGadgetEncryptWorkspace::new(gadget.size());
         let mut glev = FourierGlevCiphertext::<Vec<_>>::zero(gadget.fourier_glev_len());
         let mut ggsw = FourierGgswCiphertext::<Vec<_>>::zero(gadget.fourier_ggsw_len());

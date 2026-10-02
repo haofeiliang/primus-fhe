@@ -1,6 +1,8 @@
 use num_traits::{ConstOne, ConstZero};
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable, TorusFftValue};
 use primus_integer::SignedInteger;
+use primus_lattice::PolyLength;
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{
     FourierNgswCiphertext, FourierNtruCmuxWorkspace, FourierNtruEncryptWorkspace,
@@ -61,7 +63,11 @@ fn encrypted_ternary_step_matches_phase_oracle_and_two_binary_cmuxes_without_all
     let modulus = BarrettModulus::new(Q);
     let ntt = UintNttTable::new(N.trailing_zeros(), modulus).unwrap();
     let params = NtruParameters::new(N, 16, modulus, SecretKeyDistr::SparseTernary, 0.7);
-    let gadget = NlevParameters::with_ntru_params(&params, 8, Some(6));
+    let gadget = NlevParameters::with_ntru_params(
+        &params,
+        DecompositionBaseLog::new(8),
+        Some(DecompositionLevelCount::new(6)),
+    );
     let basis = gadget.basis();
     let mut rng = StdRng::seed_from_u64(0xB702);
     let (coeff, key) = NttNtruSecretKey::generate_pair(&params, &ntt, &mut rng).unwrap();
@@ -72,8 +78,8 @@ fn encrypted_ternary_step_matches_phase_oracle_and_two_binary_cmuxes_without_all
     let input_phase = phase(input.as_ref(), coeff.as_slice());
     let secret_norm: u64 = coeff.as_slice().iter().map(|v| v.unsigned_abs()).sum();
     let mut controls = vec![0; 2 * gadget.nlev_len()];
-    let mut fused = NttNtruCmuxWorkspace::new(N, gadget.decompose_length());
-    let mut binary = NttNtruExternalProductWorkspace::new(N);
+    let mut fused = NttNtruCmuxWorkspace::new(PolyLength::new(N), gadget.decompose_length());
+    let mut binary = NttNtruExternalProductWorkspace::new(PolyLength::new(N));
     let mut output = NtruCiphertext::new(vec![Q - 1; N]);
     let mut intermediate = NtruCiphertext::<Vec<u64>>::zero(N);
     let mut reference = NtruCiphertext::<Vec<u64>>::zero(N);
@@ -198,7 +204,11 @@ fn check_fourier_step<T: TorusFftValue, Table: FftTable>() {
         SecretKeyDistr::SparseTernary,
         0.7,
     );
-    let gadget = NlevParameters::with_ntru_params(&params, 8, Some(T::BITS as usize / 8 - 1));
+    let gadget = NlevParameters::with_ntru_params(
+        &params,
+        DecompositionBaseLog::new(8),
+        Some(DecompositionLevelCount::new(T::BITS as usize / 8 - 1)),
+    );
     let basis = gadget.basis();
     let mut rng = StdRng::seed_from_u64(0xB703);
     let (coeff, key) = FourierNtruSecretKey::generate_pair(&params, &mut fft, &mut rng).unwrap();
@@ -213,7 +223,7 @@ fn check_fourier_step<T: TorusFftValue, Table: FftTable>() {
         &params,
         &mut fft,
         &mut rng,
-        &mut FourierNtruEncryptWorkspace::new(N),
+        &mut FourierNtruEncryptWorkspace::new(PolyLength::new(N)),
     )
     .write_torus_form(&mut input, &mut fft);
     let input_phase = native_phase(input.as_ref(), coeff.as_slice());
@@ -226,9 +236,9 @@ fn check_fourier_step<T: TorusFftValue, Table: FftTable>() {
     )
     .unwrap();
     let mut controls = vec![Complex64::default(); 2 * gadget.fourier_nlev_len()];
-    let mut encrypt_workspace = FourierNtruGadgetEncryptWorkspace::new(N);
-    let mut fused = FourierNtruCmuxWorkspace::new(N, gadget.decompose_length());
-    let mut binary = FourierNtruExternalProductWorkspace::new(N);
+    let mut encrypt_workspace = FourierNtruGadgetEncryptWorkspace::new(PolyLength::new(N));
+    let mut fused = FourierNtruCmuxWorkspace::new(PolyLength::new(N), gadget.decompose_length());
+    let mut binary = FourierNtruExternalProductWorkspace::new(PolyLength::new(N));
     let mut output = NtruCiphertext::new(vec![T::MAX; N]);
     let mut intermediate = NtruCiphertext::<Vec<T>>::zero(N);
     let mut reference = NtruCiphertext::<Vec<T>>::zero(N);
@@ -284,7 +294,8 @@ fn check_fourier_step<T: TorusFftValue, Table: FftTable>() {
         let residual_bound = secret_norm * basis.approximate_error_bound();
         let noise_bound = T::try_from(N).unwrap()
             * (basis.basis_value() / T::TWO)
-            * (control_error_sum + secret_norm * T::try_from(gadget.decompose_length()).unwrap());
+            * (control_error_sum
+                + secret_norm * T::try_from(gadget.decompose_length().get()).unwrap());
         let fused_bound = residual_bound + noise_bound + secret_norm * floating_budget;
         let binary_bound = T::TWO * (residual_bound + secret_norm * floating_budget) + noise_bound;
         let (positive, negative) = controls.split_at(gadget.fourier_nlev_len());

@@ -76,6 +76,7 @@ pub use primus_lattice::workspace::{
     FourierNtruCmuxWorkspace, FourierNtruExternalProductWorkspace, NttNtruCmuxWorkspace,
     NttNtruExternalProductWorkspace,
 };
+pub use primus_lattice::{LweDimension, PolyLength};
 pub use scheme_switch::{FourierNtruSchemeSwitchKey, NttNtruSchemeSwitchKey};
 pub use secret_key::{
     FourierNtruDecryptWorkspace, FourierNtruEncryptWorkspace, FourierNtruGadgetEncryptWorkspace,

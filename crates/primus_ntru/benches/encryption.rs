@@ -1,5 +1,7 @@
 //! Ordinary encrypt_to and undecoded phase_to; setup and allocations are excluded.
 //! cargo bench -p primus_ntru --bench encryption
+
+use primus_lattice::PolyLength;
 use std::hint::black_box;
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
@@ -58,8 +60,8 @@ fn fourier<Table: FftTable>(c: &mut Criterion, n: usize, backend: &str) {
     let mut fft = FftEngine::new(&table);
     let mut rng = StdRng::seed_from_u64(42);
     let (_, key) = FourierNtruSecretKey::generate_pair(&parameters, &mut fft, &mut rng).unwrap();
-    let mut encrypt = FourierNtruEncryptWorkspace::new(n);
-    let mut decrypt = FourierNtruDecryptWorkspace::new(n);
+    let mut encrypt = FourierNtruEncryptWorkspace::new(PolyLength::new(n));
+    let mut decrypt = FourierNtruDecryptWorkspace::new(PolyLength::new(n));
     let message = Polynomial::new((0..n).map(|i| i as u64 % 16).collect::<Vec<_>>());
     let input = key.encrypt(&message, &parameters, &mut fft, &mut rng, &mut encrypt);
     let mut output = input.clone();

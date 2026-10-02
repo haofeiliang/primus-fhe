@@ -4,9 +4,9 @@ use std::hint::black_box;
 mod support;
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
-use primus_decompose::big_integer::BigUintApproxSignedBasis;
+use primus_decompose::{DecompositionBaseLog, big_integer::BigUintApproxSignedBasis};
 use primus_lattice::{
-    GlweSize, RnsGadgetSize, RnsGlweSize,
+    GlweDimension, GlweSize, PolyLength, RnsGadgetSize, RnsGlweSize,
     ggsw::CrtGgsw,
     glwe::{CrtGlwe, DcrtGlwe},
     workspace::DcrtGlevMulWorkspace,
@@ -22,9 +22,19 @@ fn benchmarks(c: &mut Criterion) {
         let moduli: Vec<_> = qs.iter().copied().map(BarrettModulus::new).collect();
         let base = RNSBase::new(&moduli).unwrap();
         let table = U64DcrtTable::new(log_n, &moduli).unwrap();
-        let basis = BigUintApproxSignedBasis::new(base.moduli_product(), log_b, None);
+        let basis = BigUintApproxSignedBasis::new(
+            base.moduli_product(),
+            DecompositionBaseLog::new(log_b),
+            None,
+        );
         let levels = basis.decompose_length();
-        let size = RnsGadgetSize::new(RnsGlweSize::new(GlweSize::new(dimension, n), count), levels);
+        let size = RnsGadgetSize::new(
+            RnsGlweSize::new(
+                GlweSize::new(GlweDimension::new(dimension), PolyLength::new(n)),
+                count,
+            ),
+            levels,
+        );
         let glwe_len = size.rns_glwe_size().rns_glwe_len();
         let key = CrtGgsw::new(support::coefficients(size.rns_ggsw_len(), n, qs, 17))
             .into_ntt_form(&table);
@@ -32,7 +42,8 @@ fn benchmarks(c: &mut Criterion) {
         let mut output = DcrtGlwe::new(vec![0; glwe_len]);
         let mut workspace = DcrtGlevMulWorkspace::new(size, &base);
         let mut group = c.benchmark_group(format!(
-            "rns/ggsw/u64/n{n}/k{dimension}/m{count}/logb{log_b}/l{levels}"
+            "rns/ggsw/u64/n{n}/k{dimension}/m{count}/logb{log_b}/l{}",
+            levels.get()
         ));
         group.throughput(Throughput::Elements(glwe_len as u64));
         group.bench_function("crt_to_dcrt", |b| {

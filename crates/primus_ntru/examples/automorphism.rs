@@ -1,5 +1,7 @@
 //! Coefficient/NTT key pair and an automorphism under the original secret.
 //! These are functional example parameters, not a security recommendation.
+
+use primus_decompose::DecompositionBaseLog;
 use primus_modulus::BarrettModulus;
 use primus_ntru::{
     NlevParameters, NtruParameters, NttNtruAutomorphismKey, NttNtruAutomorphismWorkspace,
@@ -17,7 +19,8 @@ fn main() {
     let mut rng = StdRng::seed_from_u64(42);
     let (coeff_secret, secret) =
         NttNtruSecretKey::generate_pair(&parameters, &table, &mut rng).unwrap();
-    let key_parameters = NlevParameters::with_ntru_params(&parameters, 3, None);
+    let key_parameters =
+        NlevParameters::with_ntru_params(&parameters, DecompositionBaseLog::new(3), None);
     let auto = NttNtruAutomorphismKey::generate(
         3,
         &coeff_secret,
@@ -25,7 +28,7 @@ fn main() {
         &key_parameters,
         &table,
         &mut rng,
-        &mut NttNtruGadgetEncryptWorkspace::new(N),
+        &mut NttNtruGadgetEncryptWorkspace::new(parameters.poly_length()),
     );
 
     let mut message = Polynomial::<Vec<u32>>::zero(N);
@@ -34,7 +37,7 @@ fn main() {
     message.as_mut()[N / 2] = 3;
     let input = secret.encrypt(&message, &parameters, &table, &mut rng);
     let mut output = NttNtruCiphertext::<Vec<u32>>::zero(N);
-    let mut workspace = NttNtruAutomorphismWorkspace::new(N);
+    let mut workspace = NttNtruAutomorphismWorkspace::new(parameters.poly_length());
     auto.apply_ntt_to(&input, &mut output, modulus, &table, &mut workspace);
 
     // X^(3N/2) = -X^(N/2). The output is still under the original secret.

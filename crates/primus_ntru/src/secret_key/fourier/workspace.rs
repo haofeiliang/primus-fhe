@@ -2,7 +2,7 @@
 
 use primus_fft::Complex64;
 use primus_integer::FheUint;
-use primus_lattice::{MAX_POLY_LENGTH, MIN_POLY_LENGTH};
+use primus_lattice::PolyLength;
 use primus_poly::{FourierPolynomialOwned, PolynomialOwned};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
@@ -15,13 +15,10 @@ pub struct FourierNtruEncryptWorkspace<T: FheUint> {
 
 impl<T: FheUint> FourierNtruEncryptWorkspace<T> {
     /// Creates an encryption workspace for polynomials of length `poly_length`.
-    pub fn new(poly_length: usize) -> Self {
-        assert!(
-            (MIN_POLY_LENGTH..=MAX_POLY_LENGTH).contains(&poly_length)
-                && poly_length.is_power_of_two()
-        );
+    #[must_use]
+    pub fn new(poly_length: PolyLength) -> Self {
         Self {
-            coeff: PolynomialOwned::zero(poly_length),
+            coeff: PolynomialOwned::zero(poly_length.get()),
         }
     }
 }
@@ -50,13 +47,10 @@ pub struct FourierNtruDecryptWorkspace {
 
 impl FourierNtruDecryptWorkspace {
     /// Creates a decryption workspace for polynomials of length `poly_length`.
-    pub fn new(poly_length: usize) -> Self {
-        assert!(
-            (MIN_POLY_LENGTH..=MAX_POLY_LENGTH).contains(&poly_length)
-                && poly_length.is_power_of_two()
-        );
+    #[must_use]
+    pub fn new(poly_length: PolyLength) -> Self {
         Self {
-            phase: FourierPolynomialOwned::zero(poly_length / 2),
+            phase: FourierPolynomialOwned::zero(poly_length.fourier_poly_len()),
         }
     }
 }
@@ -90,11 +84,11 @@ pub struct FourierNtruGadgetEncryptWorkspace<T: FheUint> {
 
 impl<T: FheUint> FourierNtruGadgetEncryptWorkspace<T> {
     /// Creates a generation workspace for polynomials of length `poly_length`.
-    pub fn new(poly_length: usize) -> Self {
-        debug_assert!(poly_length >= 2 && poly_length.is_power_of_two());
+    #[must_use]
+    pub fn new(poly_length: PolyLength) -> Self {
         Self {
-            encoded: PolynomialOwned::zero(poly_length),
-            transformed: vec![Complex64::default(); poly_length / 2],
+            encoded: PolynomialOwned::zero(poly_length.get()),
+            transformed: vec![Complex64::default(); poly_length.fourier_poly_len()],
             ntru: FourierNtruEncryptWorkspace::new(poly_length),
         }
     }

@@ -1,11 +1,13 @@
 //! Compare sequential and two-worker expansion on the same keys and ciphertexts.
 //! N=32 retains a multi-level tree; two ~50-bit limbs retain wide CRT arithmetic.
+use primus_decompose::DecompositionBaseLog;
 use primus_glwe_rns::{
     CrtGlevParameters, CrtGlweExpandCoeffKey, CrtGlweExpandCoeffSyncPool,
     CrtGlweExpandCoeffWorkspace, CrtGlweParameters, DcrtGadgetDomain, DcrtGlweCiphertext,
     DcrtGlweDecryptWorkspace, DcrtGlweExpandCoeffKey, DcrtGlweExpandCoeffSyncPool,
     DcrtGlweExpandCoeffWorkspace, DcrtGlweSecretKey, GlweSecretKey, SecretKeyDistr,
 };
+use primus_lattice::GlweDimension;
 use primus_lattice::glwe::CrtGlwe;
 use primus_modulus::BarrettModulus;
 use primus_ntt::UintDcrtTable;
@@ -38,7 +40,7 @@ fn crt_expansion_matches_parallel_and_plaintext() {
     let mut rng = StdRng::seed_from_u64(42);
 
     let glwe_params = CrtGlweParameters::new(
-        dimension,
+        GlweDimension::new(dimension),
         poly_length,
         mod_t,
         mod_gamma,
@@ -56,7 +58,8 @@ fn crt_expansion_matches_parallel_and_plaintext() {
     );
     let dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&sk, &table);
 
-    let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, 20, None);
+    let glev_params =
+        CrtGlevParameters::with_glwe_params(&glwe_params, DecompositionBaseLog::new(20), None);
     let domain = DcrtGadgetDomain::try_new(&glev_params, &table).unwrap();
 
     let expand_key = CrtGlweExpandCoeffKey::new(&domain, &sk, &dcrt_sk, &mut rng);
@@ -168,7 +171,7 @@ fn dcrt_expansion_matches_parallel_and_plaintext() {
     let mut rng = StdRng::seed_from_u64(42);
 
     let glwe_params = CrtGlweParameters::new(
-        dimension,
+        GlweDimension::new(dimension),
         poly_length,
         mod_t,
         mod_gamma,
@@ -186,7 +189,8 @@ fn dcrt_expansion_matches_parallel_and_plaintext() {
     );
     let dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&sk, &table);
 
-    let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, 20, None);
+    let glev_params =
+        CrtGlevParameters::with_glwe_params(&glwe_params, DecompositionBaseLog::new(20), None);
     let domain = DcrtGadgetDomain::try_new(&glev_params, &table).unwrap();
 
     let expand_key = DcrtGlweExpandCoeffKey::new(&domain, &dcrt_sk, &mut rng);

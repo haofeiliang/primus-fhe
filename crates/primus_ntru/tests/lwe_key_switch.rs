@@ -1,5 +1,8 @@
 //! Independent coefficient phases, rounding and key-entry noise for NTRU -> LWE.
 
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_lattice::LweDimension;
+use primus_lattice::PolyLength;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use primus_decompose::primitive::ApproxSignedBasis;
@@ -79,7 +82,7 @@ impl<'a, T: FheUint> ReturnOracle<'a, T> {
     // Decode the stored key rows once, reusing them for every input and coefficient.
     fn new(key: &'a NtruLweKeySwitchingKey<T>, q: u128) -> Self {
         let basis = key.basis();
-        let levels = basis.decompose_length();
+        let levels = basis.decompose_length().get();
         let scalars: Vec<u128> = basis.scalar_iter().map(|v| v.as_into()).collect();
         let entries: Vec<Vec<u128>> = LweIter::new(key.as_slice(), S.len() + 1)
             .map(|row| row.as_ref().iter().map(|&v| v.as_into()).collect())
@@ -114,7 +117,7 @@ impl<'a, T: FheUint> ReturnOracle<'a, T> {
         output: &LweCiphertext<T>,
     ) {
         let q = self.q;
-        let levels = self.basis.decompose_length();
+        let levels = self.basis.decompose_length().get();
         let input_phase = ring_phase(switched, index, q);
         let scaled_phase = rounded(ring_phase(raw, index, source_q) as u128, source_q, q) as i128;
         // Each coefficient rounds within 1/2; rounding the phase adds at most 1/2.
@@ -204,7 +207,7 @@ fn check_scalar_returns<T: FheUint, M: RingContext<T>>(
 ) -> Vec<Vec<LweCiphertext<T>>> {
     let q = modulus_value::<T, _>(target);
     let oracle = ReturnOracle::new(key, q);
-    let mut workspace = NtruLweKeySwitchingWorkspace::new(F.len());
+    let mut workspace = NtruLweKeySwitchingWorkspace::new(PolyLength::new(F.len()));
     let mut output = LweCiphertext::<T>::new(vec![T::ONE; S.len() + 1]);
     let mut expected_inputs = Vec::new();
     for input in inputs {
@@ -319,13 +322,25 @@ fn check_modulus_pair<T: FheUint, Q: Modulus<ValueT = T>, M: RingContext<T>>(sou
             .collect(),
         SecretKeyDistr::UniformTernary,
     );
-    let parameters =
-        LweParameters::new(S.len(), T::TWO, target, SecretKeyDistr::UniformTernary, 0.7);
+    let parameters = LweParameters::new(
+        LweDimension::new(S.len()),
+        T::TWO,
+        target,
+        SecretKeyDistr::UniformTernary,
+        0.7,
+    );
     let inputs = coefficient_inputs(source_q, q);
-    let mut workspace = NtruLweKeySwitchingBatchWorkspace::new(F.len(), S.len());
+    let mut workspace = NtruLweKeySwitchingBatchWorkspace::new(
+        PolyLength::new(F.len()),
+        LweDimension::new(S.len()),
+    );
     let mut outputs = vec![LweCiphertext::new(vec![T::ONE; S.len() + 1]); 17];
     for level_count in [None, Some(2)] {
-        let basis = ApproxSignedBasis::new(target.explicit_value(), 4, level_count);
+        let basis = ApproxSignedBasis::new(
+            target.explicit_value(),
+            DecompositionBaseLog::new(4),
+            level_count.map(DecompositionLevelCount::new),
+        );
         let mut rng = StdRng::seed_from_u64(0x4e5452554c5745);
         let key = NtruLweKeySwitchingKey::generate(
             &secret,
@@ -337,7 +352,7 @@ fn check_modulus_pair<T: FheUint, Q: Modulus<ValueT = T>, M: RingContext<T>>(sou
         );
         assert_eq!(key.input_modulus(), source.explicit_value());
         assert_eq!(key.poly_length(), F.len());
-        assert_eq!(key.output_dimension(), S.len());
+        assert_eq!(key.output_dimension(), LweDimension::new(S.len()));
         let expected = check_scalar_returns(&key, &inputs, source_q, target);
         check_shared_input_returns(
             &key,
@@ -397,13 +412,13 @@ fn check_scalar_errors(key: &NtruLweKeySwitchingKey<u32>) {
         (4, 0, 0, 4, 65537),
         (4, 0, 3, 4, 65537),
         (4, 0, 5, 4, 65537),
-        (4, 0, 4, 3, 65537),
+        (4, 0, 4, 2, 65537),
         (4, 0, 4, 4, 65539),
     ] {
         let input = NtruCiphertext::new(vec![9u32; input_len]);
         let mut output = LweCiphertext::new(vec![17u32; output_len]);
         let before = output.as_ref().to_vec();
-        let mut workspace = NtruLweKeySwitchingWorkspace::new(scratch_len);
+        let mut workspace = NtruLweKeySwitchingWorkspace::new(PolyLength::new(scratch_len));
         assert!(
             catch_unwind(AssertUnwindSafe(|| {
                 key.key_switch_at_to(
@@ -430,7 +445,7 @@ fn check_shared_input_errors(key: &NtruLweKeySwitchingKey<u32>) {
         (4, [0, 1], vec![4, 4, 4], 4, 3, 65537),
         (4, [0, 1], vec![4, 3], 4, 3, 65537),
         (3, [0, 1], vec![4, 4], 4, 3, 65537),
-        (4, [0, 1], vec![4, 4], 3, 3, 65537),
+        (4, [0, 1], vec![4, 4], 2, 3, 65537),
         (4, [0, 1], vec![4, 4], 4, 2, 65537),
         (4, [0, 1], vec![4, 4], 4, 3, 65539),
     ] {
@@ -440,7 +455,10 @@ fn check_shared_input_errors(key: &NtruLweKeySwitchingKey<u32>) {
             .map(|len| LweCiphertext::new(vec![17u32; len]))
             .collect();
         let before = outputs.clone();
-        let mut workspace = NtruLweKeySwitchingBatchWorkspace::new(scratch_n, scratch_dimension);
+        let mut workspace = NtruLweKeySwitchingBatchWorkspace::new(
+            PolyLength::new(scratch_n),
+            LweDimension::new(scratch_dimension),
+        );
         assert!(
             catch_unwind(AssertUnwindSafe(|| key.key_switch_many_at_to(
                 &input,
@@ -480,14 +498,17 @@ fn check_streamed_errors(key: &NtruLweKeySwitchingKey<u32>) {
     for (count, last_len, scratch_n, scratch_dimension, q) in [
         (9, 4, 4, 3, 65537),
         (2, 3, 4, 3, 65537),
-        (2, 4, 3, 3, 65537),
+        (2, 4, 2, 3, 65537),
         (2, 4, 4, 2, 65537),
         (2, 4, 4, 3, 65539),
     ] {
         let mut outputs = vec![LweCiphertext::new(vec![17u32; 4]); count];
         *outputs.last_mut().unwrap() = LweCiphertext::new(vec![17; last_len]);
         let before = outputs.clone();
-        let mut workspace = NtruLweKeySwitchingBatchWorkspace::new(scratch_n, scratch_dimension);
+        let mut workspace = NtruLweKeySwitchingBatchWorkspace::new(
+            PolyLength::new(scratch_n),
+            LweDimension::new(scratch_dimension),
+        );
         assert!(
             catch_unwind(AssertUnwindSafe(|| key.key_switch_extracted_batch_to(
                 &mut outputs,
@@ -498,7 +519,8 @@ fn check_streamed_errors(key: &NtruLweKeySwitchingKey<u32>) {
         );
         assert_eq!(outputs, before);
     }
-    let mut workspace = NtruLweKeySwitchingBatchWorkspace::<u32>::new(4, 3);
+    let mut workspace =
+        NtruLweKeySwitchingBatchWorkspace::<u32>::new(PolyLength::new(4), LweDimension::new(3));
     assert!(
         catch_unwind(AssertUnwindSafe(|| {
             let _ = workspace.extracted_slot_mut(workspace.batch_capacity());
@@ -528,7 +550,7 @@ fn check_generation_errors(params: &LweParameters<u32, BarrettModulus<u32>>) {
                     UintModulus(source_q),
                     &output_key,
                     params,
-                    ApproxSignedBasis::new(Some(basis_q), 4, None),
+                    ApproxSignedBasis::new(Some(basis_q), DecompositionBaseLog::new(4), None),
                     &mut rng,
                 );
             }))
@@ -538,25 +560,31 @@ fn check_generation_errors(params: &LweParameters<u32, BarrettModulus<u32>>) {
     }
 }
 
-// Reject unusable dimensions and overflowing tile lengths at construction.
+// A valid dimension can still overflow the batch tile length.
 fn check_workspace_errors() {
-    assert!(catch_unwind(|| NtruLweKeySwitchingWorkspace::<u32>::new(0)).is_err());
-    assert!(catch_unwind(|| NtruLweKeySwitchingWorkspace::<u32>::new(usize::MAX)).is_err());
-    for (n, dimension) in [(0, 3), (4, 0), (usize::MAX, 3), (4, usize::MAX / 8)] {
-        assert!(
-            catch_unwind(|| NtruLweKeySwitchingBatchWorkspace::<u32>::new(n, dimension)).is_err()
-        );
-    }
+    assert!(
+        catch_unwind(|| NtruLweKeySwitchingBatchWorkspace::<u32>::new(
+            PolyLength::new(4),
+            LweDimension::new(usize::MAX / 8)
+        ))
+        .is_err()
+    );
 }
 
 // One small key serves every evaluation boundary; invalid generation preserves RNG state.
 #[test]
 fn validation_precedes_output_writes_and_key_sampling() {
     let modulus = BarrettModulus::new(65537u32);
-    let params = LweParameters::new(3, 2, modulus, SecretKeyDistr::UniformBinary, 0.7);
+    let params = LweParameters::new(
+        LweDimension::new(3),
+        2,
+        modulus,
+        SecretKeyDistr::UniformBinary,
+        0.7,
+    );
     let secret = NtruSecretKey::new(vec![1i32, -1, 0, 1], SecretKeyDistr::UniformTernary);
     let target = LweSecretKey::new(vec![1u32, 0, 1], SecretKeyDistr::UniformBinary);
-    let basis = ApproxSignedBasis::new(Some(65537), 4, None);
+    let basis = ApproxSignedBasis::new(Some(65537), DecompositionBaseLog::new(4), None);
     let mut rng = StdRng::seed_from_u64(10);
     let key = NtruLweKeySwitchingKey::generate(
         &secret,
@@ -581,7 +609,7 @@ fn check_encrypted_return<T: FheUint, Q: Modulus<ValueT = T>>(
 ) {
     let target = BarrettModulus::new(T::as_from(65537u32));
     let params = LweParameters::new(
-        7,
+        LweDimension::new(7),
         T::as_from(16u32),
         target,
         SecretKeyDistr::fixed_hamming_weight_binary(7, 2),
@@ -594,11 +622,11 @@ fn check_encrypted_return<T: FheUint, Q: Modulus<ValueT = T>>(
         source,
         &output_secret,
         &params,
-        ApproxSignedBasis::new(target.explicit_value(), 4, None),
+        ApproxSignedBasis::new(target.explicit_value(), DecompositionBaseLog::new(4), None),
         &mut rng,
     );
-    let mut workspace = NtruLweKeySwitchingWorkspace::new(secret.poly_length());
-    let mut output = LweCiphertext::zero(params.dimension());
+    let mut workspace = NtruLweKeySwitchingWorkspace::new(PolyLength::new(secret.poly_length()));
+    let mut output = LweCiphertext::zero(params.dimension().get());
     for index in [0, 31, 3, 16, 0] {
         let (_, allocations) =
             measure(|| key.key_switch_at_to(input, index, &mut output, target, &mut workspace));
@@ -666,7 +694,7 @@ fn check_fourier_encryption<T: primus_fft::TorusFftValue, Table: primus_fft::Fft
             &params,
             &mut fft,
             &mut rng,
-            &mut FourierNtruEncryptWorkspace::new(32),
+            &mut FourierNtruEncryptWorkspace::new(PolyLength::new(32)),
         )
         .write_torus_form(&mut input, &mut fft);
     check_encrypted_return(&input, &secret, modulus);

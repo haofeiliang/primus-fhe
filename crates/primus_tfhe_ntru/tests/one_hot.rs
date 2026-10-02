@@ -1,3 +1,5 @@
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_lwe::LweDimension;
 use primus_lwe::LweParameters;
 use primus_modulus::{BarrettModulus, NativeModulus, PowOf2Modulus};
 use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
@@ -17,18 +19,18 @@ fn parameters<M: RingContext<u64>>(
 ) {
     let ring = NtruParameters::new(64, t, modulus, SecretKeyDistr::SparseTernary, 0.7);
     let full = DecompositionConfig {
-        log_basis: 3,
+        log_basis: DecompositionBaseLog::new(3),
         level_count: None,
     };
     let tfhe = TfheParameters::try_new(
         LweParameters::new(
-            4,
+            LweDimension::new(4),
             t,
             PowOf2Modulus::new(1 << 20),
             SecretKeyDistr::UniformBinary,
             0.7,
         ),
-        NlevParameters::with_ntru_params(&ring, 3, None),
+        NlevParameters::with_ntru_params(&ring, DecompositionBaseLog::new(3), None),
         full,
         0.7,
     )
@@ -37,8 +39,8 @@ fn parameters<M: RingContext<u64>>(
         &tfhe,
         CircuitBootstrapConfig {
             output: DecompositionConfig {
-                log_basis: 3,
-                level_count: Some(levels),
+                log_basis: DecompositionBaseLog::new(3),
+                level_count: Some(DecompositionLevelCount::new(levels)),
             },
             trace: full,
             trace_noise_standard_deviation: 0.7,

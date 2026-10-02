@@ -1,4 +1,6 @@
 //! Switch between independent keys, including a change in GLWE mask count.
+
+use primus_decompose::DecompositionBaseLog;
 use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_glwe::{
     FourierGlweDecryptWorkspace, FourierGlweEncryptWorkspace, FourierGlweGadgetEncryptWorkspace,
@@ -7,6 +9,8 @@ use primus_glwe::{
     NttGlweGadgetEncryptWorkspace, NttGlweKeySwitchingKey, NttGlweKeySwitchingWorkspace,
     NttGlweSecretKey, SecretKeyDistr,
 };
+use primus_lattice::GlweDimension;
+use primus_lattice::PolyLength;
 use primus_lattice::glwe::{FourierGlweOwned, Glwe, NttGlwe};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntt::{NttTable, UintNttTable};
@@ -32,7 +36,7 @@ fn ntt_glwe_key_switches_for_equal_and_smaller_output_dimensions() {
     let ntt = UintNttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
     let mut rng = StdRng::seed_from_u64(42);
     let input_params = GlweParameters::new(
-        INPUT_DIMENSION,
+        GlweDimension::new(INPUT_DIMENSION),
         POLY_LENGTH,
         PLAINTEXT_MODULUS,
         modulus,
@@ -49,7 +53,7 @@ fn ntt_glwe_key_switches_for_equal_and_smaller_output_dimensions() {
 
     for output_dimension in [INPUT_DIMENSION, 1] {
         let output_params = GlweParameters::new(
-            output_dimension,
+            GlweDimension::new(output_dimension),
             POLY_LENGTH,
             PLAINTEXT_MODULUS,
             modulus,
@@ -73,8 +77,9 @@ fn ntt_glwe_key_switches_for_equal_and_smaller_output_dimensions() {
             generated_output_key
         };
         let output_key = NttGlweSecretKey::from_coeff_secret_key(&output_coeff_key, &ntt);
-        let glev = GlevParameters::with_glwe_params(&output_params, 8, None);
-        let parameters = GlweKeySwitchingParameters::new(INPUT_DIMENSION, glev);
+        let glev =
+            GlevParameters::with_glwe_params(&output_params, DecompositionBaseLog::new(8), None);
+        let parameters = GlweKeySwitchingParameters::new(GlweDimension::new(INPUT_DIMENSION), glev);
         let mut encrypt_workspace = NttGlweGadgetEncryptWorkspace::new(parameters.output().size());
         let key = NttGlweKeySwitchingKey::generate(
             &input_coeff_key,
@@ -104,7 +109,7 @@ fn fourier_glwe_key_switches_for_equal_and_smaller_output_dimensions() {
     let mut fft = FftEngine::new(&table);
     let mut rng = StdRng::seed_from_u64(42);
     let input_params = GlweParameters::new(
-        INPUT_DIMENSION,
+        GlweDimension::new(INPUT_DIMENSION),
         POLY_LENGTH,
         PLAINTEXT_MODULUS,
         NativeModulus::new(),
@@ -116,7 +121,7 @@ fn fourier_glwe_key_switches_for_equal_and_smaller_output_dimensions() {
     let message_values = plaintext();
     let message = Polynomial::new(message_values.clone());
     let mut encrypted = FourierGlweOwned::zero(input_params.fourier_glwe_len());
-    let mut glwe_encrypt_workspace = FourierGlweEncryptWorkspace::new(POLY_LENGTH);
+    let mut glwe_encrypt_workspace = FourierGlweEncryptWorkspace::new(PolyLength::new(POLY_LENGTH));
     input_key.encrypt_to(
         &message,
         &mut encrypted,
@@ -130,7 +135,7 @@ fn fourier_glwe_key_switches_for_equal_and_smaller_output_dimensions() {
 
     for output_dimension in [INPUT_DIMENSION, 1] {
         let output_params = GlweParameters::new(
-            output_dimension,
+            GlweDimension::new(output_dimension),
             POLY_LENGTH,
             PLAINTEXT_MODULUS,
             NativeModulus::new(),
@@ -152,8 +157,9 @@ fn fourier_glwe_key_switches_for_equal_and_smaller_output_dimensions() {
             generated_output_key
         };
         let output_key = FourierGlweSecretKey::from_coeff_secret_key(&output_coeff_key, &mut fft);
-        let glev = GlevParameters::with_glwe_params(&output_params, 8, None);
-        let parameters = GlweKeySwitchingParameters::new(INPUT_DIMENSION, glev);
+        let glev =
+            GlevParameters::with_glwe_params(&output_params, DecompositionBaseLog::new(8), None);
+        let parameters = GlweKeySwitchingParameters::new(GlweDimension::new(INPUT_DIMENSION), glev);
         let mut encrypt_workspace =
             FourierGlweGadgetEncryptWorkspace::new(parameters.output().size());
         let key = FourierGlweKeySwitchingKey::generate(
@@ -169,7 +175,7 @@ fn fourier_glwe_key_switches_for_equal_and_smaller_output_dimensions() {
         let switched = key.key_switch(&input, &mut fft, &mut workspace);
         let mut switched_fourier = FourierGlweOwned::zero(output_params.fourier_glwe_len());
         switched.write_fourier_form(&mut switched_fourier, &mut fft);
-        let mut decrypt_workspace = FourierGlweDecryptWorkspace::new(POLY_LENGTH);
+        let mut decrypt_workspace = FourierGlweDecryptWorkspace::new(PolyLength::new(POLY_LENGTH));
         assert_eq!(
             output_key
                 .decrypt(

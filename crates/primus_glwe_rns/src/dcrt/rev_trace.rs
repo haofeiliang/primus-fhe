@@ -33,7 +33,7 @@ impl<T: FheUint> DcrtGlweRevTraceKey<T> {
         Table: NttTable<ValueT = T>,
     {
         let params = domain.parameters();
-        let log_n = params.poly_length().trailing_zeros();
+        let log_n = params.poly_length().log_n();
 
         // Reversed order: degrees 3, 5, 9, ..., 2^logN + 1
         let auto_keys: Vec<DcrtGlweAutoKey<T>> = (1..=log_n)
@@ -83,7 +83,7 @@ impl<T: FheUint> DcrtGlweRevTraceKey<T> {
         B: DataMut<Elem = T>,
     {
         let params = domain.parameters();
-        let poly_length = params.poly_length();
+        let poly_length = params.poly_length().get();
         let rns_poly_len = params.rns_poly_len();
         let moduli = params.cipher_moduli();
         let moduli_value = params.cipher_moduli_value();

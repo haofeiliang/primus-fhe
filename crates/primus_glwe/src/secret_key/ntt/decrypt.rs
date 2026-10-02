@@ -32,7 +32,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        let poly_length = self.size.poly_length();
+        let poly_length = self.size.poly_length().get();
         assert_eq!(
             ntt_table.poly_length(),
             poly_length,
@@ -90,7 +90,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         Table: NttTable<ValueT = T>,
         A: Data<Elem = T>,
     {
-        let mut output = PolynomialOwned::zero(self.size.poly_length());
+        let mut output = PolynomialOwned::zero(self.size.poly_length().get());
         self.decrypt_to(input, &mut output, params, ntt_table);
         output
     }
@@ -98,7 +98,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     /// Decrypts an NTT GLWE ciphertext into `output`.
     ///
     /// Inherits [`Self::phase_to`]'s representation requirements. The ciphertext
-    /// has `params.glwe_len()` values; output has `params.poly_length()` values.
+    /// has `params.glwe_len()` values; output has `params.poly_length().get()` values.
     ///
     /// # Panics
     ///
@@ -197,10 +197,10 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     {
         assert_eq!(self.size, params.size(), "GLWE parameter layout mismatch");
         let modulus = params.cipher_modulus();
-        let mut message = PolynomialOwned::zero(self.size.poly_length());
+        let mut message = PolynomialOwned::zero(self.size.poly_length().get());
         self.phase_to(input, &mut message, modulus, ntt_table);
 
-        let mut noise = PolynomialOwned::zero(self.size.poly_length());
+        let mut noise = PolynomialOwned::zero(self.size.poly_length().get());
         message
             .iter_mut()
             .zip(noise.iter_mut())

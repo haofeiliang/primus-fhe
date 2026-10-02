@@ -113,14 +113,16 @@ where
         if !parameters.is_compatible(tfhe) {
             return Err(TfheEvaluationError::IncompatibleCircuitBootstrapParameters);
         }
-        let n = tfhe.poly_length();
+        let poly_length = tfhe.poly_length();
+        let n = poly_length.get();
         let modulus = tfhe.accumulator_ntru().cipher_modulus();
-        let domain_len = primus_tfhe::front_half_domain_len(tfhe.plain_modulus_value(), n)?;
+        let domain_len =
+            primus_tfhe::front_half_domain_len(tfhe.plain_modulus_value(), poly_length)?;
         let scalars: Vec<T> = parameters.output_basis().scalar_iter().collect();
         let lookup_table = InterleavedLookupTable::try_new(
             domain_len,
-            n,
-            parameters.output_basis().decompose_length(),
+            poly_length,
+            parameters.output_basis().decompose_length().get(),
             tfhe.plain_modulus_value(),
             tfhe.external_lwe().cipher_modulus(),
             modulus,
@@ -171,7 +173,7 @@ where
         C: Data<Elem = T>,
         D: DataMut<Elem = T>,
     {
-        let ring_len = self.pbs.context.parameters().poly_length();
+        let ring_len = self.pbs.context.parameters().poly_length().get();
         assert_eq!(
             (
                 control.as_ref().len(),
@@ -222,7 +224,7 @@ where
         B: Data<Elem = T>,
         C: DataMut<Elem = T>,
     {
-        let ring_len = self.pbs.context.parameters().poly_length();
+        let ring_len = self.pbs.context.parameters().poly_length().get();
         assert_eq!(
             (
                 control.as_ref().len(),
@@ -280,7 +282,7 @@ where
         let tfhe = self.pbs.context.parameters();
         assert_eq!(
             input.dimension(),
-            tfhe.external_lwe_dimension(),
+            tfhe.external_lwe_dimension().get(),
             "circuit-bootstrap input dimension mismatch"
         );
         assert_eq!(
@@ -306,7 +308,8 @@ where
                 self.circuit_key
                     .parameters()
                     .output_basis()
-                    .decompose_length(),
+                    .decompose_length()
+                    .get(),
                 self.projected.as_mut(),
                 tfhe.accumulator_ntru().cipher_modulus(),
                 self.pbs.context.table(),

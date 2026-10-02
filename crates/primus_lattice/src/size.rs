@@ -4,18 +4,12 @@
 //! range, and flattened-length overflow. They do not establish transform-table
 //! availability, modulus suitability, gadget weights, or encryption security.
 
-/// Smallest supported polynomial length for GLWE-family layouts.
-pub const MIN_POLY_LENGTH: usize = 2;
-
-/// Largest supported polynomial length for GLWE-family layouts.
-pub const MAX_POLY_LENGTH: usize = 1 << 17;
+use crate::{GlweDimension, MAX_POLY_LENGTH, MIN_POLY_LENGTH, PolyLength};
+use primus_decompose::DecompositionLevelCount;
 
 /// An error produced while constructing a checked GLWE-family size.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum GlweSizeError {
-    /// The GLWE mask dimension is zero.
-    #[error("GLWE dimension must be non-zero")]
-    ZeroDimension,
     /// The polynomial length is outside the supported power-of-two range.
     #[error(
         "GLWE polynomial length must be a power of two in {MIN_POLY_LENGTH}..={MAX_POLY_LENGTH}"
@@ -24,9 +18,6 @@ pub enum GlweSizeError {
     /// An RNS layout has no moduli.
     #[error("RNS modulus count must be non-zero")]
     ZeroModuliCount,
-    /// A gadget layout has no decomposition levels.
-    #[error("gadget decomposition length must be non-zero")]
-    ZeroDecomposeLength,
     /// A derived flattened length does not fit in `usize`.
     #[error("{0} length overflow")]
     LengthOverflow(&'static str),
@@ -38,10 +29,11 @@ pub enum GlweSizeError {
 /// body polynomial, each with `poly_length` coefficients. Fourier-domain
 /// lengths are derived by halving the corresponding ordinary length and are
 /// not stored separately.
+/// The shared [`PolyLength`] checks the supported power-of-two range.
 #[derive(Debug, Clone, Copy, Eq)]
 pub struct GlweSize {
-    dimension: usize,
-    poly_length: usize,
+    dimension: GlweDimension,
+    poly_length: PolyLength,
     mask_len: usize,
     glwe_len: usize,
 }
@@ -58,28 +50,20 @@ impl GlweSize {
     ///
     /// # Errors
     ///
-    /// Returns an error for a zero dimension, an invalid polynomial length,
-    /// or an overflowing flattened length.
-    pub fn try_new(dimension: usize, poly_length: usize) -> Result<Self, GlweSizeError> {
-        if dimension == 0 {
-            return Err(GlweSizeError::ZeroDimension);
-        }
-        if !(MIN_POLY_LENGTH..=MAX_POLY_LENGTH).contains(&poly_length)
-            || !poly_length.is_power_of_two()
-        {
-            return Err(GlweSizeError::InvalidPolynomialLength);
-        }
-
-        let component_count = dimension
-            .checked_add(1)
-            .ok_or(GlweSizeError::LengthOverflow("GLWE component"))?;
+    /// Returns an error for an overflowing flattened length.
+    /// The polynomial length is already checked by [`PolyLength`].
+    pub fn try_new(
+        dimension: GlweDimension,
+        poly_length: PolyLength,
+    ) -> Result<Self, GlweSizeError> {
         let mask_len = dimension
-            .checked_mul(poly_length)
+            .get()
+            .checked_mul(poly_length.get())
             .ok_or(GlweSizeError::LengthOverflow("GLWE mask"))?;
-        let glwe_len = component_count
-            .checked_mul(poly_length)
+        let glwe_len = dimension
+            .component_count()
+            .checked_mul(poly_length.get())
             .ok_or(GlweSizeError::LengthOverflow("GLWE ciphertext"))?;
-
         Ok(Self {
             dimension,
             poly_length,
@@ -92,24 +76,23 @@ impl GlweSize {
     ///
     /// # Panics
     ///
-    /// Panics on any invalid count, polynomial size, or length overflow reported
-    /// by [`Self::try_new`].
+    /// Panics on length overflow reported by [`Self::try_new`].
     #[must_use]
-    pub fn new(dimension: usize, poly_length: usize) -> Self {
+    pub fn new(dimension: GlweDimension, poly_length: PolyLength) -> Self {
         Self::try_new(dimension, poly_length).unwrap_or_else(|error| panic!("{error}"))
     }
 
     /// Returns the number of mask polynomials.
     #[must_use]
     #[inline]
-    pub const fn dimension(self) -> usize {
+    pub const fn dimension(self) -> GlweDimension {
         self.dimension
     }
 
     /// Returns the number of coefficients in each polynomial.
     #[must_use]
     #[inline]
-    pub const fn poly_length(self) -> usize {
+    pub const fn poly_length(self) -> PolyLength {
         self.poly_length
     }
 
@@ -117,14 +100,14 @@ impl GlweSize {
     #[must_use]
     #[inline]
     pub const fn fourier_poly_len(self) -> usize {
-        self.poly_length >> 1
+        self.poly_length.fourier_poly_len()
     }
 
     /// Returns the number of mask and body polynomials combined.
     #[must_use]
     #[inline]
     pub const fn component_count(self) -> usize {
-        self.dimension + 1
+        self.dimension.component_count()
     }
 
     /// Returns the flattened mask length.
@@ -187,10 +170,12 @@ impl RnsGlweSize {
 
         let rns_poly_len = glwe_size
             .poly_length()
+            .get()
             .checked_mul(moduli_count)
             .ok_or(GlweSizeError::LengthOverflow("RNS polynomial"))?;
         let rns_mask_len = glwe_size
             .dimension()
+            .get()
             .checked_mul(rns_poly_len)
             .ok_or(GlweSizeError::LengthOverflow("RNS GLWE mask"))?;
         let rns_glwe_len = rns_mask_len
@@ -210,8 +195,7 @@ impl RnsGlweSize {
     ///
     /// # Panics
     ///
-    /// Panics on any invalid count, polynomial size, or length overflow reported
-    /// by [`Self::try_new`].
+    /// Panics on a zero modulus count or length overflow reported by [`Self::try_new`].
     #[must_use]
     pub fn new(glwe_size: GlweSize, moduli_count: usize) -> Self {
         Self::try_new(glwe_size, moduli_count).unwrap_or_else(|error| panic!("{error}"))
@@ -227,14 +211,14 @@ impl RnsGlweSize {
     /// Returns the number of mask polynomials.
     #[must_use]
     #[inline]
-    pub const fn dimension(self) -> usize {
+    pub const fn dimension(self) -> GlweDimension {
         self.glwe_size.dimension()
     }
 
     /// Returns the polynomial length for one modulus limb.
     #[must_use]
     #[inline]
-    pub const fn poly_length(self) -> usize {
+    pub const fn poly_length(self) -> PolyLength {
         self.glwe_size.poly_length()
     }
 
@@ -271,7 +255,7 @@ impl RnsGlweSize {
 #[derive(Debug, Clone, Copy, Eq)]
 pub struct GadgetSize {
     glwe_size: GlweSize,
-    decompose_length: usize,
+    decompose_length: DecompositionLevelCount,
     glev_len: usize,
     ggsw_len: usize,
 }
@@ -288,14 +272,14 @@ impl GadgetSize {
     ///
     /// # Errors
     ///
-    /// Returns an error for a zero decomposition length or a derived length that
+    /// Returns an error for a derived length that
     /// does not fit in `usize`.
-    pub fn try_new(glwe_size: GlweSize, decompose_length: usize) -> Result<Self, GlweSizeError> {
-        if decompose_length == 0 {
-            return Err(GlweSizeError::ZeroDecomposeLength);
-        }
-
+    pub fn try_new(
+        glwe_size: GlweSize,
+        decompose_length: DecompositionLevelCount,
+    ) -> Result<Self, GlweSizeError> {
         let glev_len = decompose_length
+            .get()
             .checked_mul(glwe_size.glwe_len())
             .ok_or(GlweSizeError::LengthOverflow("GLev ciphertext"))?;
         let ggsw_len = glwe_size
@@ -315,10 +299,9 @@ impl GadgetSize {
     ///
     /// # Panics
     ///
-    /// Panics on any invalid count, polynomial size, or length overflow reported
-    /// by [`Self::try_new`].
+    /// Panics on length overflow reported by [`Self::try_new`].
     #[must_use]
-    pub fn new(glwe_size: GlweSize, decompose_length: usize) -> Self {
+    pub fn new(glwe_size: GlweSize, decompose_length: DecompositionLevelCount) -> Self {
         Self::try_new(glwe_size, decompose_length).unwrap_or_else(|error| panic!("{error}"))
     }
 
@@ -332,7 +315,7 @@ impl GadgetSize {
     /// Returns the number of decomposition levels.
     #[must_use]
     #[inline]
-    pub const fn decompose_length(self) -> usize {
+    pub const fn decompose_length(self) -> DecompositionLevelCount {
         self.decompose_length
     }
 
@@ -376,7 +359,7 @@ impl GadgetSize {
 #[derive(Debug, Clone, Copy, Eq)]
 pub struct RnsGadgetSize {
     rns_glwe_size: RnsGlweSize,
-    decompose_length: usize,
+    decompose_length: DecompositionLevelCount,
     rns_glev_len: usize,
     rns_ggsw_len: usize,
 }
@@ -393,17 +376,14 @@ impl RnsGadgetSize {
     ///
     /// # Errors
     ///
-    /// Returns an error for a zero decomposition length or a derived length that
+    /// Returns an error for a derived length that
     /// does not fit in `usize`.
     pub fn try_new(
         rns_glwe_size: RnsGlweSize,
-        decompose_length: usize,
+        decompose_length: DecompositionLevelCount,
     ) -> Result<Self, GlweSizeError> {
-        if decompose_length == 0 {
-            return Err(GlweSizeError::ZeroDecomposeLength);
-        }
-
         let rns_glev_len = decompose_length
+            .get()
             .checked_mul(rns_glwe_size.rns_glwe_len())
             .ok_or(GlweSizeError::LengthOverflow("RNS GLev ciphertext"))?;
         let rns_ggsw_len = rns_glwe_size
@@ -424,10 +404,9 @@ impl RnsGadgetSize {
     ///
     /// # Panics
     ///
-    /// Panics on any invalid count, polynomial size, or length overflow reported
-    /// by [`Self::try_new`].
+    /// Panics on length overflow reported by [`Self::try_new`].
     #[must_use]
-    pub fn new(rns_glwe_size: RnsGlweSize, decompose_length: usize) -> Self {
+    pub fn new(rns_glwe_size: RnsGlweSize, decompose_length: DecompositionLevelCount) -> Self {
         Self::try_new(rns_glwe_size, decompose_length).unwrap_or_else(|error| panic!("{error}"))
     }
 
@@ -441,7 +420,7 @@ impl RnsGadgetSize {
     /// Returns the number of decomposition levels.
     #[must_use]
     #[inline]
-    pub const fn decompose_length(self) -> usize {
+    pub const fn decompose_length(self) -> DecompositionLevelCount {
         self.decompose_length
     }
 

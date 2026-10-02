@@ -1,4 +1,5 @@
 use primus_encoding::PlaintextEmbedding;
+use primus_lattice::LweDimension;
 use primus_lattice::lwe::Lwe;
 use primus_lwe::{LweParameters, LweSecretKey, SecretKeyDistr};
 use primus_modulus::BarrettModulus;
@@ -7,7 +8,7 @@ use rand::{SeedableRng, rngs::StdRng};
 #[test]
 fn message_encryption_reuses_storage_for_both_embeddings() {
     let params = LweParameters::new(
-        7,
+        LweDimension::new(7),
         4,
         BarrettModulus::new(97u32),
         SecretKeyDistr::UniformTernary,
@@ -49,7 +50,7 @@ fn message_encryption_reuses_storage_for_both_embeddings() {
 #[test]
 fn noise_is_distance_to_the_decoded_message_embedding() {
     let params = LweParameters::new(
-        1,
+        LweDimension::new(1),
         4u32,
         BarrettModulus::new(97),
         SecretKeyDistr::UniformBinary,

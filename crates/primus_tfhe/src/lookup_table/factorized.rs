@@ -1,5 +1,6 @@
 use primus_encoding::{PlaintextEmbedding, RoundedCodec, ScaledCodec};
 use primus_integer::FheUint;
+use primus_lattice::PolyLength;
 use primus_poly::{PolynomialIter, PolynomialOwned};
 use primus_reduce::{PrepareModulusSwitch, ReduceAdd, RingContext};
 
@@ -50,7 +51,7 @@ impl<T: FheUint> FactorizedLookupTable<T> {
     /// requirement. Retain `output_codec` to decode extracted LWE phases.
     pub fn try_new<LM, M, F>(
         input_domain_len: usize,
-        poly_length: usize,
+        poly_length: PolyLength,
         output_count: usize,
         input_codec: &RoundedCodec<T, LM>,
         output_codec: &ScaledCodec<T, M>,
@@ -81,6 +82,7 @@ impl<T: FheUint> FactorizedLookupTable<T> {
             input_codec.plaintext_modulus(),
             input_codec.ciphertext_modulus().explicit_value(),
         )?;
+        let poly_length = poly_length.get();
         let factors_len = output_count
             .checked_mul(poly_length)
             .ok_or(LookupTableError::TableLengthOverflow)?;
@@ -147,12 +149,12 @@ impl<T: FheUint> FactorizedLookupTable<T> {
     #[must_use]
     pub fn is_compatible(
         &self,
-        poly_length: usize,
+        poly_length: PolyLength,
         input_plaintext_modulus: T,
         input_ciphertext_modulus: Option<T>,
         coefficient_modulus: Option<T>,
     ) -> bool {
-        self.common_polynomial.as_ref().len() == poly_length
+        self.common_polynomial.as_ref().len() == poly_length.get()
             && self.encoding.is_compatible(
                 input_plaintext_modulus,
                 input_ciphertext_modulus,

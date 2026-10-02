@@ -1,10 +1,12 @@
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_lattice::GlweDimension;
 use std::hint::black_box;
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_integer::FheUint;
 use primus_lattice::{
-    GadgetSize, GlweSize,
+    GadgetSize, GlweSize, PolyLength,
     ggsw::Ggsw,
     glwe::{Glwe, NttGlwe},
     workspace::{NttGlweExternalProductWorkspace, NttGlweTernaryCmuxWorkspace},
@@ -23,8 +25,18 @@ fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     let modulus = BarrettModulus::new(q);
     let table = Table::new(log_n, modulus).unwrap();
     let exponent = table.poly_length() / 3;
-    let basis = ApproxSignedBasis::new(Some(q), log_b, Some(levels));
-    let size = GadgetSize::new(GlweSize::new(dimension, table.poly_length()), levels);
+    let basis = ApproxSignedBasis::new(
+        Some(q),
+        DecompositionBaseLog::new(log_b),
+        Some(DecompositionLevelCount::new(levels)),
+    );
+    let size = GadgetSize::new(
+        GlweSize::new(
+            GlweDimension::new(dimension),
+            PolyLength::new(table.poly_length()),
+        ),
+        DecompositionLevelCount::new(levels),
+    );
     let glwe_len = size.glwe_size().glwe_len();
     let input = Glwe::new(
         (0..glwe_len)

@@ -11,6 +11,8 @@ Parameters and LWE clients for NTRU-TFHE. The [NTT](../primus_tfhe_ntru_ntt/READ
 
 `TfheParameters<T, M, LM=M>` separates ring modulus Q from external LWE modulus q, sharing coefficient type T. Construct it with `TfheParameters::try_from_config(TfheConfig { .. })`: `external_lwe` selects the external dimension, q, plaintext modulus, binary/ternary distribution and encryption noise; `accumulator_modulus` selects Q. `blind_rotation` decomposition uses Q, while `key_switching` decomposition and return-key noise use q. `level_count: None` selects the maximum supported level count; still check the [decomposition precision](../primus_decompose/README.md).
 
+Dimension choices use `LweDimension`; decomposition choices use `DecompositionBaseLog` and `Option<DecompositionLevelCount>`. Construct these checked units once and pass parameter accessors directly to workspaces. `.get()` exposes the integer at raw storage or kernel boundaries; composed lengths and basis/modulus compatibility remain constructor checks.
+
 The direct composition entry is `TfheParameters::try_new(external_lwe, blind_rotation, key_switching, key_switching_noise_standard_deviation)`. Both domains share plaintext modulus t, and 2N must fit T; the external dimension n need not be at most N. Constructors report specific parameter errors but do not validate security or a complete noise budget.
 
 `ClientKey` holds independent LWE secret s and NTRU ring secret f. Generate paired material with `context.try_generate_keys(cbs_config, rng)`, or import it with `ClientKey::new(s, f)`. Only f requires invertibility checks and, for Fourier, inverse stability. External secrets require neither padding, invertibility nor odd weight. `external_lwe_secret_key()` returns the LWE secret at q.

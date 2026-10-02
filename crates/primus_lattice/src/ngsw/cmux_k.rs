@@ -84,7 +84,7 @@ where
             candidates.len(),
             "CMUX requires one control per candidate"
         );
-        let poly_length = workspace.poly_length();
+        let poly_length = workspace.poly_length().get();
         assert_eq!(
             default.as_ref().len(),
             poly_length,
@@ -103,6 +103,7 @@ where
 
         let control_len = basis
             .decompose_length()
+            .get()
             .checked_mul(poly_length / 2)
             .expect("CMUX control length overflow");
         let mut workspace = workspace.as_mut();
@@ -201,7 +202,7 @@ where
             candidates.len(),
             "CMUX requires one control per candidate"
         );
-        let poly_length = workspace.poly_length();
+        let poly_length = workspace.poly_length().get();
         assert_eq!(
             default.as_ref().len(),
             poly_length,
@@ -220,6 +221,7 @@ where
 
         let control_len = basis
             .decompose_length()
+            .get()
             .checked_mul(poly_length)
             .expect("CMUX control length overflow");
         let mut workspace = workspace.as_mut();

@@ -6,6 +6,7 @@ mod front_half;
 mod odd_full_domain;
 
 use primus_integer::FheUint;
+use primus_lattice::PolyLength;
 use primus_reduce::RingContext;
 
 use crate::LookupTableError;
@@ -18,14 +19,13 @@ pub(super) use front_half::{
 pub(super) use odd_full_domain::compile as compile_odd_full_domain;
 
 pub(super) fn validate_input_encoding<T: FheUint>(
-    poly_length: usize,
+    poly_length: PolyLength,
     input_plaintext_modulus: T,
     input_ciphertext_modulus: Option<T>,
 ) -> Result<(), LookupTableError> {
-    poly_length
-        .checked_mul(2)
-        .filter(|&length| length.is_power_of_two() && T::try_from(length).is_ok())
-        .ok_or(LookupTableError::InvalidPolynomialLength)?;
+    // PolyLength establishes the ring geometry; the rotation domain must also
+    // fit the coefficient word, including for narrow integer implementations.
+    T::try_from(2 * poly_length.get()).map_err(|_| LookupTableError::RotationDomainTooLarge)?;
     if input_plaintext_modulus <= T::ONE
         || input_ciphertext_modulus.is_some_and(|q| q <= input_plaintext_modulus)
     {

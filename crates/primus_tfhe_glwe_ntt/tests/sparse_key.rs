@@ -2,7 +2,9 @@
 //! independently of end-to-end PBS; invalid imports must precede sampling.
 
 use primus_decompose::primitive::ApproxSignedBasis;
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_glwe::{GlweCiphertext, GlweParameters, NttGlweSecretKey, SecretKeyDistr};
+use primus_lattice::{GlweDimension, LweDimension};
 use primus_lattice::{ggsw::NttGgsw, glwe::NttGlwe, workspace::NttGlweExternalProductWorkspace};
 use primus_lwe::{LweParameters, LweSecretKey};
 use primus_modulus::BarrettModulus;
@@ -20,9 +22,16 @@ const Q: u32 = 132_120_577;
 
 fn context(distribution: SecretKeyDistr) -> TfheContext<u32, U32NttTable> {
     let modulus = BarrettModulus::new(Q);
-    let lwe = LweParameters::new(16, 8, modulus, distribution, 0.7);
-    let glwe = GlweParameters::new(1, N, 8, modulus, SecretKeyDistr::UniformBinary, 0.7);
-    let basis = ApproxSignedBasis::new(Some(Q), 9, None);
+    let lwe = LweParameters::new(LweDimension::new(16), 8, modulus, distribution, 0.7);
+    let glwe = GlweParameters::new(
+        GlweDimension::new(1),
+        N,
+        8,
+        modulus,
+        SecretKeyDistr::UniformBinary,
+        0.7,
+    );
+    let basis = ApproxSignedBasis::new(Some(Q), DecompositionBaseLog::new(9), None);
     let parameters = TfheParameters::try_new(
         lwe,
         glwe,
@@ -63,7 +72,7 @@ fn encrypted_selections_cover_the_support_once_with_dummy_per_bucket() {
         let key = generator
             .try_generate_sparse_bootstrapping_key(&client, copy_count, bucket_count, &mut rng)
             .unwrap();
-        assert_eq!(key.input_dimension(), 16);
+        assert_eq!(key.input_dimension(), LweDimension::new(16));
         assert_eq!(key.hamming_weight(), 4);
         assert_eq!(key.copy_count(), copy_count);
         assert_eq!(key.bucket_count(), bucket_count);
@@ -157,16 +166,16 @@ fn sparse_key_rejects_invalid_parameters_and_actual_secret_before_sampling() {
 
     let invalid_cbs = primus_tfhe_glwe_ntt::CircuitBootstrapConfig {
         output: primus_tfhe_glwe_ntt::DecompositionConfig {
-            log_basis: 8,
-            level_count: Some(0),
+            log_basis: DecompositionBaseLog::new(8),
+            level_count: Some(DecompositionLevelCount::new(usize::MAX)),
         },
         trace: primus_tfhe_glwe_ntt::DecompositionConfig {
-            log_basis: 8,
+            log_basis: DecompositionBaseLog::new(8),
             level_count: None,
         },
         trace_noise_standard_deviation: 0.7,
         scheme_switch: primus_tfhe_glwe_ntt::DecompositionConfig {
-            log_basis: 8,
+            log_basis: DecompositionBaseLog::new(8),
             level_count: None,
         },
         scheme_switch_noise_standard_deviation: 0.7,

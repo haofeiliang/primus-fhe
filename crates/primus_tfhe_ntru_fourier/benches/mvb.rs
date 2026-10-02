@@ -110,7 +110,7 @@ fn backend<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) 
                                 .map(|i| {
                                     LookupTable::try_new(
                                         domain,
-                                        1024,
+                                        context.parameters().accumulator_ntru().poly_length(),
                                         T::as_from(2 * domain),
                                         output_codec.ciphertext_modulus(),
                                         table_codec.ciphertext_modulus(),
@@ -141,7 +141,7 @@ fn backend<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) 
                         "interleaved" => {
                             let lut = InterleavedLookupTable::try_new(
                                 domain,
-                                1024,
+                                context.parameters().accumulator_ntru().poly_length(),
                                 count,
                                 T::as_from(2 * domain),
                                 output_codec.ciphertext_modulus(),

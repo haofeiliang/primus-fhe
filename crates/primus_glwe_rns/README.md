@@ -28,7 +28,7 @@ use primus_poly::Polynomial;
 let moduli = [998_244_353u32, 1_004_535_809].map(BarrettModulus::new);
 let table = UintDcrtTable::new(5, &moduli).unwrap();
 let parameters = CrtGlweParameters::new(
-    2, 32, BarrettModulus::new(17), BarrettModulus::new(65_537),
+    primus_lattice::GlweDimension::new(2), 32, BarrettModulus::new(17), BarrettModulus::new(65_537),
     &moduli, SecretKeyDistr::UniformBinary, 3.2,
 );
 let mut rng = rand::rng();
@@ -53,7 +53,9 @@ For m moduli, ordinary storage contains `(k+1)*m*N` elements in `[component][mod
 
 ## Evaluation resources
 
-`CrtGlevParameters::try_with_glwe_params` prepares gadget decomposition over the product Q. `DcrtGadgetDomain::try_new` binds parameters and a table, checking polynomial length and ordered moduli. Ordinary DCRT key switching uses this domain. Hybrid switching instead binds the complete Q/P basis with `HybridRnsKeySwitchDomain::try_new`; partitioning and ModUp/ModDown contracts live in [`primus_rns`](../primus_rns/README.md#hybrid-rns).
+`CrtGlweParameters` takes `GlweDimension`, and gadget construction takes `DecompositionBaseLog` and `Option<DecompositionLevelCount>`. Parameter accessors return these checked units; use `.get()` at raw storage or numerical boundaries.
+
+`CrtGlevParameters::try_with_glwe_params` prepares gadget decomposition over the product Q and checks the composed gadget lengths before allocation. `CrtGlevParametersError::Layout` reports length overflow. `DcrtGadgetDomain::try_new` binds parameters and a table, checking polynomial length and ordered moduli. Ordinary DCRT key switching uses this domain. Hybrid switching instead binds the complete Q/P basis with `HybridRnsKeySwitchDomain::try_new`; partitioning and ModUp/ModDown contracts live in [`primus_rns`](../primus_rns/README.md#hybrid-rns).
 
 The client generates evaluation keys from its secrets and supplies them to the server. Reuse the operation's `*Workspace` with the bound layout; shape and modulus checks do not prove actual secret identity, canonical residues or a noise margin. CRT and DCRT trace/expansion APIs retain their own input/output and normalization contracts in rustdoc.
 

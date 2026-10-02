@@ -1,4 +1,5 @@
 //! Trace keys for coefficient-domain native-torus ciphertexts.
+
 use crate::{
     FourierGlweAutomorphismKey, FourierGlweAutomorphismWorkspace,
     FourierGlweGadgetEncryptWorkspace, FourierGlweSecretKey, GlevParameters, GlweSecretKey,
@@ -44,7 +45,7 @@ impl<T: TorusFftValue> FourierGlweTraceKey<T> {
         workspace: &mut FourierGlweGadgetEncryptWorkspace<T>,
     ) -> Self {
         let glwe_size = secret.glwe_size();
-        let automorphism_keys = (1..=glwe_size.poly_length().trailing_zeros())
+        let automorphism_keys = (1..=glwe_size.poly_length().log_n())
             .rev()
             .map(|shift| {
                 FourierGlweAutomorphismKey::generate(

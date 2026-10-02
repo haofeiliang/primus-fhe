@@ -1,6 +1,9 @@
 //! Sparse key selection semantics and independent NLev/bucket error budgets.
 
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_integer::{AsInto, FheUint};
+use primus_lattice::LweDimension;
+use primus_lattice::PolyLength;
 use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntru::{
@@ -70,7 +73,7 @@ fn check_bucket<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, level_cou
     let modulus = BarrettModulus::new(q);
     let ntt = Table::new(N.trailing_zeros(), modulus).unwrap();
     let client_params = LweParameters::new(
-        DIM,
+        LweDimension::new(DIM),
         T::as_from(16usize),
         modulus,
         SecretKeyDistr::fixed_hamming_weight_binary(DIM, WEIGHT),
@@ -95,11 +98,15 @@ fn check_bucket<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, level_cou
         SecretKeyDistr::SparseTernary,
         0.7,
     );
-    let gadget = NlevParameters::with_ntru_params(&params, 8, level_count);
+    let gadget = NlevParameters::with_ntru_params(
+        &params,
+        DecompositionBaseLog::new(8),
+        level_count.map(DecompositionLevelCount::new),
+    );
     let context = TfheContext::try_new(
         TfheParameters::try_new(
             LweParameters::new(
-                DIM,
+                LweDimension::new(DIM),
                 T::as_from(16usize),
                 modulus,
                 client_params.secret_key_distr(),
@@ -107,7 +114,7 @@ fn check_bucket<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, level_cou
             ),
             gadget.clone(),
             primus_tfhe_ntru::DecompositionConfig {
-                log_basis: 8,
+                log_basis: DecompositionBaseLog::new(8),
                 level_count: None,
             },
             client_params.noise_distribution().standard_deviation(),
@@ -134,7 +141,7 @@ fn check_bucket<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, level_cou
         &gadget,
         ntt,
         &mut rng,
-        &mut NttNtruGadgetEncryptWorkspace::new(N),
+        &mut NttNtruGadgetEncryptWorkspace::new(PolyLength::new(N)),
     );
     let mut init_error_sum = 0;
     for (level, &scalar) in initializer.as_ref().as_chunks::<N>().0.iter().zip(&scalars) {
@@ -158,7 +165,7 @@ fn check_bucket<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, level_cou
     );
     let mut input = NtruCiphertext::<Vec<T>>::zero(N);
     let mut product = NtruCiphertext::<Vec<T>>::zero(N);
-    let mut scratch = NttNtruExternalProductWorkspace::new(N);
+    let mut scratch = NttNtruExternalProductWorkspace::new(PolyLength::new(N));
     let (_, allocations) = measure(|| {
         initializer.external_product_to(&encoded, &mut input, basis, modulus, ntt, &mut scratch);
     });

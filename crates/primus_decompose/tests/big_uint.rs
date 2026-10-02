@@ -1,4 +1,5 @@
 use primus_decompose::{ApproxSignedBasisError, big_integer::BigUintApproxSignedBasis};
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_integer::{AsFrom, BigUint, FheUint};
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 
@@ -46,7 +47,12 @@ where
 {
     let q: u128 = moduli.iter().map(|&m| m.into()).product();
     let modulus = BigUint(limbs::<T>(q, (q.ilog2() + 1).div_ceil(T::BITS) as usize));
-    let basis = BigUintApproxSignedBasis::try_new(modulus.view(), log_basis, retained).unwrap();
+    let basis = BigUintApproxSignedBasis::try_new(
+        modulus.view(),
+        DecompositionBaseLog::new(log_basis),
+        retained.map(DecompositionLevelCount::new),
+    )
+    .unwrap();
     let levels = retained.unwrap_or((q.ilog2() + 1) as usize / log_basis as usize);
     let drop_bits = q.ilog2() + 1 - levels as u32 * log_basis;
     let bound = if drop_bits == 0 {
@@ -58,7 +64,7 @@ where
     let len = basis.big_uint_value_len();
     assert_eq!(to_u128(basis.modulus()), q);
     assert_eq!(basis.drop_bits(), drop_bits);
-    assert_eq!(basis.decompose_length(), levels);
+    assert_eq!(basis.decompose_length().get(), levels);
     assert_eq!(basis.decomposer_iter().len(), levels);
     assert_eq!(basis.scalar_iter().len(), levels);
     assert_eq!(to_u128(basis.approximate_error_bound().digits()), bound);
@@ -135,7 +141,11 @@ fn check_batch<T: FheUint>() {
         modulus[0] -= T::as_from(58u8);
         modulus[len - 1] -= T::as_from(2u8);
         for log_basis in [16, 17] {
-            let basis = BigUintApproxSignedBasis::new(BigUint(&modulus[..]), log_basis, None);
+            let basis = BigUintApproxSignedBasis::new(
+                BigUint(&modulus[..]),
+                DecompositionBaseLog::new(log_basis),
+                None,
+            );
             // Empty input, a single value, and a batch with a vectorization tail.
             for count in [0, 1, 33] {
                 let mut values: Vec<T> = (0..count * len)
@@ -201,14 +211,6 @@ fn invalid_parameters_and_modulus_representations_are_rejected() {
     let modulus = BigUint([17_u32 * 97]);
     for (log_basis, retained, expected) in [
         (
-            1,
-            None,
-            ApproxSignedBasisError::InvalidLogBasis {
-                log_basis: 1,
-                limb_bits: 32,
-            },
-        ),
-        (
             32,
             None,
             ApproxSignedBasisError::InvalidLogBasis {
@@ -216,7 +218,6 @@ fn invalid_parameters_and_modulus_representations_are_rejected() {
                 limb_bits: 32,
             },
         ),
-        (4, Some(0), ApproxSignedBasisError::ZeroReverseLength),
         (
             4,
             Some(3),
@@ -227,20 +228,34 @@ fn invalid_parameters_and_modulus_representations_are_rejected() {
         ),
     ] {
         assert_eq!(
-            BigUintApproxSignedBasis::try_new(modulus.view(), log_basis, retained).unwrap_err(),
+            BigUintApproxSignedBasis::try_new(
+                modulus.view(),
+                DecompositionBaseLog::new(log_basis),
+                retained.map(DecompositionLevelCount::new)
+            )
+            .unwrap_err(),
             expected
         );
     }
     assert_eq!(
-        BigUintApproxSignedBasis::try_new(BigUint(&[3_u32]), 2, None).unwrap_err(),
+        BigUintApproxSignedBasis::try_new(BigUint(&[3_u32]), DecompositionBaseLog::new(2), None)
+            .unwrap_err(),
         ApproxSignedBasisError::BasisExceedsModulus
     );
     for invalid in [&[][..], &[0][..], &[1649, 0][..]] {
         assert_eq!(
-            BigUintApproxSignedBasis::<u32>::try_new(BigUint(invalid), 4, None).unwrap_err(),
+            BigUintApproxSignedBasis::<u32>::try_new(
+                BigUint(invalid),
+                DecompositionBaseLog::new(4),
+                None
+            )
+            .unwrap_err(),
             ApproxSignedBasisError::InvalidModulusRepresentation
         );
     }
     // Zero low limbs are valid; only redundant high zero limbs are rejected.
-    assert!(BigUintApproxSignedBasis::try_new(BigUint(&[0_u32, 1]), 4, None).is_ok());
+    assert!(
+        BigUintApproxSignedBasis::try_new(BigUint(&[0_u32, 1]), DecompositionBaseLog::new(4), None)
+            .is_ok()
+    );
 }

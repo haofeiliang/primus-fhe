@@ -25,7 +25,7 @@ Let `N` be the polynomial length, `k` the GLWE mask dimension, `L` the gadget le
 | `TruncatedGlwe` | Full mask polynomials followed by a prefix of the body | Coefficients |
 | `BigUintGlwe` | GLWE polynomials with fixed-width little-endian limbs per coefficient | Multi-limb coefficients |
 
-RLWE, RLev and RGSW use `Glwe`, `Glev` and `Ggsw` with `GlweSize::new(1, N)`; their NTT and CRT/DCRT representations follow the same dimension-one layout.
+RLWE, RLev and RGSW use `Glwe`, `Glev` and `Ggsw` with `GlweSize::new(GlweDimension::new(1), PolyLength::new(N))`; their NTT and CRT/DCRT representations follow the same dimension-one layout.
 
 Types are exported through their modules, for example `glwe::Glwe`, `ggsw::NttGgsw`, and `ngsw::FourierNgsw`. Prefixes identify the representation. `Torus*` aliases name native-torus uses of coefficient wrappers; they do not enforce a modulus or perform encoding.
 
@@ -58,7 +58,19 @@ For NLev sums and NGSW multi-way CMux, pass `output.as_mut_view()` as output, an
 - Fourier polynomials contain `N/2` complex entries in the selected backend's evaluation order. Ciphertexts use normalized torus transforms; polynomial multipliers must use the scale required by the multiplication API.
 - BigUint storage is coefficient-major within each polynomial, with one fixed-width little-endian limb sequence per coefficient.
 
-`GlweSize`, `GadgetSize`, `RnsGlweSize`, and `RnsGadgetSize` compute checked lengths. They reject invalid counts, unsupported polynomial sizes, and flattened-length overflow. They do not validate backing buffers, transform availability, modulus suitability, or security. Use their length accessors when allocating rather than repeating layout formulas.
+`LweDimension` and `GlweDimension` represent positive mask counts with a representable body-inclusive count. `LweDimension::ciphertext_len()` gives `n+1`; `GlweDimension::component_count()` gives `k+1`. They impose no parameter-preset or security cap. Raw ciphertext and secret-key slices retain integer lengths and can represent dimension zero.
+
+`GlweSize`, `GadgetSize`, `RnsGlweSize`, and `RnsGadgetSize` compute checked lengths from `GlweDimension`, `PolyLength` and the `primus_decompose::DecompositionLevelCount` for gadgets. They check RNS modulus counts and flattened-length overflow. `GlweSize` stores GLWE geometry and flattened lengths. `LweDimension::from(glwe_size)` explicitly derives the extracted dimension `kN`, including the guarantee that `kN+1` fits. They do not validate backing buffers, transform availability, modulus suitability, or security. Use their length accessors when allocating rather than repeating layout formulas.
+
+`PolyLength` checks that `N` is a power of two in `MIN_POLY_LENGTH..=MAX_POLY_LENGTH`
+(currently `2..=2^17`). Its `get()`, `log_n()`
+and `fourier_poly_len()` return `N`, `log2(N)` and `N/2` complex elements.
+This range also ensures `2N` fits in `usize`. Use `new`, `try_new`
+or `TryFrom<usize>` to construct it. `PolyLengthError` retains the rejected length.
+`GlweSize` stores it, and gadget/RNS layouts
+compose the same invariant through their nested GLWE size. Layout constructors consume `PolyLength`, and `poly_length()` accessors
+return it directly; extract `usize` with `.get()` at raw storage/kernel boundaries. Transform constructors
+retain their own supported ranges and numerical requirements.
 
 ## Operations and ownership
 
@@ -111,11 +123,11 @@ Overwriting external products initialize their accumulator, and other scratch is
 Borrow storage, add an already encoded polynomial to the body, then extract its second coefficient under an explicit modulus:
 
 ```rust
-use primus_lattice::{GlweSize, glwe::Glwe, lwe::Lwe};
+use primus_lattice::{GlweDimension, GlweSize, PolyLength, glwe::Glwe, lwe::Lwe};
 use primus_modulus::BarrettModulus;
 use primus_poly::Polynomial;
 
-let size = GlweSize::new(2, 4);
+let size = GlweSize::new(GlweDimension::new(2), PolyLength::new(4));
 let modulus = BarrettModulus::new(97u32);
 let mut storage = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 assert_eq!(storage.len(), size.glwe_len());
@@ -124,7 +136,7 @@ let plaintext = Polynomial::new([10, 20, 30, 40]);
 ciphertext.add_plaintext_assign(&plaintext, modulus);
 
 let mut sample: Lwe<Vec<u32>> = Lwe::zero(size.mask_len());
-ciphertext.extract_lwe_at_to(1, &mut sample, size.poly_length(), modulus);
+ciphertext.extract_lwe_at_to(1, &mut sample, size.poly_length().get(), modulus);
 assert_eq!(sample.a(), &[2, 1, 93, 94, 6, 5, 89, 90]);
 assert_eq!(sample.b(), 30);
 ```

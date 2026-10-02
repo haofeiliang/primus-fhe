@@ -3,6 +3,8 @@
 use crate::{LookupTable, LweCiphertext, ProgrammableBootstrap, TfheEvaluationError};
 use primus_encoding::{PlaintextEmbedding, RoundedCodec};
 use primus_integer::FheUint;
+use primus_lattice::LweDimension;
+use primus_lattice::PolyLength;
 use primus_reduce::RingContext;
 
 /// The number of bits in the external Boolean plaintext modulus: `t = 2^2 = 4`.
@@ -64,7 +66,7 @@ where
     E: ProgrammableBootstrap<T>,
 {
     ciphertext_modulus: M,
-    external_lwe_dimension: usize,
+    external_lwe_dimension: LweDimension,
     encoded_one: T,
     bootstrapper: E,
     gate_lookup_tables: [LookupTable<T>; 4],
@@ -91,8 +93,8 @@ where
     /// required by [`ProgrammableBootstrap::apply_lookup_table_to`]. The trait
     /// cannot verify this binding or secret-key identity.
     pub fn try_new<GM>(
-        external_lwe_dimension: usize,
-        poly_length: usize,
+        external_lwe_dimension: LweDimension,
+        poly_length: PolyLength,
         input_codec: &RoundedCodec<T, M>,
         coefficient_modulus: GM,
         bootstrapper: E,
@@ -149,8 +151,8 @@ where
             bootstrapper,
             gate_lookup_tables,
             output_shift,
-            gate_input: LweCiphertext::zero(external_lwe_dimension),
-            mux_branch: LweCiphertext::zero(external_lwe_dimension),
+            gate_input: LweCiphertext::zero(external_lwe_dimension.get()),
+            mux_branch: LweCiphertext::zero(external_lwe_dimension.get()),
         })
     }
 
@@ -162,7 +164,7 @@ where
         lhs: &LweCiphertext<T>,
         rhs: &LweCiphertext<T>,
     ) -> LweCiphertext<T> {
-        let mut output = LweCiphertext::zero(self.external_lwe_dimension);
+        let mut output = LweCiphertext::zero(self.external_lwe_dimension.get());
         self.evaluate_binary_to(gate, lhs, rhs, &mut output);
         output
     }
@@ -242,7 +244,7 @@ where
         then_value: &LweCiphertext<T>,
         else_value: &LweCiphertext<T>,
     ) -> LweCiphertext<T> {
-        let mut output = LweCiphertext::zero(self.external_lwe_dimension);
+        let mut output = LweCiphertext::zero(self.external_lwe_dimension.get());
         self.mux_to(condition, then_value, else_value, &mut output);
         output
     }
@@ -270,7 +272,7 @@ where
         let modulus = self.ciphertext_modulus;
         modulus.reduce_add_assign(self.mux_branch.b_mut(), self.output_shift);
 
-        assert_dimension(else_value, self.external_lwe_dimension);
+        assert_dimension(else_value, self.external_lwe_dimension.get());
         self.gate_input.0.copy_from_slice(else_value.0.as_slice());
         self.gate_input.sub_assign(condition, modulus);
         modulus.reduce_add_assign(self.gate_input.b_mut(), self.encoded_one);
@@ -287,7 +289,7 @@ where
     /// Negates a Boolean ciphertext without programmable bootstrapping.
     #[must_use]
     pub fn not(&self, input: &LweCiphertext<T>) -> LweCiphertext<T> {
-        assert_dimension(input, self.external_lwe_dimension);
+        assert_dimension(input, self.external_lwe_dimension.get());
         let mut output = input.clone();
         self.not_assign(&mut output);
         output
@@ -295,8 +297,8 @@ where
 
     /// Negates a Boolean ciphertext into an existing allocation without PBS.
     pub fn not_to(&self, input: &LweCiphertext<T>, output: &mut LweCiphertext<T>) {
-        assert_dimension(input, self.external_lwe_dimension);
-        assert_dimension(output, self.external_lwe_dimension);
+        assert_dimension(input, self.external_lwe_dimension.get());
+        assert_dimension(output, self.external_lwe_dimension.get());
         output.0.copy_from_slice(input.0.as_slice());
         self.not_assign(output);
     }

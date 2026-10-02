@@ -20,7 +20,7 @@ use primus_reduce::FieldContext;
 /// # Correctness
 ///
 /// Input contains `N = workspace.poly_length()` canonical coefficients. The
-/// gadget has `basis.decompose_length()` complete levels in decomposition
+/// gadget has `basis.decompose_length().get()` complete levels in decomposition
 /// order, each of length `N / 2` in the FFT table's normalized torus
 /// representation. The basis uses the native modulus, and FFT/workspace
 /// polynomial lengths and packing agree. The selected accumulator has `N / 2`
@@ -43,7 +43,10 @@ pub(crate) fn accumulate_fourier_gadget_product<T, Table>(
     debug_assert_eq!(fourier_length, poly_length / 2);
     debug_assert_eq!(basis.modulus(), None);
     debug_assert_eq!(input.len(), poly_length);
-    debug_assert_eq!(gadget.len(), basis.decompose_length() * fourier_length);
+    debug_assert_eq!(
+        gadget.len(),
+        basis.decompose_length().get() * fourier_length
+    );
 
     // Carries belong to this input's signed decomposition, not the accumulated
     // sum. Reinitialize them for each product, then carry across its levels.
@@ -68,7 +71,7 @@ pub(crate) fn accumulate_fourier_gadget_product<T, Table>(
 /// # Correctness
 ///
 /// Input contains `N = workspace.poly_length()` canonical coefficients. The
-/// gadget has `basis.decompose_length()` complete levels in decomposition
+/// gadget has `basis.decompose_length().get()` complete levels in decomposition
 /// order, each of length `N` in the NTT table's evaluation order.
 /// Gadget values are canonical. Basis, table, and arithmetic modulus agree,
 /// and the table polynomial length equals `N`. The selected accumulator has
@@ -92,7 +95,7 @@ pub(crate) fn accumulate_ntt_gadget_product<T, M, Table>(
     debug_assert_eq!(ntt.modulus(), modulus.value());
     debug_assert_eq!(basis.modulus(), Some(modulus.value()));
     debug_assert_eq!(input.len(), poly_length);
-    debug_assert_eq!(gadget.len(), basis.decompose_length() * poly_length);
+    debug_assert_eq!(gadget.len(), basis.decompose_length().get() * poly_length);
 
     // Adjust this input and initialize its carries once. The transformed sum
     // remains live while decomposition scratch is reused across inputs/levels.

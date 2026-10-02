@@ -1,4 +1,6 @@
 //! Original-secret phases after automorphism, including nonbinary Fourier keys.
+
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_glwe::{
     FourierGlweAutomorphismKey, FourierGlweAutomorphismWorkspace,
@@ -6,6 +8,8 @@ use primus_glwe::{
     GlweSecretKey, GlweSize, NttGlweAutomorphismKey, NttGlweAutomorphismWorkspace,
     NttGlweGadgetEncryptWorkspace, NttGlweSecretKey, SecretKeyDistr,
 };
+use primus_lattice::GlweDimension;
+use primus_lattice::PolyLength;
 use primus_lattice::glwe::{Glwe, NttGlwe};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntt::{NttTable, U64NttTable};
@@ -39,14 +43,18 @@ fn ntt_and_coefficient_inputs_reuse_the_automorphism_key() {
     let modulus = BarrettModulus::new(MODULUS);
     let ntt = U64NttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
     let glwe_parameters = GlweParameters::new(
-        DIMENSION,
+        GlweDimension::new(DIMENSION),
         POLY_LENGTH,
         PLAINTEXT_MODULUS,
         modulus,
         SecretKeyDistr::UniformBinary,
         0.7,
     );
-    let glev_parameters = GlevParameters::with_glwe_params(&glwe_parameters, 10, Some(3));
+    let glev_parameters = GlevParameters::with_glwe_params(
+        &glwe_parameters,
+        DecompositionBaseLog::new(10),
+        Some(DecompositionLevelCount::new(3)),
+    );
     let mut rng = StdRng::seed_from_u64(0x0043_4253_5052_494d);
     let (coefficient_secret, secret) =
         NttGlweSecretKey::generate_pair(&glwe_parameters, &ntt, &mut rng);
@@ -101,8 +109,8 @@ fn ntt_and_coefficient_inputs_reuse_the_automorphism_key() {
 
     // Layout validation includes a different N with the same total GLWE length.
     for size in [
-        GlweSize::new(5, POLY_LENGTH / 2),
-        GlweSize::new(3, POLY_LENGTH),
+        GlweSize::new(GlweDimension::new(5), PolyLength::new(POLY_LENGTH / 2)),
+        GlweSize::new(GlweDimension::new(3), PolyLength::new(POLY_LENGTH)),
     ] {
         let mut workspace = NttGlweAutomorphismWorkspace::new(size);
         let mut output = Glwe::new(vec![7; glwe_parameters.glwe_len()]);
@@ -127,16 +135,20 @@ fn fourier_automorphism_input<Table: FftTable>() {
     use primus_lattice::glwe::FourierGlwe;
     let table = Table::new(N.trailing_zeros()).unwrap();
     let mut fft = FftEngine::new(&table);
-    let size = GlweSize::new(K, N);
+    let size = GlweSize::new(GlweDimension::new(K), PolyLength::new(N));
     let params = GlweParameters::new(
-        K,
+        GlweDimension::new(K),
         N,
         64,
         NativeModulus::new(),
         SecretKeyDistr::UniformTernary,
         0.7,
     );
-    let glev = GlevParameters::with_glwe_params(&params, 8, Some(7));
+    let glev = GlevParameters::with_glwe_params(
+        &params,
+        DecompositionBaseLog::new(8),
+        Some(DecompositionLevelCount::new(7)),
+    );
     let s = secret();
     let coeff = GlweSecretKey::<u64>::new(s.clone(), size, SecretKeyDistr::UniformTernary);
     let sk = FourierGlweSecretKey::from_coeff_secret_key(&coeff, &mut fft);
@@ -180,7 +192,10 @@ fn fourier_automorphism_input<Table: FftTable>() {
         fourier_output.write_torus_form(&mut output, &mut fft);
         assert_phase(output.as_ref(), &expected, &s, q);
         // A different N with the same total storage must fail before output writes.
-        let mut wrong_workspace = FourierGlweAutomorphismWorkspace::new(GlweSize::new(5, N / 2));
+        let mut wrong_workspace = FourierGlweAutomorphismWorkspace::new(GlweSize::new(
+            GlweDimension::new(5),
+            PolyLength::new(N / 2),
+        ));
         fourier_output.as_mut().fill(Complex64::new(7.0, 0.0));
         assert!(
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {

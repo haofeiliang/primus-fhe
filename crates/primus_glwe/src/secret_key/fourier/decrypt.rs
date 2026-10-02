@@ -44,7 +44,7 @@ impl FourierGlweSecretKey {
         );
         assert_eq!(
             output.as_ref().len(),
-            self.size.poly_length(),
+            self.size.poly_length().get(),
             "GLWE phase output length mismatch"
         );
 
@@ -93,7 +93,7 @@ impl FourierGlweSecretKey {
         A: Data<Elem = Complex64>,
         T: TorusFftValue,
     {
-        let mut output = PolynomialOwned::zero(self.size.poly_length());
+        let mut output = PolynomialOwned::zero(self.size.poly_length().get());
         self.decrypt_to(input, &mut output, params, fft, workspace);
         output
     }

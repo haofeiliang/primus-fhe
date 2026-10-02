@@ -168,7 +168,7 @@ fn stages<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) {
                 let mut switched: GlweCiphertext<Vec<T>> =
                     GlweCiphertext::zero(parameters.glwe_key_switching().output().glwe_len());
                 let mut small_lwe: LweCiphertext<T> =
-                    LweCiphertext::zero(parameters.small_lwe().dimension());
+                    LweCiphertext::zero(parameters.small_lwe().dimension().get());
 
                 bootstrapping_key.fourier_blind_rotate_lookup_table_to(
                     &input,
@@ -183,7 +183,7 @@ fn stages<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) {
                     &mut fft,
                     &mut key_switching,
                 );
-                switched.extract_compact_lwe_to(&mut small_lwe, poly_length, modulus);
+                switched.extract_compact_lwe_to(&mut small_lwe, poly_length.get(), modulus);
                 if !verified {
                     assert_eq!(
                         context

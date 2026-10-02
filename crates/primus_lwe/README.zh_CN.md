@@ -28,14 +28,14 @@ Primus FHE 的单模数 LWE 密钥生成、私钥加密、公钥加密和密钥�
 下面使用小维度演示存储复用、独立公钥 batch 和密钥切换，参数未经安全性评估。 调用方 crate 需要直接依赖 `primus_lwe`、`primus_lattice`、`primus_modulus`、 `primus_decompose` 和 `rand`，以使用示例中的导入。
 
 ```rust
-use primus_decompose::primitive::ApproxSignedBasis;
+use primus_decompose::{DecompositionBaseLog, primitive::ApproxSignedBasis};
 use primus_lattice::lwe::{Lwe, LweIter};
-use primus_lwe::{LweKeySwitchingKey, LweParameters, LwePublicKey, LweSecretKey, SecretKeyDistr};
+use primus_lwe::{LweDimension, LweKeySwitchingKey, LweParameters, LwePublicKey, LweSecretKey, SecretKeyDistr};
 use primus_modulus::NativeModulus;
 
 fn main() {
     let params = LweParameters::new(
-        64,
+        LweDimension::new(64),
         4u32,
         NativeModulus::new(),
         SecretKeyDistr::UniformBinary,
@@ -63,14 +63,14 @@ fn main() {
     }
 
     let output_params = LweParameters::new(
-        32,
+        LweDimension::new(32),
         4u32,
         NativeModulus::new(),
         SecretKeyDistr::UniformBinary,
         0.7,
     );
     let output_secret = LweSecretKey::generate(&output_params, &mut rng);
-    let basis = ApproxSignedBasis::new(params.cipher_modulus_value(), 4, None);
+    let basis = ApproxSignedBasis::new(params.cipher_modulus_value(), DecompositionBaseLog::new(4), None);
     let switching = LweKeySwitchingKey::generate(
         secret.as_view(),
         &output_secret,
@@ -90,9 +90,9 @@ fn main() {
 
 ## 参数与编码
 
-配置输入使用 `LweParameters::try_new`，维数、编码、秘密支持集/重量和噪声采样错误返回 `LweParameterError`。固定重量不得超过 n。`new` 是主动 panic 的便捷形式；明文模数从保存的 codec 派生。 `LweParameterError::SecretKey` 以 `SecretKeySamplerError` 保留采样配置、重量或模数适配的具体原因；`Noise` 保留 `GaussianError`。
+外部配置输入先用 `LweDimension::try_new` 检查非零 `n` 和可表示的 `n+1`，失败返回 `LweDimensionError`。`LweParameters::try_new` 接收该维数，对编码、秘密支持集/重量和噪声采样错误返回 `LweParameterError`。固定重量不得超过 n。`new` 是主动 panic 的便捷形式；明文模数从保存的 codec 派生。 `LweParameterError::SecretKey` 以 `SecretKeySamplerError` 保留采样配置、重量或模数适配的具体原因；`Noise` 保留 `GaussianError`。
 
-`LweParameters::new(n, t, modulus, secret_distribution, noise_standard_deviation)` 要求 `n != 0`、`n + 1` 可表示，并满足 codec 和采样器的有效性条件，包括 `t >= 2`、`q > t`。`NativeModulus<T>` 表示 `q = 2^T::BITS`； `cipher_modulus_value()` 对 Native 模数返回 `None`，对显式模数返回 `Some(q)`。 噪声标准差以密文系数为单位。
+`LweParameters::new(LweDimension::new(n), t, modulus, secret_distribution, noise_standard_deviation)` 要求满足 codec 和采样器的有效性条件，包括 `t >= 2`、`q > t`。`params.dimension()` 返回 `LweDimension`，用 `.ciphertext_len()` 分配存储，在原始切片边界用 `.get()` 提取整数。原始秘密视图仍返回整数维数，允许零维。`NativeModulus<T>` 表示 `q = 2^T::BITS`； `cipher_modulus_value()` 对 Native 模数返回 `None`，对显式模数返回 `Some(q)`。 噪声标准差以密文系数为单位。
 
 消息接口接受类型 `T`、位于 `[0,t)` 内的规范剩余类，批量及 packed 加密接受 `&[T]`。 `encrypt` 使用 unsigned embedding；`encrypt_with_embedding` 通过 `primus_encoding` 中的 `PlaintextEmbedding::Unsigned` 或 `PlaintextEmbedding::Centered` 选择编码。Centered embedding 仍接受无符号剩余类， 其中 `t - 1` 表示 `-1`。两种编码都使用 `decrypt` 解密，结果使用密文系数类型 `T`， 位于 `[0,t)`。批量和 packed 解密同样返回 `Vec<T>` 或写入 `[T]`；应用在加密前、 解密后按需转换整数类型或有明确语义的消息类型。
 

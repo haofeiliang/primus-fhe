@@ -122,7 +122,7 @@ impl<T: FheUint> ServerKey<T> {
     ) -> bool {
         self.input_distribution == parameters.external_lwe().secret_key_distr()
             && &self.blind_rotation_basis == parameters.blind_rotation().basis()
-            && self.key_switching_key.poly_length() == parameters.poly_length()
+            && self.key_switching_key.poly_length() == parameters.poly_length().get()
             && self.key_switching_key.input_modulus()
                 == parameters.accumulator_ntru().cipher_modulus_value()
             && self.key_switching_key.output_dimension() == parameters.external_lwe_dimension()
@@ -131,7 +131,7 @@ impl<T: FheUint> ServerKey<T> {
                 Controls::Classic { initializer, data } => {
                     initializer.as_ref().len() == parameters.blind_rotation().nlev_len()
                         && data.len()
-                            == parameters.external_lwe_dimension()
+                            == parameters.external_lwe_dimension().get()
                                 * if self.input_distribution.is_binary() {
                                     1
                                 } else {
@@ -140,7 +140,7 @@ impl<T: FheUint> ServerKey<T> {
                                 * initializer.as_ref().len()
                 }
                 Controls::Sparse(key) => {
-                    key.input_dimension() == parameters.external_lwe_dimension()
+                    key.input_dimension() == (parameters.external_lwe_dimension())
                         && key.control_len == parameters.blind_rotation().nlev_len()
                 }
             }

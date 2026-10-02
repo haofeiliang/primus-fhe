@@ -130,6 +130,8 @@ Context 保存不可变参数和变换表，ServerKey 保存求值材料；Evalu
 
 直接使用共享层时，`LookupTable` / `InterleavedLookupTable` 的 `try_from_fn`、`try_from_slice` 接收输入 codec、累加器模数和输出 codec，负责 unsigned Rounded 编码与检查。 奇数全域使用 `LookupTable::try_from_odd_full_domain_fn` / `_slice`；family 编译入口复用这些方法。
 
+共享 LUT 构造器和 `BooleanEvaluator::try_new` 都接收从 `primus_lattice` 重新导出的 `PolyLength`。直接传入环参数返回的已验证长度，或用 `PolyLength::try_new(N)` 构造一次。支持范围为 `2..=2^17` 内的二次幂；编译仍检查旋转域能否由系数字宽表示、编码、输出容量与数值范围。
+
 Raw 构造器 `LookupTable::try_new` / `InterleavedLookupTable::try_new` 显式接收 编程前缀长度 `D` 和已编码输出。`input_ciphertext_modulus` 描述输入量化模数， `coefficient_modulus` 描述 LUT/累加器模数，raw 输出必须是后者下的规范值。 `k` 和明文模数都不必是二次幂；补齐数量 `s` 必须与容量、实际中心分离和噪声余量相容。 构造失败不会返回部分表。输出槽、重复区间与舍入规则见[旋转几何](IMPLEMENTATION.md#rotation-geometry)。
 
 ## 编码与密钥契约
@@ -199,7 +201,7 @@ assert_eq!(message, 7);
 
 ## 有界双输入 PBS
 
-`BivariateLookupTable::try_new(B, R, N, input_codec, output_codec, function)` 通过 `z = x + B*y` 编译 `0 <= x < B`、`0 <= y < R` 上的 `f(x,y)`。 `B`、`R` 必须为正，`D = B*R <= ceil(t_in/2)`，并满足普通 LUT 的容量和旋转中心检查。 只编译 `0..D` 前缀，回调按 `x` 优先变化的顺序求值；`B` 不必是二次幂。 输出 codec 独立选择 `t_out`，但必须使用相同密文模数。
+`BivariateLookupTable::try_new(B, R, poly_length, input_codec, output_codec, function)` 通过 `z = x + B*y` 编译 `0 <= x < B`、`0 <= y < R` 上的 `f(x,y)`。 `B`、`R` 必须为正，`D = B*R <= ceil(t_in/2)`，并满足普通 LUT 的容量和旋转中心检查。 只编译 `0..D` 前缀，回调按 `x` 优先变化的顺序求值；`B` 不必是二次幂。 输出 codec 独立选择 `t_out`，但必须使用相同密文模数。
 
 按外部 LWE 维数一次性分配 `packed` 和 `output`。 `pack_to` 用一遍模乘加写入 `lhs + B*rhs`，不分配内存；长度不同或缺少 body 时在写入前拒绝。 两输入必须具有相同的实际秘密、密文模数及传入的 unsigned 输入 codec，系数规范、明文不超出各自边界。 raw 密文无法验证这些语义条件。GLWE 使用其 order 对应的外部维数与 `input_plaintext_codec()`，无需增加密钥材料。
 
@@ -209,7 +211,7 @@ assert_eq!(message, 7);
 
 ## 固定尺度分解式 MVB
 
-`FactorizedLookupTable::try_new(D, N, output_count, input_codec, output_codec, function)` 使用 Rounded 输入和 unsigned Scaled 输出编译非空前半区前缀。系数模数可以显式且为奇数， 或为 Native 且实际 Scaled 输出尺度为偶数；显式偶模数仍不支持。 Callback 每个组合调用一次，参数为 `(input, output_index)`，**外层遍历输出索引**。 有符号整数因子范数决定噪声放大；代数关系见 `FactorizedLookupTable` rustdoc 和 [MVB 设计](IMPLEMENTATION.md#factorized-mvb)。
+`FactorizedLookupTable::try_new(D, poly_length, output_count, input_codec, output_codec, function)` 使用 Rounded 输入和 unsigned Scaled 输出编译非空前半区前缀。系数模数可以显式且为奇数， 或为 Native 且实际 Scaled 输出尺度为偶数；显式偶模数仍不支持。 Callback 每个组合调用一次，参数为 `(input, output_index)`，**外层遍历输出索引**。 有符号整数因子范数决定噪声放大；代数关系见 `FactorizedLookupTable` rustdoc 和 [MVB 设计](IMPLEMENTATION.md#factorized-mvb)。
 
 全部输出共享一次步长为 1 的 BR，再分别乘公开多项式。正输出数不补齐、不降低输入容量； 代价是各输出的因子会放大 BR 噪声，输入几何检查不能代替噪声预算。解密相位须使用保留的 Scaled codec；接入下一次 Rounded 输入 PBS 时须计入编码中心差异。
 

@@ -1,3 +1,5 @@
+use primus_decompose::DecompositionBaseLog;
+use primus_lattice::LweDimension;
 use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
@@ -18,7 +20,7 @@ fn parameters(
 ) -> TfheParameters<u32> {
     let modulus = BarrettModulus::new(cipher_modulus);
     let external_lwe = LweParameters::new(
-        LWE_DIMENSION,
+        LweDimension::new(LWE_DIMENSION),
         PLAIN_MODULUS,
         modulus,
         SecretKeyDistr::UniformBinary,
@@ -34,9 +36,13 @@ fn parameters(
 
     TfheParameters::try_new(
         external_lwe,
-        NlevParameters::with_ntru_params(&accumulator, bootstrapping_log_basis, None),
+        NlevParameters::with_ntru_params(
+            &accumulator,
+            DecompositionBaseLog::new(bootstrapping_log_basis),
+            None,
+        ),
         primus_tfhe_ntru::DecompositionConfig {
-            log_basis: key_switching_log_basis,
+            log_basis: DecompositionBaseLog::new(key_switching_log_basis),
             level_count: None,
         },
         0.7,
@@ -85,11 +91,12 @@ fn rejects_server_keys_with_same_layout_but_different_bases_or_modulus() {
             context.parameters().blind_rotation().nlev_len()
         );
         assert_eq!(
-            candidate.key_switching_basis().decompose_length(),
+            candidate.key_switching_basis().decompose_length().get(),
             context
                 .parameters()
                 .key_switching_basis()
                 .decompose_length()
+                .get()
         );
         let table = U32NttTable::new(
             POLY_LENGTH.trailing_zeros(),

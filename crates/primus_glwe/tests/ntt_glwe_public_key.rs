@@ -1,9 +1,12 @@
 //! Public encryption for unsigned and centered messages using a shared workspace.
+
 use primus_encoding::PlaintextEmbedding;
 use primus_glwe::{
     GlweParameters, NttGlweCiphertext, NttGlwePublicEncryptWorkspace, NttGlwePublicKey,
     NttGlweSecretKey, SecretKeyDistr,
 };
+use primus_lattice::GlweDimension;
+use primus_lattice::PolyLength;
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, UintNttTable};
 use primus_poly::Polynomial;
@@ -19,7 +22,7 @@ const CIPHER_MODULUS: u64 = 1_125_899_906_826_241;
 fn public_key_encoding_modes_reuse_workspace() {
     let modulus = BarrettModulus::new(CIPHER_MODULUS);
     let params = GlweParameters::new(
-        DIMENSION,
+        GlweDimension::new(DIMENSION),
         POLY_LENGTH,
         PLAIN_MODULUS,
         modulus,
@@ -45,14 +48,14 @@ fn public_key_encoding_modes_reuse_workspace() {
             .collect::<Vec<_>>(),
     );
 
-    let mut workspace = NttGlwePublicEncryptWorkspace::new(POLY_LENGTH);
+    let mut workspace = NttGlwePublicEncryptWorkspace::new(PolyLength::new(POLY_LENGTH));
     // The same coins must yield the same ciphertext for explicit encoding and
     // the corresponding plaintext embedding, even after reusing the workspace.
     for embedding in [PlaintextEmbedding::Unsigned, PlaintextEmbedding::Centered] {
         let seed = rng.next_u64();
         let mut actual_rng = StdRng::seed_from_u64(seed);
         let mut expected_rng = StdRng::seed_from_u64(seed);
-        let mut fresh_workspace = NttGlwePublicEncryptWorkspace::new(POLY_LENGTH);
+        let mut fresh_workspace = NttGlwePublicEncryptWorkspace::new(PolyLength::new(POLY_LENGTH));
         let expected = match embedding {
             PlaintextEmbedding::Unsigned => public_key.encrypt(
                 &message,

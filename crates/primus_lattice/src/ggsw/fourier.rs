@@ -85,7 +85,7 @@ where
     {
         let glwe_size = size.glwe_size();
         debug_assert!(
-            level < size.decompose_length(),
+            level < size.decompose_length().get(),
             "gadget level is out of range"
         );
         for diagonal in crate::gadget::diagonal_level_mut(

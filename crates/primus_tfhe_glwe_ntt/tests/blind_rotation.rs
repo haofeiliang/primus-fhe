@@ -1,10 +1,12 @@
 //! Direct and quantized rotations against an independent negacyclic oracle;
 //! raw LUT and workspace failures must precede accumulator writes.
 
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_glwe::{
     GlevParameters, GlweParameters, GlweSecretKey, NttGlweGadgetEncryptWorkspace, NttGlweSecretKey,
     SecretKeyDistr,
 };
+use primus_lattice::{GlweDimension, LweDimension};
 use primus_lattice::{
     glwe::{Glwe, NttGlwe},
     lwe::Lwe,
@@ -55,21 +57,22 @@ fn functional_bootstrapping_key_blind_rotates() {
     let mut rng = StdRng::seed_from_u64(42);
     // Input quantization uses a different modulus from the accumulator.
     let lwe_params = LweParameters::new(
-        LWE_DIMENSION,
+        LweDimension::new(LWE_DIMENSION),
         PLAINTEXT_MODULUS,
         NativeModulus::new(),
         SecretKeyDistr::UniformTernary,
         0.7,
     );
     let glwe_params = GlweParameters::new(
-        GLWE_DIMENSION,
+        GlweDimension::new(GLWE_DIMENSION),
         POLY_LENGTH,
         PLAINTEXT_MODULUS,
         modulus,
         SecretKeyDistr::SparseTernary,
         0.7,
     );
-    let ggsw_params = GlevParameters::with_glwe_params(&glwe_params, 8, None);
+    let ggsw_params =
+        GlevParameters::with_glwe_params(&glwe_params, DecompositionBaseLog::new(8), None);
     let input_secret_key =
         LweSecretKey::new(vec![1u32, 0, u32::MAX, 1], SecretKeyDistr::UniformTernary);
     let coeff_output_secret_key = GlweSecretKey::generate(
@@ -170,7 +173,10 @@ fn functional_bootstrapping_key_blind_rotates() {
         (
             modulus,
             &ntt,
-            primus_glwe::GadgetSize::new(glwe_params.size(), ggsw_params.decompose_length() + 1),
+            primus_glwe::GadgetSize::new(
+                glwe_params.size(),
+                DecompositionLevelCount::new(ggsw_params.decompose_length().get() + 1),
+            ),
         ),
     ] {
         blind_rotation_workspace.resize(size);

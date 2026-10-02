@@ -1,3 +1,5 @@
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_lattice::PolyLength;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable};
@@ -75,8 +77,8 @@ fn ntt_scheme_switch_has_independent_bases_and_produces_cmux_controls() {
     let secret = secret();
     let key = NttNtruSecretKey::try_from_coeff_secret_key(&secret, modulus, &table).unwrap();
     let mut rng = StdRng::seed_from_u64(117);
-    let mut generation = NttNtruGadgetEncryptWorkspace::new(N);
-    let mut scratch = NttNtruExternalProductWorkspace::new(N);
+    let mut generation = NttNtruGadgetEncryptWorkspace::new(PolyLength::new(N));
+    let mut scratch = NttNtruExternalProductWorkspace::new(PolyLength::new(N));
     let messages = messages(Q.into());
     let operands = messages.each_ref().map(|message| {
         let mut transformed = primus_ntru::NttNtruCiphertext::<Vec<u64>>::zero(N);
@@ -86,11 +88,18 @@ fn ntt_scheme_switch_has_independent_bases_and_produces_cmux_controls() {
         output
     });
     for log_key_basis in [3, 10] {
-        let key_parameters = NlevParameters::with_ntru_params(&parameters, log_key_basis, None);
+        let key_parameters = NlevParameters::with_ntru_params(
+            &parameters,
+            DecompositionBaseLog::new(log_key_basis),
+            None,
+        );
         // L_output below and above L_key=5 for B_key=2^10.
         for output_levels in [2, 6] {
-            let output_parameters =
-                NlevParameters::with_ntru_params(&parameters, 8, Some(output_levels));
+            let output_parameters = NlevParameters::with_ntru_params(
+                &parameters,
+                DecompositionBaseLog::new(8),
+                Some(DecompositionLevelCount::new(output_levels)),
+            );
             let ss = NttNtruSchemeSwitchKey::generate(
                 &secret,
                 &key,
@@ -154,7 +163,7 @@ fn ntt_scheme_switch_has_independent_bases_and_produces_cmux_controls() {
                 );
             }
             output.as_mut().fill(7);
-            let mut wrong = NttNtruExternalProductWorkspace::new(2 * N);
+            let mut wrong = NttNtruExternalProductWorkspace::new(PolyLength::new(2 * N));
             assert!(
                 catch_unwind(AssertUnwindSafe(|| ss.apply_to(
                     &input,
@@ -180,8 +189,13 @@ fn ntt_scheme_switch_has_independent_bases_and_produces_cmux_controls() {
             assert!(output.as_ref().iter().all(|&value| value == 7));
         }
     }
-    let foreign = primus_decompose::primitive::ApproxSignedBasis::new(None, 8, Some(2));
-    let key_parameters = NlevParameters::with_ntru_params(&parameters, 10, None);
+    let foreign = primus_decompose::primitive::ApproxSignedBasis::new(
+        None,
+        DecompositionBaseLog::new(8),
+        Some(DecompositionLevelCount::new(2)),
+    );
+    let key_parameters =
+        NlevParameters::with_ntru_params(&parameters, DecompositionBaseLog::new(10), None);
     let mut untouched = StdRng::seed_from_u64(19);
     let mut invalid = StdRng::seed_from_u64(19);
     assert!(
@@ -216,9 +230,9 @@ fn fourier<Table: FftTable>() {
     let secret = secret();
     let key = FourierNtruSecretKey::try_from_coeff_secret_key(&secret, &mut fft).unwrap();
     let mut rng = StdRng::seed_from_u64(119);
-    let mut generation = FourierNtruGadgetEncryptWorkspace::new(N);
-    let mut encrypt = FourierNtruEncryptWorkspace::new(N);
-    let mut scratch = FourierNtruExternalProductWorkspace::new(N);
+    let mut generation = FourierNtruGadgetEncryptWorkspace::new(PolyLength::new(N));
+    let mut encrypt = FourierNtruEncryptWorkspace::new(PolyLength::new(N));
+    let mut scratch = FourierNtruExternalProductWorkspace::new(PolyLength::new(N));
     let messages = messages(q);
     let operands = messages.each_ref().map(|message| {
         let mut transformed = primus_ntru::FourierNtruCiphertext::<Vec<Complex64>>::zero(N / 2);
@@ -235,10 +249,17 @@ fn fourier<Table: FftTable>() {
         output
     });
     for log_key_basis in [3, 10] {
-        let key_parameters = NlevParameters::with_ntru_params(&parameters, log_key_basis, None);
+        let key_parameters = NlevParameters::with_ntru_params(
+            &parameters,
+            DecompositionBaseLog::new(log_key_basis),
+            None,
+        );
         for output_levels in [2, 7] {
-            let output_parameters =
-                NlevParameters::with_ntru_params(&parameters, 8, Some(output_levels));
+            let output_parameters = NlevParameters::with_ntru_params(
+                &parameters,
+                DecompositionBaseLog::new(8),
+                Some(DecompositionLevelCount::new(output_levels)),
+            );
             let ss = FourierNtruSchemeSwitchKey::generate(
                 &secret,
                 &key,
@@ -290,7 +311,7 @@ fn fourier<Table: FftTable>() {
                 assert_phase(row.as_ref(), messages[bit as usize].as_ref(), q, q / 2048);
             }
             output.as_mut().fill(Complex64::new(7.0, 0.0));
-            let mut wrong = FourierNtruExternalProductWorkspace::new(2 * N);
+            let mut wrong = FourierNtruExternalProductWorkspace::new(PolyLength::new(2 * N));
             assert!(
                 catch_unwind(AssertUnwindSafe(|| ss.apply_to(
                     &input,

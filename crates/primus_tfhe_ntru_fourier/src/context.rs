@@ -36,7 +36,7 @@ where
     pub fn try_from_parameters(
         parameters: TfheParameters<T, LM>,
     ) -> Result<Self, TfheContextError> {
-        let table = Table::new(parameters.accumulator_ntru().poly_length().trailing_zeros())?;
+        let table = Table::new(parameters.accumulator_ntru().poly_length().log_n())?;
         Ok(Self { parameters, table })
     }
 
@@ -45,7 +45,7 @@ where
         parameters: TfheParameters<T, LM>,
         table: Table,
     ) -> Result<Self, TfheContextError> {
-        let expected = parameters.poly_length();
+        let expected = parameters.poly_length().get();
         let actual = table.poly_length();
         if actual != expected {
             return Err(TfheContextError::PolynomialLengthMismatch { expected, actual });
@@ -78,14 +78,14 @@ where
     /// Uses the dimension selected by the parameters; no key or encryption is involved.
     #[must_use]
     pub fn allocate_lwe_ciphertext(&self) -> LweCiphertext<T> {
-        LweCiphertext::zero(self.parameters.external_lwe_dimension())
+        LweCiphertext::zero(self.parameters.external_lwe_dimension().get())
     }
 
     /// Allocates a zeroed coefficient-domain NTRU with the accumulator layout.
     /// Requires only public parameters; this does not encrypt a message.
     #[must_use]
     pub fn allocate_accumulator_ciphertext(&self) -> NtruCiphertext<Vec<T>> {
-        NtruCiphertext::zero(self.parameters.accumulator_ntru().poly_length())
+        NtruCiphertext::zero(self.parameters.accumulator_ntru().poly_length().get())
     }
 
     /// Prepares private-key encryption/decryption in the accumulator ring domain.

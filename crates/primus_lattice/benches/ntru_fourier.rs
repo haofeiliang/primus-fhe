@@ -1,9 +1,11 @@
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use std::hint::black_box;
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{FftEngine, FftTable, RustFftTable, TfheFftTable, TorusFftValue};
 use primus_lattice::{
+    PolyLength,
     ngsw::{FourierNgswOwned, Ngsw},
     ntru::{FourierNtruOwned, Ntru},
     workspace::FourierNtruExternalProductWorkspace,
@@ -18,7 +20,11 @@ fn fourier<T: TorusFftValue>(
 ) {
     let mut fft = FftEngine::new(&table);
     let exponent = fft.poly_length() / 3;
-    let basis = ApproxSignedBasis::<T>::new(None, log_b, Some(levels));
+    let basis = ApproxSignedBasis::<T>::new(
+        None,
+        DecompositionBaseLog::new(log_b),
+        Some(DecompositionLevelCount::new(levels)),
+    );
     let poly_length = fft.poly_length();
     // Deterministic coefficient data gives both FFT backends the same workload
     // in their own evaluation order and normalized torus representation.
@@ -48,7 +54,7 @@ fn fourier<T: TorusFftValue>(
     coeff_key.write_fourier_form(&mut key, &mut fft);
     let mut output = Ntru::new(vec![T::ZERO; poly_length]);
     let mut fourier_output = FourierNtruOwned::zero(poly_length / 2);
-    let mut workspace = FourierNtruExternalProductWorkspace::new(poly_length);
+    let mut workspace = FourierNtruExternalProductWorkspace::new(PolyLength::new(poly_length));
 
     let mut group = c.benchmark_group(format!(
         "ntru/fourier/{backend}/u{}/native/n{}/logb{log_b}/l{levels}",

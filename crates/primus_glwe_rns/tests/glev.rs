@@ -1,7 +1,9 @@
+use primus_decompose::DecompositionBaseLog;
 use primus_glwe_rns::{
     CrtGlevParameters, CrtGlweParameters, DcrtGadgetDomain, DcrtGlweDecryptWorkspace,
     DcrtGlweSecretKey, GlweSecretKey, SecretKeyDistr,
 };
+use primus_lattice::GlweDimension;
 use primus_lattice::{glev::DcrtGlev, glwe::DcrtGlwe, workspace::DcrtGlevMulWorkspace};
 use primus_modulus::BarrettModulus;
 use primus_ntt::UintDcrtTable;
@@ -37,7 +39,7 @@ fn test_rns_glev() {
     let mut rng = StdRng::seed_from_u64(42);
 
     let glwe_params = CrtGlweParameters::new(
-        dimension,
+        GlweDimension::new(dimension),
         poly_length,
         mod_t,
         mod_gamma,
@@ -58,7 +60,8 @@ fn test_rns_glev() {
     );
     let dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&sk, &table);
 
-    let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, 20, None);
+    let glev_params =
+        CrtGlevParameters::with_glwe_params(&glwe_params, DecompositionBaseLog::new(20), None);
     let domain = DcrtGadgetDomain::try_new(&glev_params, &table).unwrap();
     let rns_glev_len = glev_params.rns_glev_len();
 

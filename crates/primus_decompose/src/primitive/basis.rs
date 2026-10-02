@@ -1,7 +1,8 @@
 use primus_integer::FheUint;
 
 use crate::{
-    ApproxSignedBasisError, MIN_DECOMPOSITION_LOG_BASIS, decomposition_length_and_drop_bits,
+    ApproxSignedBasisError, DecompositionBaseLog, DecompositionLevelCount,
+    decomposition_length_and_drop_bits,
 };
 
 use super::common::{ScalarIter, SignedDecomposerIter, ValueCarryInitMode, ValueMask};
@@ -25,9 +26,9 @@ pub struct ApproxSignedBasis<T: FheUint> {
     basis: T,
     basis_minus_one: T,
     modulus_minus_basis: T,
-    decompose_length: usize,
+    decompose_length: DecompositionLevelCount,
     value_bits: u32,
-    log_basis: u32,
+    log_basis: DecompositionBaseLog,
     drop_bits: u32,
     carry_mask: T,
     value_carry_init_mode: ValueCarryInitMode<T>,
@@ -51,7 +52,7 @@ impl<T: FheUint> ApproxSignedBasis<T> {
     ///
     /// `modulus` may be `None` to use the implicit power-of-two modulus
     /// `2^T::BITS`. `log_basis` is the base-2 logarithm of the decomposition
-    /// basis (`basis = 2^log_basis`) and must be in `2..T::BITS`.
+    /// basis (`basis = 2^log_basis`) and must be below `T::BITS`. The checked type establishes its lower bound.
     /// `reverse_length`, when provided, limits the number of decomposition
     /// steps by discarding more low bits and retaining the highest levels.
     ///
@@ -61,11 +62,15 @@ impl<T: FheUint> ApproxSignedBasis<T> {
     ///
     /// # Panics
     ///
-    /// Panics if `log_basis` is outside `2..T::BITS`, if an explicit modulus
-    /// is smaller than the basis, or if `reverse_length` is zero or exceeds
+    /// Panics if `log_basis >= T::BITS`, if an explicit modulus
+    /// is smaller than the basis, or if `reverse_length` exceeds
     /// the full decomposition length.
     #[inline]
-    pub fn new(modulus: Option<T>, log_basis: u32, reverse_length: Option<usize>) -> Self {
+    pub fn new(
+        modulus: Option<T>,
+        log_basis: DecompositionBaseLog,
+        reverse_length: Option<DecompositionLevelCount>,
+    ) -> Self {
         Self::try_new(modulus, log_basis, reverse_length)
             .unwrap_or_else(|message| panic!("{message}"))
     }
@@ -75,16 +80,18 @@ impl<T: FheUint> ApproxSignedBasis<T> {
     #[inline]
     pub fn try_new(
         modulus: Option<T>,
-        log_basis: u32,
-        reverse_length: Option<usize>,
+        log_basis: DecompositionBaseLog,
+        reverse_length: Option<DecompositionLevelCount>,
     ) -> Result<Self, ApproxSignedBasisError> {
-        if log_basis < MIN_DECOMPOSITION_LOG_BASIS || log_basis >= T::BITS {
+        if log_basis.get() >= T::BITS {
             return Err(ApproxSignedBasisError::InvalidLogBasis {
-                log_basis,
+                log_basis: log_basis.get(),
                 limb_bits: T::BITS,
             });
         }
 
+        let checked_log_basis = log_basis;
+        let log_basis = log_basis.get();
         let basis = T::ONE << log_basis;
         let basis_minus_one = basis - T::ONE;
 
@@ -105,7 +112,9 @@ impl<T: FheUint> ApproxSignedBasis<T> {
             }
         };
         let (decompose_length, drop_bits) =
-            decomposition_length_and_drop_bits(value_bits, log_basis, reverse_length)?;
+            decomposition_length_and_drop_bits(value_bits, checked_log_basis, reverse_length)?;
+        let checked_decompose_length = decompose_length;
+        let decompose_length = decompose_length.get();
         let init_carry_mask = drop_bits.checked_sub(1).map(|bit| T::ONE << bit);
 
         // Power-of-two inputs already have the right bit representation. Other
@@ -147,8 +156,8 @@ impl<T: FheUint> ApproxSignedBasis<T> {
             modulus_minus_basis,
             value_bits,
             carry_mask,
-            decompose_length,
-            log_basis,
+            decompose_length: checked_decompose_length,
+            log_basis: checked_log_basis,
             drop_bits,
             value_carry_init_mode,
             scalars,
@@ -175,8 +184,9 @@ impl<T: FheUint> ApproxSignedBasis<T> {
     }
 
     /// Returns the decompose length of this [`ApproxSignedBasis<T>`].
+    #[must_use]
     #[inline]
-    pub fn decompose_length(&self) -> usize {
+    pub fn decompose_length(&self) -> DecompositionLevelCount {
         self.decompose_length
     }
 
@@ -193,8 +203,9 @@ impl<T: FheUint> ApproxSignedBasis<T> {
     }
 
     /// Returns the log basis of this [`ApproxSignedBasis<T>`].
+    #[must_use]
     #[inline]
-    pub fn log_basis(&self) -> u32 {
+    pub fn log_basis(&self) -> DecompositionBaseLog {
         self.log_basis
     }
 

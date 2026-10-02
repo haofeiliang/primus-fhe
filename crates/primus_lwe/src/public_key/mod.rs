@@ -5,6 +5,7 @@ mod batch;
 use primus_data::DataMut;
 use primus_distr::{DiscreteGaussian, sample_sparse_ternary_values_to};
 use primus_integer::FheUint;
+use primus_lattice::LweDimension;
 use primus_lattice::lwe::Lwe;
 use primus_reduce::RingContext;
 
@@ -50,7 +51,7 @@ const ROWS_PER_BLOCK: usize = 16;
 #[derive(Clone)]
 pub struct LwePublicKey<T: FheUint> {
     data: Vec<T>,
-    dimension: usize,
+    dimension: LweDimension,
     modulus_minus_one: T,
 }
 
@@ -84,11 +85,12 @@ impl<T: FheUint> LwePublicKey<T> {
         let dimension = params.dimension();
         assert_eq!(
             secret_key.dimension(),
-            dimension,
+            dimension.get(),
             "LWE public-key dimension mismatch"
         );
-        let row_len = dimension + 1;
+        let row_len = dimension.ciphertext_len();
         let length = dimension
+            .get()
             .checked_mul(row_len)
             .expect("LWE public-key storage length overflow");
         let mut data = vec![T::ZERO; length];
@@ -115,7 +117,7 @@ impl<T: FheUint> LwePublicKey<T> {
     /// Returns the dimension of the secret and output LWE ciphertexts.
     #[must_use]
     #[inline]
-    pub fn dimension(&self) -> usize {
+    pub fn dimension(&self) -> LweDimension {
         self.dimension
     }
 
@@ -151,7 +153,7 @@ impl<T: FheUint> LwePublicKey<T> {
         R: rand::Rng + rand::CryptoRng,
     {
         self.check_modulus(modulus);
-        let mut output = LweCiphertext::zero(self.dimension);
+        let mut output = LweCiphertext::zero(self.dimension.get());
         self.encrypt_encoded_slice(plaintext, output.as_mut(), modulus, noise, rng);
         output
     }
@@ -189,7 +191,7 @@ impl<T: FheUint> LwePublicKey<T> {
         let output = output.as_mut();
         assert_eq!(
             output.len(),
-            self.dimension + 1,
+            self.dimension.ciphertext_len(),
             "LWE public-key output length mismatch"
         );
         self.encrypt_encoded_slice(plaintext, output, modulus, noise, rng);
@@ -335,10 +337,10 @@ impl<T: FheUint> LwePublicKey<T> {
         R: rand::Rng + rand::CryptoRng,
     {
         noise.sample_to(output, rng);
-        modulus.reduce_add_assign(&mut output[self.dimension], plaintext);
-        let row_len = self.dimension + 1;
+        modulus.reduce_add_assign(&mut output[self.dimension.get()], plaintext);
+        let row_len = self.dimension.ciphertext_len();
         // Clamping keeps the block length within the validated key allocation.
-        let block_len = self.dimension.min(ROWS_PER_BLOCK) * row_len;
+        let block_len = self.dimension.get().min(ROWS_PER_BLOCK) * row_len;
         let mut ephemeral = [0i8; ROWS_PER_BLOCK];
         for rows in self.data.chunks(block_len) {
             let coefficients = &mut ephemeral[..rows.len() / row_len];

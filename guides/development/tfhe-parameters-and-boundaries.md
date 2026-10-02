@@ -17,7 +17,7 @@
 | `CircuitBootstrapConfig` → `CircuitBootstrapParameters` | output、trace、scheme-switch 三个 basis；后两者各自的噪声 | 环大小/模数继承累加环，输出布局由 output basis 派生；检查 interleaved 容量 |
 | `LookupTableConfig` | 输入 chunk 数 c、输出 chunk 数 o、低位系数 chunk 数 d | `M=t/2`、每个多项式的有效系数数 `M^d`、每输出多项式数 `M^(c-d)`，以及完整存储长度 |
 
-入口：[LWE](../../crates/primus_lwe/src/parameter.rs)、[GLWE](../../crates/primus_glwe/src/parameter/glwe/single.rs)、[NTRU](../../crates/primus_ntru/src/parameter.rs)、[分解](../../crates/primus_decompose/src/config.rs)、[GLWE TFHE](../../crates/primus_tfhe_glwe/src/parameters.rs)、[NTRU TFHE](../../crates/primus_tfhe_ntru/src/parameters.rs)。
+入口：[LWE](../../crates/primus_lwe/src/parameter.rs)、[GLWE](../../crates/primus_glwe/src/parameter/glwe/single.rs)、[NTRU](../../crates/primus_ntru/src/parameter.rs)、[分解](../../crates/primus_decompose/src/parameters.rs)、[GLWE TFHE](../../crates/primus_tfhe_glwe/src/parameters.rs)、[NTRU TFHE](../../crates/primus_tfhe_ntru/src/parameters.rs)。
 
 所有这些配置的噪声标准差均以对应模数下的**系数单位**表示；Fourier 内部将环系数转为归一化 torus，不改变配置输入的单位。BR、返回 KS、trace、scheme switch 的误差来源不同。GLWE 普通 BR/KS 当前继承 accumulator 噪声；NTRU 的返回 KS 单独选择 q 下的噪声。CBS 的 trace 和 scheme-switch 噪声独立于普通 PBS。
 

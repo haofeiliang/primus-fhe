@@ -1,5 +1,7 @@
 //! Backend Boolean integration: real PBS, encoding, rejection and evaluator reuse.
 
+use primus_decompose::DecompositionBaseLog;
+use primus_lattice::LweDimension;
 use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntru::SecretKeyDistr;
@@ -19,16 +21,22 @@ static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocato
 fn check_context(distr: SecretKeyDistr) {
     let parameters = TfheParameters::<u32>::try_from_config(TfheConfig {
         accumulator_modulus: BarrettModulus::new(132_120_577),
-        external_lwe: LweParameters::new(4, 4, BarrettModulus::new(132_120_577), distr, 0.7),
+        external_lwe: LweParameters::new(
+            LweDimension::new(4),
+            4,
+            BarrettModulus::new(132_120_577),
+            distr,
+            0.7,
+        ),
         poly_length: 32,
         accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
         accumulator_noise_standard_deviation: 0.7,
         blind_rotation: DecompositionConfig {
-            log_basis: 8,
+            log_basis: DecompositionBaseLog::new(8),
             level_count: None,
         },
         key_switching: DecompositionConfig {
-            log_basis: 8,
+            log_basis: DecompositionBaseLog::new(8),
             level_count: None,
         },
         key_switching_noise_standard_deviation: 0.7,
@@ -48,7 +56,7 @@ fn check_context(distr: SecretKeyDistr) {
         encryptor.encrypt(false, &mut rng).unwrap(),
         encryptor.encrypt(true, &mut rng).unwrap(),
     ];
-    let mut rhs = LweCiphertext::zero(context.parameters().external_lwe_dimension());
+    let mut rhs = LweCiphertext::zero(context.parameters().external_lwe_dimension().get());
     let mut output = rhs.clone();
     let mut current = output.clone();
     let (_, allocation) = allocations::measure(|| {

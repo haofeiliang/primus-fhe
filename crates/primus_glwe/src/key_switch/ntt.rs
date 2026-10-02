@@ -3,6 +3,7 @@
 use primus_data::{Data, DataMut};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_integer::FheUint;
+use primus_lattice::GlweDimension;
 use primus_lattice::{
     GadgetSize, GlweSize,
     glev::{NttGlev, NttGlevIter},
@@ -33,7 +34,8 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
     /// # Panics
     ///
     /// Panics if key layouts, NTT length/modulus or gadget workspace differ
-    /// from `params`. Compatibility checks precede sampling.
+    /// from `params`, or the combined key storage length overflows.
+    /// Compatibility and storage checks precede sampling.
     ///
     /// # Correctness
     ///
@@ -58,7 +60,7 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
         workspace.assert_glev_compatible(params.size());
         assert_eq!(
             input_secret_key.poly_length(),
-            params.poly_length(),
+            params.poly_length().get(),
             "input secret polynomial length mismatch"
         );
 
@@ -91,8 +93,15 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
         let output_size = params.size();
         let glev_len = output_size.glev_len();
 
-        let mut data = vec![T::ZERO; input_size.dimension() * glev_len];
-        let mut encoded_secret = Zeroizing::new(vec![T::ZERO; params.poly_length()]);
+        let mut data = vec![
+            T::ZERO;
+            input_size
+                .dimension()
+                .get()
+                .checked_mul(glev_len)
+                .expect("GLWE key-switching key length overflow")
+        ];
+        let mut encoded_secret = Zeroizing::new(vec![T::ZERO; params.poly_length().get()]);
 
         for (secret_poly, entry) in input_secret_key.iter().zip(data.chunks_exact_mut(glev_len)) {
             params
@@ -117,21 +126,23 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
     }
 
     /// Returns the input GLWE dimension.
+    #[must_use]
     #[inline]
-    pub fn input_dimension(&self) -> usize {
+    pub fn input_dimension(&self) -> GlweDimension {
         self.input_size.dimension()
     }
 
     /// Returns the output GLWE dimension.
+    #[must_use]
     #[inline]
-    pub fn output_dimension(&self) -> usize {
+    pub fn output_dimension(&self) -> GlweDimension {
         self.output_size.glwe_size().dimension()
     }
 
     /// Returns the polynomial length.
     #[inline]
     pub fn poly_length(&self) -> usize {
-        self.input_size.poly_length()
+        self.input_size.poly_length().get()
     }
 
     /// Returns the input layout bound to this key.
@@ -235,7 +246,7 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
         debug_assert_eq!(input.as_ref().len(), self.input_size.glwe_len());
         debug_assert_eq!(output.as_ref().len(), self.output_size.glwe_len());
 
-        let poly_length = self.input_size.poly_length();
+        let poly_length = self.input_size.poly_length().get();
         let (input_mask, input_body) = input.a_b_slices(poly_length);
 
         let mut workspace = workspace.as_mut();
@@ -267,10 +278,13 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
         B: DataMut<Elem = T>,
     {
         debug_assert_eq!(input_mask.len(), self.input_size.mask_len());
-        debug_assert_eq!(input_body.as_ref().len(), self.input_size.poly_length());
+        debug_assert_eq!(
+            input_body.as_ref().len(),
+            self.input_size.poly_length().get()
+        );
         debug_assert_eq!(output.as_ref().len(), self.output_size.glwe_len());
 
-        let poly_length = self.input_size.poly_length();
+        let poly_length = self.input_size.poly_length().get();
         let mut workspace = workspace.as_mut_with_accumulator(output);
         self.mask_product_to_accumulator(input_mask, modulus, ntt, &mut workspace);
         workspace.accumulator.neg_assign(modulus);
@@ -310,7 +324,7 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
         );
         assert_eq!(
             workspace.adjusted_poly.len(),
-            self.input_size.poly_length(),
+            self.input_size.poly_length().get(),
             "key-switch workspace polynomial length mismatch"
         );
     }
@@ -330,7 +344,7 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
         Table: NttTable<ValueT = T>,
     {
         let basis = &self.basis;
-        let poly_length = self.input_size.poly_length();
+        let poly_length = self.input_size.poly_length().get();
         let glwe_len = self.output_size.glwe_len();
 
         workspace.accumulator.set_zero();
@@ -374,7 +388,7 @@ struct NttGlweKeySwitchingWorkspaceRefMut<'a, T: FheUint> {
 impl<T: FheUint> NttGlweKeySwitchingWorkspace<T> {
     /// Creates a workspace for the output GLWE layout.
     pub fn new(glwe_size: GlweSize) -> Self {
-        let poly_length = glwe_size.poly_length();
+        let poly_length = glwe_size.poly_length().get();
         Self {
             adjusted_poly: vec![T::ZERO; poly_length],
             carries: vec![false; poly_length],

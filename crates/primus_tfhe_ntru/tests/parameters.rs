@@ -1,13 +1,15 @@
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_lwe::LweDimension;
 use primus_lwe::LweParameters;
 use primus_modulus::{BarrettModulus, NativeModulus};
-use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
+use primus_ntru::{NlevParameters, NtruParameters, PolyLength, SecretKeyDistr};
 use primus_tfhe_ntru::{DecompositionConfig, TfheConfig, TfheParameterError, TfheParameters};
 use std::error::Error;
 
 const N: usize = 32;
 const Q: u32 = 132_120_577;
 const DECOMPOSITION: DecompositionConfig = DecompositionConfig {
-    log_basis: 6,
+    log_basis: DecompositionBaseLog::new(6),
     level_count: None,
 };
 
@@ -15,7 +17,7 @@ const DECOMPOSITION: DecompositionConfig = DecompositionConfig {
 fn independent_domains_and_noise_are_preserved() {
     let config = TfheConfig {
         external_lwe: LweParameters::new(
-            N * 2,
+            LweDimension::new(N * 2),
             4,
             BarrettModulus::new(65_537),
             SecretKeyDistr::UniformBinary,
@@ -26,15 +28,18 @@ fn independent_domains_and_noise_are_preserved() {
         accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
         accumulator_noise_standard_deviation: 1.25,
         blind_rotation: DecompositionConfig {
-            log_basis: 9,
-            level_count: Some(3),
+            log_basis: DecompositionBaseLog::new(9),
+            level_count: Some(DecompositionLevelCount::new(3)),
         },
         key_switching: DECOMPOSITION,
         key_switching_noise_standard_deviation: 2.5,
     };
     let parameters = TfheParameters::try_from_config(config.clone()).unwrap();
-    assert_eq!(parameters.poly_length(), N);
-    assert_eq!(parameters.external_lwe_dimension(), N * 2);
+    assert_eq!(parameters.poly_length(), PolyLength::new(N));
+    assert_eq!(
+        parameters.external_lwe_dimension(),
+        LweDimension::new(N * 2)
+    );
     assert_eq!(
         parameters.accumulator_ntru().cipher_modulus_value(),
         Some(Q)
@@ -71,7 +76,7 @@ fn independent_domains_and_noise_are_preserved() {
         } else {
             &mut invalid.key_switching
         };
-        decomposition.level_count = Some(0);
+        decomposition.level_count = Some(DecompositionLevelCount::new(usize::MAX));
         let error = TfheParameters::try_from_config(invalid).err().unwrap();
         match error {
             TfheParameterError::BootstrappingParameters(_) if blind_rotation => assert!(
@@ -104,10 +109,16 @@ fn external_control_domain_and_common_plaintext_are_checked() {
         SecretKeyDistr::fixed_composition_ternary(N, 3, 4),
         SecretKeyDistr::gaussian(3.2),
     ] {
-        let external = LweParameters::new(N, 4, BarrettModulus::new(65_537), distr, 0.7);
+        let external = LweParameters::new(
+            LweDimension::new(N),
+            4,
+            BarrettModulus::new(65_537),
+            distr,
+            0.7,
+        );
         let result = TfheParameters::try_new(
             external,
-            NlevParameters::with_ntru_params(&accumulator, 9, None),
+            NlevParameters::with_ntru_params(&accumulator, DecompositionBaseLog::new(9), None),
             DECOMPOSITION,
             0.7,
         );
@@ -120,11 +131,17 @@ fn external_control_domain_and_common_plaintext_are_checked() {
             );
         }
     }
-    let external = LweParameters::new(1, 8, modulus, SecretKeyDistr::UniformBinary, 0.7);
+    let external = LweParameters::new(
+        LweDimension::new(1),
+        8,
+        modulus,
+        SecretKeyDistr::UniformBinary,
+        0.7,
+    );
     assert_eq!(
         TfheParameters::try_new(
             external,
-            NlevParameters::with_ntru_params(&accumulator, 9, None),
+            NlevParameters::with_ntru_params(&accumulator, DecompositionBaseLog::new(9), None),
             DECOMPOSITION,
             0.7
         )
@@ -141,12 +158,18 @@ fn rotation_domain_must_be_representable_by_input_coefficients() {
         (15, Some(TfheParameterError::RotationDomainTooLarge)),
         (16, Some(TfheParameterError::RotationDomainTooLarge)),
     ] {
-        let external = LweParameters::new(1, 2, modulus, SecretKeyDistr::UniformBinary, 0.7);
+        let external = LweParameters::new(
+            LweDimension::new(1),
+            2,
+            modulus,
+            SecretKeyDistr::UniformBinary,
+            0.7,
+        );
         let ring = NtruParameters::new(1 << log_n, 2, modulus, SecretKeyDistr::UniformBinary, 0.7);
         assert_eq!(
             TfheParameters::try_new(
                 external,
-                NlevParameters::with_ntru_params(&ring, 4, None),
+                NlevParameters::with_ntru_params(&ring, DecompositionBaseLog::new(4), None),
                 DECOMPOSITION,
                 0.7
             )
@@ -163,12 +186,12 @@ fn configs_return_accumulator_return_key_and_cbs_errors() {
         CircuitBootstrapConfig, CircuitBootstrapParameterError, CircuitBootstrapParameters,
     };
     let basis = DecompositionConfig {
-        log_basis: 4,
-        level_count: Some(1),
+        log_basis: DecompositionBaseLog::new(4),
+        level_count: Some(DecompositionLevelCount::new(1)),
     };
     let config = TfheConfig {
         external_lwe: LweParameters::new(
-            4,
+            LweDimension::new(4),
             4u32,
             primus_modulus::PowOf2Modulus::new(256),
             SecretKeyDistr::UniformBinary,
@@ -280,10 +303,16 @@ fn check_circuit_parameters<M: primus_reduce::RingContext<u64>>(
         let acc = NtruParameters::new(N, plain, modulus, SecretKeyDistr::SparseTernary, 0.7);
 
         TfheParameters::try_new(
-            LweParameters::new(16, plain, modulus, SecretKeyDistr::UniformBinary, 0.7),
-            NlevParameters::with_ntru_params(&acc, 10, None),
+            LweParameters::new(
+                LweDimension::new(16),
+                plain,
+                modulus,
+                SecretKeyDistr::UniformBinary,
+                0.7,
+            ),
+            NlevParameters::with_ntru_params(&acc, DecompositionBaseLog::new(10), None),
             primus_tfhe_ntru::DecompositionConfig {
-                log_basis: 10,
+                log_basis: DecompositionBaseLog::new(10),
                 level_count: None,
             },
             0.7,
@@ -293,24 +322,24 @@ fn check_circuit_parameters<M: primus_reduce::RingContext<u64>>(
     let tfhe = make(N as u64); // Only two interleaved outputs fit this domain.
     let config = CircuitBootstrapConfig {
         output: DecompositionConfig {
-            log_basis: 8,
-            level_count: Some(2),
+            log_basis: DecompositionBaseLog::new(8),
+            level_count: Some(DecompositionLevelCount::new(2)),
         },
         trace: DecompositionConfig {
-            log_basis: 9,
-            level_count: Some(3),
+            log_basis: DecompositionBaseLog::new(9),
+            level_count: Some(DecompositionLevelCount::new(3)),
         },
         trace_noise_standard_deviation: 1.25,
         scheme_switch: DecompositionConfig {
-            log_basis: 10,
-            level_count: Some(4),
+            log_basis: DecompositionBaseLog::new(10),
+            level_count: Some(DecompositionLevelCount::new(4)),
         },
         scheme_switch_noise_standard_deviation: 2.5,
     };
     let configured = CircuitBootstrapParameters::try_from_config(&tfhe, config).unwrap();
     assert_eq!(configured.poly_length(), tfhe.poly_length());
-    assert_eq!(configured.trace().basis().log_basis(), 9);
-    assert_eq!(configured.trace().basis().decompose_length(), 3);
+    assert_eq!(configured.trace().basis().log_basis().get(), 9);
+    assert_eq!(configured.trace().basis().decompose_length().get(), 3);
     assert_eq!(
         configured
             .trace()
@@ -319,8 +348,11 @@ fn check_circuit_parameters<M: primus_reduce::RingContext<u64>>(
             .standard_deviation(),
         1.25
     );
-    assert_eq!(configured.scheme_switch().basis().log_basis(), 10);
-    assert_eq!(configured.scheme_switch().basis().decompose_length(), 4);
+    assert_eq!(configured.scheme_switch().basis().log_basis().get(), 10);
+    assert_eq!(
+        configured.scheme_switch().basis().decompose_length().get(),
+        4
+    );
     assert_eq!(
         configured
             .scheme_switch()
@@ -332,9 +364,9 @@ fn check_circuit_parameters<M: primus_reduce::RingContext<u64>>(
     for role in ["output", "trace", "scheme-switch"] {
         let mut invalid = config;
         match role {
-            "output" => invalid.output.level_count = Some(0),
-            "trace" => invalid.trace.level_count = Some(0),
-            _ => invalid.scheme_switch.level_count = Some(0),
+            "output" => invalid.output.level_count = Some(DecompositionLevelCount::new(usize::MAX)),
+            "trace" => invalid.trace.level_count = Some(DecompositionLevelCount::new(usize::MAX)),
+            _ => invalid.scheme_switch.level_count = Some(DecompositionLevelCount::new(usize::MAX)),
         }
         let error = CircuitBootstrapParameters::try_from_config(&tfhe, invalid)
             .err()
@@ -347,7 +379,13 @@ fn check_circuit_parameters<M: primus_reduce::RingContext<u64>>(
         }
     }
     let trace = tfhe.blind_rotation().clone();
-    let output = |levels| ApproxSignedBasis::new(modulus.explicit_value(), 8, Some(levels));
+    let output = |levels| {
+        ApproxSignedBasis::new(
+            modulus.explicit_value(),
+            DecompositionBaseLog::new(8),
+            Some(DecompositionLevelCount::new(levels)),
+        )
+    };
     assert!(
         CircuitBootstrapParameters::try_new(&tfhe, output(2), trace.clone(), trace.clone()).is_ok()
     );
@@ -363,7 +401,11 @@ fn check_circuit_parameters<M: primus_reduce::RingContext<u64>>(
             CircuitBootstrapParameters::try_new(
                 &tfhe,
                 output(2),
-                NlevParameters::with_ntru_params(foreign, 8, Some(2)),
+                NlevParameters::with_ntru_params(
+                    foreign,
+                    DecompositionBaseLog::new(8),
+                    Some(DecompositionLevelCount::new(2))
+                ),
                 trace.clone()
             ),
             Err(Error::PolynomialLengthMismatch { role: "trace" }
@@ -379,8 +421,8 @@ fn check_circuit_parameters<M: primus_reduce::RingContext<u64>>(
                 } else {
                     Some(132_120_577)
                 },
-                8,
-                Some(2)
+                DecompositionBaseLog::new(8),
+                Some(DecompositionLevelCount::new(2))
             ),
             trace.clone(),
             trace,

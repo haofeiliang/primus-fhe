@@ -4,7 +4,7 @@ use primus_encoding::{RoundedCodec, ScaledCodec};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_reduce::RingContext;
 use primus_test_allocations as allocations;
-use primus_tfhe::{FactorizedLookupTable, LookupTableError};
+use primus_tfhe::{FactorizedLookupTable, LookupTableError, PolyLength};
 
 #[global_allocator]
 static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
@@ -77,10 +77,17 @@ fn factorization_and_all_rotations_match_integer_geometry() {
             };
             let calls = Cell::new(0);
             let (lut, allocation) = allocations::measure(|| {
-                FactorizedLookupTable::try_new(domain, n, 3, &input_codec, &output_codec, |m, i| {
-                    assert_eq!(calls.replace(calls.get() + 1), i * domain + m);
-                    value(m, i)
-                })
+                FactorizedLookupTable::try_new(
+                    domain,
+                    PolyLength::new(n),
+                    3,
+                    &input_codec,
+                    &output_codec,
+                    |m, i| {
+                        assert_eq!(calls.replace(calls.get() + 1), i * domain + m);
+                        value(m, i)
+                    },
+                )
                 .unwrap()
             });
             assert_eq!(
@@ -92,7 +99,7 @@ fn factorization_and_all_rotations_match_integer_geometry() {
             assert_eq!(lut.input_domain_len(), domain);
             assert_eq!(lut.output_plaintext_modulus(), output_t);
             assert!(lut.is_compatible(
-                n,
+                PolyLength::new(n),
                 t,
                 input_modulus.explicit_value(),
                 output_modulus.explicit_value()
@@ -153,7 +160,7 @@ fn factorization_and_all_rotations_match_integer_geometry() {
         }
     }
     // Empty negative tail, ordinary/short domains, nonbinary t, and double rounding.
-    for (n, t, domain, q) in [(1, 2, 1, 97), (8, 8, 4, 97), (16, 15, 4, 97), (16, 3, 2, 5)] {
+    for (n, t, domain, q) in [(2, 2, 1, 97), (8, 8, 4, 97), (16, 15, 4, 97), (16, 3, 2, 5)] {
         check(
             n,
             t,
@@ -196,7 +203,6 @@ fn factorized_compilation_rejects_invalid_domains_moduli_and_values() {
     let output = ScaledCodec::new(8, modulus);
     for (domain, n, count, expected) in [
         (4, 8, 0, LookupTableError::EmptyOutputs),
-        (4, 0, 3, LookupTableError::InvalidPolynomialLength),
         (
             4,
             8,
@@ -223,9 +229,14 @@ fn factorized_compilation_rejects_invalid_domains_moduli_and_values() {
         ),
     ] {
         assert_eq!(
-            FactorizedLookupTable::try_new(domain, n, count, &input, &output, |_, _| panic!(
-                "invalid arguments must precede callback"
-            ))
+            FactorizedLookupTable::try_new(
+                domain,
+                PolyLength::new(n),
+                count,
+                &input,
+                &output,
+                |_, _| panic!("invalid arguments must precede callback")
+            )
             .unwrap_err(),
             expected
         );
@@ -234,14 +245,15 @@ fn factorized_compilation_rejects_invalid_domains_moduli_and_values() {
         let input = RoundedCodec::new(8, modulus);
         let output = ScaledCodec::new(8, modulus);
         assert_eq!(
-            FactorizedLookupTable::try_new(4, 8, 1, &input, &output, |_, _| 0).unwrap_err(),
+            FactorizedLookupTable::try_new(4, PolyLength::new(8), 1, &input, &output, |_, _| 0)
+                .unwrap_err(),
             LookupTableError::UnsupportedFactorizationModulus
         );
     }
     assert_eq!(
         FactorizedLookupTable::try_new(
             4,
-            8,
+            PolyLength::new(8),
             1,
             &input,
             &ScaledCodec::new(3, NativeModulus::new()),
@@ -252,10 +264,8 @@ fn factorized_compilation_rejects_invalid_domains_moduli_and_values() {
     );
     reject_modulus(BarrettModulus::new(98));
     assert_eq!(
-        FactorizedLookupTable::try_new(4, 8, 3, &input, &output, |m, i| if i == 1 && m == 2 {
-            8
-        } else {
-            0
+        FactorizedLookupTable::try_new(4, PolyLength::new(8), 3, &input, &output, |m, i| {
+            if i == 1 && m == 2 { 8 } else { 0 }
         })
         .unwrap_err(),
         LookupTableError::OutputOutOfRange { input: 2 }
@@ -263,7 +273,7 @@ fn factorized_compilation_rejects_invalid_domains_moduli_and_values() {
     assert!(matches!(
         FactorizedLookupTable::try_new(
             3,
-            4,
+            PolyLength::new(4),
             1,
             &RoundedCodec::new(6, BarrettModulus::new(10)),
             &output,

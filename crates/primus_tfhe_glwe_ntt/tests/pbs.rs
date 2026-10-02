@@ -1,7 +1,10 @@
+use primus_decompose::DecompositionBaseLog;
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_encoding::RoundedCodec;
 use primus_glwe::{GlweParameters, SecretKeyDistr};
 use primus_integer::FheUint;
+use primus_lattice::PolyLength;
+use primus_lattice::{GlweDimension, LweDimension};
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable, U64NttTable};
@@ -23,26 +26,30 @@ const N: usize = 256;
 fn parameters<T: FheUint>(q: T, order: PbsOrder) -> TfheParameters<T> {
     let modulus = BarrettModulus::new(q);
     let lwe = LweParameters::new(
-        8,
+        LweDimension::new(8),
         T::as_from(15u32),
         modulus,
         SecretKeyDistr::fixed_composition_ternary(8, 2, 2),
         0.7,
     );
     let glwe = GlweParameters::new(
-        1,
+        GlweDimension::new(1),
         N,
         T::as_from(15u32),
         modulus,
         SecretKeyDistr::UniformBinary,
         0.7,
     );
-    let bsk = ApproxSignedBasis::new(glwe.cipher_modulus_value(), 8, None);
+    let bsk = ApproxSignedBasis::new(
+        glwe.cipher_modulus_value(),
+        DecompositionBaseLog::new(8),
+        None,
+    );
     TfheParameters::try_new(
         lwe,
         glwe,
         bsk,
-        ApproxSignedBasis::new(Some(q), 8, None),
+        ApproxSignedBasis::new(Some(q), DecompositionBaseLog::new(8), None),
         order,
     )
     .unwrap()
@@ -86,7 +93,10 @@ where
             .compile_interleaved_lookup_table_with_codec_slice(&output_codec, output_count, &flat)
             .unwrap();
         let mut outputs =
-            vec![LweCiphertext::zero(context.parameters().external_lwe_dimension()); output_count];
+            vec![
+                LweCiphertext::zero(context.parameters().external_lwe_dimension().get());
+                output_count
+            ];
         for message in [0, 3, 4, 7] {
             let input = encryptor
                 .encrypt_padded(T::as_from(message), &mut rng)
@@ -142,7 +152,7 @@ where
         mismatched_tables.push((
             LookupTable::try_new(
                 2,
-                n,
+                PolyLength::new(n),
                 T::as_from(t),
                 BarrettModulus::new(q),
                 BarrettModulus::new(q),
@@ -151,7 +161,7 @@ where
             .unwrap(),
             InterleavedLookupTable::try_new(
                 2,
-                n,
+                PolyLength::new(n),
                 3,
                 T::as_from(t),
                 BarrettModulus::new(q),
@@ -164,7 +174,7 @@ where
     mismatched_tables.push((
         LookupTable::try_new(
             2,
-            N,
+            PolyLength::new(N),
             T::as_from(15u32),
             primus_modulus::NativeModulus::new(),
             BarrettModulus::new(q),
@@ -173,7 +183,7 @@ where
         .unwrap(),
         InterleavedLookupTable::try_new(
             2,
-            N,
+            PolyLength::new(N),
             3,
             T::as_from(15u32),
             primus_modulus::NativeModulus::new(),
@@ -185,7 +195,7 @@ where
     mismatched_tables.push((
         LookupTable::try_new(
             2,
-            N,
+            PolyLength::new(N),
             T::as_from(15u32),
             BarrettModulus::new(q),
             BarrettModulus::new(T::as_from(104_857_601u32)),
@@ -194,7 +204,7 @@ where
         .unwrap(),
         InterleavedLookupTable::try_new(
             2,
-            N,
+            PolyLength::new(N),
             3,
             T::as_from(15u32),
             BarrettModulus::new(q),
@@ -282,7 +292,7 @@ where
     let bivariate = BivariateLookupTable::try_new(
         3,
         2,
-        N,
+        PolyLength::new(N),
         context.parameters().input_plaintext_codec(),
         &output_codec,
         |x, y| T::as_from(x * x + y),

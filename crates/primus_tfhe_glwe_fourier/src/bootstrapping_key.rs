@@ -3,6 +3,7 @@
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
 use primus_glwe::{FourierGlweGadgetEncryptWorkspace, FourierGlweSecretKey, GlevParameters};
+use primus_lattice::LweDimension;
 use primus_lattice::{
     GadgetSize,
     ggsw::{FourierGgsw, FourierGgswIter},
@@ -20,7 +21,7 @@ use zeroize::Zeroizing;
 #[derive(Clone)]
 pub struct FourierGlweBootstrappingKey<T: TorusFftValue, LM: Modulus<ValueT = T>> {
     data: Vec<Complex64>,
-    input_dimension: usize,
+    input_dimension: LweDimension,
     input_distribution: SecretKeyDistr,
     input_modulus: LM,
     input_quantizer: RotationQuantizer<T>,
@@ -30,8 +31,9 @@ pub struct FourierGlweBootstrappingKey<T: TorusFftValue, LM: Modulus<ValueT = T>
 
 impl<T: TorusFftValue, LM: Modulus<ValueT = T>> FourierGlweBootstrappingKey<T, LM> {
     /// Returns the input LWE dimension.
+    #[must_use]
     #[inline]
-    pub fn input_dimension(&self) -> usize {
+    pub fn input_dimension(&self) -> LweDimension {
         self.input_dimension
     }
 
@@ -110,10 +112,14 @@ impl<T: TorusFftValue, LM: Modulus<ValueT = T>> FourierGlweBootstrappingKey<T, L
             input_distribution.is_binary() || input_distribution.is_ternary(),
             "bootstrapping requires a binary or ternary input LWE secret"
         );
-        assert_eq!(input_secret_key.dimension(), input_parameters.dimension());
+        assert_eq!(
+            input_secret_key.dimension(),
+            input_parameters.dimension().get()
+        );
         assert_eq!(input_distribution, input_parameters.secret_key_distr());
-        let input_dimension = input_secret_key.dimension();
+        let input_dimension = input_parameters.dimension();
         let control_count = input_dimension
+            .get()
             .checked_mul(if input_distribution.is_binary() { 1 } else { 2 })
             .expect("bootstrapping control count overflow");
         // Only ternary key generation needs a temporary selector array. It is
@@ -152,7 +158,7 @@ impl<T: TorusFftValue, LM: Modulus<ValueT = T>> FourierGlweBootstrappingKey<T, L
         };
         let input_quantizer = RotationQuantizer::new(
             input_parameters.cipher_modulus(),
-            parameters.size().glwe_size().poly_length() * 2,
+            parameters.size().glwe_size().poly_length().get() * 2,
             1,
         );
         let ggsw_len = parameters.fourier_ggsw_len();

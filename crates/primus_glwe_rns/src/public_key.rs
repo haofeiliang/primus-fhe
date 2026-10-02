@@ -46,7 +46,7 @@ impl<T: FheUint> DcrtGlwePublicKey<T> {
         R: rand::Rng + rand::CryptoRng,
         M: FieldContext<T>,
     {
-        let poly_length = params.poly_length();
+        let poly_length = params.poly_length().get();
         let dcrt_glwe_len = params.rns_glwe_len();
 
         let moduli = params.cipher_moduli();
@@ -100,7 +100,7 @@ impl<T: FheUint> DcrtGlwePublicKey<T> {
         A: Data<Elem = T>,
     {
         let dimension = params.dimension();
-        let poly_length = params.poly_length();
+        let poly_length = params.poly_length().get();
         let rns_poly_len = params.rns_poly_len();
         let dcrt_glwe_len = params.rns_glwe_len();
         assert_eq!(
@@ -136,7 +136,7 @@ impl<T: FheUint> DcrtGlwePublicKey<T> {
                     rng,
                 );
 
-                if i == dimension {
+                if i == dimension.get() {
                     CrtPolynomial(&mut *ai.0).add_mul_factor_assign(
                         message,
                         params.delta_factor_mod_q().as_ref(),
@@ -167,7 +167,7 @@ impl<T: FheUint> DcrtGlwePublicKey<T> {
         Table: NttTable<ValueT = T>,
         M: FieldContext<T>,
     {
-        let poly_length = params.poly_length();
+        let poly_length = params.poly_length().get();
         let dcrt_poly_len = params.rns_poly_len();
         let dcrt_glwe_len = params.rns_glwe_len();
 
@@ -266,7 +266,7 @@ impl<T: FheUint> DcrtGlwePublicKey<T> {
         let dcrt_glev_len = params.rns_glev_len();
 
         assert_eq!(result.as_ref().len(), params.rns_ggsw_len());
-        assert!(degree < params.poly_length());
+        assert!(degree < params.poly_length().get());
 
         let mut v = vec![T::ZERO; rns_poly_len];
 

@@ -1,4 +1,7 @@
 //! Observe partially converted secrets before their allocation is released.
+
+use primus_lattice::GlweDimension;
+use primus_lattice::PolyLength;
 use std::{
     alloc::{GlobalAlloc, Layout, System},
     panic::catch_unwind,
@@ -107,7 +110,7 @@ impl NttTable for InterruptedTable {
 
 #[test]
 fn partial_dcrt_secret_is_erased_on_transform_unwind() {
-    let size = GlweSize::new(2, 8);
+    let size = GlweSize::new(GlweDimension::new(2), PolyLength::new(8));
     let secret = GlweSecretKey::<u64>::new(
         vec![1; size.mask_len()],
         size,

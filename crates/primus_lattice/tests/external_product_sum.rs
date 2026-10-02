@@ -1,9 +1,12 @@
 //! Fused NLEV sums: independent polynomial oracle, exact NTT differential,
 //! Fourier torus error, empty sums, pair counts and dirty workspace reuse.
+
+use primus_decompose::DecompositionBaseLog;
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{FftEngine, FftTable, RustFftTable, TfheFftTable, TorusFftValue};
 use primus_integer::FheUint;
 use primus_lattice::{
+    PolyLength,
     nlev::{FourierNlev, FourierNlevOwned, Nlev, NttNlev},
     ntru::Ntru,
     workspace::{FourierNtruExternalProductWorkspace, NttNtruExternalProductWorkspace},
@@ -53,7 +56,7 @@ fn fixture<T: FheUint, M: RingContext<T>>(
     let gadgets = messages
         .iter()
         .map(|message| {
-            let mut gadget = Nlev::zero(basis.decompose_length() * N);
+            let mut gadget = Nlev::zero(basis.decompose_length().get() * N);
             for (scalar, mut row) in basis.scalar_iter().zip(gadget.iter_ntru_mut(N)) {
                 message.mul_scalar_to(scalar, &mut Polynomial::new(row.as_mut()), modulus);
             }
@@ -89,7 +92,7 @@ fn ntt<T: FheUint, Table: NttTable<ValueT = T>>(q: T, table: Table) {
     let modulus = BarrettModulus::new(q);
     // Both primes have bit widths divisible by three: no bits are dropped,
     // so the independent polynomial oracle is exact.
-    let basis = ApproxSignedBasis::new(Some(q), 3, None);
+    let basis = ApproxSignedBasis::new(Some(q), DecompositionBaseLog::new(3), None);
     let values = (0..3 * N)
         .map(|i| modulus.reduce(T::as_from(i * 997 + 1)))
         .collect();
@@ -102,7 +105,7 @@ fn ntt<T: FheUint, Table: NttTable<ValueT = T>>(q: T, table: Table) {
         .into_iter()
         .map(|g| g.into_ntt_form(&table))
         .collect();
-    let mut workspace = NttNtruExternalProductWorkspace::new(N);
+    let mut workspace = NttNtruExternalProductWorkspace::new(PolyLength::new(N));
     let mut output = Ntru::new(vec![T::MAX; N]);
     // Counts and output length are checked before writes. The last two cases
     // fail after a valid first product, exercising recovery from dirty scratch.
@@ -193,7 +196,7 @@ fn ntt_sum_matches_separate_products_and_polynomial_oracle() {
 // 2^-42 (one unit for u32), not bitwise equality with separately rounded products.
 fn fourier<T: TorusFftValue, Table: FftTable>() {
     let modulus = NativeModulus::<T>::new();
-    let basis = ApproxSignedBasis::new(None, 8, None);
+    let basis = ApproxSignedBasis::new(None, DecompositionBaseLog::new(8), None);
     let table = Table::new(4).unwrap();
     let mut fft = FftEngine::new(&table);
     let values = (0..3 * N)
@@ -207,12 +210,12 @@ fn fourier<T: TorusFftValue, Table: FftTable>() {
     let gadgets: Vec<_> = gadgets
         .iter()
         .map(|g| {
-            let mut transformed = FourierNlevOwned::zero(basis.decompose_length() * N / 2);
+            let mut transformed = FourierNlevOwned::zero(basis.decompose_length().get() * N / 2);
             g.write_fourier_form(&mut transformed, &mut fft);
             transformed
         })
         .collect();
-    let mut workspace = FourierNtruExternalProductWorkspace::new(N);
+    let mut workspace = FourierNtruExternalProductWorkspace::new(PolyLength::new(N));
     let mut output = Ntru::new(vec![T::MAX; N]);
     let tolerance = T::ONE << T::BITS.saturating_sub(42);
     // Counts and output length are checked before writes. The last two cases

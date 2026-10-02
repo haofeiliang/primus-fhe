@@ -4,10 +4,12 @@
 //! For u64, change Word to u64 and U32NttTable to U64NttTable.
 //! Arithmetic profiles: guides/development/tfhe-parameters.md (not security presets).
 
+use primus_lattice::LweDimension;
 use primus_lwe::LweParameters;
 use primus_modulus::{BarrettModulus, PowOf2Modulus};
 use primus_ntru::SecretKeyDistr;
 use primus_ntt::U32NttTable as Table;
+use primus_tfhe::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_tfhe_ntru_lut::{HighPrecisionLookupTable, LookupTableConfig, NttLookupTableEvaluator};
 use primus_tfhe_ntru_ntt::{
     CircuitBootstrapConfig, DecompositionConfig, TfheConfig, TfheContext, TfheParameters,
@@ -51,13 +53,17 @@ fn parameters() -> TfheParameters<Word, PowOf2Modulus<Word>> {
 
     // None retains floor(modulus_bits / log_basis) levels; it need not cover every low bit.
     let full = DecompositionConfig {
-        log_basis: if Word::BITS == 32 { 2 } else { 8 },
+        log_basis: if Word::BITS == 32 {
+            DecompositionBaseLog::new(2)
+        } else {
+            DecompositionBaseLog::new(8)
+        },
         level_count: None,
     };
 
     TfheParameters::try_from_config(TfheConfig {
         external_lwe: LweParameters::new(
-            800,
+            LweDimension::new(800),
             8, // Padded inputs occupy 0..4.
             PowOf2Modulus::new(lwe_modulus),
             SecretKeyDistr::UniformBinary,
@@ -69,7 +75,7 @@ fn parameters() -> TfheParameters<Word, PowOf2Modulus<Word>> {
         accumulator_noise_standard_deviation: 0.7,
         blind_rotation: full,
         key_switching: DecompositionConfig {
-            log_basis: 3,
+            log_basis: DecompositionBaseLog::new(3),
             level_count: None,
         },
         key_switching_noise_standard_deviation: 3.2, // Return key switch in the q domain.
@@ -80,13 +86,25 @@ fn parameters() -> TfheParameters<Word, PowOf2Modulus<Word>> {
 // CBS emits a gadget ciphertext; its output basis is separate from the two evaluation-key bases.
 fn circuit_config() -> CircuitBootstrapConfig {
     let internal = DecompositionConfig {
-        log_basis: if Word::BITS == 32 { 2 } else { 8 },
+        log_basis: if Word::BITS == 32 {
+            DecompositionBaseLog::new(2)
+        } else {
+            DecompositionBaseLog::new(8)
+        },
         level_count: None,
     };
     CircuitBootstrapConfig {
         output: DecompositionConfig {
-            log_basis: if Word::BITS == 32 { 3 } else { 8 },
-            level_count: Some(if Word::BITS == 32 { 4 } else { 3 }),
+            log_basis: if Word::BITS == 32 {
+                DecompositionBaseLog::new(3)
+            } else {
+                DecompositionBaseLog::new(8)
+            },
+            level_count: Some(if Word::BITS == 32 {
+                DecompositionLevelCount::new(4)
+            } else {
+                DecompositionLevelCount::new(3)
+            }),
         },
         trace: internal,
         trace_noise_standard_deviation: 0.7,

@@ -43,8 +43,8 @@ where
     ///
     /// # Correctness
     ///
-    /// Let `size = workspace.size()`, `N = size.glwe_size().poly_length()`,
-    /// and `L = size.decompose_length()`. Input and output each have
+    /// Let `size = workspace.size()`, `N = size.glwe_size().poly_length().get()`,
+    /// and `L = size.decompose_length().get()`. Input and output each have
     /// `size.glwe_size().glwe_len()` elements; `self` has exactly
     /// `size.fourier_ggsw_len()` elements. The `k + 1` GLev rows correspond
     /// to the input mask polynomials followed by its body, with `L` levels
@@ -128,7 +128,7 @@ where
     {
         let size = workspace.size();
         let glwe_size = size.glwe_size();
-        let poly_len = glwe_size.poly_length();
+        let poly_len = glwe_size.poly_length().get();
         let fourier_poly_len = glwe_size.fourier_poly_len();
         let fourier_glwe_len = glwe_size.fourier_glwe_len();
         let fourier_glev_len = size.fourier_glev_len();
@@ -136,7 +136,10 @@ where
         debug_assert_eq!(fft.poly_length(), poly_len);
         debug_assert_eq!(fft.fourier_length(), fourier_poly_len);
         debug_assert_eq!(basis.modulus(), None);
-        debug_assert_eq!(basis.decompose_length(), size.decompose_length());
+        debug_assert_eq!(
+            basis.decompose_length().get(),
+            size.decompose_length().get()
+        );
         debug_assert_eq!(input.as_ref().len(), glwe_size.glwe_len());
         debug_assert_eq!(self.as_ref().len(), size.fourier_ggsw_len());
 
@@ -179,8 +182,8 @@ where
     ///
     /// # Correctness
     ///
-    /// Let `size = workspace.size()`, `N = size.glwe_size().poly_length()`,
-    /// and `L = size.decompose_length()`. Input and output each have
+    /// Let `size = workspace.size()`, `N = size.glwe_size().poly_length().get()`,
+    /// and `L = size.decompose_length().get()`. Input and output each have
     /// `size.glwe_size().glwe_len()` elements; `self` has exactly
     /// `size.ggsw_len()` elements. The `k + 1` GLev rows correspond
     /// to the input mask polynomials followed by its body, with `L` levels
@@ -280,13 +283,16 @@ where
     {
         let size = workspace.size();
         let glwe_size = size.glwe_size();
-        let poly_len = glwe_size.poly_length();
+        let poly_len = glwe_size.poly_length().get();
         let glwe_len = glwe_size.glwe_len();
         let glev_len = size.glev_len();
 
         debug_assert_eq!(ntt.poly_length(), poly_len);
         debug_assert_eq!(basis.modulus(), Some(modulus.value()));
-        debug_assert_eq!(basis.decompose_length(), size.decompose_length());
+        debug_assert_eq!(
+            basis.decompose_length().get(),
+            size.decompose_length().get()
+        );
         debug_assert_eq!(input.as_ref().len(), glwe_len);
         debug_assert_eq!(self.as_ref().len(), size.ggsw_len());
 
@@ -330,7 +336,7 @@ where
     /// Let `size = workspace.size()`, `N = table.poly_length()`,
     /// `m = rns_base.moduli_count()`, and `w = rns_base.big_uint_value_len()`.
     /// The bound size must match `N`, `m`, the GLWE dimension, and
-    /// `basis.decompose_length()`; `workspace.is_compatible(size, rns_base)`
+    /// `basis.decompose_length().get()`; `workspace.is_compatible(size, rns_base)`
     /// must hold. The table uses the base's modulus order and the gadget
     /// uses its evaluation order and `basis.decomposer_iter()` level order.
     /// CRT/DCRT values must be canonical residues.
@@ -353,7 +359,7 @@ where
         B: DataMut<Elem = T>,
     {
         let crt_poly_len = table.crt_poly_length();
-        let dcrt_glev_len = basis.decompose_length() * self.as_ref().len();
+        let dcrt_glev_len = basis.decompose_length().get() * self.as_ref().len();
 
         output.set_zero();
 

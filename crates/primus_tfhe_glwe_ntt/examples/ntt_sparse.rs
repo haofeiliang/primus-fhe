@@ -4,8 +4,10 @@
 //! For u64, change Word to u64 and U32NttTable to U64NttTable.
 //! Arithmetic profiles: guides/development/tfhe-parameters.md (not security presets).
 
+use primus_decompose::DecompositionBaseLog;
 use primus_encoding::RoundedCodec;
 use primus_glwe::SecretKeyDistr;
+use primus_lattice::{GlweDimension, LweDimension};
 use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntt::U32NttTable as Table;
@@ -36,19 +38,23 @@ fn parameters() -> TfheParameters<Word> {
 
     // None retains floor(modulus_bits / log_basis) levels; it need not cover every low bit.
     let full = DecompositionConfig {
-        log_basis: if Word::BITS == 32 { 2 } else { 8 },
+        log_basis: if Word::BITS == 32 {
+            DecompositionBaseLog::new(2)
+        } else {
+            DecompositionBaseLog::new(8)
+        },
         level_count: None,
     };
 
     TfheParameters::try_from_config(TfheConfig {
         small_lwe: LweParameters::new(
-            728,
+            LweDimension::new(728),
             16, // Padded inputs occupy 0..8.
             modulus,
             SecretKeyDistr::fixed_hamming_weight_binary(728, 32),
             3.2 * q / 16384.0,
         ),
-        accumulator_dimension: 1,
+        accumulator_dimension: GlweDimension::new(1),
         poly_length: N,
         accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
         accumulator_noise_standard_deviation: 6.4,

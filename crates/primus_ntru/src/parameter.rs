@@ -1,10 +1,11 @@
 //! Parameters shared by the NTT and Fourier NTRU backends.
 
 use primus_decompose::{ApproxSignedBasisError, primitive::ApproxSignedBasis};
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_distr::{DiscreteGaussian, SecretKeySampler};
 use primus_encoding::ScaledCodec;
 use primus_integer::FheUint;
-use primus_lattice::{MAX_POLY_LENGTH, MIN_POLY_LENGTH};
+use primus_lattice::PolyLength;
 use primus_reduce::RingContext;
 
 use crate::SecretKeyDistr;
@@ -35,13 +36,14 @@ pub enum NtruParameterError {
 /// The ciphertext modulus may be an explicit NTT-friendly field or the native
 /// wrapping modulus used by the Fourier backend.  In either case plaintexts
 /// use the codec scale `Delta = round(q / t)`.
+/// The stored [`PolyLength`] checks the supported power-of-two range.
 #[derive(Clone)]
 pub struct NtruParameters<T, M>
 where
     T: FheUint,
     M: RingContext<T>,
 {
-    poly_length: usize,
+    poly_length: PolyLength,
     cipher_modulus: M,
     secret_key_sampler: SecretKeySampler<T>,
     noise_distribution: DiscreteGaussian<T>,
@@ -94,18 +96,15 @@ where
         secret_key_distr: SecretKeyDistr,
         noise_standard_deviation: f64,
     ) -> Result<Self, NtruParameterError> {
-        if !(MIN_POLY_LENGTH..=MAX_POLY_LENGTH).contains(&poly_length)
-            || !poly_length.is_power_of_two()
-        {
-            return Err(NtruParameterError::InvalidPolynomialLength);
-        }
+        let poly_length = PolyLength::try_new(poly_length)
+            .map_err(|_| NtruParameterError::InvalidPolynomialLength)?;
 
         let plaintext_codec = ScaledCodec::try_new(plain_modulus, cipher_modulus)?;
         let modulus_minus_one = cipher_modulus.minus_one();
         let noise_distribution =
             DiscreteGaussian::new(noise_standard_deviation, modulus_minus_one)?;
         let secret_key_sampler = SecretKeySampler::try_new(secret_key_distr)?;
-        secret_key_sampler.validate_length(poly_length)?;
+        secret_key_sampler.validate_length(poly_length.get())?;
         secret_key_sampler.validate_modulus(modulus_minus_one)?;
 
         Ok(Self {
@@ -118,8 +117,9 @@ where
     }
 
     /// Returns the polynomial length `N`.
+    #[must_use]
     #[inline]
-    pub fn poly_length(&self) -> usize {
+    pub fn poly_length(&self) -> PolyLength {
         self.poly_length
     }
 
@@ -216,7 +216,8 @@ where
         }
         let nlev_len = basis
             .decompose_length()
-            .checked_mul(ntru.poly_length())
+            .get()
+            .checked_mul(ntru.poly_length().get())
             .ok_or(NlevParameterError::CiphertextLengthOverflow)?;
         Ok(Self {
             ntru: ntru.clone(),
@@ -239,8 +240,8 @@ where
     #[inline]
     pub fn with_ntru_params(
         ntru: &NtruParameters<T, M>,
-        log_basis: u32,
-        reverse_length: Option<usize>,
+        log_basis: DecompositionBaseLog,
+        reverse_length: Option<DecompositionLevelCount>,
     ) -> Self {
         Self::try_with_ntru_params(ntru, log_basis, reverse_length)
             .unwrap_or_else(|error| panic!("failed to construct NLev parameters: {error}"))
@@ -250,8 +251,8 @@ where
     /// the modulus domain of `ntru`.
     pub fn try_with_ntru_params(
         ntru: &NtruParameters<T, M>,
-        log_basis: u32,
-        reverse_length: Option<usize>,
+        log_basis: DecompositionBaseLog,
+        reverse_length: Option<DecompositionLevelCount>,
     ) -> Result<Self, NlevParameterError> {
         let basis =
             ApproxSignedBasis::try_new(ntru.cipher_modulus_value(), log_basis, reverse_length)?;
@@ -275,14 +276,14 @@ where
     /// Returns the polynomial length `N`.
     #[must_use]
     #[inline]
-    pub fn poly_length(&self) -> usize {
+    pub fn poly_length(&self) -> PolyLength {
         self.ntru.poly_length()
     }
 
     /// Returns the number of retained decomposition levels.
     #[must_use]
     #[inline]
-    pub fn decompose_length(&self) -> usize {
+    pub fn decompose_length(&self) -> DecompositionLevelCount {
         self.basis.decompose_length()
     }
 

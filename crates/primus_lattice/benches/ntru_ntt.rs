@@ -1,9 +1,11 @@
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use std::hint::black_box;
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_integer::FheUint;
 use primus_lattice::{
+    PolyLength,
     ngsw::Ngsw,
     ntru::{Ntru, NttNtru},
     workspace::NttNtruExternalProductWorkspace,
@@ -21,7 +23,11 @@ fn ntt<T: FheUint, Table: NttTable<ValueT = T>>(
     let modulus = BarrettModulus::new(q);
     let table = Table::new(log_n, modulus).unwrap();
     let exponent = table.poly_length() / 3;
-    let basis = ApproxSignedBasis::new(Some(q), log_b, Some(levels));
+    let basis = ApproxSignedBasis::new(
+        Some(q),
+        DecompositionBaseLog::new(log_b),
+        Some(DecompositionLevelCount::new(levels)),
+    );
     let poly_length = table.poly_length();
     let input = Ntru::new(
         (0..poly_length)
@@ -36,7 +42,7 @@ fn ntt<T: FheUint, Table: NttTable<ValueT = T>>(
     .into_ntt_form(&table);
     let mut output = Ntru::new(vec![T::ZERO; poly_length]);
     let mut ntt_output = NttNtru::<Vec<T>>::zero(poly_length);
-    let mut workspace = NttNtruExternalProductWorkspace::new(poly_length);
+    let mut workspace = NttNtruExternalProductWorkspace::new(PolyLength::new(poly_length));
 
     let mut group = c.benchmark_group(format!(
         "ntru/ntt/u{}/q{q}/n{}/logb{log_b}/l{levels}",

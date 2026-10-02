@@ -1,7 +1,9 @@
 use primus_decompose::primitive::ApproxSignedBasis;
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_encoding::{PlaintextEmbedding, RoundedCodec};
 use primus_fft::{FftEngine, FftTable, RustFftTable, TfheFftTable};
 use primus_glwe::{GlweParameters, SecretKeyDistr};
+use primus_lattice::{GlweDimension, LweDimension};
 use primus_lattice::{glwe::TorusGlwe, lwe::Lwe};
 use primus_lwe::LweParameters;
 use primus_modulus::NativeModulus;
@@ -76,17 +78,21 @@ fn check_raw<Table: FftTable>() {
     // k=2 checks every GGSW row; odd bucket count requires the final buffer copy.
     for (dimension, copies, buckets) in [(1, 3, 8), (2, 1, 17)] {
         let modulus = NativeModulus::new();
-        let basis = ApproxSignedBasis::new(None, 8, Some(3));
+        let basis = ApproxSignedBasis::new(
+            None,
+            DecompositionBaseLog::new(8),
+            Some(DecompositionLevelCount::new(3)),
+        );
         let parameters = TfheParameters::try_new(
             LweParameters::new(
-                16,
+                LweDimension::new(16),
                 8,
                 modulus,
                 SecretKeyDistr::fixed_hamming_weight_binary(16, 4),
                 0.7,
             ),
             GlweParameters::new(
-                dimension,
+                GlweDimension::new(dimension),
                 N,
                 8,
                 modulus,

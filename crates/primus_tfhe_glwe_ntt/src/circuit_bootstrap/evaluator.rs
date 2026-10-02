@@ -144,7 +144,7 @@ where
         let lookup_table = InterleavedLookupTable::try_new(
             domain_len,
             poly_length,
-            parameters.output_basis().decompose_length(),
+            parameters.output_basis().decompose_length().get(),
             tfhe.plain_modulus_value(),
             tfhe.small_lwe().cipher_modulus(),
             modulus,
@@ -328,7 +328,7 @@ where
         let tfhe = self.context.parameters();
         assert_eq!(
             input.dimension(),
-            tfhe.external_lwe_dimension(),
+            tfhe.external_lwe_dimension().get(),
             "circuit-bootstrap input dimension mismatch"
         );
         assert_eq!(
@@ -345,7 +345,7 @@ where
 
         self.circuit_key.trace_key().project_prefix_coefficients_to(
             accumulator,
-            self.parameters.output_basis().decompose_length(),
+            self.parameters.output_basis().decompose_length().get(),
             self.traced.as_mut(),
             self.context
                 .parameters()

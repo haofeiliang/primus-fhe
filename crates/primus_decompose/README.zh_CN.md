@@ -11,6 +11,7 @@
 
 | 类型 | 职责 |
 | --- | --- |
+| `DecompositionBaseLog` / `DecompositionLevelCount` | 经过检查的基数对数和正的保留层数 |
 | `DecompositionConfig` | 尚未绑定模数的基数和保留层数；`try_build` 准备 primitive basis |
 | `primitive::ApproxSignedBasis<T>` | 单 limb 输入，使用显式模数或隐式 native 模数 `2^T::BITS` |
 | `big_integer::BigUintApproxSignedBasis<T>` | 定宽、多 limb 输入，使用显式整数模数 |
@@ -45,7 +46,9 @@ reconstructed = sum(digit_i * weight_i) mod modulus
 
 ## 构造与保留层数
 
-两种 basis 都要求 `2 <= log_basis < T::BITS`，且模数不小于 `B`。 参数无效时，`new` 会 panic，`try_new` 返回 `ApproxSignedBasisError`。
+`DecompositionBaseLog` 检查 `log_basis >= 2`；`DecompositionLevelCount` 检查 `L >= 1`。通过 `new`、`try_new` 或 `TryFrom` 构造，用 `.get()` 读取整数。它们不添加固定上限。Basis 构造器及 `log_basis()` / `decompose_length()` 访问器使用这两个类型。
+
+两种 basis 还要求 `log_basis < T::BITS`、模数不小于 `B`，并且保留层数适合分解位宽。多 limb basis 的层数可以大于一个 limb 的位数。对这些配对错误，basis 的 `new` 会 panic，`try_new` 返回 `ApproxSignedBasisError`。
 
 `DecompositionConfig { log_basis, level_count }` 将分解选择与模数分开。 `config.try_build::<u32>(None)` 准备 native basis，`config.try_build(Some(q))` 使用显式模数。 `level_count` 与下文的 `reverse_length` 含义相同。校验和错误由 `primitive::ApproxSignedBasis::try_new` 提供；config 本身不持有预计算存储。
 
@@ -67,9 +70,9 @@ BigUint 模数必须是非空、little-endian 的 limb slice，最高 limb 不�
 对一批输入初始化一次，然后让同一份 adjusted values 和不断更新的 carry 缓冲区依次 经过所有层。每层输出会被下一层覆盖，应先消费当前结果：
 
 ```rust
-use primus_decompose::primitive::ApproxSignedBasis;
+use primus_decompose::{DecompositionBaseLog, primitive::ApproxSignedBasis};
 
-let basis = ApproxSignedBasis::new(Some(97_u32), 2, None);
+let basis = ApproxSignedBasis::new(Some(97_u32), DecompositionBaseLog::new(2), None);
 let values = [42_u32, 96];
 let mut adjusted = [0_u32; 2];
 let mut carries = [false; 2];
@@ -92,9 +95,13 @@ assert_eq!(reconstructed, [42, 0]); // 模 97 的环距离分别为 0 和 1。
 二次幂模数的输入不需要 adjusted-value 缓冲区。使用 `init_carry_slice`，并直接把 原始输入传给各层 operator；native Fourier 路径采用这种方式：
 
 ```rust
-use primus_decompose::primitive::ApproxSignedBasis;
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount, primitive::ApproxSignedBasis};
 
-let basis = ApproxSignedBasis::<u32>::new(None, 8, Some(3));
+let basis = ApproxSignedBasis::<u32>::new(
+    None,
+    DecompositionBaseLog::new(8),
+    Some(DecompositionLevelCount::new(3)),
+);
 let values = [0x1234_5678_u32, u32::MAX];
 let mut carries = [false; 2];
 let mut digits = [0_u32; 2];
@@ -124,11 +131,11 @@ assert_eq!(reconstructed, [0x1234_5600, 0]);
 Carry 缓冲区有 `N` 个布尔值。全宽 digit 输出有 `N * W` 个 limb；紧凑的 `unsigned_decompose_slice_to` 输出只有 `N` 个 limb。即使 `Q` 是二次幂，BigUint 版本也必须执行输入初始化。
 
 ```rust
-use primus_decompose::big_integer::BigUintApproxSignedBasis;
+use primus_decompose::{DecompositionBaseLog, big_integer::BigUintApproxSignedBasis};
 use primus_integer::BigUint;
 
 let modulus = [1_u32, 1]; // Q = 2^32 + 1，little-endian limbs。
-let basis = BigUintApproxSignedBasis::new(BigUint(&modulus[..]), 8, None);
+let basis = BigUintApproxSignedBasis::new(BigUint(&modulus[..]), DecompositionBaseLog::new(8), None);
 let values = [42_u32, 0, u32::MAX, 0]; // 两个值：42 和 Q - 2。
 let mut adjusted = [0_u32; 4];
 let mut carries = [false; 2];

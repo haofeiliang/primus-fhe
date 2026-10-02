@@ -79,7 +79,7 @@ impl<T: TorusFftValue> SparseGlweBootstrappingKey<T> {
         C: DataMut<Elem = T>,
     {
         let size = self.size();
-        let poly_length = size.glwe_size().poly_length();
+        let poly_length = size.glwe_size().poly_length().get();
         assert!(
             rotation_step.is_power_of_two() && poly_length.is_multiple_of(rotation_step),
             "PBSManyLUT rotation step must be a non-zero power-of-two divisor of N"
@@ -90,7 +90,7 @@ impl<T: TorusFftValue> SparseGlweBootstrappingKey<T> {
                 lookup_table.as_ref().len(),
                 output.as_ref().len(),
             ),
-            (self.input_dimension(), poly_length, size.glwe_len()),
+            (self.input_dimension().get(), poly_length, size.glwe_len()),
             "sparse blind-rotation input, LUT or output layout mismatch"
         );
         assert_eq!(
@@ -98,7 +98,7 @@ impl<T: TorusFftValue> SparseGlweBootstrappingKey<T> {
                 context.input_exponents.len(),
                 context.external_product.size()
             ),
-            (self.input_dimension(), size),
+            (self.input_dimension().get(), size),
             "sparse blind-rotation workspace layout mismatch"
         );
         assert_eq!(
@@ -133,7 +133,7 @@ impl<T: TorusFftValue> SparseGlweBootstrappingKey<T> {
         C: DataMut<Elem = T>,
     {
         let size = self.size();
-        let poly_length = size.glwe_size().poly_length();
+        let poly_length = size.glwe_size().poly_length().get();
         let modulus = self.input_modulus();
         let SparseGlweBlindRotationWorkspace {
             input_exponents,
@@ -246,7 +246,7 @@ impl<T: TorusFftValue> SparseGlweBlindRotationWorkspace<T> {
     pub fn new(key: &SparseGlweBootstrappingKey<T>) -> Self {
         let size = key.size();
         Self {
-            input_exponents: vec![0; key.input_dimension()],
+            input_exponents: vec![0; key.input_dimension().get()],
             aggregate: Ggsw::zero(size.ggsw_len()),
             transformed: FourierGgsw::zero(size.fourier_ggsw_len()),
             scratch: TorusGlwe::zero(size.glwe_len()),

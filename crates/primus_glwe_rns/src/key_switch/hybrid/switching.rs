@@ -24,7 +24,7 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
     {
-        let poly_length = self.input_size.poly_length();
+        let poly_length = self.input_size.poly_length().get();
         let q_moduli_count = self.input_size.moduli_count();
         let qp_poly_len = self.qp_size.rns_poly_len();
         let qp_glwe_len = self.qp_size.rns_glwe_len();
@@ -91,7 +91,7 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
         Table: NttTable<ValueT = T>,
         B: DataMut<Elem = T>,
     {
-        let poly_length = self.input_size.poly_length();
+        let poly_length = self.input_size.poly_length().get();
         let qp_poly_len = self.qp_size.rns_poly_len();
         let q_poly_len = self.output_size.rns_poly_len();
 
@@ -171,7 +171,7 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
         let (_, b_out) = c_out.a_b_mut_slices(self.output_size.rns_poly_len());
         DcrtPolynomial(b_out).add_assign(
             &body_in,
-            self.input_size.poly_length(),
+            self.input_size.poly_length().get(),
             hybrid_rns.q_base().moduli(),
         );
     }
@@ -191,7 +191,7 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
     {
         let hybrid_rns = domain.hybrid_rns();
         let table = domain.table();
-        let poly_length = self.input_size.poly_length();
+        let poly_length = self.input_size.poly_length().get();
         let qp_poly_len = self.qp_size.rns_poly_len();
         let qp_glwe_len = self.qp_size.rns_glwe_len();
         let qp_gadget_len = self
@@ -308,14 +308,14 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingWorkspace<T> {
         let hybrid_rns = domain.hybrid_rns();
         assert!(
             key_switching_key.partition_count == hybrid_rns.partition_count()
-                && key_switching_key.input_size.poly_length() == domain.table().poly_length()
+                && key_switching_key.input_size.poly_length().get() == domain.table().poly_length()
                 && key_switching_key.input_size.moduli_count() == hybrid_rns.q_moduli_count()
                 && key_switching_key.output_size.moduli_count() == hybrid_rns.q_moduli_count()
                 && key_switching_key.qp_size.moduli_count() == hybrid_rns.qp_moduli_count(),
             "hybrid key-switching key and Domain use incompatible layouts"
         );
 
-        let poly_length = key_switching_key.input_size.poly_length();
+        let poly_length = key_switching_key.input_size.poly_length().get();
         Self {
             accumulator_qp: vec![T::ZERO; key_switching_key.qp_size.rns_glwe_len()],
             q_scratch: vec![T::ZERO; key_switching_key.input_size.rns_poly_len()],
@@ -330,6 +330,7 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingWorkspace<T> {
 
 #[cfg(test)]
 mod tests {
+    use primus_lattice::GlweDimension;
     use primus_lattice::glwe::DcrtGlwe;
     use primus_modulus::BarrettModulus;
     use primus_ntt::UintDcrtTable;
@@ -358,7 +359,7 @@ mod tests {
         let q_table = UintDcrtTable::new(log_n, &q_moduli).unwrap();
         let qp_table = UintDcrtTable::new(log_n, &qp_moduli).unwrap();
         let parameters = CrtGlweParameters::new(
-            dimension,
+            GlweDimension::new(dimension),
             poly_length,
             plaintext_modulus,
             gamma,

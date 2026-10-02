@@ -47,7 +47,7 @@ impl<T: FheUint, M: RingContext<T>> CircuitBootstrapParameters<T, M> {
         let key_parameters = |role, decomposition: crate::DecompositionConfig, noise| {
             let ring = primus_glwe::GlweParameters::try_new(
                 accumulator.dimension(),
-                accumulator.poly_length(),
+                accumulator.poly_length().get(),
                 accumulator.plain_modulus_value(),
                 accumulator.cipher_modulus(),
                 accumulator.secret_key_distr(),
@@ -95,11 +95,12 @@ impl<T: FheUint, M: RingContext<T>> CircuitBootstrapParameters<T, M> {
             }
         }
 
-        let lookup_table_padded_output_count = output_basis.decompose_length().next_power_of_two();
+        let lookup_table_padded_output_count =
+            output_basis.decompose_length().get().next_power_of_two();
         let lookup_domain_len =
             primus_tfhe::front_half_domain_len(tfhe.plain_modulus_value(), glwe.poly_length())
                 .map_err(|_| CircuitBootstrapParameterError::OutputDecompositionTooLarge)?;
-        if lookup_table_padded_output_count > glwe.poly_length() / lookup_domain_len {
+        if lookup_table_padded_output_count > glwe.poly_length().get() / lookup_domain_len {
             return Err(CircuitBootstrapParameterError::OutputDecompositionTooLarge);
         }
 
@@ -146,7 +147,10 @@ impl<T: FheUint, M: RingContext<T>> CircuitBootstrapParameters<T, M> {
     #[must_use]
     #[inline]
     pub fn lookup_table_padded_output_count(&self) -> usize {
-        self.output_basis.decompose_length().next_power_of_two()
+        self.output_basis
+            .decompose_length()
+            .get()
+            .next_power_of_two()
     }
 
     /// Checks the accumulator layout, ciphertext modulus and input plaintext domain.

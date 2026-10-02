@@ -1,9 +1,13 @@
 //! GLev-to-GGSW conversion checked through gadget phases and external products.
+
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_glwe::{
     GlevParameters, GlweParameters, GlweSecretKey, NttGlweGadgetEncryptWorkspace,
     NttGlweSchemeSwitchKey, NttGlweSecretKey, SecretKeyDistr,
 };
+use primus_lattice::GlweDimension;
 use primus_lattice::{
+    PolyLength,
     ggsw::NttGgsw,
     glev::NttGlev,
     glwe::{Glwe, NttGlwe},
@@ -27,15 +31,23 @@ fn ntt_scheme_switch_produces_an_external_product_control() {
     let modulus = BarrettModulus::new(MODULUS);
     let ntt = U64NttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
     let glwe_parameters = GlweParameters::new(
-        DIMENSION,
+        GlweDimension::new(DIMENSION),
         POLY_LENGTH,
         PLAINTEXT_MODULUS,
         modulus,
         SecretKeyDistr::UniformBinary,
         0.7,
     );
-    let output_parameters = GlevParameters::with_glwe_params(&glwe_parameters, 10, Some(2));
-    let scheme_parameters = GlevParameters::with_glwe_params(&glwe_parameters, 10, Some(3));
+    let output_parameters = GlevParameters::with_glwe_params(
+        &glwe_parameters,
+        DecompositionBaseLog::new(10),
+        Some(DecompositionLevelCount::new(2)),
+    );
+    let scheme_parameters = GlevParameters::with_glwe_params(
+        &glwe_parameters,
+        DecompositionBaseLog::new(10),
+        Some(DecompositionLevelCount::new(3)),
+    );
     let mut rng = StdRng::seed_from_u64(0x0043_4253_5052_494d);
     let (coefficient_secret, secret) =
         NttGlweSecretKey::generate_pair(&glwe_parameters, &ntt, &mut rng);
@@ -142,7 +154,7 @@ fn fourier_scheme_switch<Table: primus_fft::FftTable>() {
     let table = Table::new(N.trailing_zeros()).unwrap();
     let mut fft = FftEngine::new(&table);
     let params = GlweParameters::new(
-        K,
+        GlweDimension::new(K),
         N,
         64u64,
         NativeModulus::new(),
@@ -150,8 +162,16 @@ fn fourier_scheme_switch<Table: primus_fft::FftTable>() {
         0.7,
     );
     // The output's gadget basis is independent of the scheme-switch key's basis.
-    let output_params = GlevParameters::with_glwe_params(&params, 8, Some(3));
-    let key_params = GlevParameters::with_glwe_params(&params, 10, Some(4));
+    let output_params = GlevParameters::with_glwe_params(
+        &params,
+        DecompositionBaseLog::new(8),
+        Some(DecompositionLevelCount::new(3)),
+    );
+    let key_params = GlevParameters::with_glwe_params(
+        &params,
+        DecompositionBaseLog::new(10),
+        Some(DecompositionLevelCount::new(4)),
+    );
     let coeff = GlweSecretKey::<u64>::new(secret(), params.size(), SecretKeyDistr::UniformTernary);
     let sk = FourierGlweSecretKey::from_coeff_secret_key(&coeff, &mut fft);
     let mut rng = StdRng::seed_from_u64(0x534348454d45);
@@ -225,7 +245,7 @@ fn fourier_scheme_switch<Table: primus_fft::FftTable>() {
     let wrong_table = Table::new((N * 2).trailing_zeros()).unwrap();
     let mut wrong_fft = FftEngine::new(&wrong_table);
     let wrong_size = primus_lattice::GadgetSize::new(
-        GlweSize::new(K + 1, N),
+        GlweSize::new(GlweDimension::new(K + 1), PolyLength::new(N)),
         key_params.size().decompose_length(),
     );
     for (input_len, output_len, wrong_fft_length, size) in [

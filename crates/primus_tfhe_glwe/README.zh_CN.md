@@ -15,6 +15,8 @@
 
 推荐使用 `TfheParameters::try_from_config(TfheConfig { .. })`：只在 `small_lwe` 中指定一次 `t/q`，具名字段选择 accumulator 的维数、长度、秘密分布和噪声，以及 blind rotation、key switching 的 `DecompositionConfig { log_basis, level_count }` 和 PBS order。`level_count: None` 选择支持的最大层数，仍可能丢弃低位（见[分解精度](../primus_decompose/README.zh_CN.md)）；各 basis 自动绑定同一模数。 GLWE evaluation key 沿用 accumulator 噪声。已持有环参数或预计算 basis 时，使用下述直接入口。
 
+维数选择使用 `LweDimension`，GLWE 另用 `GlweDimension`；分解选择使用 `DecompositionBaseLog` 和 `Option<DecompositionLevelCount>`。这些单位只构造一次，参数访问器返回的值直接传给工作区。在原始存储或内核边界用 `.get()` 提取整数；组合长度和 basis/模数兼容性仍由构造器检查。
+
 `TfheParameters::try_new(small_lwe, accumulator_glwe, blind_rotation_basis, key_switching_basis, order)` 从 accumulator 派生 BSK 布局，从 small LWE 派生 补零的密钥切换目标。明文与密文模数必须匹配，small secret 支持 binary 或 ternary 家族，且 `n <= kN`。 旋转域 `2N` 必须能由输入系数类型 `T` 表示。 Ternary LWE 密钥按 `0/1/q-1` 保存；构造补零 GLWE 密钥时将 `q-1` 还原为 signed `-1`。 均匀、自定义概率及固定重量/正负计数分布复用同一流程，Gaussian small secret 不支持。
 
 | `PbsOrder` | 完整 PBS 链 | 外部 LWE 秘密 / 维数 |

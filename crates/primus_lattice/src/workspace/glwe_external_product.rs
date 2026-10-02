@@ -65,7 +65,7 @@ impl<T: TorusFftValue> FourierGlweExternalProductWorkspace<T> {
     #[must_use]
     pub fn new(size: GadgetSize) -> Self {
         let glwe_size = size.glwe_size();
-        let poly_length = glwe_size.poly_length();
+        let poly_length = glwe_size.poly_length().get();
         let fourier_length = glwe_size.fourier_poly_len();
 
         Self {
@@ -131,7 +131,7 @@ impl<T: TorusFftValue> FourierGlweExternalProductWorkspace<T> {
         }
 
         let glwe_size = size.glwe_size();
-        let poly_length = glwe_size.poly_length();
+        let poly_length = glwe_size.poly_length().get();
         let fourier_length = glwe_size.fourier_poly_len();
 
         self.size = size;
@@ -239,7 +239,7 @@ impl<T: FheUint> NttGlweExternalProductWorkspace<T> {
     #[must_use]
     pub fn new(size: GadgetSize) -> Self {
         let glwe_size = size.glwe_size();
-        let poly_length = glwe_size.poly_length();
+        let poly_length = glwe_size.poly_length().get();
 
         Self {
             size,
@@ -301,7 +301,7 @@ impl<T: FheUint> NttGlweExternalProductWorkspace<T> {
         }
 
         let glwe_size = size.glwe_size();
-        let poly_length = glwe_size.poly_length();
+        let poly_length = glwe_size.poly_length().get();
 
         self.size = size;
         self.adjusted_poly.resize(poly_length, T::ZERO);

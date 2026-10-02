@@ -4,7 +4,9 @@
 //! For u64, change Word to u64 and U32NttTable to U64NttTable.
 //! Arithmetic profiles: guides/development/tfhe-parameters.md (not security presets).
 
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_glwe::SecretKeyDistr;
+use primus_lattice::{GlweDimension, LweDimension};
 use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntt::U32NttTable as Table;
@@ -32,19 +34,23 @@ fn parameters() -> TfheParameters<Word> {
 
     // None retains floor(modulus_bits / log_basis) levels; it need not cover every low bit.
     let full = DecompositionConfig {
-        log_basis: if Word::BITS == 32 { 2 } else { 8 },
+        log_basis: if Word::BITS == 32 {
+            DecompositionBaseLog::new(2)
+        } else {
+            DecompositionBaseLog::new(8)
+        },
         level_count: None,
     };
 
     TfheParameters::try_from_config(TfheConfig {
         small_lwe: LweParameters::new(
-            800,
+            LweDimension::new(800),
             4, // Padded inputs occupy 0..2.
             modulus,
             SecretKeyDistr::UniformBinary,
             q * 2.046151696979124e-6,
         ),
-        accumulator_dimension: 1,
+        accumulator_dimension: GlweDimension::new(1),
         poly_length: N,
         accumulator_secret_key_distr: SecretKeyDistr::UniformTernary,
         accumulator_noise_standard_deviation: 6.4,
@@ -58,13 +64,25 @@ fn parameters() -> TfheParameters<Word> {
 // CBS emits a gadget ciphertext; its output basis is separate from the two evaluation-key bases.
 fn circuit_config() -> CircuitBootstrapConfig {
     let internal = DecompositionConfig {
-        log_basis: if Word::BITS == 32 { 2 } else { 8 },
+        log_basis: if Word::BITS == 32 {
+            DecompositionBaseLog::new(2)
+        } else {
+            DecompositionBaseLog::new(8)
+        },
         level_count: None,
     };
     CircuitBootstrapConfig {
         output: DecompositionConfig {
-            log_basis: if Word::BITS == 32 { 3 } else { 8 },
-            level_count: Some(if Word::BITS == 32 { 3 } else { 2 }),
+            log_basis: if Word::BITS == 32 {
+                DecompositionBaseLog::new(3)
+            } else {
+                DecompositionBaseLog::new(8)
+            },
+            level_count: Some(if Word::BITS == 32 {
+                DecompositionLevelCount::new(3)
+            } else {
+                DecompositionLevelCount::new(2)
+            }),
         },
         trace: internal,
         trace_noise_standard_deviation: 6.4,

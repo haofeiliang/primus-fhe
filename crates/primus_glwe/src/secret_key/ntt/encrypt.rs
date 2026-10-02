@@ -280,7 +280,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         R: rand::Rng + rand::CryptoRng,
         B: DataMut<Elem = T>,
     {
-        let poly_length = self.size.poly_length();
+        let poly_length = self.size.poly_length().get();
         debug_assert_eq!(ntt_table.poly_length(), poly_length);
         debug_assert_eq!(output.as_ref().len(), self.size.glwe_len());
 

@@ -4,6 +4,7 @@ use primus_glwe::{
     GlweCiphertext, GlweParameters, NttGlweCiphertext, NttGlweSecretKey, SecretKeyDistr,
 };
 use primus_integer::FheUint;
+use primus_lattice::GlweDimension;
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, PrimitiveRoot, UintNttTable};
 use primus_poly::{Polynomial, PolynomialOwned};
@@ -36,7 +37,7 @@ where
         SecretKeyDistr::fixed_hamming_weight_ternary(DIMENSION * POLY_LENGTH, POLY_LENGTH + 7),
     ] {
         let params = GlweParameters::new(
-            DIMENSION,
+            GlweDimension::new(DIMENSION),
             POLY_LENGTH,
             T::try_from(PLAIN_MODULUS).unwrap(),
             modulus,
@@ -120,7 +121,7 @@ fn ntt_glwe_secret_key_roundtrip_u64() {
 fn noise_diagnostics_report_signed_phase_distance() {
     let modulus = BarrettModulus::new(1_125_899_906_826_241u64);
     let params = GlweParameters::new(
-        DIMENSION,
+        GlweDimension::new(DIMENSION),
         POLY_LENGTH,
         PLAIN_MODULUS as u64,
         modulus,
@@ -160,7 +161,7 @@ fn noise_diagnostics_report_signed_phase_distance() {
 fn truncated_decryption_returns_only_retained_coefficients() {
     let modulus = BarrettModulus::new(1_125_899_906_826_241u64);
     let params = GlweParameters::new(
-        DIMENSION,
+        GlweDimension::new(DIMENSION),
         POLY_LENGTH,
         PLAIN_MODULUS as u64,
         modulus,

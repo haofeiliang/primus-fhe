@@ -3,6 +3,7 @@
 //! Run with `cargo run -p primus_lwe --example basic`.
 //! The small dimension keeps the example fast and is not a security recommendation.
 
+use primus_lattice::LweDimension;
 use primus_lattice::lwe::{Lwe, LweIter};
 use primus_lwe::{LweParameters, LwePublicKey, LweSecretKey, SecretKeyDistr};
 use primus_modulus::NativeModulus;
@@ -12,7 +13,7 @@ const PLAINTEXT_MODULUS: u32 = 4;
 
 fn main() {
     let parameters = LweParameters::new(
-        LWE_DIMENSION,
+        LweDimension::new(LWE_DIMENSION),
         PLAINTEXT_MODULUS,
         NativeModulus::new(),
         SecretKeyDistr::UniformBinary,

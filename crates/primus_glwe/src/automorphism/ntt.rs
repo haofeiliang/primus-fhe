@@ -27,7 +27,7 @@ impl<T: FheUint> NttGlweAutomorphismWorkspace<T> {
     pub fn new(size: primus_lattice::GlweSize) -> Self {
         Self {
             transformed: Glwe::zero(size.glwe_len()),
-            permuted_ntt: vec![T::ZERO; size.poly_length()],
+            permuted_ntt: vec![T::ZERO; size.poly_length().get()],
             key_switching: NttGlweKeySwitchingWorkspace::new(size),
         }
     }
@@ -106,7 +106,7 @@ impl<T: FheUint> NttGlweAutomorphismKey<T> {
         R: rand::Rng + rand::CryptoRng,
     {
         let size = secret_key.glwe_size();
-        let poly_len = size.poly_length();
+        let poly_len = size.poly_length().get();
 
         let coeff_permutation = CoeffAutomorphismPermutation::new(degree, poly_len);
         let ntt_permutation = NttAutomorphismPermutation::new(degree, poly_len);

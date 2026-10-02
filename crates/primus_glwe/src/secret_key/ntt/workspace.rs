@@ -19,8 +19,8 @@ impl<T: FheUint> NttGlweGadgetEncryptWorkspace<T> {
     /// Creates reusable workspace for a checked gadget layout.
     #[must_use]
     pub fn new(size: GadgetSize) -> Self {
-        let poly_length = size.glwe_size().poly_length();
-        let decompose_length = size.decompose_length();
+        let poly_length = size.glwe_size().poly_length().get();
+        let decompose_length = size.decompose_length().get();
         Self {
             encoded: PolynomialOwned::zero(poly_length),
             level_transforms: vec![T::ZERO; decompose_length * poly_length],
@@ -29,16 +29,16 @@ impl<T: FheUint> NttGlweGadgetEncryptWorkspace<T> {
 
     /// Rebinds this workspace to another checked gadget layout.
     pub fn resize(&mut self, size: GadgetSize) {
-        let poly_length = size.glwe_size().poly_length();
+        let poly_length = size.glwe_size().poly_length().get();
         self.encoded.0.resize(poly_length, T::ZERO);
         self.level_transforms
-            .resize(size.decompose_length() * poly_length, T::ZERO);
+            .resize(size.decompose_length().get() * poly_length, T::ZERO);
     }
 
     pub(crate) fn assert_glev_compatible(&self, size: GadgetSize) {
         assert_eq!(
             self.encoded.as_ref().len(),
-            size.glwe_size().poly_length(),
+            size.glwe_size().poly_length().get(),
             "gadget polynomial workspace length mismatch"
         );
     }
@@ -47,7 +47,7 @@ impl<T: FheUint> NttGlweGadgetEncryptWorkspace<T> {
         self.assert_glev_compatible(size);
         assert_eq!(
             self.level_transforms.len(),
-            size.decompose_length() * size.glwe_size().poly_length(),
+            size.decompose_length().get() * size.glwe_size().poly_length().get(),
             "gadget level workspace length mismatch"
         );
     }

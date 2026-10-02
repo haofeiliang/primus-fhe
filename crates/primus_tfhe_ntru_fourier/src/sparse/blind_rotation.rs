@@ -24,7 +24,7 @@ impl<T: TorusFftValue> SparseWorkspace<T> {
         parameters: &TfheParameters<T, LM>,
     ) -> Self {
         Self {
-            exponents: vec![0; parameters.external_lwe_dimension()],
+            exponents: vec![0; parameters.external_lwe_dimension().get()],
             aggregate: vec![T::ZERO; parameters.blind_rotation().nlev_len()],
             transformed: vec![Complex64::ZERO; parameters.blind_rotation().fourier_nlev_len()],
             external_product: FourierNtruExternalProductWorkspace::new(parameters.poly_length()),

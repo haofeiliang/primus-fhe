@@ -73,6 +73,14 @@ NTT 的 `encrypt_truncated_zeros`、`phase_truncated` 和 `decrypt_truncated` �
 
 ## 求值原语
 
+`GlweKeySwitchingParameters::try_new(GlweDimension::new(input_dimension), output)` 在构造时检查并保存
+完整的输入 GLWE 布局，输入布局或组合密钥存储长度溢出时返回 `GlweSizeError`；`new` 在相同错误下
+panic。输入与输出共用 `output` 的环几何，`input_size()` 返回保存的布局。
+普通与 gadget 参数通过 `GlweSize` 保存经过检查的
+[PolyLength](../primus_lattice/README.zh_CN.md#存储与布局)，`poly_length()` 访问器返回经过检查的值，直接传给
+工作区构造器，在数值内核/变换边界再用 `.get()` 提取整数。
+维数入参与访问器使用从 `primus_lattice` 重新导出的 `GlweDimension`，`.get()` 返回 `k`。`primus_lattice::LweDimension::from(glwe_size)` 从 GLWE size 显式派生经过验证的提取 LWE 维数 `kN`。Gadget 构造器接收 `primus_decompose` 的 `DecompositionBaseLog` 和 `Option<DecompositionLevelCount>`。顶层加密参数构造器仍接受整数 `N`。
+
 求值密钥保存自己的布局和分解基。NTT 求值参数为 `input, output, modulus, ntt, workspace`；Fourier 求值省略 `modulus`。Workspace 是可复用的工作区。必须保持密钥的变换表示，仅长度和模数匹配不能证明表示兼容。
 
 两种自同构密钥都提供系数域 `apply_to`。`NttGlweAutomorphismKey::apply_ntt_to` 和 `FourierGlweAutomorphismKey::apply_fourier_to` 复用同一密钥处理变换域输入、输出。Fourier 求值要求使用生成密钥时的同一个 FFT table 实例；直接处理 Fourier 输入、输出的舍入结果可能与系数域往返不同。

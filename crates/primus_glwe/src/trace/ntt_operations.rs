@@ -1,4 +1,5 @@
 //! Coefficient-domain trace, projection and related-key packing evaluation.
+
 use primus_data::{Data, DataMut};
 use primus_factor::FactorSliceOps;
 use primus_integer::{DivRem, FheUint};
@@ -23,7 +24,7 @@ impl<T: FheUint> NttGlwePackingWorkspace<T> {
     /// Panics if count is not a power of two in `1..=N`, or the allocation length overflows.
     #[must_use]
     pub fn new(size: GlweSize, count: usize) -> Self {
-        kernels::check_degree(size.poly_length(), count);
+        kernels::check_degree(size.poly_length().get(), count);
         Self {
             tree: vec![
                 T::ZERO;
@@ -60,8 +61,10 @@ impl<T: FheUint> NttGlweTraceKey<T> {
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        let levels =
-            kernels::check_degree(self.glwe_size.poly_length(), retained_coefficient_count);
+        let levels = kernels::check_degree(
+            self.glwe_size.poly_length().get(),
+            retained_coefficient_count,
+        );
         self.check_io(input.as_ref(), output.as_ref(), modulus, ntt, workspace);
         output.as_mut().copy_from_slice(input.as_ref());
         self.trace_kernel_assign::<_, _, false>(output.as_mut(), levels, modulus, ntt, workspace);
@@ -113,8 +116,10 @@ impl<T: FheUint> NttGlweTraceKey<T> {
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        let levels =
-            kernels::check_degree(self.glwe_size.poly_length(), retained_coefficient_count);
+        let levels = kernels::check_degree(
+            self.glwe_size.poly_length().get(),
+            retained_coefficient_count,
+        );
         self.check_io(input.as_ref(), output.as_ref(), modulus, ntt, workspace);
         output.as_mut().copy_from_slice(input.as_ref());
         self.trace_kernel_assign::<_, _, true>(output.as_mut(), levels, modulus, ntt, workspace);
@@ -150,7 +155,7 @@ impl<T: FheUint> NttGlweTraceKey<T> {
         );
         self.check_output(output.as_ref(), modulus, ntt, workspace);
 
-        input.inverse_extract_glwe_to(output, self.glwe_size.poly_length(), modulus);
+        input.inverse_extract_glwe_to(output, self.glwe_size.poly_length().get(), modulus);
         self.trace_kernel_assign::<_, _, true>(
             output.as_mut(),
             self.automorphism_count(),
@@ -184,7 +189,7 @@ impl<T: FheUint> NttGlweTraceKey<T> {
         let (count, rem) = input.len().div_rem(lwe_len);
         assert_eq!(rem, 0, "packing input contains a partial LWE");
 
-        kernels::check_degree(self.glwe_size.poly_length(), count);
+        kernels::check_degree(self.glwe_size.poly_length().get(), count);
         assert_eq!(
             workspace.tree.len(),
             count * self.glwe_size.glwe_len(),
@@ -257,7 +262,7 @@ impl<T: FheUint> NttGlweTraceKey<T> {
         assert!(
             indices
                 .iter()
-                .all(|&index| index < self.glwe_size.poly_length()),
+                .all(|&index| index < self.glwe_size.poly_length().get()),
             "projection index outside polynomial"
         );
         self.project_indices_to(
@@ -294,7 +299,7 @@ impl<T: FheUint> NttGlweTraceKey<T> {
         A: Data<Elem = T>,
     {
         assert!(
-            count <= self.glwe_size.poly_length(),
+            count <= self.glwe_size.poly_length().get(),
             "projection prefix exceeds polynomial length"
         );
         self.project_indices_to(input, 0..count, output, modulus, ntt, workspace);
@@ -316,7 +321,7 @@ impl<T: FheUint> NttGlweTraceKey<T> {
         A: Data<Elem = T>,
     {
         let glwe_len = self.glwe_size.glwe_len();
-        let poly_length = self.glwe_size.poly_length();
+        let poly_length = self.glwe_size.poly_length().get();
         assert_eq!(
             input.as_ref().len(),
             glwe_len,
@@ -368,7 +373,7 @@ impl<T: FheUint> NttGlweTraceKey<T> {
     {
         self.expand_partial_coefficients_to(
             input,
-            self.glwe_size.poly_length(),
+            self.glwe_size.poly_length().get(),
             output,
             modulus,
             ntt,
@@ -409,7 +414,7 @@ impl<T: FheUint> NttGlweTraceKey<T> {
         Table: NttTable<ValueT = T>,
         A: Data<Elem = T>,
     {
-        kernels::check_degree(self.glwe_size.poly_length(), count);
+        kernels::check_degree(self.glwe_size.poly_length().get(), count);
         let glwe_len = self.glwe_size.glwe_len();
         assert_eq!(
             input.as_ref().len(),

@@ -1,4 +1,7 @@
 //! Observe sensitive allocations before deallocation, without reading freed memory.
+
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_lattice::PolyLength;
 use std::{
     alloc::{GlobalAlloc, Layout, System},
     cell::Cell,
@@ -152,8 +155,16 @@ fn secret_buffers_are_reused_and_erased() {
         FourierNtruSecretKey::try_from_coeff_secret_key(&coefficient_key, &mut fft).unwrap();
     let ntt_params = NtruParameters::new(N, 4, modulus, distr, 0.7);
     let fourier_params = NtruParameters::new(N, 4, NativeModulus::new(), distr, 0.7);
-    let ntt_gadget = NlevParameters::with_ntru_params(&ntt_params, 4, Some(3));
-    let fourier_gadget = NlevParameters::with_ntru_params(&fourier_params, 4, Some(3));
+    let ntt_gadget = NlevParameters::with_ntru_params(
+        &ntt_params,
+        DecompositionBaseLog::new(4),
+        Some(DecompositionLevelCount::new(3)),
+    );
+    let fourier_gadget = NlevParameters::with_ntru_params(
+        &fourier_params,
+        DecompositionBaseLog::new(4),
+        Some(DecompositionLevelCount::new(3)),
+    );
     let mut rng = StdRng::seed_from_u64(42);
     let message = Polynomial::new(vec![1u32; N]);
     let mut ntt_output = NttNgswCiphertext::<Vec<u32>>::zero(ntt_gadget.nlev_len());
@@ -166,7 +177,7 @@ fn secret_buffers_are_reused_and_erased() {
     // operation fills each workspace again before its destructor is observed.
     assert_erased(
         1,
-        || NttNtruGadgetEncryptWorkspace::new(N),
+        || NttNtruGadgetEncryptWorkspace::new(PolyLength::new(N)),
         |workspace| {
             for _ in 0..2 {
                 workspace.zeroize();
@@ -183,7 +194,7 @@ fn secret_buffers_are_reused_and_erased() {
     );
     assert_erased(
         3,
-        || FourierNtruGadgetEncryptWorkspace::new(N),
+        || FourierNtruGadgetEncryptWorkspace::new(PolyLength::new(N)),
         |workspace| {
             for _ in 0..2 {
                 workspace.zeroize();
@@ -200,7 +211,7 @@ fn secret_buffers_are_reused_and_erased() {
     );
     assert_erased(
         1,
-        || FourierNtruEncryptWorkspace::new(N),
+        || FourierNtruEncryptWorkspace::new(PolyLength::new(N)),
         |workspace| {
             for _ in 0..2 {
                 workspace.zeroize();
@@ -217,7 +228,7 @@ fn secret_buffers_are_reused_and_erased() {
     );
     assert_erased(
         1,
-        || FourierNtruDecryptWorkspace::new(N),
+        || FourierNtruDecryptWorkspace::new(PolyLength::new(N)),
         |workspace| {
             for _ in 0..2 {
                 workspace.zeroize();
@@ -288,8 +299,8 @@ fn secret_buffers_are_reused_and_erased() {
                 let (coeff, key) = result.as_ref().unwrap();
                 assert_eq!(coeff.as_slice(), coefficient_key.as_slice());
                 let mut check_fft = FftEngine::new(&table);
-                let mut encrypt = FourierNtruEncryptWorkspace::new(N);
-                let mut decrypt = FourierNtruDecryptWorkspace::new(N);
+                let mut encrypt = FourierNtruEncryptWorkspace::new(PolyLength::new(N));
+                let mut decrypt = FourierNtruDecryptWorkspace::new(PolyLength::new(N));
                 let cipher = key.encrypt(
                     &message,
                     &fourier_params,
@@ -345,7 +356,7 @@ fn secret_buffers_are_reused_and_erased() {
 
     // Reject a destroyed Fourier key even in release mode: multiplying by an
     // empty inverse would otherwise leave the encoded message and noise exposed.
-    let mut workspace = FourierNtruEncryptWorkspace::new(N);
+    let mut workspace = FourierNtruEncryptWorkspace::new(PolyLength::new(N));
     assert!(
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             fourier_key.encrypt_to(

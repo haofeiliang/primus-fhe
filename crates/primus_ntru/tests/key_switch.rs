@@ -1,4 +1,7 @@
 //! Independent NTRU key switching and validation before output mutation.
+
+use primus_decompose::DecompositionBaseLog;
+use primus_lattice::PolyLength;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use primus_fft::{FftEngine, FftTable, RustFftTable, TfheFftTable};
@@ -37,7 +40,8 @@ fn ntt_key_switch_preserves_plaintext() {
         SecretKeyDistr::SparseTernary,
         0.7,
     );
-    let key_switching = NlevParameters::with_ntru_params(&parameters, 9, None);
+    let key_switching =
+        NlevParameters::with_ntru_params(&parameters, DecompositionBaseLog::new(9), None);
     let (input_coefficient_key, input_key) =
         NttNtruSecretKey::generate_pair(&parameters, &ntt, &mut rng).unwrap();
     let (output_coefficient_key, output_key) =
@@ -47,7 +51,7 @@ fn ntt_key_switch_preserves_plaintext() {
         output_coefficient_key.as_slice()
     );
 
-    let mut gadget_workspace = NttNtruGadgetEncryptWorkspace::new(POLY_LENGTH);
+    let mut gadget_workspace = NttNtruGadgetEncryptWorkspace::new(PolyLength::new(POLY_LENGTH));
     let switching_key = NttNtruKeySwitchingKey::generate(
         &input_coefficient_key,
         &output_key,
@@ -66,7 +70,7 @@ fn ntt_key_switch_preserves_plaintext() {
             &mut rng,
         )
         .into_coeff_form(&ntt);
-    let mut external_product = NttNtruExternalProductWorkspace::new(POLY_LENGTH);
+    let mut external_product = NttNtruExternalProductWorkspace::new(PolyLength::new(POLY_LENGTH));
     let switched = switching_key.key_switch(&input, modulus, &ntt, &mut external_product);
     let switched = switched.into_ntt_form(&ntt);
 
@@ -93,7 +97,8 @@ fn check_fourier_key_switch<Table: FftTable>() {
         SecretKeyDistr::SparseTernary,
         0.7,
     );
-    let key_switching = NlevParameters::with_ntru_params(&parameters, 8, None);
+    let key_switching =
+        NlevParameters::with_ntru_params(&parameters, DecompositionBaseLog::new(8), None);
     let (input_coefficient_key, input_key) =
         FourierNtruSecretKey::generate_pair(&parameters, &mut fft, &mut rng).unwrap();
     let (output_coefficient_key, output_key) =
@@ -103,7 +108,7 @@ fn check_fourier_key_switch<Table: FftTable>() {
         output_coefficient_key.as_slice()
     );
 
-    let mut gadget_workspace = FourierNtruGadgetEncryptWorkspace::new(POLY_LENGTH);
+    let mut gadget_workspace = FourierNtruGadgetEncryptWorkspace::new(PolyLength::new(POLY_LENGTH));
     let switching_key = FourierNtruKeySwitchingKey::generate(
         &input_coefficient_key,
         &output_key,
@@ -114,7 +119,7 @@ fn check_fourier_key_switch<Table: FftTable>() {
     );
 
     let message = message();
-    let mut encrypt_workspace = FourierNtruEncryptWorkspace::new(POLY_LENGTH);
+    let mut encrypt_workspace = FourierNtruEncryptWorkspace::new(PolyLength::new(POLY_LENGTH));
     let input = input_key.encrypt(
         &Polynomial::new(message.as_slice()),
         &parameters,
@@ -126,11 +131,12 @@ fn check_fourier_key_switch<Table: FftTable>() {
         primus_ntru::NtruCiphertext::zero(POLY_LENGTH);
     input.write_torus_form(&mut input_coefficients, &mut fft);
 
-    let mut external_product = FourierNtruExternalProductWorkspace::new(POLY_LENGTH);
+    let mut external_product =
+        FourierNtruExternalProductWorkspace::new(PolyLength::new(POLY_LENGTH));
     let switched = switching_key.key_switch(&input_coefficients, &mut fft, &mut external_product);
     let mut transformed = FourierNtruOwned::zero(fft.fourier_length());
     switched.write_fourier_form(&mut transformed, &mut fft);
-    let mut decrypt_workspace = FourierNtruDecryptWorkspace::new(POLY_LENGTH);
+    let mut decrypt_workspace = FourierNtruDecryptWorkspace::new(PolyLength::new(POLY_LENGTH));
 
     assert_eq!(
         output_key
@@ -160,7 +166,7 @@ fn ntt_key_switch_rejects_mismatched_resources_before_writing() {
         SecretKeyDistr::UniformBinary,
         0.7,
     );
-    let params = NlevParameters::with_ntru_params(&params, 9, None);
+    let params = NlevParameters::with_ntru_params(&params, DecompositionBaseLog::new(9), None);
     let coeff_key = unit_key();
     let key = NttNtruSecretKey::try_from_coeff_secret_key(&coeff_key, modulus, &ntt).unwrap();
     let mut rng = StdRng::seed_from_u64(0x4e54_545f_424f_554e);
@@ -170,7 +176,7 @@ fn ntt_key_switch_rejects_mismatched_resources_before_writing() {
         &params,
         &ntt,
         &mut rng,
-        &mut NttNtruGadgetEncryptWorkspace::new(POLY_LENGTH),
+        &mut NttNtruGadgetEncryptWorkspace::new(PolyLength::new(POLY_LENGTH)),
     );
 
     for (name, input_len, output_len, scratch_len, modulus, table) in [
@@ -225,7 +231,7 @@ fn ntt_key_switch_rejects_mismatched_resources_before_writing() {
     ] {
         let input = NtruCiphertext::<Vec<u32>>::zero(input_len);
         let mut output = NtruCiphertext::new(vec![7; output_len]);
-        let mut scratch = NttNtruExternalProductWorkspace::new(scratch_len);
+        let mut scratch = NttNtruExternalProductWorkspace::new(PolyLength::new(scratch_len));
         assert!(
             catch_unwind(AssertUnwindSafe(|| {
                 switching_key.key_switch_to(&input, &mut output, modulus, table, &mut scratch);
@@ -250,7 +256,7 @@ fn fourier_key_switch_rejects_mismatched_resources_before_writing() {
         SecretKeyDistr::UniformBinary,
         0.7,
     );
-    let params = NlevParameters::with_ntru_params(&params, 8, None);
+    let params = NlevParameters::with_ntru_params(&params, DecompositionBaseLog::new(8), None);
     let coeff_key = unit_key();
     let key = FourierNtruSecretKey::try_from_coeff_secret_key(&coeff_key, &mut fft).unwrap();
     let mut rng = StdRng::seed_from_u64(0x4646_545f_424f_554e);
@@ -260,7 +266,7 @@ fn fourier_key_switch_rejects_mismatched_resources_before_writing() {
         &params,
         &mut fft,
         &mut rng,
-        &mut FourierNtruGadgetEncryptWorkspace::new(POLY_LENGTH),
+        &mut FourierNtruGadgetEncryptWorkspace::new(PolyLength::new(POLY_LENGTH)),
     );
 
     for (name, input_len, output_len, scratch_len, table) in [
@@ -277,7 +283,7 @@ fn fourier_key_switch_rejects_mismatched_resources_before_writing() {
     ] {
         let input = NtruCiphertext::<Vec<u32>>::zero(input_len);
         let mut output = NtruCiphertext::new(vec![7; output_len]);
-        let mut scratch = FourierNtruExternalProductWorkspace::new(scratch_len);
+        let mut scratch = FourierNtruExternalProductWorkspace::new(PolyLength::new(scratch_len));
         let mut fft = FftEngine::new(table);
         assert!(
             catch_unwind(AssertUnwindSafe(|| {

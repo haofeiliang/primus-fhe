@@ -6,6 +6,7 @@ use criterion::{
     BenchmarkGroup, Criterion, criterion_group, criterion_main, measurement::WallTime,
 };
 use primus_integer::{AsFrom, FheUint};
+use primus_lattice::LweDimension;
 use primus_lwe::{LweCiphertext, LweParameters, LweSecretKey, LweSecretKeyRef, SecretKeyDistr};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_reduce::RingContext;
@@ -14,7 +15,13 @@ use std::hint::black_box;
 
 fn bench_domain<M: RingContext<u32>>(c: &mut Criterion, name: &str, modulus: M, dimension: usize) {
     let mut rng = StdRng::seed_from_u64(0x1_ee01);
-    let params = LweParameters::new(dimension, 4, modulus, SecretKeyDistr::UniformBinary, 0.7);
+    let params = LweParameters::new(
+        LweDimension::new(dimension),
+        4,
+        modulus,
+        SecretKeyDistr::UniformBinary,
+        0.7,
+    );
     let sk = LweSecretKey::generate(&params, &mut rng);
     let signed: Vec<i32> = (0..dimension).map(|i| (i % 3) as i32 - 1).collect();
     let plaintext = params
@@ -64,7 +71,7 @@ fn bench_phases<T: FheUint, M: RingContext<T>>(
     params: &LweParameters<T, M>,
 ) {
     let modulus = params.cipher_modulus();
-    let signed: Vec<T::SignedInteger> = (0..params.dimension())
+    let signed: Vec<T::SignedInteger> = (0..params.dimension().get())
         .map(|i| T::SignedInteger::as_from((i % 3) as i32 - 1))
         .collect();
     let encoded: Vec<T> = signed.iter().map(|&s| modulus.encode_signed(s)).collect();
@@ -95,7 +102,7 @@ fn secret_key(c: &mut Criterion) {
         bench_domain(c, "native", NativeModulus::new(), dimension);
         bench_domain(c, "explicit", BarrettModulus::new(132_120_577), dimension);
         let params = LweParameters::new(
-            dimension,
+            LweDimension::new(dimension),
             4u64,
             NativeModulus::new(),
             SecretKeyDistr::UniformBinary,
@@ -106,7 +113,7 @@ fn secret_key(c: &mut Criterion) {
             &params,
         );
         let params = LweParameters::new(
-            dimension,
+            LweDimension::new(dimension),
             4u64,
             BarrettModulus::new(1_125_899_906_826_241),
             SecretKeyDistr::UniformBinary,

@@ -1,9 +1,10 @@
 //! Boolean-owned constructor and dimension checks, without cryptographic setup.
 
 use primus_encoding::RoundedCodec;
+use primus_lattice::LweDimension;
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_tfhe::{
-    BooleanEvaluator, BooleanGate, LookupTable, LweCiphertext, ProgrammableBootstrap,
+    BooleanEvaluator, BooleanGate, LookupTable, LweCiphertext, PolyLength, ProgrammableBootstrap,
     TfheEvaluationError,
 };
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -29,8 +30,8 @@ fn boolean_constructor_checks_both_encoding_scales() {
         let codec = RoundedCodec::new(t, BarrettModulus::new(input_q));
         assert_eq!(
             BooleanEvaluator::try_new(
-                3,
-                16,
+                LweDimension::new(3),
+                PolyLength::new(16),
                 &codec,
                 BarrettModulus::new(accumulator_q),
                 UnusedBootstrap
@@ -39,11 +40,6 @@ fn boolean_constructor_checks_both_encoding_scales() {
             Some(TfheEvaluationError::InvalidBooleanEncoding),
         );
     }
-    let codec = RoundedCodec::new(4, NativeModulus::new());
-    assert!(matches!(
-        BooleanEvaluator::try_new(3, 1, &codec, NativeModulus::new(), UnusedBootstrap),
-        Err(TfheEvaluationError::LookupTable(_))
-    ));
 }
 
 /// Allows MUX's first PBS to finish before its later else-input check.
@@ -84,8 +80,8 @@ fn boolean_dimension_checks_preserve_output_at_each_stage() {
     let modulus = NativeModulus::new();
     let codec = RoundedCodec::new(4, modulus);
     let mut evaluator = BooleanEvaluator::try_new(
-        DIMENSION,
-        16,
+        LweDimension::new(DIMENSION),
+        PolyLength::new(16),
         &codec,
         modulus,
         RecordingBootstrap::default(),

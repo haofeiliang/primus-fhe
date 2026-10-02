@@ -1,6 +1,8 @@
 //! Complex arithmetic and torus/integer scaling across both FFT backends.
 
+use primus_decompose::DecompositionLevelCount;
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable};
+use primus_lattice::GlweDimension;
 
 #[test]
 fn fourier_arithmetic_overwrites_borrowed_storage_and_matches_in_place() {
@@ -98,13 +100,16 @@ fn fourier_polynomial_products_preserve_torus_scale() {
 // Verify that sign and Fourier normalization with a coefficient scatter oracle.
 fn sub_mul_monomial<Table: FftTable>() {
     use primus_lattice::{
-        GadgetSize, GlweSize,
+        GadgetSize, GlweSize, PolyLength,
         ggsw::{FourierGgsw, Ggsw},
     };
     let table = Table::new(4).unwrap();
     let mut fft = FftEngine::new(&table);
     let n = fft.poly_length();
-    let size = GadgetSize::new(GlweSize::new(2, n), 2);
+    let size = GadgetSize::new(
+        GlweSize::new(GlweDimension::new(2), PolyLength::new(n)),
+        DecompositionLevelCount::new(2),
+    );
     let lhs = Ggsw::new(
         (0..size.ggsw_len())
             .map(|i| (i as u32).wrapping_mul(0x9e37_79b9))

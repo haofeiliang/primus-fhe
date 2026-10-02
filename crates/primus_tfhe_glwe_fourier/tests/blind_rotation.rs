@@ -1,12 +1,15 @@
 //! Direct and quantized rotations against an independent negacyclic oracle;
 //! raw LUT and workspace failures must precede accumulator writes.
 
+use primus_decompose::DecompositionBaseLog;
 use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_glwe::{
     FourierGlweDecryptWorkspace, FourierGlweEncryptWorkspace, FourierGlweGadgetEncryptWorkspace,
     FourierGlweSecretKey, GlevParameters, GlweParameters, SecretKeyDistr,
 };
+use primus_lattice::{GlweDimension, LweDimension};
 use primus_lattice::{
+    PolyLength,
     glwe::{FourierGlweOwned, TorusGlwe},
     lwe::Lwe,
 };
@@ -53,21 +56,22 @@ fn functional_bootstrapping_key_blind_rotates() {
     let mut rng = StdRng::seed_from_u64(42);
     // Input quantization uses a different modulus from the accumulator.
     let lwe_params = LweParameters::new(
-        LWE_DIMENSION,
+        LweDimension::new(LWE_DIMENSION),
         PLAINTEXT_MODULUS,
         PowOf2Modulus::new(1u32 << 31),
         SecretKeyDistr::UniformTernary,
         0.7,
     );
     let glwe_params = GlweParameters::new(
-        GLWE_DIMENSION,
+        GlweDimension::new(GLWE_DIMENSION),
         POLY_LENGTH,
         PLAINTEXT_MODULUS,
         NativeModulus::new(),
         SecretKeyDistr::UniformBinary,
         0.7,
     );
-    let ggsw_params = GlevParameters::with_glwe_params(&glwe_params, 8, None);
+    let ggsw_params =
+        GlevParameters::with_glwe_params(&glwe_params, DecompositionBaseLog::new(8), None);
     let input_secret_key = LweSecretKey::new(
         vec![1u32, 0, (1u32 << 31) - 1, 1],
         SecretKeyDistr::UniformTernary,
@@ -104,7 +108,7 @@ fn functional_bootstrapping_key_blind_rotates() {
 
     let message = accumulator_message();
     let mut accumulator_fourier = FourierGlweOwned::zero(ggsw_params.fourier_glwe_len());
-    let mut encrypt_workspace = FourierGlweEncryptWorkspace::new(POLY_LENGTH);
+    let mut encrypt_workspace = FourierGlweEncryptWorkspace::new(PolyLength::new(POLY_LENGTH));
     output_secret_key.encrypt_to(
         &Polynomial::new(message.as_slice()),
         &mut accumulator_fourier,
@@ -129,7 +133,7 @@ fn functional_bootstrapping_key_blind_rotates() {
     let expected_exponent = (TWO_N + 3 - 7 + 11 - switched_b) & (TWO_N - 1);
     let mut output_fourier = FourierGlweOwned::zero(ggsw_params.fourier_glwe_len());
     output.write_fourier_form(&mut output_fourier, &mut fft);
-    let mut decrypt_workspace = FourierGlweDecryptWorkspace::new(POLY_LENGTH);
+    let mut decrypt_workspace = FourierGlweDecryptWorkspace::new(PolyLength::new(POLY_LENGTH));
     assert_eq!(
         output_secret_key
             .decrypt(

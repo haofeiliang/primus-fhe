@@ -2,8 +2,10 @@
 //! parameter-constructor boundaries belong to the common family crate.
 
 use primus_decompose::primitive::ApproxSignedBasis;
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_glwe::{GgswParameters, GlweParameters, NttGlweSecretKey, SecretKeyDistr};
 use primus_lattice::ggsw::NttGgsw;
+use primus_lattice::{GlweDimension, LweDimension};
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::BarrettModulus;
 use primus_ntt::U64NttTable;
@@ -28,9 +30,15 @@ fn parameters(
     distribution: SecretKeyDistr,
 ) -> TfheParameters<u64> {
     let modulus = BarrettModulus::new(MODULUS);
-    let lwe = LweParameters::new(4, plain_modulus, modulus, distribution, 0.7);
+    let lwe = LweParameters::new(
+        LweDimension::new(4),
+        plain_modulus,
+        modulus,
+        distribution,
+        0.7,
+    );
     let glwe = GlweParameters::new(
-        1,
+        GlweDimension::new(1),
         POLY_LENGTH,
         plain_modulus,
         modulus,
@@ -38,12 +46,20 @@ fn parameters(
         0.7,
     );
     // Full decomposition keeps the phase error below the third output level.
-    let bootstrapping = ApproxSignedBasis::new(glwe.cipher_modulus_value(), 10, None);
+    let bootstrapping = ApproxSignedBasis::new(
+        glwe.cipher_modulus_value(),
+        DecompositionBaseLog::new(10),
+        None,
+    );
     TfheParameters::try_new(
         lwe,
         glwe,
         bootstrapping,
-        ApproxSignedBasis::new(Some(MODULUS), 10, Some(4)),
+        ApproxSignedBasis::new(
+            Some(MODULUS),
+            DecompositionBaseLog::new(10),
+            Some(DecompositionLevelCount::new(4)),
+        ),
         order,
     )
     .unwrap()
@@ -86,16 +102,16 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
         let levels = 3;
         let cbs_config = CircuitBootstrapConfig {
             output: DecompositionConfig {
-                log_basis: 8,
-                level_count: Some(levels),
+                log_basis: DecompositionBaseLog::new(8),
+                level_count: Some(DecompositionLevelCount::new(levels)),
             },
             trace: DecompositionConfig {
-                log_basis: 10,
+                log_basis: DecompositionBaseLog::new(10),
                 level_count: None,
             },
             trace_noise_standard_deviation: 0.7,
             scheme_switch: DecompositionConfig {
-                log_basis: 10,
+                log_basis: DecompositionBaseLog::new(10),
                 level_count: None,
             },
             scheme_switch_noise_standard_deviation: 0.7,
@@ -193,8 +209,11 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
             ),
             Err(TfheEvaluationError::IncompatibleCircuitBootstrapParameters)
         ));
-        let incompatible_trace =
-            GgswParameters::with_glwe_params(context.parameters().accumulator_glwe(), 9, None);
+        let incompatible_trace = GgswParameters::with_glwe_params(
+            context.parameters().accumulator_glwe(),
+            DecompositionBaseLog::new(9),
+            None,
+        );
         let incompatible_parameters = CircuitBootstrapParameters::try_new(
             context.parameters(),
             circuit_parameters.output_basis().clone(),
@@ -215,7 +234,11 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
         // with the same level count can reuse this circuit key.
         let alternate = CircuitBootstrapParameters::try_new(
             context.parameters(),
-            ApproxSignedBasis::new(Some(MODULUS), if sparse { 8 } else { 9 }, Some(levels)),
+            ApproxSignedBasis::new(
+                Some(MODULUS),
+                DecompositionBaseLog::new(if sparse { 8 } else { 9 }),
+                Some(DecompositionLevelCount::new(levels)),
+            ),
             circuit_parameters.trace().clone(),
             circuit_parameters.scheme_switch().clone(),
         )

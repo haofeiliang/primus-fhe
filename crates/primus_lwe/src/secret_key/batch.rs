@@ -97,7 +97,7 @@ impl<T: FheUint> LweSecretKey<T> {
         R: rand::Rng + rand::CryptoRng,
     {
         assert_eq!(
-            params.dimension(),
+            params.dimension().get(),
             self.dimension(),
             "LWE batch parameter dimension mismatch"
         );
@@ -228,7 +228,7 @@ impl<T: FheUint> LweSecretKey<T> {
         M: RingContext<T>,
     {
         assert_eq!(
-            params.dimension(),
+            params.dimension().get(),
             self.dimension(),
             "LWE batch parameter dimension mismatch"
         );
@@ -263,7 +263,7 @@ impl<T: FheUint> LweSecretKey<T> {
         M: RingContext<T>,
     {
         assert_eq!(
-            params.dimension(),
+            params.dimension().get(),
             self.dimension(),
             "LWE batch parameter dimension mismatch"
         );

@@ -39,12 +39,12 @@ macro_rules! impl_gadget_diagonal_single_modulus {
             {
                 let glwe_size = size.glwe_size();
                 debug_assert!(
-                    level < size.decompose_length(),
+                    level < size.decompose_length().get(),
                     "gadget level is out of range"
                 );
                 for diagonal in crate::gadget::diagonal_level_mut(
                     self.as_mut(),
-                    glwe_size.poly_length(),
+                    glwe_size.poly_length().get(),
                     level,
                     glwe_size.glwe_len(),
                     size.glev_len(),
@@ -84,7 +84,7 @@ macro_rules! impl_gadget_diagonal_multiple_modulus {
             /// the actual buffers to `size` before invoking this operation.
             /// Input residues must be canonical; results remain canonical.
             /// Each polynomial contains one block per modulus, of length
-            /// `size.rns_glwe_size().poly_length()`, in the same nonempty basis
+            /// `size.rns_glwe_size().poly_length().get()`, in the same nonempty basis
             /// order as `moduli`. `moduli.len()` must equal the modulus count in `size`.
             #[inline]
             pub fn add_gadget_diagonal_assign<M, A>(
@@ -98,9 +98,9 @@ macro_rules! impl_gadget_diagonal_multiple_modulus {
                 M: Copy + primus_reduce::ReduceAddSlice<T>,
             {
                 let glwe_size = size.rns_glwe_size();
-                let poly_length = glwe_size.poly_length();
+                let poly_length = glwe_size.poly_length().get();
                 debug_assert!(
-                    level < size.decompose_length(),
+                    level < size.decompose_length().get(),
                     "gadget level is out of range"
                 );
                 for diagonal in crate::gadget::diagonal_level_mut(

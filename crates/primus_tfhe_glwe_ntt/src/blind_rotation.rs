@@ -73,14 +73,18 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
         B: Data<Elem = T>,
         C: DataMut<Elem = T>,
     {
-        let poly_length = self.size().glwe_size().poly_length();
+        let poly_length = self.size().glwe_size().poly_length().get();
         assert_eq!(
             (
                 input.dimension(),
                 lookup_table.as_ref().len(),
                 output.as_ref().len(),
             ),
-            (self.input_dimension(), poly_length, self.size().glwe_len()),
+            (
+                self.input_dimension().get(),
+                poly_length,
+                self.size().glwe_len()
+            ),
             "blind-rotation input, lookup table or output layout mismatch"
         );
         self.assert_compatible(modulus, ntt, context);
@@ -151,7 +155,7 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
         B: Data<Elem = T>,
         C: DataMut<Elem = T>,
     {
-        let poly_length = self.size().glwe_size().poly_length();
+        let poly_length = self.size().glwe_size().poly_length().get();
         assert!(
             rotation_step.is_power_of_two() && poly_length.is_multiple_of(rotation_step),
             "PBSManyLUT rotation step must be a non-zero power-of-two divisor of N"
@@ -162,7 +166,11 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
                 lookup_table.as_ref().len(),
                 output.as_ref().len(),
             ),
-            (self.input_dimension(), poly_length, self.size().glwe_len()),
+            (
+                self.input_dimension().get(),
+                poly_length,
+                self.size().glwe_len()
+            ),
             "PBSManyLUT input, table, or output layout mismatch"
         );
         self.assert_compatible(modulus, ntt, context);
@@ -199,7 +207,7 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
         B: Data<Elem = T>,
         C: DataMut<Elem = T>,
     {
-        let poly_length = self.size().glwe_size().poly_length();
+        let poly_length = self.size().glwe_size().poly_length().get();
         let two_n = poly_length * 2;
         debug_assert!(
             rotation_step.is_power_of_two() && poly_length.is_multiple_of(rotation_step),
@@ -211,7 +219,11 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
                 lookup_table.as_ref().len(),
                 output.as_ref().len(),
             ),
-            (self.input_dimension(), poly_length, self.size().glwe_len()),
+            (
+                self.input_dimension().get(),
+                poly_length,
+                self.size().glwe_len()
+            ),
             "PBSManyLUT input, table, or output layout mismatch"
         );
 
@@ -252,7 +264,7 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
         B: Data<Elem = T>,
         C: DataMut<Elem = T>,
     {
-        let two_n = 2 * self.size().glwe_size().poly_length();
+        let two_n = 2 * self.size().glwe_size().poly_length().get();
         self.blind_rotate_with(input, accumulator, output, modulus, ntt, context, |x| {
             // This entry already receives exponents; do not quantize them again.
             let exponent = x.try_into().unwrap();
@@ -283,7 +295,7 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
         C: DataMut<Elem = T>,
         F: Fn(T) -> usize,
     {
-        let poly_length = self.size().glwe_size().poly_length();
+        let poly_length = self.size().glwe_size().poly_length().get();
         let two_n = 2 * poly_length;
         assert_eq!(
             (
@@ -292,7 +304,7 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
                 output.as_ref().len(),
             ),
             (
-                self.input_dimension(),
+                self.input_dimension().get(),
                 self.size().glwe_len(),
                 self.size().glwe_len(),
             ),
@@ -317,7 +329,7 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
     {
         assert_eq!(
             ntt.poly_length(),
-            self.size().glwe_size().poly_length(),
+            self.size().glwe_size().poly_length().get(),
             "blind-rotation NTT polynomial length mismatch"
         );
         assert_eq!(

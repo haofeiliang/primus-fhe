@@ -46,7 +46,7 @@ impl<T: FheUint> SparseGlweBootstrappingKey<T> {
         C: DataMut<Elem = T>,
     {
         let size = self.size();
-        let poly_length = size.glwe_size().poly_length();
+        let poly_length = size.glwe_size().poly_length().get();
         let modulus = self.input_modulus();
         assert_eq!(
             (
@@ -54,7 +54,7 @@ impl<T: FheUint> SparseGlweBootstrappingKey<T> {
                 lookup_table.as_ref().len(),
                 output.as_ref().len()
             ),
-            (self.input_dimension(), poly_length, size.glwe_len()),
+            (self.input_dimension().get(), poly_length, size.glwe_len()),
             "sparse blind-rotation input, LUT or output layout mismatch"
         );
         assert_eq!(
@@ -62,7 +62,7 @@ impl<T: FheUint> SparseGlweBootstrappingKey<T> {
                 context.input_exponents.len(),
                 context.external_product.size()
             ),
-            (self.input_dimension(), size),
+            (self.input_dimension().get(), size),
             "sparse blind-rotation workspace layout mismatch"
         );
         assert_eq!(
@@ -104,7 +104,7 @@ impl<T: FheUint> SparseGlweBootstrappingKey<T> {
         C: DataMut<Elem = T>,
     {
         let size = self.size();
-        let poly_length = size.glwe_size().poly_length();
+        let poly_length = size.glwe_size().poly_length().get();
         let modulus = self.input_modulus();
         let SparseGlweBlindRotationWorkspace {
             input_exponents,
@@ -243,7 +243,7 @@ impl<T: FheUint> SparseGlweBlindRotationWorkspace<T> {
     pub fn new(key: &SparseGlweBootstrappingKey<T>) -> Self {
         let size = key.size();
         Self {
-            input_exponents: vec![0; key.input_dimension()],
+            input_exponents: vec![0; key.input_dimension().get()],
             aggregate: vec![T::ZERO; size.ggsw_len()],
             scratch: Glwe::zero(size.glwe_len()),
             external_product: NttGlweExternalProductWorkspace::new(size),

@@ -1,4 +1,5 @@
 //! Native u32/u64 encodings and full k*N secret sampling with reused workspaces.
+
 use primus_encoding::PlaintextEmbedding;
 use primus_fft::{FftEngine, FftTable, RustFftTable, TorusFftValue};
 use primus_glwe::{
@@ -6,6 +7,8 @@ use primus_glwe::{
     SecretKeyDistr,
 };
 use primus_integer::FheUint;
+use primus_lattice::GlweDimension;
+use primus_lattice::PolyLength;
 use primus_modulus::NativeModulus;
 use primus_poly::Polynomial;
 use rand::{SeedableRng, rngs::StdRng};
@@ -35,7 +38,7 @@ where
         SecretKeyDistr::fixed_hamming_weight_ternary(DIMENSION * POLY_LENGTH, POLY_LENGTH + 7),
     ] {
         let params = GlweParameters::new(
-            DIMENSION,
+            GlweDimension::new(DIMENSION),
             POLY_LENGTH,
             T::try_from(PLAIN_MODULUS).unwrap(),
             NativeModulus::new(),
@@ -43,8 +46,8 @@ where
             0.7,
         );
         let (_, secret_key) = FourierGlweSecretKey::generate_pair(&params, &mut fft, &mut rng);
-        let mut encrypt_workspace = FourierGlweEncryptWorkspace::new(POLY_LENGTH);
-        let mut decrypt_workspace = FourierGlweDecryptWorkspace::new(POLY_LENGTH);
+        let mut encrypt_workspace = FourierGlweEncryptWorkspace::new(PolyLength::new(POLY_LENGTH));
+        let mut decrypt_workspace = FourierGlweDecryptWorkspace::new(PolyLength::new(POLY_LENGTH));
 
         let mut cipher = secret_key.encrypt(
             &message,

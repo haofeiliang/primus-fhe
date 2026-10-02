@@ -58,7 +58,7 @@ impl<T: FheUint, M: RingContext<T>> EncryptionKey<T, M> for LweSecretKeyRef<'_, 
         &self,
         parameters: &LweClientParameters<'_, T, M>,
     ) -> Result<(), ClientError> {
-        check_dimension(parameters.dimension, self.dimension())
+        check_dimension(parameters.dimension.get(), self.dimension())
     }
 
     fn encrypt_encoded<R: rand::Rng + rand::CryptoRng>(
@@ -100,7 +100,7 @@ impl<T: FheUint, M: RingContext<T>> EncryptionKey<T, M> for &LwePublicKey<T> {
         &self,
         parameters: &LweClientParameters<'_, T, M>,
     ) -> Result<(), ClientError> {
-        check_dimension(parameters.dimension, self.dimension())?;
+        check_dimension(parameters.dimension.get(), self.dimension().get())?;
         if self.cipher_modulus_minus_one() != parameters.codec.ciphertext_modulus().minus_one() {
             return Err(ClientError::PublicKeyModulusMismatch);
         }

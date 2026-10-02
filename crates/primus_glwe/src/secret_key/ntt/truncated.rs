@@ -33,7 +33,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         Table: NttTable<ValueT = T>,
     {
         let size = params.size();
-        let poly_length = size.poly_length();
+        let poly_length = size.poly_length().get();
         assert_eq!(self.size, size, "GLWE parameter layout mismatch");
         assert_eq!(
             ntt_table.poly_length(),
@@ -113,7 +113,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         A: Data<Elem = T>,
     {
         let size = self.size;
-        let poly_length = size.poly_length();
+        let poly_length = size.poly_length().get();
         assert_eq!(
             ntt_table.poly_length(),
             poly_length,

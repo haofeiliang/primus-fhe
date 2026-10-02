@@ -2,7 +2,9 @@
 //! Coefficient/NTT wrappers share these macros, as do CRT/DCRT wrappers; one
 //! representative per macro suffices. Fourier has its own complex arithmetic.
 
-use primus_lattice::{GadgetSize, GlweSize, ggsw::Ggsw, glwe::Glwe, lwe::Lwe};
+use primus_decompose::DecompositionLevelCount;
+use primus_lattice::GlweDimension;
+use primus_lattice::{GadgetSize, GlweSize, PolyLength, ggsw::Ggsw, glwe::Glwe, lwe::Lwe};
 use primus_modulus::BarrettModulus;
 use primus_poly::Polynomial;
 
@@ -70,7 +72,10 @@ fn gadget_injection_changes_only_the_selected_diagonal_level() {
     const LEVELS: usize = 3;
     let modulus = BarrettModulus::new(193u32);
     let plaintext = Polynomial::new([0, 1, 96, 192]);
-    let size = GadgetSize::new(GlweSize::new(2, N), LEVELS);
+    let size = GadgetSize::new(
+        GlweSize::new(GlweDimension::new(2), PolyLength::new(N)),
+        DecompositionLevelCount::new(LEVELS),
+    );
     let data: Vec<_> = (0..size.ggsw_len()).map(|i| (i * 7 % 193) as u32).collect();
     let mut cipher = Ggsw::new(data.clone());
     // First, interior and last levels expose wrong row/level strides.
@@ -97,7 +102,13 @@ fn rns_plaintext_and_gadget_operations_preserve_the_basis_layout() {
     let moduli = qs.map(BarrettModulus::new);
     let p = N * qs.len();
     let plaintext: Vec<u32> = (0..p).map(|i| (i * 53) as u32 % qs[i / N]).collect();
-    let size = RnsGadgetSize::new(RnsGlweSize::new(GlweSize::new(2, N), qs.len()), LEVELS);
+    let size = RnsGadgetSize::new(
+        RnsGlweSize::new(
+            GlweSize::new(GlweDimension::new(2), PolyLength::new(N)),
+            qs.len(),
+        ),
+        DecompositionLevelCount::new(LEVELS),
+    );
 
     // CRT body and DCRT gadget each instantiate one shared RNS macro. Distinct
     // residues expose swapping a modulus block with a ciphertext component.
@@ -171,7 +182,14 @@ fn fourier_body_and_gadget_operations_preserve_complex_entries() {
         .map(|i| Complex64::new((i * 3) as f64, 7.0))
         .collect();
     let mut ggsw = FourierGgsw::new(data.clone());
-    ggsw.add_gadget_diagonal_assign(&poly, 1, GadgetSize::new(GlweSize::new(2, 2 * N), 2));
+    ggsw.add_gadget_diagonal_assign(
+        &poly,
+        1,
+        GadgetSize::new(
+            GlweSize::new(GlweDimension::new(2), PolyLength::new(2 * N)),
+            DecompositionLevelCount::new(2),
+        ),
+    );
     for (i, &value) in data.iter().enumerate() {
         let row = i / (2 * 3 * N);
         let level = i / (3 * N) % 2;

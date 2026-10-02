@@ -83,7 +83,7 @@ where
         let parameters = self.context.parameters().accumulator_glwe();
         assert_eq!(
             (message.len(), output.as_ref().len()),
-            (parameters.poly_length(), parameters.glwe_len()),
+            (parameters.poly_length().get(), parameters.glwe_len()),
             "accumulator encryption layout mismatch"
         );
         self.secret.encrypt_to(
@@ -100,7 +100,13 @@ where
     /// Allocates and decodes all N coefficients. Inherits [`Self::decrypt_to`]'s contracts.
     #[must_use]
     pub fn decrypt<S: Data<Elem = T>>(&mut self, input: &GlweCiphertext<S>) -> Vec<T> {
-        let mut output = vec![T::ZERO; self.context.parameters().accumulator_glwe().poly_length()];
+        let n = self
+            .context
+            .parameters()
+            .accumulator_glwe()
+            .poly_length()
+            .get();
+        let mut output = vec![T::ZERO; n];
         self.decrypt_to(input, &mut output);
         output
     }
@@ -117,7 +123,7 @@ where
         let parameters = self.context.parameters().accumulator_glwe();
         assert_eq!(
             (input.as_ref().len(), output.len()),
-            (parameters.glwe_len(), parameters.poly_length()),
+            (parameters.glwe_len(), parameters.poly_length().get()),
             "accumulator decryption layout mismatch"
         );
         input.write_fourier_form(&mut self.transformed, &mut self.fft);

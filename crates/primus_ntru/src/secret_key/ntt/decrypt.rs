@@ -88,7 +88,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         B: DataMut<Elem = T>,
     {
         assert_eq!(
-            params.poly_length(),
+            params.poly_length().get(),
             self.poly_length(),
             "NTRU parameter length mismatch"
         );
@@ -113,7 +113,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         let modulus = params.cipher_modulus();
         let mut message = PolynomialOwned::zero(self.poly_length());
         assert_eq!(
-            params.poly_length(),
+            params.poly_length().get(),
             self.poly_length(),
             "NTRU parameter length mismatch"
         );

@@ -1,4 +1,7 @@
+use primus_decompose::DecompositionBaseLog;
 use primus_encoding::{PlaintextEmbedding, RoundedCodec, ScaledCodec};
+use primus_lattice::LweDimension;
+use primus_lattice::PolyLength;
 use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntru::SecretKeyDistr;
@@ -23,16 +26,22 @@ const DOMAIN: usize = 8;
 fn context(distr: SecretKeyDistr) -> TfheContext<u32, U32NttTable> {
     let parameters = TfheParameters::try_from_config(TfheConfig {
         accumulator_modulus: BarrettModulus::new(Q),
-        external_lwe: LweParameters::new(3, 15, BarrettModulus::new(Q), distr, 0.7),
+        external_lwe: LweParameters::new(
+            LweDimension::new(3),
+            15,
+            BarrettModulus::new(Q),
+            distr,
+            0.7,
+        ),
         poly_length: N,
         accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
         accumulator_noise_standard_deviation: 0.7,
         blind_rotation: DecompositionConfig {
-            log_basis: 8,
+            log_basis: DecompositionBaseLog::new(8),
             level_count: None,
         },
         key_switching: DecompositionConfig {
-            log_basis: 8,
+            log_basis: DecompositionBaseLog::new(8),
             level_count: None,
         },
         key_switching_noise_standard_deviation: 0.7,
@@ -61,10 +70,10 @@ fn check_complete(distr: SecretKeyDistr) {
         context.evaluator(&server).unwrap(),
     )
     .unwrap();
-    let dimension = context.parameters().external_lwe_dimension();
+    let dimension = context.parameters().external_lwe_dimension().get();
     // The reference uses the same Scaled centers, not Rounded outputs.
     let singles: [_; 3] = std::array::from_fn(|i| {
-        LookupTable::try_new(DOMAIN, N, 15, modulus, modulus, |m| {
+        LookupTable::try_new(DOMAIN, PolyLength::new(N), 15, modulus, modulus, |m| {
             Ok(codec.encode_value(value(m, i), PlaintextEmbedding::Unsigned))
         })
         .unwrap()
@@ -124,7 +133,15 @@ fn check_complete(distr: SecretKeyDistr) {
     }
     // Interleaving 17 outputs leaves only N/32=4 coefficients per output.
     assert!(matches!(
-        InterleavedLookupTable::try_new(DOMAIN, N, 17, 15, modulus, modulus, |_, _| Ok(0)),
+        InterleavedLookupTable::try_new(
+            DOMAIN,
+            PolyLength::new(N),
+            17,
+            15,
+            modulus,
+            modulus,
+            |_, _| Ok(0)
+        ),
         Err(LookupTableError::PlaintextDomainTooLarge { .. })
     ));
 
@@ -179,7 +196,7 @@ fn check_complete(distr: SecretKeyDistr) {
     ] {
         let raw = FactorizedLookupTable::try_new(
             2,
-            n,
+            PolyLength::new(n),
             1,
             &RoundedCodec::new(t, BarrettModulus::new(input_q)),
             &ScaledCodec::new(8, BarrettModulus::new(output_q)),

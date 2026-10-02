@@ -2,9 +2,11 @@
 //! parameter-constructor boundaries belong to the common family crate.
 
 use primus_decompose::primitive::ApproxSignedBasis;
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_fft::{Complex64, FftTable, RustFftTable, TfheFftTable};
 use primus_glwe::{GlevParameters, GlweParameters, SecretKeyDistr};
 use primus_lattice::ggsw::{FourierGgsw, Ggsw};
+use primus_lattice::{GlweDimension, LweDimension};
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::NativeModulus;
 use primus_test_allocations as allocations;
@@ -41,14 +43,14 @@ fn parameters_with_order_and_distribution(
 ) -> TfheParameters<u64> {
     TfheParameters::try_new(
         LweParameters::new(
-            4,
+            LweDimension::new(4),
             plaintext_modulus,
             NativeModulus::new(),
             distribution,
             0.7,
         ),
         GlweParameters::new(
-            dimension,
+            GlweDimension::new(dimension),
             poly_length,
             plaintext_modulus,
             NativeModulus::new(),
@@ -56,8 +58,16 @@ fn parameters_with_order_and_distribution(
             0.7,
         ),
         // Retain enough precision below the smallest CBS output gadget scale.
-        ApproxSignedBasis::new(None, 8, Some(6)),
-        ApproxSignedBasis::new(None, 8, Some(6)),
+        ApproxSignedBasis::new(
+            None,
+            DecompositionBaseLog::new(8),
+            Some(DecompositionLevelCount::new(6)),
+        ),
+        ApproxSignedBasis::new(
+            None,
+            DecompositionBaseLog::new(8),
+            Some(DecompositionLevelCount::new(6)),
+        ),
         order,
     )
     .unwrap()
@@ -66,17 +76,17 @@ fn parameters_with_order_and_distribution(
 fn circuit_config() -> CircuitBootstrapConfig {
     CircuitBootstrapConfig {
         output: DecompositionConfig {
-            log_basis: 8,
-            level_count: Some(3),
+            log_basis: DecompositionBaseLog::new(8),
+            level_count: Some(DecompositionLevelCount::new(3)),
         },
         trace: DecompositionConfig {
-            log_basis: 8,
-            level_count: Some(7),
+            log_basis: DecompositionBaseLog::new(8),
+            level_count: Some(DecompositionLevelCount::new(7)),
         },
         trace_noise_standard_deviation: 0.7,
         scheme_switch: DecompositionConfig {
-            log_basis: 10,
-            level_count: Some(5),
+            log_basis: DecompositionBaseLog::new(10),
+            level_count: Some(DecompositionLevelCount::new(5)),
         },
         scheme_switch_noise_standard_deviation: 0.7,
     }
@@ -131,7 +141,11 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
     // GLWE scheme switching binds the output layout, not its exact gadget basis.
     let alternate = CircuitBootstrapParameters::try_new(
         context.parameters(),
-        ApproxSignedBasis::new(None, if sparse { 8 } else { 9 }, Some(3)),
+        ApproxSignedBasis::new(
+            None,
+            DecompositionBaseLog::new(if sparse { 8 } else { 9 }),
+            Some(DecompositionLevelCount::new(3)),
+        ),
         parameters.trace().clone(),
         parameters.scheme_switch().clone(),
     )
@@ -337,19 +351,31 @@ fn evaluator_rejects_resource_mismatches_and_checks_shapes_before_writes() {
     // Keep level counts equal for basis mismatches, so layout checks cannot mask them.
     for (output, trace, scheme_switch) in [
         (
-            ApproxSignedBasis::new(None, 8, Some(2)),
+            ApproxSignedBasis::new(
+                None,
+                DecompositionBaseLog::new(8),
+                Some(DecompositionLevelCount::new(2)),
+            ),
             parameters.trace().clone(),
             parameters.scheme_switch().clone(),
         ),
         (
             parameters.output_basis().clone(),
-            GlevParameters::with_glwe_params(context.parameters().accumulator_glwe(), 7, Some(7)),
+            GlevParameters::with_glwe_params(
+                context.parameters().accumulator_glwe(),
+                DecompositionBaseLog::new(7),
+                Some(DecompositionLevelCount::new(7)),
+            ),
             parameters.scheme_switch().clone(),
         ),
         (
             parameters.output_basis().clone(),
             parameters.trace().clone(),
-            GlevParameters::with_glwe_params(context.parameters().accumulator_glwe(), 9, Some(5)),
+            GlevParameters::with_glwe_params(
+                context.parameters().accumulator_glwe(),
+                DecompositionBaseLog::new(9),
+                Some(DecompositionLevelCount::new(5)),
+            ),
         ),
     ] {
         let foreign =
@@ -390,7 +416,7 @@ fn evaluator_rejects_resource_mismatches_and_checks_shapes_before_writes() {
 
     let mut evaluator =
         CircuitBootstrapEvaluator::try_from_parts(&context, &server, &parameters, &key).unwrap();
-    let input_dimension = context.parameters().external_lwe_dimension();
+    let input_dimension = context.parameters().external_lwe_dimension().get();
     let output_len = parameters.output_size().fourier_ggsw_len();
     for (dimension, length) in [
         (input_dimension - 1, output_len),
@@ -433,7 +459,7 @@ fn incompatible_parameters_and_client_keys_are_rejected_before_sampling() {
         assert_eq!(rng.random::<u64>(), untouched_rng.random::<u64>());
     }
     let mut invalid = circuit_config();
-    invalid.output.level_count = Some(0);
+    invalid.output.level_count = Some(DecompositionLevelCount::new(usize::MAX));
     let mut rng = StdRng::seed_from_u64(43);
     let mut untouched_rng = StdRng::seed_from_u64(43);
     assert!(matches!(

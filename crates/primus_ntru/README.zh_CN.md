@@ -21,6 +21,12 @@ NLev 与 NGSW 存储的行数相同，但数学角色不同。`NLev[1]` 可通�
 
 ## 私钥与推荐流程
 
+构造仍传入整数 `N`。验证后的参数保存共享的
+[PolyLength](../primus_lattice/README.zh_CN.md#存储与布局)，
+`params.poly_length()` 返回经过检查的值，直接传给工作区构造器；
+数值内核或变换构造器需要 `usize` 时再调用 `.get()`。
+`PolyLength` 集中检查 `N` 为 `2..=2^17` 内的二次幂。
+
 `NtruParameters::try_new` 对环长度、固定尺度编码、秘密支持集/重量和噪声采样错误返回 `NtruParameterError`，固定重量不得超过 N；`new` 在相同错误下 panic。这些检查不证明采样秘密可逆、变换可用或噪声/安全预算成立。 `NtruParameterError::SecretKey` 以 `SecretKeySamplerError` 保留采样配置、重量或模数适配的具体原因；`Noise` 保留 `GaussianError`。
 
 使用 `NttNtruSecretKey::generate_pair` 或 `FourierNtruSecretKey::generate_pair` 同时保留有符号系数私钥和变换表示。系数私钥用于生成求值密钥；变换私钥及其缓存 逆元用于加密和相位提取。
@@ -56,7 +62,7 @@ cargo run -p primus_ntru --example automorphism
 
 `NttNlev::lift_monomial_to` / `FourierNlev::lift_monomial_to` 将公开多项式提升与首次 binary/ternary 旋转融合。传入 NLEV[1]、正向 NLEV 比特及可选的负向 NLEV 比特；只分解公开多项式，指数为零仍执行提升。`NttNtruCmuxWorkspace` / `FourierNtruCmuxWorkspace` 与后续三元 CMUX 共用一块组合控制缓冲。
 
-Ternary 旋转一次构造 `NttNtruCmuxWorkspace::new(N, levels)` 或 `FourierNtruCmuxWorkspace::new(N, levels)`，随后复用工作区，传入互斥的正负 NGSW 比特控制。Fourier 使用 Native basis，两份控制必须使用 engine 对应的同一个 FFT 表实例 和 torus 缩放。指数已量化到 `0..2N`，负指数由内部派生。 NTRU TFHE 后端使用此原语执行经典 ternary blind rotation。
+Ternary 旋转取得 `poly_length = params.poly_length()` 和 `levels = params.decompose_length()`（`DecompositionLevelCount`）后，一次构造 `NttNtruCmuxWorkspace::new(poly_length, levels)` 或 `FourierNtruCmuxWorkspace::new(poly_length, levels)`，随后复用工作区，传入互斥的正负 NGSW 比特控制。Fourier 使用 Native basis，两份控制必须使用 engine 对应的同一个 FFT 表实例 和 torus 缩放。指数已量化到 `0..2N`，负指数由内部派生。 NTRU TFHE 后端使用此原语执行经典 ternary blind rotation。
 
 解密返回系数域多项式，使用密文系数类型 `T`；输出类型转换由应用按需处理。
 
@@ -70,14 +76,16 @@ Sample extraction、NLev/NGSW 外积与 CMUX 位于 [`primus_lattice`](../primus
 
 ## 独立 LWE 返回
 
-`NtruLweKeySwitchingKey::generate(f, Q, s, lwe_parameters, basis, rng)` 从有符号 NTRU 秘密 f 生成返回原语，目标 s 是独立生成的 `primus_lwe::LweSecretKey`。参数和 basis 使用目标模数 q；s 的维数可以不同，也无需补零成为可逆 NTRU 秘密。f 的每个有符号系数的幅值必须小于显式 q，生成时在采样前检查。
+`NtruLweKeySwitchingKey::generate(f, Q, s, lwe_parameters, basis, rng)` 从有符号 NTRU 秘密 f 生成返回原语，目标 s 是独立生成的 `primus_lwe::LweSecretKey`。参数和 basis 使用目标模数 q；s 的维数可以不同，也无需补零成为可逆 NTRU 秘密。f 的每个有符号系数的幅值必须小于显式 q，生成时在采样前检查。返回密钥和 batch 工作区的维数使用 `LweDimension`；`LweDimension::from(params.poly_length())` 返回提取维数 N。组合密钥和批量存储长度仍在构造边界检查。
 
 输入必须是系数域 NTRU 密文，NTT/Fourier 输出需要先恢复为系数。工作区一次创建后复用。所有返回路径均覆盖输出，在线不分配，并在写入前检查调用方提供的形状和目标模数。
 
+构造这些工作区时，使用输入 NTRU 参数返回的已验证长度 `poly_length = params.poly_length()`。
+
 | 返回内容 | 密钥方法 | 工作区 |
 | --- | --- | --- |
-| 一个系数 | `key_switch_at_to`；索引零可用 `key_switch_to` | `NtruLweKeySwitchingWorkspace::new(N)` |
-| 同一 NTRU 的多个系数 | `key_switch_many_at_to` | `NtruLweKeySwitchingBatchWorkspace::new(N, output_dimension)` |
+| 一个系数 | `key_switch_at_to`；索引零可用 `key_switch_to` | `NtruLweKeySwitchingWorkspace::new(poly_length)` |
+| 同一 NTRU 的多个系数 | `key_switch_many_at_to` | `NtruLweKeySwitchingBatchWorkspace::new(poly_length, output_dimension)` |
 | 陆续生成的不同 NTRU 的系数 | `modulus_switch_extract_at_to`，随后 `key_switch_extracted_batch_to` | 同一种批量工作区 |
 
 单项路径将转换和提取融合到一份 N+1 元素的中间 LWE。返回同一输入的多个系数时，向 `key_switch_many_at_to` 传入 `0..outputs.len()` 或 `indices.iter().copied()`。接口保留索引顺序及重复项，并在写入前验证精确长度、可克隆的迭代器。多个输出共享一次 Q→q 转换和固定小块 LWE key switch；空批次不操作，单元素使用标量路径。结果与逐项调用一致，包括舍入 ties。[返回阶段基准](benches/lwe_return.rs) 单独比较这两条路径，不包含盲旋转。

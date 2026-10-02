@@ -4,6 +4,7 @@ use crate::TfheParameterError;
 use primus_decompose::{DecompositionConfig, primitive::ApproxSignedBasis};
 use primus_encoding::RoundedCodec;
 use primus_integer::FheUint;
+use primus_lattice::{GlweDimension, LweDimension};
 use primus_reduce::RingContext;
 
 use crate::{
@@ -33,7 +34,7 @@ pub struct TfheConfig<T: FheUint, M: RingContext<T>> {
     /// This is the external domain only for [`PbsOrder::BootstrapKeyswitch`].
     pub small_lwe: LweParameters<T, M>,
     /// Number of secret polynomials in the accumulator.
-    pub accumulator_dimension: usize,
+    pub accumulator_dimension: GlweDimension,
     /// Accumulator polynomial length `N`.
     pub poly_length: usize,
     /// Coefficient distribution of the accumulator secret.
@@ -133,17 +134,17 @@ where
             return Err(TfheParameterError::PlainModulusMismatch);
         }
 
-        let capacity = accumulator_glwe.secret_key_len();
+        let capacity = LweDimension::from(accumulator_glwe.size());
         if small_lwe.dimension() > capacity {
             return Err(TfheParameterError::SmallLweDimensionExceedsGlweCapacity {
-                small_lwe_dimension: small_lwe.dimension(),
-                capacity,
+                small_lwe_dimension: small_lwe.dimension().get(),
+                capacity: capacity.get(),
             });
         }
         if small_lwe.cipher_modulus_value() != accumulator_glwe.cipher_modulus_value() {
             return Err(TfheParameterError::CipherModulusMismatch);
         }
-        if T::try_from(accumulator_glwe.poly_length() * 2).is_err() {
+        if T::try_from(accumulator_glwe.poly_length().get() * 2).is_err() {
             return Err(TfheParameterError::RotationDomainTooLarge);
         }
         let blind_rotation_ggsw =
@@ -168,15 +169,17 @@ where
     /// Since n <= kN, the derived layout fits within the accumulator; its
     /// encoding/noise are inherited, while the KS basis remains independent.
     fn derive_glwe_key_switching(
-        small_lwe_dimension: usize,
+        small_lwe_dimension: LweDimension,
         small_lwe_distr: SecretKeyDistr,
         accumulator_glwe: &GlweParameters<T, M>,
         basis: ApproxSignedBasis<T>,
     ) -> Result<GlweKeySwitchingParameters<T, M>, TfheParameterError> {
-        let output_dimension = small_lwe_dimension.div_ceil(accumulator_glwe.poly_length());
+        let output_dimension = small_lwe_dimension
+            .get()
+            .div_ceil(accumulator_glwe.poly_length().get());
         let output_glwe = GlweParameters::new(
-            output_dimension,
-            accumulator_glwe.poly_length(),
+            GlweDimension::new(output_dimension),
+            accumulator_glwe.poly_length().get(),
             accumulator_glwe.plain_modulus_value(),
             accumulator_glwe.cipher_modulus(),
             small_lwe_distr,
@@ -184,10 +187,8 @@ where
         );
         let output = GlevParameters::try_with_basis(&output_glwe, basis)
             .map_err(TfheParameterError::KeySwitchingParameters)?;
-        Ok(GlweKeySwitchingParameters::new(
-            accumulator_glwe.dimension(),
-            output,
-        ))
+        GlweKeySwitchingParameters::try_new(accumulator_glwe.dimension(), output)
+            .map_err(|error| TfheParameterError::KeySwitchingParameters(error.into()))
     }
 
     /// Returns the small-LWE parameters used by the bootstrapping key.
@@ -228,10 +229,10 @@ where
     /// Returns the dimension of ciphertexts exposed by the client API.
     #[must_use]
     #[inline]
-    pub fn external_lwe_dimension(&self) -> usize {
+    pub fn external_lwe_dimension(&self) -> LweDimension {
         match self.pbs_order() {
             PbsOrder::BootstrapKeyswitch => self.small_lwe.dimension(),
-            PbsOrder::KeyswitchBootstrap => self.accumulator_glwe.secret_key_len(),
+            PbsOrder::KeyswitchBootstrap => LweDimension::from(self.accumulator_glwe.size()),
         }
     }
 

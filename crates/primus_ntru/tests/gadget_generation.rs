@@ -1,6 +1,9 @@
 //! NLev/NGSW gadget encryption checked through row phases and encrypted selection.
+
+use primus_decompose::DecompositionBaseLog;
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable};
 use primus_lattice::{
+    PolyLength,
     ngsw::{FourierNgswIter, NttNgswIter},
     ntru::{FourierNtruOwned, Ntru, NttNtru},
 };
@@ -83,11 +86,12 @@ fn ntt_nlev_generation_and_ngsw_cmux() {
         SecretKeyDistr::SparseTernary,
         0.7,
     );
-    let gadget_params = NlevParameters::with_ntru_params(&params, 9, None);
+    let gadget_params =
+        NlevParameters::with_ntru_params(&params, DecompositionBaseLog::new(9), None);
     let basis = gadget_params.basis();
     let mut rng = StdRng::seed_from_u64(42);
     let secret_key = NttNtruSecretKey::generate(&params, &ntt, &mut rng).unwrap();
-    let mut gadget_workspace = NttNtruGadgetEncryptWorkspace::new(POLY_LENGTH);
+    let mut gadget_workspace = NttNtruGadgetEncryptWorkspace::new(PolyLength::new(POLY_LENGTH));
 
     let mut nlev: NttNlevCiphertext<Vec<u32>> = NttNlevCiphertext::zero(gadget_params.nlev_len());
     secret_key.encrypt_nlev_constant_to(
@@ -135,7 +139,8 @@ fn ntt_nlev_generation_and_ngsw_cmux() {
         })
         .collect();
     let mut output: Ntru<Vec<u32>> = Ntru::zero(POLY_LENGTH);
-    let mut external_product_workspace = NttNtruExternalProductWorkspace::new(POLY_LENGTH);
+    let mut external_product_workspace =
+        NttNtruExternalProductWorkspace::new(PolyLength::new(POLY_LENGTH));
 
     control.cmux_to(
         &candidates[0],
@@ -225,12 +230,13 @@ fn fourier_nlev_generation_and_ngsw_cmux() {
         SecretKeyDistr::SparseTernary,
         0.7,
     );
-    let gadget_params = NlevParameters::with_ntru_params(&params, 8, None);
+    let gadget_params =
+        NlevParameters::with_ntru_params(&params, DecompositionBaseLog::new(8), None);
     let basis = gadget_params.basis();
     let mut rng = StdRng::seed_from_u64(42);
     let secret_key = FourierNtruSecretKey::generate(&params, &mut fft, &mut rng).unwrap();
-    let mut gadget_workspace = FourierNtruGadgetEncryptWorkspace::new(POLY_LENGTH);
-    let mut decrypt_workspace = FourierNtruDecryptWorkspace::new(POLY_LENGTH);
+    let mut gadget_workspace = FourierNtruGadgetEncryptWorkspace::new(PolyLength::new(POLY_LENGTH));
+    let mut decrypt_workspace = FourierNtruDecryptWorkspace::new(PolyLength::new(POLY_LENGTH));
 
     let mut nlev: FourierNlevCiphertext<Vec<Complex64>> =
         FourierNlevCiphertext::zero(gadget_params.fourier_nlev_len());
@@ -269,7 +275,7 @@ fn fourier_nlev_generation_and_ngsw_cmux() {
     );
 
     let messages = [plaintext(0), plaintext(2), plaintext(5)];
-    let mut encrypt_workspace = FourierNtruEncryptWorkspace::new(POLY_LENGTH);
+    let mut encrypt_workspace = FourierNtruEncryptWorkspace::new(PolyLength::new(POLY_LENGTH));
     let mut candidates = Vec::with_capacity(messages.len());
     for message in &messages {
         let input_fourier = secret_key.encrypt(
@@ -284,7 +290,8 @@ fn fourier_nlev_generation_and_ngsw_cmux() {
         candidates.push(input);
     }
     let mut output: Ntru<Vec<u32>> = Ntru::zero(POLY_LENGTH);
-    let mut external_product_workspace = FourierNtruExternalProductWorkspace::new(POLY_LENGTH);
+    let mut external_product_workspace =
+        FourierNtruExternalProductWorkspace::new(PolyLength::new(POLY_LENGTH));
 
     control.cmux_to(
         &candidates[0],

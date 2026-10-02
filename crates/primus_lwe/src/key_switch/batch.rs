@@ -13,8 +13,8 @@ impl<T: FheUint> LweKeySwitchingKey<T> {
     /// Also panics if the output storage length overflows.
     #[must_use]
     pub fn key_switch_batch<M: RingContext<T>>(&self, input: &[T], modulus: M) -> Vec<T> {
-        let count = batch_iter(input, self.input_dimension).len();
-        let mut output = vec![T::ZERO; batch_len(self.output_dimension, count)];
+        let count = batch_iter(input, self.input_dimension.get()).len();
+        let mut output = vec![T::ZERO; batch_len(self.output_dimension.get(), count)];
         self.key_switch_batch_to(input, &mut output, modulus);
         output
     }
@@ -42,8 +42,8 @@ impl<T: FheUint> LweKeySwitchingKey<T> {
         output: &mut [T],
         modulus: M,
     ) {
-        let count = batch_iter(input, self.input_dimension).len();
-        check_batch(output, self.output_dimension, count);
+        let count = batch_iter(input, self.input_dimension.get()).len();
+        check_batch(output, self.output_dimension.get(), count);
         assert_eq!(
             self.basis.modulus(),
             modulus.explicit_value(),
@@ -64,9 +64,9 @@ impl<T: FheUint> LweKeySwitchingKey<T> {
         output: &mut [T],
         modulus: M,
     ) {
-        let input_len = self.input_dimension + 1;
-        let output_len = self.output_dimension + 1;
-        let coefficient_len = output_len * self.basis.decompose_length();
+        let input_len = self.input_dimension.ciphertext_len();
+        let output_len = self.output_dimension.ciphertext_len();
+        let coefficient_len = output_len * self.basis.decompose_length().get();
         let mut input = input;
         let mut output = output;
         while !input.is_empty() {
@@ -81,16 +81,16 @@ impl<T: FheUint> LweKeySwitchingKey<T> {
                 .chunks_exact(input_len)
                 .zip(output_tile.chunks_exact_mut(output_len))
             {
-                output[..self.output_dimension].fill(T::ZERO);
-                output[self.output_dimension] = if NATIVE {
-                    input[self.input_dimension]
+                output[..self.output_dimension.get()].fill(T::ZERO);
+                output[self.output_dimension.get()] = if NATIVE {
+                    input[self.input_dimension.get()]
                 } else {
-                    modulus.reduce_neg(input[self.input_dimension])
+                    modulus.reduce_neg(input[self.input_dimension.get()])
                 };
             }
             if count == 1 {
                 self.key_switch_kernel::<NATIVE, _>(
-                    &input_tile[..self.input_dimension],
+                    &input_tile[..self.input_dimension.get()],
                     output_tile,
                     modulus,
                 );

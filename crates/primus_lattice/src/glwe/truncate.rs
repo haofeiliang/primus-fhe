@@ -1,3 +1,4 @@
+use crate::GlweDimension;
 use primus_data::{Data, DataMut, DataOwned, RawData};
 use primus_integer::FheUint;
 use primus_reduce::ReduceNegSlice;
@@ -57,7 +58,7 @@ where
         M: Copy + ReduceNegSlice<T>,
     {
         let mask_len = size.mask_len();
-        let poly_length = size.poly_length();
+        let poly_length = size.poly_length().get();
         let mut data = self.0;
 
         data.truncate(mask_len + 1);
@@ -99,11 +100,11 @@ where
     {
         assert_eq!(
             size.dimension(),
-            1,
+            GlweDimension::new(1),
             "packed multi-message LWE extraction requires GLWE dimension 1"
         );
         let mask_len = size.mask_len();
-        let poly_length = size.poly_length();
+        let poly_length = size.poly_length().get();
         let message_count = self.message_count(size);
         let mut data = self.0;
 

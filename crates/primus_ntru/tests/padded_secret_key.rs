@@ -1,7 +1,9 @@
 //! Prefix sampling and backend acceptance are separate from TFHE control support.
+
 use primus_distr::sample_gaussian_values_to;
 use primus_encoding::PlaintextEmbedding;
 use primus_fft::{FftEngine, FftTable, RustFftTable, TfheFftTable};
+use primus_lattice::PolyLength;
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{
     FourierNtruDecryptWorkspace, FourierNtruEncryptWorkspace, FourierNtruSecretKey, NtruError,
@@ -115,8 +117,8 @@ fn assert_fourier_prefix<Table: FftTable>(table: &Table) {
     let mut fft = FftEngine::new(table);
     let mut rng = StdRng::seed_from_u64(0xB701);
     let message = Polynomial::new((0..N as u64).map(|i| i % 16).collect::<Vec<_>>());
-    let mut encrypt = FourierNtruEncryptWorkspace::new(N);
-    let mut decrypt = FourierNtruDecryptWorkspace::new(N);
+    let mut encrypt = FourierNtruEncryptWorkspace::new(PolyLength::new(N));
+    let mut decrypt = FourierNtruDecryptWorkspace::new(PolyLength::new(N));
     for distribution in DISTRIBUTIONS {
         let params = NtruParameters::new(N, 16, NativeModulus::new(), distribution, 0.7);
         let (coeff, key) =

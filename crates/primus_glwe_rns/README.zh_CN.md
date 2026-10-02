@@ -28,7 +28,7 @@ use primus_poly::Polynomial;
 let moduli = [998_244_353u32, 1_004_535_809].map(BarrettModulus::new);
 let table = UintDcrtTable::new(5, &moduli).unwrap();
 let parameters = CrtGlweParameters::new(
-    2, 32, BarrettModulus::new(17), BarrettModulus::new(65_537),
+    primus_lattice::GlweDimension::new(2), 32, BarrettModulus::new(17), BarrettModulus::new(65_537),
     &moduli, SecretKeyDistr::UniformBinary, 3.2,
 );
 let mut rng = rand::rng();
@@ -52,6 +52,8 @@ assert_eq!(decoded.as_ref(), message.as_ref());
 m 个模数下，普通密文包含 `(k+1)*m*N` 个元素，顺序为 `[component][modulus][coefficient/evaluation]`；gadget 在外层增加 row/level。使用 `RnsGlweSize` / `RnsGadgetSize` 及多项式/密文迭代器，避免自行推算切片长度。CRT 与 DCRT 形状相同、算术含义不同，见[密文布局](../primus_lattice/README.zh_CN.md#存储与布局)。
 
 ## 求值资源
+
+`CrtGlweParameters` 接收 `GlweDimension`，gadget 构造接收 `DecompositionBaseLog` 和 `Option<DecompositionLevelCount>`。参数访问器返回这些已验证单位，在原始存储或数值边界用 `.get()` 提取整数。Gadget 构造在分配前检查组合长度，`CrtGlevParametersError::Layout` 报告长度溢出。
 
 `CrtGlevParameters::try_with_glwe_params` 准备乘积 Q 下的 gadget 分解。`DcrtGadgetDomain::try_new` 绑定参数与 table，检查多项式长度和有序模数；普通 DCRT 密钥切换使用此域。Hybrid 切换通过 `HybridRnsKeySwitchDomain::try_new` 绑定完整 Q/P 基，分区及 ModUp/ModDown 契约见 [`primus_rns`](../primus_rns/README.zh_CN.md#hybrid-rns)。
 

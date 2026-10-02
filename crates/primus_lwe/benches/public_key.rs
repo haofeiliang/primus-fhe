@@ -4,6 +4,7 @@
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use primus_integer::{AsFrom, FheUint};
+use primus_lattice::LweDimension;
 use primus_lattice::lwe::LweIterMut;
 use primus_lwe::{LweParameters, LwePublicKey, LweSecretKey, LweSecretKeyRef, SecretKeyDistr};
 use primus_modulus::{BarrettModulus, NativeModulus};
@@ -15,7 +16,7 @@ use std::hint::black_box;
 fn bench_generation<T: FheUint>(c: &mut Criterion, name: &str, modulus: impl RingContext<T>) {
     let dimension = 1024;
     let params = LweParameters::new(
-        dimension,
+        LweDimension::new(dimension),
         T::as_from(4u32),
         modulus,
         SecretKeyDistr::UniformTernary,
@@ -58,8 +59,13 @@ fn bench_batch_domain<M: RingContext<u32>>(c: &mut Criterion, name: &str, modulu
         (30.0, 512, 64),
     ] {
         let mut rng = StdRng::seed_from_u64(0x1_ee25);
-        let params =
-            LweParameters::new(dimension, 4, modulus, SecretKeyDistr::UniformBinary, sigma);
+        let params = LweParameters::new(
+            LweDimension::new(dimension),
+            4,
+            modulus,
+            SecretKeyDistr::UniformBinary,
+            sigma,
+        );
         let secret = LweSecretKey::generate(&params, &mut rng);
         let public = LwePublicKey::generate(secret.as_view(), &params, &mut rng);
         let messages = vec![1u32; count];

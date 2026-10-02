@@ -42,7 +42,7 @@ impl<T: TorusFftValue> KeySwitchingWorkspace<T> {
                 parameters.glwe_key_switching().output().glwe_size(),
             ),
             switched: GlweCiphertext::zero(parameters.glwe_key_switching().output().glwe_len()),
-            small_lwe: LweCiphertext::zero(parameters.small_lwe().dimension()),
+            small_lwe: LweCiphertext::zero(parameters.small_lwe().dimension().get()),
         }
     }
 }
@@ -196,7 +196,8 @@ where
         input: &LweCiphertext<T>,
         lookup_table: &LookupTable<T>,
     ) -> LweCiphertext<T> {
-        let mut output = LweCiphertext::zero(self.context.parameters().external_lwe_dimension());
+        let mut output =
+            LweCiphertext::zero(self.context.parameters().external_lwe_dimension().get());
         self.apply_lookup_table_to(input, lookup_table, &mut output);
         output
     }
@@ -229,12 +230,12 @@ where
         let expected_dimension = parameters.external_lwe_dimension();
         assert_eq!(
             input.dimension(),
-            expected_dimension,
+            expected_dimension.get(),
             "PBS input dimension mismatch"
         );
         assert_eq!(
             output.dimension(),
-            expected_dimension,
+            expected_dimension.get(),
             "PBS output dimension mismatch"
         );
 
@@ -243,11 +244,18 @@ where
         match parameters.pbs_order() {
             PbsOrder::BootstrapKeyswitch => {
                 let switched = self.keyswitch_accumulator();
-                switched.extract_compact_lwe_to(output, glwe.poly_length(), glwe.cipher_modulus());
+                switched.extract_compact_lwe_to(
+                    output,
+                    glwe.poly_length().get(),
+                    glwe.cipher_modulus(),
+                );
             }
             PbsOrder::KeyswitchBootstrap => {
-                self.main_glwe
-                    .extract_lwe_to(output, glwe.poly_length(), glwe.cipher_modulus());
+                self.main_glwe.extract_lwe_to(
+                    output,
+                    glwe.poly_length().get(),
+                    glwe.cipher_modulus(),
+                );
             }
         }
     }
@@ -270,7 +278,7 @@ where
     ) -> Vec<LweCiphertext<T>> {
         let dimension = self.context.parameters().external_lwe_dimension();
         let mut outputs = (0..lookup_table.output_count())
-            .map(|_| LweCiphertext::zero(dimension))
+            .map(|_| LweCiphertext::zero(dimension.get()))
             .collect::<Vec<_>>();
         self.apply_interleaved_lookup_table_to(input, lookup_table, &mut outputs);
         outputs
@@ -306,7 +314,7 @@ where
         let expected_dimension = parameters.external_lwe_dimension();
         assert_eq!(
             input.dimension(),
-            expected_dimension,
+            expected_dimension.get(),
             "PBS input dimension mismatch"
         );
         assert_eq!(
@@ -317,7 +325,7 @@ where
         assert!(
             outputs
                 .iter()
-                .all(|output| output.dimension() == expected_dimension),
+                .all(|output| output.dimension() == expected_dimension.get()),
             "PBSManyLUT output ciphertext dimension mismatch"
         );
 
@@ -334,7 +342,7 @@ where
                     switched.extract_compact_lwe_at_to(
                         index,
                         output,
-                        glwe.poly_length(),
+                        glwe.poly_length().get(),
                         glwe.cipher_modulus(),
                     );
                 }
@@ -344,7 +352,7 @@ where
                     self.main_glwe.extract_lwe_at_to(
                         index,
                         output,
-                        glwe.poly_length(),
+                        glwe.poly_length().get(),
                         glwe.cipher_modulus(),
                     );
                 }
@@ -376,7 +384,7 @@ where
                 let glwe = parameters.accumulator_glwe();
                 input.inverse_extract_glwe_to(
                     &mut self.main_glwe,
-                    glwe.poly_length(),
+                    glwe.poly_length().get(),
                     glwe.cipher_modulus(),
                 );
                 self.server_key.glwe_key_switching_key().key_switch_to(
@@ -387,7 +395,7 @@ where
                 );
                 ks.switched.extract_compact_lwe_to(
                     &mut ks.small_lwe,
-                    glwe.poly_length(),
+                    glwe.poly_length().get(),
                     glwe.cipher_modulus(),
                 );
                 &ks.small_lwe

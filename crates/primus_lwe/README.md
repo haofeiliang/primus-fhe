@@ -28,14 +28,14 @@ Public types are exported at the crate root; implementation modules are private.
 This example uses small dimensions to demonstrate storage reuse, independent public-key batches and key switching. These are not evaluated security parameters. The imports require `primus_lwe`, `primus_lattice`, `primus_modulus`, `primus_decompose` and `rand` as direct dependencies of the calling crate.
 
 ```rust
-use primus_decompose::primitive::ApproxSignedBasis;
+use primus_decompose::{DecompositionBaseLog, primitive::ApproxSignedBasis};
 use primus_lattice::lwe::{Lwe, LweIter};
-use primus_lwe::{LweKeySwitchingKey, LweParameters, LwePublicKey, LweSecretKey, SecretKeyDistr};
+use primus_lwe::{LweDimension, LweKeySwitchingKey, LweParameters, LwePublicKey, LweSecretKey, SecretKeyDistr};
 use primus_modulus::NativeModulus;
 
 fn main() {
     let params = LweParameters::new(
-        64,
+        LweDimension::new(64),
         4u32,
         NativeModulus::new(),
         SecretKeyDistr::UniformBinary,
@@ -63,14 +63,14 @@ fn main() {
     }
 
     let output_params = LweParameters::new(
-        32,
+        LweDimension::new(32),
         4u32,
         NativeModulus::new(),
         SecretKeyDistr::UniformBinary,
         0.7,
     );
     let output_secret = LweSecretKey::generate(&output_params, &mut rng);
-    let basis = ApproxSignedBasis::new(params.cipher_modulus_value(), 4, None);
+    let basis = ApproxSignedBasis::new(params.cipher_modulus_value(), DecompositionBaseLog::new(4), None);
     let switching = LweKeySwitchingKey::generate(
         secret.as_view(),
         &output_secret,
@@ -90,9 +90,9 @@ fn main() {
 
 ## Parameters and encoding
 
-Use `LweParameters::try_new` for configuration input: it returns `LweParameterError` for dimension, encoding, secret support/weight and noise-sampler errors. Fixed weights must fit n. `new` is the panicking convenience form. The plaintext modulus is derived from the stored codec. `LweParameterError::SecretKey` preserves the sampling/weight/modulus cause as `SecretKeySamplerError`; `Noise` preserves `GaussianError`.
+Construct `LweDimension` with `try_new` for external configuration input: it checks nonzero `n` and representable `n+1`, returning `LweDimensionError`. `LweParameters::try_new` consumes that dimension and returns `LweParameterError` for encoding, secret support/weight and noise-sampler errors. Fixed weights must fit n. `new` is the panicking convenience form. The plaintext modulus is derived from the stored codec. `LweParameterError::SecretKey` preserves the sampling/weight/modulus cause as `SecretKeySamplerError`; `Noise` preserves `GaussianError`.
 
-`LweParameters::new(n, t, modulus, secret_distribution, noise_standard_deviation)` requires `n != 0`, a representable `n + 1`, and the validity conditions of its codec and samplers. In particular, `t >= 2` and `q > t`. `NativeModulus<T>` denotes `q = 2^T::BITS`; `cipher_modulus_value()` returns `None` for that modulus and `Some(q)` for an explicit modulus. The noise standard deviation is measured in ciphertext coefficient units.
+`LweParameters::new(LweDimension::new(n), t, modulus, secret_distribution, noise_standard_deviation)` requires the validity conditions of its codec and samplers. `params.dimension()` returns `LweDimension`; use `.ciphertext_len()` for allocation and `.get()` at raw slice boundaries. Raw secret-key views retain integer dimensions, including zero. In particular, `t >= 2` and `q > t`. `NativeModulus<T>` denotes `q = 2^T::BITS`; `cipher_modulus_value()` returns `None` for that modulus and `Some(q)` for an explicit modulus. The noise standard deviation is measured in ciphertext coefficient units.
 
 Message APIs take canonical residues of type `T` in `[0,t)`; batch and packed encryption take `&[T]`. `encrypt` uses unsigned embedding; `encrypt_with_embedding` selects `PlaintextEmbedding::Unsigned` or `PlaintextEmbedding::Centered` from `primus_encoding`. Centered embedding still takes unsigned residues: `t - 1` represents `-1`. Both embeddings use the same `decrypt` and return residues in `[0,t)` using the ciphertext coefficient type `T`. Batch and packed decryption likewise return `Vec<T>` or write to `[T]`. Applications convert message types before encryption and after decryption.
 

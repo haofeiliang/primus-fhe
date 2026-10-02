@@ -46,7 +46,7 @@ where
         Ok(Self {
             context,
             secret,
-            scratch: Zeroizing::new(vec![T::ZERO; parameters.poly_length()]),
+            scratch: Zeroizing::new(vec![T::ZERO; parameters.poly_length().get()]),
         })
     }
 
@@ -89,7 +89,13 @@ where
     /// Allocates and decodes all N coefficients. Inherits [`Self::decrypt_to`]'s contracts.
     #[must_use]
     pub fn decrypt<S: Data<Elem = T>>(&mut self, input: &GlweCiphertext<S>) -> Vec<T> {
-        let mut output = vec![T::ZERO; self.context.parameters().accumulator_glwe().poly_length()];
+        let n = self
+            .context
+            .parameters()
+            .accumulator_glwe()
+            .poly_length()
+            .get();
+        let mut output = vec![T::ZERO; n];
         self.decrypt_to(input, &mut output);
         output
     }

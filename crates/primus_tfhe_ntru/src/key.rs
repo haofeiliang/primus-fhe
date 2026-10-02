@@ -38,7 +38,8 @@ impl<T: FheUint> ClientKey<T> {
         &self.external_lwe_secret_key
     }
 
-    /// Returns the external LWE dimension.
+    /// Returns the actual external secret storage dimension.
+    /// Imported keys may have dimension zero until bound to checked parameters.
     #[must_use]
     pub fn external_lwe_dimension(&self) -> usize {
         self.external_lwe_secret_key.dimension()
@@ -83,14 +84,14 @@ impl<T: FheUint> ClientKey<T> {
         &self,
         parameters: &TfheParameters<T, M, LM>,
     ) -> Result<(), TfheKeyError> {
-        if self.accumulator_ntru_secret_key.poly_length() != parameters.poly_length() {
+        if self.accumulator_ntru_secret_key.poly_length() != parameters.poly_length().get() {
             return Err(TfheKeyError::PolynomialLengthMismatch);
         }
         let external = parameters.external_lwe();
         if self.external_lwe_secret_key.distr() != external.secret_key_distr() {
             return Err(TfheKeyError::ClientSecretKeyDistributionMismatch);
         }
-        if self.external_lwe_dimension() != external.dimension() {
+        if self.external_lwe_dimension() != external.dimension().get() {
             return Err(TfheKeyError::ExternalLweDimensionMismatch);
         }
         let ternary = external.secret_key_distr().is_ternary();

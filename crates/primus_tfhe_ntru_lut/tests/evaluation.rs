@@ -3,6 +3,7 @@
 //! evaluation focuses on chunk digits, table boundaries and reused zero selectors.
 use primus_fft::{FftTable, RustFftTable, TfheFftTable, TorusFftValue};
 use primus_integer::FheUint;
+use primus_lattice::LweDimension;
 use primus_lwe::LweParameters;
 use primus_modulus::{BarrettModulus, NativeModulus, PowOf2Modulus};
 use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
@@ -10,6 +11,7 @@ use primus_ntt::{MonomialNttTable, U32NttTable, U64NttTable};
 use primus_reduce::RingContext;
 use primus_test_allocations as allocations;
 use primus_tfhe::LweCiphertext;
+use primus_tfhe::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_tfhe_ntru::{CircuitBootstrapConfig, DecompositionConfig, TfheParameters};
 use primus_tfhe_ntru_lut::{
     FourierLookupTableEvaluator, HighPrecisionLookupTable, LookupTableConfig, LookupTableError,
@@ -38,15 +40,15 @@ fn parameters<T: FheUint, M: RingContext<T>>(
     );
     TfheParameters::try_new(
         LweParameters::new(
-            dimension,
+            LweDimension::new(dimension),
             T::as_from(2 * radix),
             PowOf2Modulus::new(T::ONE << 24u32),
             distr,
             0.7,
         ),
-        NlevParameters::with_ntru_params(&ring, 8, None),
+        NlevParameters::with_ntru_params(&ring, DecompositionBaseLog::new(8), None),
         DecompositionConfig {
-            log_basis: 8,
+            log_basis: DecompositionBaseLog::new(8),
             level_count: None,
         },
         0.7,
@@ -57,13 +59,17 @@ fn parameters<T: FheUint, M: RingContext<T>>(
 // Three retained levels leave precision for the CMux/rotation products in each word.
 fn cbs<T: FheUint>() -> CircuitBootstrapConfig {
     let full = DecompositionConfig {
-        log_basis: 8,
+        log_basis: DecompositionBaseLog::new(8),
         level_count: None,
     };
     CircuitBootstrapConfig {
         output: DecompositionConfig {
-            log_basis: if T::BITS == 32 { 4 } else { 8 },
-            level_count: Some(3),
+            log_basis: if T::BITS == 32 {
+                DecompositionBaseLog::new(4)
+            } else {
+                DecompositionBaseLog::new(8)
+            },
+            level_count: Some(DecompositionLevelCount::new(3)),
         },
         trace: full,
         trace_noise_standard_deviation: 0.7,

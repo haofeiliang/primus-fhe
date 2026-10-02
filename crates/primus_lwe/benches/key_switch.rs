@@ -1,6 +1,8 @@
 // cargo bench -p primus_lwe --bench key_switch
 // Performance fixtures, not evaluated security parameters.
 
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_lattice::LweDimension;
 use std::hint::black_box;
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
@@ -17,10 +19,20 @@ use rand::{SeedableRng, rngs::StdRng};
 fn bench_domain<M: RingContext<u32>>(c: &mut Criterion, name: &str, modulus: M) {
     for log_basis in [2, 4] {
         let mut rng = StdRng::seed_from_u64(0xdec0_005e);
-        let params = LweParameters::new(800, 4, modulus, SecretKeyDistr::UniformBinary, 0.7);
+        let params = LweParameters::new(
+            LweDimension::new(800),
+            4,
+            modulus,
+            SecretKeyDistr::UniformBinary,
+            0.7,
+        );
         let secret = LweSecretKey::generate(&params, &mut rng);
-        let basis = ApproxSignedBasis::new(modulus.explicit_value(), log_basis, None);
-        let levels = basis.decompose_length();
+        let basis = ApproxSignedBasis::new(
+            modulus.explicit_value(),
+            DecompositionBaseLog::new(log_basis),
+            None,
+        );
+        let levels = basis.decompose_length().get();
         let key = LweKeySwitchingKey::generate(
             LweSecretKeyRef::Encoded(&[1; 1024]),
             &secret,
@@ -78,13 +90,17 @@ const LEVEL_COUNT: usize = 13;
 fn bench_generation(c: &mut Criterion) {
     let modulus = BarrettModulus::new(CIPHERTEXT_MODULUS);
     let output_parameters = LweParameters::new(
-        OUTPUT_DIMENSION,
+        LweDimension::new(OUTPUT_DIMENSION),
         4,
         modulus,
         SecretKeyDistr::UniformBinary,
         0.7,
     );
-    let basis = ApproxSignedBasis::new(Some(CIPHERTEXT_MODULUS), LOG_BASIS, Some(LEVEL_COUNT));
+    let basis = ApproxSignedBasis::new(
+        Some(CIPHERTEXT_MODULUS),
+        DecompositionBaseLog::new(LOG_BASIS),
+        Some(DecompositionLevelCount::new(LEVEL_COUNT)),
+    );
     let mut rng = StdRng::seed_from_u64(0xdec0_005e);
     let output_secret_key = LweSecretKey::generate(&output_parameters, &mut rng);
     let mut group = c.benchmark_group("lwe_key_switch_generation/u32/explicit");

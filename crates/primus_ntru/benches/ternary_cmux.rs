@@ -2,6 +2,9 @@
 //! Keys, monomial exponent, output and scratch allocation are outside timing.
 //! cargo bench -p primus_ntru --bench ternary_cmux
 //! SIMD comparison: cargo +nightly bench -p primus_ntru --bench ternary_cmux --features simd
+
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_lattice::PolyLength;
 use std::{hint::black_box, time::Duration};
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
@@ -34,7 +37,11 @@ fn ntt<T: FheUint + PrimitiveRoot>(c: &mut Criterion, q: T, levels: usize) {
         SecretKeyDistr::SparseTernary,
         3.2,
     );
-    let gadget = NlevParameters::with_ntru_params(&params, 8, Some(levels));
+    let gadget = NlevParameters::with_ntru_params(
+        &params,
+        DecompositionBaseLog::new(8),
+        Some(DecompositionLevelCount::new(levels)),
+    );
     let mut rng = StdRng::seed_from_u64(0xB702);
     let key = NttNtruSecretKey::generate(&params, &table, &mut rng).unwrap();
     let message = Polynomial::new(
@@ -59,10 +66,12 @@ fn ntt<T: FheUint + PrimitiveRoot>(c: &mut Criterion, q: T, levels: usize) {
     let negative = NttNgswCiphertext::new(negative);
     let exponent = N / 3;
     let mut output = NtruCiphertext::<Vec<T>>::zero(N);
-    let (mut fused, fused_allocations) = measure(|| NttNtruCmuxWorkspace::<T>::new(N, levels));
+    let (mut fused, fused_allocations) = measure(|| {
+        NttNtruCmuxWorkspace::<T>::new(PolyLength::new(N), DecompositionLevelCount::new(levels))
+    });
     let ((mut binary, mut intermediate), binary_allocations) = measure(|| {
         (
-            NttNtruExternalProductWorkspace::<T>::new(N),
+            NttNtruExternalProductWorkspace::<T>::new(PolyLength::new(N)),
             NtruCiphertext::<Vec<T>>::zero(N),
         )
     });
@@ -147,7 +156,11 @@ fn fourier<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str, 
         SecretKeyDistr::SparseTernary,
         3.2,
     );
-    let gadget = NlevParameters::with_ntru_params(&params, 8, Some(levels));
+    let gadget = NlevParameters::with_ntru_params(
+        &params,
+        DecompositionBaseLog::new(8),
+        Some(DecompositionLevelCount::new(levels)),
+    );
     let mut rng = StdRng::seed_from_u64(0xB703);
     let (coeff, key) = FourierNtruSecretKey::generate_pair(&params, &mut fft, &mut rng).unwrap();
     let message = Polynomial::new(
@@ -161,7 +174,7 @@ fn fourier<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str, 
         &params,
         &mut fft,
         &mut rng,
-        &mut FourierNtruEncryptWorkspace::new(N),
+        &mut FourierNtruEncryptWorkspace::new(PolyLength::new(N)),
     )
     .write_torus_form(&mut input, &mut fft);
     let mut controls = vec![Complex64::default(); 2 * gadget.fourier_nlev_len()];
@@ -171,17 +184,19 @@ fn fourier<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str, 
         &gadget,
         &mut fft,
         &mut rng,
-        &mut FourierNtruGadgetEncryptWorkspace::new(N),
+        &mut FourierNtruGadgetEncryptWorkspace::new(PolyLength::new(N)),
     );
     let (positive, negative) = controls.split_at(gadget.fourier_nlev_len());
     let positive = FourierNgswCiphertext::new(positive);
     let negative = FourierNgswCiphertext::new(negative);
     let exponent = N / 3;
     let mut output = NtruCiphertext::<Vec<T>>::zero(N);
-    let (mut fused, fused_allocations) = measure(|| FourierNtruCmuxWorkspace::<T>::new(N, levels));
+    let (mut fused, fused_allocations) = measure(|| {
+        FourierNtruCmuxWorkspace::<T>::new(PolyLength::new(N), DecompositionLevelCount::new(levels))
+    });
     let ((mut binary, mut intermediate), binary_allocations) = measure(|| {
         (
-            FourierNtruExternalProductWorkspace::<T>::new(N),
+            FourierNtruExternalProductWorkspace::<T>::new(PolyLength::new(N)),
             NtruCiphertext::<Vec<T>>::zero(N),
         )
     });

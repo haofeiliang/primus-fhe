@@ -1,9 +1,11 @@
 //! Multi-way CMux shape boundaries and recovery after a streamed-pair failure.
 //! Real encrypted selectors and numerical differentials live in primus_ntru.
 
+use primus_decompose::DecompositionBaseLog;
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable};
 use primus_lattice::{
+    PolyLength,
     ngsw::{FourierNgsw, FourierNgswOwned, Ngsw, NttNgsw},
     ntru::Ntru,
     workspace::{FourierNtruExternalProductWorkspace, NttNtruExternalProductWorkspace},
@@ -17,7 +19,7 @@ const N: usize = 4;
 // With f=1, a noiseless encryption of control bit one is just the gadget weights.
 // A valid first pair then leaves a nonzero partial sum before a later shape error.
 fn control_one(basis: &ApproxSignedBasis<u32>) -> Ngsw<Vec<u32>> {
-    let mut control = Ngsw::zero(basis.decompose_length() * N);
+    let mut control = Ngsw::zero(basis.decompose_length().get() * N);
     for (scalar, mut row) in basis.scalar_iter().zip(control.iter_ntru_mut(N)) {
         row.as_mut()[0] = scalar;
     }
@@ -119,13 +121,13 @@ fn check_shapes(
 #[test]
 fn ntt_cmux_checks_shapes_before_each_pair_and_recovers() {
     let modulus = BarrettModulus::new(257u32);
-    let basis = ApproxSignedBasis::new(Some(257u32), 3, None);
+    let basis = ApproxSignedBasis::new(Some(257u32), DecompositionBaseLog::new(3), None);
     let table = U32NttTable::new(N.trailing_zeros(), modulus).unwrap();
     let control = control_one(&basis).into_ntt_form(&table);
     let control_len = control.as_ref().len();
     let mut storage = control.into_inner();
     storage.push(0); // Also exercise an oversized gadget rather than a short slice only.
-    let mut workspace = NttNtruExternalProductWorkspace::new(N);
+    let mut workspace = NttNtruExternalProductWorkspace::new(PolyLength::new(N));
     check_shapes(control_len, |lengths, default, candidates, output| {
         NttNgsw::cmux_k_to(
             lengths.iter().map(|&len| NttNgsw::new(&storage[..len])),
@@ -142,15 +144,15 @@ fn ntt_cmux_checks_shapes_before_each_pair_and_recovers() {
 
 // Bind one FFT instance to the native-torus control and all recovery calls.
 fn fourier<Table: FftTable>() {
-    let basis = ApproxSignedBasis::new(None, 8, None);
+    let basis = ApproxSignedBasis::new(None, DecompositionBaseLog::new(8), None);
     let table = Table::new(N.trailing_zeros()).unwrap();
     let mut fft = FftEngine::new(&table);
-    let mut control = FourierNgswOwned::zero(basis.decompose_length() * N / 2);
+    let mut control = FourierNgswOwned::zero(basis.decompose_length().get() * N / 2);
     control_one(&basis).write_fourier_form(&mut control, &mut fft);
     let control_len = control.as_ref().len();
     let mut storage = control.as_ref().to_vec();
     storage.push(Complex64::default());
-    let mut workspace = FourierNtruExternalProductWorkspace::new(N);
+    let mut workspace = FourierNtruExternalProductWorkspace::new(PolyLength::new(N));
     check_shapes(control_len, |lengths, default, candidates, output| {
         FourierNgsw::cmux_k_to(
             lengths.iter().map(|&len| FourierNgsw::new(&storage[..len])),

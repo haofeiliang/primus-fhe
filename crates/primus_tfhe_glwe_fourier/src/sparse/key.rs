@@ -1,3 +1,4 @@
+use primus_lattice::LweDimension;
 use std::alloc::Layout;
 
 use primus_decompose::primitive::ApproxSignedBasis;
@@ -34,7 +35,7 @@ use crate::{ClientKey, KeyGenerationError, KeyGenerator, SparseBootstrappingKeyE
 pub struct SparseGlweBootstrappingKey<T: TorusFftValue> {
     data: Vec<T>,
     map: BucketMap,
-    input_dimension: usize,
+    input_dimension: LweDimension,
     hamming_weight: usize,
     copy_count: usize,
     input_quantizer: RotationQuantizer<T>,
@@ -45,7 +46,7 @@ pub struct SparseGlweBootstrappingKey<T: TorusFftValue> {
 impl<T: TorusFftValue> SparseGlweBootstrappingKey<T> {
     /// Returns the dimension of the actual blind-rotation input secret.
     #[must_use]
-    pub fn input_dimension(&self) -> usize {
+    pub fn input_dimension(&self) -> LweDimension {
         self.input_dimension
     }
 
@@ -137,7 +138,7 @@ impl<T: TorusFftValue> SparseGlweBootstrappingKey<T> {
 pub(crate) struct PreparedSparseMap {
     map: BucketMap,
     selected_input_indices: Zeroizing<Vec<usize>>,
-    input_dimension: usize,
+    input_dimension: LweDimension,
     hamming_weight: usize,
     copy_count: usize,
     data_len: usize,
@@ -245,7 +246,7 @@ where
         Ok(PreparedSparseMap {
             map,
             selected_input_indices,
-            input_dimension,
+            input_dimension: LweDimension::new(input_dimension),
             hamming_weight,
             copy_count,
             data_len,
@@ -316,7 +317,7 @@ where
             copy_count,
             input_quantizer: RotationQuantizer::new(
                 NativeModulus::<T>::new(),
-                2 * size.glwe_size().poly_length(),
+                2 * size.glwe_size().poly_length().get(),
                 1,
             ),
             size,

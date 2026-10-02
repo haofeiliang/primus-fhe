@@ -1,6 +1,7 @@
 use num_traits::{ConstOne, ConstZero};
 use primus_integer::FheUint;
 use primus_lattice::GlweSize;
+use primus_lattice::{GlweDimension, LweDimension};
 use primus_reduce::RingContext;
 use primus_tfhe::LweSecretKeyRef;
 
@@ -103,7 +104,7 @@ impl<T: FheUint> ClientKey<T> {
             PbsOrder::KeyswitchBootstrap => {
                 let glwe = parameters.accumulator_glwe();
                 let lwe = crate::LweParameters::new(
-                    glwe.secret_key_len(),
+                    LweDimension::new(glwe.secret_key_len()),
                     glwe.plain_modulus_value(),
                     parameters.small_lwe().cipher_modulus(),
                     glwe.secret_key_distr(),
@@ -150,7 +151,7 @@ impl<T: FheUint> ClientKey<T> {
     {
         let lwe_secret_key = &self.small_lwe_secret_key;
         let lwe_dimension = lwe_secret_key.dimension();
-        let poly_length = parameters.accumulator_glwe().poly_length();
+        let poly_length = parameters.accumulator_glwe().poly_length().get();
         let capacity = lwe_dimension
             .checked_next_multiple_of(poly_length)
             .expect("validated TFHE dimensions must fit in usize");
@@ -179,7 +180,10 @@ impl<T: FheUint> ClientKey<T> {
 
         GlweSecretKey::new(
             key,
-            GlweSize::new(capacity / poly_length, poly_length),
+            GlweSize::new(
+                GlweDimension::new(capacity / poly_length),
+                parameters.accumulator_glwe().poly_length(),
+            ),
             distribution,
         )
     }
@@ -206,9 +210,9 @@ impl<T: FheUint> ClientKey<T> {
                 actual: self.pbs_order,
             });
         }
-        if self.small_lwe_secret_key.dimension() != parameters.small_lwe().dimension() {
+        if self.small_lwe_secret_key.dimension() != parameters.small_lwe().dimension().get() {
             return Err(TfheKeyError::LweDimensionMismatch {
-                expected: parameters.small_lwe().dimension(),
+                expected: parameters.small_lwe().dimension().get(),
                 actual: self.small_lwe_secret_key.dimension(),
             });
         }
@@ -217,13 +221,13 @@ impl<T: FheUint> ClientKey<T> {
         }
         if self.glwe_secret_key.dimension() != parameters.accumulator_glwe().dimension() {
             return Err(TfheKeyError::GlweDimensionMismatch {
-                expected: parameters.accumulator_glwe().dimension(),
-                actual: self.glwe_secret_key.dimension(),
+                expected: parameters.accumulator_glwe().dimension().get(),
+                actual: self.glwe_secret_key.dimension().get(),
             });
         }
-        if self.glwe_secret_key.poly_length() != parameters.accumulator_glwe().poly_length() {
+        if self.glwe_secret_key.poly_length() != parameters.accumulator_glwe().poly_length().get() {
             return Err(TfheKeyError::PolynomialLengthMismatch {
-                expected: parameters.accumulator_glwe().poly_length(),
+                expected: parameters.accumulator_glwe().poly_length().get(),
                 actual: self.glwe_secret_key.poly_length(),
             });
         }

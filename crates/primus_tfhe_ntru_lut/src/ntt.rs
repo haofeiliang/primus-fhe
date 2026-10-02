@@ -115,7 +115,7 @@ where
             selected_tables: vec![T::ZERO; selected_tables_len].into_boxed_slice(),
             current: NtruCiphertext::zero(n),
             product: NtruCiphertext::zero(n),
-            return_workspace: NtruLweKeySwitchingWorkspace::new(n),
+            return_workspace: NtruLweKeySwitchingWorkspace::new(context.parameters().poly_length()),
         };
         evaluator.prepare_rotation_constants();
         Ok(evaluator)
@@ -436,7 +436,7 @@ fn aggregate_rotation_control_to<T: FheUint>(
     parameters: &CircuitBootstrapParameters<T, BarrettModulus<T>>,
     modulus: BarrettModulus<T>,
 ) {
-    let n = parameters.poly_length();
+    let n = parameters.poly_length().get();
     let selector_len = parameters.output_nlev_len();
     // Constant polynomial g_l transforms to the constant NTT row g_l.
     for (mut row, scalar) in output

@@ -12,6 +12,7 @@ primus_modulus = { path = "../primus_modulus" }
 primus_poly = { path = "../primus_poly" }
 primus_encoding = { path = "../primus_encoding" }
 primus_lwe = { path = "../primus_lwe" }
+primus_lattice = { path = "../primus_lattice" }
 
 thiserror = { workspace = true }
 rand = { workspace = true }

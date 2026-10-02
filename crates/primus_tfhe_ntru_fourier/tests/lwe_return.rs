@@ -1,4 +1,6 @@
+use primus_decompose::DecompositionBaseLog;
 use primus_fft::{FftTable, RustFftTable, TfheFftTable, TorusFftValue};
+use primus_lattice::LweDimension;
 use primus_modulus::NativeModulus;
 use primus_tfhe_ntru_fourier::{
     DecompositionConfig, TfheConfig, TfheContext, TfheEvaluationError, TfheParameters,
@@ -24,17 +26,23 @@ fn check<T: TorusFftValue, Table: FftTable>() {
         SecretKeyDistr::fixed_composition_ternary(DIM, 1, 1),
     ] {
         let decomposition = DecompositionConfig {
-            log_basis: 5,
+            log_basis: DecompositionBaseLog::new(5),
             level_count: None,
         };
         let config = TfheConfig {
-            external_lwe: LweParameters::new(DIM, T::as_from(4u32), external_modulus, distr, 0.7),
+            external_lwe: LweParameters::new(
+                LweDimension::new(DIM),
+                T::as_from(4u32),
+                external_modulus,
+                distr,
+                0.7,
+            ),
             accumulator_modulus: NativeModulus::new(),
             poly_length: N,
             accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
             accumulator_noise_standard_deviation: 0.7,
             blind_rotation: DecompositionConfig {
-                log_basis: 8,
+                log_basis: DecompositionBaseLog::new(8),
                 level_count: None,
             },
             key_switching: decomposition,
@@ -153,7 +161,7 @@ fn check<T: TorusFftValue, Table: FftTable>() {
         // Changing only q must reject a server key before online work.
         let mut wrong = config;
         wrong.external_lwe = LweParameters::new(
-            DIM,
+            LweDimension::new(DIM),
             T::as_from(4u32),
             BarrettModulus::new(q / T::as_from(2u32)),
             distr,

@@ -21,6 +21,12 @@ NLev and NGSW have the same number of stored rows but different mathematical rol
 
 ## Keys and recommended workflow
 
+Construction still takes an integer `N`. Validated parameters store the shared
+[PolyLength](../primus_lattice/README.md#storage-and-layout);
+`params.poly_length()` returns the checked value for workspace constructors;
+use `.get()` when a scalar kernel or transform constructor needs `usize`. `PolyLength`
+centrally checks the supported range of powers of two in `2..=2^17`.
+
 `NtruParameters::try_new` returns `NtruParameterError` for ring length, fixed-scale encoding, secret support/weight and noise-sampler errors; fixed weights must fit N. `new` panics on the same errors. These checks do not establish invertibility of a sampled secret, transform availability or a noise/security budget. `NtruParameterError::SecretKey` preserves the sampling/weight/modulus cause as `SecretKeySamplerError`; `Noise` preserves `GaussianError`.
 
 Use `NttNtruSecretKey::generate_pair` or `FourierNtruSecretKey::generate_pair` to retain both the signed coefficient secret and its transform representation. The coefficient secret generates evaluation keys; the transformed key and its cached inverse support encryption and phase extraction.
@@ -56,7 +62,7 @@ cargo run -p primus_ntru --example automorphism
 
 `NttNlev::lift_monomial_to` / `FourierNlev::lift_monomial_to` fuse public-polynomial lifting with the first binary/ternary rotation. Supply NLEV[1], a positive NLEV bit and an optional negative NLEV bit; only the public polynomial is decomposed, and a zero exponent still performs the lift. Their `NttNtruCmuxWorkspace` / `FourierNtruCmuxWorkspace` shares one combined-control buffer with subsequent ternary CMUXes.
 
-For ternary rotation, allocate `NttNtruCmuxWorkspace::new(N, levels)` or `FourierNtruCmuxWorkspace::new(N, levels)` once, and reuse it with mutually exclusive positive/negative NGSW controls. Fourier uses a native basis and both controls must use the engine's exact FFT table instance and torus scale. The exponent is already quantized into `0..2N`; its negative is derived internally. The NTRU TFHE backends use this primitive for classic ternary blind rotation.
+For ternary rotation, take `poly_length = params.poly_length()` and `levels = params.decompose_length()` (`DecompositionLevelCount`) and allocate `NttNtruCmuxWorkspace::new(poly_length, levels)` or `FourierNtruCmuxWorkspace::new(poly_length, levels)` once, and reuse it with mutually exclusive positive/negative NGSW controls. Fourier uses a native basis and both controls must use the engine's exact FFT table instance and torus scale. The exponent is already quantized into `0..2N`; its negative is derived internally. The NTRU TFHE backends use this primitive for classic ternary blind rotation.
 
 Decryption returns coefficient polynomials with the ciphertext coefficient type `T`; applications handle any output type conversion.
 
@@ -70,14 +76,17 @@ Sample extraction, NLev/NGSW external products and CMUX live in [`primus_lattice
 
 ## Independent LWE return
 
-`NtruLweKeySwitchingKey::generate(f, Q, s, lwe_parameters, basis, rng)` prepares conversion from the signed NTRU secret f to an independently generated `primus_lwe::LweSecretKey` s. The parameters and basis use target modulus q; s may have a different dimension and need not extend to an invertible NTRU secret. Each signed coefficient of f must have magnitude below an explicit q; generation checks this before sampling.
+`NtruLweKeySwitchingKey::generate(f, Q, s, lwe_parameters, basis, rng)` prepares conversion from the signed NTRU secret f to an independently generated `primus_lwe::LweSecretKey` s. The parameters and basis use target modulus q; s may have a different dimension and need not extend to an invertible NTRU secret. Each signed coefficient of f must have magnitude below an explicit q; generation checks this before sampling. Return-key and batch-workspace dimensions use `LweDimension`; `LweDimension::from(params.poly_length())` gives the extracted dimension N. Composed key and batch storage lengths remain checked at construction.
 
 Inputs are coefficient-domain NTRU ciphertexts; recover NTT/Fourier outputs to coefficients first. Create the workspace once and reuse it. All return paths overwrite their outputs without online allocation and validate caller-supplied shapes and target modulus before writes.
 
+Use the checked `poly_length = params.poly_length()` from the input NTRU parameters
+when constructing these workspaces.
+
 | Requested results | Key methods | Workspace |
 | --- | --- | --- |
-| One coefficient | `key_switch_at_to`; `key_switch_to` for index zero | `NtruLweKeySwitchingWorkspace::new(N)` |
-| Several coefficients of one NTRU | `key_switch_many_at_to` | `NtruLweKeySwitchingBatchWorkspace::new(N, output_dimension)` |
+| One coefficient | `key_switch_at_to`; `key_switch_to` for index zero | `NtruLweKeySwitchingWorkspace::new(poly_length)` |
+| Several coefficients of one NTRU | `key_switch_many_at_to` | `NtruLweKeySwitchingBatchWorkspace::new(poly_length, output_dimension)` |
 | Coefficients of successive NTRUs | `modulus_switch_extract_at_to`, then `key_switch_extracted_batch_to` | The same batch workspace type |
 
 The scalar path fuses conversion and extraction into one N+1-element intermediate LWE. For several coefficients of one input, pass `0..outputs.len()` or `indices.iter().copied()` to `key_switch_many_at_to`. It preserves order and repeated indices, validating the exact-size, clonable iterator before writes. Multiple outputs share one Q→q conversion and fixed tiles for LWE key switching; empty batches do nothing and a singleton uses the scalar path. Results equal individual calls, including rounding ties. The [return benchmark](benches/lwe_return.rs) compares both paths separately from blind rotation.

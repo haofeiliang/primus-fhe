@@ -15,7 +15,7 @@ where
 {
     /// Encrypts an unsigned plaintext polynomial into `output` without allocating.
     ///
-    /// `workspace` holds one reusable ephemeral polynomial of `params.poly_length()`
+    /// `workspace` holds one reusable ephemeral polynomial of `params.poly_length().get()`
     /// coefficients. It may be reused across keys with the same polynomial length.
     ///
     /// # Panics
@@ -42,7 +42,7 @@ where
     {
         assert_eq!(
             input.as_ref().len(),
-            params.poly_length(),
+            params.poly_length().get(),
             "GLWE message length mismatch"
         );
         self.encrypt_kernel_to(output, params, ntt, rng, workspace, |body| {
@@ -76,7 +76,7 @@ where
     {
         assert_eq!(
             input.as_ref().len(),
-            params.poly_length(),
+            params.poly_length().get(),
             "GLWE message length mismatch"
         );
         self.encrypt_kernel_to(output, params, ntt, rng, workspace, |body| {
@@ -116,7 +116,7 @@ where
     {
         assert_eq!(
             input.as_ref().len(),
-            params.poly_length(),
+            params.poly_length().get(),
             "GLWE message length mismatch"
         );
         self.encrypt_kernel_to(output, params, ntt, rng, workspace, |body| {
@@ -213,7 +213,7 @@ where
         B: DataMut<Elem = T>,
     {
         let size = params.size();
-        let poly_length = size.poly_length();
+        let poly_length = size.poly_length().get();
         assert_eq!(
             self.key.as_ref().len(),
             size.glwe_len(),

@@ -4,6 +4,7 @@ use primus_decompose::primitive::ApproxSignedBasis;
 use primus_integer::FheUint;
 use primus_modulus::NativeModulus;
 use primus_ntru::NlevParameters;
+use primus_ntru::PolyLength;
 use primus_reduce::RingContext;
 
 use crate::{CircuitBootstrapConfig, CircuitBootstrapParameterError, TfheParameters};
@@ -20,7 +21,7 @@ use crate::{CircuitBootstrapConfig, CircuitBootstrapParameterError, TfheParamete
 #[derive(Clone)]
 pub struct CircuitBootstrapParameters<T: FheUint, M: RingContext<T>> {
     output_basis: ApproxSignedBasis<T>,
-    poly_length: usize,
+    poly_length: PolyLength,
     output_nlev_len: usize,
     trace: NlevParameters<T, M>,
     scheme_switch: NlevParameters<T, M>,
@@ -45,7 +46,7 @@ impl<T: FheUint, M: RingContext<T>> CircuitBootstrapParameters<T, M> {
             .try_build(accumulator.cipher_modulus_value())?;
         let key_parameters = |role, decomposition: crate::DecompositionConfig, noise| {
             let ring = primus_ntru::NtruParameters::try_new(
-                accumulator.poly_length(),
+                accumulator.poly_length().get(),
                 accumulator.plain_modulus(),
                 accumulator.cipher_modulus(),
                 accumulator.secret_key_distr(),
@@ -98,16 +99,17 @@ impl<T: FheUint, M: RingContext<T>> CircuitBootstrapParameters<T, M> {
         {
             return Err(CircuitBootstrapParameterError::UnsupportedTraceModulus);
         }
-        let lookup_table_padded_output_count = output_basis.decompose_length().next_power_of_two();
+        let lookup_table_padded_output_count =
+            output_basis.decompose_length().get().next_power_of_two();
         let domain =
             primus_tfhe::front_half_domain_len(tfhe.plain_modulus_value(), tfhe.poly_length())
                 .map_err(|_| CircuitBootstrapParameterError::OutputDecompositionTooLarge)?;
-        if lookup_table_padded_output_count > tfhe.poly_length() / domain {
+        if lookup_table_padded_output_count > tfhe.poly_length().get() / domain {
             return Err(CircuitBootstrapParameterError::OutputDecompositionTooLarge);
         }
         let poly_length = tfhe.poly_length();
         // N <= 2^17 and levels <= 32 keep their product within usize.
-        let output_nlev_len = poly_length * output_basis.decompose_length();
+        let output_nlev_len = poly_length.get() * output_basis.decompose_length().get();
         Ok(Self {
             output_basis,
             poly_length,
@@ -128,7 +130,7 @@ impl<T: FheUint, M: RingContext<T>> CircuitBootstrapParameters<T, M> {
     /// Returns the accumulator polynomial length `N`.
     #[must_use]
     #[inline]
-    pub fn poly_length(&self) -> usize {
+    pub fn poly_length(&self) -> PolyLength {
         self.poly_length
     }
 
@@ -154,7 +156,10 @@ impl<T: FheUint, M: RingContext<T>> CircuitBootstrapParameters<T, M> {
     /// Returns the LUT padded output count for the output gadget levels.
     #[must_use]
     pub fn lookup_table_padded_output_count(&self) -> usize {
-        self.output_basis.decompose_length().next_power_of_two()
+        self.output_basis
+            .decompose_length()
+            .get()
+            .next_power_of_two()
     }
 
     /// Checks the accumulator ring, modulus and input plaintext domain.

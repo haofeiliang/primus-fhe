@@ -1,5 +1,6 @@
 use primus_encoding::{PlaintextEmbedding, RoundedCodec};
 use primus_integer::FheUint;
+use primus_lattice::PolyLength;
 use primus_reduce::{Modulus, ReduceAdd, RingContext};
 
 use super::LookupTable;
@@ -46,7 +47,7 @@ impl<T: FheUint, M: RingContext<T>> BivariateLookupTable<T, M> {
     pub fn try_new<OM, F>(
         lhs_domain_len: usize,
         rhs_domain_len: usize,
-        poly_length: usize,
+        poly_length: PolyLength,
         input_codec: &RoundedCodec<T, M>,
         output_codec: &RoundedCodec<T, OM>,
         function: F,

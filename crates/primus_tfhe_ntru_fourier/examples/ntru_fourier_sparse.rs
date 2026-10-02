@@ -4,8 +4,10 @@
 //! For u64, change Word to u64; for TFHE-FFT, use TfheFftTable as Table.
 //! Arithmetic profiles: guides/development/tfhe-parameters.md (not security presets).
 
+use primus_decompose::DecompositionBaseLog;
 use primus_encoding::RoundedCodec;
 use primus_fft::RustFftTable as Table;
+use primus_lattice::LweDimension;
 use primus_lwe::LweParameters;
 use primus_modulus::{NativeModulus, PowOf2Modulus};
 use primus_ntru::SecretKeyDistr;
@@ -29,13 +31,17 @@ fn parameters() -> TfheParameters<Word, PowOf2Modulus<Word>> {
 
     // None retains floor(modulus_bits / log_basis) levels; it need not cover every low bit.
     let full = DecompositionConfig {
-        log_basis: if Word::BITS == 32 { 2 } else { 8 },
+        log_basis: if Word::BITS == 32 {
+            DecompositionBaseLog::new(2)
+        } else {
+            DecompositionBaseLog::new(8)
+        },
         level_count: None,
     };
 
     TfheParameters::try_from_config(TfheConfig {
         external_lwe: LweParameters::new(
-            728,
+            LweDimension::new(728),
             16, // Padded inputs occupy 0..8.
             PowOf2Modulus::new(lwe_modulus),
             SecretKeyDistr::fixed_hamming_weight_binary(728, 32),
@@ -47,7 +53,7 @@ fn parameters() -> TfheParameters<Word, PowOf2Modulus<Word>> {
         accumulator_noise_standard_deviation: 0.7,
         blind_rotation: full,
         key_switching: DecompositionConfig {
-            log_basis: 3,
+            log_basis: DecompositionBaseLog::new(3),
             level_count: None,
         },
         key_switching_noise_standard_deviation: 3.2, // Return key switch in the q domain.

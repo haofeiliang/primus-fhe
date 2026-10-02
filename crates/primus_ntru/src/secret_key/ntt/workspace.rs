@@ -1,6 +1,7 @@
 //! Reusable secret workspaces.
 
 use primus_integer::FheUint;
+use primus_lattice::PolyLength;
 use primus_poly::PolynomialOwned;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
@@ -13,10 +14,9 @@ pub struct NttNtruGadgetEncryptWorkspace<T: FheUint> {
 
 impl<T: FheUint> NttNtruGadgetEncryptWorkspace<T> {
     /// Creates a generation workspace for polynomials of length `poly_length`.
-    pub fn new(poly_length: usize) -> Self {
-        debug_assert!(poly_length >= 2 && poly_length.is_power_of_two());
+    pub fn new(poly_length: PolyLength) -> Self {
         Self {
-            encoded: PolynomialOwned::zero(poly_length),
+            encoded: PolynomialOwned::zero(poly_length.get()),
         }
     }
 }

@@ -11,7 +11,7 @@ use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use primus_integer::FheUint;
 use primus_modulus::{BarrettModulus, NativeModulus, PowOf2Modulus};
 use primus_reduce::RingContext;
-use primus_tfhe::{InterleavedLookupTable, LookupTable};
+use primus_tfhe::{InterleavedLookupTable, LookupTable, PolyLength};
 
 fn compile<T, M>(c: &mut Criterion, name: &str, modulus: M)
 where
@@ -19,6 +19,7 @@ where
     M: RingContext<T>,
 {
     const N: usize = 1024;
+    let poly_length = PolyLength::new(N);
     let mut group = c.benchmark_group(format!("lut_compile/u{}/{name}/N{N}", T::BITS));
     for (t, output_count) in [(32u32, 1), (16, 3), (255, 4)] {
         let input_domain_len = t.div_ceil(2) as usize;
@@ -29,7 +30,7 @@ where
                     black_box(
                         LookupTable::try_new(
                             black_box(input_domain_len),
-                            black_box(N),
+                            black_box(poly_length),
                             black_box(T::as_from(t)),
                             modulus,
                             modulus,
@@ -45,7 +46,7 @@ where
                     black_box(
                         InterleavedLookupTable::try_new(
                             black_box(input_domain_len),
-                            black_box(N),
+                            black_box(poly_length),
                             black_box(output_count),
                             black_box(T::as_from(t)),
                             modulus,

@@ -24,8 +24,8 @@ impl<'a, T: TorusFftValue> BlindRotationWorkspace<'a, T> {
     ) -> Self {
         let poly_length = parameters.poly_length();
         Self {
-            current: Ntru::zero(poly_length),
-            scratch: Ntru::zero(poly_length),
+            current: Ntru::zero(poly_length.get()),
+            scratch: Ntru::zero(poly_length.get()),
             rotation: if let Some(key) = server_key.sparse_bootstrapping_key() {
                 RotationState::Sparse {
                     key,
@@ -103,7 +103,7 @@ pub(crate) fn blind_rotate_lookup_table_to<T, Table, A, LM: primus_reduce::RingC
     Table: FftTable,
     A: Data<Elem = T>,
 {
-    let poly_length = parameters.poly_length();
+    let poly_length = parameters.poly_length().get();
     let two_n = poly_length * 2;
     let input_modulus = parameters.external_lwe().cipher_modulus();
     let quantizer = if rotation_step == 1 {

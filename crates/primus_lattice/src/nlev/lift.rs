@@ -32,7 +32,7 @@ where
     /// # Correctness
     /// Inherits [`Self::external_product_to`]'s representation, modulus, table,
     /// basis, input and output contracts. All controls use that same key and
-    /// basis, with `workspace.decompose_length()` levels. Bits are mutually
+    /// basis, with `workspace.decompose_length().get()` levels. Bits are mutually
     /// exclusive; omit `negative` for a binary secret. `exponent` is in `0..2N`,
     /// already quantized; its inverse is derived modulo `2N`.
     /// If decomposition reconstructs `input - epsilon`, the ideal phase is
@@ -66,9 +66,12 @@ where
         B: Data<Elem = T>,
         C: DataMut<Elem = T>,
     {
-        let poly_length = workspace.poly_length();
+        let poly_length = workspace.poly_length().get();
         debug_assert!(exponent < 2 * poly_length);
-        debug_assert_eq!(basis.decompose_length(), workspace.decompose_length());
+        debug_assert_eq!(
+            basis.decompose_length().get(),
+            workspace.decompose_length().get()
+        );
         debug_assert_eq!(positive.as_ref().len(), self.as_ref().len());
         if exponent == 0 {
             self.external_product_to(
@@ -123,7 +126,7 @@ where
     /// # Correctness
     /// Inherits [`Self::external_product_to`]'s native basis, normalized torus
     /// scale, input/output layout and FFT contracts. All controls use the same
-    /// key, basis, exact FFT table instance and `workspace.decompose_length()`
+    /// key, basis, exact FFT table instance and `workspace.decompose_length().get()`
     /// levels. Bits are mutually exclusive; omit `negative` for binary.
     /// `exponent` is already quantized into `0..2N`.
     /// The ideal phase is the basis reconstruction of `input` times
@@ -156,9 +159,12 @@ where
         B: Data<Elem = T>,
         C: DataMut<Elem = T>,
     {
-        let poly_length = workspace.poly_length();
+        let poly_length = workspace.poly_length().get();
         debug_assert!(exponent < 2 * poly_length);
-        debug_assert_eq!(basis.decompose_length(), workspace.decompose_length());
+        debug_assert_eq!(
+            basis.decompose_length().get(),
+            workspace.decompose_length().get()
+        );
         debug_assert_eq!(positive.as_ref().len(), self.as_ref().len());
         if exponent == 0 {
             self.external_product_to(input, output, basis, fft, &mut workspace.external_product);

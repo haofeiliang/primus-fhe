@@ -3,6 +3,7 @@
 use primus_data::{Data, DataMut};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
+use primus_lattice::LweDimension;
 use primus_lattice::{GadgetSize, glev::FourierGlev, glwe::Glwe, lwe::Lwe};
 use primus_lwe::LweSecretKeyRef;
 use primus_modulus::NativeModulus;
@@ -23,7 +24,7 @@ use crate::{
 #[derive(Clone)]
 pub struct FourierLwePackingKeySwitchingKey<T: TorusFftValue> {
     data: Vec<Complex64>,
-    input_dimension: usize,
+    input_dimension: LweDimension,
     output_size: GadgetSize,
     basis: ApproxSignedBasis<T>,
 }
@@ -52,18 +53,15 @@ impl<T: TorusFftValue> FourierLwePackingKeySwitchingKey<T> {
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
     {
-        let input_dimension = input_secret_key.dimension();
-        assert!(input_dimension != 0, "input LWE dimension must be nonzero");
-        input_dimension
-            .checked_add(1)
-            .expect("input LWE length overflow");
+        let input_dimension = LweDimension::new(input_secret_key.dimension());
         output_secret_key.assert_gadget_compatible(params, fft);
         workspace.assert_glev_compatible(params.size());
         let length = input_dimension
+            .get()
             .checked_mul(params.fourier_glev_len())
             .expect("packing key length overflow");
         let mut data = vec![Complex64::default(); length];
-        let mut message = Zeroizing::new(vec![T::ZERO; params.poly_length()]);
+        let mut message = Zeroizing::new(vec![T::ZERO; params.poly_length().get()]);
         let mut entries = data.chunks_exact_mut(params.fourier_glev_len());
         super::for_each_secret(input_secret_key, params.cipher_modulus(), |secret| {
             message[0] = secret;
@@ -86,7 +84,7 @@ impl<T: TorusFftValue> FourierLwePackingKeySwitchingKey<T> {
 
     /// Returns the input LWE dimension.
     #[must_use]
-    pub fn input_dimension(&self) -> usize {
+    pub fn input_dimension(&self) -> LweDimension {
         self.input_dimension
     }
 
@@ -129,7 +127,7 @@ impl<T: TorusFftValue> FourierLwePackingKeySwitchingKey<T> {
     {
         assert_eq!(
             input.as_ref().len(),
-            self.input_dimension + 1,
+            self.input_dimension.ciphertext_len(),
             "packing input LWE dimension mismatch"
         );
         self.pack_lwes_to(input.as_ref(), output, fft, workspace);
@@ -165,8 +163,8 @@ impl<T: TorusFftValue> FourierLwePackingKeySwitchingKey<T> {
         B: DataMut<Elem = T>,
     {
         let size = self.output_size.glwe_size();
-        let poly_length = size.poly_length();
-        let count = super::check_batch(input.len(), self.input_dimension, poly_length);
+        let poly_length = size.poly_length().get();
+        let count = super::check_batch(input.len(), self.input_dimension.get(), poly_length);
         assert_eq!(
             output.as_ref().len(),
             size.glwe_len(),
@@ -190,7 +188,7 @@ impl<T: TorusFftValue> FourierLwePackingKeySwitchingKey<T> {
 
         // For D[j,l](X) = sum_i digit_l(a[i,j]) X^i, compute
         // (0, sum_i b_i X^i) - sum_{j,l} D[j,l](X) * K[j,l].
-        let lwe_len = self.input_dimension + 1;
+        let lwe_len = self.input_dimension.ciphertext_len();
         workspace.accumulator.set_zero();
         workspace.decomposed_poly[count..].fill(T::ZERO);
         if count == 1 {
@@ -236,14 +234,14 @@ impl<T: TorusFftValue> FourierLwePackingKeySwitchingKey<T> {
         output.neg_assign(modulus);
         let (_, body) = output.a_b_mut_slices(poly_length);
         for (output, lwe) in body[..count].iter_mut().zip(input.chunks_exact(lwe_len)) {
-            modulus.reduce_add_assign(output, lwe[self.input_dimension]);
+            modulus.reduce_add_assign(output, lwe[self.input_dimension.get()]);
         }
     }
 
     /// Accumulates one validated LWE mask using scalar digits, without digit transforms.
     fn accumulate_single(&self, input: &[T], workspace: &mut FourierGlweKeySwitchingWorkspace<T>) {
         let glwe_len = self.output_size.glwe_size().fourier_glwe_len();
-        for (&coefficient, entry) in input[..self.input_dimension]
+        for (&coefficient, entry) in input[..self.input_dimension.get()]
             .iter()
             .zip(self.data.chunks_exact(self.output_size.fourier_glev_len()))
         {

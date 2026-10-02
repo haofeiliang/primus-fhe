@@ -2,6 +2,8 @@
 
 use primus_data::{Data, DataMut};
 use primus_integer::FheUint;
+use primus_lattice::LweDimension;
+use primus_lattice::PolyLength;
 use primus_lattice::lwe::{Lwe, LweIter, LweIterMut};
 use primus_reduce::RingContext;
 
@@ -186,7 +188,7 @@ impl<T: FheUint> NtruLweKeySwitchingKey<T> {
         M: RingContext<T>,
         B: Data<Elem = T>,
     {
-        let output_len = self.output_dimension() + 1;
+        let output_len = self.output_dimension().ciphertext_len();
         assert!(
             outputs
                 .iter()
@@ -221,7 +223,7 @@ impl<T: FheUint> NtruLweKeySwitchingKey<T> {
         M: RingContext<T>,
         B: DataMut<Elem = T>,
     {
-        let output_len = self.output_dimension() + 1;
+        let output_len = self.output_dimension().ciphertext_len();
         let (extracted, switched) = workspace.lwe_tiles_mut(outputs.len());
         match outputs {
             [] => {}
@@ -267,25 +269,25 @@ pub struct NtruLweKeySwitchingBatchWorkspace<T: FheUint> {
     /// Flat target-key output tile, copied into the caller's separate LWE objects.
     /// Empty and singleton returns do not use this buffer.
     switched: Box<[T]>,
-    output_dimension: usize,
+    output_dimension: LweDimension,
 }
 
 impl<T: FheUint> NtruLweKeySwitchingBatchWorkspace<T> {
     /// Allocates the converted polynomial and fixed input/output LWE tiles.
     ///
     /// # Panics
-    /// Panics if either dimension is zero or a tile storage length overflows.
+    /// Panics if a tile storage length overflows.
     #[must_use]
-    pub fn new(poly_length: usize, output_dimension: usize) -> Self {
-        assert!(poly_length > 0, "NTRU polynomial length must be nonzero");
-        assert!(output_dimension > 0, "target LWE dimension must be nonzero");
-        let tile_len = |dimension: usize| {
+    pub fn new(poly_length: PolyLength, output_dimension: LweDimension) -> Self {
+        let input_dimension = LweDimension::from(poly_length);
+        let poly_length = poly_length.get();
+        let tile_len = |dimension: LweDimension| {
             dimension
-                .checked_add(1)
-                .and_then(|len| len.checked_mul(RETURN_BATCH_SIZE))
+                .ciphertext_len()
+                .checked_mul(RETURN_BATCH_SIZE)
                 .expect("NTRU to LWE batch workspace length overflow")
         };
-        let extracted_len = tile_len(poly_length);
+        let extracted_len = tile_len(input_dimension);
         let switched_len = tile_len(output_dimension);
         Self {
             converted: vec![T::ZERO; poly_length].into_boxed_slice(),
@@ -303,7 +305,7 @@ impl<T: FheUint> NtruLweKeySwitchingBatchWorkspace<T> {
 
     /// Returns the target LWE dimension supported by this workspace.
     #[must_use]
-    pub fn output_dimension(&self) -> usize {
+    pub fn output_dimension(&self) -> LweDimension {
         self.output_dimension
     }
 
@@ -355,7 +357,7 @@ impl<T: FheUint> NtruLweKeySwitchingBatchWorkspace<T> {
     /// Public boundaries already checked count <= capacity and key dimensions.
     fn lwe_tiles_mut(&mut self, count: usize) -> (&[T], &mut [T]) {
         let extracted_len = count * (self.poly_length() + 1);
-        let switched_len = count * (self.output_dimension + 1);
+        let switched_len = count * self.output_dimension.ciphertext_len();
         (
             &self.extracted[..extracted_len],
             &mut self.switched[..switched_len],

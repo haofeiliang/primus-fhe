@@ -3,6 +3,9 @@
 //! cargo bench -p primus_ntru --bench primitives -- 'ntt/n4096/logb3'
 //! Functional u64 workloads: sparse ternary keys, sigma 3.2, maximum basis length.
 //! Setup is excluded; these parameters do not establish cryptographic security.
+
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_lattice::PolyLength;
 use std::{hint::black_box, time::Duration};
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
@@ -41,11 +44,15 @@ fn ntt(c: &mut Criterion, n: usize) {
     transformed.write_coeff_form(&mut input, &table);
     let mut output = NtruCiphertext::<Vec<u64>>::zero(n);
     let mut ntt_output = NttNtruCiphertext::<Vec<u64>>::zero(n);
-    let mut generation = NttNtruGadgetEncryptWorkspace::new(n);
-    let mut switching = NttNtruExternalProductWorkspace::new(n);
-    let mut auto_workspace = NttNtruAutomorphismWorkspace::new(n);
+    let mut generation = NttNtruGadgetEncryptWorkspace::new(PolyLength::new(n));
+    let mut switching = NttNtruExternalProductWorkspace::new(PolyLength::new(n));
+    let mut auto_workspace = NttNtruAutomorphismWorkspace::new(PolyLength::new(n));
     for log_basis in [3, 10] {
-        let parameters = NlevParameters::with_ntru_params(&parameters, log_basis, None);
+        let parameters = NlevParameters::with_ntru_params(
+            &parameters,
+            DecompositionBaseLog::new(log_basis),
+            None,
+        );
         let ksk = NttNtruKeySwitchingKey::generate(
             &coeff_key,
             &key,
@@ -71,9 +78,13 @@ fn ntt(c: &mut Criterion, n: usize) {
             &mut rng,
             &mut generation,
         );
-        let mut trace_workspace = NttNtruTraceWorkspace::new(n);
+        let mut trace_workspace = NttNtruTraceWorkspace::new(PolyLength::new(n));
         let mut expanded = vec![0u64; 8 * n];
-        let output_parameters = NlevParameters::with_ntru_params(parameters.ntru(), 8, Some(3));
+        let output_parameters = NlevParameters::with_ntru_params(
+            parameters.ntru(),
+            DecompositionBaseLog::new(8),
+            Some(DecompositionLevelCount::new(3)),
+        );
         let ss = NttNtruSchemeSwitchKey::generate(
             &coeff_key,
             &key,
@@ -99,7 +110,7 @@ fn ntt(c: &mut Criterion, n: usize) {
         let mut ss_output = NttNgswCiphertext::<Vec<u64>>::zero(output_parameters.nlev_len());
         let mut group = c.benchmark_group(format!(
             "ntru/ntt/n{n}/logb{log_basis}/l{}",
-            parameters.decompose_length()
+            parameters.decompose_length().get()
         ));
         group.throughput(Throughput::Elements(n as u64));
         group.bench_function("key_switch", |b| {
@@ -227,17 +238,21 @@ fn fourier<Table: FftTable>(c: &mut Criterion, n: usize, backend: &str) {
         &parameters,
         &mut fft,
         &mut rng,
-        &mut FourierNtruEncryptWorkspace::new(n),
+        &mut FourierNtruEncryptWorkspace::new(PolyLength::new(n)),
     );
     let mut input = NtruCiphertext::<Vec<u64>>::zero(n);
     transformed.write_torus_form(&mut input, &mut fft);
     let mut output = NtruCiphertext::<Vec<u64>>::zero(n);
     let mut fourier_output = FourierNtruCiphertext::<Vec<Complex64>>::zero(n / 2);
-    let mut generation = FourierNtruGadgetEncryptWorkspace::new(n);
-    let mut switching = FourierNtruExternalProductWorkspace::new(n);
-    let mut auto_workspace = FourierNtruAutomorphismWorkspace::new(n);
+    let mut generation = FourierNtruGadgetEncryptWorkspace::new(PolyLength::new(n));
+    let mut switching = FourierNtruExternalProductWorkspace::new(PolyLength::new(n));
+    let mut auto_workspace = FourierNtruAutomorphismWorkspace::new(PolyLength::new(n));
     for log_basis in [3, 10] {
-        let parameters = NlevParameters::with_ntru_params(&parameters, log_basis, None);
+        let parameters = NlevParameters::with_ntru_params(
+            &parameters,
+            DecompositionBaseLog::new(log_basis),
+            None,
+        );
         let ksk = FourierNtruKeySwitchingKey::generate(
             &coeff_key,
             &key,
@@ -263,9 +278,13 @@ fn fourier<Table: FftTable>(c: &mut Criterion, n: usize, backend: &str) {
             &mut rng,
             &mut generation,
         );
-        let mut trace_workspace = FourierNtruTraceWorkspace::new(n);
+        let mut trace_workspace = FourierNtruTraceWorkspace::new(PolyLength::new(n));
         let mut expanded = vec![0u64; 8 * n];
-        let output_parameters = NlevParameters::with_ntru_params(parameters.ntru(), 8, Some(3));
+        let output_parameters = NlevParameters::with_ntru_params(
+            parameters.ntru(),
+            DecompositionBaseLog::new(8),
+            Some(DecompositionLevelCount::new(3)),
+        );
         let ss = FourierNtruSchemeSwitchKey::generate(
             &coeff_key,
             &key,
@@ -293,7 +312,7 @@ fn fourier<Table: FftTable>(c: &mut Criterion, n: usize, backend: &str) {
             FourierNgswCiphertext::<Vec<Complex64>>::zero(output_parameters.fourier_nlev_len());
         let mut group = c.benchmark_group(format!(
             "ntru/fourier/{backend}/n{n}/logb{log_basis}/l{}",
-            parameters.decompose_length()
+            parameters.decompose_length().get()
         ));
         group.throughput(Throughput::Elements(n as u64));
         group.bench_function("key_switch", |b| {

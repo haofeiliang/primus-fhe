@@ -74,7 +74,7 @@ where
         if lookup_table.output_nlev_len() / 2 > isize::MAX as usize / size_of::<Complex64>() {
             return Err(OneHotBootstrapError::StorageSizeOverflow);
         }
-        let n = pbs.context.parameters().poly_length();
+        let n = pbs.context.parameters().poly_length().get();
         Ok(Self {
             pbs,
             circuit_key,
@@ -298,7 +298,7 @@ where
         let parameters = self.circuit_key.parameters();
         assert_eq!(
             input.dimension(),
-            tfhe.external_lwe_dimension(),
+            tfhe.external_lwe_dimension().get(),
             "one-hot input dimension mismatch"
         );
 
@@ -353,7 +353,7 @@ where
                 .trace_key()
                 .project_prefix_coefficients_with_scratch_to(
                     &self.pbs.blind_rotation.scratch,
-                    self.lookup_table.level_count(),
+                    self.lookup_table.level_count().get(),
                     projected,
                     &mut self.pbs.fft,
                     &mut self.trace_scratch,

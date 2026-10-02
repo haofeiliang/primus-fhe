@@ -2,8 +2,11 @@
 //! bucket layouts and quantization margins are part of the fixture.
 
 use primus_decompose::primitive::ApproxSignedBasis;
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_encoding::{PlaintextEmbedding, RoundedCodec};
 use primus_glwe::{GlweParameters, SecretKeyDistr};
+use primus_lattice::PolyLength;
+use primus_lattice::{GlweDimension, LweDimension};
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
@@ -30,22 +33,26 @@ fn context(
     let modulus = BarrettModulus::new(Q);
     let parameters = TfheParameters::try_new(
         LweParameters::new(
-            16,
+            LweDimension::new(16),
             plaintext_modulus,
             modulus,
             SecretKeyDistr::fixed_hamming_weight_binary(16, weight),
             0.7,
         ),
         GlweParameters::new(
-            1,
+            GlweDimension::new(1),
             N,
             plaintext_modulus,
             modulus,
             SecretKeyDistr::UniformBinary,
             0.7,
         ),
-        ApproxSignedBasis::new(Some(Q), log_basis, Some(3)),
-        ApproxSignedBasis::new(Some(Q), 9, None),
+        ApproxSignedBasis::new(
+            Some(Q),
+            DecompositionBaseLog::new(log_basis),
+            Some(DecompositionLevelCount::new(3)),
+        ),
+        ApproxSignedBasis::new(Some(Q), DecompositionBaseLog::new(9), None),
         order,
     )
     .unwrap();
@@ -71,7 +78,7 @@ fn sparse_pbs_preserves_external_secret_and_interleaved_outputs_in_both_orders()
             .unwrap();
         let mut sparse = context.evaluator(&sparse_key).unwrap();
         let mut classic = context.evaluator(&classic_key).unwrap();
-        let dimension = context.parameters().external_lwe_dimension();
+        let dimension = context.parameters().external_lwe_dimension().get();
         assert_eq!(
             dimension,
             if order == PbsOrder::BootstrapKeyswitch {
@@ -189,7 +196,7 @@ fn sparse_boolean_gates_chain_in_both_orders_without_allocating() {
         // Controlled input errors also pass through affine gate preprocessing.
         add_phase_error(&mut inputs[0], i64::from(Q / 128));
         add_phase_error(&mut inputs[1], -i64::from(Q / 128));
-        let dimension = context.parameters().external_lwe_dimension();
+        let dimension = context.parameters().external_lwe_dimension().get();
         let mut output = LweCiphertext::zero(dimension);
         let mut current = LweCiphertext::zero(dimension);
         let codec = context.parameters().input_plaintext_codec();
@@ -238,17 +245,21 @@ fn sparse_bivariate_and_odd_full_domain_respect_input_margins_in_both_orders() {
             assert!(centered_error(phase, center).abs() < i64::from(Q / 16 - 1));
             assert_eq!(output_codec.decode_value(phase), expected);
         };
-        let bivariate =
-            BivariateLookupTable::try_new(3, 2, N, input_codec, &output_codec, |x, y| {
-                (x * x + y) as u32
-            })
-            .unwrap();
+        let bivariate = BivariateLookupTable::try_new(
+            3,
+            2,
+            PolyLength::new(N),
+            input_codec,
+            &output_codec,
+            |x, y| (x * x + y) as u32,
+        )
+        .unwrap();
         let full_value = |m: usize| ((m * m + 3) % 8) as u32;
         let full = context
             .parameters()
             .compile_odd_full_domain_lookup_table_with_codec_fn(&output_codec, full_value)
             .unwrap();
-        let dimension = context.parameters().external_lwe_dimension();
+        let dimension = context.parameters().external_lwe_dimension().get();
         let mut packed = LweCiphertext::zero(dimension);
         let mut output = LweCiphertext::zero(dimension);
 

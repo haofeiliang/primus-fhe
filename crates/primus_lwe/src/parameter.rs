@@ -1,16 +1,14 @@
 use primus_distr::{DiscreteGaussian, SecretKeySampler};
 use primus_integer::FheUint;
+use primus_lattice::LweDimension;
 use primus_reduce::RingContext;
 use rand::distr::Uniform;
 
 use crate::{RoundedCodec, SecretKeyDistr};
 
-/// Invalid LWE layout, encoding or sampling parameters.
+/// Invalid LWE encoding or sampling parameters.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum LweParameterError {
-    /// The dimension is zero or its mask/body length overflows.
-    #[error("LWE dimension must be nonzero and dimension + 1 must fit usize")]
-    InvalidDimension,
     /// Invalid message/ciphertext moduli.
     #[error(transparent)]
     Encoding(#[from] primus_encoding::CodecError),
@@ -31,7 +29,7 @@ where
     M: RingContext<T>,
 {
     /// Nonzero **LWE** vector dimension, refers to **n** in the paper.
-    dimension: usize,
+    dimension: LweDimension,
     /// **LWE** cipher modulus, refers to **q** in the paper.
     cipher_modulus: M,
     /// **LWE** cipher modulus minus one, refers to **q-1** in the paper.
@@ -57,7 +55,7 @@ where
     #[must_use]
     #[inline]
     pub fn new(
-        dimension: usize,
+        dimension: LweDimension,
         plain_modulus_value: T,
         cipher_modulus: M,
         secret_key_distr: SecretKeyDistr,
@@ -73,26 +71,24 @@ where
         .expect("invalid LWE parameters")
     }
 
-    /// Checks the dimension, encoding, secret support/weight and noise sampler.
+    /// Checks encoding, secret support/weight and the noise sampler.
+    /// The dimension has already been checked by [`LweDimension`].
     /// Noise standard deviation is measured in ciphertext coefficient units.
     /// Successful construction does not establish security or a decryption margin.
     pub fn try_new(
-        dimension: usize,
+        dimension: LweDimension,
         plain_modulus_value: T,
         cipher_modulus: M,
         secret_key_distr: SecretKeyDistr,
         noise_standard_deviation: f64,
     ) -> Result<Self, LweParameterError> {
-        if dimension == 0 || dimension.checked_add(1).is_none() {
-            return Err(LweParameterError::InvalidDimension);
-        }
         let plaintext_codec = RoundedCodec::try_new(plain_modulus_value, cipher_modulus)?;
         let cipher_modulus_minus_one = cipher_modulus.minus_one();
 
         let noise_distribution =
             DiscreteGaussian::new(noise_standard_deviation, cipher_modulus_minus_one)?;
         let secret_key_sampler = SecretKeySampler::try_new(secret_key_distr)?;
-        secret_key_sampler.validate_length(dimension)?;
+        secret_key_sampler.validate_length(dimension.get())?;
         secret_key_sampler.validate_modulus(cipher_modulus_minus_one)?;
 
         let cipher_modulus_uniform_distr = cipher_modulus.uniform_distribution();
@@ -108,8 +104,9 @@ where
     }
 
     /// Returns the dimension of this [`LweParameters<T, M>`].
+    #[must_use]
     #[inline]
-    pub fn dimension(&self) -> usize {
+    pub fn dimension(&self) -> LweDimension {
         self.dimension
     }
 

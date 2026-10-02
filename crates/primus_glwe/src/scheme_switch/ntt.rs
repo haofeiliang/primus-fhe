@@ -35,7 +35,8 @@ impl<T: FheUint> NttGlweSchemeSwitchKey<T> {
     /// # Panics
     ///
     /// Panics if key/output layouts, NTT length/modulus or gadget workspace
-    /// are incompatible with `key_parameters`. Checks precede sampling.
+    /// are incompatible with `key_parameters`, or key storage length overflows.
+    /// Checks precede sampling.
     ///
     /// # Correctness
     ///
@@ -65,8 +66,15 @@ impl<T: FheUint> NttGlweSchemeSwitchKey<T> {
         assert_eq!(output_size.glwe_size(), key_size.glwe_size());
 
         let dimension = key_size.glwe_size().dimension();
-        let mut data = vec![T::ZERO; dimension * key_size.ggsw_len()];
-        let mut negated_secret = Zeroizing::new(vec![T::ZERO; key_size.glwe_size().poly_length()]);
+        let mut data = vec![
+            T::ZERO;
+            dimension
+                .get()
+                .checked_mul(key_size.ggsw_len())
+                .expect("scheme-switch key length overflow")
+        ];
+        let mut negated_secret =
+            Zeroizing::new(vec![T::ZERO; key_size.glwe_size().poly_length().get()]);
         let modulus = key_parameters.cipher_modulus();
 
         for (secret_polynomial, key_ciphertext) in secret_key
@@ -155,7 +163,7 @@ impl<T: FheUint> NttGlweSchemeSwitchKey<T> {
         );
         assert_eq!(
             ntt.poly_length(),
-            self.key_size.glwe_size().poly_length(),
+            self.key_size.glwe_size().poly_length().get(),
             "scheme-switch NTT polynomial length mismatch"
         );
         assert_eq!(
@@ -175,7 +183,7 @@ impl<T: FheUint> NttGlweSchemeSwitchKey<T> {
         );
 
         let glwe_size = self.output_size.glwe_size();
-        let poly_length = glwe_size.poly_length();
+        let poly_length = glwe_size.poly_length().get();
         let glwe_len = glwe_size.glwe_len();
         let output_glev_len = self.output_size.glev_len();
         let key_basis = &self.key_basis;

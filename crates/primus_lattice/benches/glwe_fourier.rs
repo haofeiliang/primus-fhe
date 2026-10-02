@@ -1,10 +1,12 @@
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_lattice::GlweDimension;
 use std::hint::black_box;
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{FftEngine, FftTable, RustFftTable, TfheFftTable, TorusFftValue};
 use primus_lattice::{
-    GadgetSize, GlweSize,
+    GadgetSize, GlweSize, PolyLength,
     ggsw::{FourierGgswOwned, Ggsw},
     glwe::Glwe,
     workspace::{FourierGlweExternalProductWorkspace, FourierGlweTernaryCmuxWorkspace},
@@ -20,8 +22,18 @@ fn fourier<T: TorusFftValue>(
 ) {
     let mut fft = FftEngine::new(&table);
     let exponent = fft.poly_length() / 3;
-    let basis = ApproxSignedBasis::<T>::new(None, log_b, Some(levels));
-    let size = GadgetSize::new(GlweSize::new(dimension, fft.poly_length()), levels);
+    let basis = ApproxSignedBasis::<T>::new(
+        None,
+        DecompositionBaseLog::new(log_b),
+        Some(DecompositionLevelCount::new(levels)),
+    );
+    let size = GadgetSize::new(
+        GlweSize::new(
+            GlweDimension::new(dimension),
+            PolyLength::new(fft.poly_length()),
+        ),
+        DecompositionLevelCount::new(levels),
+    );
     let glwe_len = size.glwe_size().glwe_len();
     // Deterministic coefficient data gives both FFT backends the same workload
     // in their own evaluation order and normalized torus representation.

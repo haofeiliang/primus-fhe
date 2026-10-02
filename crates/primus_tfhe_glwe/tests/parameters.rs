@@ -1,5 +1,8 @@
 use primus_decompose::primitive::ApproxSignedBasis;
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_glwe::{GlweParameters, SecretKeyDistr};
+use primus_lattice::PolyLength;
+use primus_lattice::{GlweDimension, LweDimension};
 use primus_lwe::LweParameters;
 use primus_modulus::NativeModulus;
 use primus_tfhe_glwe::{DecompositionConfig, PbsOrder, TfheConfig, TfheParameters};
@@ -18,21 +21,25 @@ type Components = (
 
 fn components() -> Components {
     let small_lwe = LweParameters::new(
-        LWE_DIMENSION,
+        LweDimension::new(LWE_DIMENSION),
         PLAIN_MODULUS,
         NativeModulus::new(),
         SecretKeyDistr::UniformBinary,
         3.2,
     );
     let glwe = GlweParameters::new(
-        GLWE_DIMENSION,
+        GlweDimension::new(GLWE_DIMENSION),
         POLY_LENGTH,
         PLAIN_MODULUS,
         NativeModulus::new(),
         SecretKeyDistr::SparseTernary,
         3.2,
     );
-    let bootstrapping = ApproxSignedBasis::new(glwe.cipher_modulus_value(), 8, Some(3));
+    let bootstrapping = ApproxSignedBasis::new(
+        glwe.cipher_modulus_value(),
+        DecompositionBaseLog::new(8),
+        Some(DecompositionLevelCount::new(3)),
+    );
     (small_lwe, glwe, bootstrapping)
 }
 
@@ -41,20 +48,24 @@ fn derives_bootstrapping_and_key_switching_for_both_orders() {
     for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
         let (small_lwe, glwe, bootstrapping) = components();
         let expected_blind_rotation_basis = bootstrapping.clone();
-        let basis = ApproxSignedBasis::new(None, 4, Some(4));
+        let basis = ApproxSignedBasis::new(
+            None,
+            DecompositionBaseLog::new(4),
+            Some(DecompositionLevelCount::new(4)),
+        );
         let parameters = TfheParameters::try_from_config(TfheConfig {
             small_lwe,
-            accumulator_dimension: GLWE_DIMENSION,
+            accumulator_dimension: GlweDimension::new(GLWE_DIMENSION),
             poly_length: POLY_LENGTH,
             accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
             accumulator_noise_standard_deviation: 3.2,
             blind_rotation: DecompositionConfig {
-                log_basis: 8,
-                level_count: Some(3),
+                log_basis: DecompositionBaseLog::new(8),
+                level_count: Some(DecompositionLevelCount::new(3)),
             },
             key_switching: DecompositionConfig {
-                log_basis: 4,
-                level_count: Some(4),
+                log_basis: DecompositionBaseLog::new(4),
+                level_count: Some(DecompositionLevelCount::new(4)),
             },
             pbs_order: order,
         })
@@ -86,10 +97,16 @@ fn derives_bootstrapping_and_key_switching_for_both_orders() {
         );
         assert_eq!(
             parameters.glwe_key_switching().input_dimension(),
-            GLWE_DIMENSION
+            GlweDimension::new(GLWE_DIMENSION)
         );
-        assert_eq!(parameters.glwe_key_switching().output_dimension(), 1);
-        assert_eq!(parameters.glwe_key_switching().poly_length(), POLY_LENGTH);
+        assert_eq!(
+            parameters.glwe_key_switching().output_dimension(),
+            GlweDimension::new(1)
+        );
+        assert_eq!(
+            parameters.glwe_key_switching().poly_length(),
+            PolyLength::new(POLY_LENGTH)
+        );
         assert_eq!(
             parameters.glwe_key_switching().output().secret_key_distr(),
             SecretKeyDistr::UniformBinary
@@ -97,10 +114,10 @@ fn derives_bootstrapping_and_key_switching_for_both_orders() {
         assert_eq!(parameters.glwe_key_switching().output().basis(), &basis);
         assert_eq!(
             parameters.external_lwe_dimension(),
-            match order {
+            LweDimension::new(match order {
                 PbsOrder::BootstrapKeyswitch => LWE_DIMENSION,
                 PbsOrder::KeyswitchBootstrap => GLWE_DIMENSION * POLY_LENGTH,
-            }
+            })
         );
     }
 }
@@ -126,8 +143,16 @@ fn rejects_bases_from_another_modulus() {
         let result = TfheParameters::try_new(
             small_lwe,
             glwe,
-            ApproxSignedBasis::new(bsk_modulus, 4, Some(2)),
-            ApproxSignedBasis::new(ksk_modulus, 4, Some(2)),
+            ApproxSignedBasis::new(
+                bsk_modulus,
+                DecompositionBaseLog::new(4),
+                Some(DecompositionLevelCount::new(2)),
+            ),
+            ApproxSignedBasis::new(
+                ksk_modulus,
+                DecompositionBaseLog::new(4),
+                Some(DecompositionLevelCount::new(2)),
+            ),
             PbsOrder::BootstrapKeyswitch,
         );
         let error = result.err().unwrap();
@@ -152,16 +177,22 @@ fn rotation_domain_must_be_representable_by_input_coefficients() {
         (15, Some(TfheParameterError::RotationDomainTooLarge)),
         (16, Some(TfheParameterError::RotationDomainTooLarge)),
     ] {
-        let small_lwe = LweParameters::new(1, 2, modulus, SecretKeyDistr::UniformBinary, 0.7);
+        let small_lwe = LweParameters::new(
+            LweDimension::new(1),
+            2,
+            modulus,
+            SecretKeyDistr::UniformBinary,
+            0.7,
+        );
         let glwe = GlweParameters::new(
-            1,
+            GlweDimension::new(1),
             1 << log_n,
             2,
             modulus,
             SecretKeyDistr::UniformBinary,
             0.7,
         );
-        let basis = ApproxSignedBasis::new(None, 4, None);
+        let basis = ApproxSignedBasis::new(None, DecompositionBaseLog::new(4), None);
         assert_eq!(
             TfheParameters::try_new(
                 small_lwe,
@@ -182,8 +213,16 @@ fn check_ternary_padding<M: primus_reduce::RingContext<u32>>(modulus: M) {
     use primus_tfhe_glwe::{ClientKey, TfheParameterError};
 
     // Five LWE coefficients occupy two length-four GLWE components.
-    let glwe = GlweParameters::new(2, 4, 2, modulus, SecretKeyDistr::UniformBinary, 0.7);
-    let basis = ApproxSignedBasis::new(modulus.explicit_value(), 2, None);
+    let glwe = GlweParameters::new(
+        GlweDimension::new(2),
+        4,
+        2,
+        modulus,
+        SecretKeyDistr::UniformBinary,
+        0.7,
+    );
+    let basis =
+        ApproxSignedBasis::new(modulus.explicit_value(), DecompositionBaseLog::new(2), None);
     for distribution in [
         SecretKeyDistr::SparseTernary,
         SecretKeyDistr::UniformTernary,
@@ -193,7 +232,7 @@ fn check_ternary_padding<M: primus_reduce::RingContext<u32>>(modulus: M) {
         SecretKeyDistr::gaussian(0.7),
     ] {
         let result = TfheParameters::try_new(
-            LweParameters::new(5, 2, modulus, distribution, 0.7),
+            LweParameters::new(LweDimension::new(5), 2, modulus, distribution, 0.7),
             glwe.clone(),
             basis.clone(),
             basis.clone(),
@@ -235,10 +274,24 @@ fn check_circuit_parameters<M: primus_reduce::RingContext<u64>>(modulus: M, fore
         CircuitBootstrapConfig, CircuitBootstrapParameterError as Error, CircuitBootstrapParameters,
     };
 
-    let glwe = GlweParameters::new(1, 32, 32, modulus, SecretKeyDistr::UniformBinary, 0.7);
-    let basis = ApproxSignedBasis::new(modulus.explicit_value(), 8, None);
+    let glwe = GlweParameters::new(
+        GlweDimension::new(1),
+        32,
+        32,
+        modulus,
+        SecretKeyDistr::UniformBinary,
+        0.7,
+    );
+    let basis =
+        ApproxSignedBasis::new(modulus.explicit_value(), DecompositionBaseLog::new(8), None);
     let tfhe = TfheParameters::try_new(
-        LweParameters::new(4, 32, modulus, SecretKeyDistr::UniformBinary, 0.7),
+        LweParameters::new(
+            LweDimension::new(4),
+            32,
+            modulus,
+            SecretKeyDistr::UniformBinary,
+            0.7,
+        ),
         glwe.clone(),
         basis.clone(),
         basis,
@@ -247,34 +300,37 @@ fn check_circuit_parameters<M: primus_reduce::RingContext<u64>>(modulus: M, fore
     .unwrap();
     let config = CircuitBootstrapConfig {
         output: DecompositionConfig {
-            log_basis: 8,
-            level_count: Some(2),
+            log_basis: DecompositionBaseLog::new(8),
+            level_count: Some(DecompositionLevelCount::new(2)),
         },
         trace: DecompositionConfig {
-            log_basis: 9,
-            level_count: Some(3),
+            log_basis: DecompositionBaseLog::new(9),
+            level_count: Some(DecompositionLevelCount::new(3)),
         },
         trace_noise_standard_deviation: 1.25,
         scheme_switch: DecompositionConfig {
-            log_basis: 10,
-            level_count: Some(4),
+            log_basis: DecompositionBaseLog::new(10),
+            level_count: Some(DecompositionLevelCount::new(4)),
         },
         scheme_switch_noise_standard_deviation: 2.5,
     };
     let configured = CircuitBootstrapParameters::try_from_config(&tfhe, config).unwrap();
     assert_eq!(configured.output_size().glwe_size(), glwe.size());
-    assert_eq!(configured.trace().basis().log_basis(), 9);
-    assert_eq!(configured.trace().basis().decompose_length(), 3);
+    assert_eq!(configured.trace().basis().log_basis().get(), 9);
+    assert_eq!(configured.trace().basis().decompose_length().get(), 3);
     assert_eq!(configured.trace().noise_standard_deviation(), 1.25);
-    assert_eq!(configured.scheme_switch().basis().log_basis(), 10);
-    assert_eq!(configured.scheme_switch().basis().decompose_length(), 4);
+    assert_eq!(configured.scheme_switch().basis().log_basis().get(), 10);
+    assert_eq!(
+        configured.scheme_switch().basis().decompose_length().get(),
+        4
+    );
     assert_eq!(configured.scheme_switch().noise_standard_deviation(), 2.5);
     for role in ["output", "trace", "scheme-switch"] {
         let mut invalid = config;
         match role {
-            "output" => invalid.output.level_count = Some(0),
-            "trace" => invalid.trace.level_count = Some(0),
-            _ => invalid.scheme_switch.level_count = Some(0),
+            "output" => invalid.output.level_count = Some(DecompositionLevelCount::new(usize::MAX)),
+            "trace" => invalid.trace.level_count = Some(DecompositionLevelCount::new(usize::MAX)),
+            _ => invalid.scheme_switch.level_count = Some(DecompositionLevelCount::new(usize::MAX)),
         }
         let error = CircuitBootstrapParameters::try_from_config(&tfhe, invalid)
             .err()
@@ -287,7 +343,13 @@ fn check_circuit_parameters<M: primus_reduce::RingContext<u64>>(modulus: M, fore
         }
     }
     let trace = tfhe.blind_rotation_ggsw();
-    let output = |levels| ApproxSignedBasis::new(modulus.explicit_value(), 8, Some(levels));
+    let output = |levels| {
+        ApproxSignedBasis::new(
+            modulus.explicit_value(),
+            DecompositionBaseLog::new(8),
+            Some(DecompositionLevelCount::new(levels)),
+        )
+    };
     assert!(
         CircuitBootstrapParameters::try_new(&tfhe, output(2), trace.clone(), trace.clone()).is_ok()
     );
@@ -307,7 +369,11 @@ fn check_circuit_parameters<M: primus_reduce::RingContext<u64>>(modulus: M, fore
         assert_eq!(
             CircuitBootstrapParameters::try_new(
                 &tfhe,
-                ApproxSignedBasis::new(other, 8, Some(2)),
+                ApproxSignedBasis::new(
+                    other,
+                    DecompositionBaseLog::new(8),
+                    Some(DecompositionLevelCount::new(2))
+                ),
                 trace.clone(),
                 trace.clone()
             )
@@ -320,9 +386,16 @@ fn check_circuit_parameters<M: primus_reduce::RingContext<u64>>(modulus: M, fore
             continue;
         }
         let foreign = GgswParameters::with_glwe_params(
-            &GlweParameters::new(dimension, n, 32, q, SecretKeyDistr::UniformBinary, 0.7),
-            8,
-            Some(2),
+            &GlweParameters::new(
+                GlweDimension::new(dimension),
+                n,
+                32,
+                q,
+                SecretKeyDistr::UniformBinary,
+                0.7,
+            ),
+            DecompositionBaseLog::new(8),
+            Some(DecompositionLevelCount::new(2)),
         );
         for (role, trace, scheme_switch) in [
             ("trace", foreign.clone(), trace.clone()),
@@ -358,18 +431,18 @@ fn configs_return_accumulator_and_cbs_construction_errors() {
         TfheParameterError,
     };
     let basis = DecompositionConfig {
-        log_basis: 4,
-        level_count: Some(2),
+        log_basis: DecompositionBaseLog::new(4),
+        level_count: Some(DecompositionLevelCount::new(2)),
     };
     let config = TfheConfig {
         small_lwe: LweParameters::new(
-            4,
+            LweDimension::new(4),
             4u32,
             NativeModulus::new(),
             SecretKeyDistr::UniformBinary,
             0.7,
         ),
-        accumulator_dimension: 1,
+        accumulator_dimension: GlweDimension::new(1),
         poly_length: 8,
         accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
         accumulator_noise_standard_deviation: 0.7,

@@ -1,3 +1,19 @@
+/// An invalid base-2 logarithm of the gadget radix.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("log_basis must be at least 2, got {log_basis}")]
+pub struct DecompositionBaseLogError {
+    /// The rejected value.
+    pub log_basis: u32,
+}
+
+/// An invalid number of retained gadget decomposition levels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("level_count must be at least 1, got {level_count}")]
+pub struct DecompositionLevelCountError {
+    /// The rejected value.
+    pub level_count: usize,
+}
+
 /// Errors returned when constructing an approximate signed decomposition basis.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ApproxSignedBasisError {
@@ -15,9 +31,6 @@ pub enum ApproxSignedBasisError {
     /// The decomposition basis is larger than the modulus.
     #[error("decomposition basis must not exceed the modulus")]
     BasisExceedsModulus,
-    /// The requested retained decomposition length is zero.
-    #[error("reverse_length must be greater than zero")]
-    ZeroReverseLength,
     /// The requested retained decomposition length exceeds the full length.
     #[error(
         "reverse_length must not exceed the full decomposition length {full_length}, got {reverse_length}"

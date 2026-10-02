@@ -2,7 +2,8 @@ use primus_data::Data;
 use primus_integer::{BigUint, BigUintIter, BigUintIterMut, DivRem, FheUint};
 
 use crate::{
-    ApproxSignedBasisError, MIN_DECOMPOSITION_LOG_BASIS, decomposition_length_and_drop_bits,
+    ApproxSignedBasisError, DecompositionBaseLog, DecompositionLevelCount,
+    decomposition_length_and_drop_bits,
 };
 
 use super::common::{BigUintSignedDecomposerIter, BigUintValueCarryInitMode, ValueMask};
@@ -27,8 +28,8 @@ pub struct BigUintApproxSignedBasis<T: FheUint> {
     modulus: Vec<T>,
     basis: T,
     basis_minus_one: T,
-    decompose_length: usize,
-    log_basis: u32,
+    decompose_length: DecompositionLevelCount,
+    log_basis: DecompositionBaseLog,
     drop_bits: u32,
     value_carry_init_mode: BigUintValueCarryInitMode<T>,
     carry_mask: T,
@@ -51,7 +52,11 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
     ///
     /// Panics when [`try_new`](Self::try_new) returns an error.
     #[inline]
-    pub fn new(modulus: BigUint<&[T]>, log_basis: u32, reverse_length: Option<usize>) -> Self {
+    pub fn new(
+        modulus: BigUint<&[T]>,
+        log_basis: DecompositionBaseLog,
+        reverse_length: Option<DecompositionLevelCount>,
+    ) -> Self {
         Self::try_new(modulus, log_basis, reverse_length).unwrap_or_else(|error| {
             panic!("failed to construct BigUint approximate signed basis: {error}")
         })
@@ -61,9 +66,9 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
     ///
     /// `modulus` must be nonempty, with little-endian limbs and a nonzero
     /// most-significant limb. `log_basis` must satisfy
-    /// `2 <= log_basis < T::BITS`, and `2^log_basis` must not
+    /// `log_basis < T::BITS` (its lower bound is already checked), and `2^log_basis` must not
     /// exceed that modulus. `reverse_length`, when provided, must be in the
-    /// range `1..=full_decomposition_length`.
+    /// range `1..=full_decomposition_length`; positivity is already checked.
     /// It retains the highest levels; iteration still proceeds from the
     /// lowest retained level to the highest.
     ///
@@ -73,12 +78,12 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
     #[inline]
     pub fn try_new(
         modulus: BigUint<&[T]>,
-        log_basis: u32,
-        reverse_length: Option<usize>,
+        log_basis: DecompositionBaseLog,
+        reverse_length: Option<DecompositionLevelCount>,
     ) -> Result<Self, ApproxSignedBasisError> {
-        if log_basis < MIN_DECOMPOSITION_LOG_BASIS || log_basis >= T::BITS {
+        if log_basis.get() >= T::BITS {
             return Err(ApproxSignedBasisError::InvalidLogBasis {
-                log_basis,
+                log_basis: log_basis.get(),
                 limb_bits: T::BITS,
             });
         }
@@ -89,14 +94,21 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
             _ => return Err(ApproxSignedBasisError::InvalidModulusRepresentation),
         };
         let modulus_bits_count = T::BITS * (big_uint_value_len as u32) - unused_bits;
-        if modulus_bits_count <= log_basis {
+        if modulus_bits_count <= log_basis.get() {
             return Err(ApproxSignedBasisError::BasisExceedsModulus);
         }
 
+        let checked_log_basis = log_basis;
+        let log_basis = log_basis.get();
         let basis = T::ONE << log_basis;
         let basis_minus_one = basis - T::ONE;
-        let (decompose_length, drop_bits) =
-            decomposition_length_and_drop_bits(modulus_bits_count, log_basis, reverse_length)?;
+        let (decompose_length, drop_bits) = decomposition_length_and_drop_bits(
+            modulus_bits_count,
+            checked_log_basis,
+            reverse_length,
+        )?;
+        let checked_decompose_length = decompose_length;
+        let decompose_length = decompose_length.get();
 
         let init_carry_mask = if drop_bits > 0 {
             let bits = drop_bits - 1;
@@ -152,8 +164,8 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
             modulus: modulus.0.to_vec(),
             basis,
             basis_minus_one,
-            decompose_length,
-            log_basis,
+            decompose_length: checked_decompose_length,
+            log_basis: checked_log_basis,
             drop_bits,
             value_carry_init_mode,
             carry_mask,
@@ -188,14 +200,16 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
     }
 
     /// Returns the decompose length of this [`BigUintApproxSignedBasis<T>`].
+    #[must_use]
     #[inline]
-    pub fn decompose_length(&self) -> usize {
+    pub fn decompose_length(&self) -> DecompositionLevelCount {
         self.decompose_length
     }
 
     /// Returns the log basis of this [`BigUintApproxSignedBasis<T>`].
+    #[must_use]
     #[inline]
-    pub fn log_basis(&self) -> u32 {
+    pub fn log_basis(&self) -> DecompositionBaseLog {
         self.log_basis
     }
 

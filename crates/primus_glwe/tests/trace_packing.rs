@@ -1,3 +1,4 @@
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_glwe::{
     FourierGlweGadgetEncryptWorkspace, FourierGlwePackingWorkspace, FourierGlweSecretKey,
@@ -5,7 +6,8 @@ use primus_glwe::{
     GlweSize, NttGlweGadgetEncryptWorkspace, NttGlwePackingWorkspace, NttGlweSecretKey,
     NttGlweTraceKey, NttGlweTraceWorkspace, SecretKeyDistr,
 };
-use primus_lattice::{glwe::Glwe, lwe::Lwe};
+use primus_lattice::GlweDimension;
+use primus_lattice::{PolyLength, glwe::Glwe, lwe::Lwe};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntt::{NttTable, U64NttTable};
 use rand::{RngExt, SeedableRng, rngs::StdRng};
@@ -18,7 +20,7 @@ const Q: u64 = 1_125_899_906_826_241;
 // Prefix projection must preserve the general path's exact rounding, including
 // count=1 with a nonzero message tail. It is not prefix-only expansion.
 fn check_prefix_projection(reference: &[u64], mut project: impl FnMut(usize, &mut [u64])) {
-    let glwe_len = GlweSize::new(K, N).glwe_len();
+    let glwe_len = GlweSize::new(GlweDimension::new(K), PolyLength::new(N)).glwe_len();
     for count in [0, 1, 3, N] {
         let mut output = vec![7; count * glwe_len];
         project(count, &mut output);
@@ -49,7 +51,7 @@ fn check_partial_expansion(
     q: u128,
     mut expand: impl FnMut(&Glwe<Vec<u64>>, usize, &mut [u64]),
 ) {
-    let size = GlweSize::new(K, N);
+    let size = GlweSize::new(GlweDimension::new(K), PolyLength::new(N));
     let mut rng = StdRng::seed_from_u64(0x5041525449414c);
     for log_count in 0..=N.trailing_zeros() {
         let count = 1 << log_count;
@@ -124,9 +126,20 @@ fn lwe_batch(count: usize, secret: &[i64], q: u128, rng: &mut StdRng) -> Vec<u64
 fn ntt_trace_projection_and_packing() {
     let modulus = BarrettModulus::new(Q);
     let ntt = U64NttTable::new(N.trailing_zeros(), modulus).unwrap();
-    let size = GlweSize::new(K, N);
-    let params = GlweParameters::new(K, N, 64, modulus, SecretKeyDistr::UniformTernary, 0.7);
-    let glev = GlevParameters::with_glwe_params(&params, 10, Some(5));
+    let size = GlweSize::new(GlweDimension::new(K), PolyLength::new(N));
+    let params = GlweParameters::new(
+        GlweDimension::new(K),
+        N,
+        64,
+        modulus,
+        SecretKeyDistr::UniformTernary,
+        0.7,
+    );
+    let glev = GlevParameters::with_glwe_params(
+        &params,
+        DecompositionBaseLog::new(10),
+        Some(DecompositionLevelCount::new(5)),
+    );
     let s = secret();
     let coeff = GlweSecretKey::new(s.clone(), size, SecretKeyDistr::UniformTernary);
     let sk = NttGlweSecretKey::from_coeff_secret_key(&coeff, &ntt);
@@ -249,7 +262,8 @@ fn ntt_trace_projection_and_packing() {
         );
         assert!(output.as_ref().iter().all(|&v| v == 7));
     }
-    let mut wrong_workspace = NttGlweTraceWorkspace::new(GlweSize::new(5, N / 2));
+    let mut wrong_workspace =
+        NttGlweTraceWorkspace::new(GlweSize::new(GlweDimension::new(5), PolyLength::new(N / 2)));
     assert!(
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             key.apply_reverse_to(&input, &mut output, modulus, &ntt, &mut wrong_workspace);
@@ -295,9 +309,20 @@ fn fourier_trace_projection_and_packing_backend<Table: FftTable>() {
     let modulus = NativeModulus::<u64>::new();
     let table = Table::new(N.trailing_zeros()).unwrap();
     let mut fft = FftEngine::new(&table);
-    let size = GlweSize::new(K, N);
-    let params = GlweParameters::new(K, N, 64, modulus, SecretKeyDistr::UniformTernary, 0.7);
-    let glev = GlevParameters::with_glwe_params(&params, 8, Some(7));
+    let size = GlweSize::new(GlweDimension::new(K), PolyLength::new(N));
+    let params = GlweParameters::new(
+        GlweDimension::new(K),
+        N,
+        64,
+        modulus,
+        SecretKeyDistr::UniformTernary,
+        0.7,
+    );
+    let glev = GlevParameters::with_glwe_params(
+        &params,
+        DecompositionBaseLog::new(8),
+        Some(DecompositionLevelCount::new(7)),
+    );
     let s = secret();
     let coeff = GlweSecretKey::<u64>::new(s.clone(), size, SecretKeyDistr::UniformTernary);
     let sk = FourierGlweSecretKey::from_coeff_secret_key(&coeff, &mut fft);
@@ -392,7 +417,10 @@ fn fourier_trace_projection_and_packing_backend<Table: FftTable>() {
         );
         assert!(output.as_ref().iter().all(|&v| v == 7));
     }
-    let mut wrong_workspace = FourierGlweTraceWorkspace::new(GlweSize::new(5, N / 2));
+    let mut wrong_workspace = FourierGlweTraceWorkspace::new(GlweSize::new(
+        GlweDimension::new(5),
+        PolyLength::new(N / 2),
+    ));
     assert!(
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             key.apply_reverse_to(&input, &mut output, &mut fft, &mut wrong_workspace);

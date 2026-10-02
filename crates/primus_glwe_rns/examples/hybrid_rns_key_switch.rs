@@ -5,6 +5,7 @@ use primus_glwe_rns::{
     GlweSecretKey, HybridRnsGlweKeySwitchingKey, HybridRnsGlweKeySwitchingWorkspace,
     HybridRnsKeySwitchDomain, SecretKeyDistr,
 };
+use primus_lattice::GlweDimension;
 use primus_lattice::glwe::DcrtGlwe;
 use primus_modulus::BarrettModulus;
 use primus_ntt::UintDcrtTable;
@@ -26,7 +27,7 @@ fn main() {
     let qp_table = UintDcrtTable::new(poly_length.trailing_zeros(), &qp_moduli).unwrap();
 
     let glwe_parameters = CrtGlweParameters::new(
-        dimension,
+        GlweDimension::new(dimension),
         poly_length,
         plaintext_modulus,
         gamma,

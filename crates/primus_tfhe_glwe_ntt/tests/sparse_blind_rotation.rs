@@ -1,8 +1,10 @@
 use primus_decompose::primitive::ApproxSignedBasis;
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_encoding::{PlaintextEmbedding, RoundedCodec};
 use primus_glwe::{
     GlweParameters, NttGlweGadgetEncryptWorkspace, NttGlweSecretKey, SecretKeyDistr,
 };
+use primus_lattice::{GlweDimension, LweDimension};
 use primus_lattice::{glwe::Glwe, lwe::Lwe};
 use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
@@ -57,19 +59,30 @@ fn sparse_rotation_matches_direct_phase_and_classic_with_reused_scratch() {
     for (n, k, copies, buckets) in [(16usize, 1, 3, 8), (16, 2, 1, 17), (256, 2, 3, 8)] {
         let modulus = BarrettModulus::new(Q);
         let lwe = LweParameters::new(
-            16,
+            LweDimension::new(16),
             T,
             modulus,
             SecretKeyDistr::fixed_hamming_weight_binary(16, 4),
             0.7,
         );
-        let glwe = GlweParameters::new(k, n, T, modulus, SecretKeyDistr::UniformBinary, 0.7);
+        let glwe = GlweParameters::new(
+            GlweDimension::new(k),
+            n,
+            T,
+            modulus,
+            SecretKeyDistr::UniformBinary,
+            0.7,
+        );
         // The small rings use exact decomposition; the encrypted-input case
         // also exercises the truncated basis used by the cost profile.
         let basis = if n == 16 {
-            ApproxSignedBasis::new(Some(Q), 9, None)
+            ApproxSignedBasis::new(Some(Q), DecompositionBaseLog::new(9), None)
         } else {
-            ApproxSignedBasis::new(Some(Q), 7, Some(3))
+            ApproxSignedBasis::new(
+                Some(Q),
+                DecompositionBaseLog::new(7),
+                Some(DecompositionLevelCount::new(3)),
+            )
         };
         let parameters = TfheParameters::try_new(
             lwe,

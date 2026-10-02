@@ -1,8 +1,10 @@
 use primus_decompose::ApproxSignedBasisError;
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_glwe_rns::{
     CrtGlevParameters, CrtGlevParametersError, CrtGlweParameters, DcrtGadgetDomain,
     GadgetDomainError, SecretKeyDistr,
 };
+use primus_lattice::{GlweDimension, GlweSizeError};
 use primus_modulus::BarrettModulus;
 use primus_ntt::UintDcrtTable;
 
@@ -19,7 +21,7 @@ fn noise_support_must_fit_every_rns_modulus() {
         );
         let result = std::panic::catch_unwind(|| {
             CrtGlweParameters::new(
-                1,
+                GlweDimension::new(1),
                 8,
                 BarrettModulus::new(3),
                 BarrettModulus::new(101),
@@ -38,7 +40,7 @@ fn secret_support_must_fit_every_rns_modulus() {
     for (sigma, valid) in [(1.0, true), (1.5, false)] {
         let result = std::panic::catch_unwind(|| {
             CrtGlweParameters::new(
-                1,
+                GlweDimension::new(1),
                 8,
                 BarrettModulus::new(3),
                 BarrettModulus::new(101),
@@ -52,11 +54,11 @@ fn secret_support_must_fit_every_rns_modulus() {
 }
 
 #[test]
-fn gadget_basis_must_fit_every_rns_modulus() {
+fn gadget_parameters_check_basis_and_composed_lengths() {
     // The restrictive modulus is deliberately not the first one.
     let moduli = [97u64, 17].map(BarrettModulus::new);
     let glwe = CrtGlweParameters::new(
-        1,
+        GlweDimension::new(1),
         8,
         BarrettModulus::new(3),
         BarrettModulus::new(101),
@@ -64,18 +66,38 @@ fn gadget_basis_must_fit_every_rns_modulus() {
         SecretKeyDistr::UniformTernary,
         1.0,
     );
-    assert!(CrtGlevParameters::try_with_glwe_params(&glwe, 4, None).is_ok());
+    assert!(
+        CrtGlevParameters::try_with_glwe_params(&glwe, DecompositionBaseLog::new(4), None).is_ok()
+    );
     for log_basis in [5, 6] {
         assert!(matches!(
-            CrtGlevParameters::try_with_glwe_params(&glwe, log_basis, None),
+            CrtGlevParameters::try_with_glwe_params(&glwe, DecompositionBaseLog::new(log_basis), None),
             Err(CrtGlevParametersError::BasisNotSmallerThanModulus { basis, modulus: 17, index: 1 })
                 if basis == 1 << log_basis
         ));
     }
     assert!(matches!(
-        CrtGlevParameters::try_with_glwe_params(&glwe, 1, None),
+        CrtGlevParameters::try_with_glwe_params(&glwe, DecompositionBaseLog::new(64), None),
         Err(CrtGlevParametersError::InvalidDecomposition(
             ApproxSignedBasisError::InvalidLogBasis { .. }
+        ))
+    ));
+
+    // Parameters store sizes without allocating ciphertexts. This ordinary
+    // RNS layout fits, while its two-level gadget storage does not.
+    let large_layout = CrtGlweParameters::new(
+        GlweDimension::new(usize::MAX / 16 - 1),
+        8,
+        BarrettModulus::new(3),
+        BarrettModulus::new(101),
+        &moduli,
+        SecretKeyDistr::UniformTernary,
+        1.0,
+    );
+    assert!(matches!(
+        CrtGlevParameters::try_with_glwe_params(&large_layout, DecompositionBaseLog::new(4), None),
+        Err(CrtGlevParametersError::Layout(
+            GlweSizeError::LengthOverflow("RNS GLev ciphertext")
         ))
     ));
 }
@@ -85,7 +107,7 @@ fn cached_weights_and_centered_digits_follow_rns_order() {
     let moduli = [134_215_681u32, 134_176_769];
     let q: u64 = moduli.iter().map(|&modulus| u64::from(modulus)).product();
     let glwe = CrtGlweParameters::new(
-        1,
+        GlweDimension::new(1),
         8,
         BarrettModulus::new(3),
         BarrettModulus::new(101),
@@ -101,9 +123,16 @@ fn cached_weights_and_centered_digits_follow_rns_order() {
         .collect();
     let count = values.len() / 2;
     for (log_basis, retained) in [(3, None), (5, Some(2))] {
-        let params = CrtGlevParameters::with_glwe_params(&glwe, log_basis, retained);
+        let params = CrtGlevParameters::with_glwe_params(
+            &glwe,
+            DecompositionBaseLog::new(log_basis),
+            retained.map(DecompositionLevelCount::new),
+        );
         let basis = params.basis();
-        assert_eq!(params.scalar_residue_iter().len(), basis.decompose_length());
+        assert_eq!(
+            params.scalar_residue_iter().len(),
+            basis.decompose_length().get()
+        );
         for (level, residues) in params.scalar_residue_iter().enumerate() {
             let weight = 1u64 << (basis.drop_bits() + level as u32 * log_basis);
             assert_eq!(
@@ -149,7 +178,7 @@ fn domain_rejects_modulus_order_mismatch() {
     let moduli_values = [1_125_899_906_826_241u64, 1_125_899_906_629_633];
     let moduli = moduli_values.map(BarrettModulus::new);
     let crt_glwe = CrtGlweParameters::new(
-        1,
+        GlweDimension::new(1),
         32,
         BarrettModulus::new(12_289),
         BarrettModulus::new(2_199_023_190_017),
@@ -157,7 +186,8 @@ fn domain_rejects_modulus_order_mismatch() {
         SecretKeyDistr::SparseTernary,
         3.2,
     );
-    let crt_gadget = CrtGlevParameters::with_glwe_params(&crt_glwe, 20, None);
+    let crt_gadget =
+        CrtGlevParameters::with_glwe_params(&crt_glwe, DecompositionBaseLog::new(20), None);
     let reversed = [moduli[1], moduli[0]];
     let wrong_order_table = UintDcrtTable::new(5, &reversed).unwrap();
     assert!(matches!(

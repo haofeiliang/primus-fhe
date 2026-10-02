@@ -7,6 +7,7 @@
 // PBS cases use the real external-product shapes and separate initialization,
 // all retained levels, and their combined cost. They do not measure a full PBS.
 
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use std::hint::black_box;
 use std::time::Duration;
 
@@ -65,7 +66,7 @@ fn bench_primitive_setup(c: &mut Criterion) {
                 b.iter(|| {
                     black_box(ApproxSignedBasis::<Word>::new(
                         black_box(modulus),
-                        PRIMITIVE_LOG_BASIS,
+                        DecompositionBaseLog::new(PRIMITIVE_LOG_BASIS),
                         None,
                     ))
                 });
@@ -110,7 +111,11 @@ fn pbs_decomposition<T: FheUint>(
     retained: Option<usize>,
     n: usize,
 ) {
-    let basis = ApproxSignedBasis::new(modulus, log_basis, retained);
+    let basis = ApproxSignedBasis::new(
+        modulus,
+        DecompositionBaseLog::new(log_basis),
+        retained.map(DecompositionLevelCount::new),
+    );
     // Fixed-seed xorshift covers the word range without a regular arithmetic stride.
     let mut state = 0x1234_5678_9abc_def0u64;
     let values: Vec<T> = (0..n)
@@ -162,7 +167,7 @@ fn pbs_decomposition<T: FheUint>(
 
     let mut group = c.benchmark_group(format!(
         "decompose/pbs/{label}/logB={log_basis}/L={}/drop={}/N={n}",
-        basis.decompose_length(),
+        basis.decompose_length().get(),
         basis.drop_bits(),
     ));
     group.throughput(Throughput::Elements(n as u64));
@@ -221,7 +226,11 @@ fn primitive_online<T: FheUint>(
     retained: Option<usize>,
 ) {
     let mut group = c.benchmark_group("decompose/primitive/online");
-    let basis = ApproxSignedBasis::new(modulus, log_basis, retained);
+    let basis = ApproxSignedBasis::new(
+        modulus,
+        DecompositionBaseLog::new(log_basis),
+        retained.map(DecompositionLevelCount::new),
+    );
     let value = T::as_from(primitive_values(None, 1)[0]);
     let value = modulus.map_or(value, |q| value % q);
     group.bench_function(
@@ -229,7 +238,7 @@ fn primitive_online<T: FheUint>(
             "scalar",
             format!(
                 "{label}/logB={log_basis}/L={}/drop={}",
-                basis.decompose_length(),
+                basis.decompose_length().get(),
                 basis.drop_bits()
             ),
         ),
@@ -249,7 +258,7 @@ fn primitive_online<T: FheUint>(
     );
     let case = format!(
         "{label}/logB={log_basis}/L={}/drop={}/N={COEFFICIENT_COUNT}",
-        basis.decompose_length(),
+        basis.decompose_length().get(),
         basis.drop_bits(),
     );
     let values: Vec<T> = primitive_values(None, COEFFICIENT_COUNT)
@@ -310,7 +319,7 @@ fn bench_big_setup(c: &mut Criterion) {
                 b.iter(|| {
                     black_box(BigUintApproxSignedBasis::new(
                         black_box(modulus.view()),
-                        BIG_LOG_BASIS,
+                        DecompositionBaseLog::new(BIG_LOG_BASIS),
                         None,
                     ))
                 });
@@ -332,10 +341,14 @@ fn bench_big_online(c: &mut Criterion) {
         (2, 17, Some(1)),
     ] {
         let modulus = big_modulus(limb_count);
-        let basis = BigUintApproxSignedBasis::new(modulus.view(), log_basis, retained);
+        let basis = BigUintApproxSignedBasis::new(
+            modulus.view(),
+            DecompositionBaseLog::new(log_basis),
+            retained.map(DecompositionLevelCount::new),
+        );
         let case = format!(
             "{limb_count}_limbs/logB={log_basis}/L={}/drop={}/N={COEFFICIENT_COUNT}",
-            basis.decompose_length(),
+            basis.decompose_length().get(),
             basis.drop_bits()
         );
         let values = big_values(modulus.view(), COEFFICIENT_COUNT);

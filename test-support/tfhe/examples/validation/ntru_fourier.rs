@@ -4,6 +4,7 @@
 use super::metrics::ErrorMargin;
 use primus_encoding::{PlaintextEmbedding, RoundedCodec, ScaledCodec};
 use primus_fft::{FftTable, TorusFftValue};
+use primus_glwe::PolyLength;
 use primus_glwe::SecretKeyDistr;
 use primus_integer::AsInto;
 use primus_modulus::{NativeModulus, PowOf2Modulus};
@@ -117,7 +118,7 @@ fn one_hot<T: TorusFftValue, Table: FftTable>(
         &mut fft,
     )
     .unwrap();
-    let mut decrypt = primus_ntru::FourierNtruDecryptWorkspace::new(N);
+    let mut decrypt = primus_ntru::FourierNtruDecryptWorkspace::new(PolyLength::new(N));
     let mut margin = ErrorMargin::new(&format_name, seed);
     // The client already knows these public parameters from key generation.
     let scalars: Vec<_> = server_key
@@ -495,7 +496,7 @@ fn circuit<T: TorusFftValue, Table: FftTable>(
         &mut fft,
     )
     .unwrap();
-    let mut decrypt = primus_ntru::FourierNtruDecryptWorkspace::new(N);
+    let mut decrypt = primus_ntru::FourierNtruDecryptWorkspace::new(PolyLength::new(N));
 
     // Server: bind the evaluation key and allocate CBS/CMux outputs locally.
     let mut cbs = context.circuit_bootstrap_evaluator(&server_key).unwrap();

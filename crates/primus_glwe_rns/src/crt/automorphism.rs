@@ -153,12 +153,12 @@ where
     M: FieldContext<T>,
 {
     let params = domain.parameters();
-    let poly_length = params.poly_length();
+    let poly_length = params.poly_length().get();
     let rns_poly_len = params.rns_poly_len();
     let dcrt_glev_len = params.rns_glev_len();
     assert_eq!(sk.glwe_size(), params.size().rns_glwe_size().glwe_size());
 
-    let mut key = vec![T::ZERO; params.dimension() * dcrt_glev_len];
+    let mut key = vec![T::ZERO; params.dimension().get() * dcrt_glev_len];
     let mut auto_buffer = Zeroizing::new(vec![T::ZERO; rns_poly_len]);
     let mut auto_si = CrtPolynomial(auto_buffer.as_mut_slice());
     let mut auto_signed = Zeroizing::new(vec![T::SignedInteger::ZERO; poly_length]);
@@ -206,7 +206,7 @@ impl<T: FheUint> CrtGlweAutoKey<T> {
         Table: NttTable<ValueT = T>,
     {
         let params = domain.parameters();
-        let poly_length = params.poly_length();
+        let poly_length = params.poly_length().get();
         assert!(
             degree < poly_length * 2 && degree % 2 == 1,
             "automorphism degree must be odd and less than twice the polynomial length"
@@ -268,7 +268,7 @@ impl<T: FheUint> CrtGlweAutoKey<T> {
         let params = domain.parameters();
         let table = domain.table();
         let rns_base = domain.rns_base();
-        let poly_length = params.poly_length();
+        let poly_length = params.poly_length().get();
         let rns_poly_len = params.rns_poly_len();
         let moduli = params.cipher_moduli();
 

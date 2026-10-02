@@ -1,11 +1,15 @@
 //! Encrypted CMux controls checked against selected messages and signed phase rotations.
+
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable};
 use primus_glwe::{
     FourierGlweDecryptWorkspace, FourierGlweEncryptWorkspace, FourierGlweGadgetEncryptWorkspace,
     FourierGlweSecretKey, GlevParameters, GlweParameters, NttGlweGadgetEncryptWorkspace,
     NttGlweSecretKey, SecretKeyDistr,
 };
+use primus_lattice::GlweDimension;
 use primus_lattice::{
+    PolyLength,
     ggsw::{FourierGgsw, NttGgsw, NttGgswIter},
     glwe::{FourierGlweOwned, Glwe, NttGlwe, TorusGlwe},
     workspace::{FourierGlweExternalProductWorkspace, NttGlweExternalProductWorkspace},
@@ -34,17 +38,17 @@ fn fourier_cmux_selects_requested_glwe() {
     let mut fft = FftEngine::new(&table);
     let mut rng = StdRng::seed_from_u64(42);
     let glwe_params = GlweParameters::new(
-        DIMENSION,
+        GlweDimension::new(DIMENSION),
         POLY_LENGTH,
         PLAINTEXT_MODULUS,
         NativeModulus::new(),
         SecretKeyDistr::UniformBinary,
         0.7,
     );
-    let params = GlevParameters::with_glwe_params(&glwe_params, 8, None);
+    let params = GlevParameters::with_glwe_params(&glwe_params, DecompositionBaseLog::new(8), None);
     let (_, secret_key) = FourierGlweSecretKey::generate_pair(&glwe_params, &mut fft, &mut rng);
-    let mut encrypt_workspace = FourierGlweEncryptWorkspace::new(POLY_LENGTH);
-    let mut decrypt_workspace = FourierGlweDecryptWorkspace::new(POLY_LENGTH);
+    let mut encrypt_workspace = FourierGlweEncryptWorkspace::new(PolyLength::new(POLY_LENGTH));
+    let mut decrypt_workspace = FourierGlweDecryptWorkspace::new(PolyLength::new(POLY_LENGTH));
     let mut gadget_workspace = FourierGlweGadgetEncryptWorkspace::new(params.size());
     let mut cmux_workspace = FourierGlweExternalProductWorkspace::new(params.size());
 
@@ -124,14 +128,14 @@ fn ntt_cmux_selects_requested_glwe() {
     let ntt = UintNttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
     let mut rng = StdRng::seed_from_u64(42);
     let glwe_params = GlweParameters::new(
-        DIMENSION,
+        GlweDimension::new(DIMENSION),
         POLY_LENGTH,
         PLAINTEXT_MODULUS,
         modulus,
         SecretKeyDistr::SparseTernary,
         0.7,
     );
-    let params = GlevParameters::with_glwe_params(&glwe_params, 8, None);
+    let params = GlevParameters::with_glwe_params(&glwe_params, DecompositionBaseLog::new(8), None);
     let (_, secret_key) = NttGlweSecretKey::generate_pair(&glwe_params, &ntt, &mut rng);
     let mut gadget_workspace = NttGlweGadgetEncryptWorkspace::new(params.size());
     let mut cmux_workspace = NttGlweExternalProductWorkspace::new(params.size());
@@ -206,8 +210,19 @@ fn ntt_ternary_cmux_rotates_phase_with_encrypted_controls() {
     const Q: u64 = 132_120_577;
     let modulus = BarrettModulus::new(Q);
     let ntt = UintNttTable::new(N.trailing_zeros(), modulus).unwrap();
-    let glwe = GlweParameters::new(K, N, 16, modulus, SecretKeyDistr::SparseTernary, 0.7);
-    let params = GlevParameters::with_glwe_params(&glwe, 8, Some(3));
+    let glwe = GlweParameters::new(
+        GlweDimension::new(K),
+        N,
+        16,
+        modulus,
+        SecretKeyDistr::SparseTernary,
+        0.7,
+    );
+    let params = GlevParameters::with_glwe_params(
+        &glwe,
+        DecompositionBaseLog::new(8),
+        Some(DecompositionLevelCount::new(3)),
+    );
     let secret = secret();
     let coeff_key = GlweSecretKey::new(secret.clone(), glwe.size(), glwe.secret_key_distr());
     let key = NttGlweSecretKey::from_coeff_secret_key(&coeff_key, &ntt);
@@ -280,14 +295,18 @@ fn check_fourier_ternary_cmux<Table: FftTable>() {
     let table = Table::new(N.trailing_zeros()).unwrap();
     let mut fft = FftEngine::new(&table);
     let glwe = GlweParameters::new(
-        K,
+        GlweDimension::new(K),
         N,
         16u64,
         NativeModulus::new(),
         SecretKeyDistr::SparseTernary,
         0.7,
     );
-    let params = GlevParameters::with_glwe_params(&glwe, 8, Some(3));
+    let params = GlevParameters::with_glwe_params(
+        &glwe,
+        DecompositionBaseLog::new(8),
+        Some(DecompositionLevelCount::new(3)),
+    );
     let secret = secret();
     let coeff_key = GlweSecretKey::<u64>::new(secret.clone(), glwe.size(), glwe.secret_key_distr());
     let key = FourierGlweSecretKey::from_coeff_secret_key(&coeff_key, &mut fft);

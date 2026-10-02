@@ -2,8 +2,10 @@
 //! independently of end-to-end PBS; invalid imports must precede sampling.
 
 use primus_decompose::primitive::ApproxSignedBasis;
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_fft::{Complex64, FftTable, RustFftTable, TfheFftTable};
 use primus_glwe::{GlweParameters, SecretKeyDistr};
+use primus_lattice::{GlweDimension, LweDimension};
 use primus_lattice::{ggsw::FourierGgsw, workspace::FourierGlweExternalProductWorkspace};
 use primus_lwe::{LweParameters, LweSecretKey};
 use primus_modulus::NativeModulus;
@@ -18,9 +20,20 @@ const N: usize = 64;
 
 fn context<Table: FftTable>(distribution: SecretKeyDistr) -> TfheContext<u64, Table> {
     let modulus = NativeModulus::new();
-    let lwe = LweParameters::new(16, 8, modulus, distribution, 0.7);
-    let glwe = GlweParameters::new(1, N, 8, modulus, SecretKeyDistr::UniformBinary, 0.7);
-    let basis = ApproxSignedBasis::new(None, 8, Some(6));
+    let lwe = LweParameters::new(LweDimension::new(16), 8, modulus, distribution, 0.7);
+    let glwe = GlweParameters::new(
+        GlweDimension::new(1),
+        N,
+        8,
+        modulus,
+        SecretKeyDistr::UniformBinary,
+        0.7,
+    );
+    let basis = ApproxSignedBasis::new(
+        None,
+        DecompositionBaseLog::new(8),
+        Some(DecompositionLevelCount::new(6)),
+    );
     let parameters = TfheParameters::try_new(
         lwe,
         glwe,
@@ -57,7 +70,7 @@ fn check_selectors<Table: FftTable>() {
         let key = generator
             .try_generate_sparse_bootstrapping_key(&client, copy_count, bucket_count, &mut rng)
             .unwrap();
-        assert_eq!(key.input_dimension(), 16);
+        assert_eq!(key.input_dimension(), LweDimension::new(16));
         assert_eq!(key.hamming_weight(), 4);
         assert_eq!(key.copy_count(), copy_count);
         assert_eq!(key.bucket_count(), bucket_count);

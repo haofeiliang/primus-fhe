@@ -3,6 +3,7 @@
 use primus_data::{Data, DataMut};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{FftEngine, FftTable, TorusFftValue};
+use primus_lattice::PolyLength;
 use primus_modulus::{NativeModulus, PowOf2Modulus};
 use primus_reduce::ReduceNeg;
 
@@ -21,14 +22,11 @@ pub struct FourierNtruTraceWorkspace<T: TorusFftValue> {
 
 impl<T: TorusFftValue> FourierNtruTraceWorkspace<T> {
     /// Allocates workspace for one polynomial length.
-    ///
-    /// # Panics
-    /// Inherits [`FourierNtruAutomorphismWorkspace::new`]'s supported-length check.
     #[must_use]
-    pub fn new(poly_length: usize) -> Self {
+    pub fn new(poly_length: PolyLength) -> Self {
         let automorphism = FourierNtruAutomorphismWorkspace::new(poly_length);
         Self {
-            automorphism_output: NtruCiphertext::zero(poly_length),
+            automorphism_output: NtruCiphertext::zero(poly_length.get()),
             automorphism,
         }
     }
@@ -64,7 +62,7 @@ impl<T: TorusFftValue> FourierNtruTraceKey<T> {
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
     {
-        let automorphism_keys = (1..=parameters.poly_length().trailing_zeros())
+        let automorphism_keys = (1..=parameters.poly_length().log_n())
             .rev()
             .map(|shift| {
                 FourierNtruAutomorphismKey::generate(

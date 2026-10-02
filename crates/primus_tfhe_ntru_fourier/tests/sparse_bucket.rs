@@ -2,8 +2,11 @@
 
 use num_traits::ConstZero;
 use primus_decompose::primitive::ApproxSignedBasis;
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable, TorusFftValue};
 use primus_integer::SignedInteger;
+use primus_lattice::LweDimension;
+use primus_lattice::PolyLength;
 use primus_lwe::LweParameters;
 use primus_modulus::NativeModulus;
 use primus_ntru::{
@@ -85,7 +88,7 @@ fn check<T: TorusFftValue, Table: FftTable>(level_count: Option<usize>) {
     let mut fft = FftEngine::new(&table);
     let modulus = NativeModulus::<T>::new();
     let client_params = LweParameters::new(
-        DIM,
+        LweDimension::new(DIM),
         T::as_from(16usize),
         modulus,
         SecretKeyDistr::fixed_hamming_weight_binary(DIM, WEIGHT),
@@ -98,7 +101,11 @@ fn check<T: TorusFftValue, Table: FftTable>(level_count: Option<usize>) {
         SecretKeyDistr::SparseTernary,
         0.7,
     );
-    let gadget = NlevParameters::with_ntru_params(&params, 8, level_count);
+    let gadget = NlevParameters::with_ntru_params(
+        &params,
+        DecompositionBaseLog::new(8),
+        level_count.map(DecompositionLevelCount::new),
+    );
     let basis = gadget.basis();
     let mut rng = StdRng::seed_from_u64(0xB803);
     let client = primus_lwe::LweSecretKey::generate(&client_params, &mut rng);
@@ -114,7 +121,7 @@ fn check<T: TorusFftValue, Table: FftTable>(level_count: Option<usize>) {
     let context = TfheContext::try_new(
         TfheParameters::try_new(
             LweParameters::new(
-                DIM,
+                LweDimension::new(DIM),
                 T::as_from(16usize),
                 modulus,
                 client_params.secret_key_distr(),
@@ -122,7 +129,7 @@ fn check<T: TorusFftValue, Table: FftTable>(level_count: Option<usize>) {
             ),
             gadget.clone(),
             primus_tfhe_ntru::DecompositionConfig {
-                log_basis: 8,
+                log_basis: DecompositionBaseLog::new(8),
                 level_count: None,
             },
             client_params.noise_distribution().standard_deviation(),
@@ -143,7 +150,7 @@ fn check<T: TorusFftValue, Table: FftTable>(level_count: Option<usize>) {
         .iter()
         .filter(|&&s| s != T::SignedInteger::ZERO)
         .count() as u128;
-    let mut encrypt = FourierNtruGadgetEncryptWorkspace::new(N);
+    let mut encrypt = FourierNtruGadgetEncryptWorkspace::new(PolyLength::new(N));
     let mut initializer = FourierNlevCiphertext::<Vec<Complex64>>::zero(gadget.fourier_nlev_len());
     key.encrypt_nlev_constant_to(
         T::ONE,
@@ -160,7 +167,7 @@ fn check<T: TorusFftValue, Table: FftTable>(level_count: Option<usize>) {
         .collect();
     let mut current = NtruCiphertext::<Vec<T>>::zero(N);
     let mut scratch = NtruCiphertext::<Vec<T>>::zero(N);
-    let mut ep = FourierNtruExternalProductWorkspace::new(N);
+    let mut ep = FourierNtruExternalProductWorkspace::new(PolyLength::new(N));
     let (_, allocation) = measure(|| {
         initializer.external_product_to(
             &Polynomial(lut.as_slice()),
@@ -229,7 +236,7 @@ fn check<T: TorusFftValue, Table: FftTable>(level_count: Option<usize>) {
             let target: Vec<_> = message.iter().map(|&v| v.wrapping_mul(top)).collect();
             let zero = vec![T::ZERO; N];
             let bits: Vec<_> = rows
-                .chunks_exact(gadget.decompose_length())
+                .chunks_exact(gadget.decompose_length().get())
                 .map(|control| {
                     let row = control.last().unwrap();
                     let e0 = error(row, &zero);
@@ -321,10 +328,10 @@ fn check<T: TorusFftValue, Table: FftTable>(level_count: Option<usize>) {
                 {
                     let phase = product(row, &native_secret);
                     let mut linear =
-                        rows[indices.len() * gadget.decompose_length() + level].clone();
+                        rows[indices.len() * gadget.decompose_length().get() + level].clone();
                     for (slot, &i) in indices.iter().enumerate() {
                         for (a, b) in linear.iter_mut().zip(rotate(
-                            &rows[slot * gadget.decompose_length() + level],
+                            &rows[slot * gadget.decompose_length().get() + level],
                             exponents[i],
                         )) {
                             *a = a.wrapping_add(b);

@@ -1,4 +1,6 @@
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_fft::{FftTable, RustFftTable};
+use primus_lattice::LweDimension;
 use primus_lwe::LweParameters;
 use primus_modulus::NativeModulus;
 use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
@@ -12,7 +14,7 @@ const PLAIN_MODULUS: u32 = 4;
 fn parameters(bootstrapping_log_basis: u32, key_switching_log_basis: u32) -> TfheParameters<u32> {
     let modulus = NativeModulus::new();
     let external_lwe = LweParameters::new(
-        LWE_DIMENSION,
+        LweDimension::new(LWE_DIMENSION),
         PLAIN_MODULUS,
         modulus,
         SecretKeyDistr::UniformBinary,
@@ -28,10 +30,14 @@ fn parameters(bootstrapping_log_basis: u32, key_switching_log_basis: u32) -> Tfh
 
     TfheParameters::try_new(
         external_lwe,
-        NlevParameters::with_ntru_params(&accumulator, bootstrapping_log_basis, Some(4)),
+        NlevParameters::with_ntru_params(
+            &accumulator,
+            DecompositionBaseLog::new(bootstrapping_log_basis),
+            Some(DecompositionLevelCount::new(4)),
+        ),
         primus_tfhe_ntru::DecompositionConfig {
-            log_basis: key_switching_log_basis,
-            level_count: Some(4),
+            log_basis: DecompositionBaseLog::new(key_switching_log_basis),
+            level_count: Some(DecompositionLevelCount::new(4)),
         },
         0.7,
     )
@@ -65,11 +71,12 @@ fn rejects_server_keys_with_same_layout_but_different_bases() {
             context.parameters().blind_rotation().nlev_len()
         );
         assert_eq!(
-            candidate.key_switching_basis().decompose_length(),
+            candidate.key_switching_basis().decompose_length().get(),
             context
                 .parameters()
                 .key_switching_basis()
                 .decompose_length()
+                .get()
         );
         let table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
         let incompatible = TfheContext::try_new(candidate, table).unwrap();

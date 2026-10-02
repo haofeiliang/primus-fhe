@@ -1,6 +1,7 @@
 use core::fmt;
 
 use primus_integer::FheUint;
+use primus_lattice::PolyLength;
 use primus_poly::PolynomialOwned;
 use primus_reduce::{PrepareModulusSwitch, ReduceAdd, RingContext};
 
@@ -58,7 +59,7 @@ impl<T: FheUint> InterleavedLookupTable<T> {
     /// table is returned.
     pub fn try_new<LM, M, F>(
         input_domain_len: usize,
-        poly_length: usize,
+        poly_length: PolyLength,
         output_count: usize,
         input_plaintext_modulus: T,
         input_ciphertext_modulus: LM,
@@ -108,12 +109,12 @@ impl<T: FheUint> InterleavedLookupTable<T> {
     #[must_use]
     pub fn is_compatible(
         &self,
-        poly_length: usize,
+        poly_length: PolyLength,
         input_plaintext_modulus: T,
         input_ciphertext_modulus: Option<T>,
         coefficient_modulus: Option<T>,
     ) -> bool {
-        self.polynomial.as_ref().len() == poly_length
+        self.polynomial.as_ref().len() == poly_length.get()
             && self.encoding.is_compatible(
                 input_plaintext_modulus,
                 input_ciphertext_modulus,

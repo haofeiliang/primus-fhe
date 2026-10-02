@@ -60,7 +60,7 @@ impl<T: FheUint> NttNtruSchemeSwitchKey<T> {
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
     {
-        let n = key_parameters.poly_length();
+        let n = key_parameters.poly_length().get();
         assert_eq!(
             secret_key.poly_length(),
             n,
@@ -72,7 +72,7 @@ impl<T: FheUint> NttNtruSchemeSwitchKey<T> {
             "scheme-switch output basis modulus mismatch"
         );
         let output_len = n
-            .checked_mul(output_basis.decompose_length())
+            .checked_mul(output_basis.decompose_length().get())
             .expect("scheme-switch output length overflow");
         let mut encoded = Zeroizing::new(vec![T::ZERO; n]);
         key_parameters
@@ -161,7 +161,7 @@ impl<T: FheUint> NttNtruSchemeSwitchKey<T> {
             "scheme-switch output length mismatch"
         );
         assert_eq!(
-            workspace.poly_length(),
+            workspace.poly_length().get(),
             self.poly_length,
             "scheme-switch workspace length mismatch"
         );

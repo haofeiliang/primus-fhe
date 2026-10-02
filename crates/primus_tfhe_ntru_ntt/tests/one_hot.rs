@@ -1,3 +1,6 @@
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_lattice::LweDimension;
+use primus_lattice::PolyLength;
 use primus_lwe::LweParameters;
 use primus_modulus::{BarrettModulus, PowOf2Modulus};
 use primus_ntru::{
@@ -54,13 +57,19 @@ fn assert_phase(actual: &[u64], expected: &[u64]) {
 fn selectors(distr: SecretKeyDistr) {
     let modulus = BarrettModulus::new(Q as u64);
     let full = DecompositionConfig {
-        log_basis: 10,
+        log_basis: DecompositionBaseLog::new(10),
         level_count: None,
     };
     let ring = NtruParameters::new(N, 2 * M as u64, modulus, SecretKeyDistr::SparseTernary, 0.7);
     let tfhe = TfheParameters::try_new(
-        LweParameters::new(4, 2 * M as u64, PowOf2Modulus::new(1u64 << 24), distr, 0.7),
-        NlevParameters::with_ntru_params(&ring, 10, None),
+        LweParameters::new(
+            LweDimension::new(4),
+            2 * M as u64,
+            PowOf2Modulus::new(1u64 << 24),
+            distr,
+            0.7,
+        ),
+        NlevParameters::with_ntru_params(&ring, DecompositionBaseLog::new(10), None),
         full,
         0.7,
     )
@@ -71,8 +80,8 @@ fn selectors(distr: SecretKeyDistr) {
         .try_generate_keys(
             Some(CircuitBootstrapConfig {
                 output: DecompositionConfig {
-                    log_basis: 8,
-                    level_count: Some(L),
+                    log_basis: DecompositionBaseLog::new(8),
+                    level_count: Some(DecompositionLevelCount::new(L)),
                 },
                 trace: full,
                 trace_noise_standard_deviation: 0.7,
@@ -104,7 +113,7 @@ fn selectors(distr: SecretKeyDistr) {
     assert_eq!(nonzero_ngsw.len(), (M - 1) * selector_len);
     let mut coefficients = NtruCiphertext::<Vec<u64>>::zero(N);
     let mut selected = NtruCiphertext::<Vec<u64>>::zero(N);
-    let mut ep = NttNtruExternalProductWorkspace::new(N);
+    let mut ep = NttNtruExternalProductWorkspace::new(PolyLength::new(N));
 
     let encryptor = context.encryptor(&client).unwrap();
     let identity = context

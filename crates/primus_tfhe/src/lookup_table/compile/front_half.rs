@@ -24,6 +24,7 @@
 
 use primus_encoding::{PlaintextEmbedding, RoundedCodec};
 use primus_integer::FheUint;
+use primus_lattice::PolyLength;
 use primus_poly::PolynomialOwned;
 use primus_reduce::{PrepareModulusSwitch, ReduceAdd, RingContext};
 
@@ -34,8 +35,9 @@ use crate::{LookupTableError, rotation::RotationQuantizer};
 #[doc(hidden)]
 pub fn front_half_domain_len<T: FheUint>(
     plaintext_modulus: T,
-    poly_length: usize,
+    poly_length: PolyLength,
 ) -> Result<usize, LookupTableError> {
+    let poly_length = poly_length.get();
     let plaintext_domain_len: usize = plaintext_modulus
         .try_into()
         .map_err(|_| LookupTableError::PlaintextModulusTooLarge)?;
@@ -54,7 +56,7 @@ pub fn front_half_domain_len<T: FheUint>(
 /// through the remaining positions. No per-output storage is needed.
 pub(in crate::lookup_table) fn compile<T, LM, M, F>(
     input_domain_len: usize,
-    poly_length: usize,
+    poly_length: PolyLength,
     output_count: usize,
     input_plaintext_modulus: T,
     input_ciphertext_modulus: LM,
@@ -74,7 +76,7 @@ where
         input_plaintext_modulus,
         input_ciphertext_modulus.explicit_value(),
     )?;
-    let mut polynomial = PolynomialOwned::zero(poly_length);
+    let mut polynomial = PolynomialOwned::zero(poly_length.get());
     compile_to(
         input_domain_len,
         output_count,
@@ -90,7 +92,7 @@ where
 /// Checks encoding and capacity before allocating one polynomial or a batch.
 pub(in crate::lookup_table) fn validate<T: FheUint>(
     input_domain_len: usize,
-    poly_length: usize,
+    poly_length: PolyLength,
     output_count: usize,
     input_plaintext_modulus: T,
     input_ciphertext_modulus: Option<T>,
@@ -101,6 +103,7 @@ pub(in crate::lookup_table) fn validate<T: FheUint>(
         input_ciphertext_modulus,
     )?;
     let max_domain_len = front_half_domain_len(input_plaintext_modulus, poly_length)?;
+    let poly_length = poly_length.get();
     if input_domain_len == 0 || input_domain_len > max_domain_len {
         return Err(LookupTableError::InvalidInputDomain {
             domain_len: input_domain_len,

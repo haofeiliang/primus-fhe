@@ -1,7 +1,9 @@
 //! Small functional dimensions include vector blocks and incomplete tails.
 use primus_decompose::primitive::ApproxSignedBasis;
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_encoding::PlaintextEmbedding;
 use primus_integer::FheUint;
+use primus_lattice::LweDimension;
 use primus_lattice::lwe::Lwe;
 use primus_lwe::{LweKeySwitchingKey, LweParameters, LwePublicKey, LweSecretKey, SecretKeyDistr};
 use primus_modulus::{BarrettModulus, NativeModulus, PowOf2Modulus};
@@ -24,7 +26,7 @@ fn check_equations<T: FheUint, M: RingContext<T>>(modulus: M) {
     ] {
         // These are arithmetic fixtures, not evaluated security parameters.
         let params = LweParameters::new(
-            dimension,
+            LweDimension::new(dimension),
             T::as_from(4u32),
             modulus,
             distribution,
@@ -39,7 +41,7 @@ fn check_equations<T: FheUint, M: RingContext<T>>(modulus: M) {
             .collect();
         let mut rng = StdRng::seed_from_u64(0x1_ee11);
         let key = LwePublicKey::generate(secret.as_view(), &params, &mut rng);
-        assert_eq!(key.dimension(), dimension);
+        assert_eq!(key.dimension(), LweDimension::new(dimension));
         assert_eq!(key.as_slice().len(), dimension * (dimension + 1));
 
         // Verify the stored rows against independent integer arithmetic, including
@@ -158,8 +160,20 @@ fn public_key_encryption_matches_matrix_and_noise_equations() {
 }
 
 fn check_messages<M: RingContext<u32>>(modulus: M) {
-    let params = LweParameters::new(17, 4, modulus, SecretKeyDistr::UniformTernary, 3.2);
-    let output_params = LweParameters::new(5, 4, modulus, SecretKeyDistr::UniformBinary, 3.2);
+    let params = LweParameters::new(
+        LweDimension::new(17),
+        4,
+        modulus,
+        SecretKeyDistr::UniformTernary,
+        3.2,
+    );
+    let output_params = LweParameters::new(
+        LweDimension::new(5),
+        4,
+        modulus,
+        SecretKeyDistr::UniformBinary,
+        3.2,
+    );
     let mut rng = StdRng::seed_from_u64(0x1_ee13);
     let secret = LweSecretKey::generate(&params, &mut rng);
     let key = LwePublicKey::generate(secret.as_view(), &params, &mut rng);
@@ -170,8 +184,11 @@ fn check_messages<M: RingContext<u32>>(modulus: M) {
         &output_params,
         ApproxSignedBasis::new(
             modulus.explicit_value(),
-            2,
-            modulus.explicit_value().map(|_| 13),
+            DecompositionBaseLog::new(2),
+            modulus
+                .explicit_value()
+                .map(|_| 13)
+                .map(DecompositionLevelCount::new),
         ),
         &mut rng,
     );
@@ -205,7 +222,7 @@ fn public_key_boundaries_reject_before_writing_or_sampling() {
     use std::panic::{AssertUnwindSafe, catch_unwind};
 
     let params = LweParameters::new(
-        3,
+        LweDimension::new(3),
         4,
         BarrettModulus::new(97u32),
         SecretKeyDistr::UniformBinary,
@@ -223,7 +240,7 @@ fn public_key_boundaries_reject_before_writing_or_sampling() {
         (4, 3, 97, 4),
     ] {
         let bad_params = LweParameters::new(
-            dimension,
+            LweDimension::new(dimension),
             4,
             BarrettModulus::new(q),
             SecretKeyDistr::UniformBinary,
@@ -265,7 +282,13 @@ fn public_key_boundaries_reject_before_writing_or_sampling() {
 #[test]
 fn public_key_generation_matches_encoded_and_signed_secrets() {
     fn check<M: RingContext<u32>>(modulus: M) {
-        let params = LweParameters::new(4, 4, modulus, SecretKeyDistr::UniformTernary, 0.7);
+        let params = LweParameters::new(
+            LweDimension::new(4),
+            4,
+            modulus,
+            SecretKeyDistr::UniformTernary,
+            0.7,
+        );
         let signed = [1i32, -1, 0, -1];
         // Independent canonical encoding of the same small signed secret.
         let encoded = LweSecretKey::new(

@@ -4,8 +4,10 @@
 //! For u64, change Word to u64; for TFHE-FFT, use TfheFftTable as Table.
 //! Arithmetic profiles: guides/development/tfhe-parameters.md (not security presets).
 
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_fft::RustFftTable as Table;
 use primus_glwe::SecretKeyDistr;
+use primus_lattice::{GlweDimension, LweDimension};
 use primus_lwe::LweParameters;
 use primus_modulus::NativeModulus;
 use primus_tfhe_glwe_fourier::{
@@ -33,23 +35,23 @@ fn parameters() -> TfheParameters<Word> {
 
     TfheParameters::try_from_config(TfheConfig {
         small_lwe: LweParameters::new(
-            866,
+            LweDimension::new(866),
             32, // Padded inputs occupy 0..16.
             modulus,
             SecretKeyDistr::UniformBinary,
             q * 2.046151696979124e-6,
         ),
-        accumulator_dimension: 1,
+        accumulator_dimension: GlweDimension::new(1),
         poly_length: N,
         accumulator_secret_key_distr: SecretKeyDistr::UniformBinary,
         accumulator_noise_standard_deviation: (q * 2.845267479601915e-15).max(6.4),
         blind_rotation: DecompositionConfig {
-            log_basis: br_log,
-            level_count: Some(br_levels),
+            log_basis: DecompositionBaseLog::new(br_log),
+            level_count: Some(DecompositionLevelCount::new(br_levels)),
         },
         key_switching: DecompositionConfig {
-            log_basis: ks_log,
-            level_count: Some(ks_levels),
+            log_basis: DecompositionBaseLog::new(ks_log),
+            level_count: Some(DecompositionLevelCount::new(ks_levels)),
         },
         pbs_order: ORDER,
     })

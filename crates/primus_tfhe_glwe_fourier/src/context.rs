@@ -37,13 +37,13 @@ where
     /// Preserves table-construction failures in [`TfheContextError`]. Use [`Self::try_new`] to inject
     /// an existing table instead; all transformed keys must use the bound table.
     pub fn try_from_parameters(parameters: TfheParameters<T>) -> Result<Self, TfheContextError> {
-        let table = Table::new(parameters.accumulator_glwe().poly_length().trailing_zeros())?;
+        let table = Table::new(parameters.accumulator_glwe().poly_length().log_n())?;
         Ok(Self { parameters, table })
     }
 
     /// Binds TFHE parameters to a compatible Fourier table.
     pub fn try_new(parameters: TfheParameters<T>, table: Table) -> Result<Self, TfheContextError> {
-        let expected = parameters.accumulator_glwe().poly_length();
+        let expected = parameters.accumulator_glwe().poly_length().get();
         let actual = table.poly_length();
         if actual != expected {
             return Err(TfheContextError::PolynomialLengthMismatch { expected, actual });
@@ -73,7 +73,7 @@ where
     /// Uses the dimension selected by the parameters; no key or encryption is involved.
     #[must_use]
     pub fn allocate_lwe_ciphertext(&self) -> LweCiphertext<T> {
-        LweCiphertext::zero(self.parameters.external_lwe_dimension())
+        LweCiphertext::zero(self.parameters.external_lwe_dimension().get())
     }
 
     /// Allocates a zeroed coefficient-domain GLWE with the accumulator layout.

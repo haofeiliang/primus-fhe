@@ -280,7 +280,7 @@ impl FourierGlweSecretKey {
         B: DataMut<Elem = Complex64>,
         T: TorusFftValue,
     {
-        let poly_length = self.size.poly_length();
+        let poly_length = self.size.poly_length().get();
 
         debug_assert_eq!(fft.poly_length(), poly_length);
         debug_assert_eq!(output.as_ref().len(), self.size.fourier_glwe_len());

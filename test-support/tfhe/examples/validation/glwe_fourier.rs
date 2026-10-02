@@ -4,6 +4,7 @@
 use super::metrics::ErrorMargin;
 use primus_encoding::{PlaintextEmbedding, RoundedCodec, ScaledCodec};
 use primus_fft::{FftTable, TorusFftValue};
+use primus_glwe::PolyLength;
 use primus_glwe::SecretKeyDistr;
 use primus_integer::AsInto;
 use primus_modulus::NativeModulus;
@@ -296,7 +297,7 @@ where
         client_key.glwe_secret_key(),
         &mut fft,
     );
-    let mut decrypt = primus_glwe::FourierGlweDecryptWorkspace::new(N);
+    let mut decrypt = primus_glwe::FourierGlweDecryptWorkspace::new(PolyLength::new(N));
     let mut margin = ErrorMargin::new(name, seed);
 
     // Server: bind the evaluation key and allocate CBS/CMux outputs locally.

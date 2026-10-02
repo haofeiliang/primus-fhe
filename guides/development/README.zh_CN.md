@@ -29,6 +29,20 @@
 
 Raw 多项式/密文构造器不建立模数、秘密身份、表示或完整布局。`Polynomial<S>` 不另存环长度：包装 `batch_count*N` 个元素，不会自动把单多项式运算变成批量运算。只有接口契约明确接受批次时才直接传入；否则先迭代出完整对象。
 
+[PolyLength](../../crates/primus_lattice/src/poly_length.rs) 检查 GLWE/NTRU 支持的 `2..=2^17`
+二次幂范围；
+`get()`、`log_n()`、`fourier_poly_len()` 分别返回 `N`、`log2(N)` 和 `N/2` 个复数元素。
+`GlweSize` 与 `NtruParameters` 保存这个不变量，`poly_length()` 返回 `PolyLength`，
+直接用于工作区构造。公共 TFHE LUT 构造器也直接接收该类型。多项式长度配置仍接收整数 `N`；数值内核、存储或 FFT/NTT 边界再用 `.get()`
+提取整数。
+该范围也保证 `2N` 可用 `usize` 表示；变换构造器继续拥有各自的支持范围和数值要求。
+Raw 缓冲区长度仍用整数，另行检查其完整布局。FFT/NTT 保留整数构造入口，
+避免反向依赖更高层的 lattice。
+
+lattice 的 `LweDimension` 和 `GlweDimension` 检查正的 mask 计数及可表示的含 body 计数；`ciphertext_len()` 返回 `n+1`，`component_count()` 返回 `k+1`。`GlweSize` 保存 GLWE 几何尺寸和扁平长度，通过 `LweDimension::from(glwe_size)` 显式派生经过验证的 `kN`；NTRU 提取使用 `LweDimension::from(poly_length)`。原始切片保留整数维数，允许零维。
+
+decompose 的 `DecompositionBaseLog` 和 `DecompositionLevelCount` 建立 `log_basis >= 2` 和 `L >= 1`。Basis 构造验证字宽/模数限制及两者的配对，不施加预设上限。已验证的参数、布局和工作区直接传递这些单位，在数值或存储边界提取整数。组合长度仍由拥有布局的边界检查。
+
 GLWE 布局优先使用已有的 [size 类型](../../crates/primus_lattice/src/size.rs)：
 
 | 类型 | 描述内容 |
@@ -38,7 +52,7 @@ GLWE 布局优先使用已有的 [size 类型](../../crates/primus_lattice/src/s
 | `RnsGlweSize` | 带有明确 RNS 模数数量的 GLWE |
 | `RnsGadgetSize` | 该 RNS 布局上的 gadget 层与行 |
 
-这些类型检查支持的维数及展平长度溢出，不检查实际存储，也不验证 basis、表或噪声。拥有契约的公开边界须将完整缓冲长度与派生长度比较。NTRU 中一个 Ntru 占 N 个值，一个 Nlev/Ngsw 占 L*N 个值；使用运算参数/basis，并检查批次长度。Nlev 与 Ngsw 虽然布局相同，但加密相位和合法乘积不同。
+这些类型检查组合长度及展平长度溢出，不检查实际存储，也不验证 basis、表或噪声。拥有契约的公开边界须将完整缓冲长度与派生长度比较。NTRU 中一个 Ntru 占 N 个值，一个 Nlev/Ngsw 占 L*N 个值；使用运算参数/basis，并检查批次长度。Nlev 与 Ngsw 虽然布局相同，但加密相位和合法乘积不同。
 
 ## 遍历数学对象
 
@@ -87,10 +101,12 @@ assert_eq!(output, [252, 1, 2, 3, 248, 5, 6, 7]);
 以下片段依赖 `primus_lattice`，遍历一个 GGSW 的行和层，再分开每个 GLWE 的 mask/body。零缓冲区只展示布局访问，没有采样加密；子对象均为借用视图，遍历过程不分配。
 
 ```rust
-use primus_lattice::{GadgetSize, GlweSize, ggsw::Ggsw};
+use primus_lattice::{GadgetSize, GlweDimension, GlweSize, PolyLength, ggsw::Ggsw};
+use primus_decompose::DecompositionLevelCount;
 
-let glwe_size = GlweSize::new(2, 8);
-let gadget_size = GadgetSize::new(glwe_size, 3);
+let poly_length = PolyLength::new(8);
+let glwe_size = GlweSize::new(GlweDimension::new(2), poly_length);
+let gadget_size = GadgetSize::new(glwe_size, DecompositionLevelCount::new(3));
 let storage = vec![0u32; gadget_size.ggsw_len()];
 
 assert_eq!(storage.len(), gadget_size.ggsw_len());
@@ -98,9 +114,9 @@ let ggsw = Ggsw::new(storage.as_slice());
 let mut level_count = 0;
 for row in ggsw.iter_glev(gadget_size.glev_len()) {
     for level in row.iter_glwe(glwe_size.glwe_len()) {
-        let (mask, body) = level.a_b(glwe_size.poly_length());
-        assert_eq!(mask.len(), glwe_size.dimension());
-        assert_eq!(body.poly_length(), glwe_size.poly_length());
+        let (mask, body) = level.a_b(glwe_size.poly_length().get());
+        assert_eq!(mask.len(), glwe_size.dimension().get());
+        assert_eq!(body.poly_length(), glwe_size.poly_length().get());
         level_count += 1;
     }
 }

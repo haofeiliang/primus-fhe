@@ -64,7 +64,7 @@ where
         C: DataMut<Elem = T>,
     {
         let size = workspace.size();
-        let poly_length = size.glwe_size().poly_length();
+        let poly_length = size.glwe_size().poly_length().get();
         debug_assert!(exponent < 2 * poly_length);
         debug_assert_eq!(self.as_ref().len(), size.fourier_ggsw_len());
         debug_assert_eq!(negative.as_ref().len(), size.fourier_ggsw_len());
@@ -150,7 +150,7 @@ where
         C: DataMut<Elem = T>,
     {
         let size = workspace.size();
-        let poly_length = size.glwe_size().poly_length();
+        let poly_length = size.glwe_size().poly_length().get();
         debug_assert!(exponent < 2 * poly_length);
         debug_assert_eq!(self.as_ref().len(), size.ggsw_len());
         debug_assert_eq!(negative.as_ref().len(), size.ggsw_len());

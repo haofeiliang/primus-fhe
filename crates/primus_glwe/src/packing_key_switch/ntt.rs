@@ -3,6 +3,7 @@
 use primus_data::{Data, DataMut};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_integer::FheUint;
+use primus_lattice::LweDimension;
 use primus_lattice::{GadgetSize, glev::NttGlev, glwe::Glwe, lwe::Lwe};
 use primus_lwe::LweSecretKeyRef;
 use primus_ntt::NttTable;
@@ -22,7 +23,7 @@ use crate::{
 #[derive(Clone)]
 pub struct NttLwePackingKeySwitchingKey<T: FheUint> {
     data: Vec<T>,
-    input_dimension: usize,
+    input_dimension: LweDimension,
     output_size: GadgetSize,
     basis: ApproxSignedBasis<T>,
 }
@@ -53,18 +54,15 @@ impl<T: FheUint> NttLwePackingKeySwitchingKey<T> {
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
     {
-        let input_dimension = input_secret_key.dimension();
-        assert!(input_dimension != 0, "input LWE dimension must be nonzero");
-        input_dimension
-            .checked_add(1)
-            .expect("input LWE length overflow");
+        let input_dimension = LweDimension::new(input_secret_key.dimension());
         output_secret_key.assert_gadget_compatible(params, ntt);
         workspace.assert_glev_compatible(params.size());
         let length = input_dimension
+            .get()
             .checked_mul(params.glev_len())
             .expect("packing key length overflow");
         let mut data = vec![T::ZERO; length];
-        let mut message = Zeroizing::new(vec![T::ZERO; params.poly_length()]);
+        let mut message = Zeroizing::new(vec![T::ZERO; params.poly_length().get()]);
         let mut entries = data.chunks_exact_mut(params.glev_len());
         super::for_each_secret(input_secret_key, params.cipher_modulus(), |secret| {
             message[0] = secret;
@@ -87,7 +85,7 @@ impl<T: FheUint> NttLwePackingKeySwitchingKey<T> {
 
     /// Returns the input LWE dimension.
     #[must_use]
-    pub fn input_dimension(&self) -> usize {
+    pub fn input_dimension(&self) -> LweDimension {
         self.input_dimension
     }
 
@@ -132,7 +130,7 @@ impl<T: FheUint> NttLwePackingKeySwitchingKey<T> {
     {
         assert_eq!(
             input.as_ref().len(),
-            self.input_dimension + 1,
+            self.input_dimension.ciphertext_len(),
             "packing input LWE dimension mismatch"
         );
         self.pack_lwes_to(input.as_ref(), output, modulus, ntt, workspace);
@@ -170,8 +168,8 @@ impl<T: FheUint> NttLwePackingKeySwitchingKey<T> {
         B: DataMut<Elem = T>,
     {
         let size = self.output_size.glwe_size();
-        let poly_length = size.poly_length();
-        let count = super::check_batch(input.len(), self.input_dimension, poly_length);
+        let poly_length = size.poly_length().get();
+        let count = super::check_batch(input.len(), self.input_dimension.get(), poly_length);
         assert_eq!(
             output.as_ref().len(),
             size.glwe_len(),
@@ -205,14 +203,14 @@ impl<T: FheUint> NttLwePackingKeySwitchingKey<T> {
 
         // For D[j,l](X) = sum_i digit_l(a[i,j]) X^i, compute
         // (0, sum_i b_i X^i) - sum_{j,l} D[j,l](X) * K[j,l].
-        let lwe_len = self.input_dimension + 1;
+        let lwe_len = self.input_dimension.ciphertext_len();
         workspace.accumulator.set_zero();
         if count == 1 {
             // Frequent small digits avoid costly modular products. On Ryzen 9955HX3D,
             // large-key benchmarks (d=512..2048, N=1024..8192) support this cutoff
             // in default and SIMD builds; larger tested bases had no consistent gain.
             // Select once so the general kernel has no per-digit special cases.
-            if self.basis.log_basis() <= 6 {
+            if self.basis.log_basis().get() <= 6 {
                 self.accumulate_single::<true, _>(input, modulus, workspace);
             } else {
                 self.accumulate_single::<false, _>(input, modulus, workspace);
@@ -255,7 +253,7 @@ impl<T: FheUint> NttLwePackingKeySwitchingKey<T> {
         output.neg_assign(modulus);
         let (_, body) = output.a_b_mut_slices(poly_length);
         for (output, lwe) in body[..count].iter_mut().zip(input.chunks_exact(lwe_len)) {
-            modulus.reduce_add_assign(output, lwe[self.input_dimension]);
+            modulus.reduce_add_assign(output, lwe[self.input_dimension.get()]);
         }
     }
 
@@ -269,7 +267,7 @@ impl<T: FheUint> NttLwePackingKeySwitchingKey<T> {
         let glwe_len = self.output_size.glwe_len();
         let minus_one = modulus.reduce_neg(T::ONE);
         let minus_two = modulus.reduce_neg(T::TWO);
-        for (&coefficient, entry) in input[..self.input_dimension]
+        for (&coefficient, entry) in input[..self.input_dimension.get()]
             .iter()
             .zip(self.data.chunks_exact(self.output_size.glev_len()))
         {

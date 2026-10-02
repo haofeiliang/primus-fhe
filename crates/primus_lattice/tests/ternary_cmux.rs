@@ -1,9 +1,12 @@
 //! Ternary selection signs, decomposition residuals and dirty-scratch reuse.
 
 use primus_decompose::primitive::ApproxSignedBasis;
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_fft::{FftEngine, FftTable, RustFftTable, TfheFftTable, TorusFftValue};
+use primus_lattice::GlweDimension;
 use primus_lattice::{
-    GadgetSize, GlweSize, ggsw::Ggsw, glwe::Glwe, workspace::NttGlweTernaryCmuxWorkspace,
+    GadgetSize, GlweSize, PolyLength, ggsw::Ggsw, glwe::Glwe,
+    workspace::NttGlweTernaryCmuxWorkspace,
 };
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, UintNttTable};
@@ -41,7 +44,7 @@ fn check_fourier_rotation<T: TorusFftValue, Table: FftTable>() {
     use primus_lattice::{ggsw::FourierGgswOwned, workspace::FourierGlweTernaryCmuxWorkspace};
     let table = Table::new(N.trailing_zeros()).unwrap();
     let mut fft = FftEngine::new(&table);
-    let glwe_size = GlweSize::new(2, N);
+    let glwe_size = GlweSize::new(GlweDimension::new(2), PolyLength::new(N));
     let stride = T::MAX / T::try_from(37usize).unwrap();
     let input = Glwe::new(
         (0..glwe_size.glwe_len())
@@ -53,8 +56,12 @@ fn check_fourier_rotation<T: TorusFftValue, Table: FftTable>() {
             .collect::<Vec<_>>(),
     );
     for levels in [T::BITS as usize / 8, T::BITS as usize / 8 - 1] {
-        let basis = ApproxSignedBasis::<T>::new(None, 8, Some(levels));
-        let size = GadgetSize::new(glwe_size, levels);
+        let basis = ApproxSignedBasis::<T>::new(
+            None,
+            DecompositionBaseLog::new(8),
+            Some(DecompositionLevelCount::new(levels)),
+        );
+        let size = GadgetSize::new(glwe_size, DecompositionLevelCount::new(levels));
         let mut diagonal = Ggsw::new(vec![T::ZERO; size.ggsw_len()]);
         for row in 0..glwe_size.component_count() {
             for (level, scalar) in basis.scalar_iter().enumerate() {
@@ -123,7 +130,7 @@ fn fourier_ternary_rotation_preserves_integer_scale_and_bounds_rounding_error() 
 fn ternary_rotation_matches_negacyclic_oracle_with_bounded_decomposition_error() {
     let modulus = BarrettModulus::new(Q);
     let ntt = UintNttTable::new(N.trailing_zeros(), modulus).unwrap();
-    let glwe_size = GlweSize::new(2, N);
+    let glwe_size = GlweSize::new(GlweDimension::new(2), PolyLength::new(N));
     let input = Glwe::new(
         (0..glwe_size.glwe_len())
             .map(|i| ((i as u64 * 0x9e37_79b9 + 1) % u64::from(Q)) as u32)
@@ -132,8 +139,12 @@ fn ternary_rotation_matches_negacyclic_oracle_with_bounded_decomposition_error()
     // Two truncation depths protect the residual on (X^a-1)C. With noiseless
     // diagonal controls each output coefficient has at most one such residual.
     for levels in [3, 2] {
-        let basis = ApproxSignedBasis::new(Some(Q), 8, Some(levels));
-        let size = GadgetSize::new(glwe_size, levels);
+        let basis = ApproxSignedBasis::new(
+            Some(Q),
+            DecompositionBaseLog::new(8),
+            Some(DecompositionLevelCount::new(levels)),
+        );
+        let size = GadgetSize::new(glwe_size, DecompositionLevelCount::new(levels));
         let mut one = Ggsw::zero(size.ggsw_len());
         for row in 0..glwe_size.component_count() {
             for (level, scalar) in basis.scalar_iter().enumerate() {
@@ -189,7 +200,11 @@ fn ngsw_ternary_rotation_matches_negacyclic_oracle() {
             .collect::<Vec<_>>(),
     );
     for levels in [3, 2] {
-        let basis = ApproxSignedBasis::new(Some(Q), 8, Some(levels));
+        let basis = ApproxSignedBasis::new(
+            Some(Q),
+            DecompositionBaseLog::new(8),
+            Some(DecompositionLevelCount::new(levels)),
+        );
         // Noiseless NGSW(1): each coefficient row is the constant gadget scalar.
         let mut one = Ngsw::zero(N * levels);
         for (level, scalar) in basis.scalar_iter().enumerate() {
@@ -197,7 +212,8 @@ fn ngsw_ternary_rotation_matches_negacyclic_oracle() {
         }
         let one = one.into_ntt_form(&ntt);
         let zero = Ngsw::new(vec![0u32; N * levels]).into_ntt_form(&ntt);
-        let mut workspace = NttNtruCmuxWorkspace::new(N, levels);
+        let mut workspace =
+            NttNtruCmuxWorkspace::new(PolyLength::new(N), DecompositionLevelCount::new(levels));
         let mut output = Ntru::new(vec![Q - 1; N]);
         for secret in [1, -1, 0] {
             let positive = if secret == 1 { &one } else { &zero };

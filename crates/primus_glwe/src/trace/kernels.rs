@@ -1,5 +1,6 @@
 //! Coefficient-layout algorithms. Callers validate buffers and supply backend
 //! automorphism and halving operations; neither closure allocates.
+
 use primus_integer::FheUint;
 use primus_lattice::{GlweSize, glwe::Glwe, lwe::Lwe};
 use primus_ntt::ReverseLsbs;
@@ -61,7 +62,7 @@ pub(super) fn pack_to<T, M, H, F>(
     F: FnMut(usize, &[T], &mut [T]),
 {
     let glwe_len = size.glwe_len();
-    let poly_length = size.poly_length();
+    let poly_length = size.poly_length().get();
     let lwe_len = size.mask_len() + 1;
     let count = input.len() / lwe_len;
     let log_count = count.trailing_zeros();
@@ -126,7 +127,7 @@ pub(super) fn expand_to<T, M, H, F>(
     F: FnMut(usize, &[T], &mut [T]),
 {
     let glwe_len = size.glwe_len();
-    let poly_length = size.poly_length();
+    let poly_length = size.poly_length().get();
     output[..glwe_len].copy_from_slice(input);
     // Normalize before evaluation-key error enters the tree. In the NTT path,
     // this avoids multiplying intermediate key-switch error by modular inverses.

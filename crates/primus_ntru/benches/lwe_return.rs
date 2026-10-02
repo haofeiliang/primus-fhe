@@ -6,6 +6,9 @@
 //! Arithmetic profiles match ManyLUT's N1024/n728/q24/logB3 return stage;
 //! canonical input coefficients are synthetic, not a noise/security experiment.
 
+use primus_decompose::DecompositionBaseLog;
+use primus_lattice::LweDimension;
+use primus_lattice::PolyLength;
 use std::hint::black_box;
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
@@ -26,7 +29,7 @@ const DIMENSION: usize = 728;
 fn source<T: FheUint, Q: RingContext<T>>(c: &mut Criterion, source: Q, name: &str) {
     let target = PowOf2Modulus::new(T::ONE << 24u32);
     let parameters = LweParameters::new(
-        DIMENSION,
+        LweDimension::new(DIMENSION),
         T::TWO,
         target,
         SecretKeyDistr::UniformBinary,
@@ -59,7 +62,11 @@ fn source<T: FheUint, Q: RingContext<T>>(c: &mut Criterion, source: Q, name: &st
                         source,
                         &secret,
                         &parameters,
-                        ApproxSignedBasis::new(Some(T::ONE << 24u32), 3, None),
+                        ApproxSignedBasis::new(
+                            Some(T::ONE << 24u32),
+                            DecompositionBaseLog::new(3),
+                            None,
+                        ),
                         &mut rng,
                     );
                     let uniform = source.uniform_distribution();
@@ -68,8 +75,11 @@ fn source<T: FheUint, Q: RingContext<T>>(c: &mut Criterion, source: Q, name: &st
                     );
                     (key, input)
                 });
-                let mut individual = NtruLweKeySwitchingWorkspace::new(N);
-                let mut batch = NtruLweKeySwitchingBatchWorkspace::new(N, DIMENSION);
+                let mut individual = NtruLweKeySwitchingWorkspace::new(PolyLength::new(N));
+                let mut batch = NtruLweKeySwitchingBatchWorkspace::new(
+                    PolyLength::new(N),
+                    LweDimension::new(DIMENSION),
+                );
                 let mut outputs = vec![LweCiphertext::zero(DIMENSION); count];
                 let mut expected = outputs.clone();
                 for (index, output) in expected.iter_mut().enumerate() {

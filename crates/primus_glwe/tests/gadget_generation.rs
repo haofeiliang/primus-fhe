@@ -1,11 +1,15 @@
 //! Encrypted GLev/GGSW rows and their external-product semantics.
+
+use primus_decompose::DecompositionBaseLog;
 use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_glwe::{
     FourierGlweDecryptWorkspace, FourierGlweEncryptWorkspace, FourierGlweGadgetEncryptWorkspace,
     FourierGlweSecretKey, GlevParameters, GlweParameters, NttGlweGadgetEncryptWorkspace,
     NttGlweSecretKey, SecretKeyDistr,
 };
+use primus_lattice::GlweDimension;
 use primus_lattice::{
+    PolyLength,
     ggsw::{FourierGgswOwned, NttGgsw},
     glev::{FourierGlevOwned, NttGlev},
     glwe::{FourierGlweOwned, Glwe, NttGlwe, TorusGlwe},
@@ -58,18 +62,18 @@ fn fourier_gadget_phases_and_external_product() {
     let mut fft = FftEngine::new(&table);
     let mut rng = StdRng::seed_from_u64(42);
     let glwe_params = GlweParameters::new(
-        DIMENSION,
+        GlweDimension::new(DIMENSION),
         POLY_LENGTH,
         16u32,
         NativeModulus::new(),
         SecretKeyDistr::UniformBinary,
         0.7,
     );
-    let params = GlevParameters::with_glwe_params(&glwe_params, 8, None);
+    let params = GlevParameters::with_glwe_params(&glwe_params, DecompositionBaseLog::new(8), None);
     let (coeff_secret_key, secret_key) =
         FourierGlweSecretKey::generate_pair(&glwe_params, &mut fft, &mut rng);
     let mut gadget_workspace = FourierGlweGadgetEncryptWorkspace::new(params.size());
-    let mut decrypt_workspace = FourierGlweDecryptWorkspace::new(POLY_LENGTH);
+    let mut decrypt_workspace = FourierGlweDecryptWorkspace::new(PolyLength::new(POLY_LENGTH));
 
     let mut raw_message = vec![0u32; POLY_LENGTH];
     raw_message[0] = 1;
@@ -152,7 +156,7 @@ fn fourier_gadget_phases_and_external_product() {
     );
 
     let mut input_fourier = FourierGlweOwned::zero(params.fourier_glwe_len());
-    let mut glwe_workspace = FourierGlweEncryptWorkspace::new(POLY_LENGTH);
+    let mut glwe_workspace = FourierGlweEncryptWorkspace::new(PolyLength::new(POLY_LENGTH));
     secret_key.encrypt_to(
         &plaintext,
         &mut input_fourier,
@@ -200,14 +204,14 @@ fn ntt_gadget_phases_and_external_product() {
     let ntt = UintNttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
     let mut rng = StdRng::seed_from_u64(42);
     let glwe_params = GlweParameters::new(
-        DIMENSION,
+        GlweDimension::new(DIMENSION),
         POLY_LENGTH,
         16u32,
         modulus,
         SecretKeyDistr::SparseTernary,
         0.7,
     );
-    let params = GlevParameters::with_glwe_params(&glwe_params, 8, None);
+    let params = GlevParameters::with_glwe_params(&glwe_params, DecompositionBaseLog::new(8), None);
     let (coeff_secret_key, secret_key) =
         NttGlweSecretKey::generate_pair(&glwe_params, &ntt, &mut rng);
     let mut workspace = NttGlweGadgetEncryptWorkspace::new(params.size());

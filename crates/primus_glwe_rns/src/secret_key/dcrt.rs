@@ -90,7 +90,7 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         assert_eq!(secret_key.poly_length(), table.poly_length());
 
         let size = RnsGlweSize::new(secret_key.glwe_size(), table.moduli_count());
-        let poly_length = size.poly_length();
+        let poly_length = size.poly_length().get();
         let rns_poly_len = size.rns_poly_len();
         // Establish erasing ownership before writing secrets or invoking a
         // transform, so unwinding also erases a partially converted key.
@@ -140,7 +140,7 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        let poly_length = params.poly_length();
+        let poly_length = params.poly_length().get();
         let rns_poly_len = params.rns_poly_len();
         let moduli = params.cipher_moduli();
         let uniform_distrs = params.cipher_moduli_uniform_distr();
@@ -185,7 +185,7 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        let poly_length = params.poly_length();
+        let poly_length = params.poly_length().get();
         let rns_poly_len = params.rns_poly_len();
         let moduli = params.cipher_moduli();
         let uniform_distrs = params.cipher_moduli_uniform_distr();
@@ -229,7 +229,7 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        let poly_length = params.poly_length();
+        let poly_length = params.poly_length().get();
         let rns_poly_len = params.rns_poly_len();
         let moduli = params.cipher_moduli();
         let uniform_distrs = params.cipher_moduli_uniform_distr();
@@ -273,7 +273,7 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         Table: NttTable<ValueT = T>,
         A: DataMut<Elem = T>,
     {
-        let poly_length = params.poly_length();
+        let poly_length = params.poly_length().get();
         let rns_poly_len = params.rns_poly_len();
         let moduli = params.cipher_moduli();
         let uniform_distrs = params.cipher_moduli_uniform_distr();
@@ -315,7 +315,7 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        let poly_length = params.poly_length();
+        let poly_length = params.poly_length().get();
         let moduli = params.cipher_moduli();
         let uniform_distrs = params.cipher_moduli_uniform_distr();
 
@@ -393,7 +393,7 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        let poly_length = params.poly_length();
+        let poly_length = params.poly_length().get();
         let moduli = params.cipher_moduli();
         let uniform_distrs = params.cipher_moduli_uniform_distr();
 
@@ -471,7 +471,7 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        let poly_length = params.poly_length();
+        let poly_length = params.poly_length().get();
         let moduli = params.cipher_moduli();
 
         let (a, b) = ciphertext.a_b(params.rns_poly_len());
@@ -498,7 +498,7 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         Table: NttTable<ValueT = T>,
         A: Data<Elem = T>,
     {
-        let mut msg = PolynomialOwned::zero(params.poly_length());
+        let mut msg = PolynomialOwned::zero(params.poly_length().get());
         self.decrypt_inplace(ciphertext, &mut msg, params, table, workspace);
         msg
     }
@@ -613,12 +613,17 @@ impl<T: FheUint> DcrtGlweDecryptWorkspace<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use primus_lattice::GlweDimension;
     use primus_lattice::GlweSize;
+    use primus_lattice::PolyLength;
 
     #[test]
     fn decrypt_workspace_erases_both_buffers_without_changing_layout() {
         for count in [1, 2] {
-            let size = RnsGlweSize::new(GlweSize::new(1, 8), count);
+            let size = RnsGlweSize::new(
+                GlweSize::new(GlweDimension::new(1), PolyLength::new(8)),
+                count,
+            );
             let mut workspace = DcrtGlweDecryptWorkspace::<u64>::new(size);
             workspace.msg_mod_q.as_mut().fill(0xfeed);
             workspace.fast_convert_buffer.fill(0xbeef);

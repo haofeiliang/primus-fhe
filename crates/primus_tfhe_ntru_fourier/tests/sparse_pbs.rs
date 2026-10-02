@@ -1,8 +1,10 @@
 //! Classic/sparse differential PBS and ManyLUT on reused workspaces;
 //! bucket layouts and quantization margins are part of the fixture.
 
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_encoding::{PlaintextEmbedding, RoundedCodec};
 use primus_fft::{FftTable, RustFftTable, TfheFftTable, TorusFftValue};
+use primus_lattice::LweDimension;
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::NativeModulus;
 use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
@@ -21,7 +23,13 @@ const DIM: usize = 16;
 
 fn context<T: TorusFftValue, Table: FftTable>(distr: SecretKeyDistr) -> TfheContext<T, Table> {
     let modulus = NativeModulus::new();
-    let lwe = LweParameters::new(DIM, T::as_from(16usize), modulus, distr, 0.7);
+    let lwe = LweParameters::new(
+        LweDimension::new(DIM),
+        T::as_from(16usize),
+        modulus,
+        distr,
+        0.7,
+    );
 
     let acc = NtruParameters::new(
         N,
@@ -33,9 +41,9 @@ fn context<T: TorusFftValue, Table: FftTable>(distr: SecretKeyDistr) -> TfheCont
     TfheContext::try_from_parameters(
         TfheParameters::try_new(
             lwe,
-            NlevParameters::with_ntru_params(&acc, 8, None),
+            NlevParameters::with_ntru_params(&acc, DecompositionBaseLog::new(8), None),
             primus_tfhe_ntru::DecompositionConfig {
-                log_basis: 8,
+                log_basis: DecompositionBaseLog::new(8),
                 level_count: None,
             },
             0.7,
@@ -329,15 +337,15 @@ fn sparse_generation_boundaries_and_unsupported_combinations() {
 
     // Supplying valid standalone CBS material must not bypass the sparse gate.
     let decomposition = DecompositionConfig {
-        log_basis: 8,
+        log_basis: DecompositionBaseLog::new(8),
         level_count: None,
     };
     let parameters = CircuitBootstrapParameters::try_from_config(
         context.parameters(),
         CircuitBootstrapConfig {
             output: DecompositionConfig {
-                log_basis: 8,
-                level_count: Some(1),
+                log_basis: DecompositionBaseLog::new(8),
+                level_count: Some(DecompositionLevelCount::new(1)),
             },
             trace: decomposition,
             trace_noise_standard_deviation: 0.7,

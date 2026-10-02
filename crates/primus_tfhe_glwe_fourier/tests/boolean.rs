@@ -1,8 +1,10 @@
 //! Backend Boolean integration: real PBS, encoding, rejection and evaluator reuse.
 
 use primus_decompose::primitive::ApproxSignedBasis;
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_fft::{FftTable, RustFftTable};
 use primus_glwe::{GlweParameters, SecretKeyDistr};
+use primus_lattice::{GlweDimension, LweDimension};
 use primus_lwe::LweParameters;
 use primus_modulus::NativeModulus;
 use primus_tfhe_glwe_fourier::{
@@ -17,26 +19,34 @@ const POLY_LENGTH: usize = 32;
 /// Small parameters for client factories and both PBS orders.
 fn parameters(pbs_order: PbsOrder) -> TfheParameters<u32> {
     let lwe = LweParameters::new(
-        4,
+        LweDimension::new(4),
         4,
         NativeModulus::new(),
         SecretKeyDistr::UniformBinary,
         0.7,
     );
     let glwe = GlweParameters::new(
-        1,
+        GlweDimension::new(1),
         POLY_LENGTH,
         4,
         NativeModulus::new(),
         SecretKeyDistr::UniformBinary,
         0.7,
     );
-    let bootstrapping = ApproxSignedBasis::new(glwe.cipher_modulus_value(), 8, Some(3));
+    let bootstrapping = ApproxSignedBasis::new(
+        glwe.cipher_modulus_value(),
+        DecompositionBaseLog::new(8),
+        Some(DecompositionLevelCount::new(3)),
+    );
     TfheParameters::try_new(
         lwe,
         glwe,
         bootstrapping,
-        ApproxSignedBasis::new(None, 4, Some(4)),
+        ApproxSignedBasis::new(
+            None,
+            DecompositionBaseLog::new(4),
+            Some(DecompositionLevelCount::new(4)),
+        ),
         pbs_order,
     )
     .unwrap()
@@ -57,12 +67,12 @@ fn boolean_factories_support_truth_tables_and_reused_output_in_both_orders() {
             encryptor.encrypt(false, &mut rng).unwrap(),
             encryptor.encrypt(true, &mut rng).unwrap(),
         ];
-        let mut output = LweCiphertext::zero(context.parameters().external_lwe_dimension());
+        let mut output = LweCiphertext::zero(context.parameters().external_lwe_dimension().get());
         encryptor.encrypt_to(false, &mut output, &mut rng).unwrap();
         assert!(!decryptor.decrypt(&output).unwrap());
         assert_eq!(
             output.dimension(),
-            context.parameters().external_lwe_dimension()
+            context.parameters().external_lwe_dimension().get()
         );
 
         let invalid = context

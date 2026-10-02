@@ -196,7 +196,7 @@ impl FourierNtruSecretKey {
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
     {
-        Self::generate_padded_pair(params, params.poly_length(), fft, rng)
+        Self::generate_padded_pair(params, params.poly_length().get(), fft, rng)
     }
 
     /// Rejection-samples a coefficient prefix padded to the NTRU ring.
@@ -237,17 +237,17 @@ impl FourierNtruSecretKey {
         R: rand::Rng + rand::CryptoRng,
     {
         assert!(
-            (1..=params.poly_length()).contains(&active_length),
+            (1..=params.poly_length().get()).contains(&active_length),
             "NTRU active length must belong to 1..=N"
         );
-        assert_eq!(fft.poly_length(), params.poly_length());
+        assert_eq!(fft.poly_length(), params.poly_length().get());
 
         Self::check_fixed_weight_parity(params.secret_key_distr(), active_length)?;
 
         let mut coefficient_key =
-            NtruSecretKey::allocate(params.poly_length(), params.secret_key_distr());
-        let mut transformed = Self::allocate(params.poly_length(), params.secret_key_distr());
-        let mut native_coefficients = Zeroizing::new(vec![T::ZERO; params.poly_length()]);
+            NtruSecretKey::allocate(params.poly_length().get(), params.secret_key_distr());
+        let mut transformed = Self::allocate(params.poly_length().get(), params.secret_key_distr());
+        let mut native_coefficients = Zeroizing::new(vec![T::ZERO; params.poly_length().get()]);
         let sampler = params.secret_key_sampler();
         for _ in 0..crate::parameter::KEY_GENERATION_ATTEMPTS {
             sampler.sample_signed_to(&mut coefficient_key.key[..active_length], rng);
@@ -303,7 +303,7 @@ impl FourierNtruSecretKey {
         T: TorusFftValue,
         Table: FftTable,
     {
-        assert_eq!(params.poly_length(), self.poly_length());
+        assert_eq!(params.poly_length().get(), self.poly_length());
         assert_eq!(fft.poly_length(), self.poly_length());
     }
 }

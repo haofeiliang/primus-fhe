@@ -48,7 +48,7 @@ impl<T: FheUint> LweSecretKey<T> {
         R: rand::Rng + rand::CryptoRng,
         M: RingContext<T>,
     {
-        debug_assert_eq!(self.dimension(), params.dimension());
+        debug_assert_eq!(self.dimension(), params.dimension().get());
 
         let plaintext = params.plaintext_codec().encode_value(message, embedding);
         self.as_view().encrypt_encoded(
@@ -100,7 +100,7 @@ impl<T: FheUint> LweSecretKey<T> {
         R: rand::Rng + rand::CryptoRng,
         M: RingContext<T>,
     {
-        debug_assert_eq!(self.dimension(), params.dimension());
+        debug_assert_eq!(self.dimension(), params.dimension().get());
         let plaintext = params.plaintext_codec().encode_value(message, embedding);
         self.as_view().encrypt_encoded_to(
             plaintext,
@@ -119,7 +119,7 @@ impl<T: FheUint> LweSecretKey<T> {
     /// # Correctness
     ///
     /// The key must satisfy the [type's parameter contract](Self#correctness).
-    /// The ciphertext must have dimension `params.dimension()` and canonical
+    /// The ciphertext must have dimension `params.dimension().get()` and canonical
     /// coefficients under the same modulus. Recovering the original message
     /// also requires its noise to remain within the codec's decoding margin.
     ///
@@ -137,7 +137,7 @@ impl<T: FheUint> LweSecretKey<T> {
     {
         let modulus = params.cipher_modulus();
 
-        debug_assert_eq!(self.dimension(), params.dimension());
+        debug_assert_eq!(self.dimension(), params.dimension().get());
         let plaintext = self.as_view().decrypt_phase(cipher_text, modulus);
 
         params.plaintext_codec().decode_value(plaintext)
@@ -163,7 +163,7 @@ impl<T: FheUint> LweSecretKey<T> {
     {
         let modulus = params.cipher_modulus();
 
-        debug_assert_eq!(self.dimension(), params.dimension());
+        debug_assert_eq!(self.dimension(), params.dimension().get());
         let plaintext = self.as_view().decrypt_phase(cipher_text, modulus);
 
         let message: T = params.plaintext_codec().decode_value(plaintext);

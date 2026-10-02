@@ -58,7 +58,7 @@ impl<T: FheUint> BootstrappingKey<T> {
                 )
             }
         };
-        dimension == parameters.small_lwe().dimension()
+        dimension == (parameters.small_lwe().dimension())
             && input_modulus == parameters.small_lwe().cipher_modulus_value()
             && size == parameters.blind_rotation_ggsw().size()
             && basis == parameters.blind_rotation_ggsw().basis()
@@ -88,7 +88,7 @@ impl<T: FheUint> ServerKey<T> {
         self.bootstrapping_key.is_compatible(parameters)
             && self.glwe_key_switching_key.input_dimension() == key_switching.input_dimension()
             && self.glwe_key_switching_key.output_dimension() == key_switching.output_dimension()
-            && self.glwe_key_switching_key.poly_length() == key_switching.poly_length()
+            && self.glwe_key_switching_key.poly_length() == key_switching.poly_length().get()
             && self.glwe_key_switching_key.output_size() == key_switching.output_size()
             && self.glwe_key_switching_key.basis() == key_switching.output().basis()
     }

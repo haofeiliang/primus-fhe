@@ -29,7 +29,7 @@ where
     ///
     /// # Correctness
     ///
-    /// Let `N = workspace.poly_length()` and `L = basis.decompose_length()`.
+    /// Let `N = workspace.poly_length().get()` and `L = basis.decompose_length().get()`.
     /// The polynomial input and output each contain exactly `N` coefficients.
     /// `self` contains exactly `L * N / 2` complex values, grouped
     /// by level in `basis.decomposer_iter()` order. The basis must be the
@@ -53,7 +53,7 @@ where
         A: Data<Elem = T>,
         C: DataMut<Elem = T>,
     {
-        debug_assert_eq!(output.as_ref().len(), workspace.poly_length());
+        debug_assert_eq!(output.as_ref().len(), workspace.poly_length().get());
         let mut workspace = workspace.as_mut();
         workspace.fourier_accumulator.set_zero();
         accumulate_fourier_gadget_product(
@@ -76,7 +76,7 @@ where
     /// transform or torus rounding; later conversion requires the same FFT table.
     ///
     /// # Panics
-    /// Panics if the output length is not `workspace.poly_length() / 2`.
+    /// Panics if the output length is not `workspace.poly_length().fourier_poly_len()`.
     pub fn external_product_fourier_to<T, Table, A, C>(
         &self,
         polynomial: &Polynomial<A>,
@@ -92,7 +92,7 @@ where
     {
         assert_eq!(
             output.as_ref().len(),
-            workspace.poly_length() / 2,
+            workspace.poly_length().fourier_poly_len(),
             "external-product output length mismatch"
         );
         let mut workspace = workspace.as_mut_with_accumulator(output);
@@ -119,7 +119,7 @@ where
     ///
     /// # Correctness
     ///
-    /// Let `N = workspace.poly_length()` and `L = basis.decompose_length()`.
+    /// Let `N = workspace.poly_length().get()` and `L = basis.decompose_length().get()`.
     /// The polynomial input and output each contain exactly `N` coefficients.
     /// `self` contains exactly `L * N` evaluations, grouped
     /// by level in `basis.decomposer_iter()` order. The basis must be the
@@ -132,7 +132,7 @@ where
     /// basis, key, table, or actual ciphertext buffers.
     ///
     /// # Panics
-    /// Panics before output writes if its length is not `workspace.poly_length()`.
+    /// Panics before output writes if its length is not `workspace.poly_length().get()`.
     pub fn external_product_to<M, Table, A, C>(
         &self,
         polynomial: &Polynomial<A>,
@@ -151,7 +151,7 @@ where
         // destination, then invert in place to avoid copying an entire polynomial.
         assert_eq!(
             output.as_ref().len(),
-            workspace.poly_length(),
+            workspace.poly_length().get(),
             "external-product output length mismatch"
         );
         let mut transformed = NttNtru(output.as_mut());
@@ -178,7 +178,7 @@ where
     /// from the workspace or an inverse transform.
     ///
     /// # Panics
-    /// Panics if the output length is not `workspace.poly_length()`.
+    /// Panics if the output length is not `workspace.poly_length().get()`.
     pub fn external_product_ntt_to<M, Table, A, C>(
         &self,
         polynomial: &Polynomial<A>,
@@ -195,7 +195,7 @@ where
     {
         assert_eq!(
             output.as_ref().len(),
-            workspace.poly_length(),
+            workspace.poly_length().get(),
             "external-product output length mismatch"
         );
         let mut workspace = workspace.as_mut_with_accumulator(output);

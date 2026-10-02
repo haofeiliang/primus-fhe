@@ -1,3 +1,6 @@
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_lattice::PolyLength;
+use primus_lattice::{GlweDimension, LweDimension};
 use primus_tfhe::ProgrammableBootstrap as _;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
@@ -34,11 +37,26 @@ fn context<T: TorusFftValue, Table: FftTable>(
     };
     TfheContext::try_from_parameters(
         TfheParameters::try_new(
-            LweParameters::new(DIM, t, modulus, distribution, 0.7),
+            LweParameters::new(LweDimension::new(DIM), t, modulus, distribution, 0.7),
             // Multiple masks and a different KS output dimension protect component reuse.
-            GlweParameters::new(2, N, t, modulus, SecretKeyDistr::UniformBinary, 0.7),
-            ApproxSignedBasis::new(None, 8, Some(3)),
-            ApproxSignedBasis::new(None, 4, Some(6)),
+            GlweParameters::new(
+                GlweDimension::new(2),
+                N,
+                t,
+                modulus,
+                SecretKeyDistr::UniformBinary,
+                0.7,
+            ),
+            ApproxSignedBasis::new(
+                None,
+                DecompositionBaseLog::new(8),
+                Some(DecompositionLevelCount::new(3)),
+            ),
+            ApproxSignedBasis::new(
+                None,
+                DecompositionBaseLog::new(4),
+                Some(DecompositionLevelCount::new(6)),
+            ),
             order,
         )
         .unwrap(),
@@ -84,7 +102,7 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(order: PbsOrder, ternary: b
         );
         let encryptor = context.encryptor(&client).unwrap();
         let decryptor = context.decryptor(&client).unwrap();
-        let dimension = context.parameters().external_lwe_dimension();
+        let dimension = context.parameters().external_lwe_dimension().get();
         assert_eq!(
             dimension,
             if order == PbsOrder::BootstrapKeyswitch {
@@ -96,9 +114,14 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(order: PbsOrder, ternary: b
         let mut outputs = vec![LweCiphertext::zero(dimension); 3];
         let singles: Vec<_> = (0..3)
             .map(|i| {
-                LookupTable::try_new(DOMAIN, N, T::as_from(15usize), modulus, modulus, |m| {
-                    Ok(codec.encode_value(T::as_from(value(m, i)), Unsigned))
-                })
+                LookupTable::try_new(
+                    DOMAIN,
+                    PolyLength::new(N),
+                    T::as_from(15usize),
+                    modulus,
+                    modulus,
+                    |m| Ok(codec.encode_value(T::as_from(value(m, i)), Unsigned)),
+                )
                 .unwrap()
             })
             .collect();
@@ -163,7 +186,7 @@ fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
     let compile = |context: &TfheContext<u32, RustFftTable>| {
         FactorizedLookupTable::try_new(
             DOMAIN,
-            N,
+            PolyLength::new(N),
             3,
             context.parameters().input_plaintext_codec(),
             &codec,
@@ -225,7 +248,7 @@ fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
         mismatched.push(
             FactorizedLookupTable::try_new(
                 2,
-                n,
+                PolyLength::new(n),
                 1,
                 &RoundedCodec::new(t, native),
                 &codec,
@@ -235,13 +258,20 @@ fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
         );
     }
     mismatched.push(
-        FactorizedLookupTable::try_new(2, N, 1, &RoundedCodec::new(15, explicit), &codec, |_, _| 0)
-            .unwrap(),
+        FactorizedLookupTable::try_new(
+            2,
+            PolyLength::new(N),
+            1,
+            &RoundedCodec::new(15, explicit),
+            &codec,
+            |_, _| 0,
+        )
+        .unwrap(),
     );
     mismatched.push(
         FactorizedLookupTable::try_new(
             2,
-            N,
+            PolyLength::new(N),
             1,
             context.parameters().input_plaintext_codec(),
             &ScaledCodec::new(8, explicit),

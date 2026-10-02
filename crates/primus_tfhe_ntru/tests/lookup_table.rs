@@ -1,4 +1,6 @@
+use primus_decompose::DecompositionBaseLog;
 use primus_encoding::RoundedCodec;
+use primus_lwe::LweDimension;
 use primus_lwe::LweParameters;
 use primus_modulus::NativeModulus;
 use primus_ntru::{NlevParameters, NtruParameters, NtruSecretKey, SecretKeyDistr};
@@ -13,15 +15,15 @@ fn parameters_with_plaintext(t: u32) -> TfheParameters<u32, NativeModulus<u32>> 
     let accumulator = NtruParameters::new(N, t, modulus, SecretKeyDistr::gaussian(3.2), 0.7);
     TfheParameters::try_new(
         LweParameters::new(
-            LWE_DIMENSION,
+            LweDimension::new(LWE_DIMENSION),
             t,
             modulus,
             SecretKeyDistr::UniformBinary,
             0.7,
         ),
-        NlevParameters::with_ntru_params(&accumulator, 8, None),
+        NlevParameters::with_ntru_params(&accumulator, DecompositionBaseLog::new(8), None),
         primus_tfhe_ntru::DecompositionConfig {
-            log_basis: 8,
+            log_basis: DecompositionBaseLog::new(8),
             level_count: None,
         },
         0.7,

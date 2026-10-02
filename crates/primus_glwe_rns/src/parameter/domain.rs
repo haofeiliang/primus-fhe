@@ -60,7 +60,7 @@ where
         parameters: &'a CrtGlevParameters<T, M>,
         table: &'a DcrtTable<Table>,
     ) -> Result<Self, GadgetDomainError<T>> {
-        let expected = parameters.poly_length();
+        let expected = parameters.poly_length().get();
         let actual = table.poly_length();
         if actual != expected {
             return Err(GadgetDomainError::PolynomialLengthMismatch { expected, actual });

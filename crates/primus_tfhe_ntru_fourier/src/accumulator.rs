@@ -52,7 +52,7 @@ where
         Ok(Self {
             context,
             secret,
-            transformed: FourierNtruCiphertext::zero(parameters.poly_length() / 2),
+            transformed: FourierNtruCiphertext::zero(parameters.poly_length().fourier_poly_len()),
             fft,
             encrypt: FourierNtruEncryptWorkspace::new(parameters.poly_length()),
             decrypt: FourierNtruDecryptWorkspace::new(parameters.poly_length()),
@@ -86,9 +86,10 @@ where
         S: DataMut<Elem = T>,
     {
         let parameters = self.context.parameters().accumulator_ntru();
+        let n = parameters.poly_length().get();
         assert_eq!(
             (message.len(), output.as_ref().len()),
-            (parameters.poly_length(), parameters.poly_length()),
+            (n, n),
             "accumulator encryption layout mismatch"
         );
         self.secret.encrypt_to(
@@ -105,7 +106,13 @@ where
     /// Allocates and decodes all N coefficients. Inherits [`Self::decrypt_to`]'s contracts.
     #[must_use]
     pub fn decrypt<S: Data<Elem = T>>(&mut self, input: &NtruCiphertext<S>) -> Vec<T> {
-        let mut output = vec![T::ZERO; self.context.parameters().accumulator_ntru().poly_length()];
+        let n = self
+            .context
+            .parameters()
+            .accumulator_ntru()
+            .poly_length()
+            .get();
+        let mut output = vec![T::ZERO; n];
         self.decrypt_to(input, &mut output);
         output
     }
@@ -120,9 +127,10 @@ where
     /// Panics before output writes if ciphertext or plaintext length is wrong.
     pub fn decrypt_to<S: Data<Elem = T>>(&mut self, input: &NtruCiphertext<S>, output: &mut [T]) {
         let parameters = self.context.parameters().accumulator_ntru();
+        let n = parameters.poly_length().get();
         assert_eq!(
             (input.as_ref().len(), output.len()),
-            (parameters.poly_length(), parameters.poly_length()),
+            (n, n),
             "accumulator decryption layout mismatch"
         );
         input.write_fourier_form(&mut self.transformed, &mut self.fft);

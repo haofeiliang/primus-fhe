@@ -1,5 +1,6 @@
 //! Small functional dimensions include vector blocks and incomplete tails.
 use primus_integer::{AsFrom, AsInto, FheUint};
+use primus_lattice::LweDimension;
 use primus_lattice::lwe::Lwe;
 use primus_lwe::{LweParameters, LweSecretKeyRef, SecretKeyDistr};
 use primus_modulus::{BarrettModulus, NativeModulus, PowOf2Modulus};
@@ -23,7 +24,7 @@ fn check_raw<T: FheUint, M: RingContext<T>>(modulus: M) {
             .collect();
         // Reuse the sampler parameters while also exercising a zero-dimensional raw sample.
         let params = LweParameters::new(
-            dimension.max(1),
+            LweDimension::new(dimension.max(1)),
             T::as_from(4u32),
             modulus,
             SecretKeyDistr::UniformTernary,
@@ -106,7 +107,7 @@ fn raw_dimensions_are_checked_before_writing_or_sampling() {
     use std::panic::{AssertUnwindSafe, catch_unwind};
 
     let params = LweParameters::new(
-        2,
+        LweDimension::new(2),
         4u32,
         NativeModulus::new(),
         SecretKeyDistr::UniformBinary,

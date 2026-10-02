@@ -103,7 +103,7 @@ impl<T: FheUint> NttNtruKeySwitchingKey<T> {
         );
         Self {
             data,
-            poly_length: parameters.poly_length(),
+            poly_length: parameters.poly_length().get(),
             basis: parameters.basis().clone(),
         }
     }
@@ -182,7 +182,7 @@ impl<T: FheUint> NttNtruKeySwitchingKey<T> {
         Table: NttTable<ValueT = T>,
     {
         assert_eq!(
-            workspace.poly_length(),
+            workspace.poly_length().get(),
             self.poly_length,
             "key-switch workspace length mismatch"
         );

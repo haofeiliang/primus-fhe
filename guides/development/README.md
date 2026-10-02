@@ -29,6 +29,21 @@ Choose the modulus before choosing a transform or decomposition basis. The imple
 
 Raw polynomial/ciphertext constructors do not establish modulus, key identity, representation or full layout. `Polynomial<S>` does not carry an independent ring length: wrapping `batch_count*N` elements does not automatically turn single-polynomial operations into batch operations. Only pass such storage to an API whose contract explicitly accepts a batch; otherwise iterate over complete objects.
 
+[PolyLength](../../crates/primus_lattice/src/poly_length.rs) checks the supported
+GLWE/NTRU power-of-two range `2..=2^17`, with `get()`, `log_n()` and `fourier_poly_len()` returning
+`N`, `log2(N)` and `N/2` complex elements. `GlweSize` and `NtruParameters` store
+this invariant, and `poly_length()` returns `PolyLength` for workspace construction. Shared TFHE LUT constructors also consume it directly.
+Polynomial-length configuration still accepts integer `N`; extract `.get()` at
+scalar kernel, storage or FFT/NTT boundaries.
+This bound also ensures `2N` fits in `usize`; transforms retain their own
+supported ranges and numerical requirements. Raw buffer lengths
+remain integers and need their own layout checks. FFT/NTT retain integer
+construction interfaces rather than depending on the higher lattice layer.
+
+`LweDimension` and `GlweDimension` from lattice check positive mask counts and representable body-inclusive counts; `ciphertext_len()` gives `n+1` and `component_count()` gives `k+1`. `GlweSize` stores GLWE geometry and flattened lengths; `LweDimension::from(glwe_size)` explicitly derives checked `kN`. NTRU extraction uses `LweDimension::from(poly_length)`. Raw slices keep integer dimensions and may have dimension zero.
+
+`DecompositionBaseLog` and `DecompositionLevelCount` from decompose establish `log_basis >= 2` and `L >= 1`. Basis construction checks word/modulus limits and their pairing, without preset caps. Checked parameters, layouts and workspaces pass these units directly; unwrap once at numerical or storage boundaries. Composed lengths still require checks at the boundary owning the layout.
+
 Use the existing [size descriptors](../../crates/primus_lattice/src/size.rs) for GLWE layouts:
 
 | Descriptor | Describes |
@@ -38,7 +53,7 @@ Use the existing [size descriptors](../../crates/primus_lattice/src/size.rs) for
 | `RnsGlweSize` | GLWE with an explicit RNS modulus count |
 | `RnsGadgetSize` | Gadget levels and rows over that RNS layout |
 
-Descriptors check supported dimensions and flattened-length overflow. They do not inspect storage or validate basis, tables or noise. Compare the complete buffer length with the derived length at the owning public boundary. For NTRU, one Ntru occupies N values and one Nlev/Ngsw occupies L*N; use the operation's parameters/basis and checked batch lengths. Nlev and Ngsw have the same flat shape but different encrypted phases and valid products.
+Descriptors check composed lengths and flattened-length overflow. They do not inspect storage or validate basis, tables or noise. Compare the complete buffer length with the derived length at the owning public boundary. For NTRU, one Ntru occupies N values and one Nlev/Ngsw occupies L*N; use the operation's parameters/basis and checked batch lengths. Nlev and Ngsw have the same flat shape but different encrypted phases and valid products.
 
 ## Traverse mathematical objects
 
@@ -87,10 +102,12 @@ assert_eq!(output, [252, 1, 2, 3, 248, 5, 6, 7]);
 This fragment needs `primus_lattice`. It walks the rows and levels of one GGSW and separates each GLWE's mask/body. The zero buffer demonstrates layout access; it does not sample an encryption. Each child is a borrowed view, with no allocation in the traversal.
 
 ```rust
-use primus_lattice::{GadgetSize, GlweSize, ggsw::Ggsw};
+use primus_lattice::{GadgetSize, GlweDimension, GlweSize, PolyLength, ggsw::Ggsw};
+use primus_decompose::DecompositionLevelCount;
 
-let glwe_size = GlweSize::new(2, 8);
-let gadget_size = GadgetSize::new(glwe_size, 3);
+let poly_length = PolyLength::new(8);
+let glwe_size = GlweSize::new(GlweDimension::new(2), poly_length);
+let gadget_size = GadgetSize::new(glwe_size, DecompositionLevelCount::new(3));
 let storage = vec![0u32; gadget_size.ggsw_len()];
 
 assert_eq!(storage.len(), gadget_size.ggsw_len());
@@ -98,9 +115,9 @@ let ggsw = Ggsw::new(storage.as_slice());
 let mut level_count = 0;
 for row in ggsw.iter_glev(gadget_size.glev_len()) {
     for level in row.iter_glwe(glwe_size.glwe_len()) {
-        let (mask, body) = level.a_b(glwe_size.poly_length());
-        assert_eq!(mask.len(), glwe_size.dimension());
-        assert_eq!(body.poly_length(), glwe_size.poly_length());
+        let (mask, body) = level.a_b(glwe_size.poly_length().get());
+        assert_eq!(mask.len(), glwe_size.dimension().get());
+        assert_eq!(body.poly_length(), glwe_size.poly_length().get());
         level_count += 1;
     }
 }

@@ -138,7 +138,7 @@ where
         let context = evaluator.context;
         Ok(Self {
             evaluator,
-            shared_rotation: NttNtru::zero(context.parameters().poly_length()),
+            shared_rotation: NttNtru::zero(context.parameters().poly_length().get()),
         })
     }
 
@@ -171,7 +171,7 @@ where
     ) -> Vec<LweCiphertext<T>> {
         let dimension = self.evaluator.context.parameters().external_lwe_dimension();
         let mut outputs = (0..lookup_table.output_count())
-            .map(|_| LweCiphertext::zero(dimension))
+            .map(|_| LweCiphertext::zero(dimension.get()))
             .collect::<Vec<_>>();
         self.apply_lookup_table_to(input, lookup_table, &mut outputs);
         outputs
@@ -206,7 +206,7 @@ where
         self.check_io(input, lookup_table, outputs);
         self.prepare_shared_rotation(input, &lookup_table.common_polynomial);
 
-        let n = self.evaluator.context.parameters().poly_length();
+        let n = self.evaluator.context.parameters().poly_length().get();
         let batch_size = self.evaluator.lwe_return_batch_capacity();
         let mut factors = NttPolynomialIter::new(&lookup_table.factors, n);
         for outputs in outputs.chunks_mut(batch_size) {
@@ -232,14 +232,20 @@ where
         );
         let parameters = evaluator.context.parameters();
         let dimension = parameters.external_lwe_dimension();
-        assert_eq!(input.dimension(), dimension, "MVB input dimension mismatch");
+        assert_eq!(
+            input.dimension(),
+            dimension.get(),
+            "MVB input dimension mismatch"
+        );
         assert_eq!(
             outputs.len(),
             lookup_table.output_count(),
             "MVB output count mismatch"
         );
         assert!(
-            outputs.iter().all(|output| output.dimension() == dimension),
+            outputs
+                .iter()
+                .all(|output| output.dimension() == dimension.get()),
             "MVB output ciphertext dimension mismatch"
         );
     }

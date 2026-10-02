@@ -2,8 +2,10 @@
 //! client/server keys in both GLWE PBS orders.
 
 use primus_decompose::primitive::ApproxSignedBasis;
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_fft::{FftTable, RustFftTable};
 use primus_glwe::{GadgetSize, GlweCiphertext, GlweParameters, SecretKeyDistr};
+use primus_lattice::{GlweDimension, LweDimension};
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::NativeModulus;
 use primus_poly::Polynomial;
@@ -27,9 +29,15 @@ fn parameters_with_bases(
     key_switching_log_basis: u32,
     distribution: SecretKeyDistr,
 ) -> TfheParameters<u32> {
-    let lwe = LweParameters::new(4, 4, NativeModulus::new(), distribution, 0.7);
+    let lwe = LweParameters::new(
+        LweDimension::new(4),
+        4,
+        NativeModulus::new(),
+        distribution,
+        0.7,
+    );
     let glwe = GlweParameters::new(
-        1,
+        GlweDimension::new(1),
         POLY_LENGTH,
         4,
         NativeModulus::new(),
@@ -38,14 +46,18 @@ fn parameters_with_bases(
     );
     let bootstrapping = ApproxSignedBasis::new(
         glwe.cipher_modulus_value(),
-        bootstrapping_log_basis,
-        Some(3),
+        DecompositionBaseLog::new(bootstrapping_log_basis),
+        Some(DecompositionLevelCount::new(3)),
     );
     TfheParameters::try_new(
         lwe,
         glwe,
         bootstrapping,
-        ApproxSignedBasis::new(None, key_switching_log_basis, Some(4)),
+        ApproxSignedBasis::new(
+            None,
+            DecompositionBaseLog::new(key_switching_log_basis),
+            Some(DecompositionLevelCount::new(4)),
+        ),
         order,
     )
     .unwrap()
@@ -65,7 +77,7 @@ fn rejects_a_fourier_table_with_the_wrong_length() {
     // N=2 is a valid ring shape, but this FFT backend requires N >= 4.
     let tfhe = parameters(PbsOrder::BootstrapKeyswitch);
     let tiny_ring = GlweParameters::new(
-        2,
+        GlweDimension::new(2),
         2,
         4,
         NativeModulus::new(),
@@ -193,7 +205,7 @@ fn public_blind_rotation_rejects_mismatches_before_output_writes() {
         panic!("raw classic rotation test requires a classic key");
     };
     let size = key.size();
-    let input_len = key.input_dimension() + 1;
+    let input_len = key.input_dimension().ciphertext_len();
     let glwe_len = size.glwe_len();
     let input = LweCiphertext::new(vec![0u32; input_len]);
     let accumulator = GlweCiphertext::<Vec<u32>>::zero(glwe_len);
@@ -280,7 +292,7 @@ fn public_blind_rotation_rejects_mismatches_before_output_writes() {
     let mut wrong_scratch = FourierGlweBlindRotationWorkspace::new(key);
     wrong_scratch.resize(GadgetSize::new(
         size.glwe_size(),
-        size.decompose_length() + 1,
+        DecompositionLevelCount::new(size.decompose_length().get() + 1),
     ));
     // All data have valid lengths here, so resource mismatch alone must reject.
     for (fft, scratch) in [

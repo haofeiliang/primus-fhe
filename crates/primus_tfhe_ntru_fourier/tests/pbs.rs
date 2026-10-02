@@ -1,5 +1,8 @@
+use primus_decompose::DecompositionBaseLog;
 use primus_encoding::{PlaintextEmbedding, RoundedCodec};
 use primus_fft::{FftTable, RustFftTable, TfheFftTable, TorusFftValue};
+use primus_lattice::LweDimension;
+use primus_lattice::PolyLength;
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
@@ -19,7 +22,13 @@ const N: usize = 128;
 
 fn parameters<T: TorusFftValue>(distr: SecretKeyDistr, dimension: usize) -> TfheParameters<T> {
     let modulus = NativeModulus::new();
-    let lwe = LweParameters::new(dimension, T::as_from(15u32), modulus, distr, 0.7);
+    let lwe = LweParameters::new(
+        LweDimension::new(dimension),
+        T::as_from(15u32),
+        modulus,
+        distr,
+        0.7,
+    );
     let acc = NtruParameters::new(
         N,
         T::as_from(15u32),
@@ -30,9 +39,9 @@ fn parameters<T: TorusFftValue>(distr: SecretKeyDistr, dimension: usize) -> Tfhe
 
     TfheParameters::try_new(
         lwe,
-        NlevParameters::with_ntru_params(&acc, 8, None),
+        NlevParameters::with_ntru_params(&acc, DecompositionBaseLog::new(8), None),
         primus_tfhe_ntru::DecompositionConfig {
-            log_basis: 8,
+            log_basis: DecompositionBaseLog::new(8),
             level_count: None,
         },
         0.7,
@@ -92,14 +101,14 @@ where
         .parameters()
         .compile_lookup_table_with_codec_fn(&output_codec, |input| value(input, 0))
         .unwrap();
-    let mut output = LweCiphertext::zero(context.parameters().external_lwe_dimension());
+    let mut output = LweCiphertext::zero(context.parameters().external_lwe_dimension().get());
     // Noise-free masks exercise first fusion, leading zero and remaining CMUX parity.
     // Reuse the same evaluator across all paths to check the final buffer role.
     let modulus = context.parameters().external_lwe().cipher_modulus();
     for active in [
         0b0000, 0b0001, 0b0011, 0b0111, 0b0010, 0b0110, 0b1000, 0b0001, 0b0000,
     ] {
-        let mut input = LweCiphertext::zero(context.parameters().external_lwe_dimension());
+        let mut input = LweCiphertext::zero(context.parameters().external_lwe_dimension().get());
         for (i, mask) in input.a_mut().iter_mut().enumerate() {
             if active & (1 << i) != 0 {
                 *mask = T::ONE << (T::BITS - 2);
@@ -148,7 +157,10 @@ where
             .compile_interleaved_lookup_table_with_codec_slice(&output_codec, output_count, &flat)
             .unwrap();
         let mut outputs =
-            vec![LweCiphertext::zero(context.parameters().external_lwe_dimension()); output_count];
+            vec![
+                LweCiphertext::zero(context.parameters().external_lwe_dimension().get());
+                output_count
+            ];
         for message in [0, 3, 4, 7] {
             let input = encryptor
                 .encrypt_padded(T::as_from(message), &mut rng)
@@ -207,7 +219,7 @@ where
         mismatched_tables.push((
             LookupTable::try_new(
                 2,
-                n,
+                PolyLength::new(n),
                 T::as_from(t),
                 NativeModulus::new(),
                 NativeModulus::new(),
@@ -216,7 +228,7 @@ where
             .unwrap(),
             InterleavedLookupTable::try_new(
                 2,
-                n,
+                PolyLength::new(n),
                 3,
                 T::as_from(t),
                 NativeModulus::new(),
@@ -229,7 +241,7 @@ where
     mismatched_tables.push((
         LookupTable::try_new(
             2,
-            N,
+            PolyLength::new(N),
             T::as_from(15u32),
             BarrettModulus::new(T::as_from(132_120_577u32)),
             NativeModulus::new(),
@@ -238,7 +250,7 @@ where
         .unwrap(),
         InterleavedLookupTable::try_new(
             2,
-            N,
+            PolyLength::new(N),
             3,
             T::as_from(15u32),
             BarrettModulus::new(T::as_from(132_120_577u32)),
@@ -250,7 +262,7 @@ where
     mismatched_tables.push((
         LookupTable::try_new(
             2,
-            N,
+            PolyLength::new(N),
             T::as_from(15u32),
             NativeModulus::new(),
             BarrettModulus::new(T::as_from(132_120_577u32)),
@@ -259,7 +271,7 @@ where
         .unwrap(),
         InterleavedLookupTable::try_new(
             2,
-            N,
+            PolyLength::new(N),
             3,
             T::as_from(15u32),
             NativeModulus::new(),
@@ -343,7 +355,7 @@ where
     let bivariate = BivariateLookupTable::try_new(
         3,
         2,
-        N,
+        PolyLength::new(N),
         context.parameters().input_plaintext_codec(),
         &output_codec,
         |x, y| T::as_from(x * x + y),
@@ -437,7 +449,7 @@ fn pbs_u64_preserves_outputs_and_validates_domains() {
 // Imported secrets fix the first selector independently of keygen randomness.
 fn check_first_controls<T: TorusFftValue, Table: FftTable>(context: TfheContext<T, Table>) {
     let parameters = context.parameters();
-    let dimension = parameters.external_lwe_dimension();
+    let dimension = parameters.external_lwe_dimension().get();
     let distr = parameters.external_lwe().secret_key_distr();
     let mut rng = StdRng::seed_from_u64(0x4649_5253_545f_4252);
     let mut generator = primus_tfhe_ntru_fourier::KeyGenerator::new(&context);

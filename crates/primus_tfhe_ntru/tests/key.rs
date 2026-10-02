@@ -1,3 +1,5 @@
+use primus_decompose::DecompositionBaseLog;
+use primus_lwe::LweDimension;
 use primus_lwe::{LweParameters, LweSecretKey};
 use primus_modulus::BarrettModulus;
 use primus_ntru::{NlevParameters, NtruParameters, NtruSecretKey, SecretKeyDistr};
@@ -14,10 +16,10 @@ fn imported_external_residues_must_match_the_control_domain() {
         SecretKeyDistr::UniformTernary,
     ] {
         let parameters = TfheParameters::try_new(
-            LweParameters::new(4, 4, modulus, distr, 0.7),
-            NlevParameters::with_ntru_params(&accumulator, 8, None),
+            LweParameters::new(LweDimension::new(4), 4, modulus, distr, 0.7),
+            NlevParameters::with_ntru_params(&accumulator, DecompositionBaseLog::new(8), None),
             DecompositionConfig {
-                log_basis: 8,
+                log_basis: DecompositionBaseLog::new(8),
                 level_count: None,
             },
             0.7,
@@ -71,15 +73,15 @@ fn return_key_rejects_accumulator_magnitudes_outside_external_modulus() {
     let accumulator = NtruParameters::new(8, 2, BarrettModulus::new(65_537u32), distr, 0.7);
     let parameters = TfheParameters::try_new(
         LweParameters::new(
-            1,
+            LweDimension::new(1),
             2,
             BarrettModulus::new(16),
             SecretKeyDistr::UniformBinary,
             0.7,
         ),
-        NlevParameters::with_ntru_params(&accumulator, 8, None),
+        NlevParameters::with_ntru_params(&accumulator, DecompositionBaseLog::new(8), None),
         DecompositionConfig {
-            log_basis: 2,
+            log_basis: DecompositionBaseLog::new(2),
             level_count: None,
         },
         0.7,

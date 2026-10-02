@@ -29,10 +29,9 @@ pub enum TfheEvaluationError {
 /// An error produced while compiling a TFHE lookup table.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum LookupTableError {
-    /// The polynomial length is not a non-zero power of two, or `2N` cannot
-    /// be represented for modulus switching.
-    #[error("invalid lookup-table polynomial length")]
-    InvalidPolynomialLength,
+    /// The rotation domain `2N` cannot be represented by the coefficient word.
+    #[error("lookup-table rotation domain does not fit the coefficient word")]
+    RotationDomainTooLarge,
     /// The rounded input encoding requires `t > 1` and explicit `q > t`.
     #[error("invalid lookup-table input encoding")]
     InvalidInputEncoding,

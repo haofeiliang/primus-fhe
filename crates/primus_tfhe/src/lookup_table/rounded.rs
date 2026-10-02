@@ -1,5 +1,6 @@
 use primus_encoding::{PlaintextEmbedding, RoundedCodec};
 use primus_integer::FheUint;
+use primus_lattice::PolyLength;
 use primus_reduce::{Modulus, PrepareModulusSwitch, ReduceAdd, RingContext};
 
 use super::{InterleavedLookupTable, LookupTable, front_half_domain_len};
@@ -16,7 +17,7 @@ impl<T: FheUint> LookupTable<T> {
     /// See [`Self::try_new`] for the underlying rotation and layout contract.
     #[inline]
     pub fn try_from_fn<IM, M, OM, F>(
-        poly_length: usize,
+        poly_length: PolyLength,
         input_codec: &RoundedCodec<T, IM>,
         coefficient_modulus: M,
         output_codec: &RoundedCodec<T, OM>,
@@ -43,7 +44,7 @@ impl<T: FheUint> LookupTable<T> {
     /// Length errors precede output-codec and output-value validation.
     #[inline]
     pub fn try_from_slice<IM, M, OM>(
-        poly_length: usize,
+        poly_length: PolyLength,
         input_codec: &RoundedCodec<T, IM>,
         coefficient_modulus: M,
         output_codec: &RoundedCodec<T, OM>,
@@ -71,7 +72,7 @@ impl<T: FheUint> LookupTable<T> {
     /// see [`Self::try_new_odd_full_domain`] for capacity and noise requirements.
     #[inline]
     pub fn try_from_odd_full_domain_fn<IM, M, OM, F>(
-        poly_length: usize,
+        poly_length: PolyLength,
         input_codec: &RoundedCodec<T, IM>,
         coefficient_modulus: M,
         output_codec: &RoundedCodec<T, OM>,
@@ -97,7 +98,7 @@ impl<T: FheUint> LookupTable<T> {
     /// `t_in` outputs in plaintext input order. Length errors precede compilation.
     #[inline]
     pub fn try_from_odd_full_domain_slice<IM, M, OM>(
-        poly_length: usize,
+        poly_length: PolyLength,
         input_codec: &RoundedCodec<T, IM>,
         coefficient_modulus: M,
         output_codec: &RoundedCodec<T, OM>,
@@ -124,7 +125,7 @@ impl<T: FheUint> LookupTable<T> {
 
     fn from_outputs<IM, M, OM, F>(
         domain_len: usize,
-        poly_length: usize,
+        poly_length: PolyLength,
         input_codec: &RoundedCodec<T, IM>,
         coefficient_modulus: M,
         output_codec: &RoundedCodec<T, OM>,
@@ -158,7 +159,7 @@ impl<T: FheUint> InterleavedLookupTable<T> {
     /// center collisions and output ranges are checked during filling.
     #[inline]
     pub fn try_from_fn<IM, M, OM, F>(
-        poly_length: usize,
+        poly_length: PolyLength,
         input_codec: &RoundedCodec<T, IM>,
         coefficient_modulus: M,
         output_codec: &RoundedCodec<T, OM>,
@@ -188,7 +189,7 @@ impl<T: FheUint> InterleavedLookupTable<T> {
     /// output-codec and output-value validation.
     #[inline]
     pub fn try_from_slice<IM, M, OM>(
-        poly_length: usize,
+        poly_length: PolyLength,
         input_codec: &RoundedCodec<T, IM>,
         coefficient_modulus: M,
         output_codec: &RoundedCodec<T, OM>,
@@ -218,7 +219,7 @@ impl<T: FheUint> InterleavedLookupTable<T> {
 
     fn from_outputs<IM, M, OM, F>(
         domain_len: usize,
-        poly_length: usize,
+        poly_length: PolyLength,
         input_codec: &RoundedCodec<T, IM>,
         coefficient_modulus: M,
         output_codec: &RoundedCodec<T, OM>,

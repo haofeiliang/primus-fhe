@@ -1,7 +1,10 @@
 //! Gadget-scale phases and actual CMux/external-product consumption;
 //! parameter-constructor boundaries belong to the common family crate.
 
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_fft::{Complex64, FftTable, RustFftTable, TfheFftTable};
+use primus_lattice::LweDimension;
+use primus_lattice::PolyLength;
 use primus_lwe::LweParameters;
 use primus_modulus::NativeModulus;
 use primus_ntru::{
@@ -25,7 +28,7 @@ const N: usize = 64;
 fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr) {
     let modulus = NativeModulus::<u64>::new();
     let lwe = LweParameters::new(
-        16,
+        LweDimension::new(16),
         4,
         primus_modulus::PowOf2Modulus::new(1u64 << 24),
         distr,
@@ -35,9 +38,9 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr) {
 
     let tfhe = TfheParameters::try_new(
         lwe,
-        NlevParameters::with_ntru_params(&accumulator, 10, None),
+        NlevParameters::with_ntru_params(&accumulator, DecompositionBaseLog::new(10), None),
         primus_tfhe_ntru::DecompositionConfig {
-            log_basis: 10,
+            log_basis: DecompositionBaseLog::new(10),
             level_count: None,
         },
         0.7,
@@ -49,16 +52,16 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr) {
     let levels = 3;
     let cbs_config = CircuitBootstrapConfig {
         output: DecompositionConfig {
-            log_basis: 8,
-            level_count: Some(levels),
+            log_basis: DecompositionBaseLog::new(8),
+            level_count: Some(DecompositionLevelCount::new(levels)),
         },
         trace: DecompositionConfig {
-            log_basis: 10,
+            log_basis: DecompositionBaseLog::new(10),
             level_count: None,
         },
         trace_noise_standard_deviation: 0.7,
         scheme_switch: DecompositionConfig {
-            log_basis: 10,
+            log_basis: DecompositionBaseLog::new(10),
             level_count: None,
         },
         scheme_switch_noise_standard_deviation: 0.7,
@@ -74,7 +77,7 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr) {
         &mut fft,
     )
     .unwrap();
-    let mut decrypt = primus_ntru::FourierNtruDecryptWorkspace::new(N);
+    let mut decrypt = primus_ntru::FourierNtruDecryptWorkspace::new(PolyLength::new(N));
     let encryptor = context.encryptor(&client).unwrap();
     // The same CBS-enabled server key also supports ordinary PBS.
     let identity = context

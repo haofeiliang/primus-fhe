@@ -1,4 +1,5 @@
 use primus_decompose::{ApproxSignedBasisError, primitive::ApproxSignedBasis};
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_integer::FheUint;
 
 // Recompose with wide arithmetic, independently of the digit extraction,
@@ -13,10 +14,10 @@ where
 {
     let q = modulus.map(Into::into).unwrap_or(1u128 << T::BITS);
     let input = value.into();
-    let radix = 1u128 << basis.log_basis();
+    let radix = 1u128 << basis.log_basis().get();
     let half_radix = radix / 2;
 
-    assert_eq!(basis.scalar_iter().len(), basis.decompose_length());
+    assert_eq!(basis.scalar_iter().len(), basis.decompose_length().get());
     let (adjusted, mut carry) = basis.init_value_carry(value);
     let mut recomposed = 0u128;
     for (level, (decomposer, scalar)) in
@@ -25,7 +26,7 @@ where
         let scalar = scalar.into();
         assert_eq!(
             scalar,
-            1u128 << (basis.drop_bits() + level as u32 * basis.log_basis()),
+            1u128 << (basis.drop_bits() + level as u32 * basis.log_basis().get()),
             "level {level} is not ordered from low to high"
         );
         let (raw_digit, next_carry) = decomposer.decompose(adjusted, carry);
@@ -75,7 +76,11 @@ fn exhaustive_explicit_moduli_match_contract() {
             };
             let full_length = value_bits / log_basis;
             for length in 1..=full_length as usize {
-                let basis = ApproxSignedBasis::new(Some(q), log_basis, Some(length));
+                let basis = ApproxSignedBasis::new(
+                    Some(q),
+                    DecompositionBaseLog::new(log_basis),
+                    Some(DecompositionLevelCount::new(length)),
+                );
                 for value in 0..q {
                     assert_decomposition_contract(&basis, value, Some(q));
                 }
@@ -88,7 +93,11 @@ fn exhaustive_explicit_moduli_match_contract() {
 fn native_dropped_bits_use_round_half_up() {
     // Exhaust u16 to cover carry propagation through every retained level,
     // including rounding across the native modulus.
-    let basis = ApproxSignedBasis::<u16>::new(None, 4, Some(3));
+    let basis = ApproxSignedBasis::<u16>::new(
+        None,
+        DecompositionBaseLog::new(4),
+        Some(DecompositionLevelCount::new(3)),
+    );
     let q = 1u128 << u16::BITS;
     let step = 1u128 << basis.drop_bits();
     let half_step = step / 2;
@@ -102,12 +111,20 @@ fn native_dropped_bits_use_round_half_up() {
 
 #[test]
 fn representative_u32_u64_and_ntt_prime_cases_match_contract() {
-    let native_u32 = ApproxSignedBasis::<u32>::new(None, 8, Some(3));
+    let native_u32 = ApproxSignedBasis::<u32>::new(
+        None,
+        DecompositionBaseLog::new(8),
+        Some(DecompositionLevelCount::new(3)),
+    );
     for value in [0, 1, (1 << 7) - 1, 1 << 7, (1 << 24) - 1, 1 << 24, u32::MAX] {
         assert_decomposition_contract(&native_u32, value, None);
     }
 
-    let native_u64 = ApproxSignedBasis::<u64>::new(None, 8, Some(4));
+    let native_u64 = ApproxSignedBasis::<u64>::new(
+        None,
+        DecompositionBaseLog::new(8),
+        Some(DecompositionLevelCount::new(4)),
+    );
     for value in [
         0,
         1,
@@ -121,7 +138,11 @@ fn representative_u32_u64_and_ntt_prime_cases_match_contract() {
     }
 
     const NTT_PRIME: u32 = 1_073_692_673;
-    let explicit = ApproxSignedBasis::new(Some(NTT_PRIME), 8, Some(3));
+    let explicit = ApproxSignedBasis::new(
+        Some(NTT_PRIME),
+        DecompositionBaseLog::new(8),
+        Some(DecompositionLevelCount::new(3)),
+    );
     for value in [
         0,
         1,
@@ -139,15 +160,6 @@ fn invalid_parameters_are_rejected() {
     for (modulus, log_basis, retained, expected) in [
         (
             None,
-            1,
-            None,
-            ApproxSignedBasisError::InvalidLogBasis {
-                log_basis: 1,
-                limb_bits: 32,
-            },
-        ),
-        (
-            None,
             32,
             None,
             ApproxSignedBasisError::InvalidLogBasis {
@@ -161,10 +173,14 @@ fn invalid_parameters_are_rejected() {
             None,
             ApproxSignedBasisError::BasisExceedsModulus,
         ),
-        (None, 4, Some(0), ApproxSignedBasisError::ZeroReverseLength),
     ] {
         assert_eq!(
-            ApproxSignedBasis::<u32>::try_new(modulus, log_basis, retained).unwrap_err(),
+            ApproxSignedBasis::<u32>::try_new(
+                modulus,
+                DecompositionBaseLog::new(log_basis),
+                retained.map(DecompositionLevelCount::new)
+            )
+            .unwrap_err(),
             expected
         );
     }
@@ -181,7 +197,11 @@ fn batch_initialization_and_digits_match_scalar() {
         (Some(697), 5, None),
         (Some(1_073_692_673), 8, Some(3)),
     ] {
-        let basis = ApproxSignedBasis::<u32>::new(modulus, log_basis, retained);
+        let basis = ApproxSignedBasis::<u32>::new(
+            modulus,
+            DecompositionBaseLog::new(log_basis),
+            retained.map(DecompositionLevelCount::new),
+        );
         let max = modulus.map_or(u32::MAX, |q| q - 1);
         let values = [0, 1, max / 2, max - 1, max];
         let mut adjusted = [u32::MAX; 5];

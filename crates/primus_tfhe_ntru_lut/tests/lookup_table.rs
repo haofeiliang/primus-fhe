@@ -1,7 +1,9 @@
+use primus_lattice::LweDimension;
 use primus_lwe::LweParameters;
 use primus_modulus::{BarrettModulus, NativeModulus, PowOf2Modulus};
 use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
 use primus_reduce::RingContext;
+use primus_tfhe::DecompositionBaseLog;
 use primus_tfhe_ntru::{DecompositionConfig, TfheParameters};
 use primus_tfhe_ntru_lut::{HighPrecisionLookupTable, LookupTableConfig, LookupTableError};
 
@@ -13,15 +15,15 @@ fn parameters<M: RingContext<u64>>(
     let ring = NtruParameters::new(64, t, modulus, SecretKeyDistr::SparseTernary, 0.7);
     TfheParameters::try_new(
         LweParameters::new(
-            2,
+            LweDimension::new(2),
             t,
             PowOf2Modulus::new(1 << 24),
             SecretKeyDistr::UniformBinary,
             0.7,
         ),
-        NlevParameters::with_ntru_params(&ring, 8, None),
+        NlevParameters::with_ntru_params(&ring, DecompositionBaseLog::new(8), None),
         DecompositionConfig {
-            log_basis: 8,
+            log_basis: DecompositionBaseLog::new(8),
             level_count: None,
         },
         0.7,

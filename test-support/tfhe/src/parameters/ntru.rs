@@ -5,9 +5,11 @@
 
 use primus_glwe::SecretKeyDistr;
 use primus_integer::FheUint;
+use primus_lwe::LweDimension;
 use primus_lwe::LweParameters;
 use primus_modulus::PowOf2Modulus;
 use primus_reduce::RingContext;
+use primus_tfhe::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_tfhe_ntru::{CircuitBootstrapConfig, DecompositionConfig, TfheConfig, TfheParameters};
 
 use super::{DIMENSION, N, SPARSE_DIMENSION, SPARSE_WEIGHT};
@@ -16,7 +18,7 @@ use crate::benchmark::{LWE_STD_DEV, PbsWorkload};
 /// Retains floor(value_bits/log_basis) levels; low bits can still be discarded.
 fn full(log_basis: u32) -> DecompositionConfig {
     DecompositionConfig {
-        log_basis,
+        log_basis: DecompositionBaseLog::new(log_basis),
         level_count: None,
     }
 }
@@ -57,7 +59,7 @@ where
     let q = T::ONE << 24u32;
     TfheParameters::try_from_config(TfheConfig {
         external_lwe: LweParameters::new(
-            workload.lwe_dimension,
+            LweDimension::new(workload.lwe_dimension),
             T::as_from(workload.plaintext_modulus),
             PowOf2Modulus::new(q),
             secret,
@@ -114,8 +116,16 @@ pub fn cbs<T: FheUint>() -> CircuitBootstrapConfig {
     let internal = full(if T::BITS == 32 { 2 } else { 8 });
     CircuitBootstrapConfig {
         output: DecompositionConfig {
-            log_basis: if T::BITS == 32 { 3 } else { 8 },
-            level_count: Some(if T::BITS == 32 { 4 } else { 3 }),
+            log_basis: if T::BITS == 32 {
+                DecompositionBaseLog::new(3)
+            } else {
+                DecompositionBaseLog::new(8)
+            },
+            level_count: Some(if T::BITS == 32 {
+                DecompositionLevelCount::new(4)
+            } else {
+                DecompositionLevelCount::new(3)
+            }),
         },
         trace: internal,
         trace_noise_standard_deviation: 0.7,

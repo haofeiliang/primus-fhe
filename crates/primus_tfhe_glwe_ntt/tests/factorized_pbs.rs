@@ -1,3 +1,6 @@
+use primus_decompose::DecompositionBaseLog;
+use primus_lattice::PolyLength;
+use primus_lattice::{GlweDimension, LweDimension};
 use primus_tfhe::ProgrammableBootstrap as _;
 use primus_tfhe::ProgrammableBootstrapInterleaved as _;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -25,11 +28,18 @@ const DOMAIN: usize = 8;
 fn context(order: PbsOrder, distribution: SecretKeyDistr) -> TfheContext<u32, U32NttTable> {
     let modulus = BarrettModulus::new(Q);
     let parameters = TfheParameters::try_new(
-        LweParameters::new(8, 15, modulus, distribution, 0.7),
+        LweParameters::new(LweDimension::new(8), 15, modulus, distribution, 0.7),
         // d=2 also exercises multiplication of all mask components, not just a,b.
-        GlweParameters::new(2, N, 15, modulus, SecretKeyDistr::UniformBinary, 0.7),
-        ApproxSignedBasis::new(Some(Q), 8, None),
-        ApproxSignedBasis::new(Some(Q), 8, None),
+        GlweParameters::new(
+            GlweDimension::new(2),
+            N,
+            15,
+            modulus,
+            SecretKeyDistr::UniformBinary,
+            0.7,
+        ),
+        ApproxSignedBasis::new(Some(Q), DecompositionBaseLog::new(8), None),
+        ApproxSignedBasis::new(Some(Q), DecompositionBaseLog::new(8), None),
         order,
     )
     .unwrap();
@@ -63,14 +73,15 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
         let sparse = generator
             .try_generate_sparse_server_key(&client, 3, 4, None, &mut rng)
             .unwrap();
-        let dimension = context.parameters().external_lwe_dimension();
+        let dimension = context.parameters().external_lwe_dimension().get();
         assert_eq!(
             dimension,
-            if order == PbsOrder::BootstrapKeyswitch {
+            (LweDimension::new(if order == PbsOrder::BootstrapKeyswitch {
                 8
             } else {
                 2 * N
-            }
+            }))
+            .get()
         );
         let encryptor = context.encryptor(&client).unwrap();
         let decryptor = context.decryptor(&client).unwrap();
@@ -120,7 +131,7 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
                         let interleaved =
                             InterleavedLookupTable::try_new(
                                 DOMAIN,
-                                N,
+                                PolyLength::new(N),
                                 count,
                                 15,
                                 modulus,
@@ -136,12 +147,18 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
                             .apply_interleaved_lookup_table_to(&input, &interleaved, &mut outputs);
                         check(&outputs, message);
                         for (i, output) in outputs.iter_mut().enumerate() {
-                            let single =
-                                LookupTable::try_new(DOMAIN, N, 15, modulus, modulus, |m| {
+                            let single = LookupTable::try_new(
+                                DOMAIN,
+                                PolyLength::new(N),
+                                15,
+                                modulus,
+                                modulus,
+                                |m| {
                                     Ok(codec
                                         .encode_value(value(m, i), PlaintextEmbedding::Unsigned))
-                                })
-                                .unwrap();
+                                },
+                            )
+                            .unwrap();
                             evaluator
                                 .bootstrapper_mut()
                                 .apply_lookup_table_to(&input, &single, output);
@@ -156,7 +173,15 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
         }
         // 17 outputs require 32 interleaved slots: N/32=4 < D=8. MVB above works.
         assert!(matches!(
-            InterleavedLookupTable::try_new(DOMAIN, N, 17, 15, modulus, modulus, |_, _| Ok(0)),
+            InterleavedLookupTable::try_new(
+                DOMAIN,
+                PolyLength::new(N),
+                17,
+                15,
+                modulus,
+                modulus,
+                |_, _| Ok(0)
+            ),
             Err(LookupTableError::PlaintextDomainTooLarge { .. })
         ));
 
@@ -198,7 +223,7 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
         ] {
             let raw = FactorizedLookupTable::try_new(
                 2,
-                n,
+                PolyLength::new(n),
                 1,
                 &RoundedCodec::new(t, BarrettModulus::new(input_q)),
                 &ScaledCodec::new(8, BarrettModulus::new(output_q)),
@@ -240,7 +265,7 @@ fn factorized_pbs_accepts_ternary_controls_without_online_allocation() {
         let decryptor = context.decryptor(&client).unwrap();
         let mut evaluator = context.factorized_evaluator(&server).unwrap();
         let mut outputs =
-            vec![LweCiphertext::zero(context.parameters().external_lwe_dimension()); 3];
+            vec![LweCiphertext::zero(context.parameters().external_lwe_dimension().get()); 3];
         for message in [0, 3, 7] {
             let input = encryptor.encrypt_padded(message, &mut rng).unwrap();
             let (_, allocation) = allocations::measure(|| {

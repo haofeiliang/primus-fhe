@@ -98,7 +98,7 @@ impl<T: FheUint> NtruSecretKey<T> {
         R: rand::Rng + rand::CryptoRng,
         M: primus_reduce::RingContext<T>,
     {
-        let mut secret_key = Self::allocate(params.poly_length(), params.secret_key_distr());
+        let mut secret_key = Self::allocate(params.poly_length().get(), params.secret_key_distr());
         params
             .secret_key_sampler()
             .sample_signed_to(&mut secret_key.key, rng);

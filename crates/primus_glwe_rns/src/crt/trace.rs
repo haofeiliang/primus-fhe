@@ -70,7 +70,7 @@ impl<T: FheUint> CrtGlweTraceKey<T> {
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
     {
-        let log_n = domain.parameters().poly_length().trailing_zeros();
+        let log_n = domain.parameters().poly_length().log_n();
         let auto_keys: Vec<CrtGlweAutoKey<T>> = (1..=log_n)
             .rev()
             .map(|x| (1usize << x) + 1)
@@ -96,7 +96,7 @@ impl<T: FheUint> CrtGlweTraceKey<T> {
         B: DataMut<Elem = T>,
     {
         let params = domain.parameters();
-        let poly_length = params.poly_length();
+        let poly_length = params.poly_length().get();
         let crt_poly_length = params.rns_poly_len();
         let moduli = params.cipher_moduli();
 

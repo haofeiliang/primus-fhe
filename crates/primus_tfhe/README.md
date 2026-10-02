@@ -130,6 +130,8 @@ The front-half unary function or slice compiler programs `0..ceil(t_in/2)` with 
 
 For direct shared-layer use, `LookupTable` / `InterleavedLookupTable` provide `try_from_fn` and `try_from_slice`, taking the input codec, accumulator modulus and output codec for unsigned Rounded encoding and validation. Odd full domains use `LookupTable::try_from_odd_full_domain_fn` / `_slice`; family compilation methods use these shared constructors.
 
+All shared LUT constructors and `BooleanEvaluator::try_new` take `PolyLength`, re-exported from `primus_lattice`. Pass the checked length from the ring parameters, or construct it once with `PolyLength::try_new(N)`. The supported power-of-two range is `2..=2^17`; compilation still checks rotation-domain representability, encoding, output capacity and values.
+
 Raw constructors `LookupTable::try_new` / `InterleavedLookupTable::try_new` accept an explicit prefix length `D` and encoded outputs. `input_ciphertext_modulus` describes input quantization; `coefficient_modulus` is the LUT/accumulator modulus, and raw outputs must be canonical under it. Neither `k` nor the plaintext modulus must be a power of two; padded count `s` must fit capacity, distinct centers and noise margins. Failed construction returns no partial table. See the [rotation geometry](IMPLEMENTATION.md#rotation-geometry) for output lanes, repeated intervals and rounding.
 
 ## Encoding and key contracts
@@ -199,7 +201,7 @@ Typical spacing is `N/t_in`, so the noise margin is about half that of front-hal
 
 ## Bounded two-input PBS
 
-`BivariateLookupTable::try_new(B, R, N, input_codec, output_codec, function)` compiles `f(x,y)` for `0 <= x < B`, `0 <= y < R` using `z = x + B*y`. `B` and `R` must be positive and `D = B*R <= ceil(t_in/2)`; the ordinary LUT capacity and rotation-center checks also apply. Only the prefix `0..D` is compiled, with `x` varying fastest. `B` need not be a power of two. The output codec selects `t_out` independently but must use the same ciphertext modulus. The type owns no keys or scratch.
+`BivariateLookupTable::try_new(B, R, poly_length, input_codec, output_codec, function)` compiles `f(x,y)` for `0 <= x < B`, `0 <= y < R` using `z = x + B*y`. `B` and `R` must be positive and `D = B*R <= ceil(t_in/2)`; the ordinary LUT capacity and rotation-center checks also apply. Only the prefix `0..D` is compiled, with `x` varying fastest. `B` need not be a power of two. The output codec selects `t_out` independently but must use the same ciphertext modulus. The type owns no keys or scratch.
 
 Allocate `packed` and `output` once with the external LWE dimension. `pack_to` writes `lhs + B*rhs` in one modular multiply-add pass, without allocation; it rejects unequal lengths or missing bodies before writing. Inputs must share an actual secret, ciphertext modulus and the supplied unsigned input codec, with canonical coefficients and messages inside the stated bounds. These semantic conditions cannot be checked from raw ciphertexts. GLWE uses its order-dependent external dimension and `input_plaintext_codec()`; no extra key material is needed.
 
@@ -209,7 +211,7 @@ The current constructor has one ciphertext modulus shared by both codecs. It sup
 
 ## Fixed-scale factorized MVB
 
-`FactorizedLookupTable::try_new(D, N, output_count, input_codec, output_codec, function)` compiles a nonempty front-half prefix using Rounded input and unsigned Scaled output. The coefficient modulus may be explicit and odd, or Native with an even Scaled output scale. Explicit even moduli are unsupported. The callback receives `(input, output_index)` once per pair, with **output index outermost**. Signed integer factor norms determine noise amplification; the algebra is documented on `FactorizedLookupTable` and in the [MVB design](IMPLEMENTATION.md#factorized-mvb).
+`FactorizedLookupTable::try_new(D, poly_length, output_count, input_codec, output_codec, function)` compiles a nonempty front-half prefix using Rounded input and unsigned Scaled output. The coefficient modulus may be explicit and odd, or Native with an even Scaled output scale. Explicit even moduli are unsupported. The callback receives `(input, output_index)` once per pair, with **output index outermost**. Signed integer factor norms determine noise amplification; the algebra is documented on `FactorizedLookupTable` and in the [MVB design](IMPLEMENTATION.md#factorized-mvb).
 
 All outputs share one BR at step one and then apply separate public polynomial products. Positive output count is unpadded and does not reduce input capacity; each output instead amplifies BR error by its factor. Input geometry alone is not a sufficient noise budget. The Scaled codec must be retained for phase decoding; chaining into Rounded-input PBS must account for differing centers.
 

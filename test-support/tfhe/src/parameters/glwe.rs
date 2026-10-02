@@ -2,11 +2,14 @@
 //! NTT uses an explicit prime; Fourier uses the native torus modulus for every
 //! key role. PBS, circuit and fixed-weight profiles have distinct noise budgets.
 
+use primus_glwe::GlweDimension;
 use primus_glwe::SecretKeyDistr;
 use primus_integer::FheUint;
+use primus_lwe::LweDimension;
 use primus_lwe::LweParameters;
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_reduce::RingContext;
+use primus_tfhe::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_tfhe_glwe::{
     CircuitBootstrapConfig, DecompositionConfig, PbsOrder, TfheConfig, TfheParameters,
 };
@@ -16,8 +19,8 @@ use crate::benchmark::{GLWE_STD_DEV, LWE_STD_DEV, PbsWorkload};
 
 fn decomposition(log_basis: u32, level_count: Option<usize>) -> DecompositionConfig {
     DecompositionConfig {
-        log_basis,
-        level_count,
+        log_basis: DecompositionBaseLog::new(log_basis),
+        level_count: level_count.map(DecompositionLevelCount::new),
     }
 }
 
@@ -78,13 +81,13 @@ where
         .map_or(2f64.powi(T::BITS as i32), |q| q.as_into());
     TfheParameters::try_from_config(TfheConfig {
         small_lwe: LweParameters::new(
-            workload.lwe_dimension,
+            LweDimension::new(workload.lwe_dimension),
             T::as_from(workload.plaintext_modulus),
             modulus,
             SecretKeyDistr::UniformBinary,
             q * LWE_STD_DEV,
         ),
-        accumulator_dimension: 1,
+        accumulator_dimension: GlweDimension::new(1),
         poly_length: workload.poly_length,
         accumulator_secret_key_distr: SecretKeyDistr::UniformBinary,
         accumulator_noise_standard_deviation: (q * GLWE_STD_DEV).max(6.4),
@@ -113,13 +116,13 @@ where
         .map_or(2f64.powi(T::BITS as i32), |q| q.as_into());
     TfheParameters::try_from_config(TfheConfig {
         small_lwe: LweParameters::new(
-            DIMENSION,
+            LweDimension::new(DIMENSION),
             T::as_from(4u32),
             modulus,
             secret,
             q * LWE_STD_DEV,
         ),
-        accumulator_dimension: 1,
+        accumulator_dimension: GlweDimension::new(1),
         poly_length: N,
         accumulator_secret_key_distr: SecretKeyDistr::UniformTernary,
         accumulator_noise_standard_deviation: 6.4,
@@ -167,13 +170,13 @@ where
         .map_or(2f64.powi(T::BITS as i32), |q| q.as_into());
     TfheParameters::try_from_config(TfheConfig {
         small_lwe: LweParameters::new(
-            SPARSE_DIMENSION,
+            LweDimension::new(SPARSE_DIMENSION),
             T::as_from(plaintext_modulus),
             modulus,
             SecretKeyDistr::fixed_hamming_weight_binary(SPARSE_DIMENSION, SPARSE_WEIGHT),
             3.2 * q / 16384.0,
         ),
-        accumulator_dimension: 1,
+        accumulator_dimension: GlweDimension::new(1),
         poly_length: N,
         accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
         accumulator_noise_standard_deviation: 6.4,

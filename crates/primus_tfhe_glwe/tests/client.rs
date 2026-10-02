@@ -1,5 +1,8 @@
+use primus_decompose::DecompositionBaseLog;
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_glwe::{GlweParameters, GlweSecretKey, GlweSize, SecretKeyDistr};
+use primus_lattice::PolyLength;
+use primus_lattice::{GlweDimension, LweDimension};
 use primus_lwe::{LweCiphertext, LweParameters, LwePublicKey, LweSecretKey, LweSecretKeyRef};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_reduce::RingContext;
@@ -17,26 +20,30 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
     for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
         // Two different external dimensions and a signed ring secret including -1.
         let small = LweParameters::new(
-            4,
+            LweDimension::new(4),
             plain_modulus,
             modulus,
             SecretKeyDistr::UniformBinary,
             0.7,
         );
         let glwe = GlweParameters::new(
-            2,
+            GlweDimension::new(2),
             8,
             plain_modulus,
             modulus,
             SecretKeyDistr::UniformTernary,
             1.4,
         );
-        let bsk = ApproxSignedBasis::new(glwe.cipher_modulus_value(), 8, None);
+        let bsk = ApproxSignedBasis::new(
+            glwe.cipher_modulus_value(),
+            DecompositionBaseLog::new(8),
+            None,
+        );
         let params = TfheParameters::try_new(
             small,
             glwe,
             bsk,
-            ApproxSignedBasis::new(modulus.explicit_value(), 8, None),
+            ApproxSignedBasis::new(modulus.explicit_value(), DecompositionBaseLog::new(8), None),
             order,
         )
         .unwrap();
@@ -44,7 +51,7 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
             LweSecretKey::new(vec![1, 0, 1, 1], SecretKeyDistr::UniformBinary),
             GlweSecretKey::new(
                 vec![1, -1, 0, 1, 0, -1, 0, 1, 1, 0, -1, 0, 1, 0, 0, -1],
-                GlweSize::new(2, 8),
+                GlweSize::new(GlweDimension::new(2), PolyLength::new(8)),
                 SecretKeyDistr::UniformTernary,
             ),
             order,
@@ -53,11 +60,11 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
         let public = client.try_generate_public_key(&params, &mut rng).unwrap();
         assert_eq!(
             public.dimension(),
-            if order == PbsOrder::BootstrapKeyswitch {
+            LweDimension::new(if order == PbsOrder::BootstrapKeyswitch {
                 4
             } else {
                 16
-            }
+            })
         );
         // Independent raw-LWE calls pin the key and noise selected by each PBS order.
         let (secret, uniform, noise) = match order {
@@ -118,13 +125,19 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
             params.public_encryptor(&foreign).err(),
             Some(ClientError::PublicKeyModulusMismatch)
         );
-        let short_params = LweParameters::new(3, 4, modulus, SecretKeyDistr::UniformBinary, 0.7);
+        let short_params = LweParameters::new(
+            LweDimension::new(3),
+            4,
+            modulus,
+            SecretKeyDistr::UniformBinary,
+            0.7,
+        );
         let short_secret = LweSecretKey::generate(&short_params, &mut rng);
         let short = LwePublicKey::generate(short_secret.as_view(), &short_params, &mut rng);
         assert_eq!(
             params.public_encryptor(&short).err(),
             Some(ClientError::KeyDimensionMismatch {
-                expected: public.dimension(),
+                expected: public.dimension().get(),
                 actual: 3,
             })
         );
@@ -171,10 +184,23 @@ fn boolean_clients_reject_other_plaintext_moduli() {
     let modulus = NativeModulus::<u32>::new();
     for t in [3, 5] {
         let parameters = TfheParameters::try_new(
-            LweParameters::new(4, t, modulus, SecretKeyDistr::UniformBinary, 0.7),
-            GlweParameters::new(1, 8, t, modulus, SecretKeyDistr::UniformTernary, 0.7),
-            ApproxSignedBasis::new(None, 8, None),
-            ApproxSignedBasis::new(None, 8, None),
+            LweParameters::new(
+                LweDimension::new(4),
+                t,
+                modulus,
+                SecretKeyDistr::UniformBinary,
+                0.7,
+            ),
+            GlweParameters::new(
+                GlweDimension::new(1),
+                8,
+                t,
+                modulus,
+                SecretKeyDistr::UniformTernary,
+                0.7,
+            ),
+            ApproxSignedBasis::new(None, DecompositionBaseLog::new(8), None),
+            ApproxSignedBasis::new(None, DecompositionBaseLog::new(8), None),
             PbsOrder::BootstrapKeyswitch,
         )
         .unwrap();
@@ -200,10 +226,18 @@ fn binding_checks_small_secret_coefficients_without_restricting_gaussian_accumul
             SecretKeyDistr::UniformTernary,
         ] {
             let parameters = TfheParameters::try_new(
-                LweParameters::new(4, 4, modulus, distr, 0.7),
-                GlweParameters::new(1, 8, 4, modulus, gaussian, 0.7),
-                ApproxSignedBasis::new(modulus.explicit_value(), 8, None),
-                ApproxSignedBasis::new(modulus.explicit_value(), 8, None),
+                LweParameters::new(LweDimension::new(4), 4, modulus, distr, 0.7),
+                GlweParameters::new(GlweDimension::new(1), 8, 4, modulus, gaussian, 0.7),
+                ApproxSignedBasis::new(
+                    modulus.explicit_value(),
+                    DecompositionBaseLog::new(8),
+                    None,
+                ),
+                ApproxSignedBasis::new(
+                    modulus.explicit_value(),
+                    DecompositionBaseLog::new(8),
+                    None,
+                ),
                 PbsOrder::BootstrapKeyswitch,
             )
             .unwrap();
@@ -211,7 +245,11 @@ fn binding_checks_small_secret_coefficients_without_restricting_gaussian_accumul
             for coefficient in [0, 1, minus_one, 2, minus_one - 1] {
                 let client = ClientKey::new(
                     LweSecretKey::new(vec![0, 1, 0, coefficient], distr),
-                    GlweSecretKey::new(vec![2; 8], GlweSize::new(1, 8), gaussian),
+                    GlweSecretKey::new(
+                        vec![2; 8],
+                        GlweSize::new(GlweDimension::new(1), PolyLength::new(8)),
+                        gaussian,
+                    ),
                     PbsOrder::BootstrapKeyswitch,
                 );
                 let expected =
@@ -246,7 +284,7 @@ fn check_reused_output<M, Key>(
     Key: EncryptionKey<u32, M>,
 {
     let decryptor = parameters.decryptor(client).unwrap();
-    let dimension = parameters.external_lwe_dimension();
+    let dimension = parameters.external_lwe_dimension().get();
     let t = parameters.plain_modulus_value();
     let mut rng = StdRng::seed_from_u64(0x434c_4945_4e54);
     let mut expected_rng = StdRng::seed_from_u64(0x434c_4945_4e54);

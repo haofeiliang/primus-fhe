@@ -1,12 +1,15 @@
 //! Constant batches preserve polynomial encryption and RNG consumption exactly.
+
+use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable, TorusFftValue};
 use primus_glwe::{
     FourierGgswCiphertext, FourierGlweGadgetEncryptWorkspace, FourierGlweSecretKey, GlevParameters,
     GlweParameters, NttGlweGadgetEncryptWorkspace, NttGlweSecretKey, SecretKeyDistr,
 };
 use primus_integer::FheUint;
+use primus_lattice::GlweDimension;
 use primus_lattice::{
-    GadgetSize, GlweSize,
+    GadgetSize, GlweSize, PolyLength,
     ggsw::{Ggsw, NttGgsw},
 };
 use primus_modulus::{BarrettModulus, NativeModulus};
@@ -27,22 +30,24 @@ fn check_ntt_batch<T: FheUint, Table: NttTable<ValueT = T>>() {
     let n = 16usize;
     let modulus = BarrettModulus::new(T::try_from(257usize).unwrap());
     let glwe = GlweParameters::new(
-        2,
+        GlweDimension::new(2),
         n,
         T::try_from(16usize).unwrap(),
         modulus,
         SecretKeyDistr::UniformBinary,
         0.7,
     );
-    let params = GlevParameters::with_glwe_params(&glwe, 4, None);
+    let params = GlevParameters::with_glwe_params(&glwe, DecompositionBaseLog::new(4), None);
     let table = Table::new(n.trailing_zeros(), modulus).unwrap();
     let mut rng = StdRng::seed_from_u64(42);
     let (_, key) = NttGlweSecretKey::generate_pair(&glwe, &table, &mut rng);
     let mut workspace = NttGlweGadgetEncryptWorkspace::new(params.size());
     let mut single_workspace = NttGlweGadgetEncryptWorkspace::new(params.size());
     // Coefficient output only needs the polynomial scratch, independent of levels.
-    let mut coefficient_workspace =
-        NttGlweGadgetEncryptWorkspace::new(GadgetSize::new(params.glwe_size(), 1));
+    let mut coefficient_workspace = NttGlweGadgetEncryptWorkspace::new(GadgetSize::new(
+        params.glwe_size(),
+        DecompositionLevelCount::new(1),
+    ));
     // Include empty input, binary BSK inputs and general canonical constants.
     let constants = [
         T::ZERO,
@@ -108,7 +113,7 @@ fn check_ntt_batch<T: FheUint, Table: NttTable<ValueT = T>>() {
         (2 * params.ggsw_len(), true, 2 * n),
     ] {
         let mut workspace = NttGlweGadgetEncryptWorkspace::new(GadgetSize::new(
-            GlweSize::new(2, scratch_length),
+            GlweSize::new(GlweDimension::new(2), PolyLength::new(scratch_length)),
             params.size().decompose_length(),
         ));
         let mut output = vec![sentinel; len];
@@ -154,14 +159,18 @@ fn fourier_constant_ggsw_batches_match_individual_encryptions() {
 fn check_fourier_batch<T: TorusFftValue, Table: FftTable>() {
     let n = 16usize;
     let glwe = GlweParameters::new(
-        2,
+        GlweDimension::new(2),
         n,
         T::try_from(16usize).unwrap(),
         NativeModulus::new(),
         SecretKeyDistr::SparseTernary,
         0.7,
     );
-    let params = GlevParameters::with_glwe_params(&glwe, 3, Some(3));
+    let params = GlevParameters::with_glwe_params(
+        &glwe,
+        DecompositionBaseLog::new(3),
+        Some(DecompositionLevelCount::new(3)),
+    );
     let table = Table::new(n.trailing_zeros()).unwrap();
     let mut fft = FftEngine::new(&table);
     let mut rng = StdRng::seed_from_u64(42);
@@ -248,7 +257,11 @@ fn check_fourier_batch<T: TorusFftValue, Table: FftTable>() {
         }
         assert_eq!(coefficient_rng.next_u64(), next_random);
     }
-    let wrong_levels = GlevParameters::with_glwe_params(&glwe, 3, Some(2));
+    let wrong_levels = GlevParameters::with_glwe_params(
+        &glwe,
+        DecompositionBaseLog::new(3),
+        Some(DecompositionLevelCount::new(2)),
+    );
     for (input, len, size) in [
         (
             &constants[..1],

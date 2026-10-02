@@ -3,6 +3,8 @@
 use primus_data::{Data, DataMut};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_integer::{FheUint, SignedInteger};
+use primus_lattice::LweDimension;
+use primus_lattice::PolyLength;
 use primus_lattice::lwe::Lwe;
 use primus_lwe::{LweKeySwitchingKey, LweParameters, LweSecretKey, LweSecretKeyRef};
 use primus_reduce::{Modulus, ModulusSwitch, RingContext};
@@ -95,7 +97,7 @@ impl<T: FheUint> NtruLweKeySwitchingKey<T> {
     /// Returns the input NTRU polynomial length and intermediate LWE dimension.
     #[must_use]
     pub fn poly_length(&self) -> usize {
-        self.key_switch.input_dimension()
+        self.key_switch.input_dimension().get()
     }
 
     /// Returns Q, or `None` for the native modulus `2^T::BITS`.
@@ -106,7 +108,7 @@ impl<T: FheUint> NtruLweKeySwitchingKey<T> {
 
     /// Returns the independent target LWE dimension.
     #[must_use]
-    pub fn output_dimension(&self) -> usize {
+    pub fn output_dimension(&self) -> LweDimension {
         self.key_switch.output_dimension()
     }
 
@@ -178,7 +180,7 @@ impl<T: FheUint> NtruLweKeySwitchingKey<T> {
         assert!(index < n, "NTRU extraction index is out of range");
         assert_eq!(
             output.as_ref().len(),
-            self.output_dimension() + 1,
+            self.output_dimension().ciphertext_len(),
             "target LWE ciphertext length mismatch"
         );
         assert_eq!(
@@ -251,17 +253,10 @@ pub struct NtruLweKeySwitchingWorkspace<T: FheUint> {
 
 impl<T: FheUint> NtruLweKeySwitchingWorkspace<T> {
     /// Allocates workspace for an input NTRU polynomial of length N.
-    ///
-    /// # Panics
-    /// Panics if N is zero or `N+1` overflows `usize`.
     #[must_use]
-    pub fn new(poly_length: usize) -> Self {
-        assert!(poly_length > 0, "NTRU polynomial length must be nonzero");
-        poly_length
-            .checked_add(1)
-            .expect("NTRU to LWE workspace length overflow");
+    pub fn new(poly_length: PolyLength) -> Self {
         Self {
-            extracted: Lwe::zero(poly_length),
+            extracted: Lwe::zero(poly_length.get()),
         }
     }
 
