@@ -9,11 +9,12 @@ use primus_ntru::{FourierNgswCiphertext, NtruCiphertext};
 use primus_poly::{FourierPolynomialIter, FourierPolynomialIterMut, Polynomial};
 use primus_reduce::RingContext;
 use primus_tfhe::LweCiphertext;
+use primus_tfhe_ntru::LweReturnEvaluator;
 use primus_tfhe_ntru_fourier::{OneHotCircuitBootstrapEvaluator, ServerKey, TfheContext};
 
 use crate::{
     HighPrecisionLookupTable, LookupTableError,
-    evaluation::{copy_completed_output_to, selected_ciphertext},
+    evaluation::{check_io, copy_completed_output_to, selected_ciphertext},
     lookup_table::{
         PolynomialId, checked_allocation_len,
         selection::{OutputAction, SelectorBatches, TableNodeId, TableOperation},
@@ -31,7 +32,7 @@ use crate::{
 /// Public monomial factors and all online workspaces are allocated at binding.
 /// Table products reuse one-hot CBS's external-product workspace between calls.
 /// Outputs are converted/extracted individually, then key-switched in bounded
-/// LWE tiles using its PBS return workspace; no batch of full polynomials is kept.
+/// LWE tiles using the independent return evaluator; no batch of full polynomials is kept.
 /// Fourier transforms also reuse its engine and the same table instance.
 pub struct FourierLookupTableEvaluator<'a, T, Table, LM = primus_modulus::NativeModulus<T>>
 where
@@ -42,6 +43,7 @@ where
     context: &'a TfheContext<T, Table, LM>,
     lookup_table: &'a HighPrecisionLookupTable<T>,
     one_hot: OneHotCircuitBootstrapEvaluator<'a, T, Table, LM>,
+    lwe_return: LweReturnEvaluator<'a, T, LM>,
     // [NLEV batch][branch][level][Fourier value]: full selectors for public choices.
     public_table_selectors: Box<[Complex64]>,
     // One full NLEV coefficient batch, reused when preparing each public selector batch.
@@ -124,6 +126,10 @@ where
             context,
             lookup_table,
             one_hot,
+            lwe_return: LweReturnEvaluator::new(
+                server_key.key_switching_key(),
+                context.parameters().external_lwe().cipher_modulus(),
+            ),
             public_table_selectors: vec![Complex64::default(); public_table_selectors_len]
                 .into_boxed_slice(),
             public_selector_coefficients: vec![T::ZERO; public_selector_coefficients_len]
@@ -210,13 +216,14 @@ where
     /// Rejects wrong chunk counts or any LWE dimension before writing outputs or scratch.
     pub fn evaluate_to(&mut self, input: &[LweCiphertext<T>], output: &mut [LweCiphertext<T>]) {
         let layout = self.lookup_table.layout;
-        layout.check_io(
+        check_io(
+            layout,
             input,
             output,
             self.context.parameters().external_lwe_dimension(),
         );
         self.prepare_selectors(input);
-        let capacity = self.one_hot.lwe_return_batch_capacity();
+        let capacity = self.lwe_return.batch_capacity();
         let plan = &self.lookup_table.selection;
         let mut first = 0;
         while first < output.len() {
@@ -227,10 +234,10 @@ where
                 }
                 OutputAction::Evaluate => {
                     let tile = plan.evaluation_tile(first, capacity);
-                    self.one_hot.begin_lwe_return_batch();
+                    self.lwe_return.begin_batch();
                     self.prepare_output_returns(tile.clone());
                     first = tile.end;
-                    self.one_hot.return_lwe_batch_to(&mut output[tile]);
+                    self.lwe_return.return_batch_to(&mut output[tile]);
                 }
             }
         }
@@ -242,7 +249,7 @@ where
         for output in outputs {
             self.select_table(output);
             self.rotate_selected_table();
-            self.one_hot.append_lwe_return_at(self.current.as_view(), 0);
+            self.lwe_return.append_at(self.current.as_view(), 0);
         }
     }
 

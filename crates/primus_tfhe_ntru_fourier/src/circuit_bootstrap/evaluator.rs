@@ -11,7 +11,7 @@ use super::key::CircuitBootstrapBinding;
 
 use crate::{
     CircuitBootstrapKey, Evaluator, ServerKey, TfheContext, TfheEvaluationError,
-    blind_rotation::blind_rotate_lookup_table_to,
+    bootstrap::{BlindRotationEngine, CircuitBootstrapResources},
 };
 
 /// Allocation-free online NTRU circuit bootstrapping with optional evaluation keys.
@@ -22,7 +22,7 @@ where
     Table: FftTable,
     LM: primus_reduce::RingContext<T>,
 {
-    pbs: Evaluator<'a, T, Table, LM>,
+    resources: CircuitBootstrapResources<'a, T, Table, LM>,
     circuit: CircuitBootstrapBinding<'a, T>,
     lookup_table: InterleavedLookupTable<T>,
     trace_scratch: Vec<T>,
@@ -36,6 +36,7 @@ where
     LM: primus_reduce::RingContext<T>,
 {
     /// Binds the CBS parameters and material carried by one server key.
+    /// Standalone CBS allocates only BR/projection resources, with no LWE return buffers.
     /// Rejects sparse keys or absent CBS material.
     ///
     /// # Correctness
@@ -46,7 +47,12 @@ where
         context: &'a TfheContext<T, Table, LM>,
         server_key: &'a ServerKey<T>,
     ) -> Result<Self, TfheEvaluationError> {
-        Self::try_from_bootstrapper(Evaluator::try_new(context, server_key)?)
+        Self::from_resources_and_key(
+            CircuitBootstrapResources::Standalone(BlindRotationEngine::try_new(
+                context, server_key,
+            )?),
+            server_key.circuit_bootstrap_key(),
+        )
     }
 
     /// Binds resources and compiles gadget-scaled identity outputs once.
@@ -61,7 +67,12 @@ where
         server_key: &'a ServerKey<T>,
         circuit_key: &'a CircuitBootstrapKey<T>,
     ) -> Result<Self, TfheEvaluationError> {
-        Self::from_bootstrapper_and_key(Evaluator::try_new(context, server_key)?, Some(circuit_key))
+        Self::from_resources_and_key(
+            CircuitBootstrapResources::Standalone(BlindRotationEngine::try_new(
+                context, server_key,
+            )?),
+            Some(circuit_key),
+        )
     }
 
     /// Consumes ordinary PBS workspace and allocates only the additional CBS buffers.
@@ -69,35 +80,42 @@ where
     pub fn try_from_bootstrapper(
         pbs: Evaluator<'a, T, Table, LM>,
     ) -> Result<Self, TfheEvaluationError> {
-        let key = pbs.server_key.circuit_bootstrap_key();
-        Self::from_bootstrapper_and_key(pbs, key)
+        let key = pbs.engine.server_key.circuit_bootstrap_key();
+        Self::from_resources_and_key(CircuitBootstrapResources::Bootstrapper(pbs), key)
     }
 
-    /// Borrows ordinary PBS operations without allocation or changing the bound resources.
+    /// Borrows ordinary PBS only when constructed from a complete bootstrapper,
+    /// without allowing replacement of the bound evaluator.
+    /// Standalone CBS has no client-return buffers and returns `None`.
     #[must_use]
     pub fn bootstrapper_mut(
         &mut self,
-    ) -> impl primus_tfhe::ProgrammableBootstrap<T>
-    + primus_tfhe::ProgrammableBootstrapInterleaved<T>
-    + use<'_, 'a, T, Table, LM> {
-        &mut self.pbs
+    ) -> Option<
+        impl primus_tfhe::ProgrammableBootstrap<T>
+        + primus_tfhe::ProgrammableBootstrapInterleaved<T>
+        + use<'_, 'a, T, Table, LM>,
+    > {
+        self.resources.bootstrapper_mut()
     }
 
-    /// Releases CBS buffers and recovers ordinary PBS workspace without allocation.
+    /// Recovers ordinary PBS, allocating return buffers only for standalone CBS.
+    /// A retained complete bootstrapper is recovered without allocation.
     #[must_use]
     pub fn into_bootstrapper(self) -> Evaluator<'a, T, Table, LM> {
-        self.pbs
+        self.resources.into_bootstrapper()
     }
 
-    fn from_bootstrapper_and_key(
-        pbs: Evaluator<'a, T, Table, LM>,
+    /// Bind the circuit key once and compile the gadget-scaled identity LUT.
+    fn from_resources_and_key(
+        resources: CircuitBootstrapResources<'a, T, Table, LM>,
         circuit_key: Option<&'a CircuitBootstrapKey<T>>,
     ) -> Result<Self, TfheEvaluationError> {
-        let context = pbs.context;
+        let engine = resources.engine();
+        let context = engine.context;
         let tfhe = context.parameters();
         let circuit = CircuitBootstrapBinding::try_new(
             tfhe,
-            pbs.blind_rotation.rotation.classic_controls(),
+            engine.workspace.rotation.classic_controls(),
             circuit_key,
         )?;
         let parameters = circuit.parameters;
@@ -122,7 +140,7 @@ where
             },
         )?;
         Ok(Self {
-            pbs,
+            resources,
             circuit,
             lookup_table,
             trace_scratch: vec![T::ZERO; 2 * n],
@@ -161,8 +179,9 @@ where
         C: Data<Elem = T>,
         D: DataMut<Elem = T>,
     {
+        let engine = self.resources.engine_mut();
         let parameters = self.circuit.parameters;
-        let ring_len = self.pbs.context.parameters().poly_length().get();
+        let ring_len = engine.context.parameters().poly_length().get();
         assert_eq!(
             (
                 control.as_ref().len(),
@@ -183,8 +202,8 @@ where
             rhs,
             output,
             parameters.output_basis(),
-            &mut self.pbs.fft,
-            self.pbs.blind_rotation.rotation.external_product(),
+            &mut engine.fft,
+            engine.workspace.rotation.external_product(),
         );
     }
 
@@ -208,8 +227,9 @@ where
         B: Data<Elem = T>,
         C: DataMut<Elem = T>,
     {
+        let engine = self.resources.engine_mut();
         let parameters = self.circuit.parameters;
-        let ring_len = self.pbs.context.parameters().poly_length().get();
+        let ring_len = engine.context.parameters().poly_length().get();
         assert_eq!(
             (
                 control.as_ref().len(),
@@ -223,8 +243,8 @@ where
             input,
             output,
             parameters.output_basis(),
-            &mut self.pbs.fft,
-            self.pbs.blind_rotation.rotation.external_product(),
+            &mut engine.fft,
+            engine.workspace.rotation.external_product(),
         );
     }
 
@@ -259,9 +279,10 @@ where
         input: &LweCiphertext<T>,
         output: &mut FourierNgswCiphertext<S>,
     ) {
+        let engine = self.resources.engine_mut();
         let parameters = self.circuit.parameters;
         let circuit_key = self.circuit.key;
-        let tfhe = self.pbs.context.parameters();
+        let tfhe = engine.context.parameters();
         assert_eq!(
             input.dimension(),
             tfhe.external_lwe_dimension().get(),
@@ -272,32 +293,27 @@ where
             parameters.output_fourier_nlev_len(),
             "circuit-bootstrap NGSW output length mismatch"
         );
-        blind_rotate_lookup_table_to(
-            self.pbs.server_key,
-            input.as_view(),
-            self.lookup_table.polynomial().as_view(),
+        engine.blind_rotate(
+            input,
+            self.lookup_table.polynomial(),
             self.lookup_table.padded_output_count(),
-            &mut self.pbs.blind_rotation,
-            tfhe,
-            &mut self.pbs.fft,
-        );
-        // A general ManyLUT accumulator does not have a zero message tail.
+        ); // A general ManyLUT accumulator does not have a zero message tail.
         // Reverse-trace projection is valid here; prefix expansion is not.
         circuit_key
             .trace_key()
             .project_prefix_coefficients_with_scratch_to(
-                &self.pbs.blind_rotation.current,
+                &engine.workspace.current,
                 parameters.output_basis().decompose_length().get(),
                 self.projected.as_mut(),
-                &mut self.pbs.fft,
+                &mut engine.fft,
                 &mut self.trace_scratch,
-                self.pbs.blind_rotation.rotation.external_product(),
+                engine.workspace.rotation.external_product(),
             );
         circuit_key.scheme_switch_key().apply_to(
             &self.projected,
             output,
-            &mut self.pbs.fft,
-            self.pbs.blind_rotation.rotation.external_product(),
+            &mut engine.fft,
+            engine.workspace.rotation.external_product(),
         );
     }
 }

@@ -121,9 +121,18 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr) {
         output
     });
 
-    let mut evaluator =
-        CircuitBootstrapEvaluator::try_from_bootstrapper(context.evaluator(&server).unwrap())
-            .unwrap();
+    // Independent CBS omits ordinary return buffers. Its online path still
+    // allocates nothing; completion explicitly allocates those missing buffers.
+    let mut standalone = CircuitBootstrapEvaluator::try_new(&context, &server).unwrap();
+    assert!(standalone.bootstrapper_mut().is_none());
+    let mut standalone_control = standalone.allocate_output();
+    let (_, allocation) = allocations::measure(|| {
+        standalone.circuit_bootstrap_to(&input, &mut standalone_control);
+    });
+    assert_eq!(allocation.count, 0);
+    let (pbs, allocation) = allocations::measure(|| standalone.into_bootstrapper());
+    assert!(allocation.count > 0);
+    let mut evaluator = CircuitBootstrapEvaluator::try_from_bootstrapper(pbs).unwrap();
     let mut control = evaluator.allocate_output();
     let mut selected = context.allocate_accumulator_ciphertext();
     let mut product = context.allocate_accumulator_ciphertext();
@@ -136,9 +145,11 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr) {
             evaluator.circuit_bootstrap_to(&input, &mut control);
             evaluator.cmux_to(&control, &choices[0], &choices[1], &mut selected);
             evaluator.external_product_to(&control, &choices[1], &mut product);
-            evaluator
-                .bootstrapper_mut()
-                .apply_lookup_table_to(&input, &identity, &mut output);
+            evaluator.bootstrapper_mut().unwrap().apply_lookup_table_to(
+                &input,
+                &identity,
+                &mut output,
+            );
             accumulator_client.decrypt_to(&selected, &mut decoded);
             accumulator_client.decrypt_to(&product, &mut decoded_product);
         });

@@ -1,15 +1,10 @@
-use primus_fft::{FftEngine, FftTable, TorusFftValue};
-use primus_poly::Polynomial;
+use primus_fft::{FftTable, TorusFftValue};
 use primus_tfhe::{
     InterleavedLookupTable, LookupTable, LweCiphertext, ProgrammableBootstrap,
     ProgrammableBootstrapInterleaved, TfheEvaluationError,
 };
 
-use crate::{
-    ServerKey, TfheContext,
-    blind_rotation::{BlindRotationWorkspace, blind_rotate_lookup_table_to},
-    lwe_return::LweReturnEngine,
-};
+use crate::{LweReturnEvaluator, ServerKey, TfheContext, bootstrap::BlindRotationEngine};
 
 /// Allocation-free online evaluator for Fourier NTRU programmable bootstrapping.
 pub struct Evaluator<'a, T, Table, LM = primus_modulus::NativeModulus<T>>
@@ -18,11 +13,8 @@ where
     Table: FftTable,
     LM: primus_reduce::RingContext<T>,
 {
-    pub(crate) context: &'a TfheContext<T, Table, LM>,
-    pub(crate) server_key: &'a ServerKey<T>,
-    pub(crate) fft: FftEngine<'a, Table>,
-    pub(crate) blind_rotation: BlindRotationWorkspace<'a, T>,
-    pub(crate) lwe_return: LweReturnEngine<'a, T, LM>,
+    pub(crate) engine: BlindRotationEngine<'a, T, Table, LM>,
+    pub(crate) lwe_return: LweReturnEvaluator<'a, T, LM>,
 }
 
 impl<'a, T, Table, LM> Evaluator<'a, T, Table, LM>
@@ -41,20 +33,19 @@ where
         context: &'a TfheContext<T, Table, LM>,
         server_key: &'a ServerKey<T>,
     ) -> Result<Self, TfheEvaluationError> {
-        if !server_key.is_compatible(context.parameters()) {
-            return Err(TfheEvaluationError::IncompatibleServerKey);
-        }
-        Ok(Self {
-            lwe_return: LweReturnEngine::new(
-                server_key.key_switching_key(),
-                context.parameters().poly_length(),
-                context.parameters().external_lwe().cipher_modulus(),
-            ),
-            context,
-            server_key,
-            fft: context.new_fft_engine(),
-            blind_rotation: BlindRotationWorkspace::new(context.parameters(), server_key),
-        })
+        Ok(Self::from_engine(BlindRotationEngine::try_new(
+            context, server_key,
+        )?))
+    }
+
+    /// Adds the client-return buffers to an already bound BR engine.
+    #[must_use]
+    pub(crate) fn from_engine(engine: BlindRotationEngine<'a, T, Table, LM>) -> Self {
+        let lwe_return = LweReturnEvaluator::new(
+            engine.server_key.key_switching_key(),
+            engine.context.parameters().external_lwe().cipher_modulus(),
+        );
+        Self { engine, lwe_return }
     }
 
     /// Applies a compiled lookup table and allocates the returned ciphertext.
@@ -72,8 +63,8 @@ where
         input: &LweCiphertext<T>,
         lookup_table: &LookupTable<T>,
     ) -> LweCiphertext<T> {
-        let mut output =
-            LweCiphertext::zero(self.context.parameters().external_lwe_dimension().get());
+        let dimension = self.engine.context.parameters().external_lwe_dimension();
+        let mut output = LweCiphertext::zero(dimension.get());
         self.apply_lookup_table_to(input, lookup_table, &mut output);
         output
     }
@@ -93,8 +84,11 @@ where
         lookup_table: &LookupTable<T>,
         output: &mut LweCiphertext<T>,
     ) {
-        self.lwe_return.check_idle();
-        let parameters = self.context.parameters();
+        assert!(
+            !self.lwe_return.is_batch_active(),
+            "finish or discard the pending NTRU return batch first"
+        );
+        let parameters = self.engine.context.parameters();
         assert!(
             lookup_table.is_compatible(
                 parameters.poly_length(),
@@ -116,7 +110,8 @@ where
             "PBS output dimension mismatch"
         );
 
-        self.blind_rotate(input, lookup_table.polynomial(), 1);
+        self.engine
+            .blind_rotate(input, lookup_table.polynomial(), 1);
         self.return_accumulator_at_to(0, output);
     }
 
@@ -137,7 +132,7 @@ where
         input: &LweCiphertext<T>,
         lookup_table: &InterleavedLookupTable<T>,
     ) -> Vec<LweCiphertext<T>> {
-        let dimension = self.context.parameters().external_lwe_dimension();
+        let dimension = self.engine.context.parameters().external_lwe_dimension();
         let mut outputs = (0..lookup_table.output_count())
             .map(|_| LweCiphertext::zero(dimension.get()))
             .collect::<Vec<_>>();
@@ -163,8 +158,11 @@ where
         lookup_table: &InterleavedLookupTable<T>,
         outputs: &mut [LweCiphertext<T>],
     ) {
-        self.lwe_return.check_idle();
-        let parameters = self.context.parameters();
+        assert!(
+            !self.lwe_return.is_batch_active(),
+            "finish or discard the pending NTRU return batch first"
+        );
+        let parameters = self.engine.context.parameters();
         assert!(
             lookup_table.is_compatible(
                 parameters.poly_length(),
@@ -192,7 +190,7 @@ where
             "PBSManyLUT output ciphertext dimension mismatch"
         );
 
-        self.blind_rotate(
+        self.engine.blind_rotate(
             input,
             lookup_table.polynomial(),
             lookup_table.padded_output_count(),
@@ -200,38 +198,16 @@ where
         self.return_accumulator_prefix_to(outputs);
     }
 
-    /// Writes the coefficient-domain BR result under the accumulator secret to
-    /// `blind_rotation.current`. The caller checked input/LUT compatibility;
-    /// `rotation_step` is the LUT's padded output count. No client key switch occurs.
-    #[inline]
-    pub(crate) fn blind_rotate(
-        &mut self,
-        input: &LweCiphertext<T>,
-        lookup_table: &Polynomial<Vec<T>>,
-        rotation_step: usize,
-    ) {
-        let parameters = self.context.parameters();
-        blind_rotate_lookup_table_to(
-            self.server_key,
-            input.as_view(),
-            lookup_table.as_view(),
-            rotation_step,
-            &mut self.blind_rotation,
-            parameters,
-            &mut self.fft,
-        );
-    }
-
     /// CBS consumes `current` directly; ordinary PBS returns its phase coefficient.
     pub(crate) fn return_accumulator_at_to(&mut self, index: usize, output: &mut LweCiphertext<T>) {
         self.lwe_return
-            .return_at_to(self.blind_rotation.current.as_view(), index, output);
+            .return_at_to(self.engine.workspace.current.as_view(), index, output);
     }
 
     /// Share Q→q across the interleaved prefix, keeping a scalar path for one output.
     fn return_accumulator_prefix_to(&mut self, outputs: &mut [LweCiphertext<T>]) {
         self.lwe_return
-            .return_prefix_to(self.blind_rotation.current.as_view(), outputs);
+            .return_prefix_to(self.engine.workspace.current.as_view(), outputs);
     }
 }
 

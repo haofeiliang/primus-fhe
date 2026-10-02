@@ -1,7 +1,7 @@
 //! Packed one-hot selectors from one fused blind rotation.
 
 use primus_integer::FheUint;
-use primus_ntru::{NlevCiphertext, NtruCiphertext, NttNgswCiphertext};
+use primus_ntru::{NlevCiphertext, NttNgswCiphertext};
 use primus_ntt::MonomialNttTable;
 use primus_tfhe::LweCiphertext;
 pub use primus_tfhe_ntru::{OneHotBootstrapError, OneHotLookupTable};
@@ -10,7 +10,7 @@ use super::key::CircuitBootstrapBinding;
 
 use crate::{
     CircuitBootstrapParameters, Evaluator, ServerKey, TfheContext,
-    blind_rotation::blind_rotate_lookup_table_to,
+    bootstrap::{BlindRotationEngine, CircuitBootstrapResources},
 };
 
 /// One-hot extension of CBS for classic binary/ternary LWE secrets.
@@ -30,7 +30,7 @@ where
     Table: MonomialNttTable<ValueT = T>,
     LM: primus_reduce::RingContext<T>,
 {
-    pbs: Evaluator<'a, T, Table, LM>,
+    resources: CircuitBootstrapResources<'a, T, Table, LM>,
     circuit: CircuitBootstrapBinding<'a, T>,
     lookup_table: OneHotLookupTable<T>,
     trace_scratch: Vec<T>,
@@ -43,7 +43,8 @@ where
     Table: MonomialNttTable<ValueT = T>,
     LM: primus_reduce::RingContext<T>,
 {
-    /// Binds the context and its CBS-enabled server key and compiles the packed LUT.
+    /// Binds standalone BR/projection resources and compiles the packed LUT.
+    /// LWE return buffers are allocated only when recovering ordinary PBS.
     /// Rejects sparse keys, absent CBS material, incompatible parameters or geometry.
     ///
     /// # Correctness
@@ -53,7 +54,9 @@ where
         context: &'a TfheContext<T, Table, LM>,
         server_key: &'a ServerKey<T>,
     ) -> Result<Self, OneHotBootstrapError> {
-        Self::try_from_bootstrapper(Evaluator::try_new(context, server_key)?)
+        Self::from_resources(CircuitBootstrapResources::Standalone(
+            BlindRotationEngine::try_new(context, server_key)?,
+        ))
     }
 
     /// Consumes existing PBS workspace; allocates only the packed LUT and trace buffers.
@@ -61,17 +64,25 @@ where
     pub fn try_from_bootstrapper(
         pbs: Evaluator<'a, T, Table, LM>,
     ) -> Result<Self, OneHotBootstrapError> {
+        Self::from_resources(CircuitBootstrapResources::Bootstrapper(pbs))
+    }
+
+    /// Binds CBS geometry once and allocates only its projection buffers.
+    fn from_resources(
+        resources: CircuitBootstrapResources<'a, T, Table, LM>,
+    ) -> Result<Self, OneHotBootstrapError> {
+        let engine = resources.engine();
         let circuit = CircuitBootstrapBinding::try_new(
-            pbs.context.parameters(),
-            pbs.blind_rotation.rotation.classic_controls(),
-            pbs.server_key.circuit_bootstrap_key(),
+            engine.context.parameters(),
+            engine.workspace.rotation.classic_controls(),
+            engine.server_key.circuit_bootstrap_key(),
         )?;
         let lookup_table =
-            OneHotLookupTable::try_new(pbs.context.parameters(), circuit.parameters)?;
-        let n = pbs.context.parameters().poly_length().get();
+            OneHotLookupTable::try_new(engine.context.parameters(), circuit.parameters)?;
+        let n = engine.context.parameters().poly_length().get();
         let projected = NlevCiphertext::zero(circuit.parameters.output_nlev_len());
         Ok(Self {
-            pbs,
+            resources,
             circuit,
             lookup_table,
             trace_scratch: vec![T::ZERO; 2 * n],
@@ -97,26 +108,6 @@ where
         self.circuit.parameters
     }
 
-    /// Returns coefficient `index` of an NTRU phase under the external LWE secret.
-    /// Reuses ordinary PBS's scalar return workspace without allocation.
-    ///
-    /// # Correctness
-    /// Inherits
-    /// [`NtruLweKeySwitchingKey::key_switch_at_to`](primus_ntru::NtruLweKeySwitchingKey::key_switch_at_to)'s
-    /// coefficient representation, source secret and noise requirements. This
-    /// binds the return key and q, but does not check source secret identity.
-    ///
-    /// # Panics
-    /// Rejects incompatible input/output lengths or coefficient index before writes.
-    pub fn return_lwe_at_to(
-        &mut self,
-        input: NtruCiphertext<&[T]>,
-        index: usize,
-        output: &mut LweCiphertext<T>,
-    ) {
-        self.pbs.lwe_return.return_at_to(input, index, output);
-    }
-
     /// Borrows the external-product workspace already used by one-hot CBS.
     /// Serial table products can reuse it between calls without allocation or reset.
     /// Every one-hot call overwrites its scratch before reading it.
@@ -128,7 +119,8 @@ where
     pub fn external_product_workspace(
         &mut self,
     ) -> &mut primus_ntru::NttNtruExternalProductWorkspace<T> {
-        self.pbs.blind_rotation.rotation.external_product()
+        let engine = self.resources.engine_mut();
+        engine.workspace.rotation.external_product()
     }
 
     /// Returns the storage length of one transformed NGSW selector: L*N NTT ring elements.
@@ -165,20 +157,25 @@ where
         vec![T::ZERO; self.ngsw_batch_len() - self.ngsw_selector_len()]
     }
 
-    /// Borrows ordinary PBS operations without allocation or changing the bound resources.
+    /// Borrows ordinary PBS only when constructed from a complete bootstrapper,
+    /// without allowing replacement of the bound evaluator.
+    /// Standalone CBS has no client-return buffers and returns `None`.
     #[must_use]
     pub fn bootstrapper_mut(
         &mut self,
-    ) -> impl primus_tfhe::ProgrammableBootstrap<T>
-    + primus_tfhe::ProgrammableBootstrapInterleaved<T>
-    + use<'_, 'a, T, Table, LM> {
-        &mut self.pbs
+    ) -> Option<
+        impl primus_tfhe::ProgrammableBootstrap<T>
+        + primus_tfhe::ProgrammableBootstrapInterleaved<T>
+        + use<'_, 'a, T, Table, LM>,
+    > {
+        self.resources.bootstrapper_mut()
     }
 
-    /// Releases one-hot buffers and recovers the PBS workspace without allocation.
+    /// Recovers ordinary PBS, allocating return buffers only for standalone CBS.
+    /// A retained complete bootstrapper is recovered without allocation.
     #[must_use]
     pub fn into_bootstrapper(self) -> Evaluator<'a, T, Table, LM> {
-        self.pbs
+        self.resources.into_bootstrapper()
     }
 
     /// Writes coefficient NLEV selectors only, without scheme switching.
@@ -262,7 +259,9 @@ where
         mut nlev_output: Option<&mut [T]>,
         mut ngsw_output: Option<&mut [T]>,
     ) {
-        let tfhe = self.pbs.context.parameters();
+        let ngsw_len = self.ngsw_selector_len();
+        let engine = self.resources.engine_mut();
+        let tfhe = engine.context.parameters();
         let parameters = self.circuit.parameters;
         assert_eq!(
             input.dimension(),
@@ -271,7 +270,6 @@ where
         );
 
         let nlev_len = parameters.output_nlev_len();
-        let ngsw_len = self.ngsw_selector_len();
         let selector_count = self.lookup_table.selector_count();
         if let Some(output) = &nlev_output {
             assert_eq!(
@@ -288,14 +286,10 @@ where
             );
         }
 
-        blind_rotate_lookup_table_to(
-            self.pbs.server_key,
-            input.as_view(),
-            self.lookup_table.polynomial().as_view(),
+        engine.blind_rotate(
+            input,
+            self.lookup_table.polynomial(),
             self.lookup_table.rotation_step(),
-            &mut self.pbs.blind_rotation,
-            tfhe,
-            self.pbs.context.table(),
         );
 
         // Without NLEV, omit branch zero before projection as well as conversion.
@@ -308,9 +302,9 @@ where
             // Negative BR places selector r at -r*S+l, including its negacyclic
             // sign. Rotate by +r*S first; prefix projection then shifts by -l.
             // General BR tails are nonzero: prefix expansion is not valid here.
-            self.pbs.blind_rotation.current.mul_monomial_to(
+            engine.workspace.current.mul_monomial_to(
                 selector * self.lookup_table.selector_stride(),
-                &mut self.pbs.blind_rotation.scratch,
+                &mut engine.workspace.scratch,
                 tfhe.accumulator_ntru().cipher_modulus(),
             );
             let projected = match nlev_output.as_deref_mut() {
@@ -321,13 +315,13 @@ where
                 .key
                 .trace_key()
                 .project_prefix_coefficients_with_scratch_to(
-                    &self.pbs.blind_rotation.scratch,
+                    &engine.workspace.scratch,
                     self.lookup_table.level_count().get(),
                     projected,
                     tfhe.accumulator_ntru().cipher_modulus(),
-                    self.pbs.context.table(),
+                    engine.context.table(),
                     &mut self.trace_scratch,
-                    self.pbs.blind_rotation.rotation.external_product(),
+                    engine.workspace.rotation.external_product(),
                 );
             if let Some(output) = ngsw_output
                 .as_deref_mut()
@@ -340,8 +334,8 @@ where
                         &mut output[output_index * ngsw_len..(output_index + 1) * ngsw_len],
                     ),
                     tfhe.accumulator_ntru().cipher_modulus(),
-                    self.pbs.context.table(),
-                    self.pbs.blind_rotation.rotation.external_product(),
+                    engine.context.table(),
+                    engine.workspace.rotation.external_product(),
                 );
             }
         }

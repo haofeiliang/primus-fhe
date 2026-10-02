@@ -42,7 +42,7 @@ Both `RustFftTable` and `TfheFftTable` support u32/u64. Keys, values and evaluat
 
 ## Reusing evaluators
 
-Ordinary/interleaved `Evaluator` `_to` calls reuse workspace and caller outputs. See the [resource reuse guide](../primus_tfhe/README.md#reusing-evaluators) for PBS/MVB/CBS ownership conversions. NTRU conversions retain the ordinary PBS return workspace.
+Ordinary/interleaved `Evaluator` `_to` calls reuse workspace and caller outputs. See the [resource reuse guide](../primus_tfhe/README.md#reusing-evaluators) for PBS/MVB/CBS ownership conversions. Standalone CBS/one-hot omits ordinary LWE-return buffers: `bootstrapper_mut()` returns `None`, and `into_bootstrapper()` allocates the missing return buffers. Construct with `try_from_bootstrapper(pbs)` to retain a complete PBS and recover it without allocation; its PBS borrow returns `Some`.
 
 ## Fixed-scale factorized MVB
 
@@ -89,14 +89,12 @@ See the [family one-hot contract](../primus_tfhe_ntru/README.md#one-hot-cbs) for
 
 A complete chunk-encryption and lookup workflow is in [fourier_lookup.rs](../primus_tfhe_ntru_lut/examples/fourier_lookup.rs).
 
-For custom composition, start with `begin_lwe_return_batch()`, append successive
-samples with `append_lwe_return_at(input, index)`, then call
-`return_lwe_batch_to(outputs)`. The output count must equal the number appended,
-up to `lwe_return_batch_capacity()`. Each successful submission ends the batch;
-`discard_lwe_return_batch()` cancels it, and starting again discards its old prefix.
-One-hot generation and external products may run between appends. Ordinary PBS
-rejects an active batch; conversion with `into_bootstrapper()` discards it.
-The protocol reuses the bound key, modulus and buffers without allocation.
+For custom returns, create `LweReturnEvaluator::new(server.key_switching_key(),
+context.parameters().external_lwe().cipher_modulus())`. Use `return_at_to` for
+one coefficient, `return_prefix_to` for a shared polynomial, or `begin_batch` →
+`append_at` → `return_batch_to` for independent sources. It owns only coefficient-domain
+return buffers; one-hot and FFT/product scratch remain independently usable.
+See the [family return contract](../primus_tfhe_ntru/README.md#ntrulwe-returns).
 
 ## Lower-level composition
 

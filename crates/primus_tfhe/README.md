@@ -117,7 +117,7 @@ When alternating PBS and MVB/CBS, consume an existing evaluator to retain one PB
 - `bootstrapper_mut()` borrows PBS operations. Import `ProgrammableBootstrap` / `ProgrammableBootstrapInterleaved` to call their `_to` methods; the borrow cannot replace the bound evaluator.
 - `into_bootstrapper()` releases dedicated buffers and recovers ordinary workspace. Recovery allocates nothing when MVB/CBS was constructed from an ordinary evaluator.
 
-For one capability alone, use `context.factorized_evaluator` or `context.circuit_bootstrap_evaluator`. Standalone GLWE BR→KS CBS has no return-KS workspace: its PBS borrow is `None`, and recovery explicitly allocates that workspace. Consume ordinary PBS instead when frequently alternating. Other GLWE CBS constructors return `Some`; NTRU CBS/MVB provide a direct borrow but reject sparse keys. Construction may allocate; online evaluation and borrowing never allocate implicitly. Boolean accepts PBS ownership through `try_new` and recovers it through `into_bootstrapper`.
+For one capability alone, use `context.factorized_evaluator` or `context.circuit_bootstrap_evaluator`. Standalone GLWE BR→KS CBS and NTRU CBS/one-hot omit ordinary return buffers: their PBS borrow is `None`, and recovery explicitly allocates those buffers. GLWE KS→BR CBS retains the required input KS and can return `Some` without additional return storage. CBS/one-hot created from complete PBS always returns `Some`; MVB provides a direct borrow. Consume ordinary PBS when frequently alternating. Construction may allocate; online evaluation and borrowing never allocate implicitly. Boolean accepts PBS ownership through `try_new` and recovers it through `into_bootstrapper`.
 
 ## LUTs and resource lifetime
 

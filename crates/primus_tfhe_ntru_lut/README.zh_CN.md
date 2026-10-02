@@ -86,7 +86,7 @@ cargo run --release -p primus_tfhe_ntru_lut --example fourier_lookup
 
 Evaluator 借用 context、server key 和 table，并在构造时分配全部缓冲。复用 `allocate_output()` 的结果与 `evaluate_to`，在线无额外分配；所有 chunk 数量和 LWE 维数在写入前检查。资源必须匹配 N/t/q/Q，密钥须实际配套；Fourier 还要求相同 FFT table 实例。每个并发 evaluator 持有独立可变工作区。
 
-返回链路对每个多项式独立执行逐系数 Q→q 和相位提取，再切换到外部 LWE 秘密。NTT 逐项返回；Fourier 复用内嵌 PBS 的返回工作区批量执行 key switch，只保留一小块中间 LWE，每次提取后即可覆盖多项式缓冲；输出近似 q 下的 chunk 编码，双重舍入与返回误差须纳入预算。
+返回链路对每个多项式独立执行逐系数 Q→q 和相位提取，再切换到外部 LWE 秘密。NTT 逐项返回；Fourier 通过独立 `LweReturnEvaluator` 批量执行 key switch，只保留一小块中间 LWE，每次提取后即可覆盖多项式缓冲；输出近似 q 下的 chunk 编码，双重舍入与返回误差须纳入预算。
 
 ## 数值限制与进一步阅读
 

@@ -72,8 +72,8 @@ evaluate_to
     otherwise execute its newly needed selection nodes in compiled order
     copy the selected root to current
     rotate_selected_table
-    NTT: return_lwe_at_to
-    Fourier: append_lwe_return_at (begin and submit once per bounded tile)
+    NTT: lwe_return.return_at_to
+    Fourier: lwe_return.append_at (begin and submit once per bounded tile)
 ```
 
 Selector requirements are the union of surviving public/encrypted choices.
@@ -138,18 +138,19 @@ and returns for the surviving path. Fewer operations alone do not certify a
 noise bound. Fourier transform-domain summation can differ in rounding from
 separately converted products; NTT summation is exact.
 
-NTT returns each output through one-hot's bound scalar workspace. Fourier groups
+Both evaluators explicitly compose standalone one-hot CBS and a coefficient-domain
+`LweReturnEvaluator`. NTT returns each output through its scalar workspace. Fourier groups
 selection, rotation and extraction in `prepare_output_returns`, then key-switches
 consecutive newly evaluated outputs up to its fixed tile capacity (eight LWEs),
 including a partial last tile. Tiles stop before a repeated output, which takes
-no return slot and copies its earlier completed LWE. One-hot/PBS owns and binds
-that return workspace. Each tile starts empty and appends a consecutive valid
+no return slot and copies its earlier completed LWE. The LUT owns and binds
+that return evaluator independently of one-hot/BR resources. Each tile starts empty and appends a consecutive valid
 prefix; submission consumes exactly that prefix and invalidates it. Selection
 and rotation preserve prepared samples; conversion and extraction remain
 independent for each source polynomial.
 Q→q still precedes extraction signs. A singleton tile writes directly to output;
-larger tiles copy switched LWEs from scratch. Neither outer evaluator owns
-additional return buffers. See [workspaces and storage](../../guides/development/workspaces-and-storage.md).
+larger tiles copy switched LWEs from scratch. The ownership split adds no retained return buffers: standalone one-hot
+no longer allocates an unused complete PBS. See [workspaces and storage](../../guides/development/workspaces-and-storage.md).
 
 ## Benchmark fixture
 

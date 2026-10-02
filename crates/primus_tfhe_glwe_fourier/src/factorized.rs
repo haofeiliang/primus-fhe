@@ -7,7 +7,7 @@ use primus_lwe::LweCiphertext;
 use primus_poly::{FourierPolynomial, FourierPolynomialIter, PolynomialIter, PolynomialOwned};
 use primus_tfhe::FactorizedLookupTable;
 
-use crate::{Evaluator, LookupTableError, PbsOrder, ServerKey, TfheContext, TfheEvaluationError};
+use crate::{Evaluator, LookupTableError, ServerKey, TfheContext, TfheEvaluationError};
 
 /// Native even-scale MVB program prepared for one borrowed Fourier context.
 ///
@@ -121,7 +121,7 @@ impl<'a, T: TorusFftValue, Table: FftTable> FactorizedEvaluator<'a, T, Table> {
     /// The underlying key, context and existing allocations are preserved.
     #[must_use]
     pub fn from_bootstrapper(evaluator: Evaluator<'a, T, Table>) -> Self {
-        let context = evaluator.context;
+        let context = evaluator.engine.context;
         Self {
             evaluator,
             shared_rotation: FourierGlwe::zero(
@@ -162,7 +162,8 @@ impl<'a, T: TorusFftValue, Table: FftTable> FactorizedEvaluator<'a, T, Table> {
         input: &LweCiphertext<T>,
         lookup_table: &FourierFactorizedLookupTable<'_, T, Table>,
     ) -> Vec<LweCiphertext<T>> {
-        let dimension = self.evaluator.context.parameters().external_lwe_dimension();
+        let context = self.evaluator.engine.context;
+        let dimension = context.parameters().external_lwe_dimension();
         let mut outputs = vec![LweCiphertext::zero(dimension.get()); lookup_table.output_count()];
         self.apply_lookup_table_to(input, lookup_table, &mut outputs);
         outputs
@@ -197,10 +198,10 @@ impl<'a, T: TorusFftValue, Table: FftTable> FactorizedEvaluator<'a, T, Table> {
     ) {
         let evaluator = &mut self.evaluator;
         assert!(
-            core::ptr::eq(evaluator.context, lookup_table.context),
+            core::ptr::eq(evaluator.engine.context, lookup_table.context),
             "MVB program was prepared by a different context"
         );
-        let parameters = evaluator.context.parameters();
+        let parameters = evaluator.engine.context.parameters();
         let dimension = parameters.external_lwe_dimension();
         assert_eq!(
             input.dimension(),
@@ -219,35 +220,27 @@ impl<'a, T: TorusFftValue, Table: FftTable> FactorizedEvaluator<'a, T, Table> {
 
         let glwe = parameters.accumulator_glwe();
         let n = glwe.poly_length().get();
-        evaluator.blind_rotate(input, &lookup_table.common_polynomial, 1);
-        evaluator
-            .main_glwe
-            .write_fourier_form(&mut self.shared_rotation, &mut evaluator.fft);
+        let engine = &mut evaluator.engine;
+        engine.blind_rotate(input, &lookup_table.common_polynomial, 1);
+        engine
+            .accumulator
+            .write_fourier_form(&mut self.shared_rotation, &mut engine.fft);
         for (factor, output) in
             FourierPolynomialIter::new(&lookup_table.factors, n / 2).zip(outputs)
         {
+            let engine = &mut evaluator.engine;
             // Keep the shared result intact; only one component-sized Fourier
             // product is needed before overwriting its coefficient destination.
             for (component, destination) in
                 FourierPolynomialIter::new(self.shared_rotation.as_ref(), n / 2)
-                    .zip(evaluator.main_glwe.as_mut().chunks_exact_mut(n))
+                    .zip(engine.accumulator.as_mut().chunks_exact_mut(n))
             {
                 component.mul_to(&factor, &mut self.product);
-                evaluator
+                engine
                     .fft
                     .backward_as_torus(self.product.as_ref(), destination);
             }
-            match parameters.pbs_order() {
-                PbsOrder::BootstrapKeyswitch => {
-                    let switched = evaluator.keyswitch_accumulator();
-                    switched.extract_compact_lwe_to(output, n, glwe.cipher_modulus());
-                }
-                PbsOrder::KeyswitchBootstrap => {
-                    evaluator
-                        .main_glwe
-                        .extract_lwe_to(output, n, glwe.cipher_modulus());
-                }
-            }
+            evaluator.return_accumulator_to(core::slice::from_mut(output));
         }
     }
 }

@@ -9,12 +9,12 @@ use primus_ntt::MonomialNttTable;
 use primus_poly::{NttPolynomialIter, NttPolynomialIterMut, Polynomial, PolynomialIterMut};
 use primus_reduce::{ReduceSub, RingContext};
 use primus_tfhe::LweCiphertext;
-use primus_tfhe_ntru::CircuitBootstrapParameters;
+use primus_tfhe_ntru::{CircuitBootstrapParameters, LweReturnEvaluator};
 use primus_tfhe_ntru_ntt::{OneHotCircuitBootstrapEvaluator, ServerKey, TfheContext};
 
 use crate::{
     HighPrecisionLookupTable, LookupTableError,
-    evaluation::{copy_completed_output_to, selected_ciphertext},
+    evaluation::{check_io, copy_completed_output_to, selected_ciphertext},
     lookup_table::{
         PolynomialId, checked_allocation_len,
         selection::{OutputAction, SelectorBatches, TableNodeId, TableOperation},
@@ -40,6 +40,7 @@ where
     context: &'a TfheContext<T, Table, LM>,
     lookup_table: &'a HighPrecisionLookupTable<T>,
     one_hot: OneHotCircuitBootstrapEvaluator<'a, T, Table, LM>,
+    lwe_return: LweReturnEvaluator<'a, T, LM>,
     // [NLEV batch][branch][level][NTT value]: full selectors for public choices.
     public_table_selectors: Box<[T]>,
     // [NGSW batch][r-1][level][NTT value]: nonzero selectors for encrypted choices.
@@ -103,6 +104,10 @@ where
             context,
             lookup_table,
             one_hot,
+            lwe_return: LweReturnEvaluator::new(
+                server_key.key_switching_key(),
+                context.parameters().external_lwe().cipher_modulus(),
+            ),
             public_table_selectors: vec![T::ZERO; public_table_selectors_len].into_boxed_slice(),
             encrypted_table_selectors: vec![T::ZERO; encrypted_table_selectors_len]
                 .into_boxed_slice(),
@@ -174,7 +179,8 @@ where
     /// Rejects wrong chunk counts or any LWE dimension before writing outputs or scratch.
     pub fn evaluate_to(&mut self, input: &[LweCiphertext<T>], output: &mut [LweCiphertext<T>]) {
         let layout = self.lookup_table.layout;
-        layout.check_io(
+        check_io(
+            layout,
             input,
             output,
             self.context.parameters().external_lwe_dimension(),
@@ -188,8 +194,8 @@ where
                 OutputAction::Evaluate => {
                     self.select_table(index);
                     self.rotate_selected_table();
-                    self.one_hot
-                        .return_lwe_at_to(self.current.as_view(), 0, &mut output[index]);
+                    self.lwe_return
+                        .return_at_to(self.current.as_view(), 0, &mut output[index]);
                 }
             }
         }

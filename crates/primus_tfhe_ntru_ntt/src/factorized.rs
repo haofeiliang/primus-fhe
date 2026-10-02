@@ -133,11 +133,12 @@ where
         evaluator: Evaluator<'a, T, Table, LM>,
     ) -> Result<Self, TfheEvaluationError> {
         evaluator
-            .blind_rotation
+            .engine
+            .workspace
             .rotation
             .classic_controls()
             .ok_or(TfheEvaluationError::UnsupportedSparseBootstrapping)?;
-        let context = evaluator.context;
+        let context = evaluator.engine.context;
         Ok(Self {
             evaluator,
             shared_rotation: NttNtru::zero(context.parameters().poly_length().get()),
@@ -173,7 +174,8 @@ where
         input: &LweCiphertext<T>,
         lookup_table: &NttFactorizedLookupTable<'_, T, Table, LM>,
     ) -> Vec<LweCiphertext<T>> {
-        let dimension = self.evaluator.context.parameters().external_lwe_dimension();
+        let context = self.evaluator.engine.context;
+        let dimension = context.parameters().external_lwe_dimension();
         let mut outputs = (0..lookup_table.output_count())
             .map(|_| LweCiphertext::zero(dimension.get()))
             .collect::<Vec<_>>();
@@ -210,7 +212,13 @@ where
         self.check_io(input, lookup_table, outputs);
         self.prepare_shared_rotation(input, &lookup_table.common_polynomial);
 
-        let n = self.evaluator.context.parameters().poly_length().get();
+        let n = self
+            .evaluator
+            .engine
+            .context
+            .parameters()
+            .poly_length()
+            .get();
         let batch_size = self.evaluator.lwe_return.batch_capacity();
         let mut factors = NttPolynomialIter::new(&lookup_table.factors, n);
         for outputs in outputs.chunks_mut(batch_size) {
@@ -232,10 +240,10 @@ where
     ) {
         let evaluator = &self.evaluator;
         assert!(
-            core::ptr::eq(evaluator.context, lookup_table.context),
+            core::ptr::eq(evaluator.engine.context, lookup_table.context),
             "MVB program was prepared by a different context"
         );
-        let parameters = evaluator.context.parameters();
+        let parameters = evaluator.engine.context.parameters();
         let dimension = parameters.external_lwe_dimension();
         assert_eq!(
             input.dimension(),
@@ -258,29 +266,30 @@ where
     /// Preserve the common blind rotation in transform form for all factors.
     /// Individual products can then overwrite the coefficient accumulator.
     fn prepare_shared_rotation(&mut self, input: &LweCiphertext<T>, common: &PolynomialOwned<T>) {
-        let evaluator = &mut self.evaluator;
-        evaluator.blind_rotate(input, common, 1);
-        evaluator
-            .blind_rotation
+        let engine = &mut self.evaluator.engine;
+        engine.blind_rotate(input, common, 1);
+        engine
+            .workspace
             .current
-            .write_ntt_form(&mut self.shared_rotation, evaluator.context.table());
+            .write_ntt_form(&mut self.shared_rotation, engine.context.table());
     }
 
     /// Multiply one factor and extract its independently rounded q-domain sample.
     /// Only the LWE slot survives; the next factor may overwrite the product buffers.
     fn prepare_factor_return(&mut self, factor: NttPolynomial<&[T]>) {
         let evaluator = &mut self.evaluator;
-        let parameters = evaluator.context.parameters();
-        let mut product = NttNtru::new(evaluator.blind_rotation.current.as_mut());
+        let engine = &mut evaluator.engine;
+        let parameters = engine.context.parameters();
+        let mut product = NttNtru::new(engine.workspace.current.as_mut());
         self.shared_rotation.mul_ntt_polynomial_to(
             &factor,
             &mut product,
             parameters.accumulator_ntru().cipher_modulus(),
         );
-        product.into_coeff_form(evaluator.context.table());
+        product.into_coeff_form(engine.context.table());
         evaluator
             .lwe_return
-            .append_at(evaluator.blind_rotation.current.as_view(), 0);
+            .append_at(engine.workspace.current.as_view(), 0);
     }
 }
 

@@ -11,7 +11,7 @@ use super::key::CircuitBootstrapBinding;
 
 use crate::{
     CircuitBootstrapKey, CircuitBootstrapParameters, Evaluator, ServerKey, TfheContext,
-    TfheEvaluationError,
+    TfheEvaluationError, bootstrap::CircuitBootstrapResources,
 };
 
 /// Classic binary/ternary or sparse binary CBS producing Fourier GGSW controls.
@@ -24,7 +24,7 @@ where
     T: TorusFftValue,
     Table: FftTable,
 {
-    pbs: Evaluator<'a, T, Table>,
+    resources: CircuitBootstrapResources<'a, T, Table>,
     circuit: CircuitBootstrapBinding<'a, T>,
     lookup_table: InterleavedLookupTable<T>,
     trace: FourierGlweTraceWorkspace<T>,
@@ -70,8 +70,8 @@ where
         parameters: &'a CircuitBootstrapParameters<T>,
         circuit_key: &'a CircuitBootstrapKey<T>,
     ) -> Result<Self, TfheEvaluationError> {
-        Self::from_bootstrapper_and_parts(
-            Evaluator::try_for_circuit_bootstrap(context, server_key)?,
+        Self::from_resources_and_parts(
+            CircuitBootstrapResources::try_new(context, server_key)?,
             parameters,
             circuit_key,
         )
@@ -83,10 +83,15 @@ where
         pbs: Evaluator<'a, T, Table>,
     ) -> Result<Self, TfheEvaluationError> {
         let key = pbs
+            .engine
             .server_key
             .circuit_bootstrap_key()
             .ok_or(TfheEvaluationError::MissingCircuitBootstrapKey)?;
-        Self::from_bootstrapper_and_parts(pbs, key.parameters(), key)
+        Self::from_resources_and_parts(
+            CircuitBootstrapResources::Bootstrapper(pbs),
+            key.parameters(),
+            key,
+        )
     }
 
     /// Borrows ordinary PBS without allocation, while preventing replacement of the bound evaluator.
@@ -100,24 +105,24 @@ where
         + primus_tfhe::ProgrammableBootstrapInterleaved<T>
         + use<'_, 'a, T, Table>,
     > {
-        self.pbs.has_key_switching().then_some(&mut self.pbs)
+        self.resources.bootstrapper_mut()
     }
 
     /// Recovers ordinary PBS workspace and releases CBS-only buffers.
     /// Reuses all allocations when constructed from an ordinary bootstrapper or with KS→BR order.
     /// Standalone BR→KS CBS explicitly allocates its missing return-KS workspace here.
     #[must_use]
-    pub fn into_bootstrapper(mut self) -> Evaluator<'a, T, Table> {
-        self.pbs.complete_workspace();
-        self.pbs
+    pub fn into_bootstrapper(self) -> Evaluator<'a, T, Table> {
+        self.resources.into_bootstrapper()
     }
 
-    fn from_bootstrapper_and_parts(
-        pbs: Evaluator<'a, T, Table>,
+    /// Bind the circuit parameters once and compile the gadget-scaled identity LUT.
+    fn from_resources_and_parts(
+        resources: CircuitBootstrapResources<'a, T, Table>,
         parameters: &'a CircuitBootstrapParameters<T>,
         circuit_key: &'a CircuitBootstrapKey<T>,
     ) -> Result<Self, TfheEvaluationError> {
-        let context = pbs.context;
+        let context = resources.engine().context;
         let tfhe = context.parameters();
         let circuit = CircuitBootstrapBinding::try_new(tfhe, parameters, circuit_key)?;
 
@@ -140,7 +145,7 @@ where
             },
         )?;
         Ok(Self {
-            pbs,
+            resources,
             circuit,
             lookup_table,
             trace: FourierGlweTraceWorkspace::new(glwe.size()),
@@ -179,6 +184,7 @@ where
         C: Data<Elem = T>,
         D: DataMut<Elem = T>,
     {
+        let engine = self.resources.engine_mut();
         let parameters = self.circuit.parameters;
         let ring_len = parameters.output_size().glwe_size().glwe_len();
         assert_eq!(
@@ -196,10 +202,9 @@ where
             ),
             "CMUX ciphertext layout mismatch"
         );
-        self.pbs
-            .with_external_product(parameters.output_size(), |scratch, fft| {
-                control.cmux_to(lhs, rhs, output, parameters.output_basis(), fft, scratch);
-            });
+        engine.with_external_product(parameters.output_size(), |scratch, fft| {
+            control.cmux_to(lhs, rhs, output, parameters.output_basis(), fft, scratch);
+        });
     }
 
     /// Multiplies a coefficient-domain accumulator ciphertext by a gadget control.
@@ -222,6 +227,7 @@ where
         B: Data<Elem = T>,
         C: DataMut<Elem = T>,
     {
+        let engine = self.resources.engine_mut();
         let parameters = self.circuit.parameters;
         let ring_len = parameters.output_size().glwe_size().glwe_len();
         assert_eq!(
@@ -237,10 +243,9 @@ where
             ),
             "external-product ciphertext layout mismatch"
         );
-        self.pbs
-            .with_external_product(parameters.output_size(), |scratch, fft| {
-                control.external_product_to(input, output, parameters.output_basis(), fft, scratch);
-            });
+        engine.with_external_product(parameters.output_size(), |scratch, fft| {
+            control.external_product_to(input, output, parameters.output_basis(), fft, scratch);
+        });
     }
 
     /// Allocates a Fourier GGSW output. Inherits [`Self::circuit_bootstrap_to`]'s
@@ -277,11 +282,12 @@ where
         input: &LweCiphertext<T>,
         output: &mut FourierGgsw<S>,
     ) {
+        let engine = self.resources.engine_mut();
         let parameters = self.circuit.parameters;
         let circuit_key = self.circuit.key;
         assert_eq!(
             input.dimension(),
-            self.pbs.context.parameters().external_lwe_dimension().get(),
+            engine.context.parameters().external_lwe_dimension().get(),
             "circuit-bootstrap input dimension mismatch"
         );
         assert_eq!(
@@ -290,7 +296,7 @@ where
             "circuit-bootstrap output Fourier GGSW layout mismatch"
         );
 
-        let (accumulator, fft) = self.pbs.blind_rotate(
+        let (accumulator, fft) = engine.blind_rotate(
             input,
             self.lookup_table.polynomial(),
             self.lookup_table.padded_output_count(),
@@ -305,12 +311,11 @@ where
             &mut self.trace,
         );
         // CMUX can bind the same buffers to a different output decomposition.
-        self.pbs
-            .with_external_product(parameters.scheme_switch().size(), |scratch, fft| {
-                circuit_key
-                    .scheme_switch_key()
-                    .apply_to(&self.projected, output, fft, scratch);
-            });
+        engine.with_external_product(parameters.scheme_switch().size(), |scratch, fft| {
+            circuit_key
+                .scheme_switch_key()
+                .apply_to(&self.projected, output, fft, scratch);
+        });
     }
 }
 

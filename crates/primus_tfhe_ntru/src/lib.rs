@@ -27,6 +27,12 @@
 //! without allocating, for either secret or public keys. Message and dimension
 //! errors leave output and RNG unchanged. Backend `Encryptor` aliases expose
 //! these same methods.
+//!
+//! # Independent NTRU→LWE returns
+//!
+//! [`LweReturnEvaluator`] binds coefficient-domain return keys and scratch,
+//! independent of NTT/FFT or one-hot resources. It supports scalar, shared-input
+//! prefix and different-input stream returns without online allocation.
 
 #![deny(missing_docs)]
 
@@ -35,6 +41,7 @@ mod client;
 mod error;
 mod key;
 mod lookup_table;
+mod lwe_return;
 mod one_hot;
 mod parameters;
 
@@ -44,6 +51,7 @@ pub use error::{
     TfheClientError, TfheKeyError, TfheParameterError,
 };
 pub use key::ClientKey;
+pub use lwe_return::LweReturnEvaluator;
 pub use one_hot::{OneHotBootstrapError, OneHotLookupTable};
 pub use parameters::{TfheConfig, TfheParameters};
 

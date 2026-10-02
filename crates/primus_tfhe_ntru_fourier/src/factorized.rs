@@ -139,11 +139,12 @@ impl<'a, T: TorusFftValue, Table: FftTable, LM: primus_reduce::RingContext<T>>
         evaluator: Evaluator<'a, T, Table, LM>,
     ) -> Result<Self, TfheEvaluationError> {
         evaluator
-            .blind_rotation
+            .engine
+            .workspace
             .rotation
             .classic_controls()
             .ok_or(TfheEvaluationError::UnsupportedSparseBootstrapping)?;
-        let context = evaluator.context;
+        let context = evaluator.engine.context;
         Ok(Self {
             evaluator,
             shared_rotation: FourierNtru::zero(
@@ -180,7 +181,8 @@ impl<'a, T: TorusFftValue, Table: FftTable, LM: primus_reduce::RingContext<T>>
         input: &LweCiphertext<T>,
         lookup_table: &FourierFactorizedLookupTable<'_, T, Table, LM>,
     ) -> Vec<LweCiphertext<T>> {
-        let dimension = self.evaluator.context.parameters().external_lwe_dimension();
+        let context = self.evaluator.engine.context;
+        let dimension = context.parameters().external_lwe_dimension();
         let mut outputs = vec![LweCiphertext::zero(dimension.get()); lookup_table.output_count()];
         self.apply_lookup_table_to(input, lookup_table, &mut outputs);
         outputs
@@ -217,7 +219,13 @@ impl<'a, T: TorusFftValue, Table: FftTable, LM: primus_reduce::RingContext<T>>
         self.check_io(input, lookup_table, outputs);
         self.prepare_shared_rotation(input, &lookup_table.common_polynomial);
 
-        let n = self.evaluator.context.parameters().poly_length().get();
+        let n = self
+            .evaluator
+            .engine
+            .context
+            .parameters()
+            .poly_length()
+            .get();
         let batch_size = self.evaluator.lwe_return.batch_capacity();
         let mut factors = FourierPolynomialIter::new(&lookup_table.factors, n / 2);
         for outputs in outputs.chunks_mut(batch_size) {
@@ -239,10 +247,10 @@ impl<'a, T: TorusFftValue, Table: FftTable, LM: primus_reduce::RingContext<T>>
     ) {
         let evaluator = &self.evaluator;
         assert!(
-            core::ptr::eq(evaluator.context, lookup_table.context),
+            core::ptr::eq(evaluator.engine.context, lookup_table.context),
             "MVB program was prepared by a different context"
         );
-        let parameters = evaluator.context.parameters();
+        let parameters = evaluator.engine.context.parameters();
         let dimension = parameters.external_lwe_dimension();
         assert_eq!(
             input.dimension(),
@@ -263,25 +271,26 @@ impl<'a, T: TorusFftValue, Table: FftTable, LM: primus_reduce::RingContext<T>>
     /// Preserve the common blind rotation in transform form for all factors.
     /// Individual products can then overwrite the coefficient accumulator.
     fn prepare_shared_rotation(&mut self, input: &LweCiphertext<T>, common: &PolynomialOwned<T>) {
-        let evaluator = &mut self.evaluator;
-        evaluator.blind_rotate(input, common, 1);
-        evaluator
-            .blind_rotation
+        let engine = &mut self.evaluator.engine;
+        engine.blind_rotate(input, common, 1);
+        engine
+            .workspace
             .current
-            .write_fourier_form(&mut self.shared_rotation, &mut evaluator.fft);
+            .write_fourier_form(&mut self.shared_rotation, &mut engine.fft);
     }
 
     /// Multiply one factor and extract its independently rounded q-domain sample.
     /// Only the LWE slot survives; the next factor may overwrite the product buffers.
     fn prepare_factor_return(&mut self, factor: FourierPolynomial<&[Complex64]>) {
         let evaluator = &mut self.evaluator;
+        let engine = &mut evaluator.engine;
         self.shared_rotation
             .mul_fourier_polynomial_to(&factor, &mut self.product);
         self.product
-            .write_torus_form(&mut evaluator.blind_rotation.current, &mut evaluator.fft);
+            .write_torus_form(&mut engine.workspace.current, &mut engine.fft);
         evaluator
             .lwe_return
-            .append_at(evaluator.blind_rotation.current.as_view(), 0);
+            .append_at(engine.workspace.current.as_view(), 0);
     }
 }
 

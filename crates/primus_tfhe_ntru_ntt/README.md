@@ -40,7 +40,7 @@ NTT tables must implement `MonomialNttTable`; built-in tables support it. Contex
 
 ## Reusing evaluators
 
-Ordinary/interleaved `Evaluator` `_to` calls reuse workspace and caller outputs. See the [resource reuse guide](../primus_tfhe/README.md#reusing-evaluators) for PBS/MVB/CBS ownership conversions. NTRU conversions retain the ordinary PBS return workspace.
+Ordinary/interleaved `Evaluator` `_to` calls reuse workspace and caller outputs. See the [resource reuse guide](../primus_tfhe/README.md#reusing-evaluators) for PBS/MVB/CBS ownership conversions. Standalone CBS/one-hot omits ordinary LWE-return buffers: `bootstrapper_mut()` returns `None`, and `into_bootstrapper()` allocates the missing return buffers. Construct with `try_from_bootstrapper(pbs)` to retain a complete PBS and recover it without allocation; its PBS borrow returns `Some`.
 
 ## Fixed-scale factorized MVB
 
@@ -87,10 +87,12 @@ See the [family one-hot contract](../primus_tfhe_ntru/README.md#one-hot-cbs) for
 
 A complete chunk-encryption and lookup workflow is in [ntt_lookup.rs](../primus_tfhe_ntru_lut/examples/ntt_lookup.rs).
 
-For custom composition, `one_hot.return_lwe_at_to(input, index, output)` reuses
-PBS's scalar return resources with the bound Q→q, f→s key. It requires a
-coefficient-domain NTRU under the matching ring secret and does not establish a
-noise budget or source secret identity.
+For custom returns, create `LweReturnEvaluator::new(server.key_switching_key(),
+context.parameters().external_lwe().cipher_modulus())`. Use `return_at_to` for
+one coefficient, `return_prefix_to` for a shared polynomial, or `begin_batch` →
+`append_at` → `return_batch_to` for independent sources. It owns only coefficient-domain
+return buffers; one-hot and external-product scratch remain independently usable.
+See the [family return contract](../primus_tfhe_ntru/README.md#ntrulwe-returns).
 
 ## Lower-level composition
 

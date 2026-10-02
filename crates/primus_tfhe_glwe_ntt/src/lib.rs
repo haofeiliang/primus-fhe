@@ -40,6 +40,7 @@ use primus_modulus::BarrettModulus;
 
 mod accumulator;
 pub mod blind_rotation;
+mod bootstrap;
 pub mod bootstrapping_key;
 pub mod circuit_bootstrap;
 mod client;

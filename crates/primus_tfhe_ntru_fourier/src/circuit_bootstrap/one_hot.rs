@@ -1,7 +1,7 @@
 //! Packed one-hot selectors from one fused blind rotation.
 
 use primus_fft::{Complex64, FftTable, TorusFftValue};
-use primus_ntru::{FourierNgswCiphertext, NlevCiphertext, NtruCiphertext};
+use primus_ntru::{FourierNgswCiphertext, NlevCiphertext};
 use primus_tfhe::LweCiphertext;
 pub use primus_tfhe_ntru::{OneHotBootstrapError, OneHotLookupTable};
 
@@ -9,7 +9,7 @@ use super::key::CircuitBootstrapBinding;
 
 use crate::{
     CircuitBootstrapParameters, Evaluator, ServerKey, TfheContext,
-    blind_rotation::blind_rotate_lookup_table_to,
+    bootstrap::{BlindRotationEngine, CircuitBootstrapResources},
 };
 
 /// One-hot extension of CBS for classic binary/ternary LWE secrets.
@@ -29,7 +29,7 @@ where
     Table: FftTable,
     LM: primus_reduce::RingContext<T>,
 {
-    pbs: Evaluator<'a, T, Table, LM>,
+    resources: CircuitBootstrapResources<'a, T, Table, LM>,
     circuit: CircuitBootstrapBinding<'a, T>,
     lookup_table: OneHotLookupTable<T>,
     trace_scratch: Vec<T>,
@@ -42,7 +42,8 @@ where
     Table: FftTable,
     LM: primus_reduce::RingContext<T>,
 {
-    /// Binds the context and its CBS-enabled server key and compiles the packed LUT.
+    /// Binds standalone BR/projection resources and compiles the packed LUT.
+    /// LWE return buffers are allocated only when recovering ordinary PBS.
     /// Rejects sparse keys, absent CBS material, incompatible parameters or geometry.
     ///
     /// # Correctness
@@ -53,7 +54,9 @@ where
         context: &'a TfheContext<T, Table, LM>,
         server_key: &'a ServerKey<T>,
     ) -> Result<Self, OneHotBootstrapError> {
-        Self::try_from_bootstrapper(Evaluator::try_new(context, server_key)?)
+        Self::from_resources(CircuitBootstrapResources::Standalone(
+            BlindRotationEngine::try_new(context, server_key)?,
+        ))
     }
 
     /// Consumes existing PBS workspace; allocates only the packed LUT and trace buffers.
@@ -61,20 +64,28 @@ where
     pub fn try_from_bootstrapper(
         pbs: Evaluator<'a, T, Table, LM>,
     ) -> Result<Self, OneHotBootstrapError> {
+        Self::from_resources(CircuitBootstrapResources::Bootstrapper(pbs))
+    }
+
+    /// Binds CBS geometry once and allocates only its projection buffers.
+    fn from_resources(
+        resources: CircuitBootstrapResources<'a, T, Table, LM>,
+    ) -> Result<Self, OneHotBootstrapError> {
+        let engine = resources.engine();
         let circuit = CircuitBootstrapBinding::try_new(
-            pbs.context.parameters(),
-            pbs.blind_rotation.rotation.classic_controls(),
-            pbs.server_key.circuit_bootstrap_key(),
+            engine.context.parameters(),
+            engine.workspace.rotation.classic_controls(),
+            engine.server_key.circuit_bootstrap_key(),
         )?;
         let lookup_table =
-            OneHotLookupTable::try_new(pbs.context.parameters(), circuit.parameters)?;
+            OneHotLookupTable::try_new(engine.context.parameters(), circuit.parameters)?;
         if lookup_table.output_nlev_len() / 2 > isize::MAX as usize / size_of::<Complex64>() {
             return Err(OneHotBootstrapError::StorageSizeOverflow);
         }
-        let n = pbs.context.parameters().poly_length().get();
+        let n = engine.context.parameters().poly_length().get();
         let projected = NlevCiphertext::zero(circuit.parameters.output_nlev_len());
         Ok(Self {
-            pbs,
+            resources,
             circuit,
             lookup_table,
             trace_scratch: vec![T::ZERO; 2 * n],
@@ -92,61 +103,6 @@ where
     #[must_use]
     pub fn lookup_table(&self) -> &OneHotLookupTable<T> {
         &self.lookup_table
-    }
-
-    /// Maximum number of NTRU samples retained in one streamed return batch.
-    #[must_use]
-    pub fn lwe_return_batch_capacity(&self) -> usize {
-        self.pbs.lwe_return.batch_capacity()
-    }
-
-    /// Starts an empty return batch, discarding any previous pending samples.
-    /// No buffers are cleared or allocated. Appends form a consecutive prefix;
-    /// one-hot, FFT and external-product operations may run between appends.
-    /// Ordinary PBS cannot use the return resources until submission or discard.
-    pub fn begin_lwe_return_batch(&mut self) {
-        self.pbs.lwe_return.begin_batch();
-    }
-
-    /// Converts/extracts coefficient `index` and appends it to the active batch.
-    /// No source borrow is retained; the input can be overwritten afterward.
-    ///
-    /// # Correctness
-    /// Input must be a canonical coefficient NTRU under this evaluator's ring secret
-    /// at Q. Inherits
-    /// [`NtruLweKeySwitchingKey::modulus_switch_extract_at_to`](primus_ntru::NtruLweKeySwitchingKey::modulus_switch_extract_at_to)'s
-    /// key and noise requirements. Conversion to q precedes the extraction sign;
-    /// source secret identity is not checked.
-    ///
-    /// # Panics
-    /// Rejects an inactive/full batch, invalid input length or coefficient index
-    /// before sample writes. A rejected append does not advance the valid prefix.
-    pub fn append_lwe_return_at(&mut self, input: NtruCiphertext<&[T]>, index: usize) {
-        self.pbs.lwe_return.append_at(input, index);
-    }
-
-    /// Returns all appended samples in order and ends the active batch.
-    /// Outputs must match the current prefix exactly, including for an empty or
-    /// short final batch. Successful submission invalidates the prefix; old slot
-    /// contents cannot be submitted again. No allocation or clearing is required.
-    ///
-    /// # Correctness
-    /// Inherits
-    /// [`NtruLweKeySwitchingKey::key_switch_extracted_batch_to`](primus_ntru::NtruLweKeySwitchingKey::key_switch_extracted_batch_to)'s
-    /// return noise requirements.
-    ///
-    /// # Panics
-    /// Rejects an inactive batch, a count unequal to the appended prefix or any
-    /// incompatible output dimension before output/scratch writes. Failed
-    /// validation leaves the batch active for retry or discard.
-    pub fn return_lwe_batch_to(&mut self, outputs: &mut [LweCiphertext<T>]) {
-        self.pbs.lwe_return.return_batch_to(outputs);
-    }
-
-    /// Discards pending samples and permits ordinary PBS again, without clearing buffers.
-    /// Does nothing if no batch is active. Dropping this evaluator also drops the batch.
-    pub fn discard_lwe_return_batch(&mut self) {
-        self.pbs.lwe_return.discard_batch();
     }
 
     /// Returns the shared CBS bases and accumulator layouts.
@@ -169,9 +125,10 @@ where
         &mut primus_fft::FftEngine<'a, Table>,
         &mut primus_ntru::FourierNtruExternalProductWorkspace<T>,
     ) {
+        let engine = self.resources.engine_mut();
         (
-            &mut self.pbs.fft,
-            self.pbs.blind_rotation.rotation.external_product(),
+            &mut engine.fft,
+            engine.workspace.rotation.external_product(),
         )
     }
 
@@ -209,23 +166,25 @@ where
         vec![Complex64::default(); self.ngsw_batch_len() - self.ngsw_selector_len()]
     }
 
-    /// Borrows ordinary PBS operations without allocation or changing the bound resources.
-    /// Their evaluation calls reject an active return batch; submit or discard it first.
+    /// Borrows ordinary PBS only when constructed from a complete bootstrapper,
+    /// without allowing replacement of the bound evaluator.
+    /// Standalone CBS has no client-return buffers and returns `None`.
     #[must_use]
     pub fn bootstrapper_mut(
         &mut self,
-    ) -> impl primus_tfhe::ProgrammableBootstrap<T>
-    + primus_tfhe::ProgrammableBootstrapInterleaved<T>
-    + use<'_, 'a, T, Table, LM> {
-        &mut self.pbs
+    ) -> Option<
+        impl primus_tfhe::ProgrammableBootstrap<T>
+        + primus_tfhe::ProgrammableBootstrapInterleaved<T>
+        + use<'_, 'a, T, Table, LM>,
+    > {
+        self.resources.bootstrapper_mut()
     }
 
-    /// Releases one-hot buffers and recovers the PBS workspace without allocation.
-    /// Any pending streamed return batch is discarded.
+    /// Recovers ordinary PBS, allocating return buffers only for standalone CBS.
+    /// A retained complete bootstrapper is recovered without allocation.
     #[must_use]
-    pub fn into_bootstrapper(mut self) -> Evaluator<'a, T, Table, LM> {
-        self.discard_lwe_return_batch();
-        self.pbs
+    pub fn into_bootstrapper(self) -> Evaluator<'a, T, Table, LM> {
+        self.resources.into_bootstrapper()
     }
 
     /// Writes coefficient NLEV selectors only, without scheme switching.
@@ -309,7 +268,9 @@ where
         mut nlev_output: Option<&mut [T]>,
         mut ngsw_output: Option<&mut [Complex64]>,
     ) {
-        let tfhe = self.pbs.context.parameters();
+        let ngsw_len = self.ngsw_selector_len();
+        let engine = self.resources.engine_mut();
+        let tfhe = engine.context.parameters();
         let parameters = self.circuit.parameters;
         assert_eq!(
             input.dimension(),
@@ -318,7 +279,6 @@ where
         );
 
         let nlev_len = parameters.output_nlev_len();
-        let ngsw_len = self.ngsw_selector_len();
         let selector_count = self.lookup_table.selector_count();
         if let Some(output) = &nlev_output {
             assert_eq!(
@@ -335,14 +295,10 @@ where
             );
         }
 
-        blind_rotate_lookup_table_to(
-            self.pbs.server_key,
-            input.as_view(),
-            self.lookup_table.polynomial().as_view(),
+        engine.blind_rotate(
+            input,
+            self.lookup_table.polynomial(),
             self.lookup_table.rotation_step(),
-            &mut self.pbs.blind_rotation,
-            tfhe,
-            &mut self.pbs.fft,
         );
 
         // Without NLEV, omit branch zero before projection as well as conversion.
@@ -355,9 +311,9 @@ where
             // Negative BR places selector r at -r*S+l, including its negacyclic
             // sign. Rotate by +r*S first; prefix projection then shifts by -l.
             // General BR tails are nonzero: prefix expansion is not valid here.
-            self.pbs.blind_rotation.current.mul_monomial_to(
+            engine.workspace.current.mul_monomial_to(
                 selector * self.lookup_table.selector_stride(),
-                &mut self.pbs.blind_rotation.scratch,
+                &mut engine.workspace.scratch,
                 tfhe.accumulator_ntru().cipher_modulus(),
             );
             let projected = match nlev_output.as_deref_mut() {
@@ -368,12 +324,12 @@ where
                 .key
                 .trace_key()
                 .project_prefix_coefficients_with_scratch_to(
-                    &self.pbs.blind_rotation.scratch,
+                    &engine.workspace.scratch,
                     self.lookup_table.level_count().get(),
                     projected,
-                    &mut self.pbs.fft,
+                    &mut engine.fft,
                     &mut self.trace_scratch,
-                    self.pbs.blind_rotation.rotation.external_product(),
+                    engine.workspace.rotation.external_product(),
                 );
             if let Some(output) = ngsw_output
                 .as_deref_mut()
@@ -385,8 +341,8 @@ where
                     &mut FourierNgswCiphertext::new(
                         &mut output[output_index * ngsw_len..(output_index + 1) * ngsw_len],
                     ),
-                    &mut self.pbs.fft,
-                    self.pbs.blind_rotation.rotation.external_product(),
+                    &mut engine.fft,
+                    engine.workspace.rotation.external_product(),
                 );
             }
         }

@@ -53,6 +53,26 @@ Let S=N/M and A=N/(2MW). Correct selection requires the quantized phase to satis
 
 The separate [primus_tfhe_ntru_lut](../primus_tfhe_ntru_lut/README.md) crate handles multiple chunks and multiple table polynomials.
 
+## NTRU→LWE returns
+
+`LweReturnEvaluator` borrows the Q→q, f→s return key and owns scalar/batch buffers,
+without an NTT/FFT engine. Both backends re-export it. Construct with
+`LweReturnEvaluator::new(server.key_switching_key(), q_modulus)` after choosing the
+paired key and external q. Input must be coefficient-domain NTRU under that key's
+ring secret at Q, with canonical residues and a valid return noise budget.
+
+`return_at_to(input.as_view(), index, output)` converts and extracts one phase
+coefficient. `return_prefix_to(input.as_view(), outputs)` returns consecutive
+coefficients, sharing one Q→q conversion for multiple outputs. For different
+sources, use `begin_batch` → `append_at(input.as_view(), index)` →
+`return_batch_to(outputs)`. Each append retains only an extracted LWE; source and
+one-hot/FFT buffers may be overwritten afterward. Submit exactly the appended
+count, at most `batch_capacity()` (currently eight). Empty and singleton batches
+are valid. Successful submission ends the stream; `discard_batch` cancels it,
+and restarting discards the previous prefix. Scalar/prefix returns reject an
+active stream. Independent ordinary PBS remains usable during that stream.
+All online `_to` and stream operations allocate nothing; construction allocates.
+
 ## Further reading
 
 [Operations and resource reuse](../primus_tfhe/README.md) · [Implementation notes](../primus_tfhe/IMPLEMENTATION.md) · [Benchmark guide](../primus_tfhe/BENCHMARKS.md)

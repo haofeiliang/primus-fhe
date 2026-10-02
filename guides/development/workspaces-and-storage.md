@@ -69,34 +69,53 @@ omits table selectors and candidates as well as high-chunk CBS. Mixed tables
 keep those shared buffers. Embedded one-hot scratch is retained. See the
 [table layout](../../crates/primus_tfhe_ntru_lut/IMPLEMENTATION.md#public-table-storage-and-compiled-choices).
 
-One-hot CBS already reuses PBS's external-product workspace for BR, trace and scheme switching. Table selection and encrypted rotation now borrow that same workspace between one-hot calls. The NTT entry point is `OneHotCircuitBootstrapEvaluator::external_product_workspace`; Fourier's `external_product_workspaces` returns the FFT engine and external-product buffers together. Borrowers retain polynomial lengths and the FFT table identity. Every subsequent one-hot call overwrites its scratch before reading it.
+One-hot CBS reuses its BR external-product workspace for BR, trace and scheme switching. Table selection and encrypted rotation now borrow that same workspace between one-hot calls. The NTT entry point is `OneHotCircuitBootstrapEvaluator::external_product_workspace`; Fourier's `external_product_workspaces` returns the FFT engine and external-product buffers together. Borrowers retain polynomial lengths and the FFT table identity. Every subsequent one-hot call overwrites its scratch before reading it.
 
 The high-precision evaluator therefore owns no second external-product workspace or FFT engine. Each evaluator still has independent mutable state, and borrowing excludes concurrent mutation. Existing one-hot/PBS conversion and recovery retain their ownership contracts.
 
-Each NTRU backend keeps its bound return key, q, scalar/batch scratch and stream
-state in a private `LweReturnEngine`, separate from BR/FFT buffers. Shared-input
-interleaved returns still reuse one Q→q conversion; streams independently round
-each source and retain only its extracted LWE.
+The family `LweReturnEvaluator` binds the coefficient-domain return key, q,
+scalar/batch scratch and stream state without a transform-table generic. Both
+backends use the same concrete implementation. Shared-input interleaved returns
+reuse one Q→q conversion; streams independently round each source and retain
+only its extracted LWE. This does not unify the NTT/Fourier numerical kernels.
 
-Fourier one-hot starts a stream with `begin_lwe_return_batch`, appends samples in
-order with `append_lwe_return_at`, then submits exactly that prefix through
-`return_lwe_batch_to`. The recorded count prevents fresh or stale slot reads,
-including empty and partial batches. Successful submission ends the batch;
-`discard_lwe_return_batch` cancels it, and restarting discards the old prefix.
-Input/index and output-count/dimension rejection leave the valid prefix intact.
-One-hot generation and table/FFT products can run between appends: no source or
-whole-evaluator borrow survives an append. Ordinary/interleaved PBS rejects an
-active stream before scratch or output writes. Converting one-hot back to PBS
-discards the stream. These state checks belong to the stream boundary, not the
-coefficient kernels.
+Custom streams use `begin_batch` → ordered `append_at` → `return_batch_to` on the
+return evaluator. Submission consumes exactly the current prefix, including an
+empty or partial tile, then invalidates it. `discard_batch` cancels it; restart
+invalidates the old prefix. Input/index and output-count/dimension rejection
+leave that prefix intact. Scalar/shared-prefix calls reject active streams.
+One-hot, table products and separately owned ordinary PBS may run between
+appends because they do not own those return buffers. These state checks belong
+to the stream boundary, not coefficient kernels.
 
-Both lookup backends reuse the embedded PBS return buffers and own no additional
-return scratch. NTT lookup uses one-hot's `return_lwe_at_to` to keep its measured
-scalar schedule; Fourier lookup and both factorized MVB backends retain bounded
-streamed tiles. This removes the former extra NTT scalar buffer of N+1 elements
-without changing the arithmetic or tile size. The unchanged `pipeline` and `mvb`
-fixtures can revisit scheduling choices; this ownership refactoring makes no new
-latency claim.
+Each lookup evaluator explicitly owns standalone one-hot and one return evaluator.
+NTT keeps its scalar schedule; Fourier keeps bounded streamed tiles. Standalone
+one-hot no longer allocates unused ordinary-return resources, so this composition
+adds no retained heap. Both NTRU factorized MVB backends still retain complete
+PBS and use its private return evaluator. Arithmetic, tile size and scheduling
+are unchanged; no new latency claim is made.
+
+## Input, blind rotation and return ownership
+
+Every concrete backend's private `BlindRotationEngine` binds the context, key,
+selected BR scratch and coefficient accumulator; Fourier also owns its FFT
+engine there. GLWE input preparation is direct for BR→KS, or owns the required
+input KS and compact small LWE for KS→BR. The latter cannot be omitted by CBS.
+Ordinary `Evaluator` adds its complete return stage: output KS for GLWE BR→KS,
+direct extraction for GLWE KS→BR, or the NTRU return evaluator. It has no optional
+missing essential workspace. GLWE BR→KS no longer allocates an unused input LWE.
+
+A private two-state CBS resource enum contains either standalone BR/input
+resources or the full retained PBS. Standalone GLWE KS→BR already has a complete
+PBS, since its return is direct extraction. `bootstrapper_mut` exposes only PBS
+operations, preventing replacement of the key-bound evaluator.
+
+| CBS construction | Ordinary PBS borrow | Recovery allocation |
+| --- | --- | --- |
+| Standalone GLWE BR→KS | `None` | Allocate output KS |
+| Standalone GLWE KS→BR | `Some` | None |
+| Standalone NTRU CBS/one-hot | `None` | Allocate scalar/batch returns |
+| Any CBS/one-hot from complete PBS | `Some` | None |
 
 Existing size/domain boundaries and semantic polynomial/ciphertext iterators describe batches. Table groups contain M polynomials; ciphertext iterators traverse one complete object at a time. Candidate compaction remains indexed because a group must be consumed before its result overwrites the prefix. No additional generic batch abstraction is needed.
 

@@ -60,9 +60,15 @@ CBS 的可选材料仍使用 `Option` 表示。私有绑定集中可用材料与
 
 ## NTRU 返回资源与批次
 
-具体后端的私有 `LweReturnEngine` 绑定返回 key、q 和 scalar/batch scratch，独立于 BR/FFT 资源。单项直接转换并提取；共享输入的 interleaved 返回只转换 Q→q 一次；MVB 与 Fourier LUT 流式返回对每个源分别转换，保留的仅是提取后的 LWE。转换始终先于提取符号。
+家族层的系数域 `LweReturnEvaluator` 绑定返回 key、q 和 scalar/batch scratch，不带变换表泛型。NTT/Fourier 复用同一个具体实现。单项直接转换并提取；共享输入的 interleaved 返回只转换 Q→q 一次；MVB 与 Fourier LUT 对每个来源独立转换，保留提取后的 LWE。转换始终先于提取符号。
 
-Fourier one-hot 的公开协议为 `begin_lwe_return_batch` → 顺序 `append_lwe_return_at` → `return_lwe_batch_to`；记录当前有效前缀，提交数必须完全匹配，成功后前缀失效。可以显式 `discard_lwe_return_batch`，也可以重新开始来丢弃旧前缀。追加不保留源或整个 evaluator 的长期借用，one-hot/外积/FFT 可以穿插执行；普通及 interleaved PBS 在写入前拒绝活跃批次。转换回普通 PBS 会丢弃批次。NTT LUT 通过 one-hot 的 `return_lwe_at_to` 复用 scalar scratch，继续逐项返回。
+其公开流式协议为 `begin_batch` → 顺序 `append_at` → `return_batch_to`；提交数须完全匹配有效前缀，成功后前缀失效。`discard_batch` 或重新开始丢弃旧前缀。追加不保留源借用，one-hot/外积/FFT 和独立 PBS 可穿插执行；活跃批次拒绝使用同一返回对象的 scalar/prefix 方法。两种 LUT 显式持有 standalone one-hot 与返回对象，NTT 继续逐项返回，Fourier 继续流式返回；不再依赖 one-hot 内嵌完整 PBS。
+
+## 输入、盲旋转与返回组合
+
+具体后端的私有 `BlindRotationEngine` 绑定 input 准备、所选 BR key/scratch、系数 accumulator 与 Fourier FFT engine。GLWE KS→BR 保留输入 KS，BR→KS 直接使用外部 input。普通 `Evaluator` 组合完整返回阶段：GLWE BR→KS 的输出 KS、KS→BR 的直接提取，或 NTRU 返回对象；必需资源不再是可能缺失的 `Option`。
+
+CBS 私有小枚举只区分独立 BR/input 与完整 PBS 两种实际所有权。独立 GLWE BR→KS 和 NTRU CBS/one-hot 的 PBS 借用返回 `None`，恢复时显式分配缺失返回缓冲；独立 GLWE KS→BR 已有输入 KS，直接提取不需额外返回工作区，因此可提供 `Some` 且恢复无分配。从完整 PBS 转入的状态始终保留并复用原资源。公开借用仅暴露 PBS 操作，不能替换已绑定 evaluator。详见[资源组合表](workspaces-and-storage.md#input-blind-rotation-and-return-ownership)。
 
 ## CBS、CMux、MVB 与高精度查表
 

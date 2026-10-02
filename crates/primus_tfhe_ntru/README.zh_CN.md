@@ -53,6 +53,21 @@ NTT reverse trace 使用模逆元，Fourier 使用原生整数减半并引入 FF
 
 多 chunk 与多多项式流程由独立的 [primus_tfhe_ntru_lut](../primus_tfhe_ntru_lut/README.zh_CN.md) 提供。
 
+## NTRU→LWE 返回
+
+`LweReturnEvaluator` 借用 Q→q、f→s 返回密钥，持有 scalar/batch 缓冲，不持有 NTT/FFT
+engine。两个后端均重新导出它。选择配对密钥与外部 q 后，使用
+`LweReturnEvaluator::new(server.key_switching_key(), q_modulus)` 构造。输入必须为
+该返回密钥的环秘密下、Q 域的系数形式 NTRU，系数规范且满足返回噪声预算。
+
+`return_at_to(input.as_view(), index, output)` 转换并提取一个相位系数。
+`return_prefix_to(input.as_view(), outputs)` 返回连续系数，多个输出共用一次 Q→q 转换。
+不同来源使用 `begin_batch` → `append_at(input.as_view(), index)` → `return_batch_to(outputs)`；
+每次追加只保留提取后的 LWE，随后可覆盖来源及 one-hot/FFT 缓冲。
+提交数量必须等于已追加数量，不超过 `batch_capacity()`（目前为八）；空批次和单项有效。
+成功提交结束批次，`discard_batch` 取消，重新开始丢弃旧前缀。活跃批次期间拒绝 scalar/prefix
+返回，但独立普通 PBS 可继续使用。构造允许分配，在线 `_to` 与流式操作均不分配。
+
 ## 进一步阅读
 
 [操作与资源复用](../primus_tfhe/README.zh_CN.md) · [实现说明](../primus_tfhe/IMPLEMENTATION.md) · [基准指南](../primus_tfhe/BENCHMARKS.md)

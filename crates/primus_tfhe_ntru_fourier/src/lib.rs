@@ -23,7 +23,9 @@
 //!
 //! [`FactorizedEvaluator::bootstrapper_mut`] and [`CircuitBootstrapEvaluator::bootstrapper_mut`]
 //! borrow ordinary PBS operations; `into_bootstrapper` recovers the underlying evaluator.
-//! The specialized constructors document their allocation and recovery contracts.
+//! Standalone CBS/one-hot has no LWE-return buffers: its PBS borrow is `None`,
+//! and recovery allocates them. Conversion from complete PBS retains all resources.
+//! [`LweReturnEvaluator`] supports independent coefficient-domain returns.
 //!
 //! # Composition and representation
 //!
@@ -42,6 +44,7 @@ use primus_modulus::NativeModulus;
 mod accumulator;
 mod blind_rotation;
 pub mod boolean;
+mod bootstrap;
 pub mod circuit_bootstrap;
 mod client;
 mod context;
@@ -49,7 +52,6 @@ mod error;
 mod evaluator;
 pub mod factorized;
 pub mod key;
-mod lwe_return;
 pub mod sparse;
 
 pub use accumulator::AccumulatorClient;
@@ -75,7 +77,7 @@ pub use primus_tfhe::{
     BivariateLookupTable, CircuitBootstrapConfig, ClientError, DecompositionConfig,
     FactorizedLookupTable, InterleavedLookupTable, LookupTable, LweCiphertext, LweSecretKeyRef,
 };
-pub use primus_tfhe_ntru::{ClientKey, EncryptionKey, LwePublicKey};
+pub use primus_tfhe_ntru::{ClientKey, EncryptionKey, LwePublicKey, LweReturnEvaluator};
 
 #[doc(no_inline)]
 pub use circuit_bootstrap::CircuitBootstrapKey;

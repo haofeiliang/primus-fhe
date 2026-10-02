@@ -8,7 +8,7 @@ use primus_ntt::MonomialNttTable;
 use primus_poly::{NttPolynomialIter, PolynomialIterMut, PolynomialOwned};
 use primus_tfhe::FactorizedLookupTable;
 
-use crate::{Evaluator, LookupTableError, PbsOrder, ServerKey, TfheContext, TfheEvaluationError};
+use crate::{Evaluator, LookupTableError, ServerKey, TfheContext, TfheEvaluationError};
 
 /// A factorized MVB program prepared for one borrowed NTT context.
 ///
@@ -126,7 +126,7 @@ where
     /// The underlying key, context and existing allocations are preserved.
     #[must_use]
     pub fn from_bootstrapper(evaluator: Evaluator<'a, T, Table>) -> Self {
-        let context = evaluator.context;
+        let context = evaluator.engine.context;
         Self {
             evaluator,
             shared_rotation: NttGlweCiphertext::zero(
@@ -162,7 +162,8 @@ where
         input: &LweCiphertext<T>,
         lookup_table: &NttFactorizedLookupTable<'_, T, Table>,
     ) -> Vec<LweCiphertext<T>> {
-        let dimension = self.evaluator.context.parameters().external_lwe_dimension();
+        let context = self.evaluator.engine.context;
+        let dimension = context.parameters().external_lwe_dimension();
         let mut outputs = (0..lookup_table.output_count())
             .map(|_| LweCiphertext::zero(dimension.get()))
             .collect::<Vec<_>>();
@@ -197,10 +198,10 @@ where
     ) {
         let evaluator = &mut self.evaluator;
         assert!(
-            core::ptr::eq(evaluator.context, lookup_table.context),
+            core::ptr::eq(evaluator.engine.context, lookup_table.context),
             "MVB program was prepared by a different context"
         );
-        let parameters = evaluator.context.parameters();
+        let parameters = evaluator.engine.context.parameters();
         let dimension = parameters.external_lwe_dimension();
         assert_eq!(
             input.dimension(),
@@ -220,40 +221,26 @@ where
         );
 
         let glwe = parameters.accumulator_glwe();
-        let table = evaluator.context.table();
-        evaluator.blind_rotate(input, &lookup_table.common_polynomial, 1);
-        evaluator
-            .main_glwe
+        let table = evaluator.engine.context.table();
+        let engine = &mut evaluator.engine;
+        engine.blind_rotate(input, &lookup_table.common_polynomial, 1);
+        engine
+            .accumulator
             .write_ntt_form(&mut self.shared_rotation, table);
         let factors = NttPolynomialIter::new(&lookup_table.factors, glwe.poly_length().get());
         for (factor, output) in factors.zip(outputs) {
-            // Borrow the existing main buffer in NTT form, then restore its
+            // Borrow the accumulator in NTT form, then restore its
             // coefficient representation before KS/extraction. The shared BR
             // result remains intact for the next output.
-            let mut product = NttGlweCiphertext::new(evaluator.main_glwe.as_mut());
+            let engine = &mut evaluator.engine;
+            let mut product = NttGlweCiphertext::new(engine.accumulator.as_mut());
             self.shared_rotation.mul_ntt_polynomial_to(
                 &factor,
                 &mut product,
                 glwe.cipher_modulus(),
             );
             product.into_coeff_form(table);
-            match parameters.pbs_order() {
-                PbsOrder::BootstrapKeyswitch => {
-                    let switched = evaluator.keyswitch_accumulator();
-                    switched.extract_compact_lwe_to(
-                        output,
-                        glwe.poly_length().get(),
-                        glwe.cipher_modulus(),
-                    );
-                }
-                PbsOrder::KeyswitchBootstrap => {
-                    evaluator.main_glwe.extract_lwe_to(
-                        output,
-                        glwe.poly_length().get(),
-                        glwe.cipher_modulus(),
-                    );
-                }
-            }
+            evaluator.return_accumulator_to(core::slice::from_mut(output));
         }
     }
 }

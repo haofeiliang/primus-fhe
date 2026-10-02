@@ -1,16 +1,14 @@
-use primus_glwe::{GlweCiphertext, NttGlweKeySwitchingWorkspace};
 use primus_integer::FheUint;
 use primus_lwe::LweCiphertext;
 use primus_ntt::MonomialNttTable;
-use primus_poly::Polynomial;
 use primus_tfhe::{
     InterleavedLookupTable, LookupTable, ProgrammableBootstrap, ProgrammableBootstrapInterleaved,
 };
 use primus_tfhe_glwe::PbsOrder;
 
 use crate::{
-    BootstrappingKey, NttGlweBlindRotationWorkspace, NttGlweBootstrappingKey, ServerKey,
-    SparseGlweBlindRotationWorkspace, SparseGlweBootstrappingKey, TfheContext,
+    ServerKey, TfheContext,
+    bootstrap::{BlindRotationEngine, KeySwitchingWorkspace},
     error::TfheEvaluationError,
 };
 
@@ -20,45 +18,14 @@ where
     T: FheUint,
     Table: MonomialNttTable<ValueT = T>,
 {
-    pub(crate) context: &'a TfheContext<T, Table>,
-    pub(crate) server_key: &'a ServerKey<T>,
-    // try_new binds the key, parameters and table; this workspace stays private.
-    blind_rotation: BlindRotation<'a, T>,
-    // Only standalone BootstrapKeyswitch CBS omits this workspace.
-    key_switching: Option<KeySwitchingWorkspace<T>>,
-    // After BR: coefficient GLWE under the accumulator secret, in either order.
-    pub(crate) main_glwe: GlweCiphertext<Vec<T>>,
+    pub(crate) engine: BlindRotationEngine<'a, T, Table>,
+    lwe_return: LweReturn<T>,
 }
 
-struct KeySwitchingWorkspace<T: FheUint> {
-    context: NttGlweKeySwitchingWorkspace<T>,
-    switched: GlweCiphertext<Vec<T>>,
-    small_lwe: LweCiphertext<T>,
-}
-
-impl<T: FheUint> KeySwitchingWorkspace<T> {
-    fn new(parameters: &crate::TfheParameters<T>) -> Self {
-        Self {
-            context: NttGlweKeySwitchingWorkspace::new(
-                parameters.glwe_key_switching().output().glwe_size(),
-            ),
-            switched: GlweCiphertext::zero(parameters.glwe_key_switching().output().glwe_len()),
-            small_lwe: LweCiphertext::zero(parameters.small_lwe().dimension().get()),
-        }
-    }
-}
-
-// Pair each borrowed key with its own scratch once, avoiding mismatched variants
-// and allocating only the workspace for the selected algorithm.
-enum BlindRotation<'a, T: FheUint> {
-    Classic {
-        key: &'a NttGlweBootstrappingKey<T, primus_modulus::BarrettModulus<T>>,
-        scratch: NttGlweBlindRotationWorkspace<T>,
-    },
-    Sparse {
-        key: &'a SparseGlweBootstrappingKey<T>,
-        scratch: SparseGlweBlindRotationWorkspace<T>,
-    },
+/// The result stage is complete and selected once for the bound PBS order.
+enum LweReturn<T: FheUint> {
+    Keyswitch(KeySwitchingWorkspace<T>),
+    Extract,
 }
 
 impl<T, Table> ProgrammableBootstrap<T> for Evaluator<'_, T, Table>
@@ -110,69 +77,22 @@ where
         context: &'a TfheContext<T, Table>,
         server_key: &'a ServerKey<T>,
     ) -> Result<Self, TfheEvaluationError> {
-        Self::try_with_key_switching(context, server_key, true)
+        Ok(Self::from_engine(BlindRotationEngine::try_new(
+            context, server_key,
+        )?))
     }
 
-    pub(crate) fn try_for_circuit_bootstrap(
-        context: &'a TfheContext<T, Table>,
-        server_key: &'a ServerKey<T>,
-    ) -> Result<Self, TfheEvaluationError> {
-        Self::try_with_key_switching(
-            context,
-            server_key,
-            context.parameters().pbs_order() == PbsOrder::KeyswitchBootstrap,
-        )
-    }
-
-    pub(crate) fn has_key_switching(&self) -> bool {
-        self.key_switching.is_some()
-    }
-
-    pub(crate) fn complete_workspace(&mut self) {
-        if self.key_switching.is_none() {
-            self.key_switching = Some(KeySwitchingWorkspace::new(self.context.parameters()));
-        }
-    }
-
-    fn try_with_key_switching(
-        context: &'a TfheContext<T, Table>,
-        server_key: &'a ServerKey<T>,
-        with_key_switching: bool,
-    ) -> Result<Self, TfheEvaluationError> {
-        let parameters = context.parameters();
-        if !server_key.is_compatible(parameters) {
-            return Err(TfheEvaluationError::IncompatibleServerKey);
-        }
-
-        Ok(Self {
-            context,
-            server_key,
-            blind_rotation: match server_key.bootstrapping_key() {
-                BootstrappingKey::Classic(key) => BlindRotation::Classic {
-                    key,
-                    scratch: NttGlweBlindRotationWorkspace::new(key),
-                },
-                BootstrappingKey::Sparse(key) => BlindRotation::Sparse {
-                    key,
-                    scratch: SparseGlweBlindRotationWorkspace::new(key),
-                },
-            },
-            key_switching: with_key_switching.then(|| KeySwitchingWorkspace::new(parameters)),
-            main_glwe: GlweCiphertext::zero(parameters.accumulator_glwe().glwe_len()),
-        })
-    }
-
-    pub(crate) fn with_external_product<R>(
-        &mut self,
-        size: primus_lattice::GadgetSize,
-        operation: impl FnOnce(&mut primus_lattice::workspace::NttGlweExternalProductWorkspace<T>) -> R,
-    ) -> R {
-        match &mut self.blind_rotation {
-            BlindRotation::Classic { scratch, .. } => {
-                scratch.with_external_product(size, operation)
+    /// Complete the output stage; the engine already owns input KS for KS→BR.
+    #[must_use]
+    pub(crate) fn from_engine(engine: BlindRotationEngine<'a, T, Table>) -> Self {
+        let parameters = engine.context.parameters();
+        let lwe_return = match parameters.pbs_order() {
+            PbsOrder::BootstrapKeyswitch => {
+                LweReturn::Keyswitch(KeySwitchingWorkspace::new(parameters))
             }
-            BlindRotation::Sparse { scratch, .. } => scratch.with_external_product(size, operation),
-        }
+            PbsOrder::KeyswitchBootstrap => LweReturn::Extract,
+        };
+        Self { engine, lwe_return }
     }
 
     /// Applies a compiled lookup table and returns a refreshed ciphertext in
@@ -190,8 +110,8 @@ where
         input: &LweCiphertext<T>,
         lookup_table: &LookupTable<T>,
     ) -> LweCiphertext<T> {
-        let mut output =
-            LweCiphertext::zero(self.context.parameters().external_lwe_dimension().get());
+        let dimension = self.engine.context.parameters().external_lwe_dimension();
+        let mut output = LweCiphertext::zero(dimension.get());
         self.apply_lookup_table_to(input, lookup_table, &mut output);
         output
     }
@@ -211,7 +131,7 @@ where
         lookup_table: &LookupTable<T>,
         output: &mut LweCiphertext<T>,
     ) {
-        let parameters = self.context.parameters();
+        let parameters = self.engine.context.parameters();
         assert!(
             lookup_table.is_compatible(
                 parameters.accumulator_glwe().poly_length(),
@@ -233,25 +153,9 @@ where
             "PBS output dimension mismatch"
         );
 
-        let glwe = parameters.accumulator_glwe();
-        self.blind_rotate(input, lookup_table.polynomial(), 1);
-        match parameters.pbs_order() {
-            PbsOrder::BootstrapKeyswitch => {
-                let switched = self.keyswitch_accumulator();
-                switched.extract_compact_lwe_to(
-                    output,
-                    glwe.poly_length().get(),
-                    glwe.cipher_modulus(),
-                );
-            }
-            PbsOrder::KeyswitchBootstrap => {
-                self.main_glwe.extract_lwe_to(
-                    output,
-                    glwe.poly_length().get(),
-                    glwe.cipher_modulus(),
-                );
-            }
-        }
+        self.engine
+            .blind_rotate(input, lookup_table.polynomial(), 1);
+        self.return_accumulator_to(core::slice::from_mut(output));
     }
 
     /// Applies all interleaved tables and allocates one ciphertext per output.
@@ -270,7 +174,7 @@ where
         input: &LweCiphertext<T>,
         lookup_table: &InterleavedLookupTable<T>,
     ) -> Vec<LweCiphertext<T>> {
-        let dimension = self.context.parameters().external_lwe_dimension();
+        let dimension = self.engine.context.parameters().external_lwe_dimension();
         let mut outputs = (0..lookup_table.output_count())
             .map(|_| LweCiphertext::zero(dimension.get()))
             .collect::<Vec<_>>();
@@ -295,7 +199,7 @@ where
         lookup_table: &InterleavedLookupTable<T>,
         outputs: &mut [LweCiphertext<T>],
     ) {
-        let parameters = self.context.parameters();
+        let parameters = self.engine.context.parameters();
         assert!(
             lookup_table.is_compatible(
                 parameters.accumulator_glwe().poly_length(),
@@ -323,120 +227,49 @@ where
             "PBSManyLUT output ciphertext dimension mismatch"
         );
 
-        let glwe = parameters.accumulator_glwe();
-        self.blind_rotate(
+        self.engine.blind_rotate(
             input,
             lookup_table.polynomial(),
             lookup_table.padded_output_count(),
         );
-        match parameters.pbs_order() {
-            PbsOrder::BootstrapKeyswitch => {
-                let switched = self.keyswitch_accumulator();
-                for (index, output) in outputs.iter_mut().enumerate() {
-                    switched.extract_compact_lwe_at_to(
-                        index,
-                        output,
-                        glwe.poly_length().get(),
-                        glwe.cipher_modulus(),
-                    );
-                }
-            }
-            PbsOrder::KeyswitchBootstrap => {
-                for (index, output) in outputs.iter_mut().enumerate() {
-                    self.main_glwe.extract_lwe_at_to(
-                        index,
-                        output,
-                        glwe.poly_length().get(),
-                        glwe.cipher_modulus(),
-                    );
-                }
-            }
-        }
+        self.return_accumulator_to(outputs);
     }
 
-    /// Prepares the small-LWE input for the selected order, then writes the BR
-    /// result to `main_glwe` in coefficient form under the accumulator secret.
-    /// The caller checked input/LUT compatibility; `rotation_step` is the LUT's
-    /// padded output count (one for ordinary PBS). No output key switch occurs.
+    /// Return a validated phase prefix. BR→KS switches the ring once before compact
+    /// extraction; KS→BR directly extracts under the accumulator LWE secret.
     #[inline]
-    pub(crate) fn blind_rotate(
-        &mut self,
-        input: &LweCiphertext<T>,
-        lookup_table: &Polynomial<Vec<T>>,
-        rotation_step: usize,
-    ) -> &GlweCiphertext<Vec<T>> {
-        let parameters = self.context.parameters();
-        let small_lwe = match parameters.pbs_order() {
-            PbsOrder::BootstrapKeyswitch => input,
-            PbsOrder::KeyswitchBootstrap => {
-                let ks = self
-                    .key_switching
-                    .as_mut()
-                    .expect("input KS workspace is constructed for KeyswitchBootstrap");
-                let glwe = parameters.accumulator_glwe();
-                input.inverse_extract_glwe_to(
-                    &mut self.main_glwe,
-                    glwe.poly_length().get(),
-                    glwe.cipher_modulus(),
-                );
-                self.server_key.glwe_key_switching_key().key_switch_to(
-                    &self.main_glwe,
+    pub(crate) fn return_accumulator_to(&mut self, outputs: &mut [LweCiphertext<T>]) {
+        let engine = &mut self.engine;
+        let glwe = engine.context.parameters().accumulator_glwe();
+        match &mut self.lwe_return {
+            LweReturn::Keyswitch(ks) => {
+                engine.server_key.glwe_key_switching_key().key_switch_to(
+                    &engine.accumulator,
                     &mut ks.switched,
                     glwe.cipher_modulus(),
-                    self.context.table(),
-                    &mut ks.context,
+                    engine.context.table(),
+                    &mut ks.scratch,
                 );
-                ks.switched.extract_compact_lwe_to(
-                    &mut ks.small_lwe,
-                    glwe.poly_length().get(),
-                    glwe.cipher_modulus(),
-                );
-                &ks.small_lwe
+                for (index, output) in outputs.iter_mut().enumerate() {
+                    ks.switched.extract_compact_lwe_at_to(
+                        index,
+                        output,
+                        glwe.poly_length().get(),
+                        glwe.cipher_modulus(),
+                    );
+                }
             }
-        };
-        match &mut self.blind_rotation {
-            BlindRotation::Classic { key, scratch } => key
-                .ntt_blind_rotate_interleaved_lookup_table_kernel_to(
-                    small_lwe.as_view(),
-                    lookup_table.as_view(),
-                    rotation_step,
-                    self.main_glwe.as_mut_view(),
-                    parameters.accumulator_glwe().cipher_modulus(),
-                    self.context.table(),
-                    scratch,
-                ),
-            BlindRotation::Sparse { key, scratch } => key
-                .ntt_blind_rotate_interleaved_lookup_table_kernel_to(
-                    small_lwe.as_view(),
-                    lookup_table.as_view(),
-                    rotation_step,
-                    self.main_glwe.as_mut_view(),
-                    self.context.table(),
-                    scratch,
-                ),
+            LweReturn::Extract => {
+                for (index, output) in outputs.iter_mut().enumerate() {
+                    engine.accumulator.extract_lwe_at_to(
+                        index,
+                        output,
+                        glwe.poly_length().get(),
+                        glwe.cipher_modulus(),
+                    );
+                }
+            }
         }
-        &self.main_glwe
-    }
-
-    /// Switches `main_glwe` from the accumulator secret to the padded small
-    /// secret in coefficient-domain `switched`, ready for compact extraction.
-    /// Ordinary/interleaved PBS calls this only for BootstrapKeyswitch; the
-    /// accumulator remains available for consumers needing its original secret.
-    #[inline]
-    pub(crate) fn keyswitch_accumulator(&mut self) -> &GlweCiphertext<Vec<T>> {
-        let ks = self
-            .key_switching
-            .as_mut()
-            .expect("ordinary PBS owns key-switching workspace");
-        let glwe = self.context.parameters().accumulator_glwe();
-        self.server_key.glwe_key_switching_key().key_switch_to(
-            &self.main_glwe,
-            &mut ks.switched,
-            glwe.cipher_modulus(),
-            self.context.table(),
-            &mut ks.context,
-        );
-        &ks.switched
     }
 }
 

@@ -92,6 +92,7 @@ fn selectors(distr: SecretKeyDistr) {
         )
         .unwrap();
     let mut evaluator = OneHotCircuitBootstrapEvaluator::try_new(&context, &server).unwrap();
+    assert!(evaluator.bootstrapper_mut().is_none());
     assert_eq!(evaluator.lookup_table().selector_count(), M);
     assert_eq!(evaluator.lookup_table().rotation_step(), 4);
     let scalars: Vec<_> = evaluator
@@ -133,11 +134,24 @@ fn selectors(distr: SecretKeyDistr) {
     // Descending inputs force every selector to overwrite previous nonzero rows.
     for message in (0..M).rev() {
         let input = encryptor.encrypt_padded(message as u64, &mut rng).unwrap();
+        if message == M - 1 {
+            // Standalone one-hot uses no return storage; recovering ordinary PBS
+            // allocates it explicitly. Subsequent alternation retains that PBS.
+            let (_, allocation) = allocations::measure(|| {
+                evaluator.one_hot_to(&input, &mut nlev, &mut ngsw);
+            });
+            assert_eq!(allocation.count, 0);
+            let (pbs, allocation) = allocations::measure(|| evaluator.into_bootstrapper());
+            assert!(allocation.count > 0);
+            evaluator = OneHotCircuitBootstrapEvaluator::try_from_bootstrapper(pbs).unwrap();
+        }
         let (_, allocation) = allocations::measure(|| {
             evaluator.one_hot_to(&input, &mut nlev, &mut ngsw);
-            evaluator
-                .bootstrapper_mut()
-                .apply_lookup_table_to(&input, &identity, &mut lwe_output);
+            evaluator.bootstrapper_mut().unwrap().apply_lookup_table_to(
+                &input,
+                &identity,
+                &mut lwe_output,
+            );
             evaluator.one_hot_nlev_to(&input, &mut nlev_only);
             evaluator.one_hot_ngsw_to(&input, &mut ngsw_only);
             evaluator.one_hot_nonzero_ngsw_to(&input, &mut nonzero_ngsw);
@@ -277,8 +291,9 @@ fn selectors(distr: SecretKeyDistr) {
         assert!(ngsw.iter().all(|&v| v == 7));
     }
     // Recovery and rebinding preserve the PBS/ordinary-CBS workflow.
-    let mut ordinary =
-        CircuitBootstrapEvaluator::try_from_bootstrapper(evaluator.into_bootstrapper()).unwrap();
+    let (pbs, allocation) = allocations::measure(|| evaluator.into_bootstrapper());
+    assert_eq!(allocation.count, 0);
+    let mut ordinary = CircuitBootstrapEvaluator::try_from_bootstrapper(pbs).unwrap();
     let mut control = ordinary.allocate_output();
     ordinary.circuit_bootstrap_to(&input, &mut control);
     ordinary.cmux_to(&control, &choices[0], &choices[1], &mut selected);

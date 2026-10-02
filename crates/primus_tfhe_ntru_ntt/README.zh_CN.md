@@ -40,7 +40,7 @@ NTT 表需要实现 `MonomialNttTable`，内置表均支持。Context 检查长�
 
 ## 复用 evaluator
 
-`Evaluator` 的普通/交错 `_to` 调用复用工作区和已有输出。PBS、MVB 与 CBS 之间的所有权转换见[资源复用指南](../primus_tfhe/README.zh_CN.md#复用-evaluator)。
+普通/interleaved `Evaluator` 的 `_to` 调用复用工作区和调用方输出。PBS/MVB/CBS 的所有权转换见[资源复用指南](../primus_tfhe/README.zh_CN.md#复用-evaluator)。独立 CBS/one-hot 省略普通 LWE 返回缓冲：`bootstrapper_mut()` 返回 `None`，`into_bootstrapper()` 显式分配缺失的返回缓冲。需要交替调用时使用 `try_from_bootstrapper(pbs)`，保留完整 PBS，其借用返回 `Some`，恢复无分配。
 
 ## 固定尺度分解式 MVB
 
@@ -87,9 +87,11 @@ let mut evaluator = context.evaluator(&server)?;
 
 完整 chunk 加密与查表工作流见 [ntt_lookup.rs](../primus_tfhe_ntru_lut/examples/ntt_lookup.rs)。
 
-自行组合流程时，`one_hot.return_lwe_at_to(input, index, output)` 通过已绑定的
-Q→q、f→s 密钥复用 PBS 的 scalar 返回资源。输入须为对应环秘密下的系数域 NTRU；
-接口不验证源秘密身份或噪声预算。
+自定义返回使用 `LweReturnEvaluator::new(server.key_switching_key(),
+context.parameters().external_lwe().cipher_modulus())`。`return_at_to` 返回一个系数，
+`return_prefix_to` 返回共享多项式的前缀，`begin_batch` → `append_at` →
+`return_batch_to` 返回不同来源的连续样本。它只持有系数域返回缓冲，one-hot 与外积
+资源可独立复用。详见[家族返回契约](../primus_tfhe_ntru/README.zh_CN.md#ntrulwe-返回)。
 
 ## 底层组合
 

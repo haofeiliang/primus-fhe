@@ -1,7 +1,6 @@
 use primus_integer::FheUint;
 use primus_poly::Polynomial;
 use primus_reduce::RingContext;
-use primus_tfhe::LweCiphertext;
 use primus_tfhe_ntru::{OneHotBootstrapError, TfheParameters};
 
 mod compile;
@@ -140,35 +139,6 @@ impl Layout {
     /// Logical high-chunk count c-d, even if all outputs bypass table selection.
     pub fn table_chunk_count(self) -> usize {
         self.config.input_chunk_count - self.config.coefficient_chunk_count
-    }
-
-    /// Checks all chunk counts and LWE dimensions before evaluation writes any data.
-    /// Panics on a shape mismatch; key identity, encoding and noise are not checked here.
-    pub fn check_io<T: FheUint>(
-        self,
-        input: &[LweCiphertext<T>],
-        output: &[LweCiphertext<T>],
-        dimension: primus_lattice::LweDimension,
-    ) {
-        assert_eq!(
-            input.len(),
-            self.config.input_chunk_count,
-            "lookup input chunk count mismatch"
-        );
-        assert_eq!(
-            output.len(),
-            self.config.output_chunk_count,
-            "lookup output chunk count mismatch"
-        );
-        let len = dimension.ciphertext_len();
-        assert!(
-            input.iter().all(|c| c.lwe_len() == len),
-            "lookup input LWE dimension mismatch"
-        );
-        assert!(
-            output.iter().all(|c| c.lwe_len() == len),
-            "lookup output LWE dimension mismatch"
-        );
     }
 }
 
