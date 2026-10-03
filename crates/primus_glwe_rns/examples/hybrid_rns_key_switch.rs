@@ -54,7 +54,7 @@ fn main() {
     let output_dcrt_key = DcrtGlweSecretKey::from_coeff_secret_key(&output_key, &q_table);
     let switching_key = HybridRnsGlweKeySwitchingKey::generate(
         &input_key,
-        &glwe_parameters,
+        glwe_parameters.inner(),
         &output_key,
         &domain,
         &mut rng,

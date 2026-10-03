@@ -1,6 +1,6 @@
 //! GLWE key switching with signed digit decomposition over an RNS basis.
 
-use crate::parameter::{validate_dcrt_table, validate_glwe_size, validate_moduli};
+use crate::parameter::{validate_glwe_size, validate_moduli};
 use primus_data::{Data, DataMut};
 use primus_decompose::DecompositionBaseLog;
 use primus_integer::FheUint;
@@ -16,8 +16,8 @@ use zeroize::Zeroizing;
 
 use crate::secret_key::encode_secret_polynomial_to_rns;
 use crate::{
-    CrtGlweCiphertext, CrtGlweParameters, DcrtGadgetDomain, DcrtGlweCiphertext, DcrtGlweSecretKey,
-    GlweSecretKey, RnsDomainError,
+    CrtGlweCiphertext, CrtGlweParametersInner, DcrtGadgetDomain, DcrtGlweCiphertext,
+    DcrtGlweSecretKey, GlweSecretKey, RnsDomainError,
 };
 
 /// A DCRT GLWE key-switching key stored as input-mask-ordered GLev entries.
@@ -31,6 +31,8 @@ pub struct DcrtGlweKeySwitchingKey<T: FheUint> {
 
 impl<T: FheUint> DcrtGlweKeySwitchingKey<T> {
     /// Generates a key from a coefficient-domain input key to a DCRT output key.
+    /// Input layout and ordered Q come from codec-free sampling parameters; output
+    /// noise and gadget scales come from the bound output domain.
     ///
     /// # Panics
     /// Panics if secret layouts, polynomial lengths or ordered moduli are
@@ -42,7 +44,7 @@ impl<T: FheUint> DcrtGlweKeySwitchingKey<T> {
     /// the intended secrets and the table's NTT representation.
     pub fn generate<R, M, Table>(
         input_sk: &GlweSecretKey<T>,
-        input_params: &CrtGlweParameters<T, M>,
+        input_params: &CrtGlweParametersInner<T>,
         output_sk: &DcrtGlweSecretKey<T>,
         domain: &DcrtGadgetDomain<'_, T, M, Table>,
         rng: &mut R,
@@ -53,12 +55,14 @@ impl<T: FheUint> DcrtGlweKeySwitchingKey<T> {
         Table: NttTable<ValueT = T>,
     {
         let ksk_params = domain.parameters();
-        validate_dcrt_table(
-            input_params.poly_length(),
-            input_params.cipher_moduli(),
-            domain.table(),
-        )
-        .expect("DCRT key-switch input parameters and output domain are incompatible");
+        input_params
+            .validate_base(domain.rns_base())
+            .expect("DCRT key-switch input parameters and output domain are incompatible");
+        assert_eq!(
+            input_params.size().poly_length(),
+            domain.size().rns_glwe_size().poly_length(),
+            "DCRT key-switch input and output polynomial lengths differ"
+        );
         let encryptor = output_sk
             .try_bind_gadget(domain)
             .expect("DCRT key-switch output secret and domain are incompatible");
@@ -66,6 +70,7 @@ impl<T: FheUint> DcrtGlweKeySwitchingKey<T> {
 
         let dcrt_glev_len = ksk_params.rns_glev_len();
         let key_len = input_params
+            .size()
             .dimension()
             .get()
             .checked_mul(dcrt_glev_len)
@@ -73,7 +78,7 @@ impl<T: FheUint> DcrtGlweKeySwitchingKey<T> {
         let mut key = vec![T::ZERO; key_len];
 
         let key_iter = DcrtGlevIterMut::new(key.as_mut_slice(), dcrt_glev_len);
-        let mut secret_buffer = Zeroizing::new(vec![T::ZERO; input_params.rns_poly_len()]);
+        let mut secret_buffer = Zeroizing::new(vec![T::ZERO; input_params.size().rns_poly_len()]);
         let mut secret_mod_q = CrtPolynomial(secret_buffer.as_mut_slice());
 
         input_sk
@@ -83,7 +88,7 @@ impl<T: FheUint> DcrtGlweKeySwitchingKey<T> {
                 encode_secret_polynomial_to_rns(
                     secret_polynomial,
                     secret_mod_q.as_mut(),
-                    input_params.cipher_moduli_value(),
+                    ksk_params.cipher_moduli_value(),
                 );
                 encryptor.encrypt_crt_to(&secret_mod_q, &mut dcrt_glev, rng);
             });

@@ -1,14 +1,16 @@
-use primus_decompose::DecompositionBaseLog;
+use primus_decompose::{DecompositionBaseLog, big_integer::BigUintApproxSignedBasis};
 use primus_glwe_rns::{
-    CrtGlevParameters, CrtGlweParameters, DcrtGadgetDomain, DcrtGlweDecryptWorkspace,
-    DcrtGlweSecretKey, GlweSecretKey, SecretKeyDistr,
+    BfvRnsCodec, CrtGlevParameters, CrtGlweParameters, CrtGlweParametersInner, DcrtGadgetDomain,
+    DcrtGlweDecryptWorkspace, DcrtGlweSecretKey, GlweSecretKey, SecretKeyDistr,
 };
-use primus_lattice::GlweDimension;
+use primus_lattice::{GlweDimension, GlweSize, RnsGlweSize};
 use primus_lattice::{glev::DcrtGlev, glwe::DcrtGlwe, workspace::DcrtGlevMulWorkspace};
 use primus_modulus::BarrettModulus;
 use primus_ntt::UintDcrtTable;
 use primus_poly::{BigUintPolynomial, CrtPolynomial, PolyLength, Polynomial};
+use primus_rns::RNSBase;
 use rand::{SeedableRng, rngs::StdRng};
+use std::sync::Arc;
 
 /// Test GLev–BigUint multiplication correctness.
 ///
@@ -38,30 +40,32 @@ fn test_rns_glev() {
 
     let mut rng = StdRng::seed_from_u64(42);
 
-    let glwe_params = CrtGlweParameters::new(
-        GlweDimension::new(dimension),
-        poly_length,
-        mod_t,
-        mod_gamma,
-        &moduli,
+    // Prepare sampling, the gadget basis and keys before choosing BFV encoding.
+    let base_q = RNSBase::new(&moduli).unwrap();
+    let size = RnsGlweSize::new(
+        GlweSize::new(GlweDimension::new(dimension), table.poly_length()),
+        base_q.moduli_count(),
+    );
+    let inner = Arc::new(CrtGlweParametersInner::new(
+        size,
+        &base_q,
         SecretKeyDistr::SparseTernary,
         3.20,
-    );
-
-    let rns_glwe_len = glwe_params.rns_glwe_len();
-    let rns_poly_len = glwe_params.rns_poly_len();
-    let big_uint_poly_len = glwe_params.big_uint_poly_len();
-    let base_q = glwe_params.base_q();
-
-    let sk = GlweSecretKey::generate(
-        glwe_params.size().glwe_size(),
-        glwe_params.secret_key_sampler(),
-        &mut rng,
-    );
+    ));
+    let basis =
+        BigUintApproxSignedBasis::new(base_q.moduli_product(), DecompositionBaseLog::new(20), None);
+    let glev_params = CrtGlevParameters::try_from_parts(Arc::clone(&inner), base_q, basis).unwrap();
+    let sk = GlweSecretKey::generate(size.glwe_size(), inner.secret_key_sampler(), &mut rng);
     let dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&sk, &table);
 
-    let glev_params =
-        CrtGlevParameters::with_glwe_params(&glwe_params, DecompositionBaseLog::new(20), None);
+    // Only the ordinary input/output encoding needs t and gamma.
+    let codec = BfvRnsCodec::new(mod_t, glev_params.base_q().clone(), mod_gamma);
+    let glwe_params = CrtGlweParameters::try_from_parts(inner, codec).unwrap();
+    let rns_glwe_len = glwe_params.rns_glwe_len();
+    let base_q = glwe_params.base_q();
+    let rns_poly_len = glwe_params.rns_poly_len();
+    let big_uint_poly_len = glwe_params.big_uint_poly_len();
+
     let domain = DcrtGadgetDomain::try_new(&glev_params, &table).unwrap();
     let rns_glev_len = glev_params.rns_glev_len();
 

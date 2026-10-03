@@ -52,15 +52,25 @@ assert_eq!(decoded.as_ref(), message.as_ref());
 
 For m moduli, ordinary storage contains `(k+1)*m*N` elements in `[component][modulus][coefficient/evaluation]` order. Gadget storage adds outer row/level dimensions. Use `RnsGlweSize` / `RnsGadgetSize` and polynomial/ciphertext iterators rather than inferring chunk sizes. CRT and DCRT have the same shape but different arithmetic; see [ciphertext layouts](../primus_lattice/README.md#storage-and-layout).
 
-## Evaluation resources
+## Parameter composition
 
 `CrtGlweParameters` takes `GlweDimension`, and gadget construction takes `DecompositionBaseLog` and `Option<DecompositionLevelCount>`. Parameter accessors return these checked units; use `.get()` at raw storage or numerical boundaries.
 
-`CrtGlweParameters::try_new` reports layout, RNS base, encoding, secret sampling and noise errors through `CrtGlweParametersError<T>`, preserving their causes. Fixed secret weights apply to the complete kN signed key, before replication across RNS moduli. Secret and noise support must fit below every ciphertext modulus. Ordinary and gadget parameters share prepared sampling state; ordinary parameters retain the BFV codec/scaling, while gadget parameters own the decomposition basis and cached weights.
+The ordinary constructor above prepares all parts. For gadget-only encryption or independently chosen encoding, prepare and combine them explicitly:
 
-Construction also passes the noise sampler's maximum magnitude to `BfvRnsCodec::validate_noise_bound` with unsigned lifting, covering both plaintext embeddings for fresh private-key encryption. An insufficient margin returns `CrtGlweParametersError::Encoding`. Public-key encryption and homomorphic evaluation require bounds on their complete phase noise; parameter construction does not cover those additional contributions.
+- `CrtGlweParametersInner::try_new(size, &base_q, secret_distribution, noise)` prepares layout and samplers without t or gamma. Fixed secret weights apply to the complete kN signed key, before replication across moduli; secret and noise support must fit below every q_i. Wrap the result in `Arc` to share those precomputations.
+- `CrtGlevParameters::try_from_parts(shared_inner, base_q, basis)` moves the ordered `RNSBase` and `BigUintApproxSignedBasis` into gadget parameters. It checks the sampler's ordered moduli, the basis's exact product modulus and limb width, radix < every q_i, and composed gadget lengths before caching level weights. It needs no BFV codec.
+- `CrtGlweParameters::try_from_parts(shared_inner, codec)` binds ordinary BFV encoding, checking the codec's ordered moduli and fresh private-key recovery margin. The codec owns its RNS base and conversion data; the shared sampling state stores no additional base or converter.
 
-`CrtGlevParameters::try_with_glwe_params` prepares gadget decomposition over the product Q and checks the composed gadget lengths before allocation. `CrtGlevParametersError::Layout` reports length overflow. `DcrtGadgetDomain::try_new` binds parameters and a table, checking polynomial length and ordered moduli. Ordinary DCRT key switching uses this domain. Hybrid switching instead binds the complete Q/P basis with `HybridRnsKeySwitchDomain::try_new`; partitioning and ModUp/ModDown contracts live in [`primus_rns`](../primus_rns/README.md#hybrid-rns).
+`CrtGlweParameters::try_new` and `try_from_parts` report errors through `CrtGlweParametersError<T>`, preserving their causes. `CrtGlevParameters::try_with_glwe_params` remains the convenient way to derive gadget parameters from existing ordinary parameters and shares their samplers. Gadget construction reports `CrtGlevParametersError`; its `Layout` variant reports length overflow. Distinct noise roles require independently prepared sampling states.
+
+Ordinary parameter construction passes the noise sampler's maximum magnitude to `BfvRnsCodec::validate_noise_bound` with unsigned lifting, covering both plaintext embeddings for fresh private-key encryption. An insufficient margin returns `CrtGlweParametersError::Encoding`. Public-key encryption and homomorphic evaluation require bounds on their complete phase noise; parameter construction does not cover those additional contributions.
+
+## Evaluation resources
+
+Both parameter types expose their sampling state through `inner()`. Public-key generation takes `DcrtGlwePublicKey::new(&secret, parameters.inner(), parameters.base_q(), &table, rng)`; zero encryption needs no codec. DCRT and hybrid key-switch generation likewise accept `input_parameters.inner()` rather than ordinary BFV parameters. These setup calls validate ordered bases before consuming randomness. Hybrid generation also checks the input sampling state's key noise against the auxiliary P limbs.
+
+`DcrtGadgetDomain::try_new` binds gadget parameters and a table, checking polynomial length and ordered moduli. Ordinary DCRT key switching uses this domain. Hybrid switching instead binds the complete Q/P basis with `HybridRnsKeySwitchDomain::try_new`; partitioning and ModUp/ModDown contracts live in [`primus_rns`](../primus_rns/README.md#hybrid-rns).
 
 `try_bind` checks ordinary parameter/table/key layouts and ordered moduli, returning `RnsDomainError`; the public key has the same binding workflow. For gadget encryption, `try_bind_gadget(&domain)` returns `DcrtGlevEncryptor` for a secret key or `DcrtGgswEncryptor` for a public key. The GLev encryptor accepts coefficient messages through `encrypt_crt_to` and NTT messages through `encrypt_dcrt_to`; these apply gadget weights without BFV plaintext scaling. The GGSW encryptor provides `encrypt_monomial_ggsw` / `encrypt_monomial_ggsw_to` for allocated / reused output. Reuse these bindings across messages and key rows.
 

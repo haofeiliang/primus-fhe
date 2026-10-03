@@ -6,6 +6,7 @@ mod error;
 mod gadget;
 mod ordinary;
 
+pub use core::CrtGlweParametersInner;
 pub use domain::{DcrtGadgetDomain, HybridRnsKeySwitchDomain, RnsDomainError};
 pub use error::{CrtGlevParametersError, CrtGlweParametersError};
 pub use gadget::{CrtGgswParameters, CrtGlevParameters};

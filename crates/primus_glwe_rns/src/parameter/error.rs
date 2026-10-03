@@ -11,6 +11,9 @@ pub enum CrtGlweParametersError<T: FheUint> {
     /// The ciphertext moduli do not define an RNS basis.
     #[error("invalid ciphertext RNS basis")]
     RnsBase(#[from] primus_rns::RnsError),
+    /// Layout or codec base does not match the prepared sampler domain.
+    #[error(transparent)]
+    Domain(#[from] super::RnsDomainError<T>),
     /// Invalid BFV moduli or insufficient fresh private-key plaintext recovery margin.
     #[error(transparent)]
     Encoding(#[from] primus_encoding::BfvRnsCodecError<T>),
@@ -28,6 +31,12 @@ pub enum CrtGlevParametersError<T: FheUint> {
     /// A derived gadget storage length is not representable.
     #[error(transparent)]
     Layout(#[from] GlweSizeError),
+    /// The supplied ordered base does not match the prepared sampler domain.
+    #[error(transparent)]
+    Domain(#[from] super::RnsDomainError<T>),
+    /// The decomposition basis has a different product modulus or limb width.
+    #[error("CRT GLev decomposition must match the RNS product modulus and limb width")]
+    BasisModulusMismatch,
     /// The decomposition parameters are invalid for the product modulus.
     #[error(transparent)]
     InvalidDecomposition(#[from] ApproxSignedBasisError),

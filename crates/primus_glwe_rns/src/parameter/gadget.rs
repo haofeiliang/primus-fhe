@@ -17,7 +17,7 @@ use crate::SecretKeyDistr;
 
 /// CRT GLev/GGSW parameters for gadget encryption under the product modulus Q.
 ///
-/// These reuse the source GLWE layout and prepared sampling state. The gadget
+/// These bind a shared checked layout and prepared sampling state. The gadget
 /// owns its ordered RNS base, decomposition basis and cached level weights;
 /// plaintext encoding and BFV scaling are not part of this parameter type.
 #[derive(Clone)]
@@ -77,7 +77,31 @@ where
             log_basis,
             reverse_length,
         )?;
-        for (index, &modulus) in glwe_params.cipher_moduli_value().iter().enumerate() {
+        Self::try_from_parts(
+            Arc::clone(&glwe_params.inner),
+            glwe_params.base_q().clone(),
+            basis,
+        )
+    }
+
+    /// Binds prepared layout/samplers, an owned ordered base and decomposition,
+    /// without constructing a BFV codec. The base and basis are moved; no converter
+    /// or sampling table is rebuilt. Cached weights follow level order, then Q order.
+    ///
+    /// # Errors
+    /// Rejects a base/count/order mismatch, a different product modulus or limb
+    /// width, radix >= any q_i, or an overflowing gadget layout. The limb-width
+    /// check preserves the exact fixed-width representation used by decomposition.
+    pub fn try_from_parts(
+        inner: Arc<CrtGlweParametersInner<T>>,
+        base_q: RNSBase<T, M>,
+        basis: BigUintApproxSignedBasis<T>,
+    ) -> Result<Self, CrtGlevParametersError<T>> {
+        inner.validate_base(&base_q)?;
+        if basis.modulus() != base_q.moduli_product().0 {
+            return Err(CrtGlevParametersError::BasisModulusMismatch);
+        }
+        for (index, modulus) in base_q.moduli().iter().map(|q| q.value()).enumerate() {
             if basis.basis_value() >= modulus {
                 return Err(CrtGlevParametersError::BasisNotSmallerThanModulus {
                     basis: basis.basis_value(),
@@ -86,27 +110,33 @@ where
                 });
             }
         }
-        let size = RnsGadgetSize::try_new(glwe_params.size(), basis.decompose_length())?;
+        let size = RnsGadgetSize::try_new(inner.size, basis.decompose_length())?;
         // L*m weights fit because the checked gadget layout contains
         // L*m*(k+1)*N coefficients. Validate that layout before allocating.
         let mut scalar_residues =
-            vec![T::ZERO; basis.decompose_length().get() * glwe_params.cipher_moduli_count()];
+            vec![T::ZERO; basis.decompose_length().get() * base_q.moduli_count()];
         for (scalar, residues) in basis
             .scalar_iter()
-            .zip(scalar_residues.chunks_exact_mut(glwe_params.cipher_moduli_count()))
+            .zip(scalar_residues.chunks_exact_mut(base_q.moduli_count()))
         {
-            glwe_params
-                .base_q()
-                .decompose_to(BigUint(scalar), &mut Residues(residues));
+            base_q.decompose_to(BigUint(scalar), &mut Residues(residues));
         }
+        let cipher_moduli_value = base_q.moduli().iter().map(|q| q.value()).collect();
         Ok(Self {
-            inner: Arc::clone(&glwe_params.inner),
-            base_q: glwe_params.base_q().clone(),
-            cipher_moduli_value: glwe_params.cipher_moduli_value().to_vec(),
+            inner,
+            size,
+            base_q,
+            cipher_moduli_value,
             basis,
             scalar_residues,
-            size,
         })
+    }
+
+    /// Returns the shared layout and sampling state, without BFV encoding.
+    #[must_use]
+    #[inline]
+    pub fn inner(&self) -> &CrtGlweParametersInner<T> {
+        &self.inner
     }
 
     /// Returns the dimension of this [`CrtGlevParameters<T, M>`].

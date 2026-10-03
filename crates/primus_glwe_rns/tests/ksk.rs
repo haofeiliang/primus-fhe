@@ -51,7 +51,7 @@ fn hybrid_generation_rejects_input_secret_layout_before_sampling() {
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             HybridRnsGlweKeySwitchingKey::generate(
                 &input_secret,
-                &parameters,
+                parameters.inner(),
                 &output_secret,
                 &domain,
                 &mut rng,
@@ -91,7 +91,13 @@ fn hybrid_noise_support_must_fit_auxiliary_moduli() {
         let mut rng = StdRng::seed_from_u64(17);
         let mut expected_rng = StdRng::seed_from_u64(17);
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            HybridRnsGlweKeySwitchingKey::generate(&secret, &params, &secret, &domain, &mut rng)
+            HybridRnsGlweKeySwitchingKey::generate(
+                &secret,
+                params.inner(),
+                &secret,
+                &domain,
+                &mut rng,
+            )
         }));
         assert_eq!(result.is_ok(), valid);
         if !valid {
@@ -155,8 +161,13 @@ fn test_rns_glwe_ksk() {
         CrtGlevParameters::with_glwe_params(&glwe_params, DecompositionBaseLog::new(20), None);
     let domain = DcrtGadgetDomain::try_new(&glev_params, &table).unwrap();
 
-    let key_switching_key =
-        DcrtGlweKeySwitchingKey::generate(&sk_1, &glwe_params, &dcrt_sk_2, &domain, &mut rng);
+    let key_switching_key = DcrtGlweKeySwitchingKey::generate(
+        &sk_1,
+        glwe_params.inner(),
+        &dcrt_sk_2,
+        &domain,
+        &mut rng,
+    );
 
     let input: Polynomial<Vec<ValueT>> = Polynomial::random(poly_length.get(), mod_t, &mut rng);
     let mut c1: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
@@ -237,7 +248,7 @@ fn test_rns_glwe_ksk_hybrid() {
 
     let key_switching_key = HybridRnsGlweKeySwitchingKey::generate(
         &sk_1,
-        &glwe_params,
+        glwe_params.inner(),
         &sk_2,
         &hybrid_domain,
         &mut rng,

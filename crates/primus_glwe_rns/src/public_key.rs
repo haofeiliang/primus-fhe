@@ -5,12 +5,12 @@ use primus_lattice::{RnsGlweSize, ggsw::DcrtGgsw, glev::DcrtGlev, glwe::DcrtGlwe
 use primus_ntt::{DcrtTable, NttTable};
 use primus_poly::{CrtPolynomial, DcrtPolynomial};
 use primus_reduce::FieldContext;
-use primus_rns::Residues;
+use primus_rns::{RNSBase, Residues};
 
 use crate::parameter::{validate_dcrt_table, validate_glwe_size, validate_moduli};
 use crate::{
-    CrtGgswParameters, CrtGlevParameters, CrtGlweParameters, DcrtGadgetDomain, DcrtGlweSecretKey,
-    RnsDomainError,
+    CrtGgswParameters, CrtGlevParameters, CrtGlweParameters, CrtGlweParametersInner,
+    DcrtGadgetDomain, DcrtGlweSecretKey, RnsDomainError,
 };
 
 #[derive(Clone)]
@@ -44,7 +44,8 @@ impl<T: FheUint> DcrtGlwePublicKey<T> {
         self.key.byte_count()
     }
 
-    /// Generates a public key for `secret_key` using the supplied DCRT table.
+    /// Generates a public key from codec-free sampling state and its ordered Q base.
+    /// The zero encryption needs neither a plaintext modulus nor BFV recovery data.
     ///
     /// # Panics
     /// Panics if the parameters/table/key layouts or ordered moduli differ,
@@ -54,7 +55,8 @@ impl<T: FheUint> DcrtGlwePublicKey<T> {
     /// The secret key and table must use the same NTT representation.
     pub fn new<Table, R, M>(
         secret_key: &DcrtGlweSecretKey<T>,
-        params: &CrtGlweParameters<T, M>,
+        params: &CrtGlweParametersInner<T>,
+        base_q: &RNSBase<T, M>,
         table: &DcrtTable<Table>,
         rng: &mut R,
     ) -> DcrtGlwePublicKey<T>
@@ -63,26 +65,30 @@ impl<T: FheUint> DcrtGlwePublicKey<T> {
         R: rand::Rng + rand::CryptoRng,
         M: FieldContext<T>,
     {
-        validate_dcrt_table(params.poly_length(), params.cipher_moduli(), table)
+        params
+            .validate_base(base_q)
+            .expect("public-key sampling parameters and RNS basis are incompatible");
+        let size = params.size();
+        validate_dcrt_table(size.poly_length(), base_q.moduli(), table)
             .expect("public-key parameters and table are incompatible");
         secret_key
-            .validate_parameters(params.size(), params.cipher_moduli())
+            .validate_parameters(params.size(), base_q.moduli())
             .expect("public-key secret and parameters are incompatible");
-        let poly_length = params.poly_length().get();
-        let dcrt_glwe_len = params.rns_glwe_len();
+        let poly_length = size.poly_length().get();
+        let dcrt_glwe_len = size.rns_glwe_len();
 
-        let moduli = params.cipher_moduli();
-        let moduli_value = params.cipher_moduli_value();
+        let moduli = base_q.moduli();
+        let moduli_value: Vec<T> = moduli.iter().map(|q| q.value()).collect();
         let uniform_distrs = params.cipher_moduli_uniform_distr();
 
         let mut data: DcrtGlwe<Vec<T>> = DcrtGlwe::zero(dcrt_glwe_len);
 
-        let (a, mut b) = data.a_b_mut(params.rns_poly_len());
+        let (a, mut b) = data.a_b_mut(size.rns_poly_len());
 
         primus_distr::sample_crt_gaussian_values_to(
             b.0,
             poly_length,
-            moduli_value,
+            &moduli_value,
             params.noise_distribution(),
             rng,
         );
@@ -97,7 +103,7 @@ impl<T: FheUint> DcrtGlwePublicKey<T> {
         Self {
             key: data,
             size: params.size(),
-            moduli: params.cipher_moduli_value().to_vec(),
+            moduli: moduli_value,
         }
     }
 

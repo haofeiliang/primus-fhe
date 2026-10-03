@@ -46,6 +46,16 @@ TFHE 的 BSK 共享 accumulator 的布局和采样状态。KS 目标直接组合
 
 TFHE 显式拥有普通 accumulator 参数以及共享其 inner 的 BR 参数。直接组合入口接收 `external_lwe, accumulator_ntru, blind_rotation_basis, key_switching, key_switching_noise_standard_deviation`，继续检查共同 t 和 2N 可表示性。CBS trace/scheme-switch 直接构造无 codec 的 NLev，每个噪声角色独立准备 inner。构造分配、保留内存与在线加密的对比见[采样状态共享测量](workspaces-and-storage.md#ntru-parameter-sharing)。
 
+## RNS 普通与 gadget 参数组合
+
+`CrtGlweParametersInner` 绑定 `RnsGlweSize`、有序 Q 对应的 mask sampler、秘密 sampler 和系数噪声；固定重量按完整 kN 检查，秘密及噪声支持必须适用于每个 q_i。它只借用 `RNSBase` 准备采样缓存，不拥有另一份 base 或 converter。
+
+`CrtGlevParameters::try_from_parts(Arc<CrtGlweParametersInner>, base_q, basis)` 检查缓存与 base 的模数数量及顺序、basis 的精确乘积和 limb 宽度、逐模数的 centered-lift radix 条件，以及 `RnsGadgetSize` 组合长度。它拥有传入的 base、basis 和各层 CRT 权重，不需要 t/gamma。普通 `CrtGlweParameters::try_from_parts(shared_inner, codec)` 则检查 codec 的有序 Q，并用共享噪声采样器的最大幅度验证新鲜私钥密文的 BFV 恢复条件；这不包含公钥或求值的附加噪声。
+
+两种参数都通过 `inner()` 借用共享状态。公钥生成接收 inner、base 和 table；普通 DCRT key switch 接收 input inner 和 output gadget domain，输出噪声来自 domain；hybrid key switch 沿用 input inner 的密钥噪声，并额外检查辅助 P 模数的支持界。这些生成流程均不依赖 BFV codec，秘密缓冲擦除及采样顺序保持不变。`try_with_glwe_params` 仍可从普通参数派生 gadget，复制已有 base 并共享 sampler；RNSBase 和 ModUp/ModDown 转换器继续由各自原有类型拥有。
+
+三个方案共同遵循“采样状态 + gadget basis”与“采样状态 + 普通 codec”的组合规则，但布局检查保留各方案差异：GLWE inner 不绑定 k/N，固定重量由组合入口检查；NTRU inner 绑定 N；RNS inner 绑定 k/N/模数数量和缓存顺序。不能仅凭乘积 Q 相等认为 RNS 缓冲兼容，也不能把 GLWE 的 mask sampler 套用到 NTRU。组合检查都在构造边界，在线 kernel 沿用已经建立的不变量。
+
 ## 配置、绑定与工作区的职责
 
 | 角色 | 保存或执行的内容 |

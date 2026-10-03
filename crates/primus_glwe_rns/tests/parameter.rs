@@ -1,17 +1,22 @@
-use primus_decompose::ApproxSignedBasisError;
+use primus_decompose::{ApproxSignedBasisError, big_integer::BigUintApproxSignedBasis};
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_glwe_rns::{
-    CrtGlevParameters, CrtGlevParametersError, CrtGlweParameters, CrtGlweParametersError,
-    DcrtGadgetDomain, RnsDomainError, SecretKeyDistr,
+    BfvRnsCodec, CrtGlevParameters, CrtGlevParametersError, CrtGlweParameters,
+    CrtGlweParametersError, CrtGlweParametersInner, DcrtGadgetDomain, RnsDomainError,
+    SecretKeyDistr,
 };
-use primus_lattice::{GlweDimension, GlweSizeError};
+use primus_integer::BigUint;
+use primus_lattice::{GlweDimension, GlweSize, GlweSizeError, RnsGlweSize};
 use primus_modulus::BarrettModulus;
 use primus_ntt::UintDcrtTable;
 use primus_poly::PolyLength;
+use primus_rns::RNSBase;
+use std::sync::Arc;
 
 #[test]
 fn noise_support_must_fit_every_rns_modulus() {
     let moduli = [97u64, 17].map(BarrettModulus::new);
+    let base_q = RNSBase::new(&moduli).unwrap();
     // Bounds 16, 17, 18 exercise strict comparison against the second modulus.
     for (sigma, magnitude, valid) in [(1.375, 16, true), (1.4375, 17, false), (1.5, 18, false)] {
         assert_eq!(
@@ -20,12 +25,12 @@ fn noise_support_must_fit_every_rns_modulus() {
                 .maximum_magnitude(),
             magnitude
         );
-        let result = CrtGlweParameters::try_new(
-            GlweDimension::new(1),
-            32,
-            BarrettModulus::new(3),
-            BarrettModulus::new(101),
-            &moduli,
+        let result = CrtGlweParametersInner::try_new(
+            RnsGlweSize::new(
+                GlweSize::new(GlweDimension::new(1), PolyLength::new(32)),
+                base_q.moduli_count(),
+            ),
+            &base_q,
             SecretKeyDistr::UniformBinary,
             sigma,
         );
@@ -42,13 +47,14 @@ fn noise_support_must_fit_every_rns_modulus() {
 #[test]
 fn secret_support_must_fit_every_rns_modulus() {
     let moduli = [97u64, 17].map(BarrettModulus::new);
+    let base_q = RNSBase::new(&moduli).unwrap();
     for (sigma, valid) in [(1.0, true), (1.5, false)] {
-        let result = CrtGlweParameters::try_new(
-            GlweDimension::new(1),
-            32,
-            BarrettModulus::new(3),
-            BarrettModulus::new(101),
-            &moduli,
+        let result = CrtGlweParametersInner::try_new(
+            RnsGlweSize::new(
+                GlweSize::new(GlweDimension::new(1), PolyLength::new(32)),
+                base_q.moduli_count(),
+            ),
+            &base_q,
             SecretKeyDistr::gaussian(sigma),
             0.7,
         );
@@ -85,15 +91,25 @@ fn fresh_private_key_recovery_uses_complete_noise_support() {
                 .maximum_magnitude(),
             u64::from(magnitude)
         );
-        let result = CrtGlweParameters::try_new(
-            GlweDimension::new(1),
-            32,
-            BarrettModulus::new(3),
-            BarrettModulus::new(gamma),
-            &moduli,
+        let base_q = RNSBase::new(&moduli).unwrap();
+        let size = RnsGlweSize::new(GlweSize::new(GlweDimension::new(1), PolyLength::new(32)), 1);
+        let inner = Arc::new(CrtGlweParametersInner::new(
+            size,
+            &base_q,
             SecretKeyDistr::UniformBinary,
             sigma,
+        ));
+        let basis = BigUintApproxSignedBasis::new(
+            base_q.moduli_product(),
+            DecompositionBaseLog::new(3),
+            None,
         );
+        // Gadget construction has no t/gamma recovery condition.
+        let gadget =
+            CrtGlevParameters::try_from_parts(Arc::clone(&inner), base_q.clone(), basis).unwrap();
+        assert!(std::ptr::eq(gadget.inner(), inner.as_ref()));
+        let codec = BfvRnsCodec::new(BarrettModulus::new(3), base_q, BarrettModulus::new(gamma));
+        let result = CrtGlweParameters::try_from_parts(inner, codec);
         if valid {
             assert!(result.is_ok());
         } else {
@@ -114,6 +130,7 @@ fn fresh_private_key_recovery_uses_complete_noise_support() {
 #[test]
 fn fixed_secret_weights_are_checked_against_the_complete_logical_key() {
     let moduli = [97u32, 17].map(BarrettModulus::new);
+    let base_q = RNSBase::new(&moduli).unwrap();
     for (distribution, valid) in [
         (
             SecretKeyDistr::FixedHammingWeightBinary { hamming_weight: 64 },
@@ -153,12 +170,12 @@ fn fixed_secret_weights_are_checked_against_the_complete_logical_key() {
             false,
         ),
     ] {
-        let result = CrtGlweParameters::try_new(
-            GlweDimension::new(2),
-            32,
-            BarrettModulus::new(3),
-            BarrettModulus::new(101),
-            &moduli,
+        let result = CrtGlweParametersInner::try_new(
+            RnsGlweSize::new(
+                GlweSize::new(GlweDimension::new(2), PolyLength::new(32)),
+                base_q.moduli_count(),
+            ),
+            &base_q,
             distribution,
             1.0,
         );
@@ -267,6 +284,80 @@ fn gadget_parameters_check_basis_and_composed_lengths() {
             GlweSizeError::LengthOverflow("RNS GLev ciphertext")
         ))
     ));
+}
+
+#[test]
+fn prepared_parts_require_the_same_ordered_base_and_product() {
+    let moduli = [97u32, 17].map(BarrettModulus::new);
+    let base_q = RNSBase::new(&moduli).unwrap();
+    let glwe_size = GlweSize::new(GlweDimension::new(1), PolyLength::new(32));
+    assert!(matches!(
+        CrtGlweParametersInner::try_new(
+            RnsGlweSize::new(glwe_size, 3),
+            &base_q,
+            SecretKeyDistr::UniformBinary,
+            1.0,
+        ),
+        Err(CrtGlweParametersError::Domain(
+            RnsDomainError::ModuliCountMismatch {
+                expected: 3,
+                actual: 2,
+            }
+        ))
+    ));
+    let inner = Arc::new(CrtGlweParametersInner::new(
+        RnsGlweSize::new(glwe_size, 2),
+        &base_q,
+        SecretKeyDistr::UniformBinary,
+        1.0,
+    ));
+    let basis = || {
+        BigUintApproxSignedBasis::new(base_q.moduli_product(), DecompositionBaseLog::new(4), None)
+    };
+
+    // Equal products, equal limb counts and valid individual bases do not prove
+    // that their samplers/codec/decomposition buffers use the same ordered Q.
+    for values in [&[17, 97][..], &[97, 19], &[97]] {
+        let foreign = RNSBase::new(
+            &values
+                .iter()
+                .copied()
+                .map(BarrettModulus::new)
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
+        assert!(matches!(
+            CrtGlevParameters::try_from_parts(Arc::clone(&inner), foreign.clone(), basis()),
+            Err(CrtGlevParametersError::Domain(_))
+        ));
+        let codec = BfvRnsCodec::new(BarrettModulus::new(3), foreign, BarrettModulus::new(101));
+        assert!(matches!(
+            CrtGlweParameters::try_from_parts(Arc::clone(&inner), codec),
+            Err(CrtGlweParametersError::Domain(_))
+        ));
+    }
+    for modulus in [&[97 * 17 + 1][..], &[97 * 17, 1]] {
+        let foreign_basis =
+            BigUintApproxSignedBasis::new(BigUint(modulus), DecompositionBaseLog::new(4), None);
+        assert!(matches!(
+            CrtGlevParameters::try_from_parts(Arc::clone(&inner), base_q.clone(), foreign_basis),
+            Err(CrtGlevParametersError::BasisModulusMismatch)
+        ));
+    }
+
+    let gadget =
+        CrtGlevParameters::try_from_parts(Arc::clone(&inner), base_q.clone(), basis()).unwrap();
+    let codec = BfvRnsCodec::new(BarrettModulus::new(3), base_q, BarrettModulus::new(101));
+    let ordinary = CrtGlweParameters::try_from_parts(inner, codec).unwrap();
+    let derived =
+        CrtGlevParameters::with_glwe_params(&ordinary, DecompositionBaseLog::new(3), None);
+    for params in [&gadget, &derived, &gadget.clone()] {
+        assert!(std::ptr::eq(ordinary.inner(), params.inner()));
+        assert!(std::ptr::eq(
+            ordinary.noise_distribution(),
+            params.noise_distribution()
+        ));
+    }
 }
 
 #[test]

@@ -157,7 +157,8 @@ fn public_encrypt_accepts_unscaled_crt_plaintexts() {
         let secret =
             GlweSecretKey::generate(params.glwe_size(), params.secret_key_sampler(), &mut rng);
         let secret = DcrtGlweSecretKey::from_coeff_secret_key(&secret, &table);
-        let public = DcrtGlwePublicKey::new(&secret, &params, &table, &mut rng);
+        let public =
+            DcrtGlwePublicKey::new(&secret, params.inner(), params.base_q(), &table, &mut rng);
         let mut workspace = DcrtGlweDecryptWorkspace::new(params.size());
         let message = Polynomial(
             (0..POLY_LENGTH)

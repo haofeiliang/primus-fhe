@@ -7,11 +7,12 @@ use primus_reduce::FieldContext;
 use rand::distr::Uniform;
 
 use super::HybridRnsGlweKeySwitchingKey;
-use crate::parameter::validate_moduli;
-use crate::{CrtGlweParameters, DcrtGlweSecretKey, GlweSecretKey, HybridRnsKeySwitchDomain};
+use crate::{CrtGlweParametersInner, DcrtGlweSecretKey, GlweSecretKey, HybridRnsKeySwitchDomain};
 
 impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
     /// Generates a hybrid-RNS key-switching key in the NTT domain over `QP`.
+    /// The input sampling state supplies layout, ordered Q and key noise without
+    /// a BFV codec; the noise support is also checked against the auxiliary P limbs.
     ///
     /// # Panics
     ///
@@ -26,7 +27,7 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
     /// following [`DcrtGlweSecretKey::from_coeff_secret_key`]'s bounded-lift contract.
     pub fn generate<R, M, QpTable>(
         input_secret_key: &GlweSecretKey<T>,
-        input_parameters: &CrtGlweParameters<T, M>,
+        input_parameters: &CrtGlweParametersInner<T>,
         output_secret_key: &GlweSecretKey<T>,
         domain: &HybridRnsKeySwitchDomain<'_, T, M, QpTable>,
         rng: &mut R,
@@ -51,11 +52,9 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
             input_size.glwe_size(),
             "hybrid input secret key layout mismatch"
         );
-        validate_moduli(
-            input_parameters.cipher_moduli_value().iter().copied(),
-            hybrid_rns.q_base().moduli().iter().map(|m| m.value()),
-        )
-        .expect("hybrid input parameters and Q basis are incompatible");
+        input_parameters
+            .validate_base(hybrid_rns.q_base())
+            .expect("hybrid input parameters and Q basis are incompatible");
         assert_eq!(output_secret_key.poly_length(), poly_length);
         assert_eq!(qp_table.poly_length().get(), poly_length);
 

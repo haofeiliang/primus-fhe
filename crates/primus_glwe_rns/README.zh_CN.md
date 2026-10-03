@@ -52,15 +52,25 @@ assert_eq!(decoded.as_ref(), message.as_ref());
 
 m 个模数下，普通密文包含 `(k+1)*m*N` 个元素，顺序为 `[component][modulus][coefficient/evaluation]`；gadget 在外层增加 row/level。使用 `RnsGlweSize` / `RnsGadgetSize` 及多项式/密文迭代器，避免自行推算切片长度。CRT 与 DCRT 形状相同、算术含义不同，见[密文布局](../primus_lattice/README.zh_CN.md#存储与布局)。
 
-## 求值资源
+## 参数组合
 
 `CrtGlweParameters` 接收 `GlweDimension`，gadget 构造接收 `DecompositionBaseLog` 和 `Option<DecompositionLevelCount>`。参数访问器返回这些已验证单位，在原始存储或数值边界用 `.get()` 提取整数。
 
-`CrtGlweParameters::try_new` 通过 `CrtGlweParametersError<T>` 区分布局、RNS 基、编码、秘密采样和噪声错误，并保留底层原因。固定秘密权重对应完整 kN 个有符号系数，之后才向各 RNS 模数复制；秘密及噪声支持范围必须小于每个密文模数。普通参数与 gadget 参数共享已准备的采样状态；普通参数保留 BFV codec/缩放，gadget 参数持有分解 basis 和缓存权重。
+上面的普通构造器一次准备全部部件。只需要 gadget 加密，或需要独立选择编码时，可显式准备和组合：
 
-构造还将噪声采样器的最大幅度传给 `BfvRnsCodec::validate_noise_bound`，按 unsigned 提升验证新鲜私钥密文的恢复条件，因此也覆盖 centered 提升。恢复余量不足时返回 `CrtGlweParametersError::Encoding`。公钥加密及同态求值须使用完整相位噪声界；参数构造不覆盖这些额外噪声贡献。
+- `CrtGlweParametersInner::try_new(size, &base_q, secret_distribution, noise)` 准备布局及采样器，无需 t 或 gamma。固定秘密权重对应完整 kN 个有符号系数，之后才向各模数复制；秘密及噪声支持范围必须小于每个 q_i。用 `Arc` 包裹结果，即可共享这些预计算。
+- `CrtGlevParameters::try_from_parts(shared_inner, base_q, basis)` 将有序 `RNSBase` 和 `BigUintApproxSignedBasis` 移入 gadget 参数。缓存各层权重前，检查采样器的有序模数、basis 的精确乘积模数及 limb 宽度、radix < 每个 q_i，以及组合 gadget 长度；无需 BFV codec。
+- `CrtGlweParameters::try_from_parts(shared_inner, codec)` 绑定普通 BFV 编码，检查 codec 的有序模数及新鲜私钥密文恢复余量。Codec 拥有自己的 RNS 基与转换数据，共享采样状态不再保存另一份 base 或转换器。
 
-`CrtGlevParameters::try_with_glwe_params` 准备乘积 Q 下的 gadget 分解，并在分配前检查组合长度；`CrtGlevParametersError::Layout` 报告长度溢出。`DcrtGadgetDomain::try_new` 绑定参数与 table，检查多项式长度和有序模数；普通 DCRT 密钥切换使用此域。Hybrid 切换通过 `HybridRnsKeySwitchDomain::try_new` 绑定完整 Q/P 基，分区及 ModUp/ModDown 契约见 [`primus_rns`](../primus_rns/README.zh_CN.md#hybrid-rns)。
+`CrtGlweParameters::try_new` 和 `try_from_parts` 通过 `CrtGlweParametersError<T>` 报告错误并保留底层原因。`CrtGlevParameters::try_with_glwe_params` 仍可便捷地从已有普通参数派生 gadget，并共享其采样器。Gadget 构造返回 `CrtGlevParametersError`，其中 `Layout` 变体报告长度溢出。不同噪声角色需要独立准备采样状态。
+
+普通参数构造将噪声采样器的最大幅度传给 `BfvRnsCodec::validate_noise_bound`，按 unsigned 提升验证新鲜私钥密文的恢复条件，因此也覆盖 centered 提升。恢复余量不足时返回 `CrtGlweParametersError::Encoding`。公钥加密及同态求值须使用完整相位噪声界；参数构造不覆盖这些额外噪声贡献。
+
+## 求值资源
+
+两种参数均通过 `inner()` 暴露采样状态。公钥生成使用 `DcrtGlwePublicKey::new(&secret, parameters.inner(), parameters.base_q(), &table, rng)`，其零加密无需 codec。DCRT 和 hybrid 密钥切换生成同样接收 `input_parameters.inner()`，不再接收普通 BFV 参数。这些准备操作在消耗随机数前验证有序模数；hybrid 生成还检查输入采样状态所提供的密钥噪声是否适用于辅助 P 模数。
+
+`DcrtGadgetDomain::try_new` 绑定 gadget 参数与 table，检查多项式长度和有序模数；普通 DCRT 密钥切换使用此域。Hybrid 切换通过 `HybridRnsKeySwitchDomain::try_new` 绑定完整 Q/P 基，分区及 ModUp/ModDown 契约见 [`primus_rns`](../primus_rns/README.zh_CN.md#hybrid-rns)。
 
 `try_bind` 检查普通参数、table、密钥的布局和有序模数，返回 `RnsDomainError`；公钥使用相同绑定流程。Gadget 加密通过 `try_bind_gadget(&domain)` 绑定：秘密密钥返回 `DcrtGlevEncryptor`，公钥返回 `DcrtGgswEncryptor`。GLev encryptor 通过 `encrypt_crt_to` 接收系数消息，通过 `encrypt_dcrt_to` 接收 NTT 消息，只施加 gadget 权重，不进行 BFV 明文缩放。GGSW encryptor 的 `encrypt_monomial_ggsw` / `encrypt_monomial_ggsw_to` 分别分配或复用输出。消息和密钥行之间复用绑定。
 

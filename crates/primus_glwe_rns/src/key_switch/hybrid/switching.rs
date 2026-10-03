@@ -437,7 +437,7 @@ mod tests {
         let input_dcrt_key = DcrtGlweSecretKey::from_coeff_secret_key(&input_key, &q_table);
         let switching_key = HybridRnsGlweKeySwitchingKey::generate(
             &input_key,
-            &parameters,
+            parameters.inner(),
             &output_key,
             &domain,
             &mut rng,

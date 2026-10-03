@@ -106,11 +106,25 @@ where
             secret_key_distr,
             noise_standard_deviation,
         )?;
+        Self::try_from_parts(Arc::new(inner), codec)
+    }
+
+    /// Binds prepared layout/samplers to ordinary BFV encoding without rebuilding them.
+    /// The codec owns its ordered Q base and conversion precomputation.
+    ///
+    /// # Errors
+    /// Rejects a different modulus count/order or insufficient recovery margin
+    /// for the complete fresh private-key noise support. The unsigned bound also
+    /// covers centered lifting; public-key and evaluation noise need their own bounds.
+    pub fn try_from_parts(
+        inner: Arc<CrtGlweParametersInner<T>>,
+        codec: BfvRnsCodec<T, M>,
+    ) -> Result<Self, CrtGlweParametersError<T>> {
+        inner.validate_base(codec.base_q())?;
         // Every modulus already contains the signed support, so the magnitude
         // fits T. For private-key plaintext encryption it bounds the phase noise.
         let maximum_noise_magnitude = T::as_from(inner.noise_distribution.maximum_magnitude());
         codec.validate_noise_bound(maximum_noise_magnitude, PlaintextEmbedding::Unsigned)?;
-        let inner = Arc::new(inner);
         let delta_mod_q = codec
             .delta_factor_mod_q()
             .iter()
@@ -121,6 +135,13 @@ where
             codec,
             delta_mod_q,
         })
+    }
+
+    /// Returns the shared layout and sampling state, without BFV encoding.
+    #[must_use]
+    #[inline]
+    pub fn inner(&self) -> &CrtGlweParametersInner<T> {
+        &self.inner
     }
 
     /// Returns the dimension of this [`CrtGlweParameters<T, M>`].
