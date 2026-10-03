@@ -1,27 +1,26 @@
+//! Reusable scratch storage, grouped internally by transform representation.
+
 #[cfg(feature = "rns")]
 mod dcrt_glev_mul;
-mod glwe_external_product;
-mod glwe_ternary_cmux;
-mod ntru_cmux;
-mod ntru_external_product;
+mod fourier;
+mod ntt;
 
 #[cfg(feature = "rns")]
 pub use dcrt_glev_mul::DcrtGlevMulWorkspace;
 #[cfg(feature = "rns")]
 pub(crate) use dcrt_glev_mul::DcrtGlevMulWorkspaceRefMut;
 
-pub use glwe_external_product::{
-    FourierGlweExternalProductWorkspace, NttGlweExternalProductWorkspace,
+pub use fourier::{
+    FourierGlweExternalProductWorkspace, FourierGlweTernaryCmuxWorkspace, FourierNtruCmuxWorkspace,
+    FourierNtruExternalProductWorkspace,
 };
-pub(crate) use glwe_external_product::{
-    FourierGlweExternalProductWorkspaceRefMut, NttGlweExternalProductWorkspaceRefMut,
+pub(crate) use fourier::{
+    FourierGlweExternalProductWorkspaceRefMut, FourierNtruExternalProductWorkspaceRefMut,
 };
-pub use glwe_ternary_cmux::{FourierGlweTernaryCmuxWorkspace, NttGlweTernaryCmuxWorkspace};
-pub use ntru_external_product::{
-    FourierNtruExternalProductWorkspace, NttNtruExternalProductWorkspace,
+pub use ntt::{
+    NttGlweExternalProductWorkspace, NttGlweTernaryCmuxWorkspace, NttNtruCmuxWorkspace,
+    NttNtruExternalProductWorkspace,
 };
-pub(crate) use ntru_external_product::{
-    FourierNtruExternalProductWorkspaceRefMut, NttNtruExternalProductWorkspaceRefMut,
+pub(crate) use ntt::{
+    NttGlweExternalProductWorkspaceRefMut, NttNtruExternalProductWorkspaceRefMut,
 };
-
-pub use ntru_cmux::{FourierNtruCmuxWorkspace, NttNtruCmuxWorkspace};

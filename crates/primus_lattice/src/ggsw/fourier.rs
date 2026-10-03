@@ -1,3 +1,7 @@
+mod cmux;
+mod external_product;
+mod ternary;
+
 use num_complex::Complex64;
 use primus_data::{Data, DataMut, RawData};
 use primus_poly::FourierPolynomial;

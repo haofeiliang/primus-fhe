@@ -1,11 +1,8 @@
 use primus_data::{Data, DataMut, DataOwned, RawData};
 use primus_integer::FheUint;
-use primus_ntt::NttTable;
 
 #[allow(unused_imports)]
 use crate::glev::{Glev, GlevIter, GlevIterMut};
-
-use super::NttGgsw;
 
 /// Represents a ciphertext in the General-GSW homomorphic encryption scheme.
 ///
@@ -39,5 +36,3 @@ impl_mul_scalar_single_modulus!(Ggsw);
 impl_mul_factor_single_modulus!(Ggsw);
 impl_monomial_single_modulus!(Ggsw);
 impl_gadget_diagonal_single_modulus!(Ggsw, Polynomial);
-
-impl_ntt!(Ggsw, NttGgsw);

@@ -1,6 +1,7 @@
 use primus_data::{Data, DataMut, DataOwned, RawData};
 use primus_factor::ShoupFactor;
 use primus_integer::FheUint;
+use primus_ntt::{DcrtTable, NttTable};
 use primus_poly::{DcrtPolynomial, DcrtPolynomialIter, DcrtPolynomialIterMut};
 use primus_reduce::FieldContext;
 
@@ -41,6 +42,7 @@ impl_mul_factor_multiple_modulus!(DcrtGlwe);
 impl_plaintext_multiple_modulus!(DcrtGlwe, DcrtPolynomial);
 impl_dcrt_polynomial_mul!(DcrtGlwe);
 
+impl_crt_ntt!(CrtGlwe, DcrtGlwe);
 impl_crt_intt!(DcrtGlwe, CrtGlwe);
 
 impl<S, T> DcrtGlwe<S>
@@ -202,5 +204,50 @@ where
             DcrtPolynomialIter::new(mask, rns_poly_len),
             DcrtPolynomial(body),
         )
+    }
+}
+
+impl<S, T> CrtGlwe<S>
+where
+    S: Data<Elem = T>,
+    T: FheUint,
+{
+    /// Performs a multiplication on the `self` [`CrtGlwe<S>`] with another `dcrt_poly` [`DcrtPolynomial<A>`],
+    /// store the output into `output` [`DcrtGlwe<T>`].
+    ///
+    /// # Correctness
+    ///
+    /// The table, ciphertext, `dcrt_poly`, and `moduli` must use the same
+    /// ordered RNS base. Each RNS polynomial has `table.rns_poly_len()`
+    /// entries in modulus-major order, and `dcrt_poly` has exactly that length
+    /// in the table's evaluation order. Values must be canonical residues.
+    /// Output has the same component count and total length as `self` and is
+    /// overwritten in DCRT form.
+    ///
+    /// # Panics
+    ///
+    /// Panics if input and output storage lengths differ.
+    #[inline]
+    pub fn mul_dcrt_polynomial_to<M, Table, A, B>(
+        &self,
+        dcrt_poly: &DcrtPolynomial<A>,
+        output: &mut DcrtGlwe<B>,
+        moduli: &[M],
+        table: &DcrtTable<Table>,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
+    {
+        let poly_length = table.poly_length().get();
+        let rns_poly_len = table.rns_poly_len();
+
+        output.0.copy_from_slice(self.as_ref());
+
+        output.iter_dcrt_poly_mut(rns_poly_len).for_each(|mut x| {
+            table.transform_slice(x.0);
+            x.mul_assign(dcrt_poly, poly_length, moduli);
+        });
     }
 }

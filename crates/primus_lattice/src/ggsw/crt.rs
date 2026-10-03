@@ -4,8 +4,6 @@ use primus_integer::FheUint;
 #[allow(unused_imports)]
 use crate::glev::{CrtGlev, CrtGlevIter, CrtGlevIterMut};
 
-use super::DcrtGgsw;
-
 /// Represents a ciphertext in the General-GSW homomorphic encryption scheme.
 ///
 /// ## Structure of the `data`
@@ -45,5 +43,3 @@ impl_mul_scalar_multiple_modulus!(CrtGgsw);
 impl_mul_factor_multiple_modulus!(CrtGgsw);
 impl_monomial_multiple_modulus!(CrtGgsw);
 impl_gadget_diagonal_multiple_modulus!(CrtGgsw, CrtPolynomial);
-
-impl_crt_ntt!(CrtGgsw, DcrtGgsw);

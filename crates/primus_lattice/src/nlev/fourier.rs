@@ -1,3 +1,7 @@
+mod external_product;
+mod external_product_sum;
+mod lift;
+
 use num_complex::Complex64;
 use primus_data::RawData;
 

@@ -1,3 +1,5 @@
+mod external_product;
+
 use primus_data::{Data, DataMut, DataOwned, RawData};
 use primus_integer::FheUint;
 
@@ -51,4 +53,5 @@ impl_mul_scalar_multiple_modulus!(DcrtGlev);
 impl_mul_factor_multiple_modulus!(DcrtGlev);
 impl_dcrt_polynomial_mul!(DcrtGlev);
 
+impl_crt_ntt!(CrtGlev, DcrtGlev);
 impl_crt_intt!(DcrtGlev, CrtGlev);

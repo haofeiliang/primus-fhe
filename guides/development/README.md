@@ -140,6 +140,25 @@ assert_eq!(level_count, 9); // (k+1) rows * L levels
 
 Constructing a different wrapper or iterator does not perform a transform. Fourier values occupy N/2 complex slots and are approximate; arbitrary FFT tables with the same N are not interchangeable. Parallel workers may share an immutable table but each needs its own mutable workspace.
 
+### Lattice implementation boundaries
+
+Within each ciphertext family, `coeff.rs` owns coefficient storage and arithmetic.
+The `ntt.rs`, `fourier.rs`, and `dcrt.rs` modules own their representations and
+both conversion directions, including inherent methods on coefficient types.
+External products, CMux, and fused lifting live in the corresponding representation's
+subdirectory. Public type paths and inherent methods are exported by the family module;
+callers do not need extension traits.
+
+| Implementation | Source entry |
+| --- | --- |
+| GGSW products and CMux | [NTT](../../crates/primus_lattice/src/ggsw/ntt.rs), [Fourier](../../crates/primus_lattice/src/ggsw/fourier.rs), [DCRT products](../../crates/primus_lattice/src/ggsw/dcrt/external_product.rs) |
+| Shared NLev/NGSW gadget kernels | [NTT](../../crates/primus_lattice/src/ntru/ntt/gadget_product.rs), [Fourier](../../crates/primus_lattice/src/ntru/fourier/gadget_product.rs) |
+| Workspace owners and internal views | [NTT](../../crates/primus_lattice/src/workspace/ntt.rs), [Fourier](../../crates/primus_lattice/src/workspace/fourier.rs), [DCRT](../../crates/primus_lattice/src/workspace/dcrt_glev_mul.rs) |
+
+Keep backend-specific code within these modules. NTT/Fourier currently remain
+unconditionally available; source separation alone does not make dependencies optional.
+Current feature availability is documented in the [lattice README](../../crates/primus_lattice/README.md#features).
+
 ## Compose an encrypted workflow
 
 The [TFHE parameter and boundary guide](tfhe-parameters-and-boundaries.md) maps q/Q, secret domains, PBS/CBS/MVB/one-hot/lookup paths and construction error ownership. The [parameter matrix](tfhe-parameters.md) records representative-size profiles by operation, word width and backend, with an opt-in numerical validator; ordinary tests keep small parameters.
@@ -168,7 +187,7 @@ Names follow responsibility; reusable buffer groups use `Workspace`, while bound
 
 | Responsibility | Naming rule | Current entry point |
 | --- | --- | --- |
-| A group of reusable temporary buffers with shape invariants | `*Workspace` | [Ntt/FourierNtruExternalProductWorkspace](../../crates/primus_lattice/src/workspace/ntru_external_product.rs), [NtruLweKeySwitchingWorkspace](../../crates/primus_ntru/src/key_switch/lwe.rs) |
+| A group of reusable temporary buffers with shape invariants | `*Workspace` | [Ntt/FourierNtruExternalProductWorkspace](../../crates/primus_lattice/src/workspace/mod.rs), [NtruLweKeySwitchingWorkspace](../../crates/primus_ntru/src/key_switch/lwe.rs) |
 | Owned FFT temporary buffers | `*Workspace` as well | [FftTable::Workspace / new_workspace and FftEngine](../../crates/primus_fft/src/table.rs) |
 | Validated parameters, modulus and transform environment | `*Context` | [TfheContext](../../crates/primus_tfhe_ntru_ntt/src/context.rs); arithmetic `RingContext` / `FieldContext` remain capability traits |
 | Bound execution with keys/tables and mutable workspace | `*Evaluator` / `*Engine` | TFHE evaluators and `FftEngine`; classify mixed state by its actual responsibility |

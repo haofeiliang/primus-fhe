@@ -1,11 +1,8 @@
 use primus_data::{Data, DataMut, DataOwned, RawData};
 use primus_integer::FheUint;
-use primus_ntt::NttTable;
 #[allow(unused_imports)]
-use primus_poly::{NttPolynomial, Polynomial, PolynomialIter, PolynomialIterMut};
-use primus_reduce::{FieldContext, RingContext};
-
-use super::NttGlwe;
+use primus_poly::{Polynomial, PolynomialIter, PolynomialIterMut};
+use primus_reduce::RingContext;
 
 /// A cryptographic structure for Module(General) Learning with Errors (MLWE, GLWE).
 ///
@@ -37,8 +34,6 @@ impl_mul_scalar_single_modulus!(Glwe);
 impl_mul_factor_single_modulus!(Glwe);
 impl_monomial_single_modulus!(Glwe);
 impl_plaintext_single_modulus!(Glwe, Polynomial);
-
-impl_ntt!(Glwe, NttGlwe);
 
 impl<S, T> Glwe<S>
 where
@@ -152,43 +147,5 @@ where
         {
             Polynomial(input).mul_monomial_sub_one_to(exponent, &mut Polynomial(output), modulus);
         }
-    }
-
-    /// Performs a multiplication on the `self` [`Glwe<S>`] with another `ntt_poly` [`NttPolynomial<A>`],
-    /// store the output into `output` [`NttGlwe<B>`].
-    ///
-    /// # Correctness
-    ///
-    /// Each coefficient polynomial must have `ntt_table.poly_length().get()` entries;
-    /// `ntt_poly` must have exactly that length in the table's NTT order.
-    /// The table, ciphertext, polynomial, and `modulus` must use the same
-    /// modulus, and input values must be canonical residues. Output has the
-    /// same component count and total length as `self` and is overwritten in
-    /// NTT form, retaining the ciphertext key.
-    ///
-    /// # Panics
-    ///
-    /// Panics if input and output storage lengths differ.
-    #[inline]
-    pub fn mul_ntt_polynomial_to<M, Table, A, B>(
-        &self,
-        ntt_poly: &NttPolynomial<A>,
-        output: &mut NttGlwe<B>,
-        modulus: M,
-        ntt_table: &Table,
-    ) where
-        M: FieldContext<T>,
-        Table: NttTable<ValueT = T>,
-        A: Data<Elem = T>,
-        B: DataMut<Elem = T>,
-    {
-        let ntt_poly_len = ntt_table.poly_length().get();
-
-        output.0.copy_from_slice(self.as_ref());
-
-        output.iter_ntt_poly_mut(ntt_poly_len).for_each(|mut poly| {
-            ntt_table.transform_slice(poly.0);
-            poly.mul_assign(ntt_poly, modulus);
-        });
     }
 }

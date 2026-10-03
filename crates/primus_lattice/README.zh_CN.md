@@ -140,6 +140,8 @@ assert_eq!(sample.b(), 76);
 
 默认不启用任何 feature。
 
+NTT 和 Fourier 支持及其变换依赖目前仍无条件启用；空的默认 feature 不表示仅构建系数运算。
+
 - `rns` 启用 CRT/DCRT 密文、对应乘法工作区，以及 `BigUintGlwe` 的 CRT 转换。
 - `simd` 启用算术依赖中的 nightly SIMD 支持，不会自动启用 `rns`；RNS SIMD 运算需要同时启用两者。
 - `BigUintGlwe`、`RnsGlweSize` 和 `RnsGadgetSize` 不依赖 `rns` feature。

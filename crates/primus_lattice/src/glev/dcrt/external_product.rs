@@ -8,11 +8,12 @@ use primus_poly::{BigUintPolynomial, CrtPolynomial, DcrtPolynomial};
 use primus_reduce::FieldContext;
 use primus_rns::RNSBase;
 
-use super::DcrtGlev;
 use crate::{
     glwe::DcrtGlwe,
     workspace::{DcrtGlevMulWorkspace, DcrtGlevMulWorkspaceRefMut},
 };
+
+use super::DcrtGlev;
 
 impl<S, T> DcrtGlev<S>
 where

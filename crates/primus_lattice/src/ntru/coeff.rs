@@ -1,10 +1,7 @@
 use primus_data::{Data, DataMut, DataOwned, RawData};
 use primus_integer::FheUint;
-use primus_ntt::NttTable;
-use primus_poly::{NttPolynomial, Polynomial};
-use primus_reduce::{FieldContext, RingContext};
-
-use super::NttNtru;
+use primus_poly::Polynomial;
+use primus_reduce::RingContext;
 
 /// A cryptographic structure for NTRU.
 ///
@@ -106,64 +103,6 @@ where
             modulus,
         );
     }
-
-    /// Transforms `self` to ntt form and stores in `output`.
-    ///
-    /// # Correctness
-    ///
-    /// Storage must contain exactly one polynomial of `ntt_table.poly_length().get()`
-    /// values, satisfying the selected transform's input range. The table
-    /// modulus must match the ciphertext; inverse input must use that table's
-    /// evaluation order and normalization. Output has the same length and is
-    /// fully overwritten.
-    ///
-    /// # Panics
-    ///
-    /// Panics if input and output lengths differ.
-    #[inline]
-    pub fn write_ntt_form<Table, A>(&self, output: &mut NttNtru<A>, ntt_table: &Table)
-    where
-        A: DataMut<Elem = T>,
-        Table: NttTable<ValueT = T>,
-    {
-        let p = output.as_mut();
-        p.copy_from_slice(self.as_ref());
-        ntt_table.transform_slice(p)
-    }
-
-    /// Performs a multiplication on the `self` [`Ntru<S>`] with another `ntt_polynomial` [`NttPolynomial<A>`],
-    /// store the output into `output` [`NttNtru<B>`].
-    ///
-    /// # Correctness
-    ///
-    /// Each coefficient polynomial must have `ntt_table.poly_length().get()` entries;
-    /// `ntt_poly` must have exactly that length in the table's NTT order.
-    /// The table, ciphertext, polynomial, and `modulus` must use the same
-    /// modulus, and input values must be canonical residues. Output has the
-    /// same component count and total length as `self` and is overwritten in
-    /// NTT form, retaining the ciphertext key.
-    ///
-    /// # Panics
-    ///
-    /// Panics if input and output storage lengths differ.
-    #[inline]
-    pub fn mul_ntt_polynomial_to<M, Table, A, B>(
-        &self,
-        ntt_poly: &NttPolynomial<A>,
-        output: &mut NttNtru<B>,
-        modulus: M,
-        ntt_table: &Table,
-    ) where
-        M: FieldContext<T>,
-        Table: NttTable<ValueT = T>,
-        A: Data<Elem = T>,
-        B: DataMut<Elem = T>,
-    {
-        let p = output.as_mut();
-        p.copy_from_slice(self.as_ref());
-        ntt_table.transform_slice(p);
-        NttPolynomial(p).mul_assign(ntt_poly, modulus);
-    }
 }
 
 impl<S, T> Ntru<S>
@@ -171,23 +110,6 @@ where
     S: DataMut<Elem = T>,
     T: FheUint,
 {
-    /// Transforms `self` to ntt form.
-    ///
-    /// # Correctness
-    ///
-    /// Storage must contain exactly one polynomial of `ntt_table.poly_length().get()`
-    /// values, satisfying the selected transform's input range. The table
-    /// modulus must match the ciphertext; inverse input must use that table's
-    /// evaluation order and normalization.
-    #[inline]
-    pub fn into_ntt_form<Table>(mut self, ntt_table: &Table) -> NttNtru<S>
-    where
-        Table: NttTable<ValueT = T>,
-    {
-        ntt_table.transform_slice(self.as_mut());
-        NttNtru::new(self.0)
-    }
-
     /// Multiplies this polynomial ciphertext by `X^exponent` without allocation.
     ///
     /// # Correctness

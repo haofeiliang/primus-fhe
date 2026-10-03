@@ -1,3 +1,7 @@
+mod gadget_product;
+
+pub(crate) use gadget_product::accumulate_fourier_gadget_product;
+
 use num_complex::Complex64;
 use primus_data::RawData;
 

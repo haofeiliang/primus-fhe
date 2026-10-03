@@ -140,6 +140,21 @@ assert_eq!(level_count, 9); // (k+1) 行 * L 层
 
 换一个 wrapper 或迭代器不等于执行变换。Fourier 每个多项式占 N/2 个复数，结果存在近似误差；长度相同的任意 FFT 表不能互换。并行 worker 可以共享只读表，但各自需要可变工作区。
 
+### Lattice 实现边界
+
+每个密文类型族的 `coeff.rs` 拥有系数存储和算术。`ntt.rs`、`fourier.rs`、`dcrt.rs`
+拥有对应表示和两个方向的转换，包括定义在系数类型上的固有方法。外积、CMux 和融合提升
+位于对应表示的子目录。类型族模块导出公开类型，调用方继续使用原有固有方法，无需扩展 trait。
+
+| 实现 | 源码入口 |
+| --- | --- |
+| GGSW 外积与 CMux | [NTT](../../crates/primus_lattice/src/ggsw/ntt.rs)、[Fourier](../../crates/primus_lattice/src/ggsw/fourier.rs)、[DCRT 外积](../../crates/primus_lattice/src/ggsw/dcrt/external_product.rs) |
+| NLev/NGSW 共用 gadget 内核 | [NTT](../../crates/primus_lattice/src/ntru/ntt/gadget_product.rs)、[Fourier](../../crates/primus_lattice/src/ntru/fourier/gadget_product.rs) |
+| 工作区所有者与内部视图 | [NTT](../../crates/primus_lattice/src/workspace/ntt.rs)、[Fourier](../../crates/primus_lattice/src/workspace/fourier.rs)、[DCRT](../../crates/primus_lattice/src/workspace/dcrt_glev_mul.rs) |
+
+后端专属实现放在上述模块内。NTT/Fourier 目前仍无条件可用；源码拆分本身不会使依赖可选。
+当前 feature 行为见 [lattice README](../../crates/primus_lattice/README.zh_CN.md#features)。
+
 ## 组合密文工作流
 
 [TFHE 参数与边界指南](tfhe-parameters-and-boundaries.md) 说明 q/Q、秘密域、PBS/CBS/MVB/one-hot/查表链路及构造错误归属。 [参数矩阵](tfhe-parameters.md) 列出按操作、字宽和后端验证的实际尺寸配置，以及独立的大参数验证入口；普通测试仍使用小参数。
@@ -168,7 +183,7 @@ GLWE 参数分别由[共享模数/采样状态](../../crates/primus_glwe/src/par
 
 | 职责 | 命名规则 | 当前入口 |
 | --- | --- | --- |
-| 保存一组复用临时缓冲和形状不变量 | `*Workspace` | [Ntt/FourierNtruExternalProductWorkspace](../../crates/primus_lattice/src/workspace/ntru_external_product.rs)、[NtruLweKeySwitchingWorkspace](../../crates/primus_ntru/src/key_switch/lwe.rs) |
+| 保存一组复用临时缓冲和形状不变量 | `*Workspace` | [Ntt/FourierNtruExternalProductWorkspace](../../crates/primus_lattice/src/workspace/mod.rs)、[NtruLweKeySwitchingWorkspace](../../crates/primus_ntru/src/key_switch/lwe.rs) |
 | FFT 后端拥有的临时缓冲 | 同样使用 `*Workspace` | [FftTable::Workspace / new_workspace 和 FftEngine](../../crates/primus_fft/src/table.rs) |
 | 绑定已验证参数、模数和变换环境 | `*Context` | [TfheContext](../../crates/primus_tfhe_ntru_ntt/src/context.rs)；算术 `RingContext` / `FieldContext` 仍为能力 trait |
 | 绑定密钥/表和可变工作区并提供执行流程 | `*Evaluator` / `*Engine` | TFHE evaluator、`FftEngine`；混合状态按实际职责判断 |

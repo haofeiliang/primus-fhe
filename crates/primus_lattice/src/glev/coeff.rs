@@ -1,11 +1,8 @@
 use primus_data::{Data, DataMut, DataOwned, RawData};
 use primus_integer::FheUint;
-use primus_ntt::NttTable;
 
 #[allow(unused_imports)]
 use crate::glwe::{Glwe, GlweIter, GlweIterMut};
-
-use super::NttGlev;
 
 /// A representation of Module Learning with Errors (MLWE) ciphertexts at different levels of one gadget basis,
 /// used to control noise growth in polynomial multiplications.
@@ -39,5 +36,3 @@ impl_neg_single_modulus!(Glev);
 impl_mul_scalar_single_modulus!(Glev);
 impl_mul_factor_single_modulus!(Glev);
 impl_monomial_single_modulus!(Glev);
-
-impl_ntt!(Glev, NttGlev);

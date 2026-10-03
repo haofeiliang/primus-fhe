@@ -1,3 +1,7 @@
+mod external_product;
+mod external_product_sum;
+mod lift;
+
 use primus_data::{Data, DataMut, DataOwned, RawData};
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
@@ -39,4 +43,5 @@ impl_mul_factor_single_modulus!(NttNlev);
 impl_ntt_polynomial_mul!(NttNlev);
 impl_ntt_monomial!(NttNlev);
 
+impl_ntt!(Nlev, NttNlev);
 impl_intt!(NttNlev, Nlev);

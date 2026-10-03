@@ -3,6 +3,9 @@
 //! Pass type names without storage generics: `impl_common!(Lwe)`.
 //! At each type declaration, group invocations in this order:
 //! storage/construction, iteration/access, arithmetic, domain conversion.
+//! Both directions of a conversion are generated in its transform module
+//! (`ntt`, `fourier`, or `dcrt`), including inherent methods on coefficient types.
+//! Coefficient modules own storage and coefficient arithmetic only.
 //! Within arithmetic, use add/sub, negation, scalar arithmetic,
 //! then precomputed-factor arithmetic, polynomial products, body operations and gadget injection.
 //! Capability groups remain explicit.

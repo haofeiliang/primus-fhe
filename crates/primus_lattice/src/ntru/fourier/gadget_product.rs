@@ -4,15 +4,11 @@
 //! level layout. Wrappers choose the accumulator, clear it once per operation,
 //! and convert it after the last product. These kernels only add one product.
 
-use crate::workspace::{
-    FourierNtruExternalProductWorkspaceRefMut, NttNtruExternalProductWorkspaceRefMut,
-};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
-use primus_integer::FheUint;
-use primus_ntt::NttTable;
-use primus_poly::{FourierPolynomial, FourierPolynomialIter, NttPolynomial, NttPolynomialIter};
-use primus_reduce::FieldContext;
+use primus_poly::{FourierPolynomial, FourierPolynomialIter};
+
+use crate::workspace::FourierNtruExternalProductWorkspaceRefMut;
 
 /// Adds the gadget product of `gadget` and `input` to the existing Fourier accumulator.
 /// This does not clear the accumulator; the caller must initialize it first.
@@ -61,60 +57,6 @@ pub(crate) fn accumulate_fourier_gadget_product<T, Table>(
         FourierPolynomial(workspace.fourier_accumulator.as_mut()).add_mul_assign(
             &FourierPolynomial(&*workspace.decomposed_fourier),
             &key_level,
-        );
-    }
-}
-
-/// Adds the gadget product of `gadget` and `input` to the existing NTT accumulator.
-/// This does not clear the accumulator; the caller must initialize it first.
-///
-/// # Correctness
-///
-/// Input contains `N = workspace.poly_length()` canonical coefficients. The
-/// gadget has `basis.decompose_length().get()` complete levels in decomposition
-/// order, each of length `N` in the NTT table's evaluation order.
-/// Gadget values are canonical. Basis, table, and arithmetic modulus agree,
-/// and the table polynomial length equals `N`. The selected accumulator has
-/// `N` values and is disjoint from the input and decomposition scratch.
-/// These conditions are caller obligations, with selected debug diagnostics.
-pub(crate) fn accumulate_ntt_gadget_product<T, M, Table>(
-    gadget: &[T],
-    input: &[T],
-    basis: &ApproxSignedBasis<T>,
-    modulus: M,
-    ntt: &Table,
-    workspace: &mut NttNtruExternalProductWorkspaceRefMut<'_, T>,
-) where
-    T: FheUint,
-    M: FieldContext<T>,
-    Table: NttTable<ValueT = T>,
-{
-    let poly_length = workspace.poly_length();
-
-    debug_assert_eq!(ntt.poly_length().get(), poly_length);
-    debug_assert_eq!(ntt.modulus(), modulus.value());
-    debug_assert_eq!(basis.modulus(), Some(modulus.value()));
-    debug_assert_eq!(input.len(), poly_length);
-    debug_assert_eq!(gadget.len(), basis.decompose_length().get() * poly_length);
-
-    // Adjust this input and initialize its carries once. The transformed sum
-    // remains live while decomposition scratch is reused across inputs/levels.
-    basis.init_value_carry_slice_to(input, workspace.adjusted_poly, workspace.carries);
-
-    for (decomposer, key_level) in basis
-        .decomposer_iter()
-        .zip(NttPolynomialIter::new(gadget, poly_length))
-    {
-        decomposer.decompose_slice_to(
-            workspace.adjusted_poly,
-            workspace.decomposed_ntt,
-            workspace.carries,
-        );
-        ntt.transform_slice(workspace.decomposed_ntt);
-        NttPolynomial(workspace.ntt_accumulator.as_mut()).add_mul_assign(
-            &key_level,
-            &NttPolynomial(&*workspace.decomposed_ntt),
-            modulus,
         );
     }
 }

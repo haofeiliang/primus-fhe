@@ -4,8 +4,6 @@ use primus_integer::FheUint;
 #[allow(unused_imports)]
 use crate::glwe::{CrtGlwe, CrtGlweIter, CrtGlweIterMut};
 
-use super::DcrtGlev;
-
 /// A representation of Module Learning with Errors (MLWE) ciphertexts at different levels of one gadget basis,
 /// used to control noise growth in polynomial multiplications.
 ///
@@ -45,5 +43,3 @@ impl_neg_multiple_modulus!(CrtGlev);
 impl_mul_scalar_multiple_modulus!(CrtGlev);
 impl_mul_factor_multiple_modulus!(CrtGlev);
 impl_monomial_multiple_modulus!(CrtGlev);
-
-impl_crt_ntt!(CrtGlev, DcrtGlev);

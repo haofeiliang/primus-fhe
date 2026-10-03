@@ -1,3 +1,8 @@
+mod cmux;
+mod cmux_k;
+mod external_product;
+mod ternary;
+
 use primus_data::{Data, DataMut, DataOwned, RawData};
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
@@ -39,4 +44,5 @@ impl_mul_factor_single_modulus!(NttNgsw);
 impl_ntt_polynomial_mul!(NttNgsw);
 impl_ntt_monomial!(NttNgsw);
 
+impl_ntt!(Ngsw, NttNgsw);
 impl_intt!(NttNgsw, Ngsw);

@@ -1,11 +1,8 @@
 use primus_data::{Data, DataMut, DataOwned, RawData};
 use primus_integer::FheUint;
-use primus_ntt::NttTable;
 
 #[allow(unused_imports)]
 use crate::ntru::{Ntru, NtruIter, NtruIterMut};
-
-use super::NttNlev;
 
 /// A gadget-decomposed NTRU ciphertext in the coefficient domain.
 ///
@@ -43,5 +40,3 @@ impl_neg_single_modulus!(Nlev);
 impl_mul_scalar_single_modulus!(Nlev);
 impl_mul_factor_single_modulus!(Nlev);
 impl_monomial_single_modulus!(Nlev);
-
-impl_ntt!(Nlev, NttNlev);

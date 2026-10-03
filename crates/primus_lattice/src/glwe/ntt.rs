@@ -2,6 +2,7 @@ use primus_data::{Data, DataMut, DataOwned, RawData};
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
 use primus_poly::{NttPolynomial, NttPolynomialIter, NttPolynomialIterMut};
+use primus_reduce::FieldContext;
 
 use super::Glwe;
 
@@ -39,6 +40,7 @@ impl_plaintext_single_modulus!(NttGlwe, NttPolynomial);
 impl_ntt_polynomial_mul!(NttGlwe);
 impl_ntt_monomial!(NttGlwe);
 
+impl_ntt!(Glwe, NttGlwe);
 impl_intt!(NttGlwe, Glwe);
 
 impl<S, T> NttGlwe<S>
@@ -129,5 +131,49 @@ where
             NttPolynomialIter::new(mask, poly_length),
             NttPolynomial(body),
         )
+    }
+}
+
+impl<S, T> Glwe<S>
+where
+    S: Data<Elem = T>,
+    T: FheUint,
+{
+    /// Performs a multiplication on the `self` [`Glwe<S>`] with another `ntt_poly` [`NttPolynomial<A>`],
+    /// store the output into `output` [`NttGlwe<B>`].
+    ///
+    /// # Correctness
+    ///
+    /// Each coefficient polynomial must have `ntt_table.poly_length().get()` entries;
+    /// `ntt_poly` must have exactly that length in the table's NTT order.
+    /// The table, ciphertext, polynomial, and `modulus` must use the same
+    /// modulus, and input values must be canonical residues. Output has the
+    /// same component count and total length as `self` and is overwritten in
+    /// NTT form, retaining the ciphertext key.
+    ///
+    /// # Panics
+    ///
+    /// Panics if input and output storage lengths differ.
+    #[inline]
+    pub fn mul_ntt_polynomial_to<M, Table, A, B>(
+        &self,
+        ntt_poly: &NttPolynomial<A>,
+        output: &mut NttGlwe<B>,
+        modulus: M,
+        ntt_table: &Table,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
+    {
+        let ntt_poly_len = ntt_table.poly_length().get();
+
+        output.0.copy_from_slice(self.as_ref());
+
+        output.iter_ntt_poly_mut(ntt_poly_len).for_each(|mut poly| {
+            ntt_table.transform_slice(poly.0);
+            poly.mul_assign(ntt_poly, modulus);
+        });
     }
 }

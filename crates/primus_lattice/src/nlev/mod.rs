@@ -1,8 +1,5 @@
 mod coeff;
-mod external_product;
-mod external_product_sum;
 mod fourier;
-mod lift;
 mod ntt;
 
 pub use coeff::{Nlev, NlevIter, NlevIterMut};

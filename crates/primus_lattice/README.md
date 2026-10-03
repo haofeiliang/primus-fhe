@@ -142,6 +142,9 @@ This illustrates layout and arithmetic, not randomized encryption or secure para
 
 Default features are empty.
 
+NTT and Fourier support, including their transform dependencies, is currently
+unconditional; empty default features do not select a coefficient-only build.
+
 - `rns` enables CRT/DCRT ciphertexts, their product workspace, and CRT conversions on `BigUintGlwe`.
 - `simd` enables nightly SIMD support in arithmetic dependencies. It does not enable `rns`; use both for SIMD RNS operations.
 - `BigUintGlwe`, `RnsGlweSize`, and `RnsGadgetSize` are available without `rns`.

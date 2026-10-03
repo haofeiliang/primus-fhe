@@ -5,8 +5,6 @@ mod ntt;
 mod crt;
 #[cfg(feature = "rns")]
 mod dcrt;
-#[cfg(feature = "rns")]
-mod external_product;
 /// Fourier-domain GLev ciphertexts.
 mod fourier;
 

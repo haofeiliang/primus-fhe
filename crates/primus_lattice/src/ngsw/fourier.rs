@@ -1,3 +1,8 @@
+mod cmux;
+mod cmux_k;
+mod external_product;
+mod ternary;
+
 use num_complex::Complex64;
 use primus_data::RawData;
 
