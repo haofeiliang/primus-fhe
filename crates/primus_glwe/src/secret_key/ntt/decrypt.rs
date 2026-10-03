@@ -19,7 +19,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     /// # Panics
     ///
     /// Panics if ciphertext/output/table lengths do not match the key layout,
-    /// or `modulus` differs from the table modulus. Checks precede output writes.
+    /// or the key, arithmetic and table moduli differ. Checks precede output writes.
     pub fn phase_to<M, Table, A, B>(
         &self,
         input: &NttGlweCiphertext<A>,
@@ -33,16 +33,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         B: DataMut<Elem = T>,
     {
         let poly_length = self.size.poly_length().get();
-        assert_eq!(
-            ntt_table.poly_length().get(),
-            poly_length,
-            "NTT polynomial length mismatch"
-        );
-        assert_eq!(
-            ntt_table.modulus(),
-            modulus.value(),
-            "NTT ciphertext modulus mismatch"
-        );
+        self.assert_ntt_compatible(modulus, ntt_table);
         assert_eq!(
             output.as_ref().len(),
             poly_length,

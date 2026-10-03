@@ -33,7 +33,7 @@ ManyLUT 通过交错共享一次盲旋转；分解式 MVB 通过公共因子生�
 
 `TfheParameters::try_from_config(TfheConfig { .. })` 检查数学配置； `TfheContext::<_, U32NttTable>::try_from_parameters(parameters)` 准备变换表。 已有表用 `TfheContext::try_new(parameters, table)` 绑定。 `TfheConfig`、`TfheParameters`、`Encryptor` 和 `Decryptor` 将家族 API 特化为 `BarrettModulus`。
 
-NTT 表需要实现 `MonomialNttTable`，内置表均支持。Context 检查长度和模数； 所有变换域密钥及数据须遵循该表的表示约定。
+NTT 表需要实现 `MonomialNttTable`，内置表均支持。Context 检查长度和模数； 所有变换域密钥及数据须遵循该表的表示约定。 拥有型 `NttGlweSecretKey` 保存 q，普通加密及求值密钥生成在采样前拒绝异模数密钥；导入使用 `new(values, size, distribution, modulus)`。相同 q/N 不证明 roots/order 或秘密身份，见 [GLWE 密钥契约](../primus_glwe/README.zh_CN.md)。
 
 `PbsOrder::BootstrapKeyswitch` 的外部维数为 n，`KeyswitchBootstrap` 为 dN。 用 `context.allocate_lwe_ciphertext()` 按当前 order 分配。 Basic 示例使用 binary 秘密和 `BootstrapKeyswitch`；修改 `ORDER` 常量即可选择 `KeyswitchBootstrap`。
 

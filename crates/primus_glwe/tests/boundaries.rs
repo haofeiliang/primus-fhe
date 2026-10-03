@@ -11,7 +11,7 @@ use primus_glwe::{
     FourierGgswCiphertext, FourierGlevCiphertext, FourierGlweCiphertext,
     FourierGlweEncryptWorkspace, FourierGlweGadgetEncryptWorkspace, FourierGlweSecretKey,
     GadgetSize, GlevParameters, GlweCiphertext, GlweKeySwitchingParameters, GlweParameters,
-    GlweSecretKey, GlweSizeError, NttGgswCiphertext, NttGlevCiphertext, NttGlweCiphertext,
+    GlweSizeError, NttGgswCiphertext, NttGlevCiphertext, NttGlweCiphertext,
     NttGlweGadgetEncryptWorkspace, NttGlweKeySwitchingKey, NttGlweKeySwitchingWorkspace,
     NttGlwePublicEncryptWorkspace, NttGlwePublicKey, NttGlweSecretKey, SecretKeyDistr,
 };
@@ -273,13 +273,19 @@ fn ntt_operations_reject_incompatible_domains_and_workspace_before_writes() {
     let wrong_length_table = UintNttTable::new(PolyLength::new(N * 2), modulus).unwrap();
     let gadget = GlevParameters::with_glwe_params(&params, DecompositionBaseLog::new(4), None);
     let mut rng = StdRng::seed_from_u64(42);
-    let (_, key) = NttGlweSecretKey::generate_pair(&params, &table, &mut rng);
+    let (coeff_key, key) = NttGlweSecretKey::generate_pair(&params, &table, &mut rng);
+    // Equal layouts and matching parameters/table do not establish the secret's domain.
+    let foreign_key = NttGlweSecretKey::from_coeff_secret_key(&coeff_key, &wrong_table);
     let public_key = NttGlwePublicKey::generate(&key, &params, &table, &mut rng);
     let message = Polynomial::new(vec![3u32; N]);
     let mut workspace = NttGlwePublicEncryptWorkspace::new(PolyLength::new(N));
 
     let mut gadget_workspace = NttGlweGadgetEncryptWorkspace::new(gadget.size());
-    for wrong_ntt in [&wrong_table, &wrong_length_table] {
+    for (key, wrong_ntt) in [
+        (&key, &wrong_table),
+        (&key, &wrong_length_table),
+        (&foreign_key, &table),
+    ] {
         for ggsw in [false, true] {
             let len = if ggsw {
                 gadget.ggsw_len()
@@ -317,7 +323,6 @@ fn ntt_operations_reject_incompatible_domains_and_workspace_before_writes() {
             assert_eq!(rng.next_u64(), expected_rng.next_u64());
         }
     }
-    let coeff_key = GlweSecretKey::generate(params.size(), params.secret_key_sampler(), &mut rng);
     let switching_key = NttGlweKeySwitchingKey::generate(
         &coeff_key,
         &key,
@@ -371,6 +376,21 @@ fn ntt_operations_reject_incompatible_domains_and_workspace_before_writes() {
         );
         assert_eq!(output.as_ref(), vec![7u32; params.glwe_len()]);
     }
+    // Ordinary NTT encryption must reject a foreign owner before the first draw.
+    let mut output = NttGlweCiphertext::new(vec![7u32; params.glwe_len()]);
+    let mut rejected_rng = StdRng::seed_from_u64(43);
+    assert!(
+        catch_unwind(AssertUnwindSafe(|| {
+            foreign_key.encrypt_to(&message, &mut output, &params, &table, &mut rejected_rng);
+        }))
+        .is_err()
+    );
+    assert_eq!(output.as_ref(), vec![7u32; params.glwe_len()]);
+    assert_eq!(
+        rejected_rng.next_u64(),
+        StdRng::seed_from_u64(43).next_u64()
+    );
+
     for length in [N / 2, N * 2] {
         let mut wrong_workspace = NttGlwePublicEncryptWorkspace::new(PolyLength::new(length));
         let mut output = NttGlweCiphertext::new(vec![7u32; params.glwe_len()]);
@@ -394,24 +414,27 @@ fn ntt_operations_reject_incompatible_domains_and_workspace_before_writes() {
     }
     let input = NttGlweCiphertext::new(vec![0u32; params.glwe_len()]);
     let mut phase = Polynomial::new(vec![7u32; N]);
-    assert!(
-        catch_unwind(AssertUnwindSafe(|| {
-            key.phase_to(&input, &mut phase, modulus, &wrong_table);
-        }))
-        .is_err()
-    );
-    assert_eq!(phase.as_ref(), vec![7u32; N]);
+    for (key, ntt) in [(&key, &wrong_table), (&foreign_key, &table)] {
+        assert!(
+            catch_unwind(AssertUnwindSafe(|| {
+                key.phase_to(&input, &mut phase, modulus, ntt);
+            }))
+            .is_err()
+        );
+        assert_eq!(phase.as_ref(), vec![7u32; N]);
+    }
 
     // Coefficient entry points share these checks; no RNG, output or scratch
     // change is allowed for a bad layout or transform domain.
-    for (polynomial_len, ciphertext_len, scratch_len, ntt) in [
-        (N - 1, 2 * N, N, &table),
-        (N, 2 * N - 1, N, &table),
-        (N, 3 * N, N, &table),
-        (N, 2 * N, N - 1, &table),
-        (N, 2 * N, N + 1, &table),
-        (N, 2 * N, N, &wrong_table),
-        (N, 2 * N, N, &wrong_length_table),
+    for (key, polynomial_len, ciphertext_len, scratch_len, ntt) in [
+        (&key, N - 1, 2 * N, N, &table),
+        (&key, N, 2 * N - 1, N, &table),
+        (&key, N, 3 * N, N, &table),
+        (&key, N, 2 * N, N - 1, &table),
+        (&key, N, 2 * N, N + 1, &table),
+        (&key, N, 2 * N, N, &wrong_table),
+        (&key, N, 2 * N, N, &wrong_length_table),
+        (&foreign_key, N, 2 * N, N, &table),
     ] {
         let mut polynomial = Polynomial::new(vec![7; polynomial_len]);
         let mut ciphertext = GlweCiphertext::new(vec![7; ciphertext_len]);

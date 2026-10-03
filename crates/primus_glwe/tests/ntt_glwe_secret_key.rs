@@ -45,6 +45,7 @@ where
             0.7,
         );
         let (_, secret_key) = NttGlweSecretKey::generate_pair(&params, &ntt, &mut rng);
+        assert_eq!(secret_key.cipher_modulus(), cipher_modulus);
         let mut cipher = NttGlweCiphertext::<Vec<T>>::zero(params.glwe_len());
         let mut coefficients = GlweCiphertext::<Vec<T>>::zero(params.glwe_len());
         let mut expected_coefficients = GlweCiphertext::<Vec<T>>::zero(params.glwe_len());
@@ -133,6 +134,7 @@ fn noise_diagnostics_report_signed_phase_distance() {
         vec![0; params.secret_key_len()],
         params.size(),
         SecretKeyDistr::UniformBinary,
+        modulus,
     );
     let message: Vec<u64> = (0..POLY_LENGTH)
         .map(|i| (i % PLAIN_MODULUS) as u64)

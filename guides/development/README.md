@@ -54,6 +54,8 @@ Descriptors check composed lengths and flattened-length overflow. They do not in
 
 Owning LWE secrets record the coefficient domain as `q - 1`, including Native. Import with `LweSecretKey::new(coefficients, distribution, modulus)`; coefficient canonicality and the declared distribution remain import preconditions. Validate an owner's domain before converting it with `as_view()`: raw encoded/signed views have no modulus metadata. TFHE family binding, LWE key-switch output-key generation and GLWE bootstrapping input-key generation perform this check before sampling. Metadata does not identify a particular secret. Explicitly zeroized keys must be discarded even though their public metadata remains.
 
+Owning `NttGlweSecretKey` records explicit q on import/conversion and checks it with the parameter modulus and table at ordinary, coefficient, truncated and gadget boundaries. Key-switch, automorphism, trace, scheme-switch and TFHE bootstrapping generation inherit the gadget check; inner kernels do not repeat it. `cipher_modulus()` exposes q for consumers that still hold the owner. Raw polynomial iterators carry no domain metadata; equal q/N cannot prove NTT roots/order or secret identity. Import and erased-key contracts are in the [GLWE README](../../crates/primus_glwe/README.md).
+
 LWE key generation takes `LweParametersInner`, which owns dimension, modulus and prepared samplers without encoding. Ordinary `LweParameters` adds a Rounded codec and exposes `inner()` / `into_inner()`. GLWE TFHE builds from the core and GGSW parameters, then binds codecs at clients/program compilers; see the [parameter ownership map](tfhe-parameters-and-boundaries.md).
 
 ## Traverse mathematical objects

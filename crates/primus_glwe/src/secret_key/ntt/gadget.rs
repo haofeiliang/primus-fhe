@@ -21,7 +21,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     ///
     /// # Panics
     ///
-    /// Panics if the key layout, input/output lengths, NTT length/modulus or
+    /// Panics if the key modulus/layout, input/output lengths, NTT length/modulus or
     /// polynomial workspace do not match `params`. Checks precede all output writes.
     pub fn encrypt_glev_to<M, Table, R, A, B>(
         &self,
@@ -104,7 +104,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     /// # Panics
     ///
     /// Panics if the key, input, transform, output, or workspace lengths do
-    /// not match the gadget parameters, or the NTT modulus differs.
+    /// not match the gadget parameters, or the key/parameter/table moduli differ.
     /// Checks precede all output writes.
     pub fn encrypt_ggsw_to<M, Table, R, A, B>(
         &self,
@@ -226,15 +226,6 @@ impl<T: FheUint> NttGlweSecretKey<T> {
             params.glwe_size(),
             "GLWE parameter layout mismatch"
         );
-        assert_eq!(
-            ntt.poly_length().get(),
-            self.poly_length(),
-            "NTT polynomial length mismatch"
-        );
-        assert_eq!(
-            ntt.modulus(),
-            params.cipher_modulus().value(),
-            "NTT ciphertext modulus mismatch"
-        );
+        self.assert_ntt_compatible(params.cipher_modulus(), ntt);
     }
 }

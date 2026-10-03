@@ -20,13 +20,13 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     ///
     /// # Correctness
     ///
-    /// Parameters and table must use this key's modulus and NTT representation.
+    /// The table must use this key's NTT roots and evaluation order.
     ///
     /// # Panics
     ///
-    /// Layout, table length/modulus and scratch length are checked before sampling
-    /// or writes. An out-of-range plaintext, RNG or transform panic may consume
-    /// randomness and leave partial output or scratch.
+    /// Layout, key/parameter/table moduli, table length and scratch length are checked
+    /// before sampling or writes. An out-of-range plaintext, RNG or transform panic
+    /// may consume randomness and leave partial output or scratch.
     pub fn encrypt_coeff_to<M, Table, R, A, B>(
         &self,
         input: &Polynomial<A>,
@@ -127,13 +127,13 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     /// # Correctness
     ///
     /// Input coefficients must be canonical residues modulo `modulus`. The table
-    /// and modulus must match this key's NTT representation.
+    /// must use this key's NTT roots and evaluation order.
     ///
     /// # Panics
     ///
     /// Panics before writes if ciphertext, output or scratch lengths differ from
-    /// the key layout, or table length/modulus is incompatible. A transform panic
-    /// may leave partial output or scratch.
+    /// the key layout, or the key/arithmetic/table moduli or table length differ.
+    /// A transform panic may leave partial output or scratch.
     pub fn phase_coeff_to<M, Table, A, B>(
         &self,
         input: &GlweCiphertext<A>,
@@ -213,15 +213,6 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         assert_eq!(polynomial_len, n, "GLWE polynomial length mismatch");
         assert_eq!(ciphertext_len, self.size.glwe_len(), "GLWE layout mismatch");
         assert_eq!(scratch_len, n, "GLWE coefficient scratch length mismatch");
-        assert_eq!(
-            ntt_table.poly_length().get(),
-            n,
-            "NTT polynomial length mismatch"
-        );
-        assert_eq!(
-            ntt_table.modulus(),
-            modulus.value(),
-            "NTT ciphertext modulus mismatch"
-        );
+        self.assert_ntt_compatible(modulus, ntt_table);
     }
 }

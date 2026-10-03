@@ -92,25 +92,38 @@ fn functional_bootstrapping_key_blind_rotates() {
         SecretKeyDistr::UniformTernary,
         primus_modulus::BarrettModulus::new(97u32),
     );
-    let mut invalid_rng = StdRng::seed_from_u64(71);
-    assert!(
-        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            NttGlweBootstrappingKey::generate_ntt(
-                &foreign,
-                lwe_params.inner(),
-                &output_secret_key,
-                &ggsw_params,
-                &ntt,
-                &mut invalid_rng,
-                &mut gadget_workspace,
-            );
-        }))
-        .is_err()
+    // A zero transformed secret is canonical under either prime: its import
+    // metadata must still prevent use in the wrong accumulator domain.
+    let foreign_output = NttGlweSecretKey::new(
+        vec![0; glwe_params.secret_key_len()],
+        glwe_params.size(),
+        glwe_params.secret_key_distr(),
+        primus_modulus::BarrettModulus::new(257u32),
     );
-    assert_eq!(
-        rand::Rng::next_u64(&mut invalid_rng),
-        rand::Rng::next_u64(&mut StdRng::seed_from_u64(71)),
-    );
+    for (input, output) in [
+        (&foreign, &output_secret_key),
+        (&input_secret_key, &foreign_output),
+    ] {
+        let mut invalid_rng = StdRng::seed_from_u64(71);
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                NttGlweBootstrappingKey::generate_ntt(
+                    input,
+                    lwe_params.inner(),
+                    output,
+                    &ggsw_params,
+                    &ntt,
+                    &mut invalid_rng,
+                    &mut gadget_workspace,
+                );
+            }))
+            .is_err()
+        );
+        assert_eq!(
+            rand::Rng::next_u64(&mut invalid_rng),
+            rand::Rng::next_u64(&mut StdRng::seed_from_u64(71)),
+        );
+    }
 
     let key = NttGlweBootstrappingKey::generate_ntt(
         &input_secret_key,

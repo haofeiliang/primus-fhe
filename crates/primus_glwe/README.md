@@ -30,7 +30,9 @@ let (coeff_sk, fourier_sk) =
 
 Use `GlweSecretKey::generate` when only the signed coefficient key is needed. Use `from_coeff_secret_key` to transform an existing coefficient key. Fixed-weight distributions apply to all `k*N` coefficients, not separately to each polynomial. Secret buffers are erased on drop, including unwinding during generation.
 
-Keys do not store transform tables: preserve the modulus and transform representation used at generation. Raw public-key bytes use native endianness and contain no parameter metadata.
+`NttGlweSecretKey` records explicit `q` at conversion/generation. Import transformed values with `NttGlweSecretKey::new(values, size, distribution, modulus)`; `modulus` implements `ExplicitModulus`, and `cipher_modulus()` returns its recorded value. Import checks the layout, not coefficient canonicality, distribution or transform provenance. Rejected layouts erase the consumed secret storage.
+
+Ordinary, coefficient, truncated and gadget operations check key/parameter/table moduli at their public boundary, before sampling or writes; gadget/key-generation loops reuse this check. The key retains no table. Matching `q` and layout cannot prove NTT roots, evaluation order or secret identity, so callers must preserve the transform representation. Explicit `zeroize()` clears secret storage but retains public metadata; discard the erased key. Raw public-key bytes use native endianness and contain no parameter metadata.
 
 ## Encryption and decryption
 

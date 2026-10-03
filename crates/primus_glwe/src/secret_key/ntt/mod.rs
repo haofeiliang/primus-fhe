@@ -6,7 +6,7 @@ use primus_lattice::GlweSize;
 use primus_modulus::UintModulus;
 use primus_ntt::NttTable;
 use primus_poly::NttPolynomialIter;
-use primus_reduce::{EncodeSigned, FieldContext};
+use primus_reduce::{EncodeSigned, ExplicitModulus, FieldContext};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::{GlweParameters, SecretKeyDistr};
@@ -23,18 +23,23 @@ mod workspace;
 pub use workspace::NttGlweGadgetEncryptWorkspace;
 
 /// A single-modulus GLWE secret key in NTT form.
-/// Key storage is securely erased on drop.
+/// Key storage is securely erased on drop. The explicit coefficient modulus is
+/// recorded at import or conversion; no transform table is retained.
+/// Explicit [`Zeroize::zeroize`] clears the coefficients and leaves the public
+/// layout, distribution and modulus metadata. The erased key must be discarded.
 ///
 /// # Correctness
 ///
 /// Key values must be canonical residues in the NTT representation used by
-/// subsequent operations. The key does not store the modulus or table;
-/// callers must preserve both when supplying parameters and transform tables.
+/// subsequent operations. Public operations check the recorded modulus and
+/// layout, but cannot establish secret identity, NTT roots or evaluation order.
+/// Callers must preserve the construction-time NTT representation.
 #[derive(Clone)]
 pub struct NttGlweSecretKey<T: FheUint> {
     key: Vec<T>,
     size: GlweSize,
     distr: SecretKeyDistr,
+    cipher_modulus: T,
 }
 
 impl<T: FheUint> Zeroize for NttGlweSecretKey<T> {
@@ -57,17 +62,34 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     ///
     /// # Correctness
     ///
-    /// `key` must satisfy the representation contract of [`Self`] and encode
-    /// a secret key with distribution `distr`; neither property is checked.
+    /// `key` must contain canonical NTT residues under `modulus` and encode
+    /// a secret key with distribution `distr` in the representation required by
+    /// [`Self`]. These properties are not checked or inferred from the values.
     ///
     /// # Panics
     ///
-    /// Panics if `key.len()` differs from `size.mask_len()`.
+    /// Panics if `key.len()` differs from `size.mask_len()`. The consumed secret
+    /// storage is erased on that failure.
     #[inline]
     #[must_use]
-    pub fn new(key: Vec<T>, size: GlweSize, distr: SecretKeyDistr) -> Self {
-        assert_eq!(key.len(), size.mask_len(), "NTT secret key layout mismatch");
-        Self { key, size, distr }
+    pub fn new(
+        key: Vec<T>,
+        size: GlweSize,
+        distr: SecretKeyDistr,
+        modulus: impl ExplicitModulus<ValueT = T>,
+    ) -> Self {
+        let secret = Self {
+            key,
+            size,
+            distr,
+            cipher_modulus: modulus.value(),
+        };
+        assert_eq!(
+            secret.key.len(),
+            size.mask_len(),
+            "NTT secret key layout mismatch"
+        );
+        secret
     }
 
     /// Returns the coefficient-domain GLWE layout.
@@ -98,9 +120,18 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         self.distr
     }
 
-    #[inline]
-    /// Iterates over the NTT-domain secret polynomials in GLWE component order.
+    /// Returns the explicit modulus recorded at import or conversion.
+    /// This does not identify a particular secret or NTT representation.
     #[must_use]
+    #[inline]
+    pub fn cipher_modulus(&self) -> T {
+        self.cipher_modulus
+    }
+
+    /// Iterates over the NTT-domain secret polynomials in GLWE component order.
+    /// The raw polynomial views do not carry the owning key's modulus metadata.
+    #[must_use]
+    #[inline]
     pub fn iter(&self) -> NttPolynomialIter<'_, T> {
         NttPolynomialIter::new(self.key.as_slice(), self.size.poly_length().get())
     }
@@ -137,6 +168,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
             key: vec![T::ZERO; size.mask_len()],
             size,
             distr: secret_key.distr(),
+            cipher_modulus: ntt_table.modulus(),
         };
         let modulus = UintModulus(ntt_table.modulus());
         for (coefficients, secret) in secret_key.iter().zip(key.key.chunks_exact_mut(poly_length)) {
@@ -178,5 +210,30 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         let coefficients = GlweSecretKey::generate(params.size(), params.secret_key_sampler(), rng);
         let key = Self::from_coeff_secret_key_kernel(&coefficients, ntt_table);
         (coefficients, key)
+    }
+
+    /// Checks the key, arithmetic modulus and table at an owning operation boundary.
+    /// Inner encryption/gadget kernels inherit these conditions without rechecking.
+    #[inline]
+    fn assert_ntt_compatible(
+        &self,
+        modulus: impl ExplicitModulus<ValueT = T>,
+        ntt_table: &impl NttTable<ValueT = T>,
+    ) {
+        assert_eq!(
+            self.cipher_modulus,
+            modulus.value(),
+            "NTT GLWE secret-key ciphertext modulus mismatch"
+        );
+        assert_eq!(
+            ntt_table.modulus(),
+            self.cipher_modulus,
+            "NTT ciphertext modulus mismatch"
+        );
+        assert_eq!(
+            ntt_table.poly_length().get(),
+            self.poly_length(),
+            "NTT polynomial length mismatch"
+        );
     }
 }

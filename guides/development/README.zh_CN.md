@@ -54,6 +54,8 @@ GLWE 布局优先使用已有的 [size 类型](../../crates/primus_lattice/src/s
 
 拥有型 LWE 秘密以 `q - 1` 保存系数域，覆盖 Native。通过 `LweSecretKey::new(coefficients, distribution, modulus)` 导入；系数规范性和声明分布仍由导入方保证。必须在 `as_view()` 前校验拥有型密钥的域，raw encoded/signed view 不携带模数元数据。TFHE 家族绑定、LWE key-switch 输出密钥生成和 GLWE bootstrapping 输入密钥生成在采样前完成该检查。元数据不标识具体秘密；显式擦除后即使公开元数据仍在，也应丢弃密钥。
 
+拥有型 `NttGlweSecretKey` 在导入/转换时记录显式 q，普通、系数域、截断与 gadget 边界集中核对 key、参数和 table。Key-switch、自同构、trace、scheme-switch 及 TFHE bootstrapping 生成继承 gadget 检查，内部 kernel 不逐层重复。`cipher_modulus()` 供仍持有 owner 的消费者读取 q；raw 多项式迭代器不携带域信息，相同 q/N 不能证明 NTT roots/order 或秘密身份。导入和擦除后的使用契约见 [GLWE README](../../crates/primus_glwe/README.zh_CN.md)。
+
 LWE 密钥生成接收 `LweParametersInner`，它保存维数、模数与预计算采样器，不含编码。普通 `LweParameters` 再绑定 Rounded codec，通过 `inner()` / `into_inner()` 提供采样状态。GLWE TFHE 使用 core 与 GGSW 参数构造，随后在客户端/程序编译器绑定 codec，详见[参数归属表](tfhe-parameters-and-boundaries.md)。
 
 ## 遍历数学对象

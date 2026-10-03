@@ -17,8 +17,8 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     ///
     /// # Panics
     ///
-    /// Panics if the key and parameter layouts differ, the table has the
-    /// wrong length or modulus, or `message_count` exceeds the polynomial length.
+    /// Panics before sampling if the key/parameter/table moduli or layouts differ,
+    /// or `message_count` exceeds the polynomial length.
     #[must_use]
     pub fn encrypt_truncated_zeros<M, Table, R>(
         &self,
@@ -35,16 +35,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         let size = params.size();
         let poly_length = size.poly_length().get();
         assert_eq!(self.size, size, "GLWE parameter layout mismatch");
-        assert_eq!(
-            ntt_table.poly_length().get(),
-            poly_length,
-            "NTT polynomial length mismatch"
-        );
-        assert_eq!(
-            ntt_table.modulus(),
-            params.cipher_modulus().value(),
-            "NTT ciphertext modulus mismatch"
-        );
+        self.assert_ntt_compatible(params.cipher_modulus(), ntt_table);
         assert!(
             message_count <= poly_length,
             "GLWE message count exceeds polynomial length"
@@ -94,11 +85,11 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     /// # Correctness
     ///
     /// Input coefficients must be canonical modulo `modulus`. This key and
-    /// `ntt_table` must use the same modulus and NTT representation.
+    /// `ntt_table` must use the same NTT roots and evaluation order.
     ///
     /// # Panics
     ///
-    /// Panics if the table has the wrong length or modulus, or the ciphertext
+    /// Panics if the key/arithmetic/table moduli or table length differ, or the ciphertext
     /// does not contain a full mask and at most one polynomial of body values.
     #[must_use]
     pub fn phase_truncated<M, Table, A>(
@@ -114,16 +105,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     {
         let size = self.size;
         let poly_length = size.poly_length().get();
-        assert_eq!(
-            ntt_table.poly_length().get(),
-            poly_length,
-            "NTT polynomial length mismatch"
-        );
-        assert_eq!(
-            ntt_table.modulus(),
-            modulus.value(),
-            "NTT ciphertext modulus mismatch"
-        );
+        self.assert_ntt_compatible(modulus, ntt_table);
         let (mask, body) = input.a_b_slices(size);
         assert!(
             body.len() <= poly_length,

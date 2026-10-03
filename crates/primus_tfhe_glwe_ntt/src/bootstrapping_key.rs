@@ -85,13 +85,15 @@ impl<T: FheUint, LM: Modulus<ValueT = T>> NttGlweBootstrappingKey<T, LM> {
     ///
     /// # Correctness
     ///
-    /// The output secret key must use the supplied table's NTT representation.
+    /// The output secret key must use the supplied table's NTT roots and evaluation
+    /// order; matching modulus metadata does not establish this representation.
     ///
     /// # Panics
     ///
     /// Panics on unsupported distributions or invalid secret coefficients, incompatible key/parameter
-    /// layouts or input moduli, NTT length/modulus or gadget workspace, key storage overflow,
-    /// or a rotation domain `2N` not representable by the input coefficient type.
+    /// layouts or input/output key moduli, NTT length/modulus or gadget workspace,
+    /// key storage overflow, or a rotation domain `2N` not representable by the
+    /// input coefficient type.
     pub fn generate_ntt<M, Table, R>(
         input_secret_key: &LweSecretKey<T>,
         input_parameters: &LweParametersInner<T, LM>,

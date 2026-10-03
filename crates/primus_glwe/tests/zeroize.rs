@@ -122,9 +122,35 @@ fn secret_storage_is_erased_on_drop_and_sampling_unwind() {
     let len = size_of_val(ntt.as_slice());
     ntt.truncate(size.mask_len());
     assert_erased_on_drop(
-        NttGlweSecretKey::new(ntt, size, SecretKeyDistr::UniformBinary),
+        NttGlweSecretKey::new(
+            ntt,
+            size,
+            SecretKeyDistr::UniformBinary,
+            primus_modulus::BarrettModulus::new(257),
+        ),
         data,
         len,
+    );
+
+    let invalid_ntt = vec![1u32; size.mask_len() - 1];
+    WATCHED.store(invalid_ntt.as_ptr().cast_mut().cast(), Ordering::SeqCst);
+    LENGTH.store(size_of_val(invalid_ntt.as_slice()), Ordering::SeqCst);
+    ERASED.store(false, Ordering::SeqCst);
+    assert!(
+        catch_unwind(AssertUnwindSafe(|| {
+            let _ = NttGlweSecretKey::new(
+                invalid_ntt,
+                size,
+                SecretKeyDistr::UniformBinary,
+                primus_modulus::BarrettModulus::new(257),
+            );
+        }))
+        .is_err()
+    );
+    assert!(WATCHED.load(Ordering::SeqCst).is_null());
+    assert!(
+        ERASED.load(Ordering::SeqCst),
+        "rejected NTT import was not erased"
     );
 
     let mut fourier = vec![Complex64::new(1.0, 1.0); 2 * size.fourier_mask_len()];

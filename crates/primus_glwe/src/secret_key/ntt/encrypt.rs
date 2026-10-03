@@ -13,7 +13,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     ///
     /// # Panics
     ///
-    /// Inherits the layout and plaintext-range panic conditions of [`Self::encrypt_to`].
+    /// Inherits the domain, layout and plaintext-range panic conditions of [`Self::encrypt_to`].
     #[must_use]
     pub fn encrypt<M, Table, R, A>(
         &self,
@@ -37,7 +37,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     ///
     /// # Panics
     ///
-    /// Panics if the key, parameter layout, transform, message length,
+    /// Panics if the key/parameter/table moduli, layouts, message length,
     /// or output length are incompatible. Compatibility is checked before
     /// writing the ciphertext.
     ///
@@ -273,16 +273,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         Table: NttTable<ValueT = T>,
     {
         assert_eq!(self.size, params.size(), "GLWE parameter layout mismatch");
-        assert_eq!(
-            ntt_table.poly_length().get(),
-            self.poly_length(),
-            "NTT polynomial length mismatch"
-        );
-        assert_eq!(
-            ntt_table.modulus(),
-            params.cipher_modulus().value(),
-            "NTT ciphertext modulus mismatch"
-        );
+        self.assert_ntt_compatible(params.cipher_modulus(), ntt_table);
         assert_eq!(
             output_len,
             self.size.glwe_len(),

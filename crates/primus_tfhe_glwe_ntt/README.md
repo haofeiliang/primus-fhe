@@ -33,7 +33,7 @@ ManyLUT interleaves outputs within one blind rotation; factorized MVB uses publi
 
 `TfheParameters::try_from_config(TfheConfig { .. })` checks mathematical choices; `TfheContext::<_, U32NttTable>::try_from_parameters(parameters)` prepares the transform table. Use `TfheContext::try_new(parameters, table)` to bind an existing table. `TfheConfig`, `TfheParameters`, `Encryptor` and `Decryptor` specialize the family API to `BarrettModulus`.
 
-NTT tables must implement `MonomialNttTable`; built-in tables support it. Context construction checks length and modulus. All transformed keys/values must follow the supplied table's representation.
+NTT tables must implement `MonomialNttTable`; built-in tables support it. Context construction checks length and modulus. All transformed keys/values must follow the supplied table's representation. Owning `NttGlweSecretKey` records q; ordinary and evaluation-key generation reject a different key modulus before sampling. Imports use `new(values, size, distribution, modulus)`. Equal q/N does not prove roots/order or secret identity; see the [GLWE key contracts](../primus_glwe/README.md).
 
 Choose `PbsOrder::BootstrapKeyswitch` for external dimension n or `KeyswitchBootstrap` for dimension dN. Use `context.allocate_lwe_ciphertext()` to allocate the selected layout. The basic example selects binary secrets and `BootstrapKeyswitch`; change its `ORDER` constant to use `KeyswitchBootstrap`.
 
