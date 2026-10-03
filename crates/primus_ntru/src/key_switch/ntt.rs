@@ -38,7 +38,7 @@ impl<T: FheUint> NttNtruKeySwitchingKey<T> {
     /// # Correctness
     ///
     /// Every input secret coefficient must have unsigned magnitude strictly
-    /// less than the target `parameters.ntru().cipher_modulus().value()`.
+    /// less than the target `parameters.inner().cipher_modulus().value()`.
     /// This is the output key's modulus; validity under another modulus or
     /// the key's distribution label does not establish this bound.
     /// The output secret key must use the supplied table's NTT representation.
@@ -64,7 +64,7 @@ impl<T: FheUint> NttNtruKeySwitchingKey<T> {
 
         let mut encoded_secret = Zeroizing::new(vec![T::ZERO; poly_length]);
         parameters
-            .ntru()
+            .inner()
             .cipher_modulus()
             .encode_signed_slice_to(input_secret_key.as_slice(), encoded_secret.as_mut_slice());
         Self::generate_encoded(

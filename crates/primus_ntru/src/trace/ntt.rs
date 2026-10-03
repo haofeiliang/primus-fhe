@@ -69,7 +69,7 @@ impl<T: FheUint> NttNtruTraceKey<T> {
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
     {
-        let q = parameters.ntru().cipher_modulus().value();
+        let q = parameters.inner().cipher_modulus().value();
         assert!(
             q & T::ONE == T::ONE && q < T::ONE << (T::BITS - 1),
             "trace normalization requires an odd modulus below 2^(T::BITS-1)"

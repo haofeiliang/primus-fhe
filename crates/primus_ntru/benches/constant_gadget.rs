@@ -27,7 +27,7 @@ fn ntt(c: &mut Criterion) {
         let modulus = BarrettModulus::new(1_125_899_906_826_241u64);
         let params = NtruParameters::new(n, 16, modulus, SecretKeyDistr::SparseTernary, 3.2);
         let table = UintNttTable::new(PolyLength::new(n), modulus).unwrap();
-        let (_, key) = NttNtruSecretKey::generate_pair(&params, &table, &mut rng).unwrap();
+        let (_, key) = NttNtruSecretKey::generate_pair(params.inner(), &table, &mut rng).unwrap();
         let mut workspace = NttNtruGadgetEncryptWorkspace::new(PolyLength::new(n));
         for log_basis in [3, 10] {
             let gadget = NlevParameters::with_ntru_params(
@@ -82,7 +82,8 @@ fn fourier(c: &mut Criterion) {
         );
         let table = RustFftTable::new(PolyLength::new(n));
         let mut fft = FftEngine::new(&table);
-        let (_, key) = FourierNtruSecretKey::generate_pair(&params, &mut fft, &mut rng).unwrap();
+        let (_, key) =
+            FourierNtruSecretKey::generate_pair(params.inner(), &mut fft, &mut rng).unwrap();
         let mut workspace = FourierNtruGadgetEncryptWorkspace::new(PolyLength::new(n));
         for log_basis in [3, 10] {
             let gadget = NlevParameters::with_ntru_params(

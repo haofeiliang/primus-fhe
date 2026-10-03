@@ -43,9 +43,9 @@ fn ntt_key_switch_preserves_plaintext() {
     let key_switching =
         NlevParameters::with_ntru_params(&parameters, DecompositionBaseLog::new(9), None);
     let (input_coefficient_key, input_key) =
-        NttNtruSecretKey::generate_pair(&parameters, &ntt, &mut rng).unwrap();
+        NttNtruSecretKey::generate_pair(parameters.inner(), &ntt, &mut rng).unwrap();
     let (output_coefficient_key, output_key) =
-        NttNtruSecretKey::generate_pair(&parameters, &ntt, &mut rng).unwrap();
+        NttNtruSecretKey::generate_pair(parameters.inner(), &ntt, &mut rng).unwrap();
     assert_ne!(
         input_coefficient_key.as_slice(),
         output_coefficient_key.as_slice()
@@ -100,9 +100,9 @@ fn check_fourier_key_switch<Table: FftTable>() {
     let key_switching =
         NlevParameters::with_ntru_params(&parameters, DecompositionBaseLog::new(8), None);
     let (input_coefficient_key, input_key) =
-        FourierNtruSecretKey::generate_pair(&parameters, &mut fft, &mut rng).unwrap();
+        FourierNtruSecretKey::generate_pair(parameters.inner(), &mut fft, &mut rng).unwrap();
     let (output_coefficient_key, output_key) =
-        FourierNtruSecretKey::generate_pair(&parameters, &mut fft, &mut rng).unwrap();
+        FourierNtruSecretKey::generate_pair(parameters.inner(), &mut fft, &mut rng).unwrap();
     assert_ne!(
         input_coefficient_key.as_slice(),
         output_coefficient_key.as_slice()

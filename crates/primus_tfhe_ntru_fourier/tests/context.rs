@@ -1,9 +1,10 @@
+use primus_decompose::primitive::ApproxSignedBasis;
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_fft::{FftTable, RustFftTable};
 use primus_lattice::LweDimension;
 use primus_lwe::LweParameters;
 use primus_modulus::NativeModulus;
-use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
+use primus_ntru::{NtruParameters, SecretKeyDistr};
 use primus_poly::PolyLength;
 use primus_tfhe_ntru_fourier::{TfheContext, TfheEvaluationError, TfheParameters};
 use rand::{SeedableRng, rngs::StdRng};
@@ -28,14 +29,16 @@ fn parameters(bootstrapping_log_basis: u32, key_switching_log_basis: u32) -> Tfh
         SecretKeyDistr::SparseTernary,
         0.7,
     );
+    let blind_rotation_basis = ApproxSignedBasis::new(
+        accumulator.cipher_modulus_value(),
+        DecompositionBaseLog::new(bootstrapping_log_basis),
+        Some(DecompositionLevelCount::new(4)),
+    );
 
     TfheParameters::try_new(
         external_lwe,
-        NlevParameters::with_ntru_params(
-            &accumulator,
-            DecompositionBaseLog::new(bootstrapping_log_basis),
-            Some(DecompositionLevelCount::new(4)),
-        ),
+        accumulator,
+        blind_rotation_basis,
         primus_tfhe_ntru::DecompositionConfig {
             log_basis: DecompositionBaseLog::new(key_switching_log_basis),
             level_count: Some(DecompositionLevelCount::new(4)),

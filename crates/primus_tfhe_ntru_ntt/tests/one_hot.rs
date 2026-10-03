@@ -1,10 +1,11 @@
+use primus_decompose::primitive::ApproxSignedBasis;
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_lattice::LweDimension;
 use primus_lwe::LweParameters;
 use primus_modulus::{BarrettModulus, PowOf2Modulus};
 use primus_ntru::{
-    NlevParameters, NtruCiphertext, NtruParameters, NttNgswCiphertext,
-    NttNtruExternalProductWorkspace, SecretKeyDistr,
+    NtruCiphertext, NtruParameters, NttNgswCiphertext, NttNtruExternalProductWorkspace,
+    SecretKeyDistr,
 };
 use primus_ntt::U64NttTable;
 use primus_poly::PolyLength;
@@ -61,6 +62,11 @@ fn selectors(distr: SecretKeyDistr) {
         level_count: None,
     };
     let ring = NtruParameters::new(N, 2 * M as u64, modulus, SecretKeyDistr::SparseTernary, 0.7);
+    let blind_rotation_basis = ApproxSignedBasis::new(
+        ring.cipher_modulus_value(),
+        DecompositionBaseLog::new(10),
+        None,
+    );
     let tfhe = TfheParameters::try_new(
         LweParameters::new(
             LweDimension::new(4),
@@ -69,7 +75,8 @@ fn selectors(distr: SecretKeyDistr) {
             distr,
             0.7,
         ),
-        NlevParameters::with_ntru_params(&ring, DecompositionBaseLog::new(10), None),
+        ring,
+        blind_rotation_basis,
         full,
         0.7,
     )

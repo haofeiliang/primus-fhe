@@ -97,7 +97,7 @@ where
         let secret = client_key.accumulator_ntru_secret_key();
         let transformed = NttNtruSecretKey::try_from_coeff_secret_key(
             secret,
-            parameters.trace().ntru().cipher_modulus(),
+            parameters.trace().inner().cipher_modulus(),
             self.context.table(),
         )?;
         Ok(

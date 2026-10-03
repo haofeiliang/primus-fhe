@@ -6,7 +6,7 @@ use primus_integer::FheUint;
 use primus_lattice::LweDimension;
 use primus_lwe::LweParameters;
 use primus_modulus::{BarrettModulus, NativeModulus, PowOf2Modulus};
-use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
+use primus_ntru::{NtruParameters, SecretKeyDistr};
 use primus_ntt::{MonomialNttTable, U32NttTable, U64NttTable};
 use primus_reduce::RingContext;
 use primus_test_allocations as allocations;
@@ -46,7 +46,13 @@ fn parameters<T: FheUint, M: RingContext<T>>(
             distr,
             0.7,
         ),
-        NlevParameters::with_ntru_params(&ring, DecompositionBaseLog::new(8), None),
+        ring,
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(8),
+            level_count: None,
+        }
+        .try_build(modulus.explicit_value())
+        .unwrap(),
         DecompositionConfig {
             log_basis: DecompositionBaseLog::new(8),
             level_count: None,

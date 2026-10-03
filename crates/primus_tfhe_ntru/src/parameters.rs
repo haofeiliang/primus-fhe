@@ -42,6 +42,7 @@ where
     LM: RingContext<T>,
 {
     external_lwe: LweParameters<T, LM>,
+    accumulator_ntru: NtruParameters<T, M>,
     blind_rotation: NlevParameters<T, M>,
     key_switching_lwe: LweParameters<T, LM>,
     key_switching_basis: ApproxSignedBasis<T>,
@@ -67,15 +68,14 @@ where
             config.accumulator_noise_standard_deviation,
         )
         .map_err(TfheParameterError::AccumulatorParameters)?;
-        let blind_rotation = NlevParameters::try_with_ntru_params(
-            &accumulator,
-            config.blind_rotation.log_basis,
-            config.blind_rotation.level_count,
-        )
-        .map_err(TfheParameterError::BootstrappingParameters)?;
+        let blind_rotation_basis = config
+            .blind_rotation
+            .try_build(accumulator.cipher_modulus_value())
+            .map_err(|source| TfheParameterError::BootstrappingParameters(source.into()))?;
         Self::try_new(
             config.external_lwe,
-            blind_rotation,
+            accumulator,
+            blind_rotation_basis,
             config.key_switching,
             config.key_switching_noise_standard_deviation,
         )
@@ -85,10 +85,13 @@ where
     /// External secrets must be binary or ternary; their dimension need not fit in N.
     /// Both domains must share plaintext modulus t, and 2N must fit in T.
     ///
+    /// The blind-rotation parameters share the accumulator's prepared sampling
+    /// state, while only the ordinary accumulator retains a message codec.
     /// Returns domain, decomposition or return-key noise-sampler errors.
     pub fn try_new(
         external_lwe: LweParameters<T, LM>,
-        blind_rotation: NlevParameters<T, M>,
+        accumulator_ntru: NtruParameters<T, M>,
+        blind_rotation_basis: ApproxSignedBasis<T>,
         key_switching: DecompositionConfig,
         key_switching_noise_standard_deviation: f64,
     ) -> Result<Self, TfheParameterError> {
@@ -96,11 +99,14 @@ where
         if !(distr.is_binary() || distr.is_ternary()) {
             return Err(TfheParameterError::UnsupportedClientSecretKeyDistribution);
         }
-        if external_lwe.plain_modulus_value() != blind_rotation.ntru().plain_modulus() {
+        if external_lwe.plain_modulus_value() != accumulator_ntru.plain_modulus() {
             return Err(TfheParameterError::PlainModulusMismatch);
         }
-        let two_n = 2 * blind_rotation.poly_length().get();
+        let two_n = 2 * accumulator_ntru.poly_length().get();
         T::try_from(two_n).map_err(|_| TfheParameterError::RotationDomainTooLarge)?;
+        let blind_rotation =
+            NlevParameters::try_with_basis(&accumulator_ntru, blind_rotation_basis)
+                .map_err(TfheParameterError::BootstrappingParameters)?;
         let key_switching_basis = key_switching
             .try_build(external_lwe.cipher_modulus_value())
             .map_err(TfheParameterError::KeySwitchingParameters)?;
@@ -116,6 +122,7 @@ where
             RotationModulusSwitch::new(external_lwe.cipher_modulus(), two_n, 1);
         Ok(Self {
             external_lwe,
+            accumulator_ntru,
             blind_rotation,
             key_switching_lwe,
             key_switching_basis,
@@ -148,7 +155,7 @@ where
     #[must_use]
     #[inline]
     pub fn accumulator_ntru(&self) -> &NtruParameters<T, M> {
-        self.blind_rotation.ntru()
+        &self.accumulator_ntru
     }
 
     /// Returns the dimension of externally visible LWE ciphertexts.

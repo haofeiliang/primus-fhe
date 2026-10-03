@@ -4,7 +4,7 @@ use num_traits::ConstZero;
 use primus_integer::FheUint;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-use crate::{NtruParameters, SecretKeyDistr};
+use crate::{NtruParametersInner, SecretKeyDistr};
 
 /// A small signed polynomial `f` shared by all NTRU transform backends.
 ///
@@ -93,7 +93,7 @@ impl<T: FheUint> NtruSecretKey<T> {
     /// [`crate::NttNtruSecretKey::generate`] or
     /// [`crate::FourierNtruSecretKey::generate`] when an immediately usable
     /// encryption key is required.
-    pub fn generate<R, M>(params: &NtruParameters<T, M>, rng: &mut R) -> Self
+    pub fn generate<R, M>(params: &NtruParametersInner<T, M>, rng: &mut R) -> Self
     where
         R: rand::Rng + rand::CryptoRng,
         M: primus_reduce::RingContext<T>,

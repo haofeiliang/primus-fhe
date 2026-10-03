@@ -1,13 +1,13 @@
 //! Ordinary encryption.
 
 use super::NttNtruSecretKey;
-use crate::{NtruParameters, NttNtruCiphertext};
+use crate::{NtruParameters, NtruParametersInner, NttNtruCiphertext};
 use primus_data::{Data, DataMut};
-use primus_encoding::PlaintextEmbedding;
+use primus_encoding::{PlaintextEmbedding, ScaledCodec};
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
 use primus_poly::{NttPolynomial, Polynomial};
-use primus_reduce::FieldContext;
+use primus_reduce::{FieldContext, RingContext};
 
 impl<T: FheUint> NttNtruSecretKey<T> {
     /// Allocates a ciphertext and delegates to [`Self::encrypt_to`], with the same
@@ -61,9 +61,10 @@ impl<T: FheUint> NttNtruSecretKey<T> {
             NttEncryptionMessage::Plaintext {
                 values: message.as_ref(),
                 embedding: PlaintextEmbedding::Unsigned,
+                codec: params.plaintext_codec(),
             },
             result.as_mut_view(),
-            params,
+            params.inner(),
             ntt_table,
             rng,
         );
@@ -89,9 +90,10 @@ impl<T: FheUint> NttNtruSecretKey<T> {
             NttEncryptionMessage::Plaintext {
                 values: message.as_ref(),
                 embedding: PlaintextEmbedding::Centered,
+                codec: params.plaintext_codec(),
             },
             result.as_mut_view(),
-            params,
+            params.inner(),
             ntt_table,
             rng,
         );
@@ -108,7 +110,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         &self,
         encoded: &Polynomial<A>,
         result: &mut NttNtruCiphertext<B>,
-        params: &NtruParameters<T, M>,
+        params: &NtruParametersInner<T, M>,
         ntt_table: &Table,
         rng: &mut R,
     ) where
@@ -134,7 +136,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
     /// Inherits [`Self::encrypt_zeros_to`]'s transform and layout requirements.
     pub fn encrypt_zeros<M, Table, R>(
         &self,
-        params: &NtruParameters<T, M>,
+        params: &NtruParametersInner<T, M>,
         ntt_table: &Table,
         rng: &mut R,
     ) -> NttNtruCiphertext<Vec<T>>
@@ -152,9 +154,9 @@ impl<T: FheUint> NttNtruSecretKey<T> {
     /// Message value validation remains in the codec, after coefficient noise sampling.
     fn encrypt_to_with_message<M, Table, R>(
         &self,
-        message: NttEncryptionMessage<'_, T>,
+        message: NttEncryptionMessage<'_, T, M>,
         result: NttNtruCiphertext<&mut [T]>,
-        params: &NtruParameters<T, M>,
+        params: &NtruParametersInner<T, M>,
         ntt_table: &Table,
         rng: &mut R,
     ) where
@@ -175,7 +177,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         &self,
         encoded: Polynomial<&[T]>,
         result: NttNtruCiphertext<&mut [T]>,
-        params: &NtruParameters<T, M>,
+        params: &NtruParametersInner<T, M>,
         ntt_table: &Table,
         rng: &mut R,
     ) where
@@ -207,7 +209,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
     pub fn encrypt_zeros_to<M, Table, R, B>(
         &self,
         result: &mut NttNtruCiphertext<B>,
-        params: &NtruParameters<T, M>,
+        params: &NtruParametersInner<T, M>,
         ntt_table: &Table,
         rng: &mut R,
     ) where
@@ -228,7 +230,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
     pub(super) fn encrypt_zeros_to_unchecked<M, Table, R>(
         &self,
         result: NttNtruCiphertext<&mut [T]>,
-        params: &NtruParameters<T, M>,
+        params: &NtruParametersInner<T, M>,
         ntt_table: &Table,
         rng: &mut R,
     ) where
@@ -251,9 +253,9 @@ impl<T: FheUint> NttNtruSecretKey<T> {
     /// this order preserves codec failures and RNG consumption across all message modes.
     fn encrypt_to_with_message_unchecked<M, Table, R>(
         &self,
-        message: NttEncryptionMessage<'_, T>,
+        message: NttEncryptionMessage<'_, T, M>,
         mut result: NttNtruCiphertext<&mut [T]>,
-        params: &NtruParameters<T, M>,
+        params: &NtruParametersInner<T, M>,
         ntt_table: &Table,
         rng: &mut R,
     ) where
@@ -265,9 +267,11 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         primus_distr::sample_gaussian_values_to(coefficients, params.noise_distribution(), rng);
         match message {
             NttEncryptionMessage::Zero => {}
-            NttEncryptionMessage::Plaintext { values, embedding } => params
-                .plaintext_codec()
-                .add_encode_slice_assign(coefficients, values, embedding),
+            NttEncryptionMessage::Plaintext {
+                values,
+                embedding,
+                codec,
+            } => codec.add_encode_slice_assign(coefficients, values, embedding),
             NttEncryptionMessage::Encoded(values) => Polynomial(&mut *coefficients)
                 .add_assign(&Polynomial(values), params.cipher_modulus()),
         }
@@ -278,16 +282,17 @@ impl<T: FheUint> NttNtruSecretKey<T> {
 }
 
 /// Borrowed message injection: plaintext codec, raw encoded coefficients, or zero.
-enum NttEncryptionMessage<'a, T: FheUint> {
+enum NttEncryptionMessage<'a, T: FheUint, M: RingContext<T>> {
     Zero,
     Plaintext {
         values: &'a [T],
         embedding: PlaintextEmbedding,
+        codec: &'a ScaledCodec<T, M>,
     },
     Encoded(&'a [T]),
 }
 
-impl<'a, T: FheUint> NttEncryptionMessage<'a, T> {
+impl<'a, T: FheUint, M: RingContext<T>> NttEncryptionMessage<'a, T, M> {
     fn as_slice(&self) -> Option<&'a [T]> {
         match self {
             Self::Zero => None,

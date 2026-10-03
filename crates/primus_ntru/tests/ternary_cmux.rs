@@ -69,7 +69,7 @@ fn encrypted_ternary_step_matches_phase_oracle_and_two_binary_cmuxes_without_all
     );
     let basis = gadget.basis();
     let mut rng = StdRng::seed_from_u64(0xB702);
-    let (coeff, key) = NttNtruSecretKey::generate_pair(&params, &ntt, &mut rng).unwrap();
+    let (coeff, key) = NttNtruSecretKey::generate_pair(params.inner(), &ntt, &mut rng).unwrap();
     let message = Polynomial::new((0..N as u64).map(|i| i % 16).collect::<Vec<_>>());
     let input = key
         .encrypt(&message, &params, &ntt, &mut rng)
@@ -210,7 +210,8 @@ fn check_fourier_step<T: TorusFftValue, Table: FftTable>() {
     );
     let basis = gadget.basis();
     let mut rng = StdRng::seed_from_u64(0xB703);
-    let (coeff, key) = FourierNtruSecretKey::generate_pair(&params, &mut fft, &mut rng).unwrap();
+    let (coeff, key) =
+        FourierNtruSecretKey::generate_pair(params.inner(), &mut fft, &mut rng).unwrap();
     let message = Polynomial::new(
         (0..N)
             .map(|i| T::try_from(i % 16).unwrap())

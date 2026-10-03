@@ -29,6 +29,38 @@ A fixed-length container is an ownership choice, not a speed claim. The migrated
 
 A cache-aligned base pointer does not align every subview. Polynomial strides in the measured N=1024 workload preserve alignment; an LWE entry has n+1 coefficients and generally does not. Public arithmetic still accepts normally aligned slices, including offset inputs. Keys or workspaces must not add padding without a separate layout design.
 
+## NTRU parameter sharing
+
+`NtruParameters` and `NlevParameters` share an `Arc<NtruParametersInner>` containing N, q and prepared secret/noise samplers. The ordinary codec and each gadget basis remain independently owned. Separate key-noise roles construct separate inner states. This shares distribution tables, never secret coefficients, RNG state or mutable workspace buffers; online operations borrow the inner state without cloning an Arc.
+
+Measured on 2026-10-03 against `d8eedf4f`, on AMD Ryzen 9 9955HX3D, x86_64 Linux, rustc 1.98.1 (48a229cea, LLVM 22.1.8), default features and the repository's `target-cpu=native`. Construction and retained-memory measurements used the existing `primus_test_allocations::CountingAllocator`, not timing or RSS. The three measured stages retained all returned values: create `NtruParameters::new(1024, 16u64, NativeModulus::new(), distr, 3.2)`, derive `NlevParameters::with_ntru_params(&ordinary, base_log=8, levels=Some(3))`, then clone that NLev. Run `measure` separately for each stage; all three parameter objects remain alive until after the measurements.
+
+| Secret distribution | Stage | Allocation count before → after | Allocated bytes before → after | Released bytes before → after |
+| --- | --- | --- | --- | --- |
+| Sparse ternary | Ordinary construction | 2 → 3 | 632 → 1096 | 312 → 312 |
+| Sparse ternary | Gadget derivation | 3 → 2 | 392 → 72 | 0 → 0 |
+| Sparse ternary | Gadget clone | 3 → 2 | 392 → 72 | 0 → 0 |
+| Gaussian, sigma=3.2 | Ordinary construction | 4 → 5 | 1264 → 1728 | 624 → 624 |
+| Gaussian, sigma=3.2 | Gadget derivation | 4 → 2 | 712 → 72 | 0 → 0 |
+| Gaussian, sigma=3.2 | Gadget clone | 4 → 2 | 712 → 72 | 0 → 0 |
+
+For these three live parameter objects, `sum(size_of_val)` fell from 1856 to 408 bytes. Total retained requested heap (`sum(allocated_bytes - released_bytes)`) fell from 1104 to 928 bytes for sparse ternary and from 2064 to 1248 bytes for Gaussian secrets. Inline plus retained heap therefore fell from **2960 to 1336 bytes**, or **3920 to 1656 bytes**, respectively. This estimate excludes allocator overhead and stack placement. The tradeoff is one additional 464-byte allocation at initial construction; the inner state was previously inline, so heap bytes alone do not express its total memory cost. Each gadget still allocates its own basis arrays. The temporary measurement harness was removed after recording these results.
+
+Online encryption was measured separately using the existing [encryption benchmark](../../crates/primus_ntru/benches/encryption.rs), with one `encrypt_to` per iteration. Setup, keys, tables and output allocation were excluded. N=1024, u64, t=16, sparse ternary secret, noise sigma=3.2; NTT used q=1125899906826241 and Fourier used the native modulus. Commands on the baseline and changed tree, respectively:
+
+```sh
+cargo bench -p primus_ntru --bench encryption -- 'n1024/encrypt_to' --sample-size 20 --warm-up-time 0.2 --measurement-time 1 --save-baseline before-3b
+cargo bench -p primus_ntru --bench encryption -- 'n1024/encrypt_to' --sample-size 20 --warm-up-time 0.2 --measurement-time 1 --baseline before-3b
+```
+
+| Backend | Before, µs (95% CI) | After, µs (95% CI) |
+| --- | --- | --- |
+| NTT | 10.679–10.688 | 10.452–10.640 |
+| RustFFT | 6.8924–6.9093 | 6.9015–6.9046 |
+| TFHE-FFT | 6.8672–6.8726 | 6.8720–6.8969 |
+
+This short local comparison found no regression; Fourier changes were not statistically significant, and NTT was slightly faster. The reason for sharing is reduced parameter duplication, not a general claim of faster encryption. SIMD was checked functionally, not benchmarked in this comparison. The ordinary encoding, RNG draw order, inverse filtering and gadget arithmetic are unchanged.
+
 ## Batched NTRU-to-LWE return
 
 `NtruLweKeySwitchingBatchWorkspace` keeps one canonical Q→q polynomial and fixed

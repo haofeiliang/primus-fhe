@@ -664,7 +664,8 @@ fn check_ntt_encryption<T: FheUint, Table: primus_ntt::MonomialNttTable<ValueT =
         0.7,
     );
     let mut rng = StdRng::seed_from_u64(0x4e54524e54);
-    let (secret, transformed) = NttNtruSecretKey::generate_pair(&params, &ntt, &mut rng).unwrap();
+    let (secret, transformed) =
+        NttNtruSecretKey::generate_pair(params.inner(), &ntt, &mut rng).unwrap();
     let message = Polynomial::new(
         (0..32usize)
             .map(|i| T::as_from((3 * i + 1) % 8))
@@ -693,7 +694,7 @@ fn check_fourier_encryption<T: primus_fft::TorusFftValue, Table: primus_fft::Fft
     );
     let mut rng = StdRng::seed_from_u64(0x4e54524654);
     let (secret, transformed) =
-        FourierNtruSecretKey::generate_pair(&params, &mut fft, &mut rng).unwrap();
+        FourierNtruSecretKey::generate_pair(params.inner(), &mut fft, &mut rng).unwrap();
     let message = Polynomial::new(
         (0..32usize)
             .map(|i| T::as_from((3 * i + 1) % 8))

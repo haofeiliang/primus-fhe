@@ -47,7 +47,7 @@ fn fourier_automorphism<Table: FftTable>() {
     );
     let mut rng = StdRng::seed_from_u64(0x6175_746f_464f_5552);
     let (secret, key) =
-        FourierNtruSecretKey::generate_pair(&parameters, &mut fft, &mut rng).unwrap();
+        FourierNtruSecretKey::generate_pair(parameters.inner(), &mut fft, &mut rng).unwrap();
     assert!(secret.as_slice().contains(&-1));
     let message: Vec<u32> = (0..N).map(|i| (3 * i as u32 + 1) % P).collect();
     let input = key.encrypt(
@@ -130,7 +130,7 @@ fn fourier_automorphism_rejects_incompatible_resources_before_writes() {
     let gadget = NlevParameters::with_ntru_params(&parameters, DecompositionBaseLog::new(3), None);
     let mut rng = StdRng::seed_from_u64(0x6175_746f_4642_4e44);
     let (secret, key) =
-        FourierNtruSecretKey::generate_pair(&parameters, &mut fft, &mut rng).unwrap();
+        FourierNtruSecretKey::generate_pair(parameters.inner(), &mut fft, &mut rng).unwrap();
     let mut generation = FourierNtruGadgetEncryptWorkspace::new(PolyLength::new(N));
     let auto = FourierNtruAutomorphismKey::generate(
         3,
@@ -206,7 +206,8 @@ fn ntt_automorphism_preserves_the_original_nonbinary_secret() {
     let table = UintNttTable::new(PolyLength::new(N), modulus).unwrap();
     let parameters = NtruParameters::new(N, P, modulus, SecretKeyDistr::SparseTernary, 0.7);
     let mut rng = StdRng::seed_from_u64(0x6175_746f_4e54_5452);
-    let (secret, key) = NttNtruSecretKey::generate_pair(&parameters, &table, &mut rng).unwrap();
+    let (secret, key) =
+        NttNtruSecretKey::generate_pair(parameters.inner(), &table, &mut rng).unwrap();
     assert!(secret.as_slice().contains(&-1));
     let message: Vec<u32> = (0..N).map(|i| (3 * i as u32 + 1) % P).collect();
     let input = key.encrypt(
@@ -274,7 +275,8 @@ fn ntt_automorphism_rejects_incompatible_resources_before_writes() {
     let parameters = NtruParameters::new(N, P, modulus, SecretKeyDistr::SparseTernary, 0.7);
     let gadget = NlevParameters::with_ntru_params(&parameters, DecompositionBaseLog::new(3), None);
     let mut rng = StdRng::seed_from_u64(0x6175_746f_626f_756e);
-    let (secret, key) = NttNtruSecretKey::generate_pair(&parameters, &table, &mut rng).unwrap();
+    let (secret, key) =
+        NttNtruSecretKey::generate_pair(parameters.inner(), &table, &mut rng).unwrap();
     let mut generation = NttNtruGadgetEncryptWorkspace::new(PolyLength::new(N));
     let auto = NttNtruAutomorphismKey::generate(
         3,

@@ -1,13 +1,14 @@
 //! Classic/sparse differential PBS and ManyLUT on reused workspaces;
 //! bucket layouts and quantization margins are part of the fixture.
 
+use primus_decompose::primitive::ApproxSignedBasis;
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_encoding::{PlaintextEmbedding, RoundedCodec};
 use primus_integer::FheUint;
 use primus_lattice::LweDimension;
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::BarrettModulus;
-use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
+use primus_ntru::{NtruParameters, SecretKeyDistr};
 use primus_ntt::{MonomialNttTable, U32NttTable, U64NttTable};
 use primus_test_allocations::{CountingAllocator, measure};
 use primus_tfhe::rotation::RotationModulusSwitch;
@@ -42,10 +43,16 @@ fn context<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
         SecretKeyDistr::SparseTernary,
         0.7,
     );
+    let blind_rotation_basis = ApproxSignedBasis::new(
+        acc.cipher_modulus_value(),
+        DecompositionBaseLog::new(8),
+        None,
+    );
     TfheContext::try_from_parameters(
         TfheParameters::try_new(
             lwe,
-            NlevParameters::with_ntru_params(&acc, DecompositionBaseLog::new(8), None),
+            acc,
+            blind_rotation_basis,
             primus_tfhe_ntru::DecompositionConfig {
                 log_basis: DecompositionBaseLog::new(8),
                 level_count: None,

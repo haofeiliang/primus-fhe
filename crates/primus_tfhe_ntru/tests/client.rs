@@ -1,8 +1,9 @@
 use primus_decompose::DecompositionBaseLog;
+use primus_decompose::primitive::ApproxSignedBasis;
 use primus_lwe::LweDimension;
 use primus_lwe::{LweCiphertext, LweParameters, LwePublicKey, LweSecretKey};
 use primus_modulus::{BarrettModulus, NativeModulus};
-use primus_ntru::{NlevParameters, NtruParameters, NtruSecretKey, SecretKeyDistr};
+use primus_ntru::{NtruParameters, NtruSecretKey, SecretKeyDistr};
 use primus_reduce::RingContext;
 use primus_test_allocations as allocations;
 use primus_tfhe_ntru::{
@@ -30,7 +31,12 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
             SecretKeyDistr::UniformBinary,
             0.7,
         ),
-        NlevParameters::with_ntru_params(&ring, DecompositionBaseLog::new(8), None),
+        ring.clone(),
+        ApproxSignedBasis::new(
+            ring.cipher_modulus_value(),
+            DecompositionBaseLog::new(8),
+            None,
+        ),
         primus_tfhe_ntru::DecompositionConfig {
             log_basis: DecompositionBaseLog::new(8),
             level_count: None,

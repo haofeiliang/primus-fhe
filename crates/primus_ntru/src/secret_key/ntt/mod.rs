@@ -6,7 +6,7 @@ use primus_poly::NttPolynomialOwned;
 use primus_reduce::FieldContext;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-use crate::{NtruError, NtruParameters, SecretKeyDistr, parameter::KEY_GENERATION_ATTEMPTS};
+use crate::{NtruError, NtruParametersInner, SecretKeyDistr, parameter::KEY_GENERATION_ATTEMPTS};
 
 use super::NtruSecretKey;
 
@@ -73,7 +73,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
     ///
     /// Every coefficient must have unsigned magnitude strictly less than
     /// `modulus.value()`. Conversion uses [`EncodeSigned`](primus_reduce::EncodeSigned),
-    /// without general reduction. Keys generated from matching [`NtruParameters`] satisfy this
+    /// without general reduction. Keys generated from matching [`NtruParametersInner`] satisfy this
     /// bound; callers importing keys or changing moduli must establish it.
     ///
     /// # Errors
@@ -134,7 +134,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
     /// form.
     /// See [`Self::generate_pair`] for error and panic conditions.
     pub fn generate<M, Table, R>(
-        params: &NtruParameters<T, M>,
+        params: &NtruParametersInner<T, M>,
         ntt_table: &Table,
         rng: &mut R,
     ) -> Result<Self, NtruError>
@@ -163,7 +163,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
     /// Panics if the NTT table length or modulus differs from the parameters,
     /// or a fixed weight exceeds the polynomial length or its sum overflows.
     pub fn generate_pair<M, Table, R>(
-        params: &NtruParameters<T, M>,
+        params: &NtruParametersInner<T, M>,
         ntt_table: &Table,
         rng: &mut R,
     ) -> Result<(NtruSecretKey<T>, Self), NtruError>
@@ -197,7 +197,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
     /// weight exceeds `active_length` or its sum overflows, or the NTT table
     /// length or modulus differs from the parameters.
     pub fn generate_padded_pair<M, Table, R>(
-        params: &NtruParameters<T, M>,
+        params: &NtruParametersInner<T, M>,
         active_length: usize,
         ntt_table: &Table,
         rng: &mut R,
@@ -233,8 +233,11 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         Err(NtruError::KeyGenerationExhausted)
     }
 
-    pub(super) fn assert_domain<M, Table>(&self, params: &NtruParameters<T, M>, ntt_table: &Table)
-    where
+    pub(super) fn assert_domain<M, Table>(
+        &self,
+        params: &NtruParametersInner<T, M>,
+        ntt_table: &Table,
+    ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
     {

@@ -82,7 +82,13 @@ fn ntt_scheme_switch_has_independent_bases_and_produces_cmux_controls() {
     let messages = messages(Q.into());
     let operands = messages.each_ref().map(|message| {
         let mut transformed = primus_ntru::NttNtruCiphertext::<Vec<u64>>::zero(N);
-        key.encrypt_encoded_to(message, &mut transformed, &parameters, &table, &mut rng);
+        key.encrypt_encoded_to(
+            message,
+            &mut transformed,
+            parameters.inner(),
+            &table,
+            &mut rng,
+        );
         let mut output = NtruCiphertext::<Vec<u64>>::zero(N);
         transformed.write_coeff_form(&mut output, &table);
         output
@@ -239,7 +245,7 @@ fn fourier<Table: FftTable>() {
         key.encrypt_encoded_to(
             message,
             &mut transformed,
-            &parameters,
+            parameters.inner(),
             &mut fft,
             &mut rng,
             &mut encrypt,

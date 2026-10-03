@@ -1,10 +1,11 @@
 use primus_decompose::DecompositionBaseLog;
+use primus_decompose::primitive::ApproxSignedBasis;
 use primus_encoding::{PlaintextEmbedding, RoundedCodec};
 use primus_fft::{FftTable, RustFftTable, TfheFftTable, TorusFftValue};
 use primus_lattice::LweDimension;
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::{BarrettModulus, NativeModulus};
-use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
+use primus_ntru::{NtruParameters, SecretKeyDistr};
 use primus_poly::PolyLength;
 use primus_reduce::{ReduceAdd, ReduceSub};
 use primus_test_allocations as allocations;
@@ -37,10 +38,16 @@ fn parameters<T: TorusFftValue>(distr: SecretKeyDistr, dimension: usize) -> Tfhe
         SecretKeyDistr::SparseTernary,
         0.7,
     );
+    let blind_rotation_basis = ApproxSignedBasis::new(
+        acc.cipher_modulus_value(),
+        DecompositionBaseLog::new(8),
+        None,
+    );
 
     TfheParameters::try_new(
         lwe,
-        NlevParameters::with_ntru_params(&acc, DecompositionBaseLog::new(8), None),
+        acc,
+        blind_rotation_basis,
         primus_tfhe_ntru::DecompositionConfig {
             log_basis: DecompositionBaseLog::new(8),
             level_count: None,

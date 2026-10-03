@@ -33,7 +33,8 @@ fn ntt(c: &mut Criterion, n: usize) {
     let modulus = BarrettModulus::new(1_125_899_906_826_241u64);
     let parameters = NtruParameters::new(n, 16, modulus, SecretKeyDistr::SparseTernary, 3.2);
     let table = UintNttTable::new(PolyLength::new(n), modulus).unwrap();
-    let (coeff_key, key) = NttNtruSecretKey::generate_pair(&parameters, &table, &mut rng).unwrap();
+    let (coeff_key, key) =
+        NttNtruSecretKey::generate_pair(parameters.inner(), &table, &mut rng).unwrap();
     let message = Polynomial::new(
         (0..n)
             .map(|i| if i < 8 { i as u64 } else { 0 })
@@ -47,6 +48,11 @@ fn ntt(c: &mut Criterion, n: usize) {
     let mut generation = NttNtruGadgetEncryptWorkspace::new(PolyLength::new(n));
     let mut switching = NttNtruExternalProductWorkspace::new(PolyLength::new(n));
     let mut auto_workspace = NttNtruAutomorphismWorkspace::new(PolyLength::new(n));
+    let output_parameters = NlevParameters::with_ntru_params(
+        &parameters,
+        DecompositionBaseLog::new(8),
+        Some(DecompositionLevelCount::new(3)),
+    );
     for log_basis in [3, 10] {
         let parameters = NlevParameters::with_ntru_params(
             &parameters,
@@ -80,11 +86,6 @@ fn ntt(c: &mut Criterion, n: usize) {
         );
         let mut trace_workspace = NttNtruTraceWorkspace::new(PolyLength::new(n));
         let mut expanded = vec![0u64; 8 * n];
-        let output_parameters = NlevParameters::with_ntru_params(
-            parameters.ntru(),
-            DecompositionBaseLog::new(8),
-            Some(DecompositionLevelCount::new(3)),
-        );
         let ss = NttNtruSchemeSwitchKey::generate(
             &coeff_key,
             &key,
@@ -227,7 +228,7 @@ fn fourier<Table: FftTable>(c: &mut Criterion, n: usize, backend: &str) {
     let table = Table::new(PolyLength::new(n));
     let mut fft = FftEngine::new(&table);
     let (coeff_key, key) =
-        FourierNtruSecretKey::generate_pair(&parameters, &mut fft, &mut rng).unwrap();
+        FourierNtruSecretKey::generate_pair(parameters.inner(), &mut fft, &mut rng).unwrap();
     let message = Polynomial::new(
         (0..n)
             .map(|i| if i < 8 { i as u64 } else { 0 })
@@ -247,6 +248,11 @@ fn fourier<Table: FftTable>(c: &mut Criterion, n: usize, backend: &str) {
     let mut generation = FourierNtruGadgetEncryptWorkspace::new(PolyLength::new(n));
     let mut switching = FourierNtruExternalProductWorkspace::new(PolyLength::new(n));
     let mut auto_workspace = FourierNtruAutomorphismWorkspace::new(PolyLength::new(n));
+    let output_parameters = NlevParameters::with_ntru_params(
+        &parameters,
+        DecompositionBaseLog::new(8),
+        Some(DecompositionLevelCount::new(3)),
+    );
     for log_basis in [3, 10] {
         let parameters = NlevParameters::with_ntru_params(
             &parameters,
@@ -280,11 +286,6 @@ fn fourier<Table: FftTable>(c: &mut Criterion, n: usize, backend: &str) {
         );
         let mut trace_workspace = FourierNtruTraceWorkspace::new(PolyLength::new(n));
         let mut expanded = vec![0u64; 8 * n];
-        let output_parameters = NlevParameters::with_ntru_params(
-            parameters.ntru(),
-            DecompositionBaseLog::new(8),
-            Some(DecompositionLevelCount::new(3)),
-        );
         let ss = FourierNtruSchemeSwitchKey::generate(
             &coeff_key,
             &key,

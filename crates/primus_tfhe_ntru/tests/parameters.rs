@@ -1,3 +1,4 @@
+use primus_decompose::primitive::ApproxSignedBasis;
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_lwe::LweDimension;
 use primus_lwe::LweParameters;
@@ -36,6 +37,10 @@ fn independent_domains_and_noise_are_preserved() {
         key_switching_noise_standard_deviation: 2.5,
     };
     let parameters = TfheParameters::try_from_config(config.clone()).unwrap();
+    assert!(std::ptr::eq(
+        parameters.accumulator_ntru().inner(),
+        parameters.blind_rotation().inner()
+    ));
     assert_eq!(parameters.poly_length(), PolyLength::new(N));
     assert_eq!(
         parameters.external_lwe_dimension(),
@@ -119,7 +124,12 @@ fn external_control_domain_and_common_plaintext_are_checked() {
         );
         let result = TfheParameters::try_new(
             external,
-            NlevParameters::with_ntru_params(&accumulator, DecompositionBaseLog::new(9), None),
+            accumulator.clone(),
+            ApproxSignedBasis::new(
+                accumulator.cipher_modulus_value(),
+                DecompositionBaseLog::new(9),
+                None,
+            ),
             DECOMPOSITION,
             0.7,
         );
@@ -139,10 +149,34 @@ fn external_control_domain_and_common_plaintext_are_checked() {
         SecretKeyDistr::UniformBinary,
         0.7,
     );
+    let matching_external = LweParameters::new(
+        LweDimension::new(1),
+        4,
+        modulus,
+        SecretKeyDistr::UniformBinary,
+        0.7,
+    );
+    assert!(matches!(
+        TfheParameters::try_new(
+            matching_external,
+            accumulator.clone(),
+            ApproxSignedBasis::new(Some(Q), DecompositionBaseLog::new(9), None),
+            DECOMPOSITION,
+            0.7
+        ),
+        Err(TfheParameterError::BootstrappingParameters(
+            primus_ntru::NlevParameterError::BasisModulusMismatch
+        ))
+    ));
     assert_eq!(
         TfheParameters::try_new(
             external,
-            NlevParameters::with_ntru_params(&accumulator, DecompositionBaseLog::new(9), None),
+            accumulator.clone(),
+            ApproxSignedBasis::new(
+                accumulator.cipher_modulus_value(),
+                DecompositionBaseLog::new(9),
+                None
+            ),
             DECOMPOSITION,
             0.7
         )
@@ -170,7 +204,12 @@ fn rotation_domain_must_be_representable_by_input_coefficients() {
         assert_eq!(
             TfheParameters::try_new(
                 external,
-                NlevParameters::with_ntru_params(&ring, DecompositionBaseLog::new(4), None),
+                ring.clone(),
+                ApproxSignedBasis::new(
+                    ring.cipher_modulus_value(),
+                    DecompositionBaseLog::new(4),
+                    None
+                ),
                 DECOMPOSITION,
                 0.7
             )
@@ -296,7 +335,6 @@ fn check_circuit_parameters<M: primus_reduce::RingContext<u64>>(
     modulus: M,
     foreign_modulus: Option<M>,
 ) {
-    use primus_decompose::primitive::ApproxSignedBasis;
     use primus_tfhe_ntru::{
         CircuitBootstrapConfig, CircuitBootstrapParameterError as Error, CircuitBootstrapParameters,
     };
@@ -311,7 +349,12 @@ fn check_circuit_parameters<M: primus_reduce::RingContext<u64>>(
                 SecretKeyDistr::UniformBinary,
                 0.7,
             ),
-            NlevParameters::with_ntru_params(&acc, DecompositionBaseLog::new(10), None),
+            acc.clone(),
+            ApproxSignedBasis::new(
+                acc.cipher_modulus_value(),
+                DecompositionBaseLog::new(10),
+                None,
+            ),
             primus_tfhe_ntru::DecompositionConfig {
                 log_basis: DecompositionBaseLog::new(10),
                 level_count: None,
@@ -344,7 +387,7 @@ fn check_circuit_parameters<M: primus_reduce::RingContext<u64>>(
     assert_eq!(
         configured
             .trace()
-            .ntru()
+            .inner()
             .noise_distribution()
             .standard_deviation(),
         1.25
@@ -357,7 +400,7 @@ fn check_circuit_parameters<M: primus_reduce::RingContext<u64>>(
     assert_eq!(
         configured
             .scheme_switch()
-            .ntru()
+            .inner()
             .noise_distribution()
             .standard_deviation(),
         2.5

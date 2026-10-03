@@ -111,7 +111,8 @@ fn check_bucket<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, level_cou
                 client_params.secret_key_distr(),
                 0.7,
             ),
-            gadget.clone(),
+            params.clone(),
+            gadget.basis().clone(),
             primus_tfhe_ntru::DecompositionConfig {
                 log_basis: DecompositionBaseLog::new(8),
                 level_count: None,
@@ -128,7 +129,7 @@ fn check_bucket<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, level_cou
     let digit_bound: i128 = basis.basis_value().as_into();
     let digit_bound = digit_bound / 2;
     let residual: i128 = basis.approximate_error_bound().as_into();
-    let (secret, key) = NttNtruSecretKey::generate_pair(&params, ntt, &mut rng).unwrap();
+    let (secret, key) = NttNtruSecretKey::generate_pair(params.inner(), ntt, &mut rng).unwrap();
     let secret_coefficients: Vec<i128> = secret.as_slice().iter().map(|&v| v.as_into()).collect();
     let secret_norm: i128 = secret_coefficients.iter().map(|v| v.abs()).sum();
 

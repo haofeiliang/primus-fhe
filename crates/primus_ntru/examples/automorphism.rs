@@ -18,7 +18,7 @@ fn main() {
     let parameters = NtruParameters::new(N, 16, modulus, SecretKeyDistr::SparseTernary, 0.7);
     let mut rng = StdRng::seed_from_u64(42);
     let (coeff_secret, secret) =
-        NttNtruSecretKey::generate_pair(&parameters, &table, &mut rng).unwrap();
+        NttNtruSecretKey::generate_pair(parameters.inner(), &table, &mut rng).unwrap();
     let key_parameters =
         NlevParameters::with_ntru_params(&parameters, DecompositionBaseLog::new(3), None);
     let auto = NttNtruAutomorphismKey::generate(

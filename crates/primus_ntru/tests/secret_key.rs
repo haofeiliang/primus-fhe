@@ -40,7 +40,7 @@ where
         0.7,
     );
     let mut rng = StdRng::seed_from_u64(42);
-    let secret_key = NttNtruSecretKey::generate(&params, &ntt, &mut rng).unwrap();
+    let secret_key = NttNtruSecretKey::generate(params.inner(), &ntt, &mut rng).unwrap();
     let messages = messages::<T>();
     let message = Polynomial::new(messages.as_slice());
 
@@ -81,7 +81,7 @@ where
     secret_key.encrypt_encoded_to(
         &Polynomial::new(encoded),
         &mut cipher,
-        &params,
+        params.inner(),
         &ntt,
         &mut rng,
     );
@@ -90,7 +90,7 @@ where
         messages
     );
 
-    secret_key.encrypt_zeros_to(&mut cipher, &params, &ntt, &mut rng);
+    secret_key.encrypt_zeros_to(&mut cipher, params.inner(), &ntt, &mut rng);
     assert_eq!(
         secret_key.decrypt(&cipher, &params, &ntt).as_ref(),
         vec![T::ZERO; POLY_LENGTH]
@@ -118,7 +118,7 @@ where
         0.7,
     );
     let mut rng = StdRng::seed_from_u64(42);
-    let secret_key = FourierNtruSecretKey::generate(&params, &mut fft, &mut rng).unwrap();
+    let secret_key = FourierNtruSecretKey::generate(params.inner(), &mut fft, &mut rng).unwrap();
     let mut encrypt_workspace = FourierNtruEncryptWorkspace::new(PolyLength::new(POLY_LENGTH));
     let mut decrypt_workspace = FourierNtruDecryptWorkspace::new(PolyLength::new(POLY_LENGTH));
     let messages = messages::<T>();
@@ -162,7 +162,7 @@ where
     secret_key.encrypt_encoded_to(
         &Polynomial::new(encoded),
         &mut cipher,
-        &params,
+        params.inner(),
         &mut fft,
         &mut rng,
         &mut encrypt_workspace,
@@ -176,7 +176,7 @@ where
 
     secret_key.encrypt_zeros_to(
         &mut cipher,
-        &params,
+        params.inner(),
         &mut fft,
         &mut rng,
         &mut encrypt_workspace,
@@ -237,7 +237,7 @@ fn key_generation_supports_small_coefficient_distributions() {
             distribution,
             0.7,
         );
-        NttNtruSecretKey::generate(&ntt_params, &ntt, &mut rng).unwrap();
+        NttNtruSecretKey::generate(ntt_params.inner(), &ntt, &mut rng).unwrap();
 
         let fourier_params = NtruParameters::new(
             POLY_LENGTH,
@@ -246,7 +246,7 @@ fn key_generation_supports_small_coefficient_distributions() {
             distribution,
             0.7,
         );
-        FourierNtruSecretKey::generate(&fourier_params, &mut fft, &mut rng).unwrap();
+        FourierNtruSecretKey::generate(fourier_params.inner(), &mut fft, &mut rng).unwrap();
     }
 }
 
@@ -352,6 +352,53 @@ fn fallible_parameters_check_ring_codec_and_samplers() {
 }
 
 #[test]
+fn parameter_parts_bind_codec_and_basis_to_shared_sampling_state() {
+    use primus_decompose::{DecompositionBaseLog, primitive::ApproxSignedBasis};
+    use primus_encoding::ScaledCodec;
+    use primus_ntru::{
+        NlevParameterError, NlevParameters, NtruParameterError, NtruParametersInner,
+    };
+    use std::sync::Arc;
+
+    let modulus = BarrettModulus::new(257u32);
+    let inner = Arc::new(NtruParametersInner::new(
+        PolyLength::new(32),
+        modulus,
+        SecretKeyDistr::gaussian(3.2),
+        0.7,
+    ));
+    let basis = |q| ApproxSignedBasis::new(q, DecompositionBaseLog::new(3), None);
+
+    // Native and other explicit bases must both be rejected before binding.
+    for foreign_q in [None, Some(769)] {
+        assert_eq!(
+            NlevParameters::try_from_parts(Arc::clone(&inner), basis(foreign_q)).err(),
+            Some(NlevParameterError::BasisModulusMismatch)
+        );
+    }
+    assert_eq!(
+        NtruParameters::try_from_parts(
+            Arc::clone(&inner),
+            ScaledCodec::new(4, BarrettModulus::new(769))
+        )
+        .err(),
+        Some(NtruParameterError::CodecModulusMismatch)
+    );
+
+    let gadget = NlevParameters::try_from_parts(Arc::clone(&inner), basis(Some(257))).unwrap();
+    let ordinary = NtruParameters::try_from_parts(inner, ScaledCodec::new(4, modulus)).unwrap();
+    let derived = NlevParameters::with_ntru_params(&ordinary, DecompositionBaseLog::new(4), None);
+    for parameters in [&gadget, &derived, &gadget.clone()] {
+        assert!(std::ptr::eq(ordinary.inner(), parameters.inner()));
+        assert_eq!(
+            parameters.nlev_len(),
+            32 * parameters.decompose_length().get()
+        );
+    }
+    assert!(std::ptr::eq(ordinary.inner(), ordinary.clone().inner()));
+}
+
+#[test]
 fn ordinary_operations_validate_before_sampling_or_writing() {
     use std::panic::{AssertUnwindSafe, catch_unwind};
     let mut rng = StdRng::seed_from_u64(73);
@@ -365,8 +412,8 @@ fn ordinary_operations_validate_before_sampling_or_writing() {
         SecretKeyDistr::UniformBinary,
         0.7,
     );
-    let key = NttNtruSecretKey::generate(&params, &ntt, &mut rng).unwrap();
-    let input = key.encrypt_zeros(&params, &ntt, &mut rng);
+    let key = NttNtruSecretKey::generate(params.inner(), &ntt, &mut rng).unwrap();
+    let input = key.encrypt_zeros(params.inner(), &ntt, &mut rng);
     let mut output = Polynomial::new(vec![7; POLY_LENGTH]);
     assert!(
         catch_unwind(AssertUnwindSafe(|| key.decrypt_to(
@@ -384,7 +431,7 @@ fn ordinary_operations_validate_before_sampling_or_writing() {
     assert!(
         catch_unwind(AssertUnwindSafe(|| key.encrypt_zeros_to(
             &mut wrong_output,
-            &params,
+            params.inner(),
             &ntt,
             &mut rng
         )))
@@ -409,10 +456,10 @@ fn ordinary_operations_validate_before_sampling_or_writing() {
         SecretKeyDistr::UniformBinary,
         0.7,
     );
-    let key = FourierNtruSecretKey::generate(&params, &mut fft, &mut rng).unwrap();
+    let key = FourierNtruSecretKey::generate(params.inner(), &mut fft, &mut rng).unwrap();
     let mut encrypt = FourierNtruEncryptWorkspace::new(PolyLength::new(POLY_LENGTH));
     let mut decrypt = FourierNtruDecryptWorkspace::new(PolyLength::new(POLY_LENGTH));
-    let mut input = key.encrypt_zeros(&params, &mut fft, &mut rng, &mut encrypt);
+    let mut input = key.encrypt_zeros(params.inner(), &mut fft, &mut rng, &mut encrypt);
     assert!(
         catch_unwind(AssertUnwindSafe(|| key.decrypt_to(
             &input,
@@ -431,7 +478,7 @@ fn ordinary_operations_validate_before_sampling_or_writing() {
     assert!(
         catch_unwind(AssertUnwindSafe(|| key.encrypt_zeros_to(
             &mut input,
-            &params,
+            params.inner(),
             &mut fft,
             &mut rng,
             &mut short_encrypt

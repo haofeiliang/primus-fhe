@@ -13,7 +13,9 @@ NTRU-TFHE 的参数与 LWE 客户端层；[NTT](../primus_tfhe_ntru_ntt/README.z
 
 维数选择使用 `LweDimension`；分解选择使用 `DecompositionBaseLog` 和 `Option<DecompositionLevelCount>`。这些单位只构造一次，参数访问器返回的值直接传给工作区。在原始存储或内核边界用 `.get()` 提取整数；组合长度和 basis/模数兼容性仍由构造器检查。
 
-直接组合入口为 `TfheParameters::try_new(external_lwe, blind_rotation, key_switching, key_switching_noise_standard_deviation)`。两个域共用明文模数 t，2N 必须能由 T 表示；外部维数 n 不要求小于等于 N。构造器返回带具体原因的参数错误，不验证安全性或完整噪声预算。
+直接组合入口为 `TfheParameters::try_new(external_lwe, accumulator_ntru, blind_rotation_basis, key_switching, key_switching_noise_standard_deviation)`。两个域共用明文模数 t，2N 必须能由 T 表示；外部维数 n 不要求小于等于 N。构造器返回带具体原因的参数错误，不验证安全性或完整噪声预算。
+
+`accumulator_ntru` 保存普通 NTRU 编码；盲旋转 NLev 参数只共享其环与采样状态，并绑定 Q 下的 `blind_rotation_basis`。Trace 和 scheme-switch 配置直接构造不含 codec 的 NLev 参数，各自选择噪声。
 
 `ClientKey` 保存独立 LWE 秘密 s 与 NTRU 环秘密 f。使用 `context.try_generate_keys(cbs_config, rng)` 生成配套密钥，或用 `ClientKey::new(s, f)` 导入。只有 f 需要可逆性检查，Fourier 还检查逆稳定性；外部秘密不要求补零、可逆或奇数重量。`external_lwe_secret_key()` 返回 q 下的 LWE 秘密。
 

@@ -188,7 +188,7 @@ fn ntt_trace_projection_and_expansion_match_ring_phases() {
     key.encrypt_encoded_to(
         &Polynomial(m.as_slice()),
         &mut transformed,
-        &parameters,
+        parameters.inner(),
         &table,
         &mut rng,
     );
@@ -259,7 +259,7 @@ fn ntt_trace_projection_and_expansion_match_ring_phases() {
         key.encrypt_encoded_to(
             &Polynomial(m.as_slice()),
             &mut transformed,
-            &parameters,
+            parameters.inner(),
             &table,
             &mut rng,
         );
@@ -318,7 +318,7 @@ fn fourier_trace<Table: FftTable>() {
     key.encrypt_encoded_to(
         &Polynomial(m.as_slice()),
         &mut transformed,
-        &parameters,
+        parameters.inner(),
         &mut fft,
         &mut rng,
         &mut encrypt,
@@ -380,7 +380,7 @@ fn fourier_trace<Table: FftTable>() {
         key.encrypt_encoded_to(
             &Polynomial(m.as_slice()),
             &mut transformed,
-            &parameters,
+            parameters.inner(),
             &mut fft,
             &mut rng,
             &mut encrypt,

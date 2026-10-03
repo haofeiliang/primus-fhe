@@ -83,7 +83,7 @@ impl<T: FheUint> NttNtruAutomorphismKey<T> {
         );
         let coeff_permutation = CoeffAutomorphismPermutation::new(degree, parameters.poly_length());
         let ntt_permutation = NttAutomorphismPermutation::new(degree, parameters.poly_length());
-        let modulus = parameters.ntru().cipher_modulus();
+        let modulus = parameters.inner().cipher_modulus();
         let mut encoded = Zeroizing::new(vec![T::ZERO; n]);
         let mut permuted = Zeroizing::new(vec![T::ZERO; n]);
         // Permute canonical residues: no signed negation or inversion of

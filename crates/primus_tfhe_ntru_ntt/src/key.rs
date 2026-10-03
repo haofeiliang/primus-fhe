@@ -190,7 +190,7 @@ where
         let parameters = self.context.parameters();
         let client = primus_lwe::LweSecretKey::generate(parameters.external_lwe(), rng);
         let (accumulator, _) = NttNtruSecretKey::generate_pair(
-            parameters.accumulator_ntru(),
+            parameters.accumulator_ntru().inner(),
             self.context.table(),
             rng,
         )?;
@@ -401,7 +401,7 @@ where
         let parameters = self.context.parameters();
         let client = primus_lwe::LweSecretKey::generate(parameters.external_lwe(), rng);
         let (accumulator, accumulator_ntt) = NttNtruSecretKey::generate_pair(
-            parameters.accumulator_ntru(),
+            parameters.accumulator_ntru().inner(),
             self.context.table(),
             rng,
         )?;

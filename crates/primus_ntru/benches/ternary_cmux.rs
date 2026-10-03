@@ -43,7 +43,7 @@ fn ntt<T: FheUint + PrimitiveRoot>(c: &mut Criterion, q: T, levels: usize) {
         Some(DecompositionLevelCount::new(levels)),
     );
     let mut rng = StdRng::seed_from_u64(0xB702);
-    let key = NttNtruSecretKey::generate(&params, &table, &mut rng).unwrap();
+    let key = NttNtruSecretKey::generate(params.inner(), &table, &mut rng).unwrap();
     let message = Polynomial::new(
         (0..N)
             .map(|i| T::try_from(i % 16).unwrap())
@@ -162,7 +162,8 @@ fn fourier<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str, 
         Some(DecompositionLevelCount::new(levels)),
     );
     let mut rng = StdRng::seed_from_u64(0xB703);
-    let (coeff, key) = FourierNtruSecretKey::generate_pair(&params, &mut fft, &mut rng).unwrap();
+    let (coeff, key) =
+        FourierNtruSecretKey::generate_pair(params.inner(), &mut fft, &mut rng).unwrap();
     let message = Polynomial::new(
         (0..N)
             .map(|i| T::try_from(i % 16).unwrap())

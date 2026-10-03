@@ -76,7 +76,7 @@ impl<T: FheUint> NttNtruSchemeSwitchKey<T> {
             .expect("scheme-switch output length overflow");
         let mut encoded = Zeroizing::new(vec![T::ZERO; n]);
         key_parameters
-            .ntru()
+            .inner()
             .cipher_modulus()
             .encode_signed_slice_to(secret_key.as_slice(), encoded.as_mut_slice());
         let mut data = NttNgswCiphertext::zero(key_parameters.nlev_len());

@@ -1,17 +1,18 @@
 //! Constant and signed gadget batches compared with polynomial encryption and RNG order.
 
-use primus_decompose::DecompositionBaseLog;
+use primus_decompose::{DecompositionBaseLog, primitive::ApproxSignedBasis};
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{
     FourierNgswCiphertext, FourierNlevCiphertext, FourierNtruGadgetEncryptWorkspace,
-    FourierNtruSecretKey, NlevParameters, NtruParameters, NttNgswCiphertext, NttNlevCiphertext,
-    NttNtruGadgetEncryptWorkspace, NttNtruSecretKey, SecretKeyDistr,
+    FourierNtruSecretKey, NlevParameters, NtruParameters, NtruParametersInner, NttNgswCiphertext,
+    NttNlevCiphertext, NttNtruGadgetEncryptWorkspace, NttNtruSecretKey, SecretKeyDistr,
 };
 use primus_ntt::{NttTable, UintNttTable};
 use primus_poly::{PolyLength, Polynomial};
 use rand::{Rng, SeedableRng, rngs::StdRng};
 use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::sync::Arc;
 
 // Functional ring size; keep the original word widths, moduli and decomposition.
 const POLY_LENGTH: usize = 64;
@@ -21,16 +22,21 @@ const EXPLICIT_MODULUS: u32 = 132_120_577;
 fn constant_nlev_matches_polynomial_encryption() {
     let modulus = BarrettModulus::new(EXPLICIT_MODULUS);
     let ntt = UintNttTable::new(PolyLength::new(POLY_LENGTH), modulus).unwrap();
-    let params = NtruParameters::new(
-        POLY_LENGTH,
-        16u32,
+    // Gadget encryption and key generation do not require a plaintext domain.
+    let inner = Arc::new(NtruParametersInner::<u32, _>::new(
+        PolyLength::new(POLY_LENGTH),
         modulus,
         SecretKeyDistr::SparseTernary,
         0.7,
+    ));
+    let basis = ApproxSignedBasis::new(
+        inner.cipher_modulus_value(),
+        DecompositionBaseLog::new(9),
+        None,
     );
-    let gadget = NlevParameters::with_ntru_params(&params, DecompositionBaseLog::new(9), None);
+    let gadget = NlevParameters::try_from_parts(inner, basis).unwrap();
     let mut rng = StdRng::seed_from_u64(75);
-    let key = NttNtruSecretKey::generate(&params, &ntt, &mut rng).unwrap();
+    let key = NttNtruSecretKey::generate(gadget.inner(), &ntt, &mut rng).unwrap();
     let mut workspace = NttNtruGadgetEncryptWorkspace::new(PolyLength::new(POLY_LENGTH));
     let mut expected = NttNlevCiphertext::<Vec<u32>>::zero(gadget.nlev_len());
     let mut actual = expected.clone();
@@ -91,16 +97,21 @@ fn constant_nlev_matches_polynomial_encryption() {
 fn check_fourier_constant_nlev<Table: FftTable>() {
     let table = Table::new(PolyLength::new(POLY_LENGTH));
     let mut fft = FftEngine::new(&table);
-    let params = NtruParameters::new(
-        POLY_LENGTH,
-        16u32,
+    // Gadget encryption and key generation do not require a plaintext domain.
+    let inner = Arc::new(NtruParametersInner::<u32, _>::new(
+        PolyLength::new(POLY_LENGTH),
         NativeModulus::new(),
         SecretKeyDistr::SparseTernary,
         0.7,
+    ));
+    let basis = ApproxSignedBasis::new(
+        inner.cipher_modulus_value(),
+        DecompositionBaseLog::new(8),
+        None,
     );
-    let gadget = NlevParameters::with_ntru_params(&params, DecompositionBaseLog::new(8), None);
+    let gadget = NlevParameters::try_from_parts(inner, basis).unwrap();
     let mut rng = StdRng::seed_from_u64(75);
-    let key = FourierNtruSecretKey::generate(&params, &mut fft, &mut rng).unwrap();
+    let key = FourierNtruSecretKey::generate(gadget.inner(), &mut fft, &mut rng).unwrap();
     let mut workspace = FourierNtruGadgetEncryptWorkspace::new(PolyLength::new(POLY_LENGTH));
     let mut expected = FourierNlevCiphertext::<Vec<Complex64>>::zero(gadget.fourier_nlev_len());
     let mut actual = expected.clone();
@@ -153,7 +164,7 @@ fn signed_ngsw_batches_match_polynomial_encryption() {
     );
     let gadget = NlevParameters::with_ntru_params(&params, DecompositionBaseLog::new(9), None);
     let mut rng = StdRng::seed_from_u64(79);
-    let key = NttNtruSecretKey::generate(&params, &ntt, &mut rng).unwrap();
+    let key = NttNtruSecretKey::generate(params.inner(), &ntt, &mut rng).unwrap();
     let mut workspace = NttNtruGadgetEncryptWorkspace::new(PolyLength::new(POLY_LENGTH));
     for input in [&[][..], &[1][..], &[0, 1, -1, 2][..]] {
         let mut expected = vec![0; input.len() * gadget.nlev_len()];
@@ -227,7 +238,7 @@ fn check_fourier_ngsw_batch<Table: FftTable>() {
     );
     let gadget = NlevParameters::with_ntru_params(&params, DecompositionBaseLog::new(8), None);
     let mut rng = StdRng::seed_from_u64(79);
-    let key = FourierNtruSecretKey::generate(&params, &mut fft, &mut rng).unwrap();
+    let key = FourierNtruSecretKey::generate(params.inner(), &mut fft, &mut rng).unwrap();
     let mut workspace = FourierNtruGadgetEncryptWorkspace::new(PolyLength::new(POLY_LENGTH));
     for input in [&[][..], &[1][..], &[0, 1, -1, 2][..]] {
         let mut expected = vec![Complex64::default(); input.len() * gadget.fourier_nlev_len()];

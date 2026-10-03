@@ -20,7 +20,7 @@ fn ntt(c: &mut Criterion, n: usize) {
     let parameters = NtruParameters::new(n, 16, modulus, SecretKeyDistr::SparseTernary, 3.2);
     let table = UintNttTable::new(PolyLength::new(n), modulus).unwrap();
     let mut rng = StdRng::seed_from_u64(42);
-    let (_, key) = NttNtruSecretKey::generate_pair(&parameters, &table, &mut rng).unwrap();
+    let (_, key) = NttNtruSecretKey::generate_pair(parameters.inner(), &table, &mut rng).unwrap();
     let message = Polynomial::new((0..n).map(|i| i as u64 % 16).collect::<Vec<_>>());
     let input = key.encrypt(&message, &parameters, &table, &mut rng);
     let mut output = input.clone();
@@ -59,7 +59,8 @@ fn fourier<Table: FftTable>(c: &mut Criterion, n: usize, backend: &str) {
     let table = Table::new(PolyLength::new(n));
     let mut fft = FftEngine::new(&table);
     let mut rng = StdRng::seed_from_u64(42);
-    let (_, key) = FourierNtruSecretKey::generate_pair(&parameters, &mut fft, &mut rng).unwrap();
+    let (_, key) =
+        FourierNtruSecretKey::generate_pair(parameters.inner(), &mut fft, &mut rng).unwrap();
     let mut encrypt = FourierNtruEncryptWorkspace::new(PolyLength::new(n));
     let mut decrypt = FourierNtruDecryptWorkspace::new(PolyLength::new(n));
     let message = Polynomial::new((0..n).map(|i| i as u64 % 16).collect::<Vec<_>>());

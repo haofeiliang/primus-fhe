@@ -1,11 +1,12 @@
+use primus_decompose::primitive::ApproxSignedBasis;
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_fft::{Complex64, FftTable, RustFftTable, TfheFftTable};
 use primus_lattice::LweDimension;
 use primus_lwe::LweParameters;
 use primus_modulus::PowOf2Modulus;
 use primus_ntru::{
-    FourierNgswCiphertext, FourierNtruExternalProductWorkspace, NlevParameters, NtruCiphertext,
-    NtruParameters, SecretKeyDistr,
+    FourierNgswCiphertext, FourierNtruExternalProductWorkspace, NtruCiphertext, NtruParameters,
+    SecretKeyDistr,
 };
 use primus_poly::PolyLength;
 use primus_test_allocations as allocations;
@@ -61,6 +62,11 @@ fn selectors<Table: FftTable>(distr: SecretKeyDistr) {
         level_count: None,
     };
     let ring = NtruParameters::new(N, 2 * M as u64, modulus, SecretKeyDistr::SparseTernary, 0.7);
+    let blind_rotation_basis = ApproxSignedBasis::new(
+        ring.cipher_modulus_value(),
+        DecompositionBaseLog::new(10),
+        None,
+    );
     let tfhe = TfheParameters::try_new(
         LweParameters::new(
             LweDimension::new(4),
@@ -69,7 +75,8 @@ fn selectors<Table: FftTable>(distr: SecretKeyDistr) {
             distr,
             0.7,
         ),
-        NlevParameters::with_ntru_params(&ring, DecompositionBaseLog::new(10), None),
+        ring,
+        blind_rotation_basis,
         full,
         0.7,
     )

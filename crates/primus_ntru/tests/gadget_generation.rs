@@ -89,7 +89,7 @@ fn ntt_nlev_generation_and_ngsw_cmux() {
         NlevParameters::with_ntru_params(&params, DecompositionBaseLog::new(9), None);
     let basis = gadget_params.basis();
     let mut rng = StdRng::seed_from_u64(42);
-    let secret_key = NttNtruSecretKey::generate(&params, &ntt, &mut rng).unwrap();
+    let secret_key = NttNtruSecretKey::generate(params.inner(), &ntt, &mut rng).unwrap();
     let mut gadget_workspace = NttNtruGadgetEncryptWorkspace::new(PolyLength::new(POLY_LENGTH));
 
     let mut nlev: NttNlevCiphertext<Vec<u32>> = NttNlevCiphertext::zero(gadget_params.nlev_len());
@@ -233,7 +233,7 @@ fn fourier_nlev_generation_and_ngsw_cmux() {
         NlevParameters::with_ntru_params(&params, DecompositionBaseLog::new(8), None);
     let basis = gadget_params.basis();
     let mut rng = StdRng::seed_from_u64(42);
-    let secret_key = FourierNtruSecretKey::generate(&params, &mut fft, &mut rng).unwrap();
+    let secret_key = FourierNtruSecretKey::generate(params.inner(), &mut fft, &mut rng).unwrap();
     let mut gadget_workspace = FourierNtruGadgetEncryptWorkspace::new(PolyLength::new(POLY_LENGTH));
     let mut decrypt_workspace = FourierNtruDecryptWorkspace::new(PolyLength::new(POLY_LENGTH));
 

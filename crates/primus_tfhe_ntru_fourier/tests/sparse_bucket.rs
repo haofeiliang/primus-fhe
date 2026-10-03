@@ -115,7 +115,8 @@ fn check<T: TorusFftValue, Table: FftTable>(level_count: Option<usize>) {
         .filter_map(|(i, &v)| (v == T::ONE).then_some(i))
         .collect();
     assert_eq!(support.len(), WEIGHT);
-    let (secret, key) = FourierNtruSecretKey::generate_pair(&params, &mut fft, &mut rng).unwrap();
+    let (secret, key) =
+        FourierNtruSecretKey::generate_pair(params.inner(), &mut fft, &mut rng).unwrap();
     drop(fft);
     let context = TfheContext::try_new(
         TfheParameters::try_new(
@@ -126,7 +127,8 @@ fn check<T: TorusFftValue, Table: FftTable>(level_count: Option<usize>) {
                 client_params.secret_key_distr(),
                 0.7,
             ),
-            gadget.clone(),
+            params.clone(),
+            gadget.basis().clone(),
             primus_tfhe_ntru::DecompositionConfig {
                 log_basis: DecompositionBaseLog::new(8),
                 level_count: None,

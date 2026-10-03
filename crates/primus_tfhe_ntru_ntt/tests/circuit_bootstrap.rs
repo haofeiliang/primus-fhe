@@ -1,13 +1,12 @@
 //! Gadget-scale phases and actual CMux/external-product consumption;
 //! parameter-constructor boundaries belong to the common family crate.
 
+use primus_decompose::primitive::ApproxSignedBasis;
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_lattice::LweDimension;
 use primus_lwe::LweParameters;
 use primus_modulus::{BarrettModulus, PowOf2Modulus};
-use primus_ntru::{
-    NlevParameters, NtruParameters, NttNgswCiphertext, NttNtruSecretKey, SecretKeyDistr,
-};
+use primus_ntru::{NtruParameters, NttNgswCiphertext, NttNtruSecretKey, SecretKeyDistr};
 use primus_ntt::U64NttTable;
 use primus_poly::Polynomial;
 use primus_test_allocations as allocations;
@@ -35,10 +34,16 @@ fn circuit_bootstrap(distr: SecretKeyDistr) {
         0.7,
     );
     let accumulator = NtruParameters::new(N, 4, modulus, SecretKeyDistr::SparseTernary, 0.7);
+    let blind_rotation_basis = ApproxSignedBasis::new(
+        accumulator.cipher_modulus_value(),
+        DecompositionBaseLog::new(10),
+        None,
+    );
 
     let tfhe = TfheParameters::try_new(
         lwe,
-        NlevParameters::with_ntru_params(&accumulator, DecompositionBaseLog::new(10), None),
+        accumulator,
+        blind_rotation_basis,
         primus_tfhe_ntru::DecompositionConfig {
             log_basis: DecompositionBaseLog::new(10),
             level_count: None,

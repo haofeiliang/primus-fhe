@@ -1,9 +1,10 @@
 use primus_decompose::DecompositionBaseLog;
+use primus_decompose::primitive::ApproxSignedBasis;
 use primus_encoding::RoundedCodec;
 use primus_lwe::LweDimension;
 use primus_lwe::LweParameters;
 use primus_modulus::NativeModulus;
-use primus_ntru::{NlevParameters, NtruParameters, NtruSecretKey, SecretKeyDistr};
+use primus_ntru::{NtruParameters, NtruSecretKey, SecretKeyDistr};
 use primus_tfhe_ntru::{ClientError, ClientKey, TfheParameters};
 
 const N: usize = 32;
@@ -13,6 +14,11 @@ fn parameters_with_plaintext(t: u32) -> TfheParameters<u32, NativeModulus<u32>> 
     let modulus = NativeModulus::new();
 
     let accumulator = NtruParameters::new(N, t, modulus, SecretKeyDistr::gaussian(3.2), 0.7);
+    let blind_rotation_basis = ApproxSignedBasis::new(
+        accumulator.cipher_modulus_value(),
+        DecompositionBaseLog::new(8),
+        None,
+    );
     TfheParameters::try_new(
         LweParameters::new(
             LweDimension::new(LWE_DIMENSION),
@@ -21,7 +27,8 @@ fn parameters_with_plaintext(t: u32) -> TfheParameters<u32, NativeModulus<u32>> 
             SecretKeyDistr::UniformBinary,
             0.7,
         ),
-        NlevParameters::with_ntru_params(&accumulator, DecompositionBaseLog::new(8), None),
+        accumulator,
+        blind_rotation_basis,
         primus_tfhe_ntru::DecompositionConfig {
             log_basis: DecompositionBaseLog::new(8),
             level_count: None,

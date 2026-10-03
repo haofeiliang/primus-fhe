@@ -263,9 +263,14 @@ fn secret_buffers_are_reused_and_erased() {
             3,
             || {
                 if padded {
-                    NttNtruSecretKey::generate_padded_pair(&ntt_params, N / 2, &ntt, &mut words)
+                    NttNtruSecretKey::generate_padded_pair(
+                        ntt_params.inner(),
+                        N / 2,
+                        &ntt,
+                        &mut words,
+                    )
                 } else {
-                    NttNtruSecretKey::generate_pair(&ntt_params, &ntt, &mut words)
+                    NttNtruSecretKey::generate_pair(ntt_params.inner(), &ntt, &mut words)
                 }
             },
             |result| {
@@ -286,13 +291,17 @@ fn secret_buffers_are_reused_and_erased() {
             || {
                 if padded {
                     FourierNtruSecretKey::generate_padded_pair(
-                        &fourier_params,
+                        fourier_params.inner(),
                         N / 2,
                         &mut fft,
                         &mut words,
                     )
                 } else {
-                    FourierNtruSecretKey::generate_pair(&fourier_params, &mut fft, &mut words)
+                    FourierNtruSecretKey::generate_pair(
+                        fourier_params.inner(),
+                        &mut fft,
+                        &mut words,
+                    )
                 }
             },
             |result| {
@@ -334,13 +343,17 @@ fn secret_buffers_are_reused_and_erased() {
             || {
                 if padded {
                     FourierNtruSecretKey::generate_padded_pair(
-                        &rejecting_params,
+                        rejecting_params.inner(),
                         N / 2,
                         &mut fft,
                         &mut rng,
                     )
                 } else {
-                    FourierNtruSecretKey::generate_pair(&rejecting_params, &mut fft, &mut rng)
+                    FourierNtruSecretKey::generate_pair(
+                        rejecting_params.inner(),
+                        &mut fft,
+                        &mut rng,
+                    )
                 }
             },
             |result| assert!(matches!(result, Err(NtruError::KeyGenerationExhausted))),

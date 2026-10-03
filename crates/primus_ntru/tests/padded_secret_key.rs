@@ -71,7 +71,7 @@ fn ntt_padded_ternary_has_exact_coefficient_phase() {
     for distribution in DISTRIBUTIONS.into_iter().chain([even]) {
         let params = NtruParameters::new(N, 16, modulus, distribution, 0.7);
         let (coeff, key) =
-            NttNtruSecretKey::generate_padded_pair(&params, ACTIVE_LENGTH, &table, &mut rng)
+            NttNtruSecretKey::generate_padded_pair(params.inner(), ACTIVE_LENGTH, &table, &mut rng)
                 .unwrap();
         assert_prefix(&coeff, distribution);
 
@@ -120,9 +120,13 @@ fn assert_fourier_prefix<Table: FftTable>(table: &Table) {
     let mut decrypt = FourierNtruDecryptWorkspace::new(PolyLength::new(N));
     for distribution in DISTRIBUTIONS {
         let params = NtruParameters::new(N, 16, NativeModulus::new(), distribution, 0.7);
-        let (coeff, key) =
-            FourierNtruSecretKey::generate_padded_pair(&params, ACTIVE_LENGTH, &mut fft, &mut rng)
-                .unwrap();
+        let (coeff, key) = FourierNtruSecretKey::generate_padded_pair(
+            params.inner(),
+            ACTIVE_LENGTH,
+            &mut fft,
+            &mut rng,
+        )
+        .unwrap();
         assert_prefix(&coeff, distribution);
         assert_eq!(coeff.as_slice().iter().sum::<i64>().rem_euclid(2), 1);
         // Reimport the returned signed key to check the pair's identity, rather
@@ -166,13 +170,13 @@ fn native_fixed_even_weights_fail_without_sampling() {
             let mut untouched = StdRng::seed_from_u64(0xB701);
             let result = if padded {
                 FourierNtruSecretKey::generate_padded_pair(
-                    &params,
+                    params.inner(),
                     ACTIVE_LENGTH,
                     &mut fft,
                     &mut rng,
                 )
             } else {
-                FourierNtruSecretKey::generate_pair(&params, &mut fft, &mut rng)
+                FourierNtruSecretKey::generate_pair(params.inner(), &mut fft, &mut rng)
             };
             assert!(matches!(result, Err(NtruError::NonInvertibleSecretKey)));
             assert_eq!(rng.next_u64(), untouched.next_u64());

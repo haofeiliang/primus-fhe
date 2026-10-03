@@ -3,9 +3,10 @@
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_integer::FheUint;
 use primus_modulus::NativeModulus;
-use primus_ntru::NlevParameters;
+use primus_ntru::{NlevParameters, NtruParametersInner};
 use primus_poly::PolyLength;
 use primus_reduce::RingContext;
+use std::sync::Arc;
 
 use crate::{CircuitBootstrapConfig, CircuitBootstrapParameterError, TfheParameters};
 
@@ -45,9 +46,9 @@ impl<T: FheUint, M: RingContext<T>> CircuitBootstrapParameters<T, M> {
             .output
             .try_build(accumulator.cipher_modulus_value())?;
         let key_parameters = |role, decomposition: crate::DecompositionConfig, noise| {
-            let ring = primus_ntru::NtruParameters::try_new(
-                accumulator.poly_length().get(),
-                accumulator.plain_modulus(),
+            // Each key role has its own encryption noise and needs no codec.
+            let inner = NtruParametersInner::try_new(
+                accumulator.poly_length(),
                 accumulator.cipher_modulus(),
                 accumulator.secret_key_distr(),
                 noise,
@@ -55,12 +56,14 @@ impl<T: FheUint, M: RingContext<T>> CircuitBootstrapParameters<T, M> {
             .map_err(|source| {
                 CircuitBootstrapParameterError::EncryptionParameters { role, source }
             })?;
-            NlevParameters::try_with_ntru_params(
-                &ring,
-                decomposition.log_basis,
-                decomposition.level_count,
-            )
-            .map_err(|source| CircuitBootstrapParameterError::GadgetParameters { role, source })
+            let basis = decomposition
+                .try_build(accumulator.cipher_modulus_value())
+                .map_err(|source| CircuitBootstrapParameterError::GadgetParameters {
+                    role,
+                    source: source.into(),
+                })?;
+            NlevParameters::try_from_parts(Arc::new(inner), basis)
+                .map_err(|source| CircuitBootstrapParameterError::GadgetParameters { role, source })
         };
         let trace = key_parameters("trace", config.trace, config.trace_noise_standard_deviation)?;
         let scheme_switch = key_parameters(
@@ -86,7 +89,7 @@ impl<T: FheUint, M: RingContext<T>> CircuitBootstrapParameters<T, M> {
             if parameters.poly_length() != tfhe.poly_length() {
                 return Err(CircuitBootstrapParameterError::PolynomialLengthMismatch { role });
             }
-            if parameters.ntru().cipher_modulus_value()
+            if parameters.inner().cipher_modulus_value()
                 != tfhe.accumulator_ntru().cipher_modulus_value()
             {
                 return Err(CircuitBootstrapParameterError::CipherModulusMismatch { role });
@@ -94,7 +97,7 @@ impl<T: FheUint, M: RingContext<T>> CircuitBootstrapParameters<T, M> {
         }
         // Explicit-modulus trace uses modular halving. Native trace instead
         // uses coefficient halving with a distinct rounding-error contract.
-        if let Some(q) = trace.ntru().cipher_modulus_value()
+        if let Some(q) = trace.inner().cipher_modulus_value()
             && (q & T::ONE != T::ONE || q >= T::ONE << (T::BITS - 1))
         {
             return Err(CircuitBootstrapParameterError::UnsupportedTraceModulus);

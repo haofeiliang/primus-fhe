@@ -12,15 +12,15 @@
 | --- | --- | --- |
 | `LweParameters` | n、t、q、秘密分布、系数噪声标准差 | n+1 密文长度可表示；Rounded codec、秘密/噪声 sampler；t 从 codec 读取 |
 | `GlweParameters` | k、N、t、Q、环秘密分布、系数噪声 | `GlweSize`、Scaled codec、`GlweParametersInner`；固定重量作用于整个 kN 秘密 |
-| `NtruParameters` | N、t、Q、环秘密分布、系数噪声 | Scaled codec、sampler；固定重量作用于整个 N 系数秘密；不预先证明秘密可逆 |
+| `NtruParameters` | N、t、Q、环秘密分布、系数噪声 | Scaled codec、共享 `NtruParametersInner`；固定重量作用于整个 N 系数秘密；不预先证明秘密可逆 |
 | `DecompositionConfig` | `log_basis`、`level_count` | 绑定 q 或 Q 后生成 `ApproxSignedBasis`；`None` 表示保留全部可用层，不等于零分解残差 |
 | `GlevParameters` / `GgswParameters` | `GlweSize`、共享模数/采样状态、该运算的 basis | 固定秘密重量、basis 模数和 gadget 布局；无需普通消息 codec |
-| `NlevParameters` | NTRU 环参数和该运算的 basis | 对应密文形状、层序及预计算 |
+| `NlevParameters` | 共享 NTRU 环/采样状态和该运算的 basis | basis 模数、N*L 布局和层序；无需普通消息 codec |
 | `TfheConfig` → `TfheParameters` | 家族特定的 LWE/环配置、BR/KS 分解、PBS order（GLWE） | 同域检查、派生返回布局和编码；NTT/Fourier 表由后端 context 绑定 |
 | `CircuitBootstrapConfig` → `CircuitBootstrapParameters` | output、trace、scheme-switch 三个 basis；后两者各自的噪声 | 环大小/模数继承累加环，输出布局由 output basis 派生；检查 interleaved 容量 |
 | `LookupTableConfig` | 输入 chunk 数 c、输出 chunk 数 o、低位系数 chunk 数 d | `M=t/2`、每个多项式的有效系数数 `M^d`、每输出多项式数 `M^(c-d)`，以及完整存储长度 |
 
-入口：[LWE](../../crates/primus_lwe/src/parameter.rs)、[GLWE](../../crates/primus_glwe/src/parameter/ordinary.rs)、[NTRU](../../crates/primus_ntru/src/parameter.rs)、[分解](../../crates/primus_decompose/src/parameters.rs)、[GLWE TFHE](../../crates/primus_tfhe_glwe/src/parameters.rs)、[NTRU TFHE](../../crates/primus_tfhe_ntru/src/parameters.rs)。
+入口：[LWE](../../crates/primus_lwe/src/parameter.rs)、[GLWE](../../crates/primus_glwe/src/parameter/ordinary.rs)、[NTRU](../../crates/primus_ntru/src/parameter/ordinary.rs)、[分解](../../crates/primus_decompose/src/parameters.rs)、[GLWE TFHE](../../crates/primus_tfhe_glwe/src/parameters.rs)、[NTRU TFHE](../../crates/primus_tfhe_ntru/src/parameters.rs)。
 
 所有这些配置的噪声标准差均以对应模数下的**系数单位**表示；Fourier 内部将环系数转为归一化 torus，不改变配置输入的单位。BR、返回 KS、trace、scheme switch 的误差来源不同。GLWE 普通 BR/KS 当前继承 accumulator 噪声；NTRU 的返回 KS 单独选择 q 下的噪声。CBS 的 trace 和 scheme-switch 噪声独立于普通 PBS。
 
@@ -37,6 +37,14 @@
 `GlevParameters::try_from_parts(size, Arc<GlweParametersInner>, basis)` 可直接构造 GLev/GGSW 参数。`GlweParameters::try_from_parts(size, shared_inner, codec)` 只在需要普通消息编码时组合 codec。两种入口都消费已经准备好的部件，不复制采样表、不重建 basis；独立布局与采样状态之间的固定重量检查仍由组合入口负责。既有 `try_with_basis` / `try_with_glwe_params` 适用于从已有普通参数派生 gadget，继续共享同一 Arc。
 
 TFHE 的 BSK 共享 accumulator 的布局和采样状态。KS 目标直接组合补零后的布局、small-secret 分布、accumulator 噪声与 KS basis；不创建临时普通 GLWE codec。CBS trace 和 scheme-switch 同样直接组合 gadget 参数，分别准备各自噪声的状态。普通 GLWE 加密、client Rounded 编码与 LUT 几何各自的检查仍保留在原有边界。
+
+## NTRU 普通与 gadget 参数组合
+
+`NtruParametersInner` 绑定 N、Q、秘密 sampler 和系数单位噪声，不保存 codec，也没有 GLWE 的 mask sampler。NTRU 的完整秘密长度就是 N，固定重量和支持界在 inner 构造时检查；补零密钥生成另检查活跃前缀。可逆性、最多 1024 次候选重试、Fourier 逆元稳定性仍归密钥生成。
+
+`NlevParameters::try_from_parts(Arc<NtruParametersInner>, basis)` 检查 basis/Q 和 N*L；`NtruParameters::try_from_parts(shared_inner, codec)` 检查 codec/Q，固定尺度恢复条件由 codec 自身保证。两者 `inner()` 均借用同一状态。密钥生成、encoded/zero 加密只需 inner；普通加解密仍使用含 codec 的参数。`try_with_basis` / `try_with_ntru_params` 是从普通参数派生 gadget 的便捷入口，只复制 Arc，不复制采样表。NLev 克隆仍复制其独立 basis；没有把秘密系数或 RNG 放入共享状态。
+
+TFHE 显式拥有普通 accumulator 参数以及共享其 inner 的 BR 参数。直接组合入口接收 `external_lwe, accumulator_ntru, blind_rotation_basis, key_switching, key_switching_noise_standard_deviation`，继续检查共同 t 和 2N 可表示性。CBS trace/scheme-switch 直接构造无 codec 的 NLev，每个噪声角色独立准备 inner。构造分配、保留内存与在线加密的对比见[采样状态共享测量](workspaces-and-storage.md#ntru-parameter-sharing)。
 
 ## 配置、绑定与工作区的职责
 
