@@ -316,12 +316,15 @@ fn ntt_automorphism_rejects_incompatible_resources_before_writes() {
         assert!(output.as_ref().iter().all(|&value| value == 7));
     }
     // Construction must reject a bad degree or domain before consuming randomness.
-    for (degree, table) in [
-        (0, &table),
-        (2, &table),
-        (2 * N + 1, &table),
-        (3, &short_table),
-        (3, &other_table),
+    let foreign_key =
+        NttNtruSecretKey::try_from_coeff_secret_key(&secret, other_modulus, &other_table).unwrap();
+    for (degree, key, table) in [
+        (0, &key, &table),
+        (2, &key, &table),
+        (2 * N + 1, &key, &table),
+        (3, &key, &short_table),
+        (3, &key, &other_table),
+        (3, &foreign_key, &table),
     ] {
         let mut rng = StdRng::seed_from_u64(37);
         let mut expected_rng = StdRng::seed_from_u64(37);
@@ -330,7 +333,7 @@ fn ntt_automorphism_rejects_incompatible_resources_before_writes() {
                 let _ = NttNtruAutomorphismKey::generate(
                     degree,
                     &secret,
-                    &key,
+                    key,
                     &gadget,
                     table,
                     &mut rng,

@@ -56,6 +56,8 @@ GLWE 布局优先使用已有的 [size 类型](../../crates/primus_lattice/src/s
 
 拥有型 `NttGlweSecretKey` 在导入/转换时记录显式 q，普通、系数域、截断与 gadget 边界集中核对 key、参数和 table。Key-switch、自同构、trace、scheme-switch 及 TFHE bootstrapping 生成继承 gadget 检查，内部 kernel 不逐层重复。`cipher_modulus()` 供仍持有 owner 的消费者读取 q；raw 多项式迭代器不携带域信息，相同 q/N 不能证明 NTT roots/order 或秘密身份。导入和擦除后的使用契约见 [GLWE README](../../crates/primus_glwe/README.zh_CN.md)。
 
+拥有型 `NttNtruSecretKey` 同样记录 `NTT(f)` 及逆元共用的显式 q。转换/生成使用已验证的同一模数/table；普通、phase 与 gadget 边界检查 owner 的域，求值密钥生成继承这些检查。NTRU 从有符号系数密钥转换并计算逆元，不接收 raw NTT 密钥/逆元对。与 LWE/NTT GLWE 的 raw 导入不同，转换会验证可逆性；有符号幅度界仍由调用方保证。三类拥有型秘密显式擦除后都应丢弃，公开域元数据不表示密钥仍可使用。详见 [NTRU README](../../crates/primus_ntru/README.zh_CN.md)。
+
 LWE 密钥生成接收 `LweParametersInner`，它保存维数、模数与预计算采样器，不含编码。普通 `LweParameters` 再绑定 Rounded codec，通过 `inner()` / `into_inner()` 提供采样状态。GLWE TFHE 使用 core 与 GGSW 参数构造，随后在客户端/程序编译器绑定 codec，详见[参数归属表](tfhe-parameters-and-boundaries.md)。
 
 ## 遍历数学对象

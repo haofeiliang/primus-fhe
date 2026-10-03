@@ -21,8 +21,8 @@ impl<T: FheUint> NttNtruSecretKey<T> {
     ///
     /// # Panics
     ///
-    /// Panics before writes if transform, input or output lengths
-    /// do not match the key or the table modulus differs from `modulus`.
+    /// Panics before writes if transform, input or output lengths do not match
+    /// the key, or if the key, table and arithmetic moduli disagree.
     pub fn phase_to<M, Table, A, B>(
         &self,
         cipher: &NttNtruCiphertext<A>,
@@ -35,16 +35,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        assert_eq!(
-            ntt_table.poly_length().get(),
-            self.poly_length(),
-            "NTT polynomial length mismatch"
-        );
-        assert_eq!(
-            ntt_table.modulus(),
-            modulus.value(),
-            "NTT ciphertext modulus mismatch"
-        );
+        self.assert_ntt_compatible(modulus, ntt_table);
         assert_eq!(cipher.as_ref().len(), self.poly_length());
         assert_eq!(result.as_ref().len(), self.poly_length());
 

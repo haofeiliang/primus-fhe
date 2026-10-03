@@ -56,6 +56,8 @@ Owning LWE secrets record the coefficient domain as `q - 1`, including Native. I
 
 Owning `NttGlweSecretKey` records explicit q on import/conversion and checks it with the parameter modulus and table at ordinary, coefficient, truncated and gadget boundaries. Key-switch, automorphism, trace, scheme-switch and TFHE bootstrapping generation inherit the gadget check; inner kernels do not repeat it. `cipher_modulus()` exposes q for consumers that still hold the owner. Raw polynomial iterators carry no domain metadata; equal q/N cannot prove NTT roots/order or secret identity. Import and erased-key contracts are in the [GLWE README](../../crates/primus_glwe/README.md).
 
+Owning `NttNtruSecretKey` likewise records explicit q for both `NTT(f)` and its inverse. Conversion/generation uses one validated modulus/table; ordinary, phase and gadget boundaries check the owner domain, and evaluation-key generation inherits those checks. NTRU imports a signed coefficient key and computes the inverse rather than accepting a raw NTT pair. Unlike raw LWE/NTT GLWE imports, conversion checks invertibility; the signed-magnitude bound remains the caller’s responsibility. All three owning secret types must be discarded after explicit erasure; public domain metadata is not a live-key marker. See the [NTRU README](../../crates/primus_ntru/README.md).
+
 LWE key generation takes `LweParametersInner`, which owns dimension, modulus and prepared samplers without encoding. Ordinary `LweParameters` adds a Rounded codec and exposes `inner()` / `into_inner()`. GLWE TFHE builds from the core and GGSW parameters, then binds codecs at clients/program compilers; see the [parameter ownership map](tfhe-parameters-and-boundaries.md).
 
 ## Traverse mathematical objects

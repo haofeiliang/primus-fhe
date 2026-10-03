@@ -3,7 +3,7 @@
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
 use primus_poly::NttPolynomialOwned;
-use primus_reduce::FieldContext;
+use primus_reduce::{ExplicitModulus, FieldContext};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::{NtruError, NtruParametersInner, SecretKeyDistr, parameter::KEY_GENERATION_ATTEMPTS};
@@ -19,15 +19,22 @@ pub use workspace::NttNtruGadgetEncryptWorkspace;
 
 /// An NTRU secret key represented by `NTT(f)` and its exact pointwise inverse.
 /// Both polynomials are securely erased on drop, including failed conversions.
-/// Explicit zeroization clears their lengths and makes the key unusable.
+/// The explicit coefficient modulus is recorded during conversion or generation;
+/// no transform table is retained. Explicit [`Zeroize::zeroize`] clears both
+/// polynomials, preserving only the public distribution and modulus metadata.
+/// The erased key must be discarded.
 ///
-/// Operations must use the construction modulus and NTT representation. The key
-/// stores neither modulus nor table; matching lengths do not establish this premise.
+/// # Correctness
+///
+/// Public operations check the recorded modulus and layout, but cannot establish
+/// secret identity, NTT roots or evaluation order. Callers must preserve the
+/// construction-time NTT representation.
 #[derive(Clone)]
 pub struct NttNtruSecretKey<T: FheUint> {
     key: NttPolynomialOwned<T>,
     inv_key: NttPolynomialOwned<T>,
     distr: SecretKeyDistr,
+    cipher_modulus: T,
 }
 
 impl<T: FheUint> Zeroize for NttNtruSecretKey<T> {
@@ -47,24 +54,37 @@ impl<T: FheUint> Drop for NttNtruSecretKey<T> {
 }
 
 impl<T: FheUint> NttNtruSecretKey<T> {
-    fn allocate(poly_length: usize, distr: SecretKeyDistr) -> Self {
+    /// Protects both buffers before conversion or rejection sampling can fail.
+    /// Every candidate and its inverse use the same validated modulus/table.
+    fn allocate(poly_length: usize, distr: SecretKeyDistr, cipher_modulus: T) -> Self {
         Self {
             key: NttPolynomialOwned::zero(poly_length),
             inv_key: NttPolynomialOwned::zero(poly_length),
             distr,
+            cipher_modulus,
         }
     }
 
     /// Returns the polynomial length.
+    #[must_use]
     #[inline]
     pub fn poly_length(&self) -> usize {
         self.key.as_ref().len()
     }
 
     /// Returns the proposal distribution before backend rejection sampling.
+    #[must_use]
     #[inline]
     pub fn distr(&self) -> SecretKeyDistr {
         self.distr
+    }
+
+    /// Returns the explicit modulus shared by `NTT(f)` and its pointwise inverse.
+    /// This does not identify a particular secret or NTT representation.
+    #[must_use]
+    #[inline]
+    pub fn cipher_modulus(&self) -> T {
+        self.cipher_modulus
     }
 
     /// Converts a coefficient key to NTT form and computes `NTT(f)^(-1)`.
@@ -80,6 +100,11 @@ impl<T: FheUint> NttNtruSecretKey<T> {
     ///
     /// Returns [`NtruError::NonInvertibleSecretKey`] if an NTT evaluation of
     /// `f` is not invertible modulo `modulus`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the table length differs from the coefficient key length or
+    /// its modulus differs from `modulus`.
     pub fn try_from_coeff_secret_key<M, Table>(
         secret_key: &NtruSecretKey<T>,
         modulus: M,
@@ -90,11 +115,19 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         Table: NttTable<ValueT = T>,
     {
         let poly_length = secret_key.poly_length();
-        assert_eq!(ntt_table.poly_length().get(), poly_length);
-        assert_eq!(ntt_table.modulus(), modulus.value());
+        assert_eq!(
+            ntt_table.poly_length().get(),
+            poly_length,
+            "NTT polynomial length mismatch"
+        );
+        assert_eq!(
+            ntt_table.modulus(),
+            modulus.value(),
+            "NTT ciphertext modulus mismatch"
+        );
 
         // Establish drop protection before encoding or inversion can fail.
-        let mut transformed = Self::allocate(poly_length, secret_key.distr());
+        let mut transformed = Self::allocate(poly_length, secret_key.distr(), modulus.value());
         transformed.try_update_from_coeff_secret_key(secret_key, modulus, ntt_table)?;
         Ok(transformed)
     }
@@ -216,7 +249,11 @@ impl<T: FheUint> NttNtruSecretKey<T> {
 
         let mut coefficient_key =
             NtruSecretKey::allocate(params.poly_length().get(), params.secret_key_distr());
-        let mut transformed = Self::allocate(params.poly_length().get(), params.secret_key_distr());
+        let mut transformed = Self::allocate(
+            params.poly_length().get(),
+            params.secret_key_distr(),
+            params.cipher_modulus().value(),
+        );
         let sampler = params.secret_key_sampler();
         for _ in 0..KEY_GENERATION_ATTEMPTS {
             sampler.sample_signed_to(&mut coefficient_key.key[..active_length], rng);
@@ -233,16 +270,42 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         Err(NtruError::KeyGenerationExhausted)
     }
 
-    pub(super) fn assert_domain<M, Table>(
-        &self,
-        params: &NtruParametersInner<T, M>,
-        ntt_table: &Table,
-    ) where
+    /// Checks ordinary and gadget parameters once before entering encryption kernels.
+    fn assert_domain<M, Table>(&self, params: &NtruParametersInner<T, M>, ntt_table: &Table)
+    where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
     {
-        assert_eq!(params.poly_length().get(), self.poly_length());
-        assert_eq!(ntt_table.poly_length().get(), self.poly_length());
-        assert_eq!(ntt_table.modulus(), params.cipher_modulus().value());
+        assert_eq!(
+            params.poly_length().get(),
+            self.poly_length(),
+            "NTRU parameter length mismatch"
+        );
+        self.assert_ntt_compatible(params.cipher_modulus(), ntt_table);
+    }
+
+    /// Checks the owning key, arithmetic modulus and table at an operation boundary.
+    /// Encryption levels and batches inherit this domain without rechecking it.
+    #[inline]
+    fn assert_ntt_compatible(
+        &self,
+        modulus: impl ExplicitModulus<ValueT = T>,
+        ntt_table: &impl NttTable<ValueT = T>,
+    ) {
+        assert_eq!(
+            self.cipher_modulus,
+            modulus.value(),
+            "NTT NTRU secret-key ciphertext modulus mismatch"
+        );
+        assert_eq!(
+            ntt_table.modulus(),
+            self.cipher_modulus,
+            "NTT ciphertext modulus mismatch"
+        );
+        assert_eq!(
+            ntt_table.poly_length().get(),
+            self.poly_length(),
+            "NTT polynomial length mismatch"
+        );
     }
 }

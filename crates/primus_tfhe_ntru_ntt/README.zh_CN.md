@@ -36,7 +36,7 @@ ManyLUT 通过交错共享一次盲旋转，多输出返回还共享一次 Q→q
 
 `TfheParameters::try_from_config(TfheConfig { .. })` 检查数学配置； `TfheContext::<_, U32NttTable>::try_from_parameters(parameters)` 准备变换表。 已有表用 `TfheContext::try_new(parameters, table)` 绑定。 `TfheConfig`、`TfheParameters`、`Encryptor` 和 `Decryptor` 将家族 API 特化为 `BarrettModulus`。 `TfheParameters<T, LM>` / `TfheContext<T, Table, LM>` 的 `LM` 指定独立外部模数类型（默认沿用后端模数类型）；`accumulator_modulus` 指定环 `Q`。
 
-NTT 表需要实现 `MonomialNttTable`，内置表均支持。Context 检查长度和模数； 所有变换域密钥及数据须遵循该表的表示约定。
+NTT 表需要实现 `MonomialNttTable`，内置表均支持。Context 检查长度和模数。累加秘密 `NttNtruSecretKey` 记录 Q，普通/gadget 加密在采样前核对它与参数/table 一致。所有变换域密钥及数据须遵循该表的 roots 和求值顺序；相同 Q/N 不能证明表示或秘密身份。
 
 `server_key.classic_controls()` 返回借用的 `ClassicControls` 视图，稀疏材料返回 `None`。视图的 `initializer()` 用于提升公开多项式；首坐标使用 NLEV bit，后续坐标使用 NGSW bit，ternary 秘密按正/负 bit 配对。CBS、one-hot 和 MVB 在构造时检查所需能力。可选的 `circuit_bootstrap_key()` 仍可用于查看或组合 CBS 材料。
 

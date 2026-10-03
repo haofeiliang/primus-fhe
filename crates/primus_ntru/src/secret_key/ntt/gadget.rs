@@ -10,6 +10,16 @@ use primus_reduce::FieldContext;
 
 impl<T: FheUint> NttNtruSecretKey<T> {
     /// Generates an NTT NLev encryption of a polynomial already encoded in `[0, q)`.
+    ///
+    /// # Correctness
+    ///
+    /// Input coefficients must be canonical under the parameter modulus. The
+    /// secret key must use the supplied NTT roots and evaluation order.
+    ///
+    /// # Panics
+    ///
+    /// Panics before sampling or writes if the key/parameter/table moduli or
+    /// lengths, input/output lengths or workspace length disagree.
     pub fn encrypt_nlev_to<M, Table, R, A, B>(
         &self,
         message: &Polynomial<A>,
@@ -94,7 +104,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
     ///
     /// # Correctness
     ///
-    /// The secret key must use the supplied transform representation and modulus.
+    /// The secret key must use the supplied NTT roots and evaluation order.
     pub fn encrypt_nlev_constant_to<M, Table, R, B>(
         &self,
         input: T,
@@ -164,6 +174,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
     }
 
     /// Generates an NTT NGSW encryption of a polynomial already encoded in `[0, q)`.
+    /// Inherits [`Self::encrypt_nlev_to`]'s representation and failure contracts.
     pub fn encrypt_ngsw_to<M, Table, R, A, B>(
         &self,
         message: &Polynomial<A>,
@@ -250,7 +261,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
     ///
     /// # Correctness
     ///
-    /// The secret key must use the supplied modulus and NTT representation.
+    /// The secret key must use the supplied NTT roots and evaluation order.
     pub fn encrypt_ngsw_signed_constant_batch_to<M, Table, R>(
         &self,
         input: &[T::SignedInteger],

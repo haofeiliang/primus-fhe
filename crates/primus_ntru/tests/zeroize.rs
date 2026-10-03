@@ -276,6 +276,7 @@ fn secret_buffers_are_reused_and_erased() {
             |result| {
                 let (coeff, key) = result.as_ref().unwrap();
                 assert_eq!(coeff.as_slice(), coefficient_key.as_slice());
+                assert_eq!(key.cipher_modulus(), 132_120_577);
                 let cipher = key.encrypt(&message, &ntt_params, &ntt, &mut rng);
                 assert_eq!(
                     key.decrypt(&cipher, &ntt_params, &ntt).as_ref(),
@@ -365,6 +366,7 @@ fn secret_buffers_are_reused_and_erased() {
     fourier_key.zeroize();
     assert!(coefficient_key.as_slice().is_empty());
     assert_eq!(ntt_key.poly_length(), 0);
+    assert_eq!(ntt_key.cipher_modulus(), 132_120_577);
     assert_eq!(fourier_key.poly_length(), 0);
 
     // Reject a destroyed Fourier key even in release mode: multiplying by an

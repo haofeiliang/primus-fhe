@@ -5,8 +5,9 @@ use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{
     FourierNgswCiphertext, FourierNlevCiphertext, FourierNtruGadgetEncryptWorkspace,
-    FourierNtruSecretKey, NlevParameters, NtruParameters, NtruParametersInner, NttNgswCiphertext,
-    NttNlevCiphertext, NttNtruGadgetEncryptWorkspace, NttNtruSecretKey, SecretKeyDistr,
+    FourierNtruSecretKey, NlevParameters, NtruParameters, NtruParametersInner, NtruSecretKey,
+    NttNgswCiphertext, NttNlevCiphertext, NttNtruGadgetEncryptWorkspace, NttNtruSecretKey,
+    SecretKeyDistr,
 };
 use primus_ntt::{NttTable, UintNttTable};
 use primus_poly::{PolyLength, Polynomial};
@@ -17,6 +18,21 @@ use std::sync::Arc;
 // Functional ring size; keep the original word widths, moduli and decomposition.
 const POLY_LENGTH: usize = 64;
 const EXPLICIT_MODULUS: u32 = 132_120_577;
+
+// The constant unit has identical NTT values and inverse at every modulus.
+// A foreign domain must still be rejected before gadget sampling or writes.
+fn foreign_ntt_key() -> NttNtruSecretKey<u32> {
+    let modulus = BarrettModulus::new(257u32);
+    let table = UintNttTable::new(PolyLength::new(POLY_LENGTH), modulus).unwrap();
+    let mut coefficients = vec![0i32; POLY_LENGTH];
+    coefficients[0] = 1;
+    NttNtruSecretKey::try_from_coeff_secret_key(
+        &NtruSecretKey::new(coefficients, SecretKeyDistr::UniformBinary),
+        modulus,
+        &table,
+    )
+    .unwrap()
+}
 
 #[test]
 fn constant_nlev_matches_polynomial_encryption() {
@@ -74,22 +90,25 @@ fn constant_nlev_matches_polynomial_encryption() {
         assert_eq!(actual.as_ref(), expected.as_ref());
         assert_eq!(actual_rng.next_u64(), reference_rng.next_u64());
     }
-    let mut rng = StdRng::seed_from_u64(89);
-    let mut expected_rng = StdRng::seed_from_u64(89);
-    actual.as_mut().fill(17);
-    assert!(
-        catch_unwind(AssertUnwindSafe(|| key.encrypt_nlev_constant_to(
-            EXPLICIT_MODULUS,
-            &mut actual,
-            &gadget,
-            &ntt,
-            &mut rng,
-            &mut workspace
-        )))
-        .is_err()
-    );
-    assert!(actual.as_ref().iter().all(|&value| value == 17));
-    assert_eq!(rng.next_u64(), expected_rng.next_u64());
+    let foreign_key = foreign_ntt_key();
+    for (key, constant) in [(&key, EXPLICIT_MODULUS), (&foreign_key, 1)] {
+        let mut rng = StdRng::seed_from_u64(89);
+        let mut expected_rng = StdRng::seed_from_u64(89);
+        actual.as_mut().fill(17);
+        assert!(
+            catch_unwind(AssertUnwindSafe(|| key.encrypt_nlev_constant_to(
+                constant,
+                &mut actual,
+                &gadget,
+                &ntt,
+                &mut rng,
+                &mut workspace
+            )))
+            .is_err()
+        );
+        assert!(actual.as_ref().iter().all(|&value| value == 17));
+        assert_eq!(rng.next_u64(), expected_rng.next_u64());
+    }
     check_fourier_constant_nlev::<RustFftTable>();
     check_fourier_constant_nlev::<TfheFftTable>();
 }
@@ -200,10 +219,14 @@ fn signed_ngsw_batches_match_polynomial_encryption() {
         assert_eq!(actual, expected);
         assert_eq!(actual_rng.next_u64(), reference_rng.next_u64());
     }
-    // Reject an invalid later constant before writing the first block.
-    for (input, length) in [
-        (&[1, i32::MIN][..], 2 * gadget.nlev_len()),
-        (&[1][..], gadget.nlev_len() + 1),
+    // Validate the owner domain even for an empty batch. Invalid later constants
+    // and incomplete output storage must also fail before writing the first block.
+    let foreign_key = foreign_ntt_key();
+    for (key, input, length) in [
+        (&key, &[1, i32::MIN][..], 2 * gadget.nlev_len()),
+        (&key, &[1][..], gadget.nlev_len() + 1),
+        (&foreign_key, &[1][..], gadget.nlev_len()),
+        (&foreign_key, &[][..], 0),
     ] {
         let mut output = vec![17; length];
         let mut rng = StdRng::seed_from_u64(89);

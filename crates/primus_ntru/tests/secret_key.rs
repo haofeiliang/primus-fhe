@@ -41,6 +41,7 @@ where
     );
     let mut rng = StdRng::seed_from_u64(42);
     let secret_key = NttNtruSecretKey::generate(params.inner(), &ntt, &mut rng).unwrap();
+    assert_eq!(secret_key.cipher_modulus(), cipher_modulus);
     let messages = messages::<T>();
     let message = Polynomial::new(messages.as_slice());
 
@@ -439,6 +440,44 @@ fn ordinary_operations_validate_before_sampling_or_writing() {
     );
     assert_eq!(rng.next_u64(), expected_rng.next_u64());
     assert!(wrong_output.as_ref().iter().all(|&value| value == 7));
+
+    // f = 1 and its inverse transform to all ones at either modulus. Only
+    // construction metadata can distinguish these domains; the values cannot.
+    let foreign_modulus = BarrettModulus::new(257u32);
+    let foreign_table = UintNttTable::new(PolyLength::new(POLY_LENGTH), foreign_modulus).unwrap();
+    let mut coefficients = vec![0i32; POLY_LENGTH];
+    coefficients[0] = 1;
+    let foreign_key = NttNtruSecretKey::try_from_coeff_secret_key(
+        &NtruSecretKey::new(coefficients, SecretKeyDistr::UniformBinary),
+        foreign_modulus,
+        &foreign_table,
+    )
+    .unwrap();
+    assert_eq!(foreign_key.cipher_modulus(), 257);
+    let mut cipher = primus_ntru::NttNtruCiphertext::new(vec![7; POLY_LENGTH]);
+    let mut rng = StdRng::seed_from_u64(93);
+    let mut expected_rng = StdRng::seed_from_u64(93);
+    assert!(
+        catch_unwind(AssertUnwindSafe(|| foreign_key.encrypt_zeros_to(
+            &mut cipher,
+            params.inner(),
+            &ntt,
+            &mut rng
+        )))
+        .is_err()
+    );
+    assert_eq!(rng.next_u64(), expected_rng.next_u64());
+    assert!(cipher.as_ref().iter().all(|&value| value == 7));
+    assert!(
+        catch_unwind(AssertUnwindSafe(|| foreign_key.phase_to(
+            &input,
+            &mut output,
+            modulus,
+            &ntt
+        )))
+        .is_err()
+    );
+    assert!(output.iter().all(|&value| value == 7));
 
     let table = RustFftTable::new(PolyLength::new(POLY_LENGTH));
     let mut fft = FftEngine::new(&table);

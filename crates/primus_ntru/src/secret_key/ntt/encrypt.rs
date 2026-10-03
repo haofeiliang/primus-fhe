@@ -36,12 +36,12 @@ impl<T: FheUint> NttNtruSecretKey<T> {
     ///
     /// # Correctness
     ///
-    /// Use the key's construction modulus and NTT representation.
+    /// Use the key's construction-time NTT roots and evaluation order.
     ///
     /// # Panics
     ///
     /// Panics before sampling on inconsistent key/parameter/table/input/output
-    /// lengths, or if the table modulus differs from `params`.
+    /// lengths or moduli.
     /// A plaintext-codec panic can leave partial output and consume randomness.
     pub fn encrypt_to<M, Table, R, A, B>(
         &self,
@@ -200,12 +200,12 @@ impl<T: FheUint> NttNtruSecretKey<T> {
     ///
     /// # Correctness
     ///
-    /// Use the key's construction modulus and NTT representation.
+    /// Use the key's construction-time NTT roots and evaluation order.
     ///
     /// # Panics
     ///
     /// Panics before sampling or writes if key/parameter/table/output lengths
-    /// disagree, or if the table modulus differs from `params`.
+    /// or moduli disagree.
     pub fn encrypt_zeros_to<M, Table, R, B>(
         &self,
         result: &mut NttNtruCiphertext<B>,

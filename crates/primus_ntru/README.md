@@ -31,13 +31,15 @@ Both parameter types expose `inner()` for key generation and raw/zero encryption
 
 Pass `params.inner()` to `NttNtruSecretKey::generate_pair` or `FourierNtruSecretKey::generate_pair` to retain both the signed coefficient secret and its transform representation. The coefficient secret generates evaluation keys; the transformed key and its cached inverse support encryption and phase extraction.
 
+`NttNtruSecretKey` records the explicit q shared by `NTT(f)` and its inverse; `cipher_modulus()` returns it. Conversion and generation establish both under one modulus/table. Ordinary, phase and gadget entry points check the owning key’s q against the supplied arithmetic parameters and table before sampling or output writes. Key-switch, automorphism, trace, scheme-switch and TFHE key generation inherit the gadget checks. Matching q/N does not prove NTT roots, evaluation order or secret identity; retain the construction representation. Import through `try_from_coeff_secret_key` requires signed coefficient magnitudes below q and rejects noninvertible secrets; failed conversion buffers are erased. No raw NTT-pair import is provided.
+
 NTT generation rejects keys with a zero evaluation. Fourier generation checks native-ring invertibility (odd coefficient sum) and the stability of the complex inverse. These conditions differ. Bounded rejection sampling can fail, and its attempt count and inversion routines are not promised constant time.
 
 `generate_padded_pair(params.inner(), active_length, ...)` samples only the active prefix and leaves the suffix zero; fixed weights apply to that prefix. It uses the same samplers as full-length generation, including ternary. Generation tries at most 1024 candidates. Native fixed binary/ternary distributions with even nonzero count return `NonInvertibleSecretKey` before sampling; otherwise an unsuccessful search returns `KeyGenerationExhausted`. A returned key follows the proposal distribution **conditioned on backend acceptance**; `distr()` records the proposal.
 
 General NTRU supports nonbinary ring secrets. The NTRU TFHE layer uses an independent external LWE secret for binary/ternary blind-rotation controls; it does not impose a zero-padded binary ring secret.
 
-Secret keys and private encryption/generation/decryption workspaces erase owned buffers on drop. Explicit workspace zeroization preserves reusable storage; explicit secret-key zeroization destroys the key. The built-in FFT backends also erase scratch on drop, and `FftEngine::zeroize_workspace()` supports a phase boundary for long-lived engines. Caller-owned plaintext and phase outputs retain their own lifetimes.
+Secret keys and private encryption/generation/decryption workspaces erase owned buffers on drop. Explicit workspace zeroization preserves reusable storage; explicit secret-key zeroization destroys the key. For NTT keys, public distribution and q metadata remain, but the erased key must be discarded. The built-in FFT backends also erase scratch on drop, and `FftEngine::zeroize_workspace()` supports a phase boundary for long-lived engines. Caller-owned plaintext and phase outputs retain their own lifetimes.
 
 The [automorphism example](examples/automorphism.rs) shows paired key generation, evaluation-key setup and reusable NTT evaluation under the original secret:
 

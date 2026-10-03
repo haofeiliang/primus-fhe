@@ -31,13 +31,15 @@ NLev 与 NGSW 存储的行数相同，但数学角色不同。`NLev[1]` 可通�
 
 将 `params.inner()` 传给 `NttNtruSecretKey::generate_pair` 或 `FourierNtruSecretKey::generate_pair`，同时保留有符号系数私钥和变换表示。系数私钥用于生成求值密钥；变换私钥及其缓存 逆元用于加密和相位提取。
 
+`NttNtruSecretKey` 记录 `NTT(f)` 及其逆元共同使用的显式 q，通过 `cipher_modulus()` 读取。转换和生成在同一模数/table 下建立两者。普通加密、phase 和 gadget 入口在采样或输出写入前核对拥有型密钥、算术参数和 table 的 q。Key-switch、自同构、trace、scheme-switch 和 TFHE 密钥生成继承 gadget 检查。相同 q/N 不能证明 NTT roots、求值顺序或秘密身份，后续操作仍须保留构造时的表示。通过 `try_from_coeff_secret_key` 导入时，有符号系数幅度须小于 q；不可逆秘密被拒绝，转换失败的缓冲区会擦除。不提供 raw NTT 密钥/逆元对导入。
+
 NTT 生成拒绝含零点值的私钥。Fourier 生成检查原生环可逆性（系数和为奇数）和 复数逆元的稳定性。这两组条件不同。有界拒绝采样可能失败，重试次数及逆元例程 不承诺常数时间。
 
 `generate_padded_pair(params.inner(), active_length, ...)` 只采样有效前缀，尾部保持为零； 固定重量作用于该前缀。它与完整长度生成共用采样器，包括 ternary。最多尝试 1024 个 候选；Native 的固定 binary/ternary 分布若非零总数为偶数，在采样前返回 `NonInvertibleSecretKey`，其他未找到可用候选的情况返回 `KeyGenerationExhausted`。 返回私钥服从候选分布**在后端接受条件下的条件分布**；`distr()` 记录候选分布。
 
 一般 NTRU 支持非 binary 环秘密。NTRU TFHE 使用独立外部 LWE 秘密作为 binary/ternary 盲旋转控制，不要求环秘密为补零 binary。
 
-私钥和私有加密、生成、解密工作区会在析构时擦除自身缓冲区。显式工作区清零保留 可复用存储；显式私钥清零会销毁私钥。内置 FFT 后端也在析构时擦除 scratch；长寿命 engine 可在处理阶段结束后调用 `FftEngine::zeroize_workspace()`。调用方持有的明文及 相位输出有各自的生命周期。
+私钥和私有加密、生成、解密工作区会在析构时擦除自身缓冲区。显式工作区清零保留 可复用存储；显式私钥清零会销毁私钥。NTT 私钥的公开分布和 q 元数据仍保留，但擦除后应丢弃私钥。内置 FFT 后端也在析构时擦除 scratch；长寿命 engine 可在处理阶段结束后调用 `FftEngine::zeroize_workspace()`。调用方持有的明文及 相位输出有各自的生命周期。
 
 [automorphism 示例](examples/automorphism.rs) 展示配对私钥生成、求值密钥构造， 以及复用工作区、在原私钥下完成 NTT 自同构：
 
