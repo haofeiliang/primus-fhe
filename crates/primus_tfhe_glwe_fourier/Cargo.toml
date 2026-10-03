@@ -8,8 +8,8 @@ primus_encoding = { path = "../primus_encoding" }
 primus_data = { path = "../primus_data" }
 primus_decompose = { path = "../primus_decompose" }
 primus_fft = { path = "../primus_fft" }
-primus_glwe = { path = "../primus_glwe" }
-primus_lattice = { path = "../primus_lattice" }
+primus_glwe = { path = "../primus_glwe", features = ["fourier"] }
+primus_lattice = { path = "../primus_lattice", features = ["fourier"] }
 primus_lwe = { path = "../primus_lwe" }
 primus_modulus = { path = "../primus_modulus" }
 primus_poly = { path = "../primus_poly" }

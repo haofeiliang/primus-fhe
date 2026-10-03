@@ -17,7 +17,7 @@
 | `just check [package] [features]` / `just lint [package] [features]` | 当前工具链的 all-targets 编译 / Clippy `-D warnings`，可选逗号分隔的 feature 列表 |
 | `just test [package] [features]` / `just test-doc [package]` | 当前工具链的普通测试 / doctest；nextest 不执行 doctest |
 | `just simd [package]` | nightly 全 features 的 Clippy 和普通测试 |
-| `just tfhe` / `just tfhe-simd` | 对 `primus_tfhe*` 执行 Clippy 和普通测试，分别使用当前工具链/default features 和 nightly/all features |
+| `just tfhe` / `just tfhe-simd` | 对 `primus_tfhe*` 执行 Clippy 和普通测试，分别使用当前工具链/双 FFT 引擎和 nightly/all features |
 | `just bench-smoke <package> <target> [Cargo options…]` | 显式选择一个 Criterion target，以 `--test` 执行工作负载及断言，不做统计采样 |
 
 可选 package 默认为整个 workspace，接受包名或加引号的 Cargo glob。普通测试始终显式使用 `--lib --tests`，避免 Criterion 进入 nextest 枚举/执行；all-targets 只编译和 lint 示例、基准。Clippy 已承担编译检查，组合入口不再重复全库 `cargo check`。
@@ -42,11 +42,12 @@ Nightly 基准 smoke 的显式命令为 `cargo +nightly bench -p <package> --ben
 
 [GitHub CI](../../.github/workflows/ci.yml) 只有 stable、nightly 两个独立 job，分别调用 `just ci` 和 `just ci-nightly`；它们可以并行运行，各自使用对应工具链的缓存。严格文档只在 nightly 全 features 下构建一次，doctest 在两个配置都运行。使用 Cargo/nextest 按可用 CPU 自动选择的并发；空 `RUSTFLAGS` 覆盖本机 native 配置，缓存使用 rust-cache 默认策略。这里不承诺冷构建或特定 runner 的完成时限。
 
-Feature 边界只增加五条库编译命令，不再单独重复运行五组测试：
+Feature 边界使用少量 `--lib` 编译命令，不重复运行数值测试矩阵：
 
-- stable 分别以 `--lib --no-default-features` 检查 data、lattice、encoding，避免其他成员或 dev-dependencies 的 feature 合并掩盖可选依赖关闭时的问题。
+- stable 分别检查 data、encoding；无后端组合检查 FFT 公共接口、LWE、两个 TFHE family，连同它们使用的 lattice、GLWE/NTRU 系数层。`--lib` 避免 dev-dependencies 补齐后端。
+- stable 分开编译 NTT TFHE/RNS GLWE 与 RustFFT TFHE，只检查代表配置，不增加 CI job 或 feature 全排列。
 - stable 合并编译 modulus/derive 与 distr/high_precision；RNS、aligned-vec 的启用路径已由默认 workspace 的实际消费者编译并运行。
-- nightly 合并编译 modulus/lattice/encoding 的 SIMD-only 库，不启用 derive/RNS。该组合与全 features 分开，保留弱可选依赖关闭时的检查。
+- nightly 编译 modulus/encoding 和两个 TFHE family 的 SIMD-only 库，不启用 derive/RNS/NTT/Fourier；覆盖下层弱依赖传播。该组合与全 features 分开。
 
 小参数数值契约继续由默认/全 feature 普通测试负责。大参数诊断、示例配置切换和基准 fixture 验证按下面的维护入口显式执行。
 
@@ -74,7 +75,7 @@ Feature 边界只增加五条库编译命令，不再单独重复运行五组测
 cargo metadata --no-deps --format-version 1 > /tmp/primus-targets.json
 
 # 单独计量构建：binaries-only 不调用各 binary 枚举用例。
-cargo nextest list --workspace --lib --tests --list-type binaries-only \
+cargo nextest list --workspace --features ntt,rustfft,tfhe-fft --lib --tests --list-type binaries-only \
   --message-format json > /tmp/primus-test-binaries.json
 
 # 复用同一批二进制枚举，避免把编译时间算入枚举时间。
@@ -98,11 +99,13 @@ cargo nextest list --binaries-metadata /tmp/primus-test-binaries.json \
 - `primus_lattice/rns`、`primus_encoding/rns` 及 `primus_data/aligned-vec` 在默认 workspace 中可由其他成员依赖启用。独立包运行不能假定这种 feature 合并；`rns_glev`、`rns_ggsw`、`bfv_rns` 等基准需要对应的 required-features。
 - 算术、模数、变换和基础同态层具有 u32/u64 及必要的较小字宽、多 limb 验证；每个运算的具体字宽从所属测试入口确认，不能从包内出现某个类型名推断全部路径均被覆盖。普通 PBS 和高精度密文求值有 u32/u64 路径；CBS/one-hot 的专用相位测试侧重 u64，u32 的实际消费由高精度求值和双字宽基准 smoke 补充。FFT 底层谱运算 fixture 使用 u32，u64 转换 oracle 及上层 Fourier 密文消费另行保留，不将转换测试称作完整谱运算覆盖。
 
-### FFT 引擎与 target 覆盖
+### 变换后端、FFT 引擎与 target 覆盖
+
+lattice、GLWE/NTRU 的 `ntt` / `fourier` 控制表示、转换、运算、工作区及可选依赖；默认仅保留系数能力。`rns` 同时启用 DCRT 所需的 NTT。两个 TFHE family 保持无后端；具体 TFHE crate 在普通依赖上固定选择对应能力。`simd` 仅传播到已启用的依赖。
 
 `primus_fft` 默认只提供公共接口和 torus 转换；`rustfft` / `tfhe-fft` 分别启用具体实现。实际使用 FFT 的 lattice、GLWE/NTRU、Fourier TFHE、LUT 及参数诊断包转发同名 feature。普通库依赖不强制选择引擎，`simd` 也不替代这两个开关。
 
-使用具体引擎的测试、示例和基准通过 Cargo target 的 `required-features` 声明需求。没有满足要求时，Cargo 跳过整个 target；混合 NTT/Fourier 对照文件也如此，不能把无 feature 的通过当作完整数值覆盖。`just` / `just ci` 的默认 Clippy、普通测试，以及 `just tfhe` 显式启用两个引擎，保持原有覆盖；nightly 的 all-features 入口保持不变。单包 `just check/lint/test` 默认使用空 feature 列表，可显式传入需要的组合。
+使用具体表示或引擎的测试、示例和基准通过 Cargo target 的 `required-features` 声明需求。没有满足要求时，Cargo 跳过整个 target；混合 NTT/Fourier 对照文件也如此，不能把无 feature 的通过当作完整数值覆盖。`just` / `just ci` 的默认 Clippy 和普通测试显式启用 `ntt,rustfft,tfhe-fft`；`just tfhe` 由具体后端选择表示，再显式启用两个引擎，保持原有覆盖。nightly 的 all-features 入口保持不变。单包 `just check/lint/test` 默认使用空 feature 列表，可显式传入需要的组合。
 
 FFT 自身按实际启用的引擎执行既有契约测试，纯 torus 转换单独保留在无引擎配置：
 
@@ -113,7 +116,7 @@ cargo nextest run -p primus_fft --lib --tests --features tfhe-fft
 cargo nextest run -p primus_fft --lib --tests --features rustfft,tfhe-fft
 ```
 
-单引擎的依赖隔离用独立 manifest 验证，不引用 test-support：在具体 Fourier TFHE 依赖上启用一个引擎，直接 `primus_fft` 依赖保持无 feature，编译并运行一次普通 PBS；`cargo tree -e normal,features` 应只有选定的 FFT 引擎。测试 target 的 dev-dependencies、workspace feature 合并和 all-features 构建都不能证明这个边界。CI 沿用原有两套 job，只在无默认 feature 的库检查中加入 FFT 公共接口，不增加配置全排列。
+依赖隔离用 workspace 外的独立 manifest 验证，不引用 test-support，并运行实际消费者：纯 LWE 加解密不含 NTT/FFT；NTT PBS 和 RNS/DCRT 不含 FFT；Fourier PBS 只包含选定引擎且不含 NTT。在具体 Fourier TFHE 依赖上启用一个引擎，直接 `primus_fft` 依赖保持无 feature。用 `cargo tree -e normal,features` 同时检查普通与 SIMD 配置；测试 target 的 dev-dependencies、workspace 合并和 all-features 构建都不能证明这一边界。高精 LUT 当前仍固定依赖两种 evaluator，不属于纯编译或单后端隔离入口。
 
 ## 契约与主要 setup 归属
 
@@ -214,7 +217,7 @@ cargo +nightly nextest run -p primus_encoding --lib --tests --features simd
 双引擎、独立 RNS、nightly SIMD/RNS 及 release 拒绝契约分别验证：
 
 ```sh
-cargo nextest run -p primus_lattice --lib --tests --features rustfft,tfhe-fft
+cargo nextest run -p primus_lattice --lib --tests --features ntt,rustfft,tfhe-fft
 cargo nextest run -p primus_lattice --lib --tests --features rns,rustfft,tfhe-fft
 cargo +nightly nextest run -p primus_lattice --lib --tests --all-features
 cargo nextest run -p primus_lattice --lib --tests --release --features rns,rustfft,tfhe-fft
@@ -242,13 +245,13 @@ cargo nextest run -p primus_lattice --lib --tests --release --features rns,rustf
 
 ```bash
 packages=(-p primus_lwe -p primus_glwe -p primus_ntru -p primus_glwe_rns)
-cargo check "${packages[@]}" --all-targets
-cargo nextest run "${packages[@]}" --lib --tests
-cargo clippy "${packages[@]}" --all-targets -- -D warnings
+cargo check "${packages[@]}" --all-targets --features ntt,rustfft,tfhe-fft
+cargo nextest run "${packages[@]}" --lib --tests --features ntt,rustfft,tfhe-fft
+cargo clippy "${packages[@]}" --all-targets --features ntt,rustfft,tfhe-fft -- -D warnings
 cargo +nightly check "${packages[@]}" --all-targets --all-features
 cargo +nightly nextest run "${packages[@]}" --lib --tests --all-features
 cargo +nightly clippy "${packages[@]}" --all-targets --all-features -- -D warnings
-cargo nextest run "${packages[@]}" --lib --tests --release
+cargo nextest run "${packages[@]}" --lib --tests --features ntt,rustfft,tfhe-fft --release
 ```
 
 Release 验证公开拒绝和擦除失效不依赖 debug assertions；doctest 按同样 package/feature 范围单独运行。本机 SIMD 通过只代表当前 CPU 上实际分派到的路径。这里不执行大参数统计、bench 或示例，也不替代 TFHE 消费者的端到端验证。

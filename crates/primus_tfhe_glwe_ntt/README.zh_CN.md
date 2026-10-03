@@ -90,6 +90,6 @@ Rustdoc 按职责组织 `key`（服务端材料）、`circuit_bootstrap`（CBS�
 
 ## 进一步阅读
 
-默认 features 为空；可选 `simd` 启用依赖中的 nightly SIMD 算术。
+本 crate 在普通依赖上固定启用 `ntt`；无需额外后端开关，单独使用不引入 Fourier/FFT。默认 features 为空；可选 `simd` 启用依赖中的 nightly SIMD 算术。
 
 [Boolean 门](../primus_tfhe/README.zh_CN.md#boolean-门) · [错误边界](../primus_tfhe/README.zh_CN.md#错误边界) · [实现说明](../primus_tfhe/IMPLEMENTATION.md) · [基准指南](../primus_tfhe/BENCHMARKS.md)

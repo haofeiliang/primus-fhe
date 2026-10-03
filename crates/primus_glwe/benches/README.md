@@ -12,19 +12,19 @@ English | [简体中文](README.zh_CN.md)
 Tests are grouped by operation: ordinary key workflows, gadget phases and external products, constant-batch equivalence, CMUX, key switching, automorphism, scheme switching, and trace/expansion/packing. `tests/common` holds the small schoolbook phase oracle shared by evaluation tests. Boundary rejection and capacity zeroization have dedicated test binaries. Fourier constant batches, automorphism, trace, packing key switching and scheme-switching tests exercise both RustFFT and tfhe-fft.
 
 ```sh
-cargo test -p primus_glwe --features rustfft,tfhe-fft
-cargo clippy -p primus_glwe --all-targets --features rustfft,tfhe-fft -- -D warnings
-cargo +nightly test -p primus_glwe --features simd,rustfft,tfhe-fft
+cargo test -p primus_glwe --features ntt,rustfft,tfhe-fft
+cargo clippy -p primus_glwe --all-targets --features ntt,rustfft,tfhe-fft -- -D warnings
+cargo +nightly test -p primus_glwe --features ntt,simd,rustfft,tfhe-fft
 ```
 
 ## Benchmarks
 
 ```sh
-cargo bench -p primus_glwe --bench encryption --features rustfft
-cargo bench -p primus_glwe --bench primitives --features rustfft,tfhe-fft
-cargo bench -p primus_glwe --bench key_conversion --features rustfft
+cargo bench -p primus_glwe --bench encryption --features ntt,rustfft
+cargo bench -p primus_glwe --bench primitives --features ntt,rustfft,tfhe-fft
+cargo bench -p primus_glwe --bench key_conversion --features ntt,rustfft
 # Check every case without collecting timing samples:
-cargo bench -p primus_glwe --features rustfft,tfhe-fft -- --test
+cargo bench -p primus_glwe --features ntt,rustfft,tfhe-fft -- --test
 ```
 
 All benches use `(k, N) = (1, 1024)` and `(2, 4096)`. Each iteration performs one operation with reusable output/scratch; key/table construction and allocation remain outside timing. Parameters and fixed seeds are recorded in the bench sources. These workloads track regressions rather than compare matched security; they are not security parameter recommendations.

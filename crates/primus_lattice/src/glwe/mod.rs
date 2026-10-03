@@ -2,6 +2,7 @@ mod big_uint;
 
 mod coeff;
 mod extract;
+#[cfg(feature = "ntt")]
 mod ntt;
 mod truncate;
 
@@ -10,11 +11,13 @@ mod crt;
 #[cfg(feature = "rns")]
 mod dcrt;
 /// Fourier-domain GLWE ciphertexts.
+#[cfg(feature = "fourier")]
 mod fourier;
 
 pub use big_uint::{BigUintGlwe, BigUintGlweIter, BigUintGlweIterMut};
 
 pub use coeff::{Glwe, GlweIter, GlweIterMut};
+#[cfg(feature = "ntt")]
 pub use ntt::{NttGlwe, NttGlweIter, NttGlweIterMut};
 pub use truncate::TruncatedGlwe;
 
@@ -22,6 +25,7 @@ pub use truncate::TruncatedGlwe;
 pub use crt::{CrtGlwe, CrtGlweIter, CrtGlweIterMut};
 #[cfg(feature = "rns")]
 pub use dcrt::{DcrtGlwe, DcrtGlweIter, DcrtGlweIterMut};
+#[cfg(feature = "fourier")]
 pub use fourier::{FourierGlwe, FourierGlweIter, FourierGlweIterMut, FourierGlweOwned};
 
 /// TFHE torus GLWE ciphertext (coefficient domain).

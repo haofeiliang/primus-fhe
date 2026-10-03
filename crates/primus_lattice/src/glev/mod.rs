@@ -1,4 +1,5 @@
 mod coeff;
+#[cfg(feature = "ntt")]
 mod ntt;
 
 #[cfg(feature = "rns")]
@@ -6,15 +7,18 @@ mod crt;
 #[cfg(feature = "rns")]
 mod dcrt;
 /// Fourier-domain GLev ciphertexts.
+#[cfg(feature = "fourier")]
 mod fourier;
 
 pub use coeff::{Glev, GlevIter, GlevIterMut};
+#[cfg(feature = "ntt")]
 pub use ntt::{NttGlev, NttGlevIter, NttGlevIterMut};
 
 #[cfg(feature = "rns")]
 pub use crt::{CrtGlev, CrtGlevIter, CrtGlevIterMut};
 #[cfg(feature = "rns")]
 pub use dcrt::{DcrtGlev, DcrtGlevIter, DcrtGlevIterMut};
+#[cfg(feature = "fourier")]
 pub use fourier::{FourierGlev, FourierGlevIter, FourierGlevIterMut, FourierGlevOwned};
 
 /// TFHE torus GLev ciphertext (coefficient domain).

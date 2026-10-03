@@ -155,9 +155,9 @@ callers do not need extension traits.
 | Shared NLev/NGSW gadget kernels | [NTT](../../crates/primus_lattice/src/ntru/ntt/gadget_product.rs), [Fourier](../../crates/primus_lattice/src/ntru/fourier/gadget_product.rs) |
 | Workspace owners and internal views | [NTT](../../crates/primus_lattice/src/workspace/ntt.rs), [Fourier](../../crates/primus_lattice/src/workspace/fourier.rs), [DCRT](../../crates/primus_lattice/src/workspace/dcrt_glev_mul.rs) |
 
-Keep backend-specific code within these modules. NTT/Fourier APIs and common transform
-dependencies currently remain unconditional. The concrete FFT engines are selected
-explicitly with `rustfft` / `tfhe-fft`, as described in the [FFT guide](../../crates/primus_fft/README.md#features); neither engine is enabled by default.
+Keep backend-specific code within these modules. Lattice and GLWE/NTRU default to coefficient capabilities; `ntt` / `fourier` explicitly enable representations, operations and dependencies. `rustfft` / `tfhe-fft` also enable Fourier and the selected engine, as described in the [FFT guide](../../crates/primus_fft/README.md#features). `rns` includes the NTT capability required by DCRT; `simd` only propagates to active dependencies.
+
+Pure LWE and both TFHE families need no transform. Concrete TFHE backends select their capability on normal dependencies. RNS GLWE selects lattice’s `rns` and reuses only the coefficient secret from single-modulus GLWE. Each direct consumer declares the features its APIs need, without relying on incidental workspace or test-dependency unification.
 Current feature availability is documented in the [lattice README](../../crates/primus_lattice/README.md#features).
 
 ## Compose an encrypted workflow

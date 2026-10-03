@@ -1,7 +1,7 @@
 //! One encrypted ternary NTRU rotation: fused versus two binary CMUXes.
 //! Keys, monomial exponent, output and scratch allocation are outside timing.
-//! cargo bench -p primus_ntru --bench ternary_cmux
-//! SIMD comparison: cargo +nightly bench -p primus_ntru --bench ternary_cmux --features simd
+//! cargo bench -p primus_ntru --bench ternary_cmux --features ntt,rustfft,tfhe-fft
+//! SIMD comparison: cargo +nightly bench -p primus_ntru --bench ternary_cmux --features ntt,simd,rustfft,tfhe-fft
 
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_poly::PolyLength;

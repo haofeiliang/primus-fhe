@@ -15,11 +15,12 @@ primus_tfhe_glwe = { path = "../../crates/primus_tfhe_glwe" }
 primus_tfhe_ntru = { path = "../../crates/primus_tfhe_ntru" }
 
 [dev-dependencies]
+primus_glwe = { path = "../../crates/primus_glwe", features = ["ntt", "fourier"] }
 primus_encoding = { path = "../../crates/primus_encoding" }
 primus_fft = { path = "../../crates/primus_fft" }
 primus_ntt = { path = "../../crates/primus_ntt" }
 primus_poly = { path = "../../crates/primus_poly" }
-primus_ntru = { path = "../../crates/primus_ntru" }
+primus_ntru = { path = "../../crates/primus_ntru", features = ["ntt", "fourier"] }
 primus_tfhe_glwe_ntt = { path = "../../crates/primus_tfhe_glwe_ntt" }
 primus_tfhe_glwe_fourier = { path = "../../crates/primus_tfhe_glwe_fourier" }
 primus_tfhe_ntru_ntt = { path = "../../crates/primus_tfhe_ntru_ntt" }

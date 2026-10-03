@@ -109,6 +109,6 @@ Rustdoc groups server material in `key`, CBS in `circuit_bootstrap`, MVB program
 
 ## Further reading
 
-Default features are empty; optional `simd` enables nightly SIMD arithmetic in dependencies.
+This crate enables `ntt` on its normal dependencies; no extra backend flag is needed, and standalone use does not pull in Fourier/FFT. Default features are empty; optional `simd` enables nightly SIMD arithmetic in dependencies.
 
 [Boolean gates](../primus_tfhe/README.md#boolean-gates) · [Error boundaries](../primus_tfhe/README.md#error-boundaries) · [Implementation notes](../primus_tfhe/IMPLEMENTATION.md) · [Benchmark guide](../primus_tfhe/BENCHMARKS.md)

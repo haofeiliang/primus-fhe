@@ -9,6 +9,8 @@ Backend-independent GLWE-TFHE parameters, client keys, encryption/decryption, an
 
 The shared layer and both backends use the same role names: `Encryptor`, `Decryptor`, `ClientKey`, `EncryptionKey`, `PbsOrder` and `TfheParameters`. Client ciphertexts are `LweCiphertext`; GLWE describes the PBS accumulator family.
 
+This family uses only coefficient types, parameters and client operations by default, without pulling in NTT/FFT. Select a concrete backend below for homomorphic evaluation; its normal dependencies enable the required representation.
+
 ## Parameters and external key domain
 
 `TfheParameters<T, M>` and clients share one ciphertext modulus type `M`; backend aliases fix their modulus implementation.

@@ -1,5 +1,5 @@
 //! Ordinary encrypt_to and undecoded phase_to; setup and allocations are excluded.
-//! cargo bench -p primus_ntru --bench encryption
+//! cargo bench -p primus_ntru --bench encryption --features ntt,rustfft,tfhe-fft
 
 use primus_poly::PolyLength;
 use std::hint::black_box;

@@ -147,6 +147,7 @@ fn rns_plaintext_and_gadget_operations_preserve_the_basis_layout() {
     }
 }
 
+#[cfg(feature = "fourier")]
 #[test]
 fn fourier_body_and_gadget_operations_preserve_complex_entries() {
     use primus_fft::Complex64;

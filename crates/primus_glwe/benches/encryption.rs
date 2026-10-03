@@ -6,8 +6,8 @@
 //! NTT uses q = 1_125_899_906_826_241, Fourier uses the native torus.
 //! These are regression workloads, not matched-security backend comparisons.
 //!
-//! cargo bench -p primus_glwe --bench encryption
-//! cargo bench -p primus_glwe --bench encryption -- encrypt_ggsw_to
+//! cargo bench -p primus_glwe --bench encryption --features ntt,rustfft
+//! cargo bench -p primus_glwe --bench encryption --features ntt,rustfft -- encrypt_ggsw_to
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};

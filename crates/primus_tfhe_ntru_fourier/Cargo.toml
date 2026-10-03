@@ -10,9 +10,9 @@ primus_decompose = { path = "../primus_decompose" }
 primus_data = { path = "../primus_data" }
 primus_fft = { path = "../primus_fft" }
 primus_integer = { path = "../primus_integer" }
-primus_lattice = { path = "../primus_lattice" }
+primus_lattice = { path = "../primus_lattice", features = ["fourier"] }
 primus_modulus = { path = "../primus_modulus" }
-primus_ntru = { path = "../primus_ntru" }
+primus_ntru = { path = "../primus_ntru", features = ["fourier"] }
 primus_reduce = { path = "../primus_reduce" }
 primus_poly = { path = "../primus_poly" }
 primus_tfhe = { path = "../primus_tfhe" }

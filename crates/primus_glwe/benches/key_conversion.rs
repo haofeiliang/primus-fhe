@@ -6,7 +6,7 @@
 //! These are regression workloads, not matched-security comparisons.
 //! Setup, key generation, output and workspace allocations are outside timing.
 //!
-//! cargo bench -p primus_glwe --bench key_conversion
+//! cargo bench -p primus_glwe --bench key_conversion --features ntt,rustfft
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_fft::{FftEngine, FftTable, RustFftTable};

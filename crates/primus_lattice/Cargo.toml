@@ -10,17 +10,17 @@ primus_reduce = { path = "../primus_reduce" }
 primus_modulus = { path = "../primus_modulus" }
 primus_factor = { path = "../primus_factor" }
 primus_poly = { path = "../primus_poly" }
-primus_ntt = { path = "../primus_ntt" }
+primus_ntt = { path = "../primus_ntt", optional = true }
 primus_rns = { path = "../primus_rns", optional = true }
 primus_decompose = { path = "../primus_decompose" }
-primus_fft = { path = "../primus_fft" }
+primus_fft = { path = "../primus_fft", optional = true }
 
 aligned-vec = "0.6.4"
 serde = { workspace = true }
 bytemuck = { workspace = true }
 pastey = { workspace = true }
 itertools = { workspace = true }
-num-complex = { workspace = true }
+num-complex = { workspace = true, optional = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
@@ -34,6 +34,7 @@ required-features = ["rustfft", "tfhe-fft"]
 [[bench]]
 name = "glwe_ntt"
 harness = false
+required-features = ["ntt"]
 
 [[bench]]
 name = "ntru_fourier"
@@ -43,6 +44,7 @@ required-features = ["rustfft", "tfhe-fft"]
 [[bench]]
 name = "ntru_ntt"
 harness = false
+required-features = ["ntt"]
 
 [[bench]]
 name = "extraction"
@@ -58,18 +60,18 @@ name = "rns_ggsw"
 harness = false
 required-features = ["rns"]
 
-# Targets instantiate these FFT engines explicitly; generic library APIs need neither.
+# Targets declare the representations and concrete FFT engines they exercise.
 [[test]]
 name = "cmux_k"
-required-features = ["rustfft", "tfhe-fft"]
+required-features = ["ntt", "rustfft", "tfhe-fft"]
 
 [[test]]
 name = "external_product"
-required-features = ["rustfft", "tfhe-fft"]
+required-features = ["ntt", "rustfft", "tfhe-fft"]
 
 [[test]]
 name = "external_product_sum"
-required-features = ["rustfft", "tfhe-fft"]
+required-features = ["ntt", "rustfft", "tfhe-fft"]
 
 [[test]]
 name = "fourier"
@@ -77,18 +79,28 @@ required-features = ["rustfft", "tfhe-fft"]
 
 [[test]]
 name = "ternary_cmux"
-required-features = ["rustfft", "tfhe-fft"]
+required-features = ["ntt", "rustfft", "tfhe-fft"]
+
+[[test]]
+name = "polynomial_products"
+required-features = ["ntt"]
+
+[[test]]
+name = "rns_arithmetic"
+required-features = ["rns"]
 
 [features]
 default = []
-rustfft = ["primus_fft/rustfft"]
-tfhe-fft = ["primus_fft/tfhe-fft"]
-rns = ["dep:primus_rns"]
+ntt = ["dep:primus_ntt"]
+fourier = ["dep:primus_fft", "dep:num-complex"]
+rustfft = ["fourier", "primus_fft/rustfft"]
+tfhe-fft = ["fourier", "primus_fft/tfhe-fft"]
+rns = ["dep:primus_rns", "ntt"]
 simd = [
     "primus_integer/simd",
     "primus_factor/simd",
     "primus_poly/simd",
-    "primus_ntt/simd",
+    "primus_ntt?/simd",
     "primus_rns?/simd",
     "primus_decompose/simd",
 ]

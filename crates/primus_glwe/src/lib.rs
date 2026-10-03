@@ -1,33 +1,48 @@
 //! Single-modulus GLWE operations.
+//!
+//! Default features are empty: parameters, coefficient ciphertexts and signed
+//! secret keys remain available without a transform backend. `ntt` / `fourier`
+//! enable the corresponding keys, encryption/evaluation APIs and workspaces.
+//! `fourier` is generic over an FFT table; `rustfft` / `tfhe-fft` also enable
+//! `fourier` and select a concrete engine. These features can be combined.
+//! `simd` propagates to active arithmetic dependencies without enabling a backend.
 
 #![deny(missing_docs)]
 
 mod automorphism;
 mod ciphertext;
 mod key_switch;
+#[cfg(any(feature = "ntt", feature = "fourier"))]
 mod packing_key_switch;
 mod parameter;
+#[cfg(feature = "ntt")]
 mod public_key;
 mod scheme_switch;
 mod secret_key;
+#[cfg(any(feature = "ntt", feature = "fourier"))]
 mod trace;
 
-use primus_encoding::{PlaintextEmbedding, ScaledCodec};
+#[cfg(any(feature = "ntt", feature = "fourier"))]
+use primus_encoding::PlaintextEmbedding;
+use primus_encoding::ScaledCodec;
 
-pub use automorphism::{
-    FourierGlweAutomorphismKey, FourierGlweAutomorphismWorkspace, NttGlweAutomorphismKey,
-    NttGlweAutomorphismWorkspace,
-};
-pub use ciphertext::{
-    FourierGgswCiphertext, FourierGlevCiphertext, FourierGlweCiphertext, GlevCiphertext,
-    GlweCiphertext, NttGgswCiphertext, NttGlevCiphertext, NttGlweCiphertext,
-    TruncatedGlweCiphertext,
-};
-pub use key_switch::{
-    FourierGlweKeySwitchingKey, FourierGlweKeySwitchingWorkspace, NttGlweKeySwitchingKey,
-    NttGlweKeySwitchingWorkspace,
-};
-pub use packing_key_switch::{FourierLwePackingKeySwitchingKey, NttLwePackingKeySwitchingKey};
+#[cfg(feature = "fourier")]
+pub use automorphism::{FourierGlweAutomorphismKey, FourierGlweAutomorphismWorkspace};
+#[cfg(feature = "ntt")]
+pub use automorphism::{NttGlweAutomorphismKey, NttGlweAutomorphismWorkspace};
+#[cfg(feature = "fourier")]
+pub use ciphertext::{FourierGgswCiphertext, FourierGlevCiphertext, FourierGlweCiphertext};
+pub use ciphertext::{GlevCiphertext, GlweCiphertext, TruncatedGlweCiphertext};
+#[cfg(feature = "ntt")]
+pub use ciphertext::{NttGgswCiphertext, NttGlevCiphertext, NttGlweCiphertext};
+#[cfg(feature = "fourier")]
+pub use key_switch::{FourierGlweKeySwitchingKey, FourierGlweKeySwitchingWorkspace};
+#[cfg(feature = "ntt")]
+pub use key_switch::{NttGlweKeySwitchingKey, NttGlweKeySwitchingWorkspace};
+#[cfg(feature = "fourier")]
+pub use packing_key_switch::FourierLwePackingKeySwitchingKey;
+#[cfg(feature = "ntt")]
+pub use packing_key_switch::NttLwePackingKeySwitchingKey;
 pub use parameter::{
     GadgetSize, GgswParameters, GlevParameterError, GlevParameters, GlweKeySwitchingParameters,
     GlweParameterError, GlweParameters, GlweParametersInner, GlweSize, GlweSizeError,
@@ -35,13 +50,21 @@ pub use parameter::{
 pub use primus_distr::SecretKeyDistr;
 pub use primus_lattice::{GlweDimension, GlweDimensionError, LweDimension};
 pub use primus_poly::PolyLength;
+#[cfg(feature = "ntt")]
 pub use public_key::{NttGlwePublicEncryptWorkspace, NttGlwePublicKey};
-pub use scheme_switch::{FourierGlweSchemeSwitchKey, NttGlweSchemeSwitchKey};
+#[cfg(feature = "fourier")]
+pub use scheme_switch::FourierGlweSchemeSwitchKey;
+#[cfg(feature = "ntt")]
+pub use scheme_switch::NttGlweSchemeSwitchKey;
+pub use secret_key::GlweSecretKey;
+#[cfg(feature = "fourier")]
 pub use secret_key::{
     FourierGlweDecryptWorkspace, FourierGlweEncryptWorkspace, FourierGlweGadgetEncryptWorkspace,
-    FourierGlweSecretKey, GlweSecretKey, NttGlweGadgetEncryptWorkspace, NttGlweSecretKey,
+    FourierGlweSecretKey,
 };
-pub use trace::{
-    FourierGlwePackingWorkspace, FourierGlweTraceKey, FourierGlweTraceWorkspace,
-    NttGlwePackingWorkspace, NttGlweTraceKey, NttGlweTraceWorkspace,
-};
+#[cfg(feature = "ntt")]
+pub use secret_key::{NttGlweGadgetEncryptWorkspace, NttGlweSecretKey};
+#[cfg(feature = "fourier")]
+pub use trace::{FourierGlwePackingWorkspace, FourierGlweTraceKey, FourierGlweTraceWorkspace};
+#[cfg(feature = "ntt")]
+pub use trace::{NttGlwePackingWorkspace, NttGlweTraceKey, NttGlweTraceWorkspace};

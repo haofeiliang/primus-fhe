@@ -35,12 +35,12 @@ NGSW k-CMux length/empty-batch checks live here; `primus_ntru` keeps the real-ke
 selection and separate-product differential, including the noise from encrypted
 zero controls. Those numerical checks are independent of the raw shape tests.
 
-FFT comparison targets declare both `rustfft` and `tfhe-fft` as required features. Without them, Cargo skips those complete targets, including any NTT cases in the same comparison file. Use the commands below for full coverage; workspace `just` already selects both engines.
+Targets declare their NTT/Fourier capabilities and concrete engines. Mixed comparisons require `ntt,rustfft,tfhe-fft`; missing requirements skip the entire target. Layout and plaintext tests retain coefficient cases without a backend, and gate only their representation-specific cases. Use the commands below for full coverage; workspace `just` selects NTT and both FFT engines.
 
 Run from the workspace root:
 
 ```sh
-cargo nextest run -p primus_lattice --lib --tests --features rustfft,tfhe-fft
+cargo nextest run -p primus_lattice --lib --tests --features ntt,rustfft,tfhe-fft
 cargo nextest run -p primus_lattice --lib --tests --features rns,rustfft,tfhe-fft
 cargo nextest run -p primus_lattice --lib --tests --release --features rns,rustfft,tfhe-fft
 cargo clippy -p primus_lattice --all-targets --features rns,rustfft,tfhe-fft -- -D warnings

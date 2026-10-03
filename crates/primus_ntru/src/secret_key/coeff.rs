@@ -90,9 +90,9 @@ impl<T: FheUint> NtruSecretKey<T> {
     /// Samples a coefficient key from `params`.
     ///
     /// This method does not impose backend-specific invertibility. Use
-    /// [`crate::NttNtruSecretKey::generate`] or
-    /// [`crate::FourierNtruSecretKey::generate`] when an immediately usable
-    /// encryption key is required.
+    /// `NttNtruSecretKey::generate` (feature `ntt`) or
+    /// `FourierNtruSecretKey::generate` (feature `fourier`) when an immediately
+    /// usable encryption key is required.
     pub fn generate<R, M>(params: &NtruParametersInner<T, M>, rng: &mut R) -> Self
     where
         R: rand::Rng + rand::CryptoRng,

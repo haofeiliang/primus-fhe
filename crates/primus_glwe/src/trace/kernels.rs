@@ -3,7 +3,6 @@
 
 use primus_integer::FheUint;
 use primus_lattice::{GlweSize, glwe::Glwe, lwe::Lwe};
-use primus_ntt::ReverseLsbs;
 use primus_reduce::RingContext;
 
 pub(super) fn check_degree(n: usize, r: usize) -> usize {
@@ -67,7 +66,11 @@ pub(super) fn pack_to<T, M, H, F>(
     let count = input.len() / lwe_len;
     let log_count = count.trailing_zeros();
     for (i, leaf) in tree.chunks_exact_mut(glwe_len).enumerate() {
-        let source = i.reverse_lsbs(log_count);
+        // A single leaf has no index bits; its full-width checked shift falls back to 0.
+        let source = i
+            .reverse_bits()
+            .checked_shr(usize::BITS - log_count)
+            .unwrap_or(0);
         Lwe::new(&input[source * lwe_len..(source + 1) * lwe_len]).inverse_extract_glwe_to(
             &mut Glwe::new(leaf),
             poly_length,

@@ -49,8 +49,8 @@ For these three live parameter objects, `sum(size_of_val)` fell from 1856 to 408
 Online encryption was measured separately using the existing [encryption benchmark](../../crates/primus_ntru/benches/encryption.rs), with one `encrypt_to` per iteration. Setup, keys, tables and output allocation were excluded. N=1024, u64, t=16, sparse ternary secret, noise sigma=3.2; NTT used q=1125899906826241 and Fourier used the native modulus. Commands on the baseline and changed tree, respectively:
 
 ```sh
-cargo bench -p primus_ntru --bench encryption --features rustfft,tfhe-fft -- 'n1024/encrypt_to' --sample-size 20 --warm-up-time 0.2 --measurement-time 1 --save-baseline before-3b
-cargo bench -p primus_ntru --bench encryption --features rustfft,tfhe-fft -- 'n1024/encrypt_to' --sample-size 20 --warm-up-time 0.2 --measurement-time 1 --baseline before-3b
+cargo bench -p primus_ntru --bench encryption --features ntt,rustfft,tfhe-fft -- 'n1024/encrypt_to' --sample-size 20 --warm-up-time 0.2 --measurement-time 1 --save-baseline before-3b
+cargo bench -p primus_ntru --bench encryption --features ntt,rustfft,tfhe-fft -- 'n1024/encrypt_to' --sample-size 20 --warm-up-time 0.2 --measurement-time 1 --baseline before-3b
 ```
 
 | Backend | Before, µs (95% CI) | After, µs (95% CI) |

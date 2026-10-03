@@ -4,10 +4,14 @@ use primus_integer::FheUint;
 use primus_lwe::LweSecretKeyRef;
 use primus_reduce::RingContext;
 
+#[cfg(feature = "fourier")]
 mod fourier;
+#[cfg(feature = "ntt")]
 mod ntt;
 
+#[cfg(feature = "fourier")]
 pub use fourier::FourierLwePackingKeySwitchingKey;
+#[cfg(feature = "ntt")]
 pub use ntt::NttLwePackingKeySwitchingKey;
 
 /// Visits secret coefficients in their encoded representation without copying the key.

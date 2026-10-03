@@ -140,7 +140,9 @@ The batch input is a flat slice of complete LWEs. These keys write consecutive m
 
 ## Features
 
-Default features are empty; generic Fourier APIs do not select an FFT engine. `rustfft` / `tfhe-fft` forward to the corresponding `primus_fft` implementation and may be enabled together. Tests, examples, and benchmarks that instantiate an engine declare `required-features` on their Cargo targets; comparisons using both engines require both features. `simd` does not enable an FFT engine.
+Default features are empty: parameters, coefficient ciphertexts and signed secrets need no transform backend. `ntt` / `fourier` enable their keys, conversions, encryption/decryption, evaluation and workspaces, forwarding the capability to lattice. `fourier` does not select a concrete FFT engine; `rustfft` / `tfhe-fft` also enable `fourier` and the corresponding implementation. All backend features can be combined. `simd` propagates only to active arithmetic dependencies without activating a transform or FFT engine.
+
+Tests, examples and benchmarks declare their representations and engines in `required-features`. Mixed NTT/Fourier targets require `ntt` and their specified engines. Use `--features ntt,rustfft,tfhe-fft` for complete ordinary validation; Cargo skips entire targets whose requirements are missing.
 
 ## Further reading
 

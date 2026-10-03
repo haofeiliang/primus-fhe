@@ -98,6 +98,7 @@ fn dcrt_workspace_reuse_depends_on_layout_and_limb_width() {
     assert!(!workspace.is_compatible(other_size, &small));
 }
 
+#[cfg(all(feature = "ntt", feature = "fourier"))]
 #[test]
 fn serial_external_product_restores_ternary_layout_on_unwind() {
     use primus_lattice::workspace::{FourierGlweTernaryCmuxWorkspace, NttGlweTernaryCmuxWorkspace};

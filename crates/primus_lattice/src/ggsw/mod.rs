@@ -1,4 +1,5 @@
 mod coeff;
+#[cfg(feature = "ntt")]
 mod ntt;
 
 #[cfg(feature = "rns")]
@@ -6,15 +7,18 @@ mod crt;
 #[cfg(feature = "rns")]
 mod dcrt;
 /// Fourier-domain GGSW ciphertexts.
+#[cfg(feature = "fourier")]
 mod fourier;
 
 pub use coeff::{Ggsw, GgswIter, GgswIterMut};
+#[cfg(feature = "ntt")]
 pub use ntt::{NttGgsw, NttGgswIter, NttGgswIterMut};
 
 #[cfg(feature = "rns")]
 pub use crt::{CrtGgsw, CrtGgswIter, CrtGgswIterMut};
 #[cfg(feature = "rns")]
 pub use dcrt::{DcrtGgsw, DcrtGgswIter, DcrtGgswIterMut};
+#[cfg(feature = "fourier")]
 pub use fourier::{FourierGgsw, FourierGgswIter, FourierGgswIterMut, FourierGgswOwned};
 
 /// TFHE torus GGSW ciphertext (coefficient domain).

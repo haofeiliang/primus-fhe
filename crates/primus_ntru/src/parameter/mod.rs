@@ -11,4 +11,5 @@ pub use gadget::NlevParameters;
 pub use ordinary::NtruParameters;
 
 /// Maximum candidates in a backend's invertible-key search.
+#[cfg(any(feature = "ntt", feature = "fourier"))]
 pub(crate) const KEY_GENERATION_ATTEMPTS: usize = 1 << 10;

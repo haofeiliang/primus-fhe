@@ -38,10 +38,14 @@
 //!
 //! # Features
 //!
-//! - `rns` (disabled by default) enables CRT/DCRT ciphertexts, their multiplication
-//!   workspace, and the CRT conversions on [`glwe::BigUintGlwe`].
-//! - `simd` enables nightly SIMD support in the arithmetic dependencies. It does
-//!   not enable `rns`; when both are enabled, the RNS dependency also uses SIMD.
+//! Default features are empty: coefficient storage and arithmetic need no transform.
+//! - `ntt` enables NTT ciphertexts, conversions, operations and workspaces.
+//! - `fourier` enables the corresponding Fourier APIs without selecting an FFT engine.
+//! - `rustfft` / `tfhe-fft` enable `fourier` and the selected FFT implementation.
+//! - `rns` enables `ntt`, CRT/DCRT ciphertexts, their multiplication workspace,
+//!   and the CRT conversions on [`glwe::BigUintGlwe`].
+//! - `simd` enables nightly SIMD in active arithmetic dependencies; it does not
+//!   activate a transform backend, FFT implementation or `rns`.
 //!
 //! [`glwe::BigUintGlwe`], [`RnsGlweSize`], and [`RnsGadgetSize`] remain available
 //! without `rns`: their storage and layout APIs do not depend on RNS arithmetic.
@@ -60,7 +64,7 @@ pub use size::{GadgetSize, GlweSize, GlweSizeError, RnsGadgetSize, RnsGlweSize};
 pub mod ggsw;
 /// GLev gadget-decomposed ciphertexts.
 pub mod glev;
-/// Module-LWE (GLWE) ciphertexts: [`coeff`](crate::glwe::Glwe), [`ntt`](crate::glwe::NttGlwe), [`fourier`](crate::glwe::FourierGlwe).
+/// Module-LWE (GLWE) ciphertexts, with optional NTT/Fourier and CRT/DCRT representations.
 pub mod glwe;
 /// Standard LWE ciphertexts.
 pub mod lwe;

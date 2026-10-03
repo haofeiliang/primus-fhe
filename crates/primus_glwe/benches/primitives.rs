@@ -5,7 +5,7 @@
 //! regression workloads, not matched-security comparisons. Ordinary trace and
 //! reverse trace measure their public APIs, with their respective message scales.
 //!
-//! cargo bench -p primus_glwe --bench primitives
+//! cargo bench -p primus_glwe --bench primitives --features ntt,rustfft,tfhe-fft
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};

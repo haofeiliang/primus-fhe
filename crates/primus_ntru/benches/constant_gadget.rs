@@ -3,7 +3,7 @@
 //! u64, sigma 3.2, sparse ternary key; NTT q = 1_125_899_906_826_241,
 //! Fourier native torus. These workloads do not compare matched security.
 //!
-//! cargo bench -p primus_ntru --bench constant_gadget
+//! cargo bench -p primus_ntru --bench constant_gadget --features ntt,rustfft
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use primus_decompose::DecompositionBaseLog;

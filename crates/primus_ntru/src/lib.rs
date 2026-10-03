@@ -43,10 +43,19 @@
 //!
 //! Same-secret automorphism, trace/reverse trace, coefficient projection and
 //! expansion use separate NTT/Fourier keys and reusable coefficient workspaces.
-//! [`NttNtruSchemeSwitchKey`] / [`FourierNtruSchemeSwitchKey`] convert coefficient
+//! `NttNtruSchemeSwitchKey` / `FourierNtruSchemeSwitchKey` convert coefficient
 //! NLev to transformed NGSW with independent key/output bases. Their
 //! secret-dependent-key and f/f²-weighted noise contracts require additional
 //! analysis when used for CBS in the NTRU TFHE backends.
+//!
+//! # Features
+//!
+//! Default features are empty: coefficient types, parameters, signed secrets and
+//! the NTRU-to-LWE return path need no transform backend. `ntt` / `fourier` enable
+//! the corresponding keys, encryption/evaluation APIs and workspaces. `fourier`
+//! is generic over an FFT table; `rustfft` / `tfhe-fft` also enable `fourier` and
+//! select a concrete engine. These features can be combined. `simd` propagates
+//! to active arithmetic dependencies without enabling a backend.
 
 #![deny(missing_docs)]
 
@@ -57,36 +66,51 @@ mod key_switch;
 mod parameter;
 mod scheme_switch;
 mod secret_key;
+#[cfg(any(feature = "ntt", feature = "fourier"))]
 mod trace;
 
-pub use automorphism::{
-    FourierNtruAutomorphismKey, FourierNtruAutomorphismWorkspace, NttNtruAutomorphismKey,
-    NttNtruAutomorphismWorkspace,
-};
-pub use ciphertext::{
-    FourierNgswCiphertext, FourierNlevCiphertext, FourierNtruCiphertext, NgswCiphertext,
-    NlevCiphertext, NtruCiphertext, NttNgswCiphertext, NttNlevCiphertext, NttNtruCiphertext,
-};
+#[cfg(feature = "fourier")]
+pub use automorphism::{FourierNtruAutomorphismKey, FourierNtruAutomorphismWorkspace};
+#[cfg(feature = "ntt")]
+pub use automorphism::{NttNtruAutomorphismKey, NttNtruAutomorphismWorkspace};
+#[cfg(feature = "fourier")]
+pub use ciphertext::{FourierNgswCiphertext, FourierNlevCiphertext, FourierNtruCiphertext};
+pub use ciphertext::{NgswCiphertext, NlevCiphertext, NtruCiphertext};
+#[cfg(feature = "ntt")]
+pub use ciphertext::{NttNgswCiphertext, NttNlevCiphertext, NttNtruCiphertext};
 pub use error::NtruError;
+#[cfg(feature = "fourier")]
+pub use key_switch::FourierNtruKeySwitchingKey;
+#[cfg(feature = "ntt")]
+pub use key_switch::NttNtruKeySwitchingKey;
 pub use key_switch::{
-    FourierNtruKeySwitchingKey, NtruLweKeySwitchingBatchWorkspace, NtruLweKeySwitchingKey,
-    NtruLweKeySwitchingWorkspace, NttNtruKeySwitchingKey,
+    NtruLweKeySwitchingBatchWorkspace, NtruLweKeySwitchingKey, NtruLweKeySwitchingWorkspace,
 };
 pub use parameter::{
     NlevParameterError, NlevParameters, NtruParameterError, NtruParameters, NtruParametersInner,
 };
 pub use primus_distr::SecretKeyDistr;
 pub use primus_lattice::LweDimension;
+#[cfg(feature = "fourier")]
 pub use primus_lattice::workspace::{
-    FourierNtruCmuxWorkspace, FourierNtruExternalProductWorkspace, NttNtruCmuxWorkspace,
-    NttNtruExternalProductWorkspace,
+    FourierNtruCmuxWorkspace, FourierNtruExternalProductWorkspace,
 };
+#[cfg(feature = "ntt")]
+pub use primus_lattice::workspace::{NttNtruCmuxWorkspace, NttNtruExternalProductWorkspace};
 pub use primus_poly::PolyLength;
-pub use scheme_switch::{FourierNtruSchemeSwitchKey, NttNtruSchemeSwitchKey};
+#[cfg(feature = "fourier")]
+pub use scheme_switch::FourierNtruSchemeSwitchKey;
+#[cfg(feature = "ntt")]
+pub use scheme_switch::NttNtruSchemeSwitchKey;
+pub use secret_key::NtruSecretKey;
+#[cfg(feature = "fourier")]
 pub use secret_key::{
     FourierNtruDecryptWorkspace, FourierNtruEncryptWorkspace, FourierNtruGadgetEncryptWorkspace,
-    FourierNtruSecretKey, NtruSecretKey, NttNtruGadgetEncryptWorkspace, NttNtruSecretKey,
+    FourierNtruSecretKey,
 };
-pub use trace::{
-    FourierNtruTraceKey, FourierNtruTraceWorkspace, NttNtruTraceKey, NttNtruTraceWorkspace,
-};
+#[cfg(feature = "ntt")]
+pub use secret_key::{NttNtruGadgetEncryptWorkspace, NttNtruSecretKey};
+#[cfg(feature = "fourier")]
+pub use trace::{FourierNtruTraceKey, FourierNtruTraceWorkspace};
+#[cfg(feature = "ntt")]
+pub use trace::{NttNtruTraceKey, NttNtruTraceWorkspace};

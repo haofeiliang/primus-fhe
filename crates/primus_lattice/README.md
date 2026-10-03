@@ -140,23 +140,23 @@ This illustrates layout and arithmetic, not randomized encryption or secure para
 
 ## Features
 
-Default features are empty.
+Default features are empty: coefficient storage, layouts and basic arithmetic do not pull in NTT/FFT.
 
-NTT and Fourier APIs and their common transform dependencies remain unconditional;
-empty default features do not select a coefficient-only build. Concrete FFT engines
-are optional.
+- `ntt` enables NTT ciphertexts, conversions, operations and workspaces.
+- `fourier` enables the corresponding generic Fourier APIs without selecting an FFT engine.
+- `rustfft` / `tfhe-fft` enable `fourier` and the corresponding FFT implementation; they can be combined.
+- `rns` enables CRT/DCRT ciphertexts, multiplication workspaces and CRT conversions on `BigUintGlwe`, including the `ntt` capability required by DCRT.
+- `simd` propagates nightly SIMD only to active arithmetic dependencies; it does not activate a backend, FFT engine or `rns`.
+- `BigUintGlwe`, `RnsGlweSize`, and `RnsGadgetSize` remain available without `rns`.
 
-- `rustfft` / `tfhe-fft` select the corresponding `primus_fft` engine. Targets comparing both require both features; generic Fourier APIs need neither.
-- `rns` enables CRT/DCRT ciphertexts, their product workspace, and CRT conversions on `BigUintGlwe`.
-- `simd` enables nightly SIMD support in arithmetic dependencies. It does not enable an FFT engine or `rns`; use both for SIMD RNS operations.
-- `BigUintGlwe`, `RnsGlweSize`, and `RnsGadgetSize` are available without `rns`.
+Each target declares the representations and concrete FFT implementations it needs. Mixed-backend comparisons require all corresponding features; Cargo skips the entire target when any requirement is missing.
 
 ## Tests and benchmarks
 
 Run from the workspace root:
 
 ```sh
-cargo test -p primus_lattice --features rustfft,tfhe-fft
+cargo test -p primus_lattice --features ntt,rustfft,tfhe-fft
 cargo test -p primus_lattice --features rns,rustfft,tfhe-fft
 cargo clippy -p primus_lattice --all-targets --features rns,rustfft,tfhe-fft -- -D warnings
 cargo +nightly test -p primus_lattice --features rns,simd,rustfft,tfhe-fft

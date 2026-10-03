@@ -12,19 +12,19 @@
 测试按操作分组：普通密钥工作流、gadget phase 与 external product、常数批次等价性、CMUX、key switching、自同构、scheme switching，以及 trace/展开/packing。`tests/common` 保存求值测试共用的小规模朴素 phase oracle。边界拒绝和容量擦除使用独立测试文件。Fourier 常数批次、自同构、trace、packing key switching 和 scheme switching 测试覆盖 RustFFT 和 tfhe-fft。
 
 ```sh
-cargo test -p primus_glwe --features rustfft,tfhe-fft
-cargo clippy -p primus_glwe --all-targets --features rustfft,tfhe-fft -- -D warnings
-cargo +nightly test -p primus_glwe --features simd,rustfft,tfhe-fft
+cargo test -p primus_glwe --features ntt,rustfft,tfhe-fft
+cargo clippy -p primus_glwe --all-targets --features ntt,rustfft,tfhe-fft -- -D warnings
+cargo +nightly test -p primus_glwe --features ntt,simd,rustfft,tfhe-fft
 ```
 
 ## 基准
 
 ```sh
-cargo bench -p primus_glwe --bench encryption --features rustfft
-cargo bench -p primus_glwe --bench primitives --features rustfft,tfhe-fft
-cargo bench -p primus_glwe --bench key_conversion --features rustfft
+cargo bench -p primus_glwe --bench encryption --features ntt,rustfft
+cargo bench -p primus_glwe --bench primitives --features ntt,rustfft,tfhe-fft
+cargo bench -p primus_glwe --bench key_conversion --features ntt,rustfft
 # 执行全部 case，不收集计时样本：
-cargo bench -p primus_glwe --features rustfft,tfhe-fft -- --test
+cargo bench -p primus_glwe --features ntt,rustfft,tfhe-fft -- --test
 ```
 
 所有基准均使用 `(k, N) = (1, 1024)` 和 `(2, 4096)`。每次迭代执行一次操作，复用输出和工作区；密钥、变换表构造与分配在计时外。参数和固定 seed 记录在基准源码中。这些工作负载用于跟踪回归，不用于比较相同安全级别，也不作为安全参数建议。

@@ -8,14 +8,14 @@ English | [简体中文](README.zh_CN.md)
 ## Tests and benchmarks
 
 ```sh
-cargo test -p primus_ntru --features rustfft,tfhe-fft
-cargo clippy -p primus_ntru --all-targets --features rustfft,tfhe-fft -- -D warnings
-cargo +nightly test -p primus_ntru --features simd,rustfft,tfhe-fft
-cargo bench -p primus_ntru --bench encryption --features rustfft,tfhe-fft
+cargo test -p primus_ntru --features ntt,rustfft,tfhe-fft
+cargo clippy -p primus_ntru --all-targets --features ntt,rustfft,tfhe-fft -- -D warnings
+cargo +nightly test -p primus_ntru --features ntt,simd,rustfft,tfhe-fft
+cargo bench -p primus_ntru --bench encryption --features ntt,rustfft,tfhe-fft
 cargo bench -p primus_ntru --bench lwe_return
-cargo bench -p primus_ntru --bench primitives --features rustfft,tfhe-fft -- 'ntt/n4096/logb3'
-cargo bench -p primus_ntru --bench constant_gadget --features rustfft
-cargo bench -p primus_ntru --bench ternary_cmux --features rustfft,tfhe-fft
+cargo bench -p primus_ntru --bench primitives --features ntt,rustfft,tfhe-fft -- 'ntt/n4096/logb3'
+cargo bench -p primus_ntru --bench constant_gadget --features ntt,rustfft
+cargo bench -p primus_ntru --bench ternary_cmux --features ntt,rustfft,tfhe-fft
 ```
 
 `encryption` measures ordinary encryption and undecoded phase extraction. `primitives` measures key switching, automorphism, trace/reverse trace, three coefficient projections, expansion of an eight-coefficient prefix and scheme switching (output B=2^8, L=3) at `N = 1024/4096/8192`, with `B = 2^3/2^10` and the maximum supported level count. Both use `u64`, sparse ternary secrets and sigma 3.2; NTT uses `q = 1_125_899_906_826_241`, and Fourier covers both FFT backends. `constant_gadget` retains constant NLev and eight-control NGSW generation. Setup, tables, key generation and allocations stay outside timed closures. Add `-- --test` for fixture smoke checks; those checks do not measure performance or establish decryptability.

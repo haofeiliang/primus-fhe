@@ -1,6 +1,6 @@
 //! NTRU key switching, automorphism, trace, expansion and scheme switching.
 //! Each case reuses output/workspace; projection and prefix expansion have different contracts.
-//! cargo bench -p primus_ntru --bench primitives -- 'ntt/n4096/logb3'
+//! cargo bench -p primus_ntru --bench primitives --features ntt,rustfft,tfhe-fft -- 'ntt/n4096/logb3'
 //! Functional u64 workloads: sparse ternary keys, sigma 3.2, maximum basis length.
 //! Setup is excluded; these parameters do not establish cryptographic security.
 

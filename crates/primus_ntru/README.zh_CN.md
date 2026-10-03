@@ -44,7 +44,7 @@ NTT 生成拒绝含零点值的私钥。Fourier 生成检查原生环可逆性�
 [automorphism 示例](examples/automorphism.rs) 展示配对私钥生成、求值密钥构造， 以及复用工作区、在原私钥下完成 NTT 自同构：
 
 ```sh
-cargo run -p primus_ntru --example automorphism
+cargo run -p primus_ntru --example automorphism --features ntt
 ```
 
 ## 操作与表示
@@ -121,7 +121,9 @@ Sample extraction、NLev/NGSW 外积与 CMUX 位于 [`primus_lattice`](../primus
 
 ## Features
 
-默认 features 为空，Fourier 泛型接口不选择具体 FFT 引擎。`rustfft` / `tfhe-fft` 分别转发到 `primus_fft` 的对应实现；可以同时启用。使用具体引擎的测试、示例和基准在 Cargo target 上声明 `required-features`；双引擎对照 target 需要两者。`simd` 不会自动启用 FFT 引擎。
+默认 features 为空，参数、系数密文和有符号秘密，以及 NTRU→LWE 返回路径无需变换后端。`ntt` / `fourier` 分别启用对应的密钥、转换、加解密、求值与工作区，并向 lattice 传递能力。`fourier` 不选择具体 FFT 引擎；`rustfft` / `tfhe-fft` 同时启用 `fourier` 和对应实现，所有后端 feature 可以叠加。`simd` 仅向已启用的算术依赖传播，不激活变换或 FFT 引擎。
+
+使用具体表示或引擎的测试、示例和基准声明 `required-features`；混合 NTT/Fourier target 需同时启用 `ntt` 和其指定的引擎。完整普通验证使用 `--features ntt,rustfft,tfhe-fft`；不满足要求时 Cargo 跳过整个 target。
 
 ## 进一步阅读
 
