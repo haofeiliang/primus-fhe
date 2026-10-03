@@ -52,7 +52,7 @@ Fourier 环只支持 `NativeModulus`；`PowOf2Modulus` 环不受支持。 NTRU �
 
 ## 复用 evaluator
 
-普通/interleaved `Evaluator` 的 `_to` 调用复用工作区和调用方输出。PBS/MVB/CBS 的所有权转换见[资源复用指南](../primus_tfhe/README.zh_CN.md#复用-evaluator)。独立 CBS/one-hot 省略普通 LWE 返回缓冲：`bootstrapper_mut()` 返回 `None`，`try_into_bootstrapper(return_key)` 显式分配缺失的返回缓冲。需要交替调用时使用 `try_from_bootstrapper(pbs, circuit_key, &input_codec)`，保留完整 PBS，其借用返回 `Some`；传入同一返回密钥对象时恢复无分配，换用另一把兼容返回密钥则重新准备返回缓冲。
+普通/interleaved `Evaluator` 的 `_to` 调用复用工作区和调用方输出。PBS/MVB/CBS 的所有权转换见[资源复用指南](../primus_tfhe/README.zh_CN.md#复用-evaluator)。独立 CBS/one-hot 省略普通 LWE 返回缓冲：`bootstrapper_mut()` 返回 `None`，`try_into_bootstrapper(return_key)` 显式分配缺失的返回缓冲。需要交替调用时使用 `try_from_bootstrapper(pbs, circuit_key, &input_codec)`，保留完整 PBS，其借用返回 `Some`；传入任意兼容返回密钥均可无分配恢复；恢复时丢弃旧返回绑定的待提交样本。
 
 ## 固定尺度分解式 MVB
 
@@ -101,11 +101,10 @@ let mut evaluator = context.evaluator(&server)?;
 
 完整 chunk 加密与查表工作流见 [fourier_lookup.rs](../primus_tfhe_ntru_lut/examples/fourier_lookup.rs)。
 
-自定义返回使用 `LweReturnEvaluator::new(server.key_switching_key(),
-context.parameters().external_lwe().cipher_modulus())`。`return_at_to` 返回一个系数，
-`return_prefix_to` 返回共享多项式的前缀，`begin_batch` → `append_at` →
-`return_batch_to` 返回不同来源的连续样本。它只持有系数域返回缓冲，one-hot 与 FFT/外积
-资源可独立复用。详见[家族返回契约](../primus_tfhe_ntru/README.zh_CN.md#ntrulwe-返回)。
+自定义返回先绑定 `LweReturnEvaluator::new(server.key_switching_key(),
+context.parameters().external_lwe().cipher_modulus())`，再按需准备 scalar/batch 工作区，
+显式传给 `return_at_to`、`return_prefix_to` 或流式操作。one-hot 与变换工作区可独立复用。
+详见[家族返回契约](../primus_tfhe_ntru/README.zh_CN.md#ntrulwe-返回)。
 
 ## 底层组合
 

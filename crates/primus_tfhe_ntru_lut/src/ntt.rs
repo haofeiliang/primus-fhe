@@ -44,6 +44,7 @@ where
     lookup_table: &'a HighPrecisionLookupTable<T>,
     one_hot: OneHotCircuitBootstrapEvaluator<'a, T, Table, LM>,
     lwe_return: LweReturnEvaluator<'a, T, LM>,
+    scalar_return: primus_ntru::NtruLweKeySwitchingWorkspace<T>,
     // [NLEV batch][branch][level][NTT value]: full selectors for public choices.
     public_table_selectors: Box<[T]>,
     // [NGSW batch][r-1][level][NTT value]: nonzero selectors for encrypted choices.
@@ -138,14 +139,16 @@ where
         } else {
             0
         };
+        let lwe_return = LweReturnEvaluator::new(
+            return_key,
+            context.parameters().external_lwe().cipher_modulus(),
+        );
         let mut evaluator = Self {
             context,
             lookup_table,
             one_hot,
-            lwe_return: LweReturnEvaluator::new(
-                return_key,
-                context.parameters().external_lwe().cipher_modulus(),
-            ),
+            scalar_return: lwe_return.new_scalar_workspace(),
+            lwe_return,
             public_table_selectors: vec![T::ZERO; public_table_selectors_len].into_boxed_slice(),
             encrypted_table_selectors: vec![T::ZERO; encrypted_table_selectors_len]
                 .into_boxed_slice(),
@@ -239,6 +242,7 @@ where
                         self.current.as_view(),
                         0,
                         output[index].as_mut_view(),
+                        &mut self.scalar_return,
                     );
                 }
             }

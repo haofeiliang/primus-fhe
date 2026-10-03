@@ -9,10 +9,11 @@ use primus_tfhe::{Lwe, LweCiphertext};
 
 /// Coefficient-domain NTRU→LWE returns, independent of blind rotation and NTT/FFT scratch.
 ///
-/// Borrows the Q→q, f→s key and owns reusable scalar/batch buffers. It can be
-/// composed with standalone one-hot CBS without retaining an ordinary PBS
-/// evaluator. Single returns, shared-input prefixes and independent input streams
-/// keep their different conversion schedules. All online methods allocate nothing.
+/// Borrows the Q→q, f→s key and binds q without allocating. Callers prepare
+/// only the scalar and/or batch workspace their operations need, independently
+/// of standalone one-hot CBS or an ordinary PBS evaluator. Single returns,
+/// shared-input prefixes and independent streams keep their conversion schedules.
+/// All online methods allocate nothing.
 /// Source secret identity, coefficient representation and noise are caller contracts.
 /// Batch methods borrow a slice of preallocated LWEs and validate every output
 /// before writing. A short final tile contains fewer complete LWEs, not a partial
@@ -20,25 +21,13 @@ use primus_tfhe::{Lwe, LweCiphertext};
 pub struct LweReturnEvaluator<'a, T: FheUint, LM: RingContext<T>> {
     key: &'a NtruLweKeySwitchingKey<T>,
     modulus: LM,
-    scalar: NtruLweKeySwitchingWorkspace<T>,
-    batch: NtruLweKeySwitchingBatchWorkspace<T>,
-    // None is idle; Some(k) owns exactly the current batch's valid prefix 0..k.
-    // Old slot contents never become valid merely by starting another batch.
-    prepared: Option<usize>,
 }
 
 impl<'a, T: FheUint, LM: RingContext<T>> LweReturnEvaluator<'a, T, LM> {
-    /// Borrows the return material bound to this workspace.
-    #[must_use]
-    pub fn key(&self) -> &'a NtruLweKeySwitchingKey<T> {
-        self.key
-    }
-
-    /// Binds a return key to q and allocates one scalar buffer and bounded LWE tiles.
+    /// Binds a return key to q without allocating scratch.
     ///
     /// # Panics
-    /// Panics if q differs from the key's target modulus, its polynomial length is
-    /// outside [`PolyLength`]'s supported range, or tile storage length overflows.
+    /// Panics if q differs from the key's target modulus.
     #[must_use]
     pub fn new(key: &'a NtruLweKeySwitchingKey<T>, modulus: LM) -> Self {
         assert_eq!(
@@ -46,27 +35,33 @@ impl<'a, T: FheUint, LM: RingContext<T>> LweReturnEvaluator<'a, T, LM> {
             key.basis().modulus(),
             "target LWE modulus mismatch"
         );
-        let poly_length = PolyLength::new(key.poly_length());
-        Self {
-            key,
-            modulus,
-            scalar: NtruLweKeySwitchingWorkspace::new(poly_length),
-            batch: NtruLweKeySwitchingBatchWorkspace::new(poly_length, key.output_dimension()),
+        Self { key, modulus }
+    }
+
+    /// Allocates the single N+1-element intermediate LWE used by scalar returns.
+    ///
+    /// # Panics
+    /// Panics if the key's polynomial length is outside [`PolyLength`]'s range.
+    #[must_use]
+    pub fn new_scalar_workspace(&self) -> NtruLweKeySwitchingWorkspace<T> {
+        NtruLweKeySwitchingWorkspace::new(PolyLength::new(self.key.poly_length()))
+    }
+
+    /// Allocates bounded return tiles and shared-input conversion scratch.
+    /// No scalar workspace is included; the batch path handles singleton tiles too.
+    ///
+    /// # Panics
+    /// Panics if the key's polynomial length is outside [`PolyLength`]'s range
+    /// or tile storage length overflows.
+    #[must_use]
+    pub fn new_batch_workspace(&self) -> LweReturnBatchWorkspace<T> {
+        LweReturnBatchWorkspace {
+            batch: NtruLweKeySwitchingBatchWorkspace::new(
+                PolyLength::new(self.key.poly_length()),
+                self.key.output_dimension(),
+            ),
             prepared: None,
         }
-    }
-
-    /// Returns whether a stream owns the return buffers, including an empty active batch.
-    #[must_use]
-    pub fn is_batch_active(&self) -> bool {
-        self.prepared.is_some()
-    }
-
-    fn check_idle(&self) {
-        assert!(
-            self.prepared.is_none(),
-            "finish or discard the pending NTRU return batch first"
-        );
     }
 
     /// Returns phase coefficient `index` at q under the independent LWE secret.
@@ -76,16 +71,16 @@ impl<'a, T: FheUint, LM: RingContext<T>> LweReturnEvaluator<'a, T, LM> {
     /// source secret and noise requirements. Q→q precedes extraction signs.
     ///
     /// # Panics
-    /// Rejects an active stream or invalid input/output lengths or index before writes.
+    /// Rejects invalid input/output/workspace lengths or index before writes.
     pub fn return_at_to(
-        &mut self,
+        &self,
         input: NtruCiphertext<&[T]>,
         index: usize,
         mut output: Lwe<&mut [T]>,
+        workspace: &mut NtruLweKeySwitchingWorkspace<T>,
     ) {
-        self.check_idle();
         self.key
-            .key_switch_at_to(&input, index, &mut output, self.modulus, &mut self.scalar);
+            .key_switch_at_to(&input, index, &mut output, self.modulus, workspace);
     }
 
     /// Returns phase coefficients `0..outputs.len()` from one shared NTRU input.
@@ -98,38 +93,24 @@ impl<'a, T: FheUint, LM: RingContext<T>> LweReturnEvaluator<'a, T, LM> {
     ///
     /// # Panics
     /// Rejects an active stream or invalid input/output lengths or prefix indices
-    /// before output/scratch writes.
+    /// or workspace dimensions before output/scratch writes.
     pub fn return_prefix_to(
-        &mut self,
+        &self,
         input: NtruCiphertext<&[T]>,
         outputs: &mut [LweCiphertext<T>],
+        workspace: &mut LweReturnBatchWorkspace<T>,
     ) {
-        self.check_idle();
-        match outputs {
-            [output] => {
-                self.key
-                    .key_switch_at_to(&input, 0, output, self.modulus, &mut self.scalar)
-            }
-            _ => self.key.key_switch_many_at_to(
-                &input,
-                0..outputs.len(),
-                outputs,
-                self.modulus,
-                &mut self.batch,
-            ),
-        }
-    }
-
-    /// Maximum number of extracted LWEs retained in one streamed tile.
-    #[must_use]
-    pub fn batch_capacity(&self) -> usize {
-        self.batch.batch_capacity()
-    }
-
-    /// Starts an empty stream, discarding any previous pending prefix without clearing buffers.
-    /// BR/FFT and source buffers remain independently usable between appends.
-    pub fn begin_batch(&mut self) {
-        self.prepared = Some(0);
+        assert!(
+            !workspace.is_batch_active(),
+            "finish or discard the pending NTRU return batch first"
+        );
+        self.key.key_switch_many_at_to(
+            &input,
+            0..outputs.len(),
+            outputs,
+            self.modulus,
+            &mut workspace.batch,
+        );
     }
 
     /// Converts/extracts one phase coefficient and appends it to the current prefix.
@@ -138,25 +119,34 @@ impl<'a, T: FheUint, LM: RingContext<T>> LweReturnEvaluator<'a, T, LM> {
     /// # Correctness
     /// Inherits [`NtruLweKeySwitchingKey::modulus_switch_extract_at_to`]'s canonical
     /// coefficient, source secret and noise requirements. Conversion precedes signs.
+    /// Every append and submission in one stream must use this same return key
+    /// (or a key for the same actual secrets and Q/q); workspace shape does not
+    /// establish secret or modulus identity.
     ///
     /// # Panics
-    /// Rejects an inactive/full batch or invalid input length/index before writes.
+    /// Rejects an inactive/full batch, invalid input length/index or extracted-slot
+    /// length before writes.
     /// A rejected append does not advance the valid prefix.
-    pub fn append_at(&mut self, input: NtruCiphertext<&[T]>, index: usize) {
-        let count = self
+    pub fn append_at(
+        &self,
+        input: NtruCiphertext<&[T]>,
+        index: usize,
+        workspace: &mut LweReturnBatchWorkspace<T>,
+    ) {
+        let count = workspace
             .prepared
             .expect("begin an NTRU return batch before appending");
         assert!(
-            count < self.batch_capacity(),
+            count < workspace.batch_capacity(),
             "NTRU return batch exceeds workspace capacity"
         );
         self.key.modulus_switch_extract_at_to(
             input,
             index,
-            self.batch.extracted_slot_mut(count),
+            workspace.batch.extracted_slot_mut(count),
             self.modulus,
         );
-        self.prepared = Some(count + 1);
+        workspace.prepared = Some(count + 1);
     }
 
     /// Returns the entire appended prefix in order, then ends the stream.
@@ -165,14 +155,19 @@ impl<'a, T: FheUint, LM: RingContext<T>> LweReturnEvaluator<'a, T, LM> {
     ///
     /// # Correctness
     /// Inherits [`NtruLweKeySwitchingKey::key_switch_extracted_batch_to`]'s noise
-    /// requirements for the intermediate LWEs prepared by [`Self::append_at`].
+    /// requirements for the intermediate LWEs prepared by [`Self::append_at`] under
+    /// this binding's secrets and q.
     ///
     /// # Panics
-    /// Rejects an inactive batch, mismatched count or any wrong output dimension
-    /// before output/scratch writes. Failed validation retains the prefix for retry
+    /// Rejects an inactive batch, mismatched count or incompatible workspace/output
+    /// dimensions before output/scratch writes. Failed validation retains the prefix for retry
     /// or discard.
-    pub fn return_batch_to(&mut self, outputs: &mut [LweCiphertext<T>]) {
-        let count = self
+    pub fn return_batch_to(
+        &self,
+        outputs: &mut [LweCiphertext<T>],
+        workspace: &mut LweReturnBatchWorkspace<T>,
+    ) {
+        let count = workspace
             .prepared
             .expect("begin an NTRU return batch before submitting");
         assert_eq!(
@@ -181,12 +176,46 @@ impl<'a, T: FheUint, LM: RingContext<T>> LweReturnEvaluator<'a, T, LM> {
             "NTRU return output count differs from the prepared prefix"
         );
         self.key
-            .key_switch_extracted_batch_to(outputs, self.modulus, &mut self.batch);
-        self.discard_batch();
+            .key_switch_extracted_batch_to(outputs, self.modulus, &mut workspace.batch);
+        workspace.discard_batch();
+    }
+}
+
+/// Reusable batch-return storage and the current stream's valid prefix.
+///
+/// Created by [`LweReturnEvaluator::new_batch_workspace`]. Owns one Q→q
+/// polynomial plus bounded extracted/output LWE tiles, with no scalar buffer or
+/// key borrow. Only `0..prepared` belongs to the current stream; old slot contents
+/// never become valid merely by restarting. Compatible storage can be reused with
+/// another binding after finishing or discarding the previous stream.
+/// Scalar returns use independent storage and may run while this stream is active.
+pub struct LweReturnBatchWorkspace<T: FheUint> {
+    batch: NtruLweKeySwitchingBatchWorkspace<T>,
+    // None is idle; Some(k) is an active stream, even when k is zero.
+    prepared: Option<usize>,
+}
+
+impl<T: FheUint> LweReturnBatchWorkspace<T> {
+    /// Returns whether a stream is active, including an empty active batch.
+    #[must_use]
+    pub fn is_batch_active(&self) -> bool {
+        self.prepared.is_some()
+    }
+
+    /// Maximum number of extracted LWEs retained in one streamed tile.
+    #[must_use]
+    pub fn batch_capacity(&self) -> usize {
+        self.batch.batch_capacity()
+    }
+
+    /// Starts an empty stream, discarding any previous prefix without clearing buffers.
+    /// Source and BR/FFT buffers remain independently usable between appends.
+    pub fn begin_batch(&mut self) {
+        self.prepared = Some(0);
     }
 
     /// Cancels a stream without clearing buffers; does nothing when idle.
-    /// Dropping this evaluator also drops pending samples.
+    /// Dropping this workspace also drops pending samples.
     pub fn discard_batch(&mut self) {
         self.prepared = None;
     }

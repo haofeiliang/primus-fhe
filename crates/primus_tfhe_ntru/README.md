@@ -63,23 +63,26 @@ The separate [primus_tfhe_ntru_lut](../primus_tfhe_ntru_lut/README.md) crate han
 
 ## NTRU→LWE returns
 
-`LweReturnEvaluator` borrows the Q→q, f→s return key and owns scalar/batch buffers,
-without an NTT/FFT engine. Both backends re-export it. Construct with
-`LweReturnEvaluator::new(server.key_switching_key(), q_modulus)` after choosing the
-paired key and external q. Input must be coefficient-domain NTRU under that key's
-ring secret at Q, with canonical residues and a valid return noise budget.
+`LweReturnEvaluator::new(server.key_switching_key(), q_modulus)` borrows the
+Q→q, f→s key and binds external q without allocating. Both backends re-export it.
+Prepare only the storage you need with `new_scalar_workspace()` and/or
+`new_batch_workspace()`. The latter returns `LweReturnBatchWorkspace`, containing
+bounded tiles and the stream's valid-prefix state. Input must be canonical
+coefficient-domain NTRU under the paired ring secret at Q, with a valid noise budget.
 
-`return_at_to(input.as_view(), index, output.as_mut_view())` converts and extracts one phase
-coefficient. `return_prefix_to(input.as_view(), outputs)` returns consecutive
-coefficients, sharing one Q→q conversion for multiple outputs. For different
-sources, use `begin_batch` → `append_at(input.as_view(), index)` →
-`return_batch_to(outputs)`. Each append retains only an extracted LWE; source and
-one-hot/FFT buffers may be overwritten afterward. Submit exactly the appended
-count, at most `batch_capacity()` (currently eight). Empty and singleton batches
-are valid. Successful submission ends the stream; `discard_batch` cancels it,
-and restarting discards the previous prefix. Scalar/prefix returns reject an
-active stream. Independent ordinary PBS remains usable during that stream.
-All online `_to` and stream operations allocate nothing; construction allocates.
+- `return_at_to(input.as_view(), index, output.as_mut_view(), &mut scalar)` returns one phase coefficient.
+- `return_prefix_to(input.as_view(), outputs, &mut batch)` returns consecutive coefficients, sharing one Q→q conversion for multiple outputs.
+- For different sources, call `batch.begin_batch()`, then ordered `append_at(input.as_view(), index, &mut batch)`, then `return_batch_to(outputs, &mut batch)`.
+
+Each append retains only an extracted LWE; source and one-hot/FFT buffers may be
+reused immediately. Submit exactly the appended count, at most
+`batch.batch_capacity()` (currently eight). Empty and singleton batches are valid.
+Successful submission ends the stream; `batch.discard_batch()` cancels it, and
+restarting discards the previous prefix. Failed validation preserves it for retry.
+Shared-prefix return rejects an active batch; independent scalar scratch remains
+usable. All appends and submission must use the same actual secrets and Q/q;
+workspace shape does not establish key identity. Finish or discard before
+reusing batch storage with a different binding. Online operations allocate nothing.
 
 ## Further reading
 

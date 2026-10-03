@@ -10,7 +10,7 @@ use primus_ntru::{FourierNgswCiphertext, NtruCiphertext};
 use primus_poly::{FourierPolynomialIter, FourierPolynomialIterMut, Polynomial};
 use primus_reduce::RingContext;
 use primus_tfhe::LweCiphertext;
-use primus_tfhe_ntru::LweReturnEvaluator;
+use primus_tfhe_ntru::{LweReturnBatchWorkspace, LweReturnEvaluator};
 use primus_tfhe_ntru_fourier::{
     BlindRotationKey, CircuitBootstrapKey, OneHotCircuitBootstrapEvaluator, ServerKey, TfheContext,
 };
@@ -47,6 +47,7 @@ where
     lookup_table: &'a HighPrecisionLookupTable<T>,
     one_hot: OneHotCircuitBootstrapEvaluator<'a, T, Table, LM>,
     lwe_return: LweReturnEvaluator<'a, T, LM>,
+    batch_return: LweReturnBatchWorkspace<T>,
     // [NLEV batch][branch][level][Fourier value]: full selectors for public choices.
     public_table_selectors: Box<[Complex64]>,
     // One full NLEV coefficient batch, reused when preparing each public selector batch.
@@ -160,14 +161,16 @@ where
         } else {
             0
         };
+        let lwe_return = LweReturnEvaluator::new(
+            return_key,
+            context.parameters().external_lwe().cipher_modulus(),
+        );
         let mut evaluator = Self {
             context,
             lookup_table,
             one_hot,
-            lwe_return: LweReturnEvaluator::new(
-                return_key,
-                context.parameters().external_lwe().cipher_modulus(),
-            ),
+            batch_return: lwe_return.new_batch_workspace(),
+            lwe_return,
             public_table_selectors: vec![Complex64::default(); public_table_selectors_len]
                 .into_boxed_slice(),
             public_selector_coefficients: vec![T::ZERO; public_selector_coefficients_len]
@@ -264,7 +267,7 @@ where
             self.context.parameters().external_lwe_dimension(),
         );
         self.prepare_selectors(input);
-        let capacity = self.lwe_return.batch_capacity();
+        let capacity = self.batch_return.batch_capacity();
         let plan = &self.lookup_table.selection;
         let mut first = 0;
         while first < output.len() {
@@ -275,10 +278,11 @@ where
                 }
                 OutputAction::Evaluate => {
                     let tile = plan.evaluation_tile(first, capacity);
-                    self.lwe_return.begin_batch();
+                    self.batch_return.begin_batch();
                     self.prepare_output_returns(tile.clone());
                     first = tile.end;
-                    self.lwe_return.return_batch_to(&mut output[tile]);
+                    self.lwe_return
+                        .return_batch_to(&mut output[tile], &mut self.batch_return);
                 }
             }
         }
@@ -290,7 +294,8 @@ where
         for output in outputs {
             self.select_table(output);
             self.rotate_selected_table();
-            self.lwe_return.append_at(self.current.as_view(), 0);
+            self.lwe_return
+                .append_at(self.current.as_view(), 0, &mut self.batch_return);
         }
     }
 

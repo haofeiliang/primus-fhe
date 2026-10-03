@@ -27,7 +27,7 @@
 //! borrow ordinary PBS operations. MVB uses `into_bootstrapper`; CBS/one-hot uses
 //! `try_into_bootstrapper(return_key)`. Standalone CBS/one-hot has no return buffers:
 //! its PBS borrow is `None`, and recovery allocates them. Conversion from complete
-//! PBS retains those buffers when recovering with the same return-key object.
+//! PBS reuses those buffers when recovering with any compatible return key.
 //! [`LweReturnEvaluator`] supports independent coefficient-domain returns.
 //!
 //! # Composition and representation
@@ -85,7 +85,9 @@ pub use primus_tfhe::{
     FactorizedLookupTable, InterleavedLookupTable, LookupTable, LookupTableCompiler, Lwe,
     LweCiphertext, LweSecretKeyRef,
 };
-pub use primus_tfhe_ntru::{ClientKey, EncryptionKey, LwePublicKey, LweReturnEvaluator};
+pub use primus_tfhe_ntru::{
+    ClientKey, EncryptionKey, LwePublicKey, LweReturnBatchWorkspace, LweReturnEvaluator,
+};
 
 #[doc(no_inline)]
 pub use circuit_bootstrap::CircuitBootstrapKey;

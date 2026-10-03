@@ -32,9 +32,10 @@
 //!
 //! # Independent NTRU→LWE returns
 //!
-//! [`LweReturnEvaluator`] binds coefficient-domain return keys and scratch,
+//! [`LweReturnEvaluator`] binds coefficient-domain return keys and q,
 //! independent of NTT/FFT or one-hot resources. It supports scalar, shared-input
-//! prefix and different-input stream returns without online allocation.
+//! prefix and different-input stream returns with separately prepared scalar/batch
+//! workspaces and no online allocation.
 
 #![deny(missing_docs)]
 
@@ -53,7 +54,7 @@ pub use error::{
     TfheClientError, TfheKeyError, TfheParameterError,
 };
 pub use key::ClientKey;
-pub use lwe_return::LweReturnEvaluator;
+pub use lwe_return::{LweReturnBatchWorkspace, LweReturnEvaluator};
 pub use one_hot::{OneHotBootstrapError, OneHotLookupTable};
 pub use parameters::{TfheConfig, TfheParameters};
 

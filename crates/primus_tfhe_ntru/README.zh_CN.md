@@ -63,18 +63,22 @@ NTT reverse trace 使用模逆元，Fourier 使用原生整数减半并引入 FF
 
 ## NTRU→LWE 返回
 
-`LweReturnEvaluator` 借用 Q→q、f→s 返回密钥，持有 scalar/batch 缓冲，不持有 NTT/FFT
-engine。两个后端均重新导出它。选择配对密钥与外部 q 后，使用
-`LweReturnEvaluator::new(server.key_switching_key(), q_modulus)` 构造。输入必须为
-该返回密钥的环秘密下、Q 域的系数形式 NTRU，系数规范且满足返回噪声预算。
+`LweReturnEvaluator::new(server.key_switching_key(), q_modulus)` 借用 Q→q、f→s
+返回密钥并绑定外部 q，本身不分配。两个后端均重新导出它。按需调用
+`new_scalar_workspace()` 和／或 `new_batch_workspace()`；后者返回
+`LweReturnBatchWorkspace`，保存固定容量 tile 与流式有效前缀。
+输入须为配对环秘密下、Q 域的规范系数形式 NTRU，并满足返回噪声预算。
 
-`return_at_to(input.as_view(), index, output.as_mut_view())` 转换并提取一个相位系数。
-`return_prefix_to(input.as_view(), outputs)` 返回连续系数，多个输出共用一次 Q→q 转换。
-不同来源使用 `begin_batch` → `append_at(input.as_view(), index)` → `return_batch_to(outputs)`；
-每次追加只保留提取后的 LWE，随后可覆盖来源及 one-hot/FFT 缓冲。
-提交数量必须等于已追加数量，不超过 `batch_capacity()`（目前为八）；空批次和单项有效。
-成功提交结束批次，`discard_batch` 取消，重新开始丢弃旧前缀。活跃批次期间拒绝 scalar/prefix
-返回，但独立普通 PBS 可继续使用。构造允许分配，在线 `_to` 与流式操作均不分配。
+- `return_at_to(input.as_view(), index, output.as_mut_view(), &mut scalar)` 返回一个相位系数。
+- `return_prefix_to(input.as_view(), outputs, &mut batch)` 返回连续系数，多个输出共用一次 Q→q 转换。
+- 不同来源依次调用 `batch.begin_batch()`、有序 `append_at(input.as_view(), index, &mut batch)`、`return_batch_to(outputs, &mut batch)`。
+
+每次追加只保留提取后的 LWE，随后即可复用来源及 one-hot/FFT 缓冲。提交数量须等于
+已追加数量，不超过 `batch.batch_capacity()`（目前为八）；空批次和单项有效。
+成功提交结束批次，`batch.discard_batch()` 取消，重新开始丢弃旧前缀；校验失败保留
+前缀供重试。活跃批次拒绝共享前缀返回，独立的 scalar 缓冲仍可使用。
+同一批次的追加与提交须使用相同实际秘密及 Q/q，工作区尺寸不能证明密钥身份。
+换用其他绑定前先结束或取消批次。在线操作均不分配。
 
 ## 进一步阅读
 

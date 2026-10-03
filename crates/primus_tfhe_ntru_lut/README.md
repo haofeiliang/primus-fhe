@@ -90,7 +90,7 @@ The data LUT encodes one function value per logical input/output chunk, with ide
 
 The evaluator borrows its context, server key and table and allocates all buffers at construction. Reuse the result of `allocate_output()` with `evaluate_to` for allocation-free online evaluation. All chunk counts and LWE dimensions are checked before writes. Resources must match N/q/Q and actual key identity; the table’s t determines one-hot geometry; Fourier also requires the exact FFT table instance. Each concurrent evaluator owns independent mutable workspace.
 
-The return path performs coefficient-wise Q→q and phase extraction independently for each polynomial, then switches to the external LWE secret. NTT returns each output immediately. Fourier batches key switching through an independent `LweReturnEvaluator`, retaining only a small tile of intermediate LWEs; the polynomial buffer can be overwritten after each extraction. Outputs approximate the q-domain chunk encoding; budget double-rounding and return errors.
+The return path performs coefficient-wise Q→q and phase extraction independently for each polynomial, then switches to the external LWE secret. NTT returns each output immediately and allocates only scalar return scratch. Fourier allocates only `LweReturnBatchWorkspace` and batches key switching through an independent `LweReturnEvaluator`, retaining only a small tile of intermediate LWEs; the polynomial buffer can be overwritten after each extraction. Outputs approximate the q-domain chunk encoding; budget double-rounding and return errors.
 
 ## Numerical limits and further reading
 

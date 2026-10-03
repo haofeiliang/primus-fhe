@@ -182,13 +182,13 @@ GLWE 复用已有独立 `BootstrappingKey::{Classic,Sparse}` 和底层环 KS own
 
 CBS 的可选材料仍使用 `Option` 表示。私有绑定集中可用材料与所选 output parameters；NTRU CBS/one-hot 要求 classic，并始终使用 circuit key 的完整 output basis。GLWE CBS 支持 classic 与 sparse，独立 `try_from_parts` 验证调用方提供的参数、trace basis 和 scheme-switch layout，可复用兼容的独立 output basis。构造后保存借用的绑定，在线操作不再取得可选材料。布局及 basis 一致仍不证明秘密或变换表示身份。
 
-入口：NTRU [NTT 控制视图](../../crates/primus_tfhe_ntru_ntt/src/key/classic.rs) / [Fourier 控制视图](../../crates/primus_tfhe_ntru_fourier/src/key/classic.rs)，各后端 `circuit_bootstrap/key.rs` 的私有绑定与 `circuit_bootstrap/evaluator.rs` 的公开构造器。高精度 LUT 从已绑定 one-hot 取得 initializer；返回缓冲和批次协议由家族 `LweReturnEvaluator` 拥有，NTT/Fourier evaluator 各自选择返回调度。
+入口：NTRU [NTT 控制视图](../../crates/primus_tfhe_ntru_ntt/src/key/classic.rs) / [Fourier 控制视图](../../crates/primus_tfhe_ntru_fourier/src/key/classic.rs)，各后端 `circuit_bootstrap/key.rs` 的私有绑定与 `circuit_bootstrap/evaluator.rs` 的公开构造器。高精度 LUT 从已绑定 one-hot 取得 initializer；返回密钥与 q 由家族 `LweReturnEvaluator` 绑定，缓冲由消费者独立持有，批次协议位于 `LweReturnBatchWorkspace`，NTT/Fourier evaluator 各自选择返回调度。
 
 ## NTRU 返回资源与批次
 
-家族层的系数域 `LweReturnEvaluator` 绑定返回 key、q 和 scalar/batch scratch，不带变换表泛型。NTT/Fourier 复用同一个具体实现。单项直接转换并提取；共享输入的 interleaved 返回只转换 Q→q 一次；MVB 与 Fourier LUT 对每个来源独立转换，保留提取后的 LWE。转换始终先于提取符号。
+家族层的系数域 `LweReturnEvaluator` 只绑定返回 key 和 q，scalar/batch scratch 独立准备并显式传入，不带变换表泛型。NTT/Fourier 复用同一个具体实现。单项直接转换并提取；共享输入的 interleaved 返回只转换 Q→q 一次；MVB 与 Fourier LUT 对每个来源独立转换，保留提取后的 LWE。转换始终先于提取符号。
 
-其公开流式协议为 `begin_batch` → 顺序 `append_at` → `return_batch_to`；提交数须完全匹配有效前缀，成功后前缀失效。`discard_batch` 或重新开始丢弃旧前缀。追加不保留源借用，one-hot/外积/FFT 和独立 PBS 可穿插执行；活跃批次拒绝使用同一返回对象的 scalar/prefix 方法。两种 LUT 显式持有 standalone one-hot 与返回对象，NTT 继续逐项返回，Fourier 继续流式返回；不再依赖 one-hot 内嵌完整 PBS。
+公开流式协议为工作区的 `begin_batch` → 绑定的顺序 `append_at(..., &mut batch)` → `return_batch_to(..., &mut batch)`；提交数须完全匹配有效前缀，成功后前缀失效。`discard_batch` 或重新开始丢弃旧前缀。追加不保留源借用，one-hot/外积/FFT 和独立 PBS 可穿插执行；活跃批次拒绝共享前缀返回，独立 scalar 工作区仍可使用。同一批次必须保持秘密与 Q/q 绑定不变。两种 LUT 显式持有 standalone one-hot 与返回绑定，NTT 仅准备 scalar 工作区并逐项返回，Fourier 仅准备 batch 工作区并流式返回；不再依赖 one-hot 内嵌完整 PBS。
 
 ## 输入、盲旋转与返回组合
 

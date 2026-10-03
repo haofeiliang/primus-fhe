@@ -127,7 +127,7 @@ Context 保存不可变参数和变换表，ServerKey 保存求值材料；Evalu
 - GLWE MVB：`FactorizedEvaluator::from_bootstrapper(pbs)`；NTRU MVB 使用可失败的 `try_from_bootstrapper`。
 - GLWE/NTRU CBS 与 NTRU one-hot 均显式接收 CBS 材料：`CircuitBootstrapEvaluator::try_from_bootstrapper(pbs, circuit_key, &input_codec)`（one-hot 使用自己的 evaluator 类型）。
 - `bootstrapper_mut()` 借用普通 PBS 操作。导入 `ProgrammableBootstrap` / `ProgrammableBootstrapInterleaved` 即可调用相应 `_to`，借用不能替换内部 evaluator。
-- `into_bootstrapper()` 回收 MVB 工作区。GLWE CBS 使用 `try_into_bootstrapper(glwe_ks_key)`，复用已有输入或返回 KS 缓冲；独立 BR→KS CBS 在此分配缺失返回缓冲。NTRU CBS/one-hot 使用 `try_into_bootstrapper(return_key)`；从完整 PBS 转入且传回同一返回密钥对象时回收无分配，其他情况准备返回缓冲。
+- `into_bootstrapper()` 回收 MVB 工作区。GLWE CBS 使用 `try_into_bootstrapper(glwe_ks_key)`，复用已有输入或返回 KS 缓冲；独立 BR→KS CBS 在此分配缺失返回缓冲。NTRU CBS/one-hot 使用 `try_into_bootstrapper(return_key)`；从完整 PBS 转入时可用任意兼容返回密钥无分配恢复，并丢弃旧待提交样本；独立 CBS 在此分配缺失缓冲。
 
 只需一种能力时使用 `context.factorized_evaluator` 或 `context.circuit_bootstrap_evaluator`。独立 GLWE BR→KS CBS 与 NTRU CBS/one-hot 省略普通返回缓冲，其 PBS 借用是 `None`，恢复时显式分配缺失缓冲。GLWE KS→BR CBS 保留必需的输入 KS，不需额外返回存储即可提供 `Some`。从完整 PBS 转入的 CBS/one-hot 始终返回 `Some`；MVB 提供直接借用。需要频繁交替则从普通 PBS 转入。构造允许分配，在线执行和借用不做隐藏分配。Boolean 的 `try_new` 接受 PBS 所有权，`into_bootstrapper` 可回收。
 

@@ -168,7 +168,7 @@ impl<'a, T: TorusFftValue, Table: FftTable, LM: primus_reduce::RingContext<T>>
     /// Discards any unfinished return tile left by an interrupted evaluation.
     #[must_use]
     pub fn into_bootstrapper(mut self) -> Evaluator<'a, T, Table, LM> {
-        self.evaluator.lwe_return.discard_batch();
+        self.evaluator.batch_return.discard_batch();
         self.evaluator
     }
 
@@ -225,14 +225,16 @@ impl<'a, T: TorusFftValue, Table: FftTable, LM: primus_reduce::RingContext<T>>
             .parameters()
             .poly_length()
             .get();
-        let batch_size = self.evaluator.lwe_return.batch_capacity();
+        let batch_size = self.evaluator.batch_return.batch_capacity();
         let mut factors = FourierPolynomialIter::new(&lookup_table.factors, n / 2);
         for outputs in outputs.chunks_mut(batch_size) {
-            self.evaluator.lwe_return.begin_batch();
+            self.evaluator.batch_return.begin_batch();
             for factor in factors.by_ref().take(outputs.len()) {
                 self.prepare_factor_return(factor);
             }
-            self.evaluator.lwe_return.return_batch_to(outputs);
+            self.evaluator
+                .lwe_return
+                .return_batch_to(outputs, &mut self.evaluator.batch_return);
         }
     }
 
@@ -287,9 +289,11 @@ impl<'a, T: TorusFftValue, Table: FftTable, LM: primus_reduce::RingContext<T>>
             .mul_fourier_polynomial_to(&factor, &mut self.product);
         self.product
             .write_torus_form(&mut engine.workspace.current, &mut engine.fft);
-        evaluator
-            .lwe_return
-            .append_at(engine.workspace.current.as_view(), 0);
+        evaluator.lwe_return.append_at(
+            engine.workspace.current.as_view(),
+            0,
+            &mut evaluator.batch_return,
+        );
     }
 }
 

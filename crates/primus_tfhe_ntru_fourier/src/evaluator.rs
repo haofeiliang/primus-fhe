@@ -5,7 +5,7 @@ use primus_tfhe::{
 };
 
 use crate::{
-    BlindRotationKey, Lwe, LweReturnEvaluator, ServerKey, TfheContext,
+    BlindRotationKey, Lwe, LweReturnBatchWorkspace, LweReturnEvaluator, ServerKey, TfheContext,
     bootstrap::BlindRotationEngine,
 };
 
@@ -18,6 +18,8 @@ where
 {
     pub(crate) engine: BlindRotationEngine<'a, T, Table, LM>,
     pub(crate) lwe_return: LweReturnEvaluator<'a, T, LM>,
+    scalar_return: primus_ntru::NtruLweKeySwitchingWorkspace<T>,
+    pub(crate) batch_return: LweReturnBatchWorkspace<T>,
 }
 
 impl<'a, T, Table, LM> Evaluator<'a, T, Table, LM>
@@ -66,7 +68,14 @@ where
             return_key,
             engine.context.parameters().external_lwe().cipher_modulus(),
         );
-        Self { engine, lwe_return }
+        let scalar_return = lwe_return.new_scalar_workspace();
+        let batch_return = lwe_return.new_batch_workspace();
+        Self {
+            engine,
+            lwe_return,
+            scalar_return,
+            batch_return,
+        }
     }
 
     /// Applies a compiled lookup table and allocates the returned ciphertext.
@@ -106,7 +115,7 @@ where
         output: Lwe<&mut [T]>,
     ) {
         assert!(
-            !self.lwe_return.is_batch_active(),
+            !self.batch_return.is_batch_active(),
             "finish or discard the pending NTRU return batch first"
         );
         let parameters = self.engine.context.parameters();
@@ -179,7 +188,7 @@ where
         outputs: &mut [LweCiphertext<T>],
     ) {
         assert!(
-            !self.lwe_return.is_batch_active(),
+            !self.batch_return.is_batch_active(),
             "finish or discard the pending NTRU return batch first"
         );
         let parameters = self.engine.context.parameters();
@@ -218,15 +227,23 @@ where
     }
 
     /// CBS consumes `current` directly; ordinary PBS returns its phase coefficient.
-    pub(crate) fn return_accumulator_at_to(&mut self, index: usize, output: Lwe<&mut [T]>) {
-        self.lwe_return
-            .return_at_to(self.engine.workspace.current.as_view(), index, output);
+    fn return_accumulator_at_to(&mut self, index: usize, output: Lwe<&mut [T]>) {
+        self.lwe_return.return_at_to(
+            self.engine.workspace.current.as_view(),
+            index,
+            output,
+            &mut self.scalar_return,
+        );
     }
 
-    /// Share Q→q across the interleaved prefix, keeping a scalar path for one output.
+    /// Share Q→q across the interleaved prefix. The batch kernel also handles
+    /// singleton outputs directly, without a tile copy.
     fn return_accumulator_prefix_to(&mut self, outputs: &mut [LweCiphertext<T>]) {
-        self.lwe_return
-            .return_prefix_to(self.engine.workspace.current.as_view(), outputs);
+        self.lwe_return.return_prefix_to(
+            self.engine.workspace.current.as_view(),
+            outputs,
+            &mut self.batch_return,
+        );
     }
 }
 

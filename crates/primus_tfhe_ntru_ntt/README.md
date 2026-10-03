@@ -48,7 +48,7 @@ NTT tables must implement `MonomialNttTable`; built-in tables support it. Contex
 
 ## Reusing evaluators
 
-Ordinary/interleaved `Evaluator` `_to` calls reuse workspace and caller outputs. See the [resource reuse guide](../primus_tfhe/README.md#reusing-evaluators) for PBS/MVB/CBS ownership conversions. Standalone CBS/one-hot omits ordinary LWE-return buffers: `bootstrapper_mut()` returns `None`, and `try_into_bootstrapper(return_key)` allocates the missing return buffers. Construct with `try_from_bootstrapper(pbs, circuit_key, &input_codec)` to retain a complete PBS and recover it without allocation when passing the same return-key object; its PBS borrow returns `Some`. A different compatible return key prepares new return buffers.
+Ordinary/interleaved `Evaluator` `_to` calls reuse workspace and caller outputs. See the [resource reuse guide](../primus_tfhe/README.md#reusing-evaluators) for PBS/MVB/CBS ownership conversions. Standalone CBS/one-hot omits ordinary LWE-return buffers: `bootstrapper_mut()` returns `None`, and `try_into_bootstrapper(return_key)` allocates the missing return buffers. Construct with `try_from_bootstrapper(pbs, circuit_key, &input_codec)` to retain a complete PBS and recover it without allocation with any compatible return key; its PBS borrow returns `Some`. Recovery discards pending samples from the previous return binding.
 
 ## Fixed-scale factorized MVB
 
@@ -95,12 +95,11 @@ See the [family one-hot contract](../primus_tfhe_ntru/README.md#one-hot-cbs) for
 
 A complete chunk-encryption and lookup workflow is in [ntt_lookup.rs](../primus_tfhe_ntru_lut/examples/ntt_lookup.rs).
 
-For custom returns, create `LweReturnEvaluator::new(server.key_switching_key(),
-context.parameters().external_lwe().cipher_modulus())`. Use `return_at_to` for
-one coefficient, `return_prefix_to` for a shared polynomial, or `begin_batch` →
-`append_at` → `return_batch_to` for independent sources. It owns only coefficient-domain
-return buffers; one-hot and external-product scratch remain independently usable.
-See the [family return contract](../primus_tfhe_ntru/README.md#ntrulwe-returns).
+For custom returns, bind `LweReturnEvaluator::new(server.key_switching_key(),
+context.parameters().external_lwe().cipher_modulus())`, then prepare only the
+needed scalar/batch workspace. Pass it explicitly to `return_at_to`,
+`return_prefix_to`, or the stream operations; one-hot and transform scratch remain
+independently usable. See the [family return contract](../primus_tfhe_ntru/README.md#ntrulwe-returns).
 
 ## Lower-level composition
 

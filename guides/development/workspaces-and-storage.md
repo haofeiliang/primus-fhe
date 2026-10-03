@@ -110,9 +110,9 @@ conversion, extraction, key switching and tile-copy costs together; the backend
 `mvb` benchmarks measure complete interleaved and factorized requests.
 
 Factorized MVB submits each different product through its bound PBS
-evaluator's private `LweReturnEvaluator`. That family-level return object owns
-the stream protocol and both workspaces, with the matching return key and
-modulus. Internally it uses
+evaluator's private `LweReturnEvaluator` binding and `LweReturnBatchWorkspace`.
+The binding borrows the key and q; the workspace owns bounded storage and the
+stream protocol. Internally the binding uses
 `modulus_switch_extract_at_to` into `extracted_slot_mut(slot)`, followed by
 `key_switch_extracted_batch_to` on the filled output prefix. Each polynomial
 gets its own Q→q conversion, but only extracted LWEs survive until a tile is
@@ -135,25 +135,28 @@ One-hot CBS reuses its BR external-product workspace for BR, trace and scheme sw
 
 The high-precision evaluator therefore owns no second external-product workspace or FFT engine. Each evaluator still has independent mutable state, and borrowing excludes concurrent mutation. Existing one-hot/PBS conversion and recovery retain their ownership contracts.
 
-The family `LweReturnEvaluator` binds the coefficient-domain return key, q,
-scalar/batch scratch and stream state without a transform-table generic. Both
+The family `LweReturnEvaluator` binds only the coefficient-domain return key
+and q, without allocating or carrying a transform-table generic. Callers prepare
+scalar scratch with `new_scalar_workspace()` and/or batch scratch with
+`new_batch_workspace()`, then pass the needed workspace explicitly. Both
 backends use the same concrete implementation. Shared-input interleaved returns
 reuse one Q→q conversion; streams independently round each source and retain
 only its extracted LWE. This does not unify the NTT/Fourier numerical kernels.
 
-Custom streams use `begin_batch` → ordered `append_at` → `return_batch_to` on the
-return evaluator. Submission consumes exactly the current prefix, including an
+Custom streams use `batch.begin_batch()` → ordered `append_at(..., &mut batch)`
+→ `return_batch_to(..., &mut batch)` on the return binding. Submission consumes exactly the current prefix, including an
 empty or partial tile, then invalidates it. `discard_batch` cancels it; restart
 invalidates the old prefix. Input/index and output-count/dimension rejection
-leave that prefix intact. Scalar/shared-prefix calls reject active streams.
+leave that prefix intact. Shared-prefix calls reject an active batch; separate scalar scratch remains usable.
+All appends and submission in one stream must use the same actual secrets and
+Q/q; the workspace tracks initialized slots, not key identity.
 One-hot, table products and separately owned ordinary PBS may run between
 appends because they do not own those return buffers. These state checks belong
 to the stream boundary, not coefficient kernels.
 
-Each lookup evaluator explicitly owns standalone one-hot and one return evaluator.
-NTT keeps its scalar schedule; Fourier keeps bounded streamed tiles. Standalone
-one-hot no longer allocates unused ordinary-return resources, so this composition
-adds no retained heap. Both NTRU factorized MVB backends still retain complete
+Each lookup evaluator explicitly owns standalone one-hot and a return binding.
+NTT allocates only scalar scratch; Fourier allocates only batch scratch and keeps
+its bounded streamed schedule. Standalone one-hot has no ordinary-return buffers. Both NTRU factorized MVB backends still retain complete
 PBS and use its private return evaluator. Arithmetic, tile size and scheduling
 are unchanged; no new latency claim is made.
 
@@ -178,7 +181,7 @@ operations, preventing replacement of the key-bound evaluator.
 | Standalone GLWE KS→BR | `Some` | None |
 | Standalone NTRU CBS/one-hot | `None` | Allocate scalar/batch returns |
 | GLWE CBS from complete PBS | `Some` | None |
-| NTRU CBS/one-hot from complete PBS | `Some` | None when recovering with the same return-key object |
+| NTRU CBS/one-hot from complete PBS | `Some` | None for any compatible return key |
 
 GLWE engines borrow the selected BR key directly. Each active KS stage binds
 its own ring KS key alongside the existing scratch. Independent BR→KS CBS can
@@ -194,13 +197,117 @@ NTRU BR, return and CBS material have independent owners. Standalone CBS/one-hot
 borrows only BR and CBS keys; its resources retain no return-key dependency.
 `try_from_bootstrapper(pbs, circuit_key, input_codec)` keeps a complete PBS for
 alternation. `try_into_bootstrapper(return_key)` checks the supplied return
-material, reuses retained buffers for that same key object, and otherwise
-prepares new return buffers while retaining BR/FFT storage. All allocation is
+material and reuses retained buffers for any compatible key, discarding pending
+samples from the previous binding. Only standalone CBS prepares missing return
+buffers while retaining BR/FFT storage. All allocation is
 explicit at construction or conversion; online operations do not allocate.
 
 Existing size/domain boundaries and semantic polynomial/ciphertext iterators describe batches. Table groups contain M polynomials; ciphertext iterators traverse one complete object at a time. Candidate compaction remains indexed because a group must be consumed before its result overwrites the prefix. No additional generic batch abstraction is needed.
 
 Partial reverse trace with r>1 retains r equally spaced coefficients; CBS needs separate constant projections of gadget entries. It cannot replace those projections. The real serial consumer already uses `project_prefix_coefficients_with_scratch_to`. Standalone partial-trace callers have their own trace workspace, so an additional partial-trace scratch API currently has no independent consumer.
+
+## NTRU resource ownership
+
+This table records the concrete serial consumers; it does not introduce a common
+resource trait. NTT and Fourier keep distinct numerical representations.
+
+| Resource | Owner | Lifetime and serial reuse |
+| --- | --- | --- |
+| Coefficient accumulator/current and BR temporary polynomial | `BlindRotationEngine::workspace` | BR overwrites both; CBS projects/rotates the result; factorized MVB reuses current for each recovered product |
+| BR CMux/sparse scratch and external-product workspace | Selected `RotationState` | Selected at construction; classic EP scratch is reused by CBS trace/scheme switch, then borrowed by LUT selection/rotation |
+| FFT plan borrow and backend workspace | Fourier `BlindRotationEngine::fft` | One engine for BR, projection, scheme switch and LUT products; NTT uses the context table directly |
+| Reverse-trace scratch and projected NLEV | CBS/one-hot evaluator | One projected selector at a time; buffers are overwritten before the next selector |
+| Common rotation and factor product in transform representation | `FactorizedEvaluator` | Common rotation survives across outputs; product is reused after conversion/extraction |
+| Public/encrypted selectors, aggregate rotation controls, compiled selection slots | LUT evaluator | Needed selectors survive one request; selection slots follow the compiled graph's last uses |
+| Rotation factors and current/product polynomials | LUT evaluator | Factors are prepared once; current/product ping-pong during encrypted rotation |
+| Return key and target q | `LweReturnEvaluator` | Read-only, allocation-free binding; no scratch or transform dependency |
+| Scalar intermediate LWE, N+1 elements | `NtruLweKeySwitchingWorkspace` | Complete PBS and NTT LUT; overwritten for each return |
+| Converted polynomial and extracted/switched LWE tiles | `LweReturnBatchWorkspace` | Complete PBS and Fourier LUT; one conversion for a shared source, independent conversion per streamed source; only the prepared prefix may be submitted |
+
+Complete PBS prepares both return workspaces, and factorized MVB retains them to
+permit ordinary PBS alternation. Standalone CBS/one-hot prepares neither. Resource
+enums and evaluator nesting still retain the existing PBS/CBS ownership pattern;
+this separation does not redesign BR/projection storage.
+
+## Independent NTRU return workspace measurement
+
+Measured on 2026-10-03 against `a0d5716e`, AMD Ryzen 9 9955HX3D, x86_64 Linux,
+rustc 1.98.1 (48a229cea, LLVM 22.1.8), default features and the repository's
+`target-cpu=native`. Old and new executables ran sequentially on logical CPU 2,
+without concurrent compilation. These are the existing functional benchmark
+profiles, not security recommendations.
+
+The public LUT fixture is unchanged: n800/N1024, eight two-bit input/output
+chunks, d=5, seed 42, `x*x+3*x+7`. The allocator measures complete evaluator
+construction, excluding context, keys, compiled public LUT and caller output.
+Retained requested heap is `allocated_bytes - released_bytes`, excluding allocator
+metadata and RSS. Inline sizes are reported separately.
+
+| LUT backend / word | Allocations before → after | Retained requested bytes before → after | Inline bytes before → after | Constructor median before → after |
+| --- | --- | --- | --- | --- |
+| NTT / u32 | 22 → 19 | 571460 → 508932 | 744 → 672 | 37.32 → 29.92 µs |
+| NTT / u64 | 22 → 19 | 912520 → 787464 | 744 → 672 | 7.63 → 6.35 µs |
+| RustFFT / u32 | 27 → 26 | 1120324 → 1116224 | 816 → 800 | 16.38 → 15.90 µs |
+| RustFFT / u64 | 27 → 26 | 1068168 → 1059968 | 816 → 800 | 15.71 → 16.06 µs |
+| TFHE-FFT / u32 | 27 → 26 | 1120324 → 1116224 | 824 → 808 | 14.86 → 14.44 µs |
+| TFHE-FFT / u64 | 27 → 26 | 1068168 → 1059968 | 824 → 808 | 14.52 → 14.31 µs |
+
+The NTT saving is exactly its unused batch storage,
+`(N + 8*(N+1) + 8*(n+1))*size_of::<T>()`; Fourier removes the unused scalar
+`(N+1)*size_of::<T>()`. Complete PBS and factorized MVB retain both allocations;
+standalone CBS still has neither. Binding `LweReturnEvaluator` itself allocates
+nothing. A compatible return-key rebind now retains existing PBS scratch, even
+when the supplied key is a different object; existing recovery tests also decrypt
+an ordinary PBS result after that rebind.
+
+Constructor timing used a temporary probe in the existing pipeline fixture:
+101 separate `try_new(context, server, table)` calls, each timed with `Instant`
+from immediately before construction to its return; `black_box(&evaluator)` and
+destruction follow the timer. The median excludes key/LUT preparation and drops.
+`measure(|| try_new(...))` and `size_of_val(&evaluator)` provide the memory columns.
+The probe was removed afterward. These short cached-allocator observations do
+not imply a general constructor speedup.
+
+Full LUT request point estimates (20 samples, 0.5 s warmup, 1.5 s measurement)
+were 66.65 → 65.72 ms (NTT/u32), 50.12 → 49.25 ms (NTT/u64),
+109.64 → 104.84 ms (RustFFT/u32), 57.34 → 56.42 ms (RustFFT/u64),
+87.03 → 86.77 ms (TFHE-FFT/u32), and 46.45 → 45.36 ms (TFHE-FFT/u64).
+Every fixture verified its decrypted outputs and measured zero online allocations.
+The established benefit is smaller retained storage; these timings do not claim
+an algorithmic speedup. SIMD is verified functionally, not timed here.
+
+Complete u64 requests were also screened with the existing PBS and MVB fixtures
+(30 samples, 0.5 s warmup, 3 s measurement on CPU 2):
+
+| Backend | Ordinary PBS before → after | Shared-input ManyLUT before → after | Streamed factorized MVB before → after |
+| --- | --- | --- | --- |
+| NTT | 5.986 → 5.982 ms | 6.041 → 6.113 ms | 6.143 → 6.194 ms |
+| RustFFT | 7.150 → 7.159 ms | 7.375 → 7.306 ms | 7.353 → 7.320 ms |
+| TFHE-FFT | 5.941 → 5.981 ms | 6.171 → 6.168 ms | 6.161 → 6.175 ms |
+
+NTT ManyLUT showed an approximately 1.2% increase on CPU 2, so it was rerun in
+new/old/new/old order on CPU 4, with 1 s warmup and 3 s measurement. New versus old
+estimates were 6.117/6.195 ms and 6.146/6.133 ms: the direction did not persist
+across cores/runs. Ordinary PBS rechecks also varied in direction. This screening
+does not establish a consistent latency regression or improvement; it leaves
+roughly percent-level platform/code-layout variation unresolved. No alignment
+padding or numerical-kernel change was added to tune these samples.
+
+Reproduce online measurements with the same tree-specific toolchain, features and
+profiles. Use `--save-baseline ntru-returns` before and `--baseline ntru-returns`
+after; compile both versions before running their benchmark executables when
+alternating them:
+
+```sh
+taskset -c 2 cargo bench -p primus_tfhe_ntru_lut --bench pipeline -- 'u(32|64)/n800_N1024/c8_d5_o8/evaluate' --warm-up-time 0.5 --measurement-time 1.5 --sample-size 20 --noplot
+taskset -c 2 cargo bench -p primus_tfhe_ntru_ntt --bench pbs -- 'u64/binary/boolean/.*/complete' --warm-up-time 0.5 --measurement-time 3 --sample-size 30 --noplot
+taskset -c 2 cargo bench -p primus_tfhe_ntru_ntt --bench mvb -- 'u64/mvb/classic/.*/D8_k3/(interleaved|factorized)' --warm-up-time 0.5 --measurement-time 3 --sample-size 30 --noplot
+```
+
+Use `primus_tfhe_ntru_fourier` for the corresponding PBS/MVB commands; both FFT
+engines are selected. Ordinary PBS uses n800/N1024 and MVB uses n728/N1024,
+D8/k3. The shared-input and streamed return schedules, Q→q-before-sign order,
+transform kernels and fixed tile size are unchanged.
 
 ## Historical fixed-workspace comparison
 

@@ -373,15 +373,20 @@ fn check_return_batches<Table: FftTable>(
     ngsw: &mut [Complex64],
 ) {
     let input_codec = RoundedCodec::new(8, context.parameters().external_lwe().cipher_modulus());
-    // The return evaluator owns the q binding; a different valid modulus is rejected.
+    // The allocation-free binding rejects a different target q before workspace setup.
     assert_rejected(|| {
         let _ = LweReturnEvaluator::new(return_key, PowOf2Modulus::new(1u64 << 23));
     });
-    let mut lwe_return = LweReturnEvaluator::new(
-        return_key,
-        context.parameters().external_lwe().cipher_modulus(),
-    );
-    let capacity = lwe_return.batch_capacity();
+    let (lwe_return, allocation) = allocations::measure(|| {
+        LweReturnEvaluator::new(
+            return_key,
+            context.parameters().external_lwe().cipher_modulus(),
+        )
+    });
+    assert_eq!(allocation.count, 0);
+    let mut scalar_workspace = lwe_return.new_scalar_workspace();
+    let mut batch_workspace = lwe_return.new_batch_workspace();
+    let capacity = batch_workspace.batch_capacity();
     let indices = [0, N / 2, N - 1];
     let mut expected = (0..capacity)
         .map(|_| context.allocate_lwe_ciphertext())
@@ -403,21 +408,22 @@ fn check_return_batches<Table: FftTable>(
     let untouched = returned.clone();
 
     // Neither inactive storage nor a freshly started empty prefix is a sample.
-    assert_rejected(|| lwe_return.return_batch_to(&mut returned));
-    assert_rejected(|| lwe_return.append_at(choices[0].as_view(), 0));
-    lwe_return.begin_batch();
-    assert_rejected(|| lwe_return.return_batch_to(&mut returned));
+    assert_rejected(|| lwe_return.return_batch_to(&mut returned, &mut batch_workspace));
+    assert_rejected(|| lwe_return.append_at(choices[0].as_view(), 0, &mut batch_workspace));
+    batch_workspace.begin_batch();
+    assert_rejected(|| lwe_return.return_batch_to(&mut returned, &mut batch_workspace));
     assert_eq!(returned, untouched);
-    lwe_return.return_batch_to(&mut []);
+    lwe_return.return_batch_to(&mut [], &mut batch_workspace);
 
     // Fill a full tile in order. One-hot can reuse BR/FFT between appends without
     // changing the return prefix; only ciphertext samples survive each append.
     let (_, allocation) = allocations::measure(|| {
-        lwe_return.begin_batch();
+        batch_workspace.begin_batch();
         for i in 0..capacity {
             lwe_return.append_at(
                 choices[i % choices.len()].as_view(),
                 indices[i % indices.len()],
+                &mut batch_workspace,
             );
             if i == 0 {
                 evaluator.one_hot_ngsw_to(input.as_view(), ngsw);
@@ -425,22 +431,40 @@ fn check_return_batches<Table: FftTable>(
         }
     });
     assert_eq!(allocation.count, 0);
-    assert_rejected(|| lwe_return.append_at(choices[0].as_view(), 0));
-    assert_rejected(|| lwe_return.return_batch_to(&mut returned[..capacity - 1]));
+    assert_rejected(|| lwe_return.append_at(choices[0].as_view(), 0, &mut batch_workspace));
+    assert_rejected(|| {
+        lwe_return.return_batch_to(&mut returned[..capacity - 1], &mut batch_workspace)
+    });
     assert_eq!(returned, untouched);
 
     // Reject every output dimension before writing the first valid output.
     let last = returned.pop().unwrap();
     returned.push(primus_tfhe::LweCiphertext::zero(1));
     let malformed = returned.clone();
-    assert_rejected(|| lwe_return.return_batch_to(&mut returned));
+    assert_rejected(|| lwe_return.return_batch_to(&mut returned, &mut batch_workspace));
     assert_eq!(returned, malformed);
     *returned.last_mut().unwrap() = last;
 
-    // A pending stream owns the return buffers. Scalar/shared-input return
-    // cannot reuse them, but independently retained PBS may run safely.
-    assert_rejected(|| lwe_return.return_at_to(choices[0].as_view(), 0, returned[0].as_mut_view()));
-    assert_rejected(|| lwe_return.return_prefix_to(choices[0].as_view(), &mut returned[..2]));
+    // Shared-input return cannot overwrite an active batch. Scalar scratch is
+    // independent: using it while a batch is pending preserves every filled slot.
+    let mut scalar_output = context.allocate_lwe_ciphertext();
+    let (_, allocation) = allocations::measure(|| {
+        lwe_return.return_at_to(
+            choices[0].as_view(),
+            0,
+            scalar_output.as_mut_view(),
+            &mut scalar_workspace,
+        );
+    });
+    assert_eq!(allocation.count, 0);
+    assert_eq!(scalar_output, expected[0]);
+    assert_rejected(|| {
+        lwe_return.return_prefix_to(
+            choices[0].as_view(),
+            &mut returned[..2],
+            &mut batch_workspace,
+        )
+    });
     assert_eq!(returned, untouched);
     let identity = context
         .parameters()
@@ -466,32 +490,44 @@ fn check_return_batches<Table: FftTable>(
             .apply_interleaved_lookup_table_to(input.as_view(), &many, &mut returned[..2]);
     });
     assert_eq!(allocation.count, 0);
-    let (_, allocation) = allocations::measure(|| lwe_return.return_batch_to(&mut returned));
+    let (_, allocation) =
+        allocations::measure(|| lwe_return.return_batch_to(&mut returned, &mut batch_workspace));
     assert_eq!(allocation.count, 0);
     assert_eq!(returned, expected);
-    assert_rejected(|| lwe_return.return_batch_to(&mut returned));
+    assert_rejected(|| lwe_return.return_batch_to(&mut returned, &mut batch_workspace));
     assert_eq!(returned, expected);
 
     // Restart invalidates the old prefix, then a singleton overwrites only its
     // output. Invalid source/index appends do not advance the new prefix.
-    lwe_return.begin_batch();
-    lwe_return.append_at(choices[0].as_view(), 0);
-    lwe_return.begin_batch();
-    assert_rejected(|| lwe_return.return_batch_to(&mut returned[..1]));
-    assert_rejected(|| lwe_return.append_at(NtruCiphertext::new(&[0u64][..]), 0));
-    assert_rejected(|| lwe_return.append_at(choices[0].as_view(), N));
-    lwe_return.append_at(choices[1].as_view(), indices[1]);
-    lwe_return.return_batch_to(&mut returned[..1]);
+    batch_workspace.begin_batch();
+    lwe_return.append_at(choices[0].as_view(), 0, &mut batch_workspace);
+    batch_workspace.begin_batch();
+    assert_rejected(|| lwe_return.return_batch_to(&mut returned[..1], &mut batch_workspace));
+    assert_rejected(|| {
+        lwe_return.append_at(NtruCiphertext::new(&[0u64][..]), 0, &mut batch_workspace)
+    });
+    assert_rejected(|| lwe_return.append_at(choices[0].as_view(), N, &mut batch_workspace));
+    lwe_return.append_at(choices[1].as_view(), indices[1], &mut batch_workspace);
+    lwe_return.return_batch_to(&mut returned[..1], &mut batch_workspace);
     assert_eq!(returned[0], expected[1]);
     assert_eq!(returned[1..], expected[1..]);
 
-    // Discard ends the stream; scalar and shared-input return can reuse its buffers.
-    lwe_return.begin_batch();
-    lwe_return.append_at(choices[0].as_view(), 0);
-    lwe_return.discard_batch();
+    // Discard ends the stream; shared-input return can reuse the batch buffers.
+    batch_workspace.begin_batch();
+    lwe_return.append_at(choices[0].as_view(), 0, &mut batch_workspace);
+    batch_workspace.discard_batch();
     let (_, allocation) = allocations::measure(|| {
-        lwe_return.return_at_to(choices[0].as_view(), indices[0], returned[0].as_mut_view());
-        lwe_return.return_prefix_to(choices[0].as_view(), &mut returned[..2]);
+        lwe_return.return_at_to(
+            choices[0].as_view(),
+            indices[0],
+            returned[0].as_mut_view(),
+            &mut scalar_workspace,
+        );
+        lwe_return.return_prefix_to(
+            choices[0].as_view(),
+            &mut returned[..2],
+            &mut batch_workspace,
+        );
     });
     assert_eq!(allocation.count, 0);
     for (index, output) in returned[..2].iter().enumerate() {

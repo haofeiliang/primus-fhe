@@ -105,8 +105,8 @@ where
         }
     }
 
-    /// Binds the requested return material. Recovering a retained PBS under the
-    /// same key reuses its buffers; standalone CBS or another key prepares return buffers.
+    /// Binds the requested return material. Recovering a retained PBS under a
+    /// compatible key reuses its buffers; standalone CBS prepares missing return buffers.
     pub(crate) fn try_into_bootstrapper(
         self,
         return_key: &'a primus_ntru::NtruLweKeySwitchingKey<T>,
@@ -117,8 +117,20 @@ where
             .check_lwe_return_key(return_key)?;
         Ok(match self {
             Self::Standalone(engine) => Evaluator::from_engine(engine, return_key),
-            Self::Bootstrapper(pbs) if std::ptr::eq(pbs.lwe_return.key(), return_key) => pbs,
-            Self::Bootstrapper(pbs) => Evaluator::from_engine(pbs.engine, return_key),
+            Self::Bootstrapper(mut pbs) => {
+                // Compatibility fixes N and target dimension, so only the binding
+                // changes. Pending samples belong to the previous binding.
+                pbs.batch_return.discard_batch();
+                pbs.lwe_return = crate::LweReturnEvaluator::new(
+                    return_key,
+                    pbs.engine
+                        .context
+                        .parameters()
+                        .external_lwe()
+                        .cipher_modulus(),
+                );
+                pbs
+            }
         })
     }
 }

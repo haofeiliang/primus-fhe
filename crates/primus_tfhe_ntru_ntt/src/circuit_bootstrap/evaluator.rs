@@ -114,8 +114,8 @@ where
     }
 
     /// Recovers ordinary PBS under the supplied return key.
-    /// Reuses a retained PBS without allocation when `return_key` is the same key object.
-    /// A different compatible key prepares new return buffers. Rejects incompatible return material.
+    /// Reuses retained return buffers for any compatible `return_key`, discarding
+    /// pending samples from the previous binding. Rejects incompatible return material.
     ///
     /// # Correctness
     /// The return key must use the BR accumulator secret and the intended external

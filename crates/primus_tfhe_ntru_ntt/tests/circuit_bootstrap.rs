@@ -313,14 +313,32 @@ fn circuit_bootstrap(distr: SecretKeyDistr) {
     );
     assert!(control.as_ref().iter().all(|&value| value == 7));
 
-    let (_, recovery) = allocations::measure(|| {
-        evaluator
-            .try_into_bootstrapper(server.key_switching_key())
-            .unwrap()
-    });
+    // A different compatible key object changes only the binding, not scratch.
+    let return_key = server.key_switching_key().clone();
+    let (mut recovered, recovery) =
+        allocations::measure(|| evaluator.try_into_bootstrapper(&return_key).unwrap());
     assert_eq!(
         recovery.count, 0,
         "converted CBS retains ordinary workspace"
+    );
+    let identity = context
+        .parameters()
+        .lookup_table_compiler(&input_codec)
+        .unwrap()
+        .compile_fn(|m| m as u64)
+        .unwrap();
+    let mut output = context.allocate_lwe_ciphertext();
+    let (_, allocation) = allocations::measure(|| {
+        recovered.apply_lookup_table_to(input.as_view(), &identity, output.as_mut_view());
+    });
+    assert_eq!(allocation.count, 0);
+    assert_eq!(
+        context
+            .decryptor(client.external_lwe_secret_key(), &input_codec)
+            .unwrap()
+            .decrypt(output.as_view())
+            .unwrap(),
+        1
     );
 }
 

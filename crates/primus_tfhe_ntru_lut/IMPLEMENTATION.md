@@ -139,7 +139,8 @@ noise bound. Fourier transform-domain summation can differ in rounding from
 separately converted products; NTT summation is exact.
 
 Both evaluators explicitly compose standalone one-hot CBS and a coefficient-domain
-`LweReturnEvaluator`. NTT returns each output through its scalar workspace. Fourier groups
+`LweReturnEvaluator` binding. NTT allocates only scalar return scratch. Fourier allocates
+only `LweReturnBatchWorkspace` and groups
 selection, rotation and extraction in `prepare_output_returns`, then key-switches
 consecutive newly evaluated outputs up to its fixed tile capacity (eight LWEs),
 including a partial last tile. Tiles stop before a repeated output, which takes
@@ -149,8 +150,8 @@ prefix; submission consumes exactly that prefix and invalidates it. Selection
 and rotation preserve prepared samples; conversion and extraction remain
 independent for each source polynomial.
 Q→q still precedes extraction signs. A singleton tile writes directly to output;
-larger tiles copy switched LWEs from scratch. The ownership split adds no retained return buffers: standalone one-hot
-no longer allocates an unused complete PBS. See [workspaces and storage](../../guides/development/workspaces-and-storage.md).
+larger tiles copy switched LWEs from scratch. Neither LUT carries the other return schedule's unused scratch; standalone one-hot
+also omits ordinary return resources. See [workspaces and storage](../../guides/development/workspaces-and-storage.md).
 
 ## Benchmark fixture
 
