@@ -2,6 +2,23 @@
 
 User-facing encoding and evaluation contracts are in the [README](README.md). This document records the internal storage and measurement boundaries shared by the [NTT evaluator](src/ntt.rs) and [Fourier evaluator](src/fourier.rs).
 
+## Compilation and evaluator features
+
+The default build retains public compilation and polynomial inspection, including
+the complete backend-neutral selection plan. It has no NTT/FFT or concrete TFHE
+backend dependency. `ntt` / `fourier` enable the corresponding evaluator module,
+its binding errors and the shared ciphertext-access helpers in `evaluation.rs`.
+Concrete FFT engine flags also enable `fourier`; SIMD weakly propagates to selected
+backends. Neither feature selection nor compiler-only use changes graph interning,
+slot scheduling, callback order or stored coefficients.
+
+Scheduling fields remain part of the compiled artifact even when no evaluator is
+selected. The three internal metadata structs explicitly permit unread fields in
+that configuration; execution-only accessors are gated with their consumers.
+Compiler tests still exercise shared-node identity and slot lifetimes without a
+transform implementation. Evaluation tests select individual available backends;
+the comparative `pipeline` benchmark deliberately requires all of them.
+
 ## Public table storage and compiled choices
 
 [`lookup_table.rs`](src/lookup_table.rs) owns validated logical geometry and
@@ -228,14 +245,14 @@ contracts remain covered by library tests and lower-level primitive benchmarks.
 ## Reproducing measurements
 
 ```sh
-cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features rustfft,tfhe-fft -- --list
-cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features rustfft,tfhe-fft -- --test
-taskset -c 0 cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features rustfft,tfhe-fft -- \
+cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features ntt,rustfft,tfhe-fft -- --list
+cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features ntt,rustfft,tfhe-fft -- --test
+taskset -c 0 cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features ntt,rustfft,tfhe-fft -- \
   '/create_lut_and_drop$' --sample-size 20 --warm-up-time 0.5 --measurement-time 2 --noplot
-taskset -c 0 cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features rustfft,tfhe-fft -- \
+taskset -c 0 cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features ntt,rustfft,tfhe-fft -- \
   '/evaluate$' --sample-size 20 --warm-up-time 0.5 --measurement-time 2 --noplot
 # SIMD configuration; use the same nightly compiler for both sides of a feature comparison.
-taskset -c 0 cargo +nightly bench -p primus_tfhe_ntru_lut --bench pipeline --features simd,rustfft,tfhe-fft -- \
+taskset -c 0 cargo +nightly bench -p primus_tfhe_ntru_lut --bench pipeline --features ntt,simd,rustfft,tfhe-fft -- \
   '/evaluate$' --sample-size 20 --warm-up-time 0.5 --measurement-time 2 --noplot
 ```
 

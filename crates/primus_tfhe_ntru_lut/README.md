@@ -42,10 +42,10 @@ evaluator.evaluate_to(&encrypted_chunks, &mut output);
 
 Complete runnable workflows are in [ntt_lookup.rs](examples/ntt_lookup.rs) and [fourier_lookup.rs](examples/fourier_lookup.rs). They use n=800/N=1024 and eight two-bit chunks for both the 16-bit input and 16-bit result. Five low input chunks select coefficients; three high chunks select one of 64 candidate polynomials. The output chunk count remains independently configurable. Input `0b10_10_10_11_11_00_11_01` returns `0b10_00_01_01_10_01_01_11`, then zero returns 7, reusing the same evaluator and buffers.
 
-Both examples default to `type Word = u32`. For u64, change that alias; in the NTT example also replace the `U32NttTable as Table` import with `U64NttTable as Table`. The Fourier example selects RustFFT; use `TfheFftTable as Table` for TFHE-FFT. Rerun the same command after editing. Each file explicitly builds `TfheConfig` and `CircuitBootstrapConfig` in local `parameters()` and `circuit_config()` functions, showing dimensions, noise, word-specific bases, prime/native ring modulus and independent PowOf2 q=2^24; see the [arithmetic profiles](../../guides/development/tfhe-parameters.md).
+Both examples default to `type Word = u32`. For u64, change that alias; in the NTT example also replace the `U32NttTable as Table` import with `U64NttTable as Table`. The Fourier example selects RustFFT; use `TfheFftTable as Table` for TFHE-FFT. When switching FFT engines, also update the example target’s `required-features` and use `--features tfhe-fft`. Each file explicitly builds `TfheConfig` and `CircuitBootstrapConfig` in local `parameters()` and `circuit_config()` functions, showing dimensions, noise, word-specific bases, prime/native ring modulus and independent PowOf2 q=2^24; see the [arithmetic profiles](../../guides/development/tfhe-parameters.md).
 
 ```sh
-cargo run --release -p primus_tfhe_ntru_lut --example ntt_lookup
+cargo run --release -p primus_tfhe_ntru_lut --example ntt_lookup --features ntt
 cargo run --release -p primus_tfhe_ntru_lut --example fourier_lookup --features rustfft
 ```
 
@@ -102,15 +102,33 @@ The [parameter guide](../../guides/development/tfhe-parameters.md) records examp
 
 ## Features
 
-Default features are empty; generic Fourier APIs do not select an FFT engine. `rustfft` / `tfhe-fft` forward to the corresponding `primus_fft` implementation and may be enabled together. Tests, examples, and benchmarks that instantiate an engine declare `required-features` on their Cargo targets; comparisons using both engines require both features. `simd` does not enable an FFT engine.
+Default features are empty: public table compilation, inspection, `LookupTableConfig` and compilation errors need no transform or evaluator. `HighPrecisionLookupTable::try_new` still takes backend-neutral `TfheParameters` and an input codec; no keys, transform table or evaluator are required. Compilation retains the complete immutable selection plan. Features do not change callback order, coefficient encoding or table layout.
+
+| Feature | Enables |
+| --- | --- |
+| `ntt` | `NttLookupTableEvaluator` and NTT dependencies, without FFT |
+| `fourier` | `FourierLookupTableEvaluator` and generic FFT interfaces, without NTT or a concrete FFT engine |
+| `rustfft` / `tfhe-fft` | `fourier` and the selected FFT implementation |
+| `simd` | Nightly SIMD in active arithmetic dependencies, without activating an evaluator or FFT engine |
+
+All features are additive. `LookupTableError::OneHot` / `Evaluation` are available only with `ntt` or `fourier`.
+
+The NTT example requires `ntt`; the Fourier example requires its chosen engine. Evaluation tests run for each selected NTT/FFT implementation, retaining the existing cases at both word widths. `pipeline` compares all backends and requires `ntt,rustfft,tfhe-fft`; Cargo skips that target when requirements are missing. Use `just tfhe` for complete validation, or run compiler-only and individual backends separately:
+
+```sh
+cargo test -p primus_tfhe_ntru_lut
+cargo test -p primus_tfhe_ntru_lut --features ntt
+cargo test -p primus_tfhe_ntru_lut --features rustfft
+cargo test -p primus_tfhe_ntru_lut --features tfhe-fft
+```
 
 ## Benchmarks
 
 ```sh
 # Create and drop one public high-precision LUT.
-cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features rustfft,tfhe-fft -- '/create_lut_and_drop$'
+cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features ntt,rustfft,tfhe-fft -- '/create_lut_and_drop$'
 # Homomorphically evaluate all output chunks using a prepared LUT and workspace.
-cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features rustfft,tfhe-fft -- '/evaluate$'
+cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features ntt,rustfft,tfhe-fft -- '/evaluate$'
 ```
 
 Creation includes allocation, coefficient filling and destruction. Evaluation excludes key generation, public LUT creation, input encryption and workspace allocation. See the [benchmark fixture](IMPLEMENTATION.md#benchmark-fixture) for workloads and resource measurements.

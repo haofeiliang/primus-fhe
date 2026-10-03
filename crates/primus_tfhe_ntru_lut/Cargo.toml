@@ -6,18 +6,18 @@ edition = "2024"
 [dependencies]
 bytemuck = { workspace = true }
 primus_encoding = { path = "../primus_encoding" }
-primus_fft = { path = "../primus_fft" }
+primus_fft = { path = "../primus_fft", optional = true }
 primus_integer = { path = "../primus_integer" }
-primus_lattice = { path = "../primus_lattice", features = ["ntt", "fourier"] }
+primus_lattice = { path = "../primus_lattice" }
 primus_modulus = { path = "../primus_modulus" }
-primus_ntru = { path = "../primus_ntru", features = ["ntt", "fourier"] }
-primus_ntt = { path = "../primus_ntt" }
+primus_ntru = { path = "../primus_ntru" }
+primus_ntt = { path = "../primus_ntt", optional = true }
 primus_poly = { path = "../primus_poly" }
 primus_reduce = { path = "../primus_reduce" }
 primus_tfhe = { path = "../primus_tfhe" }
 primus_tfhe_ntru = { path = "../primus_tfhe_ntru" }
-primus_tfhe_ntru_ntt = { path = "../primus_tfhe_ntru_ntt" }
-primus_tfhe_ntru_fourier = { path = "../primus_tfhe_ntru_fourier" }
+primus_tfhe_ntru_ntt = { path = "../primus_tfhe_ntru_ntt", optional = true }
+primus_tfhe_ntru_fourier = { path = "../primus_tfhe_ntru_fourier", optional = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
@@ -30,19 +30,21 @@ rand = { workspace = true }
 [[bench]]
 name = "pipeline"
 harness = false
-required-features = ["rustfft", "tfhe-fft"]
+required-features = ["ntt", "rustfft", "tfhe-fft"]
 
-# Targets instantiate these FFT engines explicitly; generic library APIs need neither.
+# Examples select one backend; the pipeline benchmark compares all three transforms.
+[[example]]
+name = "ntt_lookup"
+required-features = ["ntt"]
+
 [[example]]
 name = "fourier_lookup"
 required-features = ["rustfft"]
 
-[[test]]
-name = "evaluation"
-required-features = ["rustfft", "tfhe-fft"]
-
 [features]
 default = []
-rustfft = ["primus_fft/rustfft"]
-tfhe-fft = ["primus_fft/tfhe-fft"]
-simd = ["primus_tfhe_ntru_ntt/simd", "primus_tfhe_ntru_fourier/simd"]
+ntt = ["dep:primus_ntt", "dep:primus_tfhe_ntru_ntt", "primus_lattice/ntt", "primus_ntru/ntt"]
+fourier = ["dep:primus_fft", "dep:primus_tfhe_ntru_fourier", "primus_lattice/fourier", "primus_ntru/fourier"]
+rustfft = ["fourier", "primus_fft/rustfft"]
+tfhe-fft = ["fourier", "primus_fft/tfhe-fft"]
+simd = ["primus_tfhe_ntru/simd", "primus_tfhe_ntru_ntt?/simd", "primus_tfhe_ntru_fourier?/simd"]

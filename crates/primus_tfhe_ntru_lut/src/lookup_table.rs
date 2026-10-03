@@ -2,7 +2,9 @@ use primus_encoding::RoundedCodec;
 use primus_integer::FheUint;
 use primus_poly::Polynomial;
 use primus_reduce::RingContext;
-use primus_tfhe_ntru::{OneHotBootstrapError, TfheParameters};
+#[cfg(any(feature = "ntt", feature = "fourier"))]
+use primus_tfhe_ntru::OneHotBootstrapError;
+use primus_tfhe_ntru::TfheParameters;
 
 mod compile;
 pub(crate) mod selection;
@@ -56,9 +58,11 @@ pub enum LookupTableError {
     #[error("lookup table and context have incompatible ring or encoding parameters")]
     IncompatibleParameters,
     /// The context/server material cannot provide the required one-hot CBS.
+    #[cfg(any(feature = "ntt", feature = "fourier"))]
     #[error(transparent)]
     OneHot(#[from] OneHotBootstrapError),
     /// Independent return material is incompatible with the TFHE context.
+    #[cfg(any(feature = "ntt", feature = "fourier"))]
     #[error(transparent)]
     Evaluation(#[from] primus_tfhe::TfheEvaluationError),
 }
@@ -300,6 +304,7 @@ impl<T: FheUint> HighPrecisionLookupTable<T> {
 
     /// Converts a compiled global input-chunk index to its selector batches.
     /// Low chunks belong to rotation controls and never appear in table choices.
+    #[cfg(any(feature = "ntt", feature = "fourier"))]
     pub(crate) fn selector_batches_for_chunk(
         &self,
         chunk_index: usize,
@@ -308,6 +313,7 @@ impl<T: FheUint> HighPrecisionLookupTable<T> {
     }
 
     /// Borrows ordered public branches from compiled physical IDs, without copying.
+    #[cfg(any(feature = "ntt", feature = "fourier"))]
     pub(crate) fn polynomials<'a>(
         &'a self,
         polynomial_ids: &'a [PolynomialId],

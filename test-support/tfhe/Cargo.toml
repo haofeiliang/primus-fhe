@@ -25,7 +25,7 @@ primus_tfhe_glwe_ntt = { path = "../../crates/primus_tfhe_glwe_ntt" }
 primus_tfhe_glwe_fourier = { path = "../../crates/primus_tfhe_glwe_fourier" }
 primus_tfhe_ntru_ntt = { path = "../../crates/primus_tfhe_ntru_ntt" }
 primus_tfhe_ntru_fourier = { path = "../../crates/primus_tfhe_ntru_fourier" }
-primus_tfhe_ntru_lut = { path = "../../crates/primus_tfhe_ntru_lut" }
+primus_tfhe_ntru_lut = { path = "../../crates/primus_tfhe_ntru_lut", features = ["ntt", "fourier"] }
 rand = { workspace = true }
 
 # Targets instantiate these FFT engines explicitly; generic library APIs need neither.

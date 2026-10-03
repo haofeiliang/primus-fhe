@@ -42,10 +42,10 @@ evaluator.evaluate_to(&encrypted_chunks, &mut output);
 
 完整可运行工作流见 [ntt_lookup.rs](examples/ntt_lookup.rs) 和 [fourier_lookup.rs](examples/fourier_lookup.rs)。它们使用 n=800/N=1024，以八个两位 chunks 加密 16 位输入，并返回八个 chunks 的 16 位结果。低五个输入 chunks 选择系数，高三个选择 64 个候选多项式之一；输出 chunk 数仍可独立设置。输入 `0b10_10_10_11_11_00_11_01` 返回 `0b10_00_01_01_10_01_01_11`，随后零输入返回 7，两次请求复用同一个 evaluator 和缓冲。
 
-两个示例默认使用 `type Word = u32`；改为 u64 时修改此别名，NTT 示例还需将 `U32NttTable as Table` 导入改为 `U64NttTable as Table`。Fourier 示例默认 RustFFT，改用 `TfheFftTable as Table` 可选择 TFHE-FFT；修改后执行同一运行命令。每个文件的本地 `parameters()` 与 `circuit_config()` 直接构造 `TfheConfig` / `CircuitBootstrapConfig`，展示尺寸、噪声、对应字宽的分解、prime/native 环模数和独立的 PowOf2 q=2^24，数值选择见[参数矩阵](../../guides/development/tfhe-parameters.md)。
+两个示例默认使用 `type Word = u32`；改为 u64 时修改此别名，NTT 示例还需将 `U32NttTable as Table` 导入改为 `U64NttTable as Table`。Fourier 示例默认 RustFFT，改用 `TfheFftTable as Table` 可选择 TFHE-FFT；切换 FFT 引擎时也要修改示例 target 的 `required-features`，并使用 `--features tfhe-fft`。每个文件的本地 `parameters()` 与 `circuit_config()` 直接构造 `TfheConfig` / `CircuitBootstrapConfig`，展示尺寸、噪声、对应字宽的分解、prime/native 环模数和独立的 PowOf2 q=2^24，数值选择见[参数矩阵](../../guides/development/tfhe-parameters.md)。
 
 ```sh
-cargo run --release -p primus_tfhe_ntru_lut --example ntt_lookup
+cargo run --release -p primus_tfhe_ntru_lut --example ntt_lookup --features ntt
 cargo run --release -p primus_tfhe_ntru_lut --example fourier_lookup --features rustfft
 ```
 
@@ -102,15 +102,33 @@ Evaluator 借用 context、server key 和 table，并在构造时分配全部缓
 
 ## Features
 
-默认 features 为空，Fourier 泛型接口不选择具体 FFT 引擎。`rustfft` / `tfhe-fft` 分别转发到 `primus_fft` 的对应实现；可以同时启用。使用具体引擎的测试、示例和基准在 Cargo target 上声明 `required-features`；双引擎对照 target 需要两者。`simd` 不会自动启用 FFT 引擎。
+默认 features 为空，只提供 `HighPrecisionLookupTable`、`LookupTableConfig`、编译错误及公开多项式访问。`try_new` 仍接收后端无关的 `TfheParameters` 和输入 codec；无需生成密钥、创建变换表或 evaluator。编译保留完整的不可变选择计划，回调顺序、系数编码和表布局不随 feature 改变。
+
+| Feature | 启用内容 |
+| --- | --- |
+| `ntt` | `NttLookupTableEvaluator` 及 NTT 依赖，不引入 FFT |
+| `fourier` | `FourierLookupTableEvaluator` 及通用 FFT 接口，不引入 NTT 或具体 FFT 引擎 |
+| `rustfft` / `tfhe-fft` | `fourier` 与选定的 FFT 实现 |
+| `simd` | 已启用算术依赖中的 nightly SIMD，不会激活 evaluator 或 FFT 引擎 |
+
+所有 feature 可以叠加。`LookupTableError::OneHot` / `Evaluation` 只在启用 `ntt` 或 `fourier` 时可用。
+
+NTT 示例要求 `ntt`；Fourier 示例要求其选定引擎。求值测试按实际启用的 NTT/FFT 实现运行，两个字宽的既有用例保持不变；`pipeline` 是全后端对照基准，要求 `ntt,rustfft,tfhe-fft`，缺少要求时 Cargo 跳过该 target。完整验证使用 `just tfhe`，纯编译或单后端可分别运行：
+
+```sh
+cargo test -p primus_tfhe_ntru_lut
+cargo test -p primus_tfhe_ntru_lut --features ntt
+cargo test -p primus_tfhe_ntru_lut --features rustfft
+cargo test -p primus_tfhe_ntru_lut --features tfhe-fft
+```
 
 ## 基准
 
 ```sh
 # 创建并释放一个公开的高精度 LUT。
-cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features rustfft,tfhe-fft -- '/create_lut_and_drop$'
+cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features ntt,rustfft,tfhe-fft -- '/create_lut_and_drop$'
 # 使用已准备的 LUT 和工作区，同态求值全部输出 chunk。
-cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features rustfft,tfhe-fft -- '/evaluate$'
+cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features ntt,rustfft,tfhe-fft -- '/evaluate$'
 ```
 
 创建计时包含分配、系数填充和释放；求值计时不包含密钥生成、公开 LUT 创建、输入加密和工作区分配。工作负载与资源统计见[基准说明](IMPLEMENTATION.md#benchmark-fixture)。

@@ -81,7 +81,7 @@ BootstrapKeyswitch; the other order remains smoke-covered.
 Reproduce a selected ID with the source target named in the workload guide:
 
 ```sh
-taskset -c 0 cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features rustfft,tfhe-fft -- \
+taskset -c 0 cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features ntt,rustfft,tfhe-fft -- \
   '^lookup/ntt/u32/n800_N1024/c8_d5_o8/evaluate$' \
   --sample-size 15 --warm-up-time 0.3 --measurement-time 1.2 --noplot \
   --save-baseline cleanup12

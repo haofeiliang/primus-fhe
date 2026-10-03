@@ -1,5 +1,7 @@
 //! Immutable table choices and execution metadata. Construction scratch lives
 //! in `compile`; online evaluation only follows the precomputed order and slots.
+//! Compiler-only builds retain the complete plan. Scheduling fields deliberately
+//! have no runtime reader until an evaluator backend is enabled.
 
 use std::ops::Range;
 
@@ -33,11 +35,13 @@ pub(crate) enum TableOperation {
 }
 
 /// A shared result's destination remains valid until its compiled last use.
+#[cfg_attr(not(any(feature = "ntt", feature = "fourier")), allow(dead_code))]
 pub(crate) struct SelectionNode {
     pub operation: TableOperation,
     result_slot: usize,
 }
 
+#[cfg(any(feature = "ntt", feature = "fourier"))]
 impl SelectionNode {
     /// Coefficient range in the evaluator's flat result pool. Slots need not
     /// follow node order; last-use scheduling can reuse a child's destination.
@@ -58,6 +62,7 @@ pub(crate) enum OutputAction {
 
 /// Newly needed nodes and the unrotated root for one output. Ranges partition
 /// the execution order; the action separately identifies completed-LWE reuse.
+#[cfg_attr(not(any(feature = "ntt", feature = "fourier")), allow(dead_code))]
 struct OutputSelection {
     node_range: Range<usize>,
     root: TableNodeId,
@@ -78,6 +83,7 @@ pub(crate) enum SelectorBatches {
     },
 }
 
+#[cfg(any(feature = "ntt", feature = "fourier"))]
 impl SelectorBatches {
     /// Full-M NLEV batch for a compiled public choice. Its existence is fixed
     /// by the compiler, independently of the nonzero NGSW batch index.
@@ -101,6 +107,7 @@ impl SelectorBatches {
 
 /// Immutable execution order and storage assignment. No structure discovery,
 /// liveness accounting or ciphertext mutation belongs to this plan.
+#[cfg_attr(not(any(feature = "ntt", feature = "fourier")), allow(dead_code))]
 pub(crate) struct SelectionPlan {
     nodes: Box<[SelectionNode]>,
     node_order: Box<[TableNodeId]>,
@@ -113,6 +120,7 @@ pub(crate) struct SelectionPlan {
 }
 
 impl SelectionPlan {
+    #[cfg(any(test, feature = "ntt", feature = "fourier"))]
     pub fn output_action(&self, index: usize) -> OutputAction {
         self.outputs[index].action
     }
@@ -120,6 +128,7 @@ impl SelectionPlan {
     /// Consecutive outputs that need evaluation, bounded by return capacity.
     /// Stops before copying a repeated output: its source LWE must be completed
     /// by the preceding tile. The caller starts on Evaluate with nonzero capacity.
+    #[cfg(any(test, feature = "fourier"))]
     pub fn evaluation_tile(&self, first: usize, capacity: usize) -> Range<usize> {
         debug_assert!(capacity > 0);
         debug_assert_eq!(self.output_action(first), OutputAction::Evaluate);
@@ -132,6 +141,7 @@ impl SelectionPlan {
     }
 
     /// Nodes not yet computed by earlier outputs, in dependency order.
+    #[cfg(any(feature = "ntt", feature = "fourier"))]
     pub fn scheduled_nodes(&self, output: usize) -> impl ExactSizeIterator<Item = &SelectionNode> {
         self.node_order[self.outputs[output].node_range.clone()]
             .iter()
@@ -143,6 +153,7 @@ impl SelectionPlan {
         &self.nodes[node_id.0]
     }
 
+    #[cfg(any(feature = "ntt", feature = "fourier"))]
     pub fn root_node(&self, output: usize) -> &SelectionNode {
         self.node(self.outputs[output].root)
     }

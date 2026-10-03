@@ -1,6 +1,6 @@
 //! Evaluate (x*x + 3*x + 7) mod 65536 on eight two-bit chunks: 16-bit input and output.
 //!
-//! Run: `cargo run --release -p primus_tfhe_ntru_lut --example ntt_lookup`
+//! Run: `cargo run --release -p primus_tfhe_ntru_lut --example ntt_lookup --features ntt`
 //! For u64, change Word to u64 and U32NttTable to U64NttTable.
 //! Arithmetic profiles: guides/development/tfhe-parameters.md (not security presets).
 

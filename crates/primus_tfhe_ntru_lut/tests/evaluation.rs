@@ -1,23 +1,32 @@
 //! Complete lookup through public/secret CMux layers and weighted blind rotation.
 //! Polynomial contents are checked exhaustively in lookup_table.rs; encrypted
 //! evaluation focuses on chunk digits, table boundaries and reused zero selectors.
+#![cfg(any(feature = "ntt", feature = "rustfft", feature = "tfhe-fft"))]
+
 use primus_encoding::RoundedCodec;
-use primus_fft::{FftTable, RustFftTable, TfheFftTable, TorusFftValue};
+#[cfg(feature = "rustfft")]
+use primus_fft::RustFftTable;
+#[cfg(feature = "tfhe-fft")]
+use primus_fft::TfheFftTable;
+#[cfg(any(feature = "rustfft", feature = "tfhe-fft"))]
+use primus_fft::{FftTable, TorusFftValue};
 use primus_integer::FheUint;
 use primus_lattice::LweDimension;
 use primus_lwe::LweParametersInner;
 use primus_modulus::{BarrettModulus, NativeModulus, PowOf2Modulus};
 use primus_ntru::SecretKeyDistr;
+#[cfg(feature = "ntt")]
 use primus_ntt::{MonomialNttTable, U32NttTable, U64NttTable};
 use primus_reduce::RingContext;
 use primus_test_allocations as allocations;
 use primus_tfhe::LweCiphertext;
 use primus_tfhe::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_tfhe_ntru::{CircuitBootstrapConfig, DecompositionConfig, TfheParameters};
-use primus_tfhe_ntru_lut::{
-    FourierLookupTableEvaluator, HighPrecisionLookupTable, LookupTableConfig, LookupTableError,
-    NttLookupTableEvaluator,
-};
+#[cfg(any(feature = "rustfft", feature = "tfhe-fft"))]
+use primus_tfhe_ntru_lut::FourierLookupTableEvaluator;
+#[cfg(feature = "ntt")]
+use primus_tfhe_ntru_lut::NttLookupTableEvaluator;
+use primus_tfhe_ntru_lut::{HighPrecisionLookupTable, LookupTableConfig, LookupTableError};
 use rand::{SeedableRng, rngs::StdRng};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
@@ -325,6 +334,7 @@ fn exercise<T: FheUint>(
 }
 
 // NTT keeps explicit prime arithmetic and exact coefficient representations.
+#[cfg(feature = "ntt")]
 fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T) {
     for distr in [
         SecretKeyDistr::UniformBinary,
@@ -419,6 +429,7 @@ fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T) {
 }
 
 // Native torus tests keep both FFT tables and word widths; no PowOf2 ring is implied.
+#[cfg(any(feature = "rustfft", feature = "tfhe-fft"))]
 fn fourier<T: TorusFftValue, Table: FftTable>() {
     for distr in [
         SecretKeyDistr::UniformBinary,
@@ -511,6 +522,7 @@ fn fourier<T: TorusFftValue, Table: FftTable>() {
 }
 
 // Checks the shared evaluation cases at both word widths with prime-modulus NTT.
+#[cfg(feature = "ntt")]
 #[test]
 fn ntt_complete_chunk_lookup() {
     ntt::<u32, U32NttTable>(998_244_353);
@@ -518,6 +530,7 @@ fn ntt_complete_chunk_lookup() {
 }
 
 // Checks the shared evaluation cases at both word widths with native-torus RustFFT.
+#[cfg(feature = "rustfft")]
 #[test]
 fn rustfft_complete_chunk_lookup() {
     fourier::<u32, RustFftTable>();
@@ -525,6 +538,7 @@ fn rustfft_complete_chunk_lookup() {
 }
 
 // Checks the same native-torus cases with the alternative TfheFft transform.
+#[cfg(feature = "tfhe-fft")]
 #[test]
 fn tfhe_fft_complete_chunk_lookup() {
     fourier::<u32, TfheFftTable>();
