@@ -8,6 +8,7 @@ use primus_fft::{FftTable, RustFftTable, TfheFftTable, TorusFftValue};
 use primus_lattice::LweDimension;
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::NativeModulus;
+use primus_ntru::NlevParameters;
 use primus_ntru::{NtruParameters, SecretKeyDistr};
 use primus_test_allocations::{CountingAllocator, measure};
 use primus_tfhe::rotation::RotationModulusSwitch;
@@ -46,9 +47,8 @@ fn context<T: TorusFftValue, Table: FftTable>(distr: SecretKeyDistr) -> TfheCont
     );
     TfheContext::from_parameters(
         TfheParameters::try_new(
-            lwe,
-            acc,
-            blind_rotation_basis,
+            lwe.into_inner(),
+            NlevParameters::try_with_basis(&acc, blind_rotation_basis).unwrap(),
             primus_tfhe_ntru::DecompositionConfig {
                 log_basis: DecompositionBaseLog::new(8),
                 level_count: None,
@@ -78,6 +78,10 @@ fn phase<T: TorusFftValue>(cipher: &LweCiphertext<T>, secret: &[T], q: i128) -> 
 
 fn check_complete<T: TorusFftValue, Table: FftTable>(weight: usize) {
     let context = context::<T, Table>(SecretKeyDistr::fixed_hamming_weight_binary(DIM, weight));
+    let input_codec = RoundedCodec::new(
+        T::as_from(16u32),
+        context.parameters().external_lwe().cipher_modulus(),
+    );
     let mut rng = StdRng::seed_from_u64(0xB803);
     let mut generator = KeyGenerator::new(&context);
     let mut client = generator.try_generate_client_key(&mut rng).unwrap();
@@ -102,7 +106,8 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(weight: usize) {
     let codec = RoundedCodec::new(T::as_from(8usize), modulus);
     let compiler = context
         .parameters()
-        .lookup_table_compiler()
+        .lookup_table_compiler(&input_codec)
+        .unwrap()
         .try_with_output_codec(&codec)
         .unwrap();
     let value = |m: usize, i: usize| T::as_from((m + 2 * i) % 8);
@@ -135,19 +140,26 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(weight: usize) {
             Some(TfheEvaluationError::UnsupportedSparseBootstrapping)
         );
         assert_eq!(
-            context.circuit_bootstrap_evaluator(&server).err(),
+            context
+                .circuit_bootstrap_evaluator(&server, &input_codec)
+                .err(),
             Some(TfheEvaluationError::UnsupportedSparseBootstrapping)
         );
         assert_eq!(
-            primus_tfhe_ntru_fourier::OneHotCircuitBootstrapEvaluator::try_new(&context, &server)
-                .err(),
+            primus_tfhe_ntru_fourier::OneHotCircuitBootstrapEvaluator::try_new(
+                &context,
+                &server,
+                &input_codec
+            )
+            .err(),
             Some(primus_tfhe_ntru_fourier::OneHotBootstrapError::Evaluation(
                 TfheEvaluationError::UnsupportedSparseBootstrapping
             ))
         );
         assert_eq!(
             primus_tfhe_ntru_fourier::OneHotCircuitBootstrapEvaluator::try_from_bootstrapper(
-                context.evaluator(&server).unwrap()
+                context.evaluator(&server).unwrap(),
+                &input_codec
             )
             .err(),
             Some(primus_tfhe_ntru_fourier::OneHotBootstrapError::Evaluation(
@@ -171,16 +183,14 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(weight: usize) {
         let mut sparse = context.evaluator(&server).unwrap();
         for (message, zero_mask) in [(0, true), (3, false), (7, false), (1, true)] {
             let mut input = context
-                .encryptor(&client)
+                .encryptor(&client, &input_codec)
                 .unwrap()
                 .encrypt_padded(T::as_from(message), &mut rng)
                 .unwrap();
             if zero_mask {
                 input.a_mut().fill(T::ZERO);
-                *input.b_mut() = context
-                    .parameters()
-                    .input_plaintext_codec()
-                    .encode_value(T::as_from(message), PlaintextEmbedding::Unsigned);
+                *input.b_mut() =
+                    input_codec.encode_value(T::as_from(message), PlaintextEmbedding::Unsigned);
             }
             let (_, allocation) = measure(|| {
                 sparse.apply_lookup_table_to(input.as_view(), &single, output.as_mut_view())
@@ -305,6 +315,8 @@ fn sparse_generation_boundaries_and_unsupported_combinations() {
         assert_eq!(rng.next_u64(), untouched.next_u64());
     }
     let context = context::<u32, RustFftTable>(SecretKeyDistr::fixed_hamming_weight_binary(DIM, 5));
+    let input_codec =
+        RoundedCodec::new(16u32, context.parameters().external_lwe().cipher_modulus());
     let mut generator = KeyGenerator::new(&context);
     let (client, _) = generator.try_generate(None, &mut rng).unwrap();
     for (copies, buckets, expected) in [
@@ -370,7 +382,7 @@ fn sparse_generation_boundaries_and_unsupported_combinations() {
         .try_generate_sparse_server_key(&client, 3, 8, &mut rng)
         .unwrap();
     assert_eq!(
-        CircuitBootstrapEvaluator::try_from_parts(&context, &server, &circuit).err(),
+        CircuitBootstrapEvaluator::try_from_parts(&context, &server, &circuit, &input_codec).err(),
         Some(TfheEvaluationError::UnsupportedSparseBootstrapping)
     );
 }

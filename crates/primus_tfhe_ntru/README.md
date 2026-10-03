@@ -9,13 +9,13 @@ Parameters and LWE clients for NTRU-TFHE. The [NTT](../primus_tfhe_ntru_ntt/READ
 
 ## Parameters and key domains
 
-`TfheParameters<T, M, LM=M>` separates ring modulus Q from external LWE modulus q, sharing coefficient type T. Construct it with `TfheParameters::try_from_config(TfheConfig { .. })`: `external_lwe` selects the external dimension, q, plaintext modulus, binary/ternary distribution and encryption noise; `accumulator_modulus` selects Q. `blind_rotation` decomposition uses Q, while `key_switching` decomposition and return-key noise use q. `level_count: None` selects the maximum supported level count; still check the [decomposition precision](../primus_decompose/README.md).
+`TfheParameters<T, M, LM=M>` separates ring modulus Q from external LWE modulus q, sharing coefficient type T. Construct it with `TfheParameters::try_from_config(TfheConfig { .. })`: `external_lwe` selects the external dimension, q, binary/ternary distribution and encryption noise; `accumulator_modulus` selects Q. `blind_rotation` decomposition uses Q, while `key_switching` decomposition and return-key noise use q. `level_count: None` selects the maximum supported level count; still check the [decomposition precision](../primus_decompose/README.md).
 
 Dimension choices use `LweDimension`; decomposition choices use `DecompositionBaseLog` and `Option<DecompositionLevelCount>`. Construct these checked units once and pass parameter accessors directly to workspaces. `.get()` exposes the integer at raw storage or kernel boundaries; composed lengths and basis/modulus compatibility remain constructor checks.
 
-The direct composition entry is `TfheParameters::try_new(external_lwe, accumulator_ntru, blind_rotation_basis, key_switching, key_switching_noise_standard_deviation)`. Both domains share plaintext modulus t, and 2N must fit T; the external dimension n need not be at most N. Constructors report specific parameter errors but do not validate security or a complete noise budget.
+The direct composition entry is `TfheParameters::try_new(external_lwe, blind_rotation, key_switching, key_switching_noise_standard_deviation)`. `external_lwe` is a codec-free `LweParametersInner`; `blind_rotation` is `NlevParameters`. 2N must fit T; the external dimension n need not be at most N. Constructors report specific parameter errors but do not validate security or a complete noise budget.
 
-`accumulator_ntru` owns ordinary NTRU encoding; blind-rotation NLev parameters share only its ring/sampling state and bind `blind_rotation_basis` at Q. Trace and scheme-switch configurations directly construct codec-free NLev parameters with independent noise.
+`accumulator_ntru()` borrows the ring/sampling state owned by the blind-rotation gadget at Q. Key parameters contain no message codec. Trace and scheme-switch configurations construct codec-free NLev parameters with independent noise.
 
 `ClientKey` holds independent LWE secret s and NTRU ring secret f. Generate paired material with `context.try_generate_keys(cbs_config, rng)`, or import it with `ClientKey::new(s, f)`. Only f requires invertibility checks and, for Fourier, inverse stability. External secrets require neither padding, invertibility nor odd weight. `external_lwe_secret_key()` returns the LWE secret at q.
 
@@ -25,29 +25,29 @@ Classic PBS, ManyLUT, CBS, Boolean and MVB support binary/ternary external secre
 
 ## Clients and LUTs
 
-Use the context's `encryptor(&client)`, `public_encryptor(&public)` and `decryptor(&client)`. `client.try_generate_public_key(parameters, rng)` creates an LWE public key under independent external s. This is not an NTRU ring public key; see the [LWE public-key contract](../primus_lwe/README.md#public-key-encryption) for total noise requirements. Ordinary messages use T and `decrypt` returns `Result<T, ClientError>`.
+Choose a `RoundedCodec` at external q, then use the context's `encryptor(&client, &input_codec)`, `public_encryptor(&public, &input_codec)` and `decryptor(&client, &input_codec)`. `client.try_generate_public_key(parameters, rng)` creates an LWE public key under independent external s. This is not an NTRU ring public key; see the [LWE public-key contract](../primus_lwe/README.md#public-key-encryption) for total noise requirements. Ordinary messages use T and `decrypt` returns `Result<T, ClientError>`.
 
 Client reads/writes accept borrowed LWE views: pass `output.as_mut_view()` to `encrypt_to` and `ciphertext.as_view()` to `decrypt` or `decrypt_phase`. Allocating encryption methods still return `LweCiphertext<T>`; Boolean clients follow the same convention.
 
-Use `encrypt_padded` for front-half LUTs and ordinary `encrypt` for odd full domains. `parameters.lookup_table_compiler()` creates a reusable compiler; call `compile_fn` / `compile_slice`, or the interleaved / odd full-domain methods. Default LUTs compile at Q with the parameter plaintext modulus and use ordinary `decrypt` after returning to q. `compiler.try_with_output_codec(&codec)?` selects a different output `RoundedCodec` at Q. Decode `decrypt_phase` with the same plaintext modulus and a codec at q. The return path scales existing encodings rather than re-encoding; budget rounding and key-switch errors.
+Use `encrypt_padded` for front-half LUTs and ordinary `encrypt` for odd full domains. `parameters.lookup_table_compiler(&input_codec)?` creates a reusable compiler; call `compile_fn` / `compile_slice`, or the interleaved / odd full-domain methods. The compiler checks input q and default output codec validity at Q. Default LUTs compile at Q with the input codec’s plaintext modulus and use ordinary `decrypt` after returning to q. `compiler.try_with_output_codec(&codec)?` selects a different output `RoundedCodec` at Q. Decode `decrypt_phase` with the same plaintext modulus and a codec at q. The return path scales existing encodings rather than re-encoding; budget rounding and key-switch errors.
 
 The [common guide](../primus_tfhe/README.md) covers ManyLUT, odd full domains and MVB. MVB compiles with an unsigned `ScaledCodec` at Q and decodes with a Scaled codec at q, budgeting the difference between their fixed scales. Bounded two-input `BivariateLookupTable` currently requires q=Q.
 
 ## Boolean clients and gates
 
-For t=4, use `boolean_encryptor`, `boolean_public_encryptor`, `boolean_decryptor` and `boolean_evaluator`. They handle Boolean external LWE encoding with ordinary PBS keys; see [Boolean gates](../primus_tfhe/README.md#boolean-gates) for calls and chaining contracts.
+Pass an explicit t=4 `RoundedCodec` to `boolean_encryptor`, `boolean_public_encryptor`, `boolean_decryptor` and `boolean_evaluator`. They handle Boolean external LWE encoding with ordinary PBS keys; see [Boolean gates](../primus_tfhe/README.md#boolean-gates) for calls and chaining contracts.
 
 ## CBS and examples
 
-`context.try_generate_keys(Some(cbs_config), rng)` includes trace/scheme-switch material; bind it through `context.circuit_bootstrap_evaluator(&server)`. CBS skips the ordinary PBS return path and produces NGSW under f. An input bit 0/1 produces a CMux control; candidate ring ciphertexts must share f, Q and encoding. Backend examples show the complete consumption chain.
+`context.try_generate_keys(Some(cbs_config), rng)` includes trace/scheme-switch material; bind it through `context.circuit_bootstrap_evaluator(&server, &input_codec)`. CBS skips the ordinary PBS return path and produces NGSW under f. An input bit 0/1 produces a CMux control; candidate ring ciphertexts must share f, Q and encoding. Backend examples show the complete consumption chain.
 
-`CircuitBootstrapParameters` chooses independent output, trace and scheme-switch bases. Output retains the requested level count and the scheme-switch key binds the complete output basis. Matching lengths do not establish basis or actual secret identity. BR decomposition must resolve the LUT and smallest output gadget scale.
+`CircuitBootstrapParameters` chooses independent output, trace and scheme-switch bases. Output retains the requested level count and the scheme-switch key binds the complete output basis. Matching lengths do not establish basis or actual secret identity. BR decomposition must resolve the LUT and smallest output gadget scale. CBS input encoding and ManyLUT capacity are checked when binding the evaluator; the same key material can serve several t values. `accumulator_client(&client, scaled_codec)` independently binds ordinary ring messages at Q, sharing the gadget’s sampling state; its message modulus may differ from the input LWE modulus.
 
 NTT reverse trace uses modular inverses; Fourier uses native integer halving and adds FFT error. Scheme switching multiplies input error by f and decomposition error by f². Publishing `NGSW_f[f]` requires a separately justified key-dependent-message/circular-security assumption; see the [NTRU contract](../primus_ntru/README.md#same-secret-scheme-switching).
 
 ## One-hot CBS
 
-`OneHotCircuitBootstrapEvaluator::try_new(&context, &server)` reuses classic binary/ternary CBS material. Require t=2M, M=2^tau and tau>=1; encrypt inputs in 0..M with `encrypt_padded`. For L output gadget levels, let W=next_power_of_two(L) and require 2MW<=N.
+`OneHotCircuitBootstrapEvaluator::try_new(&context, &server, &input_codec)` reuses classic binary/ternary CBS material. Require t=2M, M=2^tau and tau>=1; encrypt inputs in 0..M with `encrypt_padded`. For L output gadget levels, let W=next_power_of_two(L) and require 2MW<=N.
 
 Full-output APIs allocate with `allocate_nlev_output` / `allocate_ngsw_output`, then write δ_r(m), r=0..M-1, with `one_hot_nlev_to`, `one_hot_ngsw_to` or `one_hot_to`. NLEV uses coefficient representation at Q; NGSW uses the backend's transform representation. Layout is `[selector][level][row element]`, with levels in `output_basis().scalar_iter()` order. Rows contain N integers, or N/2 complex values for Fourier NGSW. Transform NLEV before lifting public polynomials; use NGSW for CMux on encrypted candidates.
 

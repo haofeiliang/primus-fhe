@@ -8,6 +8,7 @@
 use std::hint::black_box;
 
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
+use primus_encoding::RoundedCodec;
 use primus_fft::{FftTable, RustFftTable, TfheFftTable, TorusFftValue};
 use primus_modulus::NativeModulus;
 use primus_modulus::PowOf2Modulus;
@@ -16,7 +17,9 @@ use primus_tfhe_test_support::parameters::ntru;
 use rand::{SeedableRng, rngs::StdRng};
 
 fn backend<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) {
-    let parameters = ntru::diagnostic(NativeModulus::<T>::new(), 8);
+    let parameters = ntru::diagnostic(NativeModulus::<T>::new());
+    let input_codec =
+        RoundedCodec::new(T::as_from(8u32), parameters.external_lwe().cipher_modulus());
     let name = format!("ntru/{backend}/u{}/fixed_weight/n728_h32_N1024", T::BITS);
     // Hold one context/client pair, but build each server key only when selected.
     let mut fixture = None;
@@ -49,13 +52,14 @@ fn backend<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) 
             });
             let mut rng = StdRng::seed_from_u64(43);
             let input = context
-                .encryptor(client)
+                .encryptor(client, &input_codec)
                 .unwrap()
                 .encrypt_padded(T::ONE, &mut rng)
                 .unwrap();
             let lut = context
                 .parameters()
-                .lookup_table_compiler()
+                .lookup_table_compiler(&input_codec)
+                .unwrap()
                 .compile_fn(|m| T::as_from((m + 1) % 4))
                 .unwrap();
             let mut evaluator = context.evaluator(server).unwrap();
@@ -64,7 +68,7 @@ fn backend<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) 
                 evaluator.apply_lookup_table_to(input.as_view(), &lut, output.as_mut_view());
                 assert_eq!(
                     context
-                        .decryptor(client)
+                        .decryptor(client, &input_codec)
                         .unwrap()
                         .decrypt(output.as_view())
                         .unwrap(),

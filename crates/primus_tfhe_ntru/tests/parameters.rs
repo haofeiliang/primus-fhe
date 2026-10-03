@@ -1,7 +1,9 @@
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_encoding::RoundedCodec;
 use primus_lwe::LweDimension;
 use primus_lwe::LweParameters;
+use primus_lwe::LweParametersInner;
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
 use primus_poly::PolyLength;
@@ -18,9 +20,8 @@ const DECOMPOSITION: DecompositionConfig = DecompositionConfig {
 #[test]
 fn independent_domains_and_noise_are_preserved() {
     let config = TfheConfig {
-        external_lwe: LweParameters::new(
+        external_lwe: LweParametersInner::new(
             LweDimension::new(N * 2),
-            4,
             BarrettModulus::new(65_537),
             SecretKeyDistr::UniformBinary,
             0.7,
@@ -37,9 +38,15 @@ fn independent_domains_and_noise_are_preserved() {
         key_switching_noise_standard_deviation: 2.5,
     };
     let parameters = TfheParameters::try_from_config(config.clone()).unwrap();
+    // Binding ordinary ring messages reuses the gadget's sampler allocation.
+    let ordinary = NtruParameters::try_from_nlev(
+        parameters.blind_rotation(),
+        primus_encoding::ScaledCodec::new(4, parameters.accumulator_ntru().cipher_modulus()),
+    )
+    .unwrap();
     assert!(std::ptr::eq(
-        parameters.accumulator_ntru().inner(),
-        parameters.blind_rotation().inner()
+        ordinary.inner(),
+        parameters.accumulator_ntru()
     ));
     assert_eq!(parameters.poly_length(), PolyLength::new(N));
     assert_eq!(
@@ -103,7 +110,7 @@ fn independent_domains_and_noise_are_preserved() {
 }
 
 #[test]
-fn external_control_domain_and_common_plaintext_are_checked() {
+fn external_control_domain_is_checked() {
     let modulus = NativeModulus::<u32>::new();
     let accumulator = NtruParameters::new(N, 4, modulus, SecretKeyDistr::SparseTernary, 0.7);
     for distr in [
@@ -123,13 +130,16 @@ fn external_control_domain_and_common_plaintext_are_checked() {
             0.7,
         );
         let result = TfheParameters::try_new(
-            external,
-            accumulator.clone(),
-            ApproxSignedBasis::new(
-                accumulator.cipher_modulus_value(),
-                DecompositionBaseLog::new(9),
-                None,
-            ),
+            external.into_inner(),
+            NlevParameters::try_with_basis(
+                &accumulator,
+                ApproxSignedBasis::new(
+                    accumulator.cipher_modulus_value(),
+                    DecompositionBaseLog::new(9),
+                    None,
+                ),
+            )
+            .unwrap(),
             DECOMPOSITION,
             0.7,
         );
@@ -142,47 +152,6 @@ fn external_control_domain_and_common_plaintext_are_checked() {
             );
         }
     }
-    let external = LweParameters::new(
-        LweDimension::new(1),
-        8,
-        modulus,
-        SecretKeyDistr::UniformBinary,
-        0.7,
-    );
-    let matching_external = LweParameters::new(
-        LweDimension::new(1),
-        4,
-        modulus,
-        SecretKeyDistr::UniformBinary,
-        0.7,
-    );
-    assert!(matches!(
-        TfheParameters::try_new(
-            matching_external,
-            accumulator.clone(),
-            ApproxSignedBasis::new(Some(Q), DecompositionBaseLog::new(9), None),
-            DECOMPOSITION,
-            0.7
-        ),
-        Err(TfheParameterError::BootstrappingParameters(
-            primus_ntru::NlevParameterError::BasisModulusMismatch
-        ))
-    ));
-    assert_eq!(
-        TfheParameters::try_new(
-            external,
-            accumulator.clone(),
-            ApproxSignedBasis::new(
-                accumulator.cipher_modulus_value(),
-                DecompositionBaseLog::new(9),
-                None
-            ),
-            DECOMPOSITION,
-            0.7
-        )
-        .err(),
-        Some(TfheParameterError::PlainModulusMismatch)
-    );
 }
 
 #[test]
@@ -203,13 +172,16 @@ fn rotation_domain_must_be_representable_by_input_coefficients() {
         let ring = NtruParameters::new(1 << log_n, 2, modulus, SecretKeyDistr::UniformBinary, 0.7);
         assert_eq!(
             TfheParameters::try_new(
-                external,
-                ring.clone(),
-                ApproxSignedBasis::new(
-                    ring.cipher_modulus_value(),
-                    DecompositionBaseLog::new(4),
-                    None
-                ),
+                external.into_inner(),
+                NlevParameters::try_with_basis(
+                    &ring,
+                    ApproxSignedBasis::new(
+                        ring.cipher_modulus_value(),
+                        DecompositionBaseLog::new(4),
+                        None
+                    )
+                )
+                .unwrap(),
                 DECOMPOSITION,
                 0.7
             )
@@ -230,10 +202,9 @@ fn configs_return_accumulator_return_key_and_cbs_errors() {
         level_count: Some(DecompositionLevelCount::new(1)),
     };
     let config = TfheConfig {
-        external_lwe: LweParameters::new(
+        external_lwe: LweParametersInner::new(
             LweDimension::new(4),
-            4u32,
-            primus_modulus::PowOf2Modulus::new(256),
+            primus_modulus::PowOf2Modulus::new(256u32),
             SecretKeyDistr::UniformBinary,
             0.7,
         ),
@@ -260,14 +231,6 @@ fn configs_return_accumulator_return_key_and_cbs_errors() {
         TfheParameters::try_from_config(invalid),
         Err(TfheParameterError::AccumulatorParameters(
             NtruParameterError::Noise(_)
-        ))
-    ));
-    let mut invalid = config.clone();
-    invalid.accumulator_modulus = BarrettModulus::new(3);
-    assert!(matches!(
-        TfheParameters::try_from_config(invalid),
-        Err(TfheParameterError::AccumulatorParameters(
-            NtruParameterError::Encoding(_)
         ))
     ));
     let mut invalid = config.clone();
@@ -342,19 +305,21 @@ fn check_circuit_parameters<M: primus_reduce::RingContext<u64>>(
         let acc = NtruParameters::new(N, plain, modulus, SecretKeyDistr::SparseTernary, 0.7);
 
         TfheParameters::try_new(
-            LweParameters::new(
+            LweParametersInner::new(
                 LweDimension::new(16),
-                plain,
                 modulus,
                 SecretKeyDistr::UniformBinary,
                 0.7,
             ),
-            acc.clone(),
-            ApproxSignedBasis::new(
-                acc.cipher_modulus_value(),
-                DecompositionBaseLog::new(10),
-                None,
-            ),
+            NlevParameters::try_with_basis(
+                &acc,
+                ApproxSignedBasis::new(
+                    acc.cipher_modulus_value(),
+                    DecompositionBaseLog::new(10),
+                    None,
+                ),
+            )
+            .unwrap(),
             primus_tfhe_ntru::DecompositionConfig {
                 log_basis: DecompositionBaseLog::new(10),
                 level_count: None,
@@ -433,10 +398,14 @@ fn check_circuit_parameters<M: primus_reduce::RingContext<u64>>(
     assert!(
         CircuitBootstrapParameters::try_new(&tfhe, output(2), trace.clone(), trace.clone()).is_ok()
     );
-    assert!(matches!(
-        CircuitBootstrapParameters::try_new(&tfhe, output(3), trace.clone(), trace.clone()),
-        Err(Error::OutputDecompositionTooLarge)
-    ));
+    // Capacity depends on the input encoding, so reject when compiling the
+    // CBS program; the same key parameters accept a smaller plaintext domain.
+    let cbs = CircuitBootstrapParameters::try_new(&tfhe, output(3), trace.clone(), trace.clone())
+        .unwrap();
+    let crowded = RoundedCodec::new(N as u64, modulus);
+    assert!(cbs.compile_lookup_table(&crowded).is_err());
+    let fitting = RoundedCodec::new(4, modulus);
+    assert!(cbs.compile_lookup_table(&fitting).is_ok());
     let foreign_ring = NtruParameters::new(N * 2, 4, modulus, SecretKeyDistr::SparseTernary, 0.7);
     let foreign_modulus = foreign_modulus
         .map(|modulus| NtruParameters::new(N, 4, modulus, SecretKeyDistr::SparseTernary, 0.7));

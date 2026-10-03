@@ -1,5 +1,6 @@
 //! Packed one-hot selectors from one fused blind rotation.
 
+use primus_encoding::RoundedCodec;
 use primus_integer::FheUint;
 use primus_ntru::{NlevCiphertext, NttNgswCiphertext};
 use primus_ntt::MonomialNttTable;
@@ -44,7 +45,8 @@ where
 {
     /// Binds standalone BR/projection resources and compiles the packed LUT.
     /// LWE return buffers are allocated only when recovering ordinary PBS.
-    /// Rejects sparse keys, absent CBS material, incompatible parameters or geometry.
+    /// The input codec chooses t=2M at external q. Rejects sparse keys, absent CBS
+    /// material, mismatched q, or packed geometry without enough guard capacity.
     ///
     /// # Correctness
     /// The context and server material must use the same secrets and transform
@@ -52,23 +54,29 @@ where
     pub fn try_new(
         context: &'a TfheContext<T, Table, LM>,
         server_key: &'a ServerKey<T>,
+        input_codec: &RoundedCodec<T, LM>,
     ) -> Result<Self, OneHotBootstrapError> {
-        Self::from_resources(CircuitBootstrapResources::Standalone(
-            BlindRotationEngine::try_new(context, server_key)?,
-        ))
+        Self::from_resources(
+            CircuitBootstrapResources::Standalone(BlindRotationEngine::try_new(
+                context, server_key,
+            )?),
+            input_codec,
+        )
     }
 
     /// Consumes existing PBS workspace; allocates only the packed LUT and trace buffers.
     /// Inherits [`Self::try_new`]'s compatibility and error contracts.
     pub fn try_from_bootstrapper(
         pbs: Evaluator<'a, T, Table, LM>,
+        input_codec: &RoundedCodec<T, LM>,
     ) -> Result<Self, OneHotBootstrapError> {
-        Self::from_resources(CircuitBootstrapResources::Bootstrapper(pbs))
+        Self::from_resources(CircuitBootstrapResources::Bootstrapper(pbs), input_codec)
     }
 
     /// Binds CBS geometry once and allocates only its projection buffers.
     fn from_resources(
         resources: CircuitBootstrapResources<'a, T, Table, LM>,
+        input_codec: &RoundedCodec<T, LM>,
     ) -> Result<Self, OneHotBootstrapError> {
         let engine = resources.engine();
         let circuit = CircuitBootstrapBinding::try_new(
@@ -76,8 +84,11 @@ where
             engine.workspace.rotation.classic_controls(),
             engine.server_key.circuit_bootstrap_key(),
         )?;
-        let lookup_table =
-            OneHotLookupTable::try_new(engine.context.parameters(), circuit.parameters)?;
+        let lookup_table = OneHotLookupTable::try_new(
+            engine.context.parameters(),
+            circuit.parameters,
+            input_codec,
+        )?;
         let n = engine.context.parameters().poly_length().get();
         let projected = NlevCiphertext::zero(circuit.parameters.output_nlev_len());
         Ok(Self {

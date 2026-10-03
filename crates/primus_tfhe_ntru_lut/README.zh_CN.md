@@ -11,7 +11,7 @@
 
 使用 [NTT](../primus_tfhe_ntru_ntt/README.zh_CN.md) 或 [Fourier](../primus_tfhe_ntru_fourier/README.zh_CN.md) 的 classic binary/ternary context，通过 `context.try_generate_keys(Some(cbs_config), rng)` 生成配对密钥。拒绝 sparse 密钥和缺失 CBS 材料。客户端生成 chunks，再用 `encrypt_padded` 分别加密。
 
-`HighPrecisionLookupTable::try_new(parameters, config, function)` 编译公开表。回调接收 `(完整输入索引, 输出 chunk 索引)`，返回一个 digit。用 `NttLookupTableEvaluator::try_new(context, server_key, table)` 或 `FourierLookupTableEvaluator::try_new(context, server_key, table)` 绑定资源，调用一次 `allocate_output()`，随后重复调用 `evaluate_to(input_chunks, output_chunks)`。输出逐个使用 context 的普通 decryptor 解码。Evaluator 借用 context、服务端密钥和表，求值不需要客户端秘密。
+`HighPrecisionLookupTable::try_new(parameters, &input_codec, config, function)` 编译公开表。回调接收 `(完整输入索引, 输出 chunk 索引)`，返回一个 digit。用 `NttLookupTableEvaluator::try_new(context, server_key, table)` 或 `FourierLookupTableEvaluator::try_new(context, server_key, table)` 绑定资源，调用一次 `allocate_output()`，随后重复调用 `evaluate_to(input_chunks, output_chunks)`。输出逐个使用 `context.decryptor(&client, &input_codec)` 解码。表拥有 chunk 编码，密钥不依赖 t。Evaluator 借用 context、服务端密钥和表，求值不需要客户端秘密。
 
 对于 u32、`t=8`、`N=1024` 的 context，八个两位 chunks 表示一个 16 位输入。以下片段计算 `(x*x+3*x+7) mod 65536`，返回八个 chunks：
 
@@ -20,8 +20,10 @@ use primus_tfhe_ntru_lut::{
     HighPrecisionLookupTable, LookupTableConfig, NttLookupTableEvaluator,
 };
 
+let input_codec = primus_encoding::RoundedCodec::new(8u32, context.parameters().external_lwe().cipher_modulus());
 let table = HighPrecisionLookupTable::try_new(
     context.parameters(),
+    &input_codec,
     LookupTableConfig {
         input_chunk_count: 8,
         output_chunk_count: 8,
@@ -84,7 +86,7 @@ cargo run --release -p primus_tfhe_ntru_lut --example fourier_lookup
 
 数据 LUT 为每个逻辑输入/输出 chunk 编码一个函数值，相同多项式共享存储。容忍输入相位误差的重复保护区位于此前的 one-hot CBS 测试多项式；后续选择和旋转带来加性密文误差，仍需解码余量。
 
-Evaluator 借用 context、server key 和 table，并在构造时分配全部缓冲。复用 `allocate_output()` 的结果与 `evaluate_to`，在线无额外分配；所有 chunk 数量和 LWE 维数在写入前检查。资源必须匹配 N/t/q/Q，密钥须实际配套；Fourier 还要求相同 FFT table 实例。每个并发 evaluator 持有独立可变工作区。
+Evaluator 借用 context、server key 和 table，并在构造时分配全部缓冲。复用 `allocate_output()` 的结果与 `evaluate_to`，在线无额外分配；所有 chunk 数量和 LWE 维数在写入前检查。资源必须匹配 N/q/Q，表的 t 决定 one-hot 几何；密钥须实际配套；Fourier 还要求相同 FFT table 实例。每个并发 evaluator 持有独立可变工作区。
 
 返回链路对每个多项式独立执行逐系数 Q→q 和相位提取，再切换到外部 LWE 秘密。NTT 逐项返回；Fourier 通过独立 `LweReturnEvaluator` 批量执行 key switch，只保留一小块中间 LWE，每次提取后即可覆盖多项式缓冲；输出近似 q 下的 chunk 编码，双重舍入与返回误差须纳入预算。
 

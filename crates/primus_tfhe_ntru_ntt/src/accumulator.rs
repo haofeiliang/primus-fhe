@@ -1,7 +1,9 @@
 //! Client-side coefficient-ring encryption and decryption under the accumulator secret.
 
 use primus_data::{Data, DataMut};
+use primus_encoding::ScaledCodec;
 use primus_integer::FheUint;
+use primus_ntru::NtruParameters;
 use primus_ntru::{NtruCiphertext, NttNtruCiphertext, NttNtruSecretKey};
 use primus_ntt::MonomialNttTable;
 use primus_poly::Polynomial;
@@ -11,7 +13,7 @@ use crate::{ClientKey, TfheClientError, TfheContext};
 /// Prepared private-key client for the accumulator NTRU domain.
 ///
 /// Owns one transformed accumulator secret and reusable conversion workspace,
-/// borrowing the context that fixes its table, modulus and plaintext codec.
+/// binding a message codec and borrowing the context that fixes its table and modulus.
 /// Ciphertexts use coefficient representation and the accumulator secret, which
 /// differs from the external LWE domain used by [`crate::Encryptor`].
 /// Construction prepares all buffers; `encrypt_to` and `decrypt_to` do not allocate.
@@ -22,6 +24,7 @@ where
     LM: primus_reduce::RingContext<T>,
 {
     context: &'a TfheContext<T, Table, LM>,
+    parameters: NtruParameters<T, primus_modulus::BarrettModulus<T>>,
     secret: NttNtruSecretKey<T>,
     transformed: NttNtruCiphertext<Vec<T>>,
 }
@@ -32,7 +35,8 @@ where
     Table: MonomialNttTable<ValueT = T>,
     LM: primus_reduce::RingContext<T>,
 {
-    /// Validates the client key and prepares its accumulator representation once.
+    /// Validates the key and Scaled codec modulus Q, then prepares the accumulator secret.
+    /// The message codec is independent of external LWE encoding.
     /// Returns NTRU conversion failures, including a noninvertible secret.
     ///
     /// # Correctness
@@ -41,9 +45,12 @@ where
     pub fn try_new(
         context: &'a TfheContext<T, Table, LM>,
         client_key: &ClientKey<T>,
+        codec: ScaledCodec<T, primus_modulus::BarrettModulus<T>>,
     ) -> Result<Self, TfheClientError> {
         client_key.check_compatible(context.parameters())?;
-        let parameters = context.parameters().accumulator_ntru();
+        let parameters =
+            NtruParameters::try_from_nlev(context.parameters().blind_rotation(), codec)
+                .map_err(|_| crate::ClientError::CodecModulusMismatch)?;
         let secret = NttNtruSecretKey::try_from_coeff_secret_key(
             client_key.accumulator_ntru_secret_key(),
             parameters.cipher_modulus(),
@@ -53,6 +60,7 @@ where
             context,
             secret,
             transformed: NttNtruCiphertext::zero(parameters.poly_length().get()),
+            parameters,
         })
     }
 
@@ -82,7 +90,7 @@ where
         R: rand::Rng + rand::CryptoRng,
         S: DataMut<Elem = T>,
     {
-        let parameters = self.context.parameters().accumulator_ntru();
+        let parameters = &self.parameters;
         let n = parameters.poly_length().get();
         assert_eq!(
             (message.len(), output.as_ref().len()),
@@ -124,7 +132,7 @@ where
     /// # Panics
     /// Panics before output writes if ciphertext or plaintext length is wrong.
     pub fn decrypt_to<S: Data<Elem = T>>(&mut self, input: &NtruCiphertext<S>, output: &mut [T]) {
-        let parameters = self.context.parameters().accumulator_ntru();
+        let parameters = &self.parameters;
         let n = parameters.poly_length().get();
         assert_eq!(
             (input.as_ref().len(), output.len()),
@@ -152,7 +160,8 @@ where
     pub fn accumulator_client(
         &self,
         client_key: &ClientKey<T>,
+        codec: ScaledCodec<T, primus_modulus::BarrettModulus<T>>,
     ) -> Result<crate::AccumulatorClient<'_, T, Table, LM>, TfheClientError> {
-        crate::AccumulatorClient::try_new(self, client_key)
+        crate::AccumulatorClient::try_new(self, client_key, codec)
     }
 }

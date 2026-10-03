@@ -55,7 +55,7 @@ fn check_signed_generation<M: RingContext<u32>>(modulus: M) {
     let key_switching_key = LweKeySwitchingKey::generate(
         input_secret_key.as_view(),
         &output_secret_key,
-        &output_parameters,
+        output_parameters.inner(),
         basis.clone(),
         &mut encoded_rng,
     );
@@ -64,7 +64,7 @@ fn check_signed_generation<M: RingContext<u32>>(modulus: M) {
     let signed_key_switching_key = LweKeySwitchingKey::generate(
         LweSecretKeyRef::Signed(&signed_key),
         &output_secret_key,
-        &output_parameters,
+        output_parameters.inner(),
         basis,
         &mut signed_rng,
     );
@@ -107,7 +107,7 @@ fn key_switch_validates_before_writing() {
     let key = LweKeySwitchingKey::generate(
         LweSecretKeyRef::Encoded(&[1, 0, 1]),
         &output_key,
-        &output_parameters,
+        output_parameters.inner(),
         basis,
         &mut rng,
     );
@@ -175,7 +175,13 @@ fn generation_validates_before_sampling() {
         let mut expected_rng = StdRng::seed_from_u64(0x1_ee0a);
         assert!(
             catch_unwind(AssertUnwindSafe(|| {
-                LweKeySwitchingKey::generate(input_key, &output_key, &parameters, basis, &mut rng)
+                LweKeySwitchingKey::generate(
+                    input_key,
+                    &output_key,
+                    parameters.inner(),
+                    basis,
+                    &mut rng,
+                )
             }))
             .is_err()
         );
@@ -213,7 +219,7 @@ fn check_batch_sum<T: primus_integer::FheUint, M: RingContext<T>>(modulus: M) {
         let key = LweKeySwitchingKey::generate(
             LweSecretKeyRef::Encoded(&[T::ONE; 7]),
             &output_key,
-            &params,
+            params.inner(),
             basis,
             &mut rng,
         );

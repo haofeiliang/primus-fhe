@@ -13,9 +13,9 @@ NTRU-based TFHE with the native torus. Start with the [task and encoding guide](
 cargo run -p primus_tfhe_ntru_fourier --release --example ntru_fourier_basic
 ```
 
-The [basic example](examples/ntru_fourier_basic.rs) shows parameters → context → paired keys → clients → one compiled LUT → reused evaluator and ciphertext buffers. It computes `x % 4`, keeping `t=32` encoding for both input and output, and decodes with `decrypt`. `parameters.lookup_table_compiler()` creates a reusable compiler; `compiler.compile_fn(function)` uses the parameter plaintext modulus. Select a different output encoding with `compiler.try_with_output_codec(&output_codec)?`; see [choosing the output encoding](../primus_tfhe/README.md#choosing-the-output-encoding). Public-key encryption starts with `context.public_encryptor(&public)`; see the [family guide](../primus_tfhe_ntru/README.md#clients-and-luts). The example uses external `q=2^24`, distinct from ring `Q`: LUT compilation is at `Q` and the returned LWE is at `q`.
+The [basic example](examples/ntru_fourier_basic.rs) shows parameters → context → paired keys → clients → one compiled LUT → reused evaluator and ciphertext buffers. It computes `x % 4`, keeping `t=32` encoding for both input and output, and decodes with `decrypt`. `parameters.lookup_table_compiler(&input_codec)?` creates a reusable compiler; `compiler.compile_fn(function)` uses the input codec’s plaintext modulus at Q. Select a different output encoding with `compiler.try_with_output_codec(&output_codec)?`; see [choosing the output encoding](../primus_tfhe/README.md#choosing-the-output-encoding). Public-key encryption starts with `context.public_encryptor(&public, &input_codec)`; see the [family guide](../primus_tfhe_ntru/README.md#clients-and-luts). The example uses external `q=2^24`, distinct from ring `Q`: LUT compilation is at `Q` and the returned LWE is at `q`.
 
-Examples default to u32; change `type Word = u32` to `u64`; select TFHE-FFT by replacing the `RustFftTable as Table` import with `TfheFftTable as Table`. Rerun the same command after the edit. Each file defines its own `parameters()` using an explicit `TfheConfig`: dimensions, modulus types, secret distributions, noise and BR/KS decompositions are visible together. CBS examples also define `circuit_config()` for the output, trace and scheme-switch bases. The [parameter and validation guide](../../guides/development/tfhe-parameters.md) records numerical choices; each example handles two requests with the same buffers.
+Examples default to u32; change `type Word = u32` to `u64`; select TFHE-FFT by replacing the `RustFftTable as Table` import with `TfheFftTable as Table`. Rerun the same command after the edit. Each file defines its own `parameters()` using an explicit `TfheConfig`: dimensions, modulus types, secret distributions, noise and BR/KS decompositions are visible together. Message codecs are chosen separately in `main`; key generation does not depend on t. CBS examples also define `circuit_config()` for the output, trace and scheme-switch bases. The [parameter and validation guide](../../guides/development/tfhe-parameters.md) records numerical choices; each example handles two requests with the same buffers.
 
 Examples separate client encryption, server evaluation and client decryption; see [client/server roles and buffer allocation](../primus_tfhe/README.md#client-and-server-roles).
 
@@ -42,11 +42,11 @@ Both `RustFftTable` and `TfheFftTable` support u32/u64. Keys, values and evaluat
 
 ## Reusing evaluators
 
-Ordinary/interleaved `Evaluator` `_to` calls reuse workspace and caller outputs. See the [resource reuse guide](../primus_tfhe/README.md#reusing-evaluators) for PBS/MVB/CBS ownership conversions. Standalone CBS/one-hot omits ordinary LWE-return buffers: `bootstrapper_mut()` returns `None`, and `into_bootstrapper()` allocates the missing return buffers. Construct with `try_from_bootstrapper(pbs)` to retain a complete PBS and recover it without allocation; its PBS borrow returns `Some`.
+Ordinary/interleaved `Evaluator` `_to` calls reuse workspace and caller outputs. See the [resource reuse guide](../primus_tfhe/README.md#reusing-evaluators) for PBS/MVB/CBS ownership conversions. Standalone CBS/one-hot omits ordinary LWE-return buffers: `bootstrapper_mut()` returns `None`, and `into_bootstrapper()` allocates the missing return buffers. Construct with `try_from_bootstrapper(pbs, &input_codec)` to retain a complete PBS and recover it without allocation; its PBS borrow returns `Some`.
 
 ## Fixed-scale factorized MVB
 
-Compile through `context.compile_factorized_lookup_table_fn` and bind a `FactorizedEvaluator`. The program borrows that context; outputs use unsigned Scaled encoding. Compile with a codec at Q and decode at q with the same plaintext modulus; budget the difference between `(q/Q)*round(Q/t_out)` and `round(q/t_out)`, plus return noise.
+Compile through `context.compile_factorized_lookup_table_fn(&input_codec, &output_codec, domain_len, output_count, function)` and bind a `FactorizedEvaluator`. The program borrows that context; outputs use unsigned Scaled encoding. Compile with a codec at Q and decode at q with the same plaintext modulus; budget the difference between `(q/Q)*round(Q/t_out)` and `round(q/t_out)`, plus return noise.
 
 The actual scale `round(2^BITS/t_out)` must be even (`t_out=10` works for u32/u64). Odd scales return `LookupTableError::OddFactorizationScale`. Factors are transformed as signed integers without torus scaling; budget their amplification and FFT error.
 
@@ -69,15 +69,15 @@ Ordinary/interleaved PBS use the same evaluator. CBS/MVB reject sparse keys, inc
 
 ## Optional circuit bootstrapping
 
-Generate paired material with `context.try_generate_keys(Some(cbs_config), &mut rng)`; `ServerKey` owns the additional parameters and trace/scheme-switch keys. Create `context.circuit_bootstrap_evaluator(&server)` or consume ordinary workspace as above. With a classic key generated using `None`, binding CBS returns `MissingCircuitBootstrapKey`. Use `allocate_output`, `circuit_bootstrap_to` and `cmux_to`; the [CBS → CMUX example](examples/ntru_fourier_circuit_bootstrap.rs) shows their complete consumption chain.
+Generate paired material with `context.try_generate_keys(Some(cbs_config), &mut rng)`; `ServerKey` owns the additional parameters and trace/scheme-switch keys. Create `context.circuit_bootstrap_evaluator(&server, &input_codec)` or consume ordinary workspace as above. With a classic key generated using `None`, binding CBS returns `MissingCircuitBootstrapKey`. Use `allocate_output`, `circuit_bootstrap_to` and `cmux_to`; the [CBS → CMUX example](examples/ntru_fourier_circuit_bootstrap.rs) shows their complete consumption chain.
 
-The output is `FourierNgswCiphertext` under `f_acc`. The circuit key binds the complete output basis; `try_from_parts(context, server, circuit_key)` obtains parameters from that key. Budget native trace halving and FFT error against the smallest output gadget scale.
+The output is `FourierNgswCiphertext` under `f_acc`. The circuit key binds the complete output basis; `try_from_parts(context, server, circuit_key, &input_codec)` obtains parameters from that key. Budget native trace halving and FFT error against the smallest output gadget scale.
 
 Standalone component generation must use paired secrets and the same transform representation; shape checks cannot prove identity. See [CBS input/output and consumption](../primus_tfhe/README.md#cbs-output-and-consumption) and the [family CBS contract](../primus_tfhe_ntru/README.md#cbs-and-examples).
 
 ## One-hot CBS
 
-The [one-hot example](examples/ntru_fourier_one_hot.rs) generates four selectors and uses δ₂, selected by `TARGET=2`, in a CMux. Change `TARGET` for another branch. Bind `OneHotCircuitBootstrapEvaluator::try_new(&context, &server)`, allocate once and reuse `_to` calls.
+The [one-hot example](examples/ntru_fourier_one_hot.rs) generates four selectors and uses δ₂, selected by `TARGET=2`, in a CMux. Change `TARGET` for another branch. Bind `OneHotCircuitBootstrapEvaluator::try_new(&context, &server, &input_codec)`, allocate once and reuse `_to` calls.
 
 See the [family one-hot contract](../primus_tfhe_ntru/README.md#one-hot-cbs) for full/nonzero output APIs, layout and input guards. NLEV output contains coefficients at Q; use `write_fourier_form` before a public-polynomial external product. NGSW is already in Fourier representation. Inputs, keys and candidates must satisfy this page's transform contract.
 

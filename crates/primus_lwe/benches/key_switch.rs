@@ -36,7 +36,7 @@ fn bench_domain<M: RingContext<u32>>(c: &mut Criterion, name: &str, modulus: M) 
         let key = LweKeySwitchingKey::generate(
             LweSecretKeyRef::Encoded(&[1; 1024]),
             &secret,
-            &params,
+            params.inner(),
             basis,
             &mut rng,
         );
@@ -114,7 +114,7 @@ fn bench_generation(c: &mut Criterion) {
             LweKeySwitchingKey::generate(
                 LweSecretKeyRef::Encoded(black_box(&input_secret_key)),
                 &output_secret_key,
-                &output_parameters,
+                output_parameters.inner(),
                 basis.clone(),
                 &mut rng,
             )

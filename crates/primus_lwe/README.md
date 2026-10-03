@@ -76,7 +76,7 @@ fn main() {
     let switching = LweKeySwitchingKey::generate(
         secret.as_view(),
         &output_secret,
-        &output_params,
+        output_params.inner(),
         basis,
         &mut rng,
     );
@@ -133,7 +133,7 @@ Packed encryption has a different layout: `encrypt_multi_messages` stores one le
 
 ## Key switching
 
-`LweKeySwitchingKey::generate` accepts an `Encoded` or `Signed` input key view, an encoded `&LweSecretKey<T>` output key, output parameters and an owned `ApproxSignedBasis<T>`. The key retains its dimensions and decomposition basis, not a full `LweParameters` object. Entries are ordered by input coefficient, then decomposition level, then the output ciphertext's `[a, b]` coefficients. Storage uses `input_dimension * levels * (output_dimension + 1)` elements.
+`LweKeySwitchingKey::generate` accepts an `Encoded` or `Signed` input key view, an encoded `&LweSecretKey<T>` output key, codec-free `&LweParametersInner<T, M>` output parameters and an owned `ApproxSignedBasis<T>`. The key retains its dimensions and decomposition basis, not a full `LweParameters` object. Entries are ordered by input coefficient, then decomposition level, then the output ciphertext's `[a, b]` coefficients. Storage uses `input_dimension * levels * (output_dimension + 1)` elements.
 
 `key_switch` / `key_switch_to` process a single sample; `key_switch_batch` / `key_switch_batch_to` use independent batch slices. Input and output use their respective dimensions and the same ciphertext modulus. Key switching does not re-encode messages or switch moduli. Decryption parameters must preserve the encoding, and the noise budget must cover decomposition error and key-entry noise. Batch output equals repeated single key switching coefficient for coefficient; the `_to` path reuses key entries without heap scratch.
 

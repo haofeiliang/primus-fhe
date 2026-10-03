@@ -1,12 +1,13 @@
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_lattice::LweDimension;
+use primus_lwe::LweParametersInner;
 use primus_poly::PolyLength;
 use primus_tfhe::ProgrammableBootstrap as _;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use primus_encoding::{PlaintextEmbedding::Unsigned, RoundedCodec, ScaledCodec};
 use primus_fft::{FftTable, RustFftTable, TfheFftTable, TorusFftValue};
-use primus_lwe::{LweCiphertext, LweParameters};
+use primus_lwe::LweCiphertext;
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::SecretKeyDistr;
 use primus_test_allocations as allocations;
@@ -26,9 +27,8 @@ const DOMAIN: usize = 8;
 fn context<T: TorusFftValue, Table: FftTable>(distr: SecretKeyDistr) -> TfheContext<T, Table> {
     let parameters = TfheParameters::try_from_config(TfheConfig {
         accumulator_modulus: NativeModulus::new(),
-        external_lwe: LweParameters::new(
+        external_lwe: LweParametersInner::new(
             LweDimension::new(DIM),
-            T::as_from(15usize),
             NativeModulus::new(),
             distr,
             0.7,
@@ -60,6 +60,10 @@ fn value(m: usize, i: usize) -> usize {
 
 fn check_complete<T: TorusFftValue, Table: FftTable>(distr: SecretKeyDistr) {
     let context = context::<T, Table>(distr);
+    let input_codec = RoundedCodec::new(
+        T::as_from(15u32),
+        context.parameters().external_lwe().cipher_modulus(),
+    );
     let mut rng = StdRng::seed_from_u64(0x4235_3301);
     let (client, server) = context.try_generate_keys(None, &mut rng).unwrap();
     let modulus = NativeModulus::new();
@@ -68,7 +72,7 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(distr: SecretKeyDistr) {
     // Two full return tiles and a singleton tail reuse one polynomial buffer.
     let output_count = 17;
     let lut = context
-        .compile_factorized_lookup_table_fn(&codec, DOMAIN, output_count, |m, i| {
+        .compile_factorized_lookup_table_fn(&input_codec, &codec, DOMAIN, output_count, |m, i| {
             T::as_from(value(m, i))
         })
         .unwrap();
@@ -84,8 +88,8 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(distr: SecretKeyDistr) {
         context.evaluator(&server).unwrap(),
     )
     .unwrap();
-    let encryptor = context.encryptor(&client).unwrap();
-    let decryptor = context.decryptor(&client).unwrap();
+    let encryptor = context.encryptor(&client, &input_codec).unwrap();
+    let decryptor = context.decryptor(&client, &input_codec).unwrap();
     let dimension = context.parameters().external_lwe_dimension().get();
     assert_eq!(dimension, (LweDimension::new(DIM)).get());
     let mut outputs = vec![LweCiphertext::zero(dimension); output_count];
@@ -156,26 +160,27 @@ fn factorized_pbs_preserves_scaled_outputs_and_reuses_workspace() {
 #[test]
 fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
     let context = context::<u32, RustFftTable>(SecretKeyDistr::fixed_hamming_weight_binary(DIM, 3));
+    let input_codec = RoundedCodec::new(15, context.parameters().external_lwe().cipher_modulus());
     let mut rng = StdRng::seed_from_u64(0x4235_3302);
     let (client, server) = context.try_generate_keys(None, &mut rng).unwrap();
     let codec = ScaledCodec::new(8u32, NativeModulus::new());
-    let compile = |context: &TfheContext<u32, RustFftTable>| {
+    let compile = || {
         FactorizedLookupTable::try_new(
             DOMAIN,
             PolyLength::new(N),
             3,
-            context.parameters().input_plaintext_codec(),
+            &input_codec,
             &codec,
             |m, i| ((m + i) % 8) as u32,
         )
         .unwrap()
     };
-    let lut = FourierFactorizedLookupTable::new(&context, compile(&context));
+    let lut = FourierFactorizedLookupTable::new(&context, compile());
     let other =
         self::context::<u32, RustFftTable>(SecretKeyDistr::fixed_hamming_weight_binary(DIM, 3));
-    let foreign = FourierFactorizedLookupTable::new(&other, compile(&other));
+    let foreign = FourierFactorizedLookupTable::new(&other, compile());
     let input = context
-        .encryptor(&client)
+        .encryptor(&client, &input_codec)
         .unwrap()
         .encrypt_padded(3, &mut rng)
         .unwrap();
@@ -201,7 +206,7 @@ fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
         );
         assert_eq!(outputs, before);
     }
-    let decryptor = context.decryptor(&client).unwrap();
+    let decryptor = context.decryptor(&client, &input_codec).unwrap();
     let outputs = evaluator.apply_lookup_table(input.as_view(), &lut);
     assert_eq!(
         outputs
@@ -211,7 +216,7 @@ fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
         [3, 4, 5]
     );
     let single = context
-        .compile_factorized_lookup_table_fn(&codec, DOMAIN, 1, |m, _| m as u32)
+        .compile_factorized_lookup_table_fn(&input_codec, &codec, DOMAIN, 1, |m, _| m as u32)
         .unwrap();
     assert_eq!(
         codec.decode_value(
@@ -224,20 +229,18 @@ fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
 
     let native = NativeModulus::new();
     let explicit = BarrettModulus::new(97);
-    let mut mismatched = Vec::new();
-    for (n, t) in [(N / 2, 15), (N, 8)] {
-        mismatched.push(
-            FactorizedLookupTable::try_new(
-                2,
-                PolyLength::new(n),
-                1,
-                &RoundedCodec::new(t, native),
-                &codec,
-                |_, _| 0,
-            )
-            .unwrap(),
-        );
-    }
+    let mut mismatched = vec![
+        FactorizedLookupTable::try_new(
+            2,
+            PolyLength::new(N / 2),
+            1,
+            &RoundedCodec::new(15, native),
+            &codec,
+            |_, _| 0,
+        )
+        .unwrap(),
+    ];
+
     mismatched.push(
         FactorizedLookupTable::try_new(
             2,
@@ -254,7 +257,7 @@ fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
             2,
             PolyLength::new(N),
             1,
-            context.parameters().input_plaintext_codec(),
+            &input_codec,
             &ScaledCodec::new(8, explicit),
             |_, _| 0,
         )
@@ -270,6 +273,7 @@ fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
     }
     assert!(matches!(
         context.compile_factorized_lookup_table_fn(
+            &input_codec,
             &ScaledCodec::new(8, BarrettModulus::new(97)),
             DOMAIN,
             1,
@@ -279,6 +283,7 @@ fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
     ));
     assert!(matches!(
         context.compile_factorized_lookup_table_fn(
+            &input_codec,
             &ScaledCodec::new(3, NativeModulus::new()),
             DOMAIN,
             1,

@@ -1,8 +1,11 @@
 use primus_decompose::DecompositionBaseLog;
 use primus_decompose::primitive::ApproxSignedBasis;
+use primus_encoding::RoundedCodec;
 use primus_lwe::LweDimension;
+use primus_lwe::LweParametersInner;
 use primus_lwe::{LweCiphertext, LweParameters, LwePublicKey, LweSecretKey};
 use primus_modulus::{BarrettModulus, NativeModulus};
+use primus_ntru::NlevParameters;
 use primus_ntru::{NtruParameters, NtruSecretKey, SecretKeyDistr};
 use primus_reduce::RingContext;
 use primus_test_allocations as allocations;
@@ -16,6 +19,7 @@ use rand::{Rng, SeedableRng, rngs::StdRng};
 static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
 
 fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
+    let input_codec = RoundedCodec::new(plain_modulus, modulus);
     let ring = NtruParameters::new(
         32,
         plain_modulus,
@@ -24,19 +28,21 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
         1.4,
     );
     let params = TfheParameters::try_new(
-        LweParameters::new(
+        LweParametersInner::new(
             LweDimension::new(4),
-            plain_modulus,
             modulus,
             SecretKeyDistr::UniformBinary,
             0.7,
         ),
-        ring.clone(),
-        ApproxSignedBasis::new(
-            ring.cipher_modulus_value(),
-            DecompositionBaseLog::new(8),
-            None,
-        ),
+        NlevParameters::try_with_basis(
+            &ring,
+            ApproxSignedBasis::new(
+                ring.cipher_modulus_value(),
+                DecompositionBaseLog::new(8),
+                None,
+            ),
+        )
+        .unwrap(),
         primus_tfhe_ntru::DecompositionConfig {
             log_basis: DecompositionBaseLog::new(8),
             level_count: None,
@@ -55,9 +61,7 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
     assert_eq!(public.dimension(), LweDimension::new(4)); // Independent external LWE dimension.
     // External LWE encryption uses its own noise sampler.
     let lwe = params.external_lwe();
-    let encoded = params
-        .input_plaintext_codec()
-        .encode_value(1, primus_encoding::PlaintextEmbedding::Unsigned);
+    let encoded = input_codec.encode_value(1, primus_encoding::PlaintextEmbedding::Unsigned);
     let seed = rng.next_u64();
     let mut rng = StdRng::seed_from_u64(seed);
     let mut reference_rng = StdRng::seed_from_u64(seed);
@@ -70,7 +74,7 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
     );
     assert_eq!(
         params
-            .encryptor(&client)
+            .encryptor(&client, &input_codec)
             .unwrap()
             .encrypt(1, &mut rng)
             .unwrap(),
@@ -88,16 +92,26 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
     );
     assert_eq!(
         params
-            .public_encryptor(&public)
+            .public_encryptor(&public, &input_codec)
             .unwrap()
             .encrypt(1, &mut rng)
             .unwrap(),
         expected
     );
     assert_eq!(rng.next_u64(), reference_rng.next_u64());
-    check_reused_output(&params, &client, params.public_encryptor(&public).unwrap());
-    check_reused_output(&params, &client, params.encryptor(&client).unwrap());
-    check_boolean_client(&params, &client);
+    check_reused_output(
+        &params,
+        &client,
+        &input_codec,
+        params.public_encryptor(&public, &input_codec).unwrap(),
+    );
+    check_reused_output(
+        &params,
+        &client,
+        &input_codec,
+        params.encryptor(&client, &input_codec).unwrap(),
+    );
+    check_boolean_client(&params, &client, &input_codec);
 
     let foreign_params = LweParameters::new(
         LweDimension::new(4),
@@ -110,7 +124,7 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
     let foreign =
         LwePublicKey::generate(foreign_secret.as_view(), foreign_params.inner(), &mut rng);
     assert_eq!(
-        params.public_encryptor(&foreign).err(),
+        params.public_encryptor(&foreign, &input_codec).err(),
         Some(ClientError::PublicKeyModulusMismatch)
     );
     let full_params = LweParameters::new(
@@ -123,7 +137,7 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
     let full_secret = LweSecretKey::generate(full_params.inner(), &mut rng);
     let full = LwePublicKey::generate(full_secret.as_view(), full_params.inner(), &mut rng);
     assert_eq!(
-        params.public_encryptor(&full).err(),
+        params.public_encryptor(&full, &input_codec).err(),
         Some(ClientError::KeyDimensionMismatch {
             expected: 4,
             actual: 8
@@ -159,21 +173,24 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
 fn check_boolean_client<M: RingContext<u32>>(
     parameters: &TfheParameters<u32, M>,
     client: &ClientKey<u32>,
+    input_codec: &RoundedCodec<u32, M>,
 ) {
-    if parameters.plain_modulus_value() != 4 {
+    if input_codec.plaintext_modulus() != 4 {
         assert_eq!(
-            BooleanEncryptor::try_new(parameters.encryptor(client).unwrap()).err(),
+            BooleanEncryptor::try_new(parameters.encryptor(client, input_codec).unwrap()).err(),
             Some(BooleanError::PlaintextModulusMustBeFour)
         );
         assert_eq!(
-            BooleanDecryptor::try_new(parameters.decryptor(client).unwrap()).err(),
+            BooleanDecryptor::try_new(parameters.decryptor(client, input_codec).unwrap()).err(),
             Some(BooleanError::PlaintextModulusMustBeFour)
         );
         return;
     }
-    let encryptor = BooleanEncryptor::try_new(parameters.encryptor(client).unwrap()).unwrap();
-    let decryptor = BooleanDecryptor::try_new(parameters.decryptor(client).unwrap()).unwrap();
-    let raw_encryptor = parameters.encryptor(client).unwrap();
+    let encryptor =
+        BooleanEncryptor::try_new(parameters.encryptor(client, input_codec).unwrap()).unwrap();
+    let decryptor =
+        BooleanDecryptor::try_new(parameters.decryptor(client, input_codec).unwrap()).unwrap();
+    let raw_encryptor = parameters.encryptor(client, input_codec).unwrap();
     let mut rng = StdRng::seed_from_u64(0xB202);
     // Reuse a stack-backed view; only its mask/body may be overwritten.
     // The fixture's external LWE dimension is four, independent of ring N.
@@ -236,14 +253,15 @@ enum Encoding {
 fn check_reused_output<M, Key>(
     parameters: &TfheParameters<u32, M>,
     client: &ClientKey<u32>,
+    input_codec: &RoundedCodec<u32, M>,
     encryptor: Encryptor<'_, u32, M, Key>,
 ) where
     M: RingContext<u32>,
     Key: EncryptionKey<u32, M>,
 {
-    let decryptor = parameters.decryptor(client).unwrap();
+    let decryptor = parameters.decryptor(client, input_codec).unwrap();
     let dimension = parameters.external_lwe_dimension().get();
-    let t = parameters.plain_modulus_value();
+    let t = input_codec.plaintext_modulus();
     let mut rng = StdRng::seed_from_u64(0x434c_4945_4e54);
     let mut expected_rng = StdRng::seed_from_u64(0x434c_4945_4e54);
     let mut output = LweCiphertext::new(vec![u32::MAX; dimension + 1]);

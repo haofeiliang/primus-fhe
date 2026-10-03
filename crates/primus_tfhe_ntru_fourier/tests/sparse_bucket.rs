@@ -1,4 +1,5 @@
 //! Independent coefficient phases and FFT error in NTRU bucket aggregation.
+use primus_lwe::LweParametersInner;
 
 use num_traits::ConstZero;
 use primus_decompose::primitive::ApproxSignedBasis;
@@ -120,15 +121,13 @@ fn check<T: TorusFftValue, Table: FftTable>(level_count: Option<usize>) {
     drop(fft);
     let context = TfheContext::try_new(
         TfheParameters::try_new(
-            LweParameters::new(
+            LweParametersInner::new(
                 LweDimension::new(DIM),
-                T::as_from(16usize),
                 modulus,
                 client_params.secret_key_distr(),
                 0.7,
             ),
-            params.clone(),
-            gadget.basis().clone(),
+            NlevParameters::try_with_basis(&params, gadget.basis().clone()).unwrap(),
             primus_tfhe_ntru::DecompositionConfig {
                 log_basis: DecompositionBaseLog::new(8),
                 level_count: None,

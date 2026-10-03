@@ -3,10 +3,13 @@
 
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_encoding::RoundedCodec;
+use primus_encoding::ScaledCodec;
 use primus_fft::{Complex64, FftTable, RustFftTable, TfheFftTable};
 use primus_lattice::LweDimension;
 use primus_lwe::LweParameters;
 use primus_modulus::NativeModulus;
+use primus_ntru::NlevParameters;
 use primus_ntru::{FourierNgswCiphertext, FourierNtruSecretKey, NtruParameters, SecretKeyDistr};
 use primus_poly::{PolyLength, Polynomial};
 use primus_test_allocations as allocations;
@@ -40,9 +43,8 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr) {
     );
 
     let tfhe = TfheParameters::try_new(
-        lwe,
-        accumulator,
-        blind_rotation_basis,
+        lwe.into_inner(),
+        NlevParameters::try_with_basis(&accumulator, blind_rotation_basis).unwrap(),
         primus_tfhe_ntru::DecompositionConfig {
             log_basis: DecompositionBaseLog::new(10),
             level_count: None,
@@ -51,6 +53,7 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr) {
     )
     .unwrap();
     let context = TfheContext::<_, Table, _>::from_parameters(tfhe);
+    let input_codec = RoundedCodec::new(4, context.parameters().external_lwe().cipher_modulus());
     let mut rng = StdRng::seed_from_u64(0x004e_5454_5f43_4253);
     // Three gadget levels exercise multiple scales and an internal padding slot.
     let levels = 3;
@@ -93,11 +96,12 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr) {
     )
     .unwrap();
     let mut decrypt = primus_ntru::FourierNtruDecryptWorkspace::new(PolyLength::new(N));
-    let encryptor = context.encryptor(&client).unwrap();
+    let encryptor = context.encryptor(&client, &input_codec).unwrap();
     // The same CBS-enabled server key also supports ordinary PBS.
     let identity = context
         .parameters()
-        .lookup_table_compiler()
+        .lookup_table_compiler(&input_codec)
+        .unwrap()
         .compile_fn(|message| message as u64)
         .unwrap();
     let input = encryptor.encrypt_padded(1u64, &mut rng).unwrap();
@@ -107,14 +111,22 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr) {
         .apply_lookup_table(input.as_view(), &identity);
     assert_eq!(
         context
-            .decryptor(&client)
+            .decryptor(&client, &input_codec)
             .unwrap()
             .decrypt(output.as_view())
             .unwrap(),
         1
     );
 
-    let mut accumulator_client = context.accumulator_client(&client).unwrap();
+    let mut accumulator_client = context
+        .accumulator_client(
+            &client,
+            ScaledCodec::new(
+                input_codec.plaintext_modulus(),
+                context.parameters().accumulator_ntru().cipher_modulus(),
+            ),
+        )
+        .unwrap();
     let choices = [1u64, 3].map(|message| {
         let mut output = context.allocate_accumulator_ciphertext();
         let (_, allocation) = allocations::measure(|| {
@@ -129,7 +141,8 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr) {
 
     // Independent CBS omits ordinary return buffers. Its online path still
     // allocates nothing; completion explicitly allocates those missing buffers.
-    let mut standalone = CircuitBootstrapEvaluator::try_new(&context, &server).unwrap();
+    let mut standalone =
+        CircuitBootstrapEvaluator::try_new(&context, &server, &input_codec).unwrap();
     assert!(standalone.bootstrapper_mut().is_none());
     let mut standalone_control = standalone.allocate_output();
     let (_, allocation) = allocations::measure(|| {
@@ -138,14 +151,29 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr) {
     assert_eq!(allocation.count, 0);
     let (pbs, allocation) = allocations::measure(|| standalone.into_bootstrapper());
     assert!(allocation.count > 0);
-    let mut evaluator = CircuitBootstrapEvaluator::try_from_bootstrapper(pbs).unwrap();
+    let mut evaluator =
+        CircuitBootstrapEvaluator::try_from_bootstrapper(pbs, &input_codec).unwrap();
     let mut control = evaluator.allocate_output();
     let mut selected = context.allocate_accumulator_ciphertext();
     let mut product = context.allocate_accumulator_ciphertext();
     let mut decoded = vec![0; N];
     let mut decoded_product = vec![0; N];
-    // A zero result must overwrite the previous nonzero control.
-    for bit in [1u64, 0] {
+    // Rebind the same CBS key to t=8; the final zero overwrites a nonzero control.
+    for (t, bit) in [(4u64, 1u64), (8, 1), (8, 0)] {
+        let input_codec =
+            RoundedCodec::new(t, context.parameters().external_lwe().cipher_modulus());
+        let encryptor = context.encryptor(&client, &input_codec).unwrap();
+        let identity = context
+            .parameters()
+            .lookup_table_compiler(&input_codec)
+            .unwrap()
+            .compile_fn(|m| m as u64)
+            .unwrap();
+        evaluator = CircuitBootstrapEvaluator::try_from_bootstrapper(
+            evaluator.into_bootstrapper(),
+            &input_codec,
+        )
+        .unwrap();
         let input = encryptor.encrypt_padded(bit, &mut rng).unwrap();
         let (_, allocation) = allocations::measure(|| {
             evaluator.circuit_bootstrap_to(input.as_view(), &mut control);
@@ -161,7 +189,7 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr) {
         });
         assert_eq!(
             context
-                .decryptor(&client)
+                .decryptor(&client, &input_codec)
                 .unwrap()
                 .decrypt(output.as_view())
                 .unwrap(),

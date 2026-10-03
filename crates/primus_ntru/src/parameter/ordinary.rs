@@ -104,6 +104,16 @@ where
         })
     }
 
+    /// Binds a Scaled message codec to an existing gadget's ring and samplers.
+    /// Shares the immutable sampling state without copying the gadget basis.
+    /// Returns an error if the codec uses a different ciphertext modulus.
+    pub fn try_from_nlev(
+        gadget: &super::NlevParameters<T, M>,
+        plaintext_codec: ScaledCodec<T, M>,
+    ) -> Result<Self, NtruParameterError> {
+        Self::try_from_parts(Arc::clone(&gadget.inner), plaintext_codec)
+    }
+
     /// Returns the ring and sampling state shared with gadget parameters.
     #[must_use]
     #[inline]

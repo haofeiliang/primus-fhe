@@ -1,8 +1,11 @@
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_encoding::RoundedCodec;
+use primus_encoding::ScaledCodec;
 use primus_lattice::LweDimension;
-use primus_lwe::LweParameters;
+use primus_lwe::LweParametersInner;
 use primus_modulus::{BarrettModulus, PowOf2Modulus};
+use primus_ntru::NlevParameters;
 use primus_ntru::{
     NtruCiphertext, NtruParameters, NttNgswCiphertext, NttNtruExternalProductWorkspace,
     SecretKeyDistr,
@@ -68,20 +71,19 @@ fn selectors(distr: SecretKeyDistr) {
         None,
     );
     let tfhe = TfheParameters::try_new(
-        LweParameters::new(
+        LweParametersInner::new(
             LweDimension::new(4),
-            2 * M as u64,
             PowOf2Modulus::new(1u64 << 24),
             distr,
             0.7,
         ),
-        ring,
-        blind_rotation_basis,
+        NlevParameters::try_with_basis(&ring, blind_rotation_basis).unwrap(),
         full,
         0.7,
     )
     .unwrap();
     let context = TfheContext::<_, U64NttTable, _>::try_from_parameters(tfhe).unwrap();
+    let input_codec = RoundedCodec::new(8, context.parameters().external_lwe().cipher_modulus());
     let mut rng = StdRng::seed_from_u64(0x4f48434253);
     let (client, server) = context
         .try_generate_keys(
@@ -98,7 +100,8 @@ fn selectors(distr: SecretKeyDistr) {
             &mut rng,
         )
         .unwrap();
-    let mut evaluator = OneHotCircuitBootstrapEvaluator::try_new(&context, &server).unwrap();
+    let mut evaluator =
+        OneHotCircuitBootstrapEvaluator::try_new(&context, &server, &input_codec).unwrap();
     assert!(evaluator.bootstrapper_mut().is_none());
     assert_eq!(evaluator.lookup_table().selector_count(), M);
     assert_eq!(evaluator.lookup_table().rotation_step(), 4);
@@ -123,14 +126,23 @@ fn selectors(distr: SecretKeyDistr) {
     let mut selected = NtruCiphertext::<Vec<u64>>::zero(N);
     let mut ep = NttNtruExternalProductWorkspace::new(PolyLength::new(N));
 
-    let encryptor = context.encryptor(&client).unwrap();
+    let encryptor = context.encryptor(&client, &input_codec).unwrap();
     let identity = context
         .parameters()
-        .lookup_table_compiler()
+        .lookup_table_compiler(&input_codec)
+        .unwrap()
         .compile_fn(|m| m as u64)
         .unwrap();
     let mut lwe_output = primus_tfhe::LweCiphertext::zero(4);
-    let mut accumulator = context.accumulator_client(&client).unwrap();
+    let mut accumulator = context
+        .accumulator_client(
+            &client,
+            ScaledCodec::new(
+                input_codec.plaintext_modulus(),
+                context.parameters().accumulator_ntru().cipher_modulus(),
+            ),
+        )
+        .unwrap();
     let choices = [1, 3].map(|m| {
         let mut c = context.allocate_accumulator_ciphertext();
         accumulator.encrypt_to(&[m; N], &mut c, &mut rng);
@@ -151,7 +163,8 @@ fn selectors(distr: SecretKeyDistr) {
             assert_eq!(allocation.count, 0);
             let (pbs, allocation) = allocations::measure(|| evaluator.into_bootstrapper());
             assert!(allocation.count > 0);
-            evaluator = OneHotCircuitBootstrapEvaluator::try_from_bootstrapper(pbs).unwrap();
+            evaluator =
+                OneHotCircuitBootstrapEvaluator::try_from_bootstrapper(pbs, &input_codec).unwrap();
         }
         let (_, allocation) = allocations::measure(|| {
             evaluator.one_hot_to(input.as_view(), &mut nlev, &mut ngsw);
@@ -180,7 +193,7 @@ fn selectors(distr: SecretKeyDistr) {
         assert_eq!(joint_nonzero_ngsw, nonzero_ngsw);
         assert_eq!(
             context
-                .decryptor(&client)
+                .decryptor(&client, &input_codec)
                 .unwrap()
                 .decrypt(lwe_output.as_view())
                 .unwrap(),
@@ -305,15 +318,17 @@ fn selectors(distr: SecretKeyDistr) {
     // Recovery and rebinding preserve the PBS/ordinary-CBS workflow.
     let (pbs, allocation) = allocations::measure(|| evaluator.into_bootstrapper());
     assert_eq!(allocation.count, 0);
-    let mut ordinary = CircuitBootstrapEvaluator::try_from_bootstrapper(pbs).unwrap();
+    let mut ordinary = CircuitBootstrapEvaluator::try_from_bootstrapper(pbs, &input_codec).unwrap();
     let mut control = ordinary.allocate_output();
     ordinary.circuit_bootstrap_to(input.as_view(), &mut control);
     ordinary.cmux_to(&control, &choices[0], &choices[1], &mut selected);
     accumulator.decrypt_to(&selected, &mut decoded);
     assert_eq!(decoded, vec![3; N]);
-    let mut evaluator =
-        OneHotCircuitBootstrapEvaluator::try_from_bootstrapper(ordinary.into_bootstrapper())
-            .unwrap();
+    let mut evaluator = OneHotCircuitBootstrapEvaluator::try_from_bootstrapper(
+        ordinary.into_bootstrapper(),
+        &input_codec,
+    )
+    .unwrap();
     evaluator.one_hot_to(input.as_view(), &mut nlev, &mut ngsw);
 }
 

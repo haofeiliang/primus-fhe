@@ -1,12 +1,13 @@
 //! Complete lookup through public/secret CMux layers and weighted blind rotation.
 //! Polynomial contents are checked exhaustively in lookup_table.rs; encrypted
 //! evaluation focuses on chunk digits, table boundaries and reused zero selectors.
+use primus_encoding::RoundedCodec;
 use primus_fft::{FftTable, RustFftTable, TfheFftTable, TorusFftValue};
 use primus_integer::FheUint;
 use primus_lattice::LweDimension;
-use primus_lwe::LweParameters;
+use primus_lwe::LweParametersInner;
 use primus_modulus::{BarrettModulus, NativeModulus, PowOf2Modulus};
-use primus_ntru::{NtruParameters, SecretKeyDistr};
+use primus_ntru::SecretKeyDistr;
 use primus_ntt::{MonomialNttTable, U32NttTable, U64NttTable};
 use primus_reduce::RingContext;
 use primus_test_allocations as allocations;
@@ -27,38 +28,30 @@ const N: usize = 64;
 // Small independent LWE secret at q=2^24; only the accumulator uses the transform.
 fn parameters<T: FheUint, M: RingContext<T>>(
     modulus: M,
-    radix: usize,
     distr: SecretKeyDistr,
     dimension: usize,
 ) -> TfheParameters<T, M, PowOf2Modulus<T>> {
-    let ring = NtruParameters::new(
-        N,
-        T::as_from(2 * radix),
-        modulus,
-        SecretKeyDistr::SparseTernary,
-        0.7,
-    );
-    TfheParameters::try_new(
-        LweParameters::new(
+    TfheParameters::try_from_config(primus_tfhe_ntru::TfheConfig {
+        external_lwe: LweParametersInner::new(
             LweDimension::new(dimension),
-            T::as_from(2 * radix),
             PowOf2Modulus::new(T::ONE << 24u32),
             distr,
             0.7,
         ),
-        ring,
-        DecompositionConfig {
-            log_basis: DecompositionBaseLog::new(8),
-            level_count: None,
-        }
-        .try_build(modulus.explicit_value())
-        .unwrap(),
-        DecompositionConfig {
+        accumulator_modulus: modulus,
+        poly_length: N,
+        accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
+        accumulator_noise_standard_deviation: 0.7,
+        blind_rotation: DecompositionConfig {
             log_basis: DecompositionBaseLog::new(8),
             level_count: None,
         },
-        0.7,
-    )
+        key_switching: DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(8),
+            level_count: None,
+        },
+        key_switching_noise_standard_deviation: 0.7,
+    })
     .unwrap()
 }
 
@@ -337,23 +330,30 @@ fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T) {
         SecretKeyDistr::UniformBinary,
         SecretKeyDistr::UniformTernary,
     ] {
-        for radix in [2, 4] {
-            let context = primus_tfhe_ntru_ntt::TfheContext::<_, Table, _>::try_from_parameters(
-                parameters(BarrettModulus::new(q), radix, distr, 2),
-            )
+        // One material set serves both t=4 and t=8 chunk programs.
+        let context = primus_tfhe_ntru_ntt::TfheContext::<_, Table, _>::try_from_parameters(
+            parameters(BarrettModulus::new(q), distr, 2),
+        )
+        .unwrap();
+        let mut rng = StdRng::seed_from_u64(0x48504c5554);
+        let (client, server) = context
+            .try_generate_keys(Some(cbs::<T>()), &mut rng)
             .unwrap();
-            let mut rng = StdRng::seed_from_u64(0x48504c5554 + radix as u64);
-            let (client, server) = context
-                .try_generate_keys(Some(cbs::<T>()), &mut rng)
-                .unwrap();
-            let encryptor = context.encryptor(&client).unwrap();
-            let decryptor = context.decryptor(&client).unwrap();
+        for radix in [2, 4] {
+            let input_codec = RoundedCodec::new(
+                T::as_from((2 * radix) as u32),
+                context.parameters().external_lwe().cipher_modulus(),
+            );
+            let encryptor = context.encryptor(&client, &input_codec).unwrap();
+            let decryptor = context.decryptor(&client, &input_codec).unwrap();
             for (config, mapping) in cases(radix) {
-                let table =
-                    HighPrecisionLookupTable::try_new(context.parameters(), config, |x, o| {
-                        T::as_from(mapping.digit(x, o, radix))
-                    })
-                    .unwrap();
+                let table = HighPrecisionLookupTable::try_new(
+                    context.parameters(),
+                    &input_codec,
+                    config,
+                    |x, o| T::as_from(mapping.digit(x, o, radix)),
+                )
+                .unwrap();
                 let mut evaluator =
                     NttLookupTableEvaluator::try_new(&context, &server, &table).unwrap();
                 let case = format!(
@@ -373,18 +373,23 @@ fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T) {
             }
             let config = cases(radix)[0].0;
             let other = primus_tfhe_ntru_ntt::TfheContext::<_, Table, _>::try_from_parameters(
-                parameters(BarrettModulus::new(q), radix, distr, 3),
+                parameters(BarrettModulus::new(q), distr, 3),
             )
             .unwrap();
-            let table =
-                HighPrecisionLookupTable::try_new(other.parameters(), config, |_, _| T::ZERO)
-                    .unwrap();
+            let table = HighPrecisionLookupTable::try_new(
+                other.parameters(),
+                &input_codec,
+                config,
+                |_, _| T::ZERO,
+            )
+            .unwrap();
             assert!(matches!(
                 NttLookupTableEvaluator::try_new(&other, &server, &table),
                 Err(LookupTableError::OneHot(_))
             ));
             let table = HighPrecisionLookupTable::try_new(
-                &parameters(NativeModulus::new(), radix, distr, 2),
+                &parameters(NativeModulus::new(), distr, 2),
+                &input_codec,
                 config,
                 |_, _| T::ZERO,
             )
@@ -403,22 +408,29 @@ fn fourier<T: TorusFftValue, Table: FftTable>() {
         SecretKeyDistr::UniformBinary,
         SecretKeyDistr::UniformTernary,
     ] {
+        // One material set serves both t=4 and t=8 chunk programs.
+        let context = primus_tfhe_ntru_fourier::TfheContext::<_, Table, _>::from_parameters(
+            parameters(NativeModulus::new(), distr, 2),
+        );
+        let mut rng = StdRng::seed_from_u64(0x48504c5554);
+        let (client, server) = context
+            .try_generate_keys(Some(cbs::<T>()), &mut rng)
+            .unwrap();
         for radix in [2, 4] {
-            let context = primus_tfhe_ntru_fourier::TfheContext::<_, Table, _>::from_parameters(
-                parameters(NativeModulus::new(), radix, distr, 2),
+            let input_codec = RoundedCodec::new(
+                T::as_from((2 * radix) as u32),
+                context.parameters().external_lwe().cipher_modulus(),
             );
-            let mut rng = StdRng::seed_from_u64(0x48504c5554 + radix as u64);
-            let (client, server) = context
-                .try_generate_keys(Some(cbs::<T>()), &mut rng)
-                .unwrap();
-            let encryptor = context.encryptor(&client).unwrap();
-            let decryptor = context.decryptor(&client).unwrap();
+            let encryptor = context.encryptor(&client, &input_codec).unwrap();
+            let decryptor = context.decryptor(&client, &input_codec).unwrap();
             for (config, mapping) in cases(radix) {
-                let table =
-                    HighPrecisionLookupTable::try_new(context.parameters(), config, |x, o| {
-                        T::as_from(mapping.digit(x, o, radix))
-                    })
-                    .unwrap();
+                let table = HighPrecisionLookupTable::try_new(
+                    context.parameters(),
+                    &input_codec,
+                    config,
+                    |x, o| T::as_from(mapping.digit(x, o, radix)),
+                )
+                .unwrap();
                 let mut evaluator =
                     FourierLookupTableEvaluator::try_new(&context, &server, &table).unwrap();
                 let case = format!(
@@ -438,22 +450,22 @@ fn fourier<T: TorusFftValue, Table: FftTable>() {
             }
             let config = cases(radix)[0].0;
             let other = primus_tfhe_ntru_fourier::TfheContext::<_, Table, _>::from_parameters(
-                parameters(NativeModulus::new(), radix, distr, 3),
+                parameters(NativeModulus::new(), distr, 3),
             );
-            let table =
-                HighPrecisionLookupTable::try_new(other.parameters(), config, |_, _| T::ZERO)
-                    .unwrap();
+            let table = HighPrecisionLookupTable::try_new(
+                other.parameters(),
+                &input_codec,
+                config,
+                |_, _| T::ZERO,
+            )
+            .unwrap();
             assert!(matches!(
                 FourierLookupTableEvaluator::try_new(&other, &server, &table),
                 Err(LookupTableError::OneHot(_))
             ));
             let table = HighPrecisionLookupTable::try_new(
-                &parameters(
-                    BarrettModulus::new(T::as_from(998_244_353u32)),
-                    radix,
-                    distr,
-                    2,
-                ),
+                &parameters(BarrettModulus::new(T::as_from(998_244_353u32)), distr, 2),
+                &input_codec,
                 config,
                 |_, _| T::ZERO,
             )

@@ -21,7 +21,7 @@ where
     T: FheUint,
     M: RingContext<T>,
 {
-    inner: Arc<NtruParametersInner<T, M>>,
+    pub(super) inner: Arc<NtruParametersInner<T, M>>,
     basis: ApproxSignedBasis<T>,
     nlev_len: usize,
 }

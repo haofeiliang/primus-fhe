@@ -1,5 +1,6 @@
 //! Boolean encryption and Fourier-backed gate evaluation.
 
+use primus_encoding::RoundedCodec;
 use primus_fft::FftTable;
 use primus_fft::TorusFftValue;
 use primus_modulus::NativeModulus;
@@ -37,8 +38,11 @@ where
     pub fn boolean_encryptor<'a>(
         &'a self,
         client_key: &'a ClientKey<T>,
+        codec: &'a RoundedCodec<T, LM>,
     ) -> Result<BooleanEncryptor<'a, T, crate::LweSecretKeyRef<'a, T>, LM>, TfheClientError> {
-        Ok(BooleanEncryptor::try_new(self.encryptor(client_key)?)?)
+        Ok(BooleanEncryptor::try_new(
+            self.encryptor(client_key, codec)?,
+        )?)
     }
 
     /// Creates a public-key Boolean encryptor, requiring `t = 4`.
@@ -46,16 +50,20 @@ where
     pub fn boolean_public_encryptor<'a>(
         &'a self,
         public_key: &'a LwePublicKey<T>,
+        codec: &'a RoundedCodec<T, LM>,
     ) -> Result<BooleanEncryptor<'a, T, &'a LwePublicKey<T>, LM>, BooleanError> {
-        BooleanEncryptor::try_new(self.public_encryptor(public_key)?)
+        BooleanEncryptor::try_new(self.public_encryptor(public_key, codec)?)
     }
 
     /// Creates a Boolean decryptor after checking the client key and `t = 4`.
     pub fn boolean_decryptor<'a>(
         &'a self,
         client_key: &'a ClientKey<T>,
+        codec: &'a RoundedCodec<T, LM>,
     ) -> Result<BooleanDecryptor<'a, T, LM>, TfheClientError> {
-        Ok(BooleanDecryptor::try_new(self.decryptor(client_key)?)?)
+        Ok(BooleanDecryptor::try_new(
+            self.decryptor(client_key, codec)?,
+        )?)
     }
 
     /// Creates a Boolean evaluator with this context's PBS, gate LUTs and workspace.
@@ -65,11 +73,19 @@ where
     pub fn boolean_evaluator<'a>(
         &'a self,
         server_key: &'a ServerKey<T>,
+        codec: &RoundedCodec<T, LM>,
     ) -> Result<BooleanEvaluator<'a, T, Table, LM>, TfheEvaluationError> {
+        if codec.ciphertext_modulus().explicit_value()
+            != self.parameters().external_lwe().cipher_modulus_value()
+        {
+            return Err(TfheEvaluationError::LookupTable(
+                crate::LookupTableError::InputModulusMismatch,
+            ));
+        }
         BooleanEvaluator::try_new(
             self.parameters().external_lwe_dimension(),
             self.parameters().accumulator_ntru().poly_length(),
-            self.parameters().input_plaintext_codec(),
+            codec,
             self.parameters().accumulator_ntru().cipher_modulus(),
             self.evaluator(server_key)?,
         )

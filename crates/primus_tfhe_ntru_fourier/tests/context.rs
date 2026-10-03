@@ -1,9 +1,11 @@
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_encoding::RoundedCodec;
 use primus_fft::{FftTable, RustFftTable};
 use primus_lattice::LweDimension;
 use primus_lwe::LweParameters;
 use primus_modulus::NativeModulus;
+use primus_ntru::NlevParameters;
 use primus_ntru::{NtruParameters, SecretKeyDistr};
 use primus_poly::PolyLength;
 use primus_tfhe_ntru_fourier::{TfheContext, TfheEvaluationError, TfheParameters};
@@ -36,9 +38,8 @@ fn parameters(bootstrapping_log_basis: u32, key_switching_log_basis: u32) -> Tfh
     );
 
     TfheParameters::try_new(
-        external_lwe,
-        accumulator,
-        blind_rotation_basis,
+        external_lwe.into_inner(),
+        NlevParameters::try_with_basis(&accumulator, blind_rotation_basis).unwrap(),
         primus_tfhe_ntru::DecompositionConfig {
             log_basis: DecompositionBaseLog::new(key_switching_log_basis),
             level_count: Some(DecompositionLevelCount::new(4)),
@@ -52,17 +53,22 @@ fn parameters(bootstrapping_log_basis: u32, key_switching_log_basis: u32) -> Tfh
 fn rejects_server_keys_with_same_layout_but_different_bases() {
     let table = RustFftTable::new(PolyLength::new(POLY_LENGTH));
     let context = TfheContext::try_new(parameters(8, 8), table).unwrap();
+    let input_codec = RoundedCodec::new(4, context.parameters().external_lwe().cipher_modulus());
     let mut rng = StdRng::seed_from_u64(0x464f_5552_4241_5349);
     let (_, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
     assert!(server_key.circuit_bootstrap_key().is_none());
     assert!(matches!(
-        primus_tfhe_ntru_fourier::OneHotCircuitBootstrapEvaluator::try_new(&context, &server_key),
+        primus_tfhe_ntru_fourier::OneHotCircuitBootstrapEvaluator::try_new(
+            &context,
+            &server_key,
+            &input_codec
+        ),
         Err(primus_tfhe_ntru_fourier::OneHotBootstrapError::Evaluation(
             primus_tfhe_ntru_fourier::TfheEvaluationError::MissingCircuitBootstrapKey
         ))
     ));
     assert!(matches!(
-        context.circuit_bootstrap_evaluator(&server_key),
+        context.circuit_bootstrap_evaluator(&server_key, &input_codec),
         Err(primus_tfhe_ntru_fourier::TfheEvaluationError::MissingCircuitBootstrapKey)
     ));
     assert!(context.evaluator(&server_key).is_ok());
@@ -89,7 +95,9 @@ fn rejects_server_keys_with_same_layout_but_different_bases() {
             Some(TfheEvaluationError::IncompatibleServerKey)
         );
         assert_eq!(
-            incompatible.boolean_evaluator(&server_key).err(),
+            incompatible
+                .boolean_evaluator(&server_key, &input_codec)
+                .err(),
             Some(TfheEvaluationError::IncompatibleServerKey)
         );
     }

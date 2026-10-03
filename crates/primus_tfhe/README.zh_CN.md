@@ -45,7 +45,7 @@ Sparse 模式需显式选择生成入口，暂不支持 sparse ternary。NTRU �
 
 ## 客户端与服务端边界
 
-`Encryptor`、`Decryptor` 及其 Boolean 包装共享编码、范围检查和无分配的 `*_to` 操作。`LweClientParameters::new(&lwe_parameters)` 借用已验证 LWE 域的维数、Rounded codec 和噪声，并从 codec 模数派生 mask 采样器。字段私有，通过访问器读取。家族构造入口先验证密钥，再一次性选定有效 LWE 秘密和噪声；GLWE 通过 `LweClientParameters::try_from_parts(dimension, &codec, &noise)` 绑定所选消息编码：BR→KS 使用 small LWE 的噪声和维数，KS→BR 使用提取维数和 accumulator 噪声。绑定时检查 codec 与密钥、噪声的模数配对。这些检查不建立噪声或安全预算。
+`Encryptor`、`Decryptor` 及其 Boolean 包装共享编码、范围检查和无分配的 `*_to` 操作。`LweClientParameters::new(&lwe_parameters)` 借用已验证 LWE 域的维数、Rounded codec 和噪声，并从 codec 模数派生 mask 采样器。字段私有，通过访问器读取。家族构造入口先验证密钥，再一次性选定有效 LWE 秘密和噪声；两家族通过 `LweClientParameters::try_from_parts(dimension, &codec, &noise)` 绑定所选消息编码：GLWE BR→KS 使用 small LWE 的噪声和维数，KS→BR 使用提取维数和 accumulator 噪声；NTRU 使用独立外部 LWE 参数。绑定时检查 codec 与密钥、噪声的模数配对。这些检查不建立噪声或安全预算。
 
 公共层接收 `LweSecretKeyRef` 或 `&LwePublicKey`；唯一的客户端 trait `EncryptionKey<T, M>` 只分派加密实现，不关联家族参数或错误类型。普通操作返回 `ClientError`，Boolean 操作返回 `BooleanError`。
 
@@ -63,7 +63,7 @@ Sparse 模式需显式选择生成入口，暂不支持 sparse ternary。NTRU �
 
 ## Boolean 门
 
-Boolean 客户端要求 `t=4`。GLWE context 工厂显式接收 Rounded codec，如下例；NTRU 使用参数 codec，`boolean_encryptor`、`boolean_public_encryptor`、`boolean_decryptor` 和 `boolean_evaluator` 均省略额外的 codec 参数。客户端使用 unsigned rounded `0/1` 编码的 `LweCiphertext<T>`，解密拒绝非 Boolean 值。直接构造时，将已有客户端传给 `BooleanEncryptor::try_new(encryptor)` 或 `BooleanDecryptor::try_new(decryptor)`。门求值使用普通 PBS 密钥，无需 CBS 材料。
+Boolean 客户端要求 `t=4`。四个 context 工厂均显式接收 Rounded codec，如下例；构造时使用相应家族的外部 LWE 模数。客户端使用 unsigned rounded `0/1` 编码的 `LweCiphertext<T>`，解密拒绝非 Boolean 值。直接构造时，将已有客户端传给 `BooleanEncryptor::try_new(encryptor)` 或 `BooleanDecryptor::try_new(decryptor)`。门求值使用普通 PBS 密钥，无需 CBS 材料。
 
 ```rust,ignore
 let codec = primus_encoding::RoundedCodec::new(4, context.parameters().cipher_modulus());
@@ -87,7 +87,7 @@ assert!(!decryptor.decrypt(output.as_view())?);
 
 ## CBS 输出与消费
 
-四后端都在同一个 CBS evaluator 中绑定输出布局与消费参数。下例为 GLWE，独立选择 Rounded 输入 codec 和 Scaled accumulator codec。NTRU 工厂使用参数中的 codec，省略这两个 codec 参数：
+四后端都在同一个 CBS evaluator 中绑定输出布局与消费参数。下例为 GLWE，独立选择 Rounded 输入 codec 和 Scaled accumulator codec。NTRU 工厂接收相同的 codec 参数，输入 codec 使用外部 q，环 codec 使用累加 Q：
 
 ```rust,ignore
 // 客户端：加密两条候选消息。
@@ -111,7 +111,7 @@ ring_client.decrypt_to(&selected, &mut decoded);
 
 `allocate_output` 返回后端原有的 GGSW/NGSW，环密文仍是系数域 GLWE/NTRU。 `cmux_to` 在控制位为 0/1 时选择 lhs/rhs；`external_product_to(control, input, output)` 也允许非 bit 的 gadget 控制。控制必须使用此 evaluator 的输出 basis、accumulator 私钥和变换表示， 候选使用该私钥/模数与相同编码。身份及噪声余量由调用方保证；所有密文长度在写输出前检查。
 
-`AccumulatorClient` 持有已准备的 accumulator 私钥与复用转换缓冲区，并借用 context。 它使用 accumulator codec 加解密 N 个无符号系数；该环域与外部 LWE 客户端分开。 形状错误在写入或消耗随机数前 panic；明文越界可能消耗随机数。 准备失败返回 `TfheClientError`：NTRU 检查密钥和秘密变换，GLWE 检查密钥以及传入 Scaled codec 的模数。
+`AccumulatorClient` 持有已准备的 accumulator 私钥与复用转换缓冲区，并借用 context。 它使用 accumulator codec 加解密 N 个无符号系数；该环域与外部 LWE 客户端分开。 形状错误在写入或消耗随机数前 panic；明文越界可能消耗随机数。 准备失败返回 `TfheClientError`：两家族均检查密钥以及传入 Scaled codec 的模数；NTRU 还检查秘密变换。
 
 准备一次，随后复用 `_to` 调用与输出缓冲，在线无需分配。
 
@@ -122,7 +122,7 @@ Context 保存不可变参数和变换表，ServerKey 保存求值材料；Evalu
 普通 PBS 与 MVB/CBS 交替时，消费已有 evaluator，避免为同一工作流同时保留两份 PBS 工作区：
 
 - GLWE MVB：`FactorizedEvaluator::from_bootstrapper(pbs)`；NTRU MVB 使用可失败的 `try_from_bootstrapper`。
-- CBS：GLWE 使用 `CircuitBootstrapEvaluator::try_from_bootstrapper(pbs, &input_codec)`，NTRU 省略 codec 参数；均从绑定的 ServerKey 取得 CBS 材料。
+- CBS：两家族均使用 `CircuitBootstrapEvaluator::try_from_bootstrapper(pbs, &input_codec)`，从绑定的 ServerKey 取得 CBS 材料。
 - `bootstrapper_mut()` 借用普通 PBS 操作。导入 `ProgrammableBootstrap` / `ProgrammableBootstrapInterleaved` 即可调用相应 `_to`，借用不能替换内部 evaluator。
 - `into_bootstrapper()` 释放专用缓冲、回收普通 evaluator；从普通 evaluator 转入的 MVB/CBS 回收无分配。
 
@@ -139,7 +139,7 @@ Context 保存不可变参数和变换表，ServerKey 保存求值材料；Evalu
 
 前半区单函数或切片编译器为 `0..ceil(t_in/2)` 输入域编程，输出属于输出 codec 指定的 `0..t_out`。 其余输入不独立编程；奇数全域使用下文的独立入口。交错 LUT（ManyLUT）的有效输出数 `k` 为正， 补齐后的输出数为 `s = next_power_of_two(k)`，满足 `ceil(t/2) <= N/s`。callback 按输入优先 顺序接收 `(input, output_index)`，每个有效组合调用一次；切片包含相同顺序的 `D*k` 个值。 例如 `k=3` 时三个输出占用四个槽：编译器将第四槽置零，不调用 callback；求值端只返回三个密文。 所有输出共享一次盲旋转（BR）。GLWE 共享环 key switch 后分别提取；NTRU 每个输出分别返回并执行 LWE key switch。 输出越多，旋转分辨率与输入噪声余量越低。这是一个输入求多个函数，不是独立密文批处理。
 
-通过 GLWE `parameters.lookup_table_compiler(&input_codec)?` 或 NTRU `parameters.lookup_table_compiler()` 创建可复用的 `LookupTableCompiler`。GLWE 参数只保存密钥域和采样状态，不含明文模数；客户端和程序独立选择 codec。直接使用共享层时，`LookupTableCompiler::try_new(poly_length, &input_codec, accumulator_modulus, &output_codec)` 绑定相同的编码环境。它只复制所需编码状态，不分配内存，也不借用 parameters/context。方法如下：
+通过两家族的 `parameters.lookup_table_compiler(&input_codec)?` 创建可复用的 `LookupTableCompiler`。TFHE 参数只保存密钥域和采样状态，不含明文模数；客户端和程序独立选择 codec。直接使用共享层时，`LookupTableCompiler::try_new(poly_length, &input_codec, accumulator_modulus, &output_codec)` 绑定相同的编码环境。它只复制所需编码状态，不分配内存，也不借用 parameters/context。方法如下：
 
 | 程序 | 函数输入 | 切片输入 |
 | --- | --- | --- |
@@ -176,7 +176,7 @@ Raw 构造器 `LookupTable::try_new` / `InterleavedLookupTable::try_new` 显式�
 | 输出编码 | 编译器构造 | 解码 |
 | --- | --- | --- |
 | GLWE 默认：所选输入 codec | `parameters.lookup_table_compiler(&input_codec)?` | `decryptor.decrypt(output.as_view())` |
-| NTRU 默认：参数明文模数，在 Q 下编码 | `parameters.lookup_table_compiler()` | `decryptor.decrypt(output.as_view())` |
+| NTRU 默认：输入 codec 明文模数，在 Q 下编码 | `parameters.lookup_table_compiler(&input_codec)?` | `decryptor.decrypt(output.as_view())` |
 | 显式指定输出 codec | `compiler.try_with_output_codec(&codec)?` | 用返回模数下的 codec 解码 `decrypt_phase(output)` |
 
 函数输出范围可以小于明文模数，例如 `x % 4` 仍可采用 `t=32` 编码。GLWE basic 示例使用这个默认流程：
@@ -189,14 +189,15 @@ let lut = compiler.compile_fn(|x| (x % 4) as u32)?;
 
 `try_with_output_codec` 返回持有新 `RoundedCodec` 副本的编译器，保持输入域与累加器模数。输出 codec 决定 `t_out`，检查输出位于 `0..t_out`，并按 unsigned embedding 编码；交错 LUT 的各列共用这个 codec。密文模数不匹配时，在绑定 codec 阶段、编译之前返回 `OutputModulusMismatch`。GLWE 输入、accumulator 和返回使用同一模数；NTRU 在 Q 下编译、返回 q，解码 codec 使用 q 和同一个 `t_out`，须预算缩放舍入及返回误差。MVB 继续显式使用 unsigned `ScaledCodec`。
 
-例如，在 `t_in=16` 的 NTRU context 中，用 `t_out=4` 编码 `x % 4`。片段沿用已创建的 context、客户端和 evaluator：
+例如，在 NTRU 中选择 `t_in=16` 的输入 codec，用 `t_out=4` 编码 `x % 4`。片段沿用已创建的 context、客户端和 evaluator：
 
 ```rust,ignore
 use primus_encoding::RoundedCodec;
 
+let input_codec = RoundedCodec::new(16u32, context.parameters().external_lwe().cipher_modulus());
 let table_codec = RoundedCodec::new(4u32, context.parameters().accumulator_ntru().cipher_modulus());
 let output_codec = RoundedCodec::new(4u32, context.parameters().external_lwe().cipher_modulus());
-let compiler = context.parameters().lookup_table_compiler()
+let compiler = context.parameters().lookup_table_compiler(&input_codec)?
     .try_with_output_codec(&table_codec).unwrap();
 let lut = compiler.compile_fn(|x| (x % 4) as u32).unwrap();
 let input = encryptor.encrypt_padded(7u32, &mut rng).unwrap();
@@ -232,7 +233,7 @@ assert_eq!(message, 7);
 
 `BivariateLookupTable::try_new(B, R, poly_length, input_codec, output_codec, function)` 通过 `z = x + B*y` 编译 `0 <= x < B`、`0 <= y < R` 上的 `f(x,y)`。 `B`、`R` 必须为正，`D = B*R <= ceil(t_in/2)`，并满足普通 LUT 的容量和旋转中心检查。 只编译 `0..D` 前缀，回调按 `x` 优先变化的顺序求值；`B` 不必是二次幂。 输出 codec 独立选择 `t_out`，但必须使用相同密文模数。
 
-按外部 LWE 维数一次性分配 `packed` 和 `output`。 `pack_to` 用一遍模乘加写入 `lhs + B*rhs`，不分配内存；长度不同或缺少 body 时在写入前拒绝。 两输入必须具有相同的实际秘密、密文模数及传入的 unsigned 输入 codec，系数规范、明文不超出各自边界。 raw 密文无法验证这些语义条件。GLWE 使用其 order 对应的外部维数与 `input_plaintext_codec()`，无需增加密钥材料。
+按外部 LWE 维数一次性分配 `packed` 和 `output`。 `pack_to` 用一遍模乘加写入 `lhs + B*rhs`，不分配内存；长度不同或缺少 body 时在写入前拒绝。 两输入必须具有相同的实际秘密、密文模数及传入的 unsigned 输入 codec，系数规范、明文不超出各自边界。 raw 密文无法验证这些语义条件。GLWE 使用其 order 对应的外部维数与显式选择的输入 codec，无需增加密钥材料。
 
 打包将第二个输入的噪声放大 B 倍；`t_in` 不整除 q 时还可能产生编码舍入偏差。 PBS 前须同时预算两者，容量检查本身不保证足够噪声余量。 具体误差界见 `BivariateLookupTable` rustdoc。 这是有界单输出工作流，不是通用整数运算或 LWE 到环密文的 packing。
 

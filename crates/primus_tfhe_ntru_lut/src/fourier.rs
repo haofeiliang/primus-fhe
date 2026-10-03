@@ -1,3 +1,4 @@
+use primus_encoding::RoundedCodec;
 use std::ops::Range;
 
 use primus_fft::{Complex64, FftTable, TorusFftValue};
@@ -84,7 +85,12 @@ where
         if !lookup_table.is_compatible(context.parameters()) {
             return Err(LookupTableError::IncompatibleParameters);
         }
-        let one_hot = OneHotCircuitBootstrapEvaluator::try_new(context, server_key)?;
+        // The table was compiled with this q; use its own chunk encoding for one-hot CBS.
+        let input_codec = RoundedCodec::new(
+            lookup_table.plaintext_modulus(),
+            context.parameters().external_lwe().cipher_modulus(),
+        );
+        let one_hot = OneHotCircuitBootstrapEvaluator::try_new(context, server_key, &input_codec)?;
         let layout = lookup_table.layout;
         let n = layout.polynomial_length;
         let coefficient_chunk_count = layout.config.coefficient_chunk_count;

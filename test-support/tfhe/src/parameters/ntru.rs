@@ -6,7 +6,7 @@
 use primus_glwe::SecretKeyDistr;
 use primus_integer::FheUint;
 use primus_lwe::LweDimension;
-use primus_lwe::LweParameters;
+use primus_lwe::LweParametersInner;
 use primus_modulus::PowOf2Modulus;
 use primus_reduce::RingContext;
 use primus_tfhe::{DecompositionBaseLog, DecompositionLevelCount};
@@ -28,7 +28,7 @@ fn full(log_basis: u32) -> DecompositionConfig {
 ///
 /// # Panics
 /// Panics unless the coefficient word is u32 or u64. The family parameter
-/// constructor also rejects invalid geometry, plaintext modulus or basis/modulus combinations.
+/// constructor also rejects invalid geometry or basis/modulus combinations.
 #[must_use]
 pub fn pbs<T, M>(
     modulus: M,
@@ -39,7 +39,13 @@ where
     T: FheUint,
     M: RingContext<T>,
 {
-    parameters(modulus, workload, secret, (1u64 << 24) as f64 * LWE_STD_DEV)
+    parameters(
+        modulus,
+        workload.lwe_dimension,
+        workload.poly_length,
+        secret,
+        (1u64 << 24) as f64 * LWE_STD_DEV,
+    )
 }
 
 /// Builds the shared NTRU key roles while varying the external LWE noise.
@@ -47,7 +53,8 @@ where
 /// their BR and q-domain return-key budgets are otherwise the same.
 fn parameters<T, M>(
     modulus: M,
-    workload: PbsWorkload,
+    lwe_dimension: usize,
+    poly_length: usize,
     secret: SecretKeyDistr,
     lwe_standard_deviation: f64,
 ) -> TfheParameters<T, M, PowOf2Modulus<T>>
@@ -58,15 +65,14 @@ where
     super::require_word::<T>();
     let q = T::ONE << 24u32;
     TfheParameters::try_from_config(TfheConfig {
-        external_lwe: LweParameters::new(
-            LweDimension::new(workload.lwe_dimension),
-            T::as_from(workload.plaintext_modulus),
+        external_lwe: LweParametersInner::new(
+            LweDimension::new(lwe_dimension),
             PowOf2Modulus::new(q),
             secret,
             lwe_standard_deviation,
         ),
         accumulator_modulus: modulus,
-        poly_length: workload.poly_length,
+        poly_length,
         accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
         // Preserve the existing NTRU ring noise: CBS multiplies errors by f/f².
         // External LWE and return KS use their independent q-domain budgets.
@@ -78,31 +84,24 @@ where
     .unwrap()
 }
 
-/// CBS and one-hot profile; t=8 also supports high-precision lookup.
+/// Shared CBS, one-hot and high-precision key profile; bind message codecs separately.
 /// For NTT pass `ntt_circuit_modulus()`; Fourier uses `NativeModulus`.
 ///
 /// # Panics
 /// Panics unless the coefficient word is u32 or u64. The family parameter
-/// constructor also rejects invalid geometry, plaintext modulus or basis/modulus combinations.
+/// constructor also rejects invalid geometry or basis/modulus combinations.
 #[must_use]
-pub fn circuit<T, M>(
-    modulus: M,
-    plaintext_modulus: u32,
-    secret: SecretKeyDistr,
-) -> TfheParameters<T, M, PowOf2Modulus<T>>
+pub fn circuit<T, M>(modulus: M, secret: SecretKeyDistr) -> TfheParameters<T, M, PowOf2Modulus<T>>
 where
     T: FheUint,
     M: RingContext<T>,
 {
-    pbs(
+    parameters(
         modulus,
-        PbsWorkload {
-            name: "circuit",
-            lwe_dimension: DIMENSION,
-            poly_length: N,
-            plaintext_modulus,
-        },
+        DIMENSION,
+        N,
         secret,
+        (1u64 << 24) as f64 * LWE_STD_DEV,
     )
 }
 
@@ -138,24 +137,17 @@ pub fn cbs<T: FheUint>() -> CircuitBootstrapConfig {
 ///
 /// # Panics
 /// Panics unless the coefficient word is u32 or u64. The family parameter
-/// constructor also rejects invalid geometry, plaintext modulus or basis/modulus combinations.
+/// constructor also rejects invalid geometry or basis/modulus combinations.
 #[must_use]
-pub fn diagnostic<T, M>(
-    modulus: M,
-    plaintext_modulus: u32,
-) -> TfheParameters<T, M, PowOf2Modulus<T>>
+pub fn diagnostic<T, M>(modulus: M) -> TfheParameters<T, M, PowOf2Modulus<T>>
 where
     T: FheUint,
     M: RingContext<T>,
 {
     parameters(
         modulus,
-        PbsWorkload {
-            name: "fixed_weight",
-            lwe_dimension: SPARSE_DIMENSION,
-            poly_length: N,
-            plaintext_modulus,
-        },
+        SPARSE_DIMENSION,
+        N,
         SecretKeyDistr::fixed_hamming_weight_binary(SPARSE_DIMENSION, SPARSE_WEIGHT),
         3.2 * (1u64 << 24) as f64 / 16384.0,
     )

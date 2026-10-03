@@ -1,9 +1,10 @@
 //! Backend Boolean integration: real PBS, encoding, rejection and evaluator reuse.
 
 use primus_decompose::DecompositionBaseLog;
+use primus_encoding::RoundedCodec;
 use primus_fft::{FftTable, RustFftTable, TfheFftTable};
 use primus_lattice::LweDimension;
-use primus_lwe::LweParameters;
+use primus_lwe::LweParametersInner;
 use primus_modulus::NativeModulus;
 use primus_ntru::SecretKeyDistr;
 use primus_test_allocations as allocations;
@@ -21,7 +22,12 @@ static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocato
 fn check_context<Table: FftTable>(distr: SecretKeyDistr) {
     let parameters = TfheParameters::<u32>::try_from_config(TfheConfig {
         accumulator_modulus: NativeModulus::new(),
-        external_lwe: LweParameters::new(LweDimension::new(4), 4, NativeModulus::new(), distr, 0.7),
+        external_lwe: LweParametersInner::new(
+            LweDimension::new(4),
+            NativeModulus::new(),
+            distr,
+            0.7,
+        ),
         poly_length: 32,
         accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
         accumulator_noise_standard_deviation: 0.7,
@@ -37,15 +43,18 @@ fn check_context<Table: FftTable>(distr: SecretKeyDistr) {
     })
     .unwrap();
     let context = TfheContext::<_, Table>::from_parameters(parameters);
+    let input_codec = RoundedCodec::new(4, context.parameters().external_lwe().cipher_modulus());
     let mut rng = StdRng::seed_from_u64(0xB201);
     let (client, server) = context.try_generate_keys(None, &mut rng).unwrap();
     let public = client
         .try_generate_public_key(context.parameters(), &mut rng)
         .unwrap();
-    let encryptor = context.boolean_encryptor(&client).unwrap();
-    let public_encryptor = context.boolean_public_encryptor(&public).unwrap();
-    let decryptor = context.boolean_decryptor(&client).unwrap();
-    let mut evaluator = context.boolean_evaluator(&server).unwrap();
+    let encryptor = context.boolean_encryptor(&client, &input_codec).unwrap();
+    let public_encryptor = context
+        .boolean_public_encryptor(&public, &input_codec)
+        .unwrap();
+    let decryptor = context.boolean_decryptor(&client, &input_codec).unwrap();
+    let mut evaluator = context.boolean_evaluator(&server, &input_codec).unwrap();
     let inputs = [
         encryptor.encrypt(false, &mut rng).unwrap(),
         encryptor.encrypt(true, &mut rng).unwrap(),

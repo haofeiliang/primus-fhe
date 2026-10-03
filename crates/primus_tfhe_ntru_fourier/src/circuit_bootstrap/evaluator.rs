@@ -1,10 +1,10 @@
 //! One blind rotation followed by reverse-trace projection and scheme switching.
 
 use primus_data::{Data, DataMut};
+use primus_encoding::RoundedCodec;
 use primus_fft::{Complex64, FftTable, TorusFftValue};
 use primus_ntru::NtruCiphertext;
 use primus_ntru::{FourierNgswCiphertext, NlevCiphertext};
-use primus_reduce::ReduceMul;
 use primus_tfhe::{InterleavedLookupTable, LookupTableError};
 
 use super::key::CircuitBootstrapBinding;
@@ -37,7 +37,8 @@ where
 {
     /// Binds the CBS parameters and material carried by one server key.
     /// Standalone CBS allocates only BR/projection resources, with no LWE return buffers.
-    /// Rejects sparse keys or absent CBS material.
+    /// Rejects sparse keys, absent CBS material, an input codec at another q,
+    /// or an input domain/output count that exceeds ManyLUT capacity.
     ///
     /// # Correctness
     /// Inherits [`Self::try_from_parts`]'s secret and transform requirements.
@@ -46,18 +47,20 @@ where
     pub fn try_new(
         context: &'a TfheContext<T, Table, LM>,
         server_key: &'a ServerKey<T>,
+        input_codec: &RoundedCodec<T, LM>,
     ) -> Result<Self, TfheEvaluationError> {
         Self::from_resources_and_key(
             CircuitBootstrapResources::Standalone(BlindRotationEngine::try_new(
                 context, server_key,
             )?),
             server_key.circuit_bootstrap_key(),
+            input_codec,
         )
     }
 
     /// Binds resources and compiles gadget-scaled identity outputs once.
     /// Uses the circuit key's complete output basis and key parameters.
-    /// Rejects sparse server keys.
+    /// Rejects sparse server keys, mismatched input q or insufficient ManyLUT capacity.
     ///
     /// # Correctness
     /// The server and circuit keys were generated from the same accumulator
@@ -66,22 +69,30 @@ where
         context: &'a TfheContext<T, Table, LM>,
         server_key: &'a ServerKey<T>,
         circuit_key: &'a CircuitBootstrapKey<T>,
+        input_codec: &RoundedCodec<T, LM>,
     ) -> Result<Self, TfheEvaluationError> {
         Self::from_resources_and_key(
             CircuitBootstrapResources::Standalone(BlindRotationEngine::try_new(
                 context, server_key,
             )?),
             Some(circuit_key),
+            input_codec,
         )
     }
 
     /// Consumes ordinary PBS workspace and allocates only the additional CBS buffers.
-    /// Rejects sparse keys or absent CBS material.
+    /// Rejects sparse keys, absent CBS material, an input codec at another q,
+    /// or an input domain/output count that exceeds ManyLUT capacity.
     pub fn try_from_bootstrapper(
         pbs: Evaluator<'a, T, Table, LM>,
+        input_codec: &RoundedCodec<T, LM>,
     ) -> Result<Self, TfheEvaluationError> {
         let key = pbs.engine.server_key.circuit_bootstrap_key();
-        Self::from_resources_and_key(CircuitBootstrapResources::Bootstrapper(pbs), key)
+        Self::from_resources_and_key(
+            CircuitBootstrapResources::Bootstrapper(pbs),
+            key,
+            input_codec,
+        )
     }
 
     /// Borrows ordinary PBS only when constructed from a complete bootstrapper,
@@ -109,6 +120,7 @@ where
     fn from_resources_and_key(
         resources: CircuitBootstrapResources<'a, T, Table, LM>,
         circuit_key: Option<&'a CircuitBootstrapKey<T>>,
+        input_codec: &RoundedCodec<T, LM>,
     ) -> Result<Self, TfheEvaluationError> {
         let engine = resources.engine();
         let context = engine.context;
@@ -121,24 +133,12 @@ where
         let parameters = circuit.parameters;
         let poly_length = tfhe.poly_length();
         let n = poly_length.get();
-        let modulus = tfhe.accumulator_ntru().cipher_modulus();
-        let domain_len =
-            primus_tfhe::front_half_domain_len(tfhe.plain_modulus_value(), poly_length)?;
-        let scalars: Vec<T> = parameters.output_basis().scalar_iter().collect();
-        let lookup_table = InterleavedLookupTable::try_new(
-            domain_len,
-            poly_length,
-            parameters.output_basis().decompose_length().get(),
-            tfhe.plain_modulus_value(),
-            tfhe.external_lwe().cipher_modulus(),
-            modulus,
-            |input, index| {
-                let scalar = scalars[index];
-                let input =
-                    T::try_from(input).map_err(|_| LookupTableError::PlaintextModulusTooLarge)?;
-                Ok(modulus.reduce_mul(scalar, input))
-            },
-        )?;
+        if input_codec.ciphertext_modulus().explicit_value()
+            != tfhe.external_lwe().cipher_modulus_value()
+        {
+            return Err(LookupTableError::InputModulusMismatch.into());
+        }
+        let lookup_table = parameters.compile_lookup_table(input_codec)?;
         Ok(Self {
             resources,
             circuit,
@@ -329,8 +329,9 @@ where
     pub fn circuit_bootstrap_evaluator<'a>(
         &'a self,
         server_key: &'a ServerKey<T>,
+        input_codec: &RoundedCodec<T, LM>,
     ) -> Result<crate::CircuitBootstrapEvaluator<'a, T, Table, LM>, crate::TfheEvaluationError>
     {
-        crate::CircuitBootstrapEvaluator::try_new(self, server_key)
+        crate::CircuitBootstrapEvaluator::try_new(self, server_key, input_codec)
     }
 }

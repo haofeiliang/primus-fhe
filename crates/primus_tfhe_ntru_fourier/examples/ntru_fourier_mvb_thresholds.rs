@@ -5,10 +5,11 @@
 //! Arithmetic profiles: guides/development/tfhe-parameters.md (not security presets).
 
 use primus_decompose::DecompositionBaseLog;
+use primus_encoding::RoundedCodec;
 use primus_encoding::ScaledCodec;
 use primus_fft::RustFftTable as Table;
 use primus_lattice::LweDimension;
-use primus_lwe::LweParameters;
+use primus_lwe::LweParametersInner;
 use primus_modulus::{NativeModulus, PowOf2Modulus};
 use primus_ntru::SecretKeyDistr;
 use primus_tfhe_ntru_fourier::{DecompositionConfig, TfheConfig, TfheContext, TfheParameters};
@@ -21,7 +22,7 @@ const N: usize = 1024;
 const DOMAIN: usize = 64;
 const OUTPUTS: usize = 17;
 
-// Public parameters: n=728, N=1024, t=128; independent external LWE q=2^24.
+// Key parameters: n=728, N=1024; independent external LWE q=2^24.
 // Noise sigmas below are in coefficient units; these are arithmetic examples, not security presets.
 fn parameters() -> TfheParameters<Word, PowOf2Modulus<Word>> {
     let modulus = NativeModulus::<Word>::new();
@@ -38,9 +39,8 @@ fn parameters() -> TfheParameters<Word, PowOf2Modulus<Word>> {
     };
 
     TfheParameters::try_from_config(TfheConfig {
-        external_lwe: LweParameters::new(
+        external_lwe: LweParametersInner::new(
             LweDimension::new(728),
-            128, // Padded inputs occupy 0..64.
             PowOf2Modulus::new(lwe_modulus),
             SecretKeyDistr::fixed_hamming_weight_binary(728, 32),
             3.2 * lwe_modulus as f64 / 16384.0,
@@ -62,6 +62,8 @@ fn parameters() -> TfheParameters<Word, PowOf2Modulus<Word>> {
 fn main() {
     let parameters = parameters();
     let context = TfheContext::<Word, Table, _>::from_parameters(parameters);
+    // Public message encoding at external q, chosen independently of key generation.
+    let input_codec = RoundedCodec::new(128, context.parameters().external_lwe().cipher_modulus());
     let thresholds: Vec<_> = (1..=OUTPUTS).map(|i| i * DOMAIN / (OUTPUTS + 1)).collect();
     // MVB compiles at Q and returns at q=2^24: retain one Scaled codec for each.
     let table_codec = ScaledCodec::new(2, context.parameters().accumulator_ntru().cipher_modulus());
@@ -70,16 +72,20 @@ fn main() {
     // Client: keep client_key and the decryptor; give server_key to the server.
     let mut rng = StdRng::seed_from_u64(42);
     let (client_key, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
-    let encryptor = context.encryptor(&client_key).unwrap();
-    let decryptor = context.decryptor(&client_key).unwrap();
+    let encryptor = context.encryptor(&client_key, &input_codec).unwrap();
+    let decryptor = context.decryptor(&client_key, &input_codec).unwrap();
     let mut input = context.allocate_lwe_ciphertext();
     let mut flags = vec![0; OUTPUTS];
 
     // Server: MVB keeps all 64 inputs; interleaving 17 outputs fits only 32 here.
     let program = context
-        .compile_factorized_lookup_table_fn(&table_codec, DOMAIN, OUTPUTS, |score, i| {
-            Word::from(score >= thresholds[i])
-        })
+        .compile_factorized_lookup_table_fn(
+            &input_codec,
+            &table_codec,
+            DOMAIN,
+            OUTPUTS,
+            |score, i| Word::from(score >= thresholds[i]),
+        )
         .unwrap();
     let mut evaluator = context.factorized_evaluator(&server_key).unwrap();
     let mut outputs = vec![context.allocate_lwe_ciphertext(); OUTPUTS];

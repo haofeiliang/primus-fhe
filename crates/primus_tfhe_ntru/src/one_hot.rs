@@ -1,6 +1,7 @@
 //! Packed one-hot geometry shared by the NTT and Fourier CBS backends.
 
 use primus_decompose::DecompositionLevelCount;
+use primus_encoding::RoundedCodec;
 use primus_integer::FheUint;
 use primus_poly::PolynomialOwned;
 use primus_reduce::RingContext;
@@ -52,6 +53,7 @@ impl<T: FheUint> OneHotLookupTable<T> {
     pub fn try_new<M, LM>(
         tfhe: &TfheParameters<T, M, LM>,
         cbs: &CircuitBootstrapParameters<T, M>,
+        input_codec: &RoundedCodec<T, LM>,
     ) -> Result<Self, OneHotBootstrapError>
     where
         M: RingContext<T>,
@@ -60,8 +62,16 @@ impl<T: FheUint> OneHotLookupTable<T> {
         if !cbs.is_compatible(tfhe) {
             return Err(TfheEvaluationError::IncompatibleCircuitBootstrapParameters.into());
         }
-        let t: usize = tfhe
-            .plain_modulus_value()
+        if input_codec.ciphertext_modulus().explicit_value()
+            != tfhe.external_lwe().cipher_modulus_value()
+        {
+            return Err(TfheEvaluationError::LookupTable(
+                crate::LookupTableError::InputModulusMismatch,
+            )
+            .into());
+        }
+        let t: usize = input_codec
+            .plaintext_modulus()
             .try_into()
             .map_err(|_| OneHotBootstrapError::InvalidPlaintextModulus)?;
         if t < 4 || !t.is_power_of_two() {

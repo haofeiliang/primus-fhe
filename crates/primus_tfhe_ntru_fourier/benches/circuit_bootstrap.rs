@@ -5,6 +5,8 @@
 //! Fixtures are initialized only for selected IDs, then reused across samples.
 //! Run: cargo bench -p primus_tfhe_ntru_fourier --bench circuit_bootstrap
 
+use primus_encoding::RoundedCodec;
+use primus_encoding::ScaledCodec;
 use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
@@ -22,9 +24,10 @@ use rand::{SeedableRng, rngs::StdRng};
 // CBS consumes a bit and emits a gadget control, not an LWE result. Verify
 // that representation by selecting an encrypted ring message before timing.
 fn ordinary<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) {
+    let input_codec = RoundedCodec::new(T::as_from(4u32), PowOf2Modulus::new(T::ONE << 24u32));
     let kind = "classic";
     let dimension = 800;
-    let parameters = ntru::circuit(NativeModulus::<T>::new(), 4, SecretKeyDistr::UniformBinary);
+    let parameters = ntru::circuit(NativeModulus::<T>::new(), SecretKeyDistr::UniformBinary);
     let name = format!(
         "ntru/{backend}/u{}/cbs/{kind}/n{dimension}_N1024/complete",
         T::BITS
@@ -40,16 +43,25 @@ fn ordinary<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str)
                 .try_generate_keys(Some(ntru::cbs::<T>()), &mut rng)
                 .unwrap();
             let input = context
-                .encryptor(&client)
+                .encryptor(&client, &input_codec)
                 .unwrap()
                 .encrypt_padded(T::ONE, &mut rng)
                 .unwrap();
-            let mut ring = context.accumulator_client(&client).unwrap();
+            let mut ring = context
+                .accumulator_client(
+                    &client,
+                    ScaledCodec::new(
+                        input_codec.plaintext_modulus(),
+                        context.parameters().accumulator_ntru().cipher_modulus(),
+                    ),
+                )
+                .unwrap();
             let lhs = ring.encrypt(&[T::ZERO; N], &mut rng);
             let rhs = ring.encrypt(&[T::ONE; N], &mut rng);
             (context, client, server, input, lhs, rhs)
         });
-        let mut evaluator = CircuitBootstrapEvaluator::try_new(context, server).unwrap();
+        let mut evaluator =
+            CircuitBootstrapEvaluator::try_new(context, server, &input_codec).unwrap();
         let mut output = evaluator.allocate_output();
         if !verified {
             evaluator.circuit_bootstrap_to(input.as_view(), &mut output);
@@ -57,7 +69,13 @@ fn ordinary<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str)
             evaluator.cmux_to(&output, lhs, rhs, &mut selected);
             let mut decoded = vec![T::ZERO; N];
             context
-                .accumulator_client(client)
+                .accumulator_client(
+                    client,
+                    ScaledCodec::new(
+                        input_codec.plaintext_modulus(),
+                        context.parameters().accumulator_ntru().cipher_modulus(),
+                    ),
+                )
                 .unwrap()
                 .decrypt_to(&selected, &mut decoded);
             assert!(decoded.iter().all(|&value| value == T::ONE));
@@ -72,6 +90,7 @@ fn ordinary<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str)
 // The compact batch omits delta_0. Compare equal input geometry to isolate the
 // saved selector work; one iteration produces M or M-1 complete NGSW controls.
 fn one_hot<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) {
+    let input_codec = RoundedCodec::new(T::as_from(8u32), PowOf2Modulus::new(T::ONE << 24u32));
     let mut fixture = None;
     for compact in [false, true] {
         let kind = if compact { "nonzero" } else { "full" };
@@ -80,7 +99,7 @@ fn one_hot<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) 
         c.bench_function(&name, |b| {
             let (context, client, server, input, lhs, rhs) = fixture.get_or_insert_with(|| {
                 let parameters =
-                    ntru::circuit(NativeModulus::<T>::new(), 8, SecretKeyDistr::UniformBinary);
+                    ntru::circuit(NativeModulus::<T>::new(), SecretKeyDistr::UniformBinary);
                 let context =
                     TfheContext::<T, Table, PowOf2Modulus<T>>::from_parameters(parameters);
                 let mut rng = StdRng::seed_from_u64(42);
@@ -88,16 +107,25 @@ fn one_hot<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) 
                     .try_generate_keys(Some(ntru::cbs::<T>()), &mut rng)
                     .unwrap();
                 let input = context
-                    .encryptor(&client)
+                    .encryptor(&client, &input_codec)
                     .unwrap()
                     .encrypt_padded(T::TWO, &mut rng)
                     .unwrap();
-                let mut ring = context.accumulator_client(&client).unwrap();
+                let mut ring = context
+                    .accumulator_client(
+                        &client,
+                        ScaledCodec::new(
+                            input_codec.plaintext_modulus(),
+                            context.parameters().accumulator_ntru().cipher_modulus(),
+                        ),
+                    )
+                    .unwrap();
                 let lhs = ring.encrypt(&[T::ZERO; N], &mut rng);
                 let rhs = ring.encrypt(&[T::ONE; N], &mut rng);
                 (context, client, server, input, lhs, rhs)
             });
-            let mut evaluator = OneHotCircuitBootstrapEvaluator::try_new(context, server).unwrap();
+            let mut evaluator =
+                OneHotCircuitBootstrapEvaluator::try_new(context, server, &input_codec).unwrap();
             let mut output = if compact {
                 evaluator.allocate_nonzero_ngsw_output()
             } else {
@@ -112,7 +140,15 @@ fn one_hot<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) 
                 let parameters = evaluator.parameters();
                 let mut selected = context.allocate_accumulator_ciphertext();
                 let mut decoded = vec![T::ZERO; N];
-                let mut ring = context.accumulator_client(client).unwrap();
+                let mut ring = context
+                    .accumulator_client(
+                        client,
+                        ScaledCodec::new(
+                            input_codec.plaintext_modulus(),
+                            context.parameters().accumulator_ntru().cipher_modulus(),
+                        ),
+                    )
+                    .unwrap();
                 // Semantic ciphertext iteration keeps selector boundaries tied
                 // to the public CBS layout, including compact index r-1.
                 for (index, control) in

@@ -8,6 +8,7 @@
 use std::hint::black_box;
 
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
+use primus_encoding::RoundedCodec;
 use primus_fft::{FftTable, RustFftTable, TfheFftTable, TorusFftValue};
 use primus_modulus::NativeModulus;
 use primus_modulus::PowOf2Modulus;
@@ -41,6 +42,10 @@ fn backend<T: TorusFftValue, Table: FftTable>(
         workload.poly_length
     );
     let parameters = ntru::pbs(NativeModulus::<T>::new(), workload, secret);
+    let input_codec = RoundedCodec::new(
+        T::as_from(workload.plaintext_modulus),
+        parameters.external_lwe().cipher_modulus(),
+    );
     // Cached owned state avoids both eager setup during --list and repeated key
     // generation for each Criterion sample. Evaluators borrow this state locally.
     let mut fixture = None;
@@ -52,14 +57,15 @@ fn backend<T: TorusFftValue, Table: FftTable>(
             let mut rng = StdRng::seed_from_u64(42);
             let (client, server) = context.try_generate_keys(None, &mut rng).unwrap();
             let input = context
-                .encryptor(&client)
+                .encryptor(&client, &input_codec)
                 .unwrap()
                 .encrypt_padded(T::ONE, &mut rng)
                 .unwrap();
             let domain = workload.plaintext_modulus as usize / 2;
             let lut = context
                 .parameters()
-                .lookup_table_compiler()
+                .lookup_table_compiler(&input_codec)
+                .unwrap()
                 .compile_fn(|x| T::as_from((x + domain - 1) % domain))
                 .unwrap();
             (context, client, server, input, lut)
@@ -70,7 +76,7 @@ fn backend<T: TorusFftValue, Table: FftTable>(
             evaluator.apply_lookup_table_to(input.as_view(), lut, output.as_mut_view());
             assert_eq!(
                 context
-                    .decryptor(client)
+                    .decryptor(client, &input_codec)
                     .unwrap()
                     .decrypt(output.as_view())
                     .unwrap(),

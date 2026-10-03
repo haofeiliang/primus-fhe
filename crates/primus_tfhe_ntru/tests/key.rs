@@ -1,8 +1,11 @@
 use primus_decompose::DecompositionBaseLog;
 use primus_decompose::primitive::ApproxSignedBasis;
+use primus_encoding::RoundedCodec;
 use primus_lwe::LweDimension;
-use primus_lwe::{LweParameters, LweSecretKey};
+use primus_lwe::LweParametersInner;
+use primus_lwe::LweSecretKey;
 use primus_modulus::BarrettModulus;
+use primus_ntru::NlevParameters;
 use primus_ntru::{NtruParameters, NtruSecretKey, SecretKeyDistr};
 use primus_tfhe_ntru::{
     ClientKey, DecompositionConfig, TfheClientError, TfheKeyError, TfheParameters,
@@ -11,19 +14,23 @@ use primus_tfhe_ntru::{
 #[test]
 fn imported_external_residues_must_match_the_control_domain() {
     let modulus = BarrettModulus::new(65_537u32);
+    let input_codec = RoundedCodec::new(4, modulus);
     let accumulator = NtruParameters::new(32, 4, modulus, SecretKeyDistr::gaussian(3.2), 0.7);
     for distr in [
         SecretKeyDistr::UniformBinary,
         SecretKeyDistr::UniformTernary,
     ] {
         let parameters = TfheParameters::try_new(
-            LweParameters::new(LweDimension::new(4), 4, modulus, distr, 0.7),
-            accumulator.clone(),
-            ApproxSignedBasis::new(
-                accumulator.cipher_modulus_value(),
-                DecompositionBaseLog::new(8),
-                None,
-            ),
+            LweParametersInner::new(LweDimension::new(4), modulus, distr, 0.7),
+            NlevParameters::try_with_basis(
+                &accumulator,
+                ApproxSignedBasis::new(
+                    accumulator.cipher_modulus_value(),
+                    DecompositionBaseLog::new(8),
+                    None,
+                ),
+            )
+            .unwrap(),
             DecompositionConfig {
                 log_basis: DecompositionBaseLog::new(8),
                 level_count: None,
@@ -64,11 +71,11 @@ fn imported_external_residues_must_match_the_control_domain() {
             );
             assert_eq!(key.check_compatible(&parameters).err(), error);
             assert_eq!(
-                parameters.encryptor(&key).err(),
+                parameters.encryptor(&key, &input_codec).err(),
                 error.clone().map(TfheClientError::IncompatibleKey)
             );
             assert_eq!(
-                parameters.decryptor(&key).err(),
+                parameters.decryptor(&key, &input_codec).err(),
                 error.map(TfheClientError::IncompatibleKey)
             );
         }
@@ -80,19 +87,21 @@ fn return_key_rejects_accumulator_magnitudes_outside_external_modulus() {
     let distr = SecretKeyDistr::gaussian(3.2);
     let accumulator = NtruParameters::new(32, 2, BarrettModulus::new(65_537u32), distr, 0.7);
     let parameters = TfheParameters::try_new(
-        LweParameters::new(
+        LweParametersInner::new(
             LweDimension::new(1),
-            2,
             BarrettModulus::new(16),
             SecretKeyDistr::UniformBinary,
             0.7,
         ),
-        accumulator.clone(),
-        ApproxSignedBasis::new(
-            accumulator.cipher_modulus_value(),
-            DecompositionBaseLog::new(8),
-            None,
-        ),
+        NlevParameters::try_with_basis(
+            &accumulator,
+            ApproxSignedBasis::new(
+                accumulator.cipher_modulus_value(),
+                DecompositionBaseLog::new(8),
+                None,
+            ),
+        )
+        .unwrap(),
         DecompositionConfig {
             log_basis: DecompositionBaseLog::new(2),
             level_count: None,

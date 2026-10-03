@@ -1,46 +1,42 @@
+use primus_encoding::RoundedCodec;
 use primus_lattice::LweDimension;
-use primus_lwe::LweParameters;
+use primus_lwe::LweParametersInner;
 use primus_modulus::{BarrettModulus, NativeModulus, PowOf2Modulus};
-use primus_ntru::{NtruParameters, SecretKeyDistr};
+use primus_ntru::SecretKeyDistr;
 use primus_reduce::RingContext;
 use primus_tfhe::DecompositionBaseLog;
 use primus_tfhe_ntru::{DecompositionConfig, TfheParameters};
 use primus_tfhe_ntru_lut::{HighPrecisionLookupTable, LookupTableConfig, LookupTableError};
 
 // Builds a small geometry/encoding fixture without generating keys or ciphertexts.
-fn parameters<M: RingContext<u64>>(
-    modulus: M,
-    t: u64,
-) -> TfheParameters<u64, M, PowOf2Modulus<u64>> {
-    let ring = NtruParameters::new(64, t, modulus, SecretKeyDistr::SparseTernary, 0.7);
-    TfheParameters::try_new(
-        LweParameters::new(
+fn parameters<M: RingContext<u64>>(modulus: M) -> TfheParameters<u64, M, PowOf2Modulus<u64>> {
+    let basis = DecompositionConfig {
+        log_basis: DecompositionBaseLog::new(8),
+        level_count: None,
+    };
+    TfheParameters::try_from_config(primus_tfhe_ntru::TfheConfig {
+        external_lwe: LweParametersInner::new(
             LweDimension::new(2),
-            t,
             PowOf2Modulus::new(1 << 24),
             SecretKeyDistr::UniformBinary,
             0.7,
         ),
-        ring,
-        DecompositionConfig {
-            log_basis: DecompositionBaseLog::new(8),
-            level_count: None,
-        }
-        .try_build(modulus.explicit_value())
-        .unwrap(),
-        DecompositionConfig {
-            log_basis: DecompositionBaseLog::new(8),
-            level_count: None,
-        },
-        0.7,
-    )
+        accumulator_modulus: modulus,
+        poly_length: 64,
+        accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
+        accumulator_noise_standard_deviation: 0.7,
+        blind_rotation: basis,
+        key_switching: basis,
+        key_switching_noise_standard_deviation: 0.7,
+    })
     .unwrap()
 }
 
 // Verifies logical indexing, encoding and sharing against an integer oracle.
 // The u128 modulus also represents the native u64 modulus 2^64 exactly.
 fn geometry<M: RingContext<u64>>(modulus: M, q: u128) {
-    let parameters = parameters(modulus, 8);
+    let parameters = parameters(modulus);
+    let input_codec = RoundedCodec::new(8, parameters.external_lwe().cipher_modulus());
     for coefficient_chunk_count in 0..=3 {
         let config = LookupTableConfig {
             input_chunk_count: 3,
@@ -48,11 +44,12 @@ fn geometry<M: RingContext<u64>>(modulus: M, q: u128) {
             coefficient_chunk_count,
         };
         let mut calls = Vec::new();
-        let lut = HighPrecisionLookupTable::try_new(&parameters, config, |x, output| {
-            calls.push((x, output));
-            ((x * 3 + x / 4 + 5) >> (2 * output)) as u64 % 4
-        })
-        .unwrap();
+        let lut =
+            HighPrecisionLookupTable::try_new(&parameters, &input_codec, config, |x, output| {
+                calls.push((x, output));
+                ((x * 3 + x / 4 + 5) >> (2 * output)) as u64 % 4
+            })
+            .unwrap();
         assert_eq!(lut.config(), config);
         assert_eq!(lut.chunk_bits(), 2);
         assert_eq!(lut.input_value_count(), 64);
@@ -105,9 +102,12 @@ fn geometry<M: RingContext<u64>>(modulus: M, q: u128) {
 // and the first radix above the temporary-cache cap. Check the zero tail too.
 fn chunk_encoding_boundaries<M: RingContext<u64>>(modulus: M, q: u128) {
     for (radix, output_chunk_count) in [(4, 1), (256, 2), (512, 2)] {
-        let parameters = parameters(modulus, 2 * radix as u64);
+        let parameters = parameters(modulus);
+        let input_codec =
+            RoundedCodec::new(2 * radix as u64, parameters.external_lwe().cipher_modulus());
         let lut = HighPrecisionLookupTable::try_new(
             &parameters,
+            &input_codec,
             LookupTableConfig {
                 input_chunk_count: 1,
                 output_chunk_count,
@@ -140,7 +140,8 @@ fn table_partition_and_chunk_encoding_match_integer_oracle() {
 // Invalid geometry must fail before callbacks; invalid digits report their exact pair.
 #[test]
 fn compilation_rejects_invalid_domains_before_callbacks() {
-    let parameters = parameters(BarrettModulus::new(65_537), 4);
+    let parameters = parameters(BarrettModulus::new(65_537));
+    let input_codec = RoundedCodec::new(4, parameters.external_lwe().cipher_modulus());
     for (input_chunk_count, output_chunk_count, coefficient_chunk_count, expected) in [
         (0, 1, 0, LookupTableError::EmptyChunks),
         (1, 0, 0, LookupTableError::EmptyChunks),
@@ -162,6 +163,7 @@ fn compilation_rejects_invalid_domains_before_callbacks() {
     ] {
         let result = HighPrecisionLookupTable::try_new(
             &parameters,
+            &input_codec,
             LookupTableConfig {
                 input_chunk_count,
                 output_chunk_count,
@@ -177,10 +179,11 @@ fn compilation_rejects_invalid_domains_before_callbacks() {
         coefficient_chunk_count: 1,
     };
     let mut calls = Vec::new();
-    let result = HighPrecisionLookupTable::try_new(&parameters, config, |x, output| {
-        calls.push((x, output));
-        if (x, output) == (1, 1) { u64::MAX } else { 0 }
-    });
+    let result =
+        HighPrecisionLookupTable::try_new(&parameters, &input_codec, config, |x, output| {
+            calls.push((x, output));
+            if (x, output) == (1, 1) { u64::MAX } else { 0 }
+        });
     assert_eq!(
         result.err(),
         Some(LookupTableError::OutputChunkOutOfRange {
@@ -190,10 +193,28 @@ fn compilation_rejects_invalid_domains_before_callbacks() {
     );
     assert_eq!(calls, [(0, 0), (1, 0), (2, 0), (3, 0), (0, 1), (1, 1)]);
     for t in [2, 6] {
-        let parameters = self::parameters(BarrettModulus::new(65_537), t);
+        let parameters = self::parameters(BarrettModulus::new(65_537));
+        let input_codec = RoundedCodec::new(t, parameters.external_lwe().cipher_modulus());
         assert_eq!(
-            HighPrecisionLookupTable::try_new(&parameters, config, |_, _| panic!()).err(),
+            HighPrecisionLookupTable::try_new(&parameters, &input_codec, config, |_, _| panic!())
+                .err(),
             Some(LookupTableError::InvalidPlaintextModulus)
         );
     }
+    let foreign = RoundedCodec::new(4, PowOf2Modulus::new(1 << 20));
+    assert!(matches!(
+        HighPrecisionLookupTable::try_new(&parameters, &foreign, config, |_, _| panic!()),
+        Err(LookupTableError::IncompatibleParameters)
+    ));
+    let small_ring = self::parameters(BarrettModulus::new(257));
+    let too_large = RoundedCodec::new(512, small_ring.external_lwe().cipher_modulus());
+    let config = LookupTableConfig {
+        input_chunk_count: 1,
+        output_chunk_count: 1,
+        coefficient_chunk_count: 0,
+    };
+    assert!(matches!(
+        HighPrecisionLookupTable::try_new(&small_ring, &too_large, config, |_, _| panic!()),
+        Err(LookupTableError::OutputEncoding(_))
+    ));
 }

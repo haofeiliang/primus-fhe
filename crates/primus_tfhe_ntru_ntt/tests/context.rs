@@ -1,8 +1,11 @@
 use primus_decompose::DecompositionBaseLog;
 use primus_decompose::primitive::ApproxSignedBasis;
+use primus_encoding::RoundedCodec;
+use primus_encoding::ScaledCodec;
 use primus_lattice::LweDimension;
 use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
+use primus_ntru::NlevParameters;
 use primus_ntru::{NtruParameters, SecretKeyDistr};
 use primus_ntt::{NttTable, U32NttTable};
 use primus_poly::PolyLength;
@@ -42,9 +45,8 @@ fn parameters(
     );
 
     TfheParameters::try_new(
-        external_lwe,
-        accumulator,
-        blind_rotation_basis,
+        external_lwe.into_inner(),
+        NlevParameters::try_with_basis(&accumulator, blind_rotation_basis).unwrap(),
         primus_tfhe_ntru::DecompositionConfig {
             log_basis: DecompositionBaseLog::new(key_switching_log_basis),
             level_count: None,
@@ -63,17 +65,22 @@ fn rejects_server_keys_with_same_layout_but_different_bases_or_modulus() {
     )
     .unwrap();
     let context = TfheContext::try_new(original, table).unwrap();
+    let input_codec = RoundedCodec::new(4, context.parameters().external_lwe().cipher_modulus());
     let mut rng = StdRng::seed_from_u64(0x4e54_5255_4241_5349);
     let (_, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
     assert!(server_key.circuit_bootstrap_key().is_none());
     assert!(matches!(
-        primus_tfhe_ntru_ntt::OneHotCircuitBootstrapEvaluator::try_new(&context, &server_key),
+        primus_tfhe_ntru_ntt::OneHotCircuitBootstrapEvaluator::try_new(
+            &context,
+            &server_key,
+            &input_codec
+        ),
         Err(primus_tfhe_ntru_ntt::OneHotBootstrapError::Evaluation(
             primus_tfhe_ntru_ntt::TfheEvaluationError::MissingCircuitBootstrapKey
         ))
     ));
     assert!(matches!(
-        context.circuit_bootstrap_evaluator(&server_key),
+        context.circuit_bootstrap_evaluator(&server_key, &input_codec),
         Err(primus_tfhe_ntru_ntt::TfheEvaluationError::MissingCircuitBootstrapKey)
     ));
     assert!(context.evaluator(&server_key).is_ok());
@@ -108,12 +115,16 @@ fn rejects_server_keys_with_same_layout_but_different_bases_or_modulus() {
         )
         .unwrap();
         let incompatible = TfheContext::try_new(candidate, table).unwrap();
+        let input_codec =
+            RoundedCodec::new(4, incompatible.parameters().external_lwe().cipher_modulus());
         assert_eq!(
             incompatible.evaluator(&server_key).err(),
             Some(TfheEvaluationError::IncompatibleServerKey)
         );
         assert_eq!(
-            incompatible.boolean_evaluator(&server_key).err(),
+            incompatible
+                .boolean_evaluator(&server_key, &input_codec)
+                .err(),
             Some(TfheEvaluationError::IncompatibleServerKey)
         );
         assert_eq!(
@@ -139,6 +150,7 @@ fn construction_errors_preserve_transform_sources() {
     let context =
         TfheContext::<_, U32NttTable>::try_from_parameters(parameters(CIPHER_MODULUS, 9, 9))
             .unwrap();
+    let input_codec = RoundedCodec::new(4, context.parameters().external_lwe().cipher_modulus());
     // Compatible shape/distributions do not imply an invertible secret.
     let client = ClientKey::new(
         primus_lwe::LweSecretKey::new(
@@ -160,7 +172,15 @@ fn construction_errors_preserve_transform_sources() {
         NtruSecretKey::new(vec![0; POLY_LENGTH], SecretKeyDistr::SparseTernary),
     );
     assert_eq!(
-        context.accumulator_client(&client).err(),
+        context
+            .accumulator_client(
+                &client,
+                ScaledCodec::new(
+                    input_codec.plaintext_modulus(),
+                    context.parameters().accumulator_ntru().cipher_modulus()
+                )
+            )
+            .err(),
         Some(TfheClientError::Ntru(NtruError::NonInvertibleSecretKey))
     );
     let error = KeyGenerator::new(&context)

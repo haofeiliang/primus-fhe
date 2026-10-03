@@ -76,7 +76,7 @@ Sample extraction、NLev/NGSW 外积与 CMUX 位于 [`primus_lattice`](../primus
 
 ## 独立 LWE 返回
 
-`NtruLweKeySwitchingKey::generate(f, Q, s, lwe_parameters, basis, rng)` 从有符号 NTRU 秘密 f 生成返回原语，目标 s 是独立生成的 `primus_lwe::LweSecretKey`。参数和 basis 使用目标模数 q；s 的维数可以不同，也无需补零成为可逆 NTRU 秘密。f 的每个有符号系数的幅值必须小于显式 q，生成时在采样前检查。返回密钥和 batch 工作区的维数使用 `LweDimension`；`LweDimension::from(params.poly_length())` 返回提取维数 N。组合密钥和批量存储长度仍在构造边界检查。
+`NtruLweKeySwitchingKey::generate(f, Q, s, lwe_parameters.inner(), basis, rng)` 从有符号 NTRU 秘密 f 生成返回原语，目标 s 是独立生成的 `primus_lwe::LweSecretKey`。密钥接收不含 codec 的 `LweParametersInner` 和目标模数 q 下的 basis；s 的维数可以不同，也无需补零成为可逆 NTRU 秘密。f 的每个有符号系数的幅值必须小于显式 q，生成时在采样前检查。返回密钥和 batch 工作区的维数使用 `LweDimension`；`LweDimension::from(params.poly_length())` 返回提取维数 N。组合密钥和批量存储长度仍在构造边界检查。
 
 输入必须是系数域 NTRU 密文，NTT/Fourier 输出需要先恢复为系数。工作区一次创建后复用。所有返回路径均覆盖输出，在线不分配，并在写入前检查调用方提供的形状和目标模数。
 

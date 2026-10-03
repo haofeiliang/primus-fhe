@@ -1,7 +1,7 @@
 use primus_decompose::DecompositionBaseLog;
 use primus_encoding::{PlaintextEmbedding, RoundedCodec, ScaledCodec};
 use primus_lattice::LweDimension;
-use primus_lwe::LweParameters;
+use primus_lwe::LweParametersInner;
 use primus_modulus::BarrettModulus;
 use primus_ntru::SecretKeyDistr;
 use primus_ntt::U32NttTable;
@@ -26,9 +26,8 @@ const DOMAIN: usize = 8;
 fn context(distr: SecretKeyDistr) -> TfheContext<u32, U32NttTable> {
     let parameters = TfheParameters::try_from_config(TfheConfig {
         accumulator_modulus: BarrettModulus::new(Q),
-        external_lwe: LweParameters::new(
+        external_lwe: LweParametersInner::new(
             LweDimension::new(3),
-            15,
             BarrettModulus::new(Q),
             distr,
             0.7,
@@ -60,12 +59,13 @@ fn value(message: usize, output: usize) -> u32 {
 
 fn check_complete(distr: SecretKeyDistr) {
     let context = context(distr);
+    let input_codec = RoundedCodec::new(15, context.parameters().external_lwe().cipher_modulus());
     let modulus = context.parameters().accumulator_ntru().cipher_modulus();
     let codec = ScaledCodec::new(8, modulus);
     let mut rng = StdRng::seed_from_u64(0xB301);
     let (client, server) = context.try_generate_keys(None, &mut rng).unwrap();
-    let encryptor = context.encryptor(&client).unwrap();
-    let decryptor = context.decryptor(&client).unwrap();
+    let encryptor = context.encryptor(&client, &input_codec).unwrap();
+    let decryptor = context.decryptor(&client, &input_codec).unwrap();
     let mut evaluator = primus_tfhe_ntru_ntt::FactorizedEvaluator::try_from_bootstrapper(
         context.evaluator(&server).unwrap(),
     )
@@ -93,7 +93,7 @@ fn check_complete(distr: SecretKeyDistr) {
     for count in [1, 3, 17] {
         let (lut, allocation) = allocations::measure(|| {
             context
-                .compile_factorized_lookup_table_fn(&codec, DOMAIN, count, value)
+                .compile_factorized_lookup_table_fn(&input_codec, &codec, DOMAIN, count, value)
                 .unwrap()
         });
         assert_eq!(
@@ -149,7 +149,9 @@ fn check_complete(distr: SecretKeyDistr) {
     // whose canonical value is large, before any noisy public multiplication.
     let binary_codec = ScaledCodec::new(2, modulus);
     let binary = context
-        .compile_factorized_lookup_table_fn(&binary_codec, DOMAIN, 1, |m, _| u32::from(m >= 3))
+        .compile_factorized_lookup_table_fn(&input_codec, &binary_codec, DOMAIN, 1, |m, _| {
+            u32::from(m >= 3)
+        })
         .unwrap();
     for message in [0, 7] {
         let input = encryptor.encrypt_padded(message, &mut rng).unwrap();
@@ -161,12 +163,12 @@ fn check_complete(distr: SecretKeyDistr) {
     }
 
     let lut = context
-        .compile_factorized_lookup_table_fn(&codec, DOMAIN, 3, value)
+        .compile_factorized_lookup_table_fn(&input_codec, &codec, DOMAIN, 3, value)
         .unwrap();
     // Identical parameters do not establish NTT context identity.
     let other_context = self::context(distr);
     let foreign = other_context
-        .compile_factorized_lookup_table_fn(&codec, DOMAIN, 3, value)
+        .compile_factorized_lookup_table_fn(&input_codec, &codec, DOMAIN, 3, value)
         .unwrap();
     let input = encryptor.encrypt_padded(3, &mut rng).unwrap();
     let wrong = LweCiphertext::zero(dimension - 1);
@@ -192,12 +194,7 @@ fn check_complete(distr: SecretKeyDistr) {
     }
     check(&evaluator.apply_lookup_table(input.as_view(), &lut), 3);
 
-    for (n, t, input_q, output_q) in [
-        (N / 2, 15, Q, Q),
-        (N, 8, Q, Q),
-        (N, 15, 97, Q),
-        (N, 15, Q, 97),
-    ] {
+    for (n, t, input_q, output_q) in [(N / 2, 15, Q, Q), (N, 15, 97, Q), (N, 15, Q, 97)] {
         let raw = FactorizedLookupTable::try_new(
             2,
             PolyLength::new(n),
@@ -216,6 +213,7 @@ fn check_complete(distr: SecretKeyDistr) {
     }
     assert!(matches!(
         context.compile_factorized_lookup_table_fn(
+            &input_codec,
             &ScaledCodec::new(8, BarrettModulus::new(97)),
             DOMAIN,
             3,

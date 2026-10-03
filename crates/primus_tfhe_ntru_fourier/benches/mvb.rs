@@ -10,6 +10,7 @@ use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use criterion::{SamplingMode, Throughput};
+use primus_encoding::RoundedCodec;
 use primus_encoding::{PlaintextEmbedding, ScaledCodec};
 use primus_fft::{FftTable, RustFftTable, TfheFftTable, TorusFftValue};
 use primus_lwe::LweCiphertext;
@@ -29,7 +30,11 @@ fn backend<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) 
                 continue;
             }
             let kind = if sparse { "sparse" } else { "classic" };
-            let parameters = ntru::diagnostic(NativeModulus::<T>::new(), (2 * domain) as u32);
+            let parameters = ntru::diagnostic(NativeModulus::<T>::new());
+            let input_codec = RoundedCodec::new(
+                T::as_from((2 * domain) as u32),
+                parameters.external_lwe().cipher_modulus(),
+            );
             let mut fixture = None;
             let mut group = c.benchmark_group(format!(
                 "ntru/{backend}/u{}/mvb/{kind}/n728_h32_N1024/D{domain}_k{count}",
@@ -63,7 +68,7 @@ fn backend<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) 
                                 .unwrap()
                         };
                         let input = context
-                            .encryptor(&client)
+                            .encryptor(&client, &input_codec)
                             .unwrap()
                             .encrypt_padded(T::as_from(domain / 2), &mut rng)
                             .unwrap();
@@ -92,7 +97,7 @@ fn backend<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) 
                     // Branch once during setup; the measured closure has no path dispatch.
                     let mut check = |outputs: &[LweCiphertext<T>]| {
                         if !verified {
-                            let decryptor = context.decryptor(client).unwrap();
+                            let decryptor = context.decryptor(client, &input_codec).unwrap();
                             for (i, output) in outputs.iter().enumerate() {
                                 assert_eq!(
                                     output_codec.decode_value(
@@ -170,6 +175,7 @@ fn backend<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) 
                         "factorized" => {
                             let lut = context
                                 .compile_factorized_lookup_table_fn(
+                                    &input_codec,
                                     &table_codec,
                                     domain,
                                     count,

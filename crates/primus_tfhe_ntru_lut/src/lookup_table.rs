@@ -1,3 +1,4 @@
+use primus_encoding::RoundedCodec;
 use primus_integer::FheUint;
 use primus_poly::Polynomial;
 use primus_reduce::RingContext;
@@ -25,6 +26,9 @@ pub struct LookupTableConfig {
 /// Invalid table geometry, encoding, storage size or bound evaluation resources.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum LookupTableError {
+    /// Chunk outputs cannot be represented by a Rounded codec at accumulator Q.
+    #[error("invalid high-precision output encoding")]
+    OutputEncoding(#[from] primus_encoding::CodecError),
     /// One-hot chunks need t=2*M with M>=2 a power of two.
     #[error("high-precision lookup requires a power-of-two plaintext modulus of at least four")]
     InvalidPlaintextModulus,
@@ -48,7 +52,7 @@ pub enum LookupTableError {
         /// Output chunk index.
         output: usize,
     },
-    /// The table was compiled with another N, t, Q or q.
+    /// The table was compiled with another N, Q or q, or input codec bound to another q.
     #[error("lookup table and context have incompatible ring or encoding parameters")]
     IncompatibleParameters,
     /// The context/server material cannot provide the required one-hot CBS.
@@ -186,13 +190,14 @@ impl<T: FheUint> HighPrecisionLookupTable<T> {
     /// Geometry and host storage overflow are checked before allocation/callbacks;
     /// a bad callback value stops compilation at that pair.
     ///
-    /// All chunks use unsigned Rounded encoding with t=2*M from `parameters`.
+    /// All chunks use unsigned Rounded encoding with t=2*M from `input_codec`.
     /// The input value count M^c must fit in usize, so tau*c < usize::BITS.
     /// This is a limit of full table enumeration, not of the cryptographic
     /// construction. Storage grows exponentially with input chunk count;
     /// representable sizes do not guarantee available memory.
     pub fn try_new<M, LM, F>(
         parameters: &TfheParameters<T, M, LM>,
+        input_codec: &RoundedCodec<T, LM>,
         config: LookupTableConfig,
         function: F,
     ) -> Result<Self, LookupTableError>
@@ -201,12 +206,25 @@ impl<T: FheUint> HighPrecisionLookupTable<T> {
         LM: RingContext<T>,
         F: FnMut(usize, usize) -> T,
     {
+        if input_codec.ciphertext_modulus().explicit_value()
+            != parameters.external_lwe().cipher_modulus_value()
+        {
+            return Err(LookupTableError::IncompatibleParameters);
+        }
         let layout = Layout::try_new(
-            parameters.plain_modulus_value(),
+            input_codec.plaintext_modulus(),
             parameters.poly_length().get(),
             config,
         )?;
-        Self::compile(parameters, layout, function)
+        Self::compile(parameters, input_codec, layout, function)
+    }
+
+    /// Returns the common input/output chunk plaintext modulus t=2*M.
+    /// Input and returned ciphertexts use this Rounded encoding at external q;
+    /// public table coefficients are encoded at accumulator Q.
+    #[must_use]
+    pub fn plaintext_modulus(&self) -> T {
+        self.plaintext_modulus
     }
 
     /// Returns the input/output counts and coefficient/table split.
@@ -296,14 +314,14 @@ impl<T: FheUint> HighPrecisionLookupTable<T> {
             .map(|&polynomial_id| self.polynomial_by_id(polynomial_id))
     }
 
-    /// Checks N, t, q and Q; key identity and noise margins are not table properties.
+    /// Checks N, q and Q; the compiled program owns its chunk encoding t.
+    /// Key identity and noise margins are not table properties.
     #[must_use]
     pub fn is_compatible<M: RingContext<T>, LM: RingContext<T>>(
         &self,
         parameters: &TfheParameters<T, M, LM>,
     ) -> bool {
         self.layout.polynomial_length == parameters.poly_length().get()
-            && self.plaintext_modulus == parameters.plain_modulus_value()
             && self.input_modulus == parameters.external_lwe().cipher_modulus_value()
             && self.ring_modulus == parameters.accumulator_ntru().cipher_modulus_value()
     }

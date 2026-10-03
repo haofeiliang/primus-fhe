@@ -90,9 +90,8 @@ where
         );
         let parameters = self.engine.context.parameters();
         assert!(
-            lookup_table.is_compatible(
+            lookup_table.is_compatible_with_ciphertext_domain(
                 parameters.poly_length(),
-                parameters.plain_modulus_value(),
                 parameters.external_lwe().cipher_modulus_value(),
                 parameters.accumulator_ntru().cipher_modulus_value(),
             ),
@@ -164,9 +163,8 @@ where
         );
         let parameters = self.engine.context.parameters();
         assert!(
-            lookup_table.is_compatible(
+            lookup_table.is_compatible_with_ciphertext_domain(
                 parameters.poly_length(),
-                parameters.plain_modulus_value(),
                 parameters.external_lwe().cipher_modulus_value(),
                 parameters.accumulator_ntru().cipher_modulus_value(),
             ),

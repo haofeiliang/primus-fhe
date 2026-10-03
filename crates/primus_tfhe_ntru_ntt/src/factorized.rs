@@ -1,6 +1,6 @@
 //! Prepared factorized MVB programs and their reusable evaluator.
 
-use primus_encoding::ScaledCodec;
+use primus_encoding::{RoundedCodec, ScaledCodec};
 use primus_integer::FheUint;
 use primus_lattice::ntru::NttNtru;
 use primus_ntt::MonomialNttTable;
@@ -47,9 +47,8 @@ where
     ) -> Self {
         let parameters = context.parameters();
         assert!(
-            lookup_table.is_compatible(
+            lookup_table.is_compatible_with_ciphertext_domain(
                 parameters.accumulator_ntru().poly_length(),
-                parameters.plain_modulus_value(),
                 parameters.external_lwe().cipher_modulus_value(),
                 parameters.accumulator_ntru().cipher_modulus_value(),
             ),
@@ -315,9 +314,11 @@ where
     /// the supplied Scaled codec's domain, and its ciphertext modulus must match
     /// the accumulator. Callback order and noise requirements follow
     /// [`FactorizedLookupTable::try_new`]. The result borrows this context and
-    /// may only be evaluated by its [`FactorizedEvaluator`].
+    /// may only be evaluated by its [`FactorizedEvaluator`]. The input codec must
+    /// use external q; the output codec must use accumulator Q.
     pub fn compile_factorized_lookup_table_fn<OM, F>(
         &self,
+        input_codec: &RoundedCodec<T, LM>,
         output_codec: &ScaledCodec<T, OM>,
         input_domain_len: usize,
         output_count: usize,
@@ -327,6 +328,11 @@ where
         OM: primus_reduce::RingContext<T>,
         F: Fn(usize, usize) -> T,
     {
+        if input_codec.ciphertext_modulus().explicit_value()
+            != self.parameters().external_lwe().cipher_modulus_value()
+        {
+            return Err(LookupTableError::InputModulusMismatch);
+        }
         if output_codec.ciphertext_modulus().explicit_value()
             != self.parameters().accumulator_ntru().cipher_modulus_value()
         {
@@ -336,7 +342,7 @@ where
             input_domain_len,
             self.parameters().poly_length(),
             output_count,
-            self.parameters().input_plaintext_codec(),
+            input_codec,
             output_codec,
             function,
         )?;

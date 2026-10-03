@@ -7,7 +7,7 @@ use primus_reduce::RingContext;
 
 mod batch;
 
-use crate::{LweParameters, LweSecretKey, LweSecretKeyRef};
+use crate::{LweParametersInner, LweSecretKey, LweSecretKeyRef};
 
 /// An LWE key-switching key from one secret-key vector to another.
 ///
@@ -45,7 +45,7 @@ impl<T: FheUint> LweKeySwitchingKey<T> {
     pub fn generate<R, M>(
         input_secret_key: LweSecretKeyRef<'_, T>,
         output_secret_key: &LweSecretKey<T>,
-        output_parameters: &LweParameters<T, M>,
+        output_parameters: &LweParametersInner<T, M>,
         basis: ApproxSignedBasis<T>,
         rng: &mut R,
     ) -> Self

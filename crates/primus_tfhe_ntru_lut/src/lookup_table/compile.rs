@@ -22,6 +22,7 @@ impl<T: FheUint> HighPrecisionLookupTable<T> {
     /// polynomial repeats. Check worst-case sizes before allocating or invoking the callback.
     pub(super) fn compile<M: RingContext<T>, LM: RingContext<T>>(
         parameters: &TfheParameters<T, M, LM>,
+        input_codec: &RoundedCodec<T, LM>,
         layout: Layout,
         mut function: impl FnMut(usize, usize) -> T,
     ) -> Result<Self, LookupTableError> {
@@ -41,11 +42,11 @@ impl<T: FheUint> HighPrecisionLookupTable<T> {
         ])?;
         checked_allocation_len::<TableNodeId>(&[output_count, layout.polynomials_per_output, 2])?;
 
-        let codec = RoundedCodec::new(
-            parameters.plain_modulus_value(),
+        let codec = RoundedCodec::try_new(
+            input_codec.plaintext_modulus(),
             parameters.accumulator_ntru().cipher_modulus(),
-        );
-        let radix = parameters.plain_modulus_value() >> 1u32;
+        )?;
+        let radix = input_codec.plaintext_modulus() >> 1u32;
         let chunk_encodings = precompute_chunk_encodings(&codec, layout);
         // Both paths receive only validated digits from the filling helper.
         let encode_chunk = |chunk_value: T| match &chunk_encodings {
@@ -78,7 +79,7 @@ impl<T: FheUint> HighPrecisionLookupTable<T> {
             layout,
             coefficients: pool.coefficients.into_boxed_slice(),
             selection: selection.finish(),
-            plaintext_modulus: parameters.plain_modulus_value(),
+            plaintext_modulus: input_codec.plaintext_modulus(),
             input_modulus: parameters.external_lwe().cipher_modulus_value(),
             ring_modulus: parameters.accumulator_ntru().cipher_modulus_value(),
         })

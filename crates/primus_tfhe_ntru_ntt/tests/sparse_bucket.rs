@@ -1,4 +1,5 @@
 //! Sparse key selection semantics and independent NLev/bucket error budgets.
+use primus_lwe::LweParametersInner;
 
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_integer::{AsInto, FheUint};
@@ -104,15 +105,13 @@ fn check_bucket<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, level_cou
     );
     let context = TfheContext::try_new(
         TfheParameters::try_new(
-            LweParameters::new(
+            LweParametersInner::new(
                 LweDimension::new(DIM),
-                T::as_from(16usize),
                 modulus,
                 client_params.secret_key_distr(),
                 0.7,
             ),
-            params.clone(),
-            gadget.basis().clone(),
+            NlevParameters::try_with_basis(&params, gadget.basis().clone()).unwrap(),
             primus_tfhe_ntru::DecompositionConfig {
                 log_basis: DecompositionBaseLog::new(8),
                 level_count: None,

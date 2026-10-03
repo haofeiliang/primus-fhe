@@ -355,7 +355,7 @@ fn check_modulus_pair<T: FheUint, Q: Modulus<ValueT = T>, M: RingContext<T>>(sou
             &secret,
             source,
             &output_secret,
-            &parameters,
+            parameters.inner(),
             basis,
             &mut rng,
         );
@@ -558,7 +558,7 @@ fn check_generation_errors(params: &LweParameters<u32, BarrettModulus<u32>>) {
                     &secret,
                     UintModulus(source_q),
                     &output_key,
-                    params,
+                    params.inner(),
                     ApproxSignedBasis::new(Some(basis_q), DecompositionBaseLog::new(4), None),
                     &mut rng,
                 );
@@ -602,7 +602,7 @@ fn validation_precedes_output_writes_and_key_sampling() {
         &secret,
         NativeModulus::new(),
         &target,
-        &params,
+        params.inner(),
         basis,
         &mut rng,
     );
@@ -633,7 +633,7 @@ fn check_encrypted_return<T: FheUint, Q: Modulus<ValueT = T>>(
         secret,
         source,
         &output_secret,
-        &params,
+        params.inner(),
         ApproxSignedBasis::new(target.explicit_value(), DecompositionBaseLog::new(4), None),
         &mut rng,
     );

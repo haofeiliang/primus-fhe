@@ -2,8 +2,9 @@ use primus_decompose::DecompositionBaseLog;
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_encoding::RoundedCodec;
 use primus_lwe::LweDimension;
-use primus_lwe::LweParameters;
+use primus_lwe::LweParametersInner;
 use primus_modulus::NativeModulus;
+use primus_ntru::NlevParameters;
 use primus_ntru::{NtruParameters, NtruSecretKey, SecretKeyDistr};
 use primus_tfhe_ntru::{ClientError, ClientKey, TfheParameters};
 
@@ -20,15 +21,13 @@ fn parameters_with_plaintext(t: u32) -> TfheParameters<u32, NativeModulus<u32>> 
         None,
     );
     TfheParameters::try_new(
-        LweParameters::new(
+        LweParametersInner::new(
             LweDimension::new(LWE_DIMENSION),
-            t,
             modulus,
             SecretKeyDistr::UniformBinary,
             0.7,
         ),
-        accumulator,
-        blind_rotation_basis,
+        NlevParameters::try_with_basis(&accumulator, blind_rotation_basis).unwrap(),
         primus_tfhe_ntru::DecompositionConfig {
             log_basis: DecompositionBaseLog::new(8),
             level_count: None,
@@ -62,17 +61,17 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
     let key = imported_key([1, 0, 1, 1]);
     for t in [3u32, 4, 5] {
         let parameters = parameters_with_plaintext(t);
-        let encryptor = parameters.encryptor(&key).unwrap();
-        let decryptor = parameters.decryptor(&key).unwrap();
+        let input_codec = RoundedCodec::new(t, NativeModulus::new());
+        let encryptor = parameters.encryptor(&key, &input_codec).unwrap();
+        let decryptor = parameters.decryptor(&key, &input_codec).unwrap();
         let domain_len = t.div_ceil(2);
         let default = parameters
-            .lookup_table_compiler()
+            .lookup_table_compiler(&input_codec)
+            .unwrap()
             .compile_slice(&vec![t - 1; domain_len as usize])
             .unwrap();
         assert_eq!(
-            parameters
-                .input_plaintext_codec()
-                .decode_value(default.polynomial().as_ref()[0]),
+            input_codec.decode_value(default.polynomial().as_ref()[0]),
             t - 1,
         );
         let input = encryptor.encrypt_padded(domain_len - 1, &mut rng).unwrap();
@@ -83,7 +82,8 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
         );
         let output_codec = RoundedCodec::new(8, NativeModulus::new());
         let compiler = parameters
-            .lookup_table_compiler()
+            .lookup_table_compiler(&input_codec)
+            .unwrap()
             .try_with_output_codec(&output_codec)
             .unwrap();
         let values: Vec<_> = (0..domain_len).map(|m| 7 - m).collect();
@@ -100,4 +100,50 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
             assert_eq!(full.input_domain_len(), t as usize);
         }
     }
+}
+
+// q and Q are independent: codec validity at q does not imply validity at Q.
+#[test]
+fn codec_binding_checks_input_q_and_default_output_encoding() {
+    use primus_modulus::BarrettModulus;
+    use primus_tfhe_ntru::{DecompositionConfig, LookupTableError, TfheClientError, TfheConfig};
+    let basis = DecompositionConfig {
+        log_basis: DecompositionBaseLog::new(2),
+        level_count: None,
+    };
+    let parameters = TfheParameters::try_from_config(TfheConfig {
+        external_lwe: LweParametersInner::new(
+            LweDimension::new(LWE_DIMENSION),
+            BarrettModulus::new(257),
+            SecretKeyDistr::UniformBinary,
+            0.7,
+        ),
+        accumulator_modulus: BarrettModulus::new(41),
+        poly_length: N,
+        accumulator_secret_key_distr: SecretKeyDistr::gaussian(3.2),
+        accumulator_noise_standard_deviation: 0.7,
+        blind_rotation: basis,
+        key_switching: basis,
+        key_switching_noise_standard_deviation: 0.7,
+    })
+    .unwrap();
+    let key = imported_key([1, 0, 1, 1]);
+    let foreign = RoundedCodec::new(4, BarrettModulus::new(129));
+    assert!(matches!(
+        parameters.encryptor(&key, &foreign),
+        Err(TfheClientError::Client(ClientError::CodecModulusMismatch))
+    ));
+    assert!(matches!(
+        parameters.decryptor(&key, &foreign),
+        Err(TfheClientError::Client(ClientError::CodecModulusMismatch))
+    ));
+    assert!(matches!(
+        parameters.lookup_table_compiler(&foreign),
+        Err(LookupTableError::InputModulusMismatch)
+    ));
+    let too_large_for_q_ring = RoundedCodec::new(64, BarrettModulus::new(257));
+    assert!(matches!(
+        parameters.lookup_table_compiler(&too_large_for_q_ring),
+        Err(LookupTableError::OutputEncoding(_))
+    ));
 }

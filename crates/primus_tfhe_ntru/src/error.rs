@@ -9,7 +9,7 @@ pub enum TfheParameterError {
     /// Return-key encryption at external q has invalid sampling parameters.
     #[error("invalid return-key encryption parameters")]
     KeySwitchingEncryption(#[source] primus_lwe::LweParameterError),
-    /// The configured accumulator layout, encoding or samplers are invalid.
+    /// The configured accumulator layout or samplers are invalid.
     #[error("invalid accumulator parameters")]
     AccumulatorParameters(#[source] primus_ntru::NtruParameterError),
     /// Invalid NLev/NGSW decomposition or layout for blind rotation.
@@ -24,9 +24,6 @@ pub enum TfheParameterError {
     /// The external LWE distribution must be binary or ternary.
     #[error("NTRU TFHE requires a binary or ternary client secret-key distribution")]
     UnsupportedClientSecretKeyDistribution,
-    /// The LWE and NTRU plaintext spaces differ.
-    #[error("LWE and NTRU plaintext moduli do not match")]
-    PlainModulusMismatch,
 }
 
 /// An incompatibility between NTRU client keys and TFHE parameters.
@@ -108,9 +105,6 @@ pub enum CircuitBootstrapParameterError {
         /// The incompatible parameter role.
         role: &'static str,
     },
-    /// The LUT padded output count leaves too few programmable input slots.
-    #[error("circuit-bootstrap output levels do not fit the ManyLUT accumulator")]
-    OutputDecompositionTooLarge,
     /// Trace normalization requires an odd field modulus with Shoup headroom.
     #[error("circuit-bootstrap trace requires odd q below 2^(T::BITS-1)")]
     UnsupportedTraceModulus,

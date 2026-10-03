@@ -61,7 +61,7 @@ fn source<T: FheUint, Q: RingContext<T>>(c: &mut Criterion, source: Q, name: &st
                         &f,
                         source,
                         &secret,
-                        &parameters,
+                        parameters.inner(),
                         ApproxSignedBasis::new(
                             Some(T::ONE << 24u32),
                             DecompositionBaseLog::new(3),

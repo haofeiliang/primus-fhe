@@ -76,7 +76,7 @@ fn main() {
     let switching = LweKeySwitchingKey::generate(
         secret.as_view(),
         &output_secret,
-        &output_params,
+        output_params.inner(),
         basis,
         &mut rng,
     );
@@ -133,7 +133,7 @@ Packed 加密使用不同布局：`encrypt_multi_messages` 存储一个长度为
 
 ## 密钥切换
 
-`LweKeySwitchingKey::generate` 接受 `Encoded` 或 `Signed` 输入私钥视图、 Encoded 输出私钥 `&LweSecretKey<T>`、输出参数以及转移所有权的 `ApproxSignedBasis<T>`。 生成的切换密钥保留维度与分解基，不保存完整 `LweParameters`。 存储顺序为输入私钥系数、分解层、输出密文的 `[a, b]` 系数， 总计 `input_dimension * levels * (output_dimension + 1)` 个元素。
+`LweKeySwitchingKey::generate` 接受 `Encoded` 或 `Signed` 输入私钥视图、 Encoded 输出私钥 `&LweSecretKey<T>`、不含 codec 的 `&LweParametersInner<T, M>` 输出参数以及转移所有权的 `ApproxSignedBasis<T>`。 生成的切换密钥保留维度与分解基，不保存完整 `LweParameters`。 存储顺序为输入私钥系数、分解层、输出密文的 `[a, b]` 系数， 总计 `input_dimension * levels * (output_dimension + 1)` 个元素。
 
 `key_switch` / `key_switch_to` 处理单条密文；`key_switch_batch` / `key_switch_batch_to` 使用独立 batch 切片。输入、输出分别使用各自维度，密文模数必须相同。 密钥切换不重新编码消息，也不切换模数。解密参数需要保持编码一致，噪声预算需覆盖 分解误差和密钥条目噪声。Batch 输出与逐条切换逐系数相同，`_to` 路径复用密钥条目， 不需要堆上临时工作区。
 

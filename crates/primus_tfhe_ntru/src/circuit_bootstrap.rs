@@ -15,8 +15,8 @@ use crate::{CircuitBootstrapConfig, CircuitBootstrapParameterError, TfheParamete
 /// The TFHE context supplies BR parameters. Trace, scheme-switch and output
 /// bases are independent. The scheme-switch key binds the complete output basis.
 /// The BR basis must resolve the smallest programmed output gadget scale.
-/// Construction checks domains, layouts and ManyLUT capacity, not noise, failure
-/// probability or security. In particular the scheme-switch
+/// Construction checks domains and layouts; program binding checks ManyLUT capacity.
+/// Neither validates noise, failure probability or security. In particular the scheme-switch
 /// key encrypts secret-dependent messages and multiplies errors by f and f²;
 /// ordinary PBS parameters are not automatically valid CBS parameters.
 #[derive(Clone)]
@@ -26,13 +26,12 @@ pub struct CircuitBootstrapParameters<T: FheUint, M: RingContext<T>> {
     output_nlev_len: usize,
     trace: NlevParameters<T, M>,
     scheme_switch: NlevParameters<T, M>,
-    input_plain_modulus: T,
 }
 
 impl<T: FheUint, M: RingContext<T>> CircuitBootstrapParameters<T, M> {
     /// Derives all CBS ring domains from TFHE, keeping bases and noise independent.
     ///
-    /// Returns basis/layout errors or insufficient interleaved LUT capacity.
+    /// Returns basis, layout or sampler errors; input encoding and capacity belong to programs.
     /// The direct [`Self::try_new`] constructor also accepts prepared bases and
     /// independently constructed key parameters.
     ///
@@ -74,7 +73,7 @@ impl<T: FheUint, M: RingContext<T>> CircuitBootstrapParameters<T, M> {
         Self::try_new(tfhe, output_basis, trace, scheme_switch)
     }
 
-    /// Checks the accumulator ring, modulus and capacity for the input domain.
+    /// Checks the accumulator ring, modulus and output layout independently of input encoding.
     /// The output layout is derived from the TFHE accumulator and `output_basis`.
     pub fn try_new<LM: RingContext<T>>(
         tfhe: &TfheParameters<T, M, LM>,
@@ -102,14 +101,6 @@ impl<T: FheUint, M: RingContext<T>> CircuitBootstrapParameters<T, M> {
         {
             return Err(CircuitBootstrapParameterError::UnsupportedTraceModulus);
         }
-        let lookup_table_padded_output_count =
-            output_basis.decompose_length().get().next_power_of_two();
-        let domain =
-            primus_tfhe::front_half_domain_len(tfhe.plain_modulus_value(), tfhe.poly_length())
-                .map_err(|_| CircuitBootstrapParameterError::OutputDecompositionTooLarge)?;
-        if lookup_table_padded_output_count > tfhe.poly_length().get() / domain {
-            return Err(CircuitBootstrapParameterError::OutputDecompositionTooLarge);
-        }
         let poly_length = tfhe.poly_length();
         // N <= 2^17 and levels <= 32 keep their product within usize.
         let output_nlev_len = poly_length.get() * output_basis.decompose_length().get();
@@ -119,8 +110,39 @@ impl<T: FheUint, M: RingContext<T>> CircuitBootstrapParameters<T, M> {
             output_nlev_len,
             trace,
             scheme_switch,
-            input_plain_modulus: tfhe.plain_modulus_value(),
         })
+    }
+
+    /// Compiles the gadget-scaled identity for a selected Rounded input encoding.
+    ///
+    /// Checks front-half geometry and interleaved output capacity here,
+    /// rather than at key generation. The same CBS material may serve another t
+    /// when its program fits. Output values are gadget scalars, not codec-scaled
+    /// messages. These parameters own Q only; backend binding checks the input
+    /// codec against external q. Callers must budget input, trace and scheme-switch noise.
+    pub fn compile_lookup_table<LM: RingContext<T>>(
+        &self,
+        input_codec: &primus_encoding::RoundedCodec<T, LM>,
+    ) -> Result<primus_tfhe::InterleavedLookupTable<T>, primus_tfhe::LookupTableError> {
+        use primus_tfhe::{InterleavedLookupTable, LookupTableError, front_half_domain_len};
+        let modulus = self.trace.inner().cipher_modulus();
+        let poly_length = self.poly_length;
+        let plaintext_modulus = input_codec.plaintext_modulus();
+        let domain_len = front_half_domain_len(plaintext_modulus, poly_length)?;
+        let scalars: Vec<T> = self.output_basis.scalar_iter().collect();
+        InterleavedLookupTable::try_new(
+            domain_len,
+            poly_length,
+            scalars.len(),
+            plaintext_modulus,
+            input_codec.ciphertext_modulus(),
+            modulus,
+            |input, level| {
+                let input =
+                    T::try_from(input).map_err(|_| LookupTableError::PlaintextModulusTooLarge)?;
+                Ok(modulus.reduce_mul(scalars[level], input))
+            },
+        )
     }
 
     /// Returns the gadget basis of the output ciphertext.
@@ -165,12 +187,11 @@ impl<T: FheUint, M: RingContext<T>> CircuitBootstrapParameters<T, M> {
             .next_power_of_two()
     }
 
-    /// Checks the accumulator ring, modulus and input plaintext domain.
+    /// Checks the accumulator ring and modulus independently of message encoding.
     /// This does not establish noise margins or secret/transform identity.
     #[must_use]
     pub fn is_compatible<LM: RingContext<T>>(&self, tfhe: &TfheParameters<T, M, LM>) -> bool {
-        self.input_plain_modulus == tfhe.plain_modulus_value()
-            && self.poly_length == tfhe.poly_length()
+        self.poly_length == tfhe.poly_length()
             && self.output_basis.modulus() == tfhe.accumulator_ntru().cipher_modulus_value()
     }
 }

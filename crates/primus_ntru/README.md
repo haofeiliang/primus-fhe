@@ -76,7 +76,7 @@ Sample extraction, NLev/NGSW external products and CMUX live in [`primus_lattice
 
 ## Independent LWE return
 
-`NtruLweKeySwitchingKey::generate(f, Q, s, lwe_parameters, basis, rng)` prepares conversion from the signed NTRU secret f to an independently generated `primus_lwe::LweSecretKey` s. The parameters and basis use target modulus q; s may have a different dimension and need not extend to an invertible NTRU secret. Each signed coefficient of f must have magnitude below an explicit q; generation checks this before sampling. Return-key and batch-workspace dimensions use `LweDimension`; `LweDimension::from(params.poly_length())` gives the extracted dimension N. Composed key and batch storage lengths remain checked at construction.
+`NtruLweKeySwitchingKey::generate(f, Q, s, lwe_parameters.inner(), basis, rng)` prepares conversion from the signed NTRU secret f to an independently generated `primus_lwe::LweSecretKey` s. The key takes codec-free `LweParametersInner` and a basis at target modulus q; s may have a different dimension and need not extend to an invertible NTRU secret. Each signed coefficient of f must have magnitude below an explicit q; generation checks this before sampling. Return-key and batch-workspace dimensions use `LweDimension`; `LweDimension::from(params.poly_length())` gives the extracted dimension N. Composed key and batch storage lengths remain checked at construction.
 
 Inputs are coefficient-domain NTRU ciphertexts; recover NTT/Fourier outputs to coefficients first. Create the workspace once and reuse it. All return paths overwrite their outputs without online allocation and validate caller-supplied shapes and target modulus before writes.
 

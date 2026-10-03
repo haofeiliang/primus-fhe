@@ -1,8 +1,10 @@
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_encoding::RoundedCodec;
 use primus_lwe::LweDimension;
-use primus_lwe::LweParameters;
+use primus_lwe::LweParametersInner;
 use primus_modulus::{BarrettModulus, NativeModulus, PowOf2Modulus};
+use primus_ntru::NlevParameters;
 use primus_ntru::{NtruParameters, SecretKeyDistr};
 use primus_reduce::RingContext;
 use primus_tfhe_ntru::{
@@ -29,15 +31,13 @@ fn parameters<M: RingContext<u64>>(
         level_count: None,
     };
     let tfhe = TfheParameters::try_new(
-        LweParameters::new(
+        LweParametersInner::new(
             LweDimension::new(4),
-            t,
             PowOf2Modulus::new(1 << 20),
             SecretKeyDistr::UniformBinary,
             0.7,
         ),
-        ring,
-        blind_rotation_basis,
+        NlevParameters::try_with_basis(&ring, blind_rotation_basis).unwrap(),
         full,
         0.7,
     )
@@ -63,7 +63,8 @@ fn geometry<M: RingContext<u64>>(modulus: M, q: u128) {
     for t in [4, 8, 16] {
         for levels in [1, 3, 4] {
             let (tfhe, cbs) = parameters(modulus, t, levels);
-            let lut = OneHotLookupTable::try_new(&tfhe, &cbs).unwrap();
+            let input_codec = RoundedCodec::new(t, tfhe.external_lwe().cipher_modulus());
+            let lut = OneHotLookupTable::try_new(&tfhe, &cbs, &input_codec).unwrap();
             let n = 64i64;
             let m_count = (t / 2) as i64;
             let w = levels.next_power_of_two() as i64;
@@ -113,22 +114,22 @@ fn geometry<M: RingContext<u64>>(modulus: M, q: u128) {
     }
     for t in [2, 6] {
         let (tfhe, cbs) = parameters(modulus, t, 3);
+        let input_codec = RoundedCodec::new(t, tfhe.external_lwe().cipher_modulus());
         assert_eq!(
-            OneHotLookupTable::try_new(&tfhe, &cbs).unwrap_err(),
+            OneHotLookupTable::try_new(&tfhe, &cbs, &input_codec).unwrap_err(),
             OneHotBootstrapError::InvalidPlaintextModulus
         );
     }
     // Ordinary CBS fits exactly; one-hot additionally needs a nonempty guard.
     let (tfhe, cbs) = parameters(modulus, 32, 3);
+    let input_codec = RoundedCodec::new(32, tfhe.external_lwe().cipher_modulus());
     assert_eq!(
-        OneHotLookupTable::try_new(&tfhe, &cbs).unwrap_err(),
+        OneHotLookupTable::try_new(&tfhe, &cbs, &input_codec).unwrap_err(),
         OneHotBootstrapError::InsufficientCapacity
     );
-    let (other, _) = parameters(modulus, 8, 3);
-    assert!(matches!(
-        OneHotLookupTable::try_new(&other, &cbs),
-        Err(OneHotBootstrapError::Evaluation(_))
-    ));
+    // The same CBS key geometry can bind a smaller message domain.
+    let input_codec = RoundedCodec::new(8, tfhe.external_lwe().cipher_modulus());
+    assert!(OneHotLookupTable::try_new(&tfhe, &cbs, &input_codec).is_ok());
 }
 
 #[test]

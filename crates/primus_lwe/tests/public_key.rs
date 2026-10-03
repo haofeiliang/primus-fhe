@@ -181,7 +181,7 @@ fn check_messages<M: RingContext<u32>>(modulus: M) {
     let switching = LweKeySwitchingKey::generate(
         secret.as_view(),
         &output_secret,
-        &output_params,
+        output_params.inner(),
         ApproxSignedBasis::new(
             modulus.explicit_value(),
             DecompositionBaseLog::new(2),

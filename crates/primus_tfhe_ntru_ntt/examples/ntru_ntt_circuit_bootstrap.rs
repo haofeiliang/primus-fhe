@@ -5,8 +5,10 @@
 //! Arithmetic profiles: guides/development/tfhe-parameters.md (not security presets).
 
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_encoding::RoundedCodec;
+use primus_encoding::ScaledCodec;
 use primus_lattice::LweDimension;
-use primus_lwe::LweParameters;
+use primus_lwe::LweParametersInner;
 use primus_modulus::{BarrettModulus, PowOf2Modulus};
 use primus_ntru::SecretKeyDistr;
 use primus_ntt::U32NttTable as Table;
@@ -19,7 +21,7 @@ use rand::{SeedableRng, rngs::StdRng};
 type Word = u32;
 const N: usize = 1024;
 
-// Public parameters: n=800, N=1024, t=4; independent external LWE q=2^24.
+// Key parameters: n=800, N=1024; independent external LWE q=2^24.
 // Noise sigmas below are in coefficient units; these are arithmetic examples, not security presets.
 fn parameters() -> TfheParameters<Word, PowOf2Modulus<Word>> {
     // NTT requires a prime admitting a 2N-th root, rather than a power-of-two modulus.
@@ -42,9 +44,8 @@ fn parameters() -> TfheParameters<Word, PowOf2Modulus<Word>> {
     };
 
     TfheParameters::try_from_config(TfheConfig {
-        external_lwe: LweParameters::new(
+        external_lwe: LweParametersInner::new(
             LweDimension::new(800),
-            4, // Padded inputs occupy 0..2.
             PowOf2Modulus::new(lwe_modulus),
             SecretKeyDistr::UniformBinary,
             lwe_modulus as f64 * 2.046151696979124e-6,
@@ -96,14 +97,20 @@ fn circuit_config() -> CircuitBootstrapConfig {
 fn main() {
     let parameters = parameters();
     let context = TfheContext::<Word, Table, _>::try_from_parameters(parameters).unwrap();
+    // Public message encoding at external q, chosen independently of key generation.
+    let input_codec = RoundedCodec::new(4, context.parameters().external_lwe().cipher_modulus());
 
     // Client: generate CBS material with the paired keys; send server_key only.
     let mut rng = StdRng::seed_from_u64(42);
     let (client_key, server_key) = context
         .try_generate_keys(Some(circuit_config()), &mut rng)
         .unwrap();
-    let encryptor = context.encryptor(&client_key).unwrap();
-    let mut ring_client = context.accumulator_client(&client_key).unwrap();
+    let encryptor = context.encryptor(&client_key, &input_codec).unwrap();
+    let ring_codec = ScaledCodec::new(
+        input_codec.plaintext_modulus(),
+        context.parameters().accumulator_ntru().cipher_modulus(),
+    );
+    let mut ring_client = context.accumulator_client(&client_key, ring_codec).unwrap();
     // Encrypt both candidates with the accumulator secret used by the CBS output.
     let lhs_message = vec![1 as Word; N];
     let rhs_message = vec![3 as Word; N];
@@ -113,7 +120,9 @@ fn main() {
     let mut decoded = vec![0; N];
 
     // Server: receive the encrypted candidates; allocate the control and result.
-    let mut cbs = context.circuit_bootstrap_evaluator(&server_key).unwrap();
+    let mut cbs = context
+        .circuit_bootstrap_evaluator(&server_key, &input_codec)
+        .unwrap();
     let mut control = cbs.allocate_output();
     let mut selected = context.allocate_accumulator_ciphertext();
 

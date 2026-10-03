@@ -1,3 +1,4 @@
+use primus_encoding::RoundedCodec;
 // Fourier evaluation uses the public API and shared representative parameters.
 use std::hint::black_box;
 
@@ -27,7 +28,9 @@ fn benchmark_workload<T: TorusFftValue, Table: FftTable>(
     backend: &str,
     workload: Workload,
 ) {
-    let parameters = ntru::circuit(NativeModulus::<T>::new(), 8, SecretKeyDistr::UniformBinary);
+    let parameters = ntru::circuit(NativeModulus::<T>::new(), SecretKeyDistr::UniformBinary);
+    let input_codec =
+        RoundedCodec::new(T::as_from(8u32), parameters.external_lwe().cipher_modulus());
     let name = format!(
         "lookup/{backend}/u{}/n800_N1024/c8_d5_o8{}",
         T::BITS,
@@ -53,14 +56,17 @@ fn benchmark_workload<T: TorusFftValue, Table: FftTable>(
             });
             heap(&format!("{name}/client_and_server_keys"), keys);
             let (table, storage) = measure(|| {
-                HighPrecisionLookupTable::try_new(context.parameters(), CONFIG, |x, output| {
-                    workload.digit::<T>(x, output)
-                })
+                HighPrecisionLookupTable::try_new(
+                    context.parameters(),
+                    &input_codec,
+                    CONFIG,
+                    |x, output| workload.digit::<T>(x, output),
+                )
                 .unwrap()
             });
             heap(&format!("{name}/public_lut"), storage);
             check_repetition(&table, workload);
-            let encryptor = context.encryptor(&client).unwrap();
+            let encryptor = context.encryptor(&client, &input_codec).unwrap();
             let input: Vec<_> = (0..CONFIG.input_chunk_count)
                 .map(|i| {
                     encryptor
@@ -81,7 +87,7 @@ fn benchmark_workload<T: TorusFftValue, Table: FftTable>(
             let (_, online) = measure(|| evaluator.evaluate_to(input, &mut output));
             assert_eq!(online.count, 0);
             eprintln!("online_allocations,{name},{}", online.count);
-            let decryptor = context.decryptor(client).unwrap();
+            let decryptor = context.decryptor(client, &input_codec).unwrap();
             for (i, chunk) in output.iter().enumerate() {
                 assert_eq!(
                     decryptor.decrypt(chunk.as_view()).unwrap(),

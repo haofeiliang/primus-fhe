@@ -1,6 +1,6 @@
 //! Prepared factorized MVB programs and their reusable evaluator.
 
-use primus_encoding::ScaledCodec;
+use primus_encoding::{RoundedCodec, ScaledCodec};
 use primus_fft::{Complex64, FftTable, TorusFftValue};
 use primus_lattice::ntru::FourierNtru;
 use primus_modulus::NativeModulus;
@@ -53,9 +53,8 @@ impl<'a, T: TorusFftValue, Table: FftTable, LM: primus_reduce::RingContext<T>>
         let parameters = context.parameters();
         let n = parameters.accumulator_ntru().poly_length().get();
         assert!(
-            lookup_table.is_compatible(
+            lookup_table.is_compatible_with_ciphertext_domain(
                 parameters.accumulator_ntru().poly_length(),
-                parameters.plain_modulus_value(),
                 parameters.external_lwe().cipher_modulus_value(),
                 parameters.accumulator_ntru().cipher_modulus_value(),
             ),
@@ -322,6 +321,7 @@ where
     /// Panics for coefficient types other than u32/u64.
     pub fn compile_factorized_lookup_table_fn<OM, F>(
         &self,
+        input_codec: &RoundedCodec<T, LM>,
         output_codec: &ScaledCodec<T, OM>,
         input_domain_len: usize,
         output_count: usize,
@@ -331,6 +331,11 @@ where
         OM: primus_reduce::RingContext<T>,
         F: Fn(usize, usize) -> T,
     {
+        if input_codec.ciphertext_modulus().explicit_value()
+            != self.parameters().external_lwe().cipher_modulus_value()
+        {
+            return Err(LookupTableError::InputModulusMismatch);
+        }
         if output_codec.ciphertext_modulus().explicit_value()
             != self.parameters().accumulator_ntru().cipher_modulus_value()
         {
@@ -340,7 +345,7 @@ where
             input_domain_len,
             self.parameters().accumulator_ntru().poly_length(),
             output_count,
-            self.parameters().input_plaintext_codec(),
+            input_codec,
             output_codec,
             function,
         )?;

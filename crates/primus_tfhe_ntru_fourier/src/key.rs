@@ -191,12 +191,9 @@ where
         R: rand::Rng + rand::CryptoRng,
     {
         let parameters = self.context.parameters();
-        let client = primus_lwe::LweSecretKey::generate((parameters.external_lwe()).inner(), rng);
-        let (accumulator, _) = FourierNtruSecretKey::generate_pair(
-            parameters.accumulator_ntru().inner(),
-            &mut self.fft,
-            rng,
-        )?;
+        let client = primus_lwe::LweSecretKey::generate(parameters.external_lwe(), rng);
+        let (accumulator, _) =
+            FourierNtruSecretKey::generate_pair(parameters.accumulator_ntru(), &mut self.fft, rng)?;
         let client_key = ClientKey::new(client, accumulator);
         client_key.check_compatible(parameters)?;
         Ok(client_key)
@@ -396,12 +393,9 @@ where
     {
         let circuit_parameters = self.prepare_circuit_bootstrap(circuit_bootstrap)?;
         let parameters = self.context.parameters();
-        let client = primus_lwe::LweSecretKey::generate((parameters.external_lwe()).inner(), rng);
-        let (accumulator, accumulator_fourier) = FourierNtruSecretKey::generate_pair(
-            parameters.accumulator_ntru().inner(),
-            &mut self.fft,
-            rng,
-        )?;
+        let client = primus_lwe::LweSecretKey::generate(parameters.external_lwe(), rng);
+        let (accumulator, accumulator_fourier) =
+            FourierNtruSecretKey::generate_pair(parameters.accumulator_ntru(), &mut self.fft, rng)?;
         let client_key = ClientKey::new(client, accumulator);
         client_key.check_compatible(parameters)?;
         let server_key = self.generate_server_key_from_transformed(

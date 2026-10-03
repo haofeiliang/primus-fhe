@@ -5,6 +5,7 @@ use primus_fft::{FftTable, RustFftTable, TfheFftTable, TorusFftValue};
 use primus_lattice::LweDimension;
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::{BarrettModulus, NativeModulus};
+use primus_ntru::NlevParameters;
 use primus_ntru::{NtruParameters, SecretKeyDistr};
 use primus_poly::PolyLength;
 use primus_reduce::{ReduceAdd, ReduceSub};
@@ -45,9 +46,8 @@ fn parameters<T: TorusFftValue>(distr: SecretKeyDistr, dimension: usize) -> Tfhe
     );
 
     TfheParameters::try_new(
-        lwe,
-        acc,
-        blind_rotation_basis,
+        lwe.into_inner(),
+        NlevParameters::try_with_basis(&acc, blind_rotation_basis).unwrap(),
         primus_tfhe_ntru::DecompositionConfig {
             log_basis: DecompositionBaseLog::new(8),
             level_count: None,
@@ -70,6 +70,10 @@ fn check_context<T: TorusFftValue, TABLE>(context: TfheContext<T, TABLE>)
 where
     TABLE: FftTable,
 {
+    let input_codec = RoundedCodec::new(
+        T::as_from(15u32),
+        context.parameters().external_lwe().cipher_modulus(),
+    );
     let mut rng = StdRng::seed_from_u64(0x4d41_4e59_5042_5301);
     let (client_key, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
     assert_eq!(
@@ -95,9 +99,9 @@ where
     let public = client_key
         .try_generate_public_key(context.parameters(), &mut rng)
         .unwrap();
-    let public_encryptor = context.public_encryptor(&public).unwrap();
-    let encryptor = context.encryptor(&client_key).unwrap();
-    let decryptor = context.decryptor(&client_key).unwrap();
+    let public_encryptor = context.public_encryptor(&public, &input_codec).unwrap();
+    let encryptor = context.encryptor(&client_key, &input_codec).unwrap();
+    let decryptor = context.decryptor(&client_key, &input_codec).unwrap();
     let mut evaluator = context.evaluator(&server_key).unwrap();
     // Input centers use t_in=15; output values use the independent t_out=8 scale.
     let output_codec = RoundedCodec::new(
@@ -106,7 +110,8 @@ where
     );
     let compiler = context
         .parameters()
-        .lookup_table_compiler()
+        .lookup_table_compiler(&input_codec)
+        .unwrap()
         .try_with_output_codec(&output_codec)
         .unwrap();
     let single = compiler.compile_fn(|input| value(input, 0)).unwrap();
@@ -123,10 +128,7 @@ where
                 *mask = T::ONE << (T::BITS - 2);
             }
         }
-        let mut body = context
-            .parameters()
-            .input_plaintext_codec()
-            .encode_value(T::as_from(3u32), PlaintextEmbedding::Unsigned);
+        let mut body = input_codec.encode_value(T::as_from(3u32), PlaintextEmbedding::Unsigned);
         for (&mask, &secret) in input
             .a()
             .iter()
@@ -232,36 +234,74 @@ where
         }
     }
 
+    // Message encodings belong to programs: reuse one key and PBS workspace
+    // at two additional plaintext moduli, including the interleaved path.
+    for t in [4u32, 8] {
+        let codec = RoundedCodec::new(
+            T::as_from(t),
+            context.parameters().external_lwe().cipher_modulus(),
+        );
+        let compiler = context.parameters().lookup_table_compiler(&codec).unwrap();
+        let single = compiler.compile_fn(|m| T::as_from(m)).unwrap();
+        let many = compiler
+            .compile_interleaved_fn(2, |m, _| T::as_from(m))
+            .unwrap();
+        let input = context
+            .encryptor(&client_key, &codec)
+            .unwrap()
+            .encrypt_padded(T::ONE, &mut rng)
+            .unwrap();
+        let mut outputs = vec![context.allocate_lwe_ciphertext(); 2];
+        evaluator.apply_lookup_table_to(input.as_view(), &single, outputs[0].as_mut_view());
+        assert_eq!(
+            context
+                .decryptor(&client_key, &codec)
+                .unwrap()
+                .decrypt(outputs[0].as_view())
+                .unwrap(),
+            T::ONE
+        );
+        evaluator.apply_interleaved_lookup_table_to(input.as_view(), &many, &mut outputs);
+        for output in outputs {
+            assert_eq!(
+                context
+                    .decryptor(&client_key, &codec)
+                    .unwrap()
+                    .decrypt(output.as_view())
+                    .unwrap(),
+                T::ONE
+            );
+        }
+    }
+
     let input = encryptor
         .encrypt_padded(T::as_from(3u32), &mut rng)
         .unwrap();
     let good = compiler.compile_interleaved_fn(3, value).unwrap();
     let mut outputs = vec![input.clone(); 3];
     // Isolate each piece of LUT metadata, including equal-length wrong-domain tables.
-    let mut mismatched_tables = Vec::new();
-    for (n, t) in [(N / 2, 15), (N, 8)] {
-        mismatched_tables.push((
-            LookupTable::try_new(
-                2,
-                PolyLength::new(n),
-                T::as_from(t),
-                NativeModulus::new(),
-                NativeModulus::new(),
-                |_| Ok(T::ZERO),
-            )
-            .unwrap(),
-            InterleavedLookupTable::try_new(
-                2,
-                PolyLength::new(n),
-                3,
-                T::as_from(t),
-                NativeModulus::new(),
-                NativeModulus::new(),
-                |_, _| Ok(T::ZERO),
-            )
-            .unwrap(),
-        ));
-    }
+    let mut mismatched_tables = vec![(
+        LookupTable::try_new(
+            2,
+            PolyLength::new(N / 2),
+            T::as_from(15u32),
+            NativeModulus::new(),
+            NativeModulus::new(),
+            |_| Ok(T::ZERO),
+        )
+        .unwrap(),
+        InterleavedLookupTable::try_new(
+            2,
+            PolyLength::new(N / 2),
+            3,
+            T::as_from(15u32),
+            NativeModulus::new(),
+            NativeModulus::new(),
+            |_, _| Ok(T::ZERO),
+        )
+        .unwrap(),
+    )];
+
     mismatched_tables.push((
         LookupTable::try_new(
             2,
@@ -388,7 +428,7 @@ where
         3,
         2,
         PolyLength::new(N),
-        context.parameters().input_plaintext_codec(),
+        &input_codec,
         &output_codec,
         |x, y| T::as_from(x * x + y),
     )
@@ -481,6 +521,10 @@ fn pbs_u64_preserves_outputs_and_validates_domains() {
 
 // Imported secrets fix the first selector independently of keygen randomness.
 fn check_first_controls<T: TorusFftValue, Table: FftTable>(context: TfheContext<T, Table>) {
+    let input_codec = RoundedCodec::new(
+        T::as_from(15u32),
+        context.parameters().external_lwe().cipher_modulus(),
+    );
     let parameters = context.parameters();
     let dimension = parameters.external_lwe_dimension().get();
     let distr = parameters.external_lwe().secret_key_distr();
@@ -517,18 +561,17 @@ fn check_first_controls<T: TorusFftValue, Table: FftTable>(context: TfheContext<
             .try_generate_server_key(&client, None, &mut rng)
             .unwrap();
         let mut evaluator = context.evaluator(&server).unwrap();
-        let decryptor = context.decryptor(&client).unwrap();
+        let decryptor = context.decryptor(&client, &input_codec).unwrap();
         let lut = parameters
-            .lookup_table_compiler()
+            .lookup_table_compiler(&input_codec)
+            .unwrap()
             .compile_fn(|m| T::as_from((m + 1) % 8))
             .unwrap();
         let modulus = parameters.external_lwe().cipher_modulus();
         let mut input = LweCiphertext::zero(dimension);
         let mut output = input.clone();
         for active in [0b0001, 0b0010, 0b0011, 0b0110, 0b0111, 0b0000, 0b0001] {
-            let mut body = parameters
-                .input_plaintext_codec()
-                .encode_value(T::as_from(2u32), PlaintextEmbedding::Unsigned);
+            let mut body = input_codec.encode_value(T::as_from(2u32), PlaintextEmbedding::Unsigned);
             for (i, (mask, &secret)) in input
                 .a_mut()
                 .iter_mut()

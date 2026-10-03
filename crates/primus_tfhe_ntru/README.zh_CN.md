@@ -9,13 +9,13 @@ NTRU-TFHE 的参数与 LWE 客户端层；[NTT](../primus_tfhe_ntru_ntt/README.z
 
 ## 参数与密钥域
 
-`TfheParameters<T, M, LM=M>` 分离环模数 Q 与外部 LWE 模数 q，共用整数类型 T。通过 `TfheParameters::try_from_config(TfheConfig { .. })` 构造：`external_lwe` 指定外部维数、q、明文模数、binary/ternary 分布和加密噪声；`accumulator_modulus` 指定 Q；`blind_rotation` 分解在 Q 下，`key_switching` 分解和返回密钥噪声在 q 下。`level_count: None` 选择支持的最大层数，仍须检查[分解精度](../primus_decompose/README.zh_CN.md)。
+`TfheParameters<T, M, LM=M>` 分离环模数 Q 与外部 LWE 模数 q，共用整数类型 T。通过 `TfheParameters::try_from_config(TfheConfig { .. })` 构造：`external_lwe` 指定外部维数、q、binary/ternary 分布和加密噪声；`accumulator_modulus` 指定 Q；`blind_rotation` 分解在 Q 下，`key_switching` 分解和返回密钥噪声在 q 下。`level_count: None` 选择支持的最大层数，仍须检查[分解精度](../primus_decompose/README.zh_CN.md)。
 
 维数选择使用 `LweDimension`；分解选择使用 `DecompositionBaseLog` 和 `Option<DecompositionLevelCount>`。这些单位只构造一次，参数访问器返回的值直接传给工作区。在原始存储或内核边界用 `.get()` 提取整数；组合长度和 basis/模数兼容性仍由构造器检查。
 
-直接组合入口为 `TfheParameters::try_new(external_lwe, accumulator_ntru, blind_rotation_basis, key_switching, key_switching_noise_standard_deviation)`。两个域共用明文模数 t，2N 必须能由 T 表示；外部维数 n 不要求小于等于 N。构造器返回带具体原因的参数错误，不验证安全性或完整噪声预算。
+直接组合入口为 `TfheParameters::try_new(external_lwe, blind_rotation, key_switching, key_switching_noise_standard_deviation)`。`external_lwe` 为不含 codec 的 `LweParametersInner`，`blind_rotation` 为 `NlevParameters`。2N 必须能由 T 表示；外部维数 n 不要求小于等于 N。构造器返回带具体原因的参数错误，不验证安全性或完整噪声预算。
 
-`accumulator_ntru` 保存普通 NTRU 编码；盲旋转 NLev 参数只共享其环与采样状态，并绑定 Q 下的 `blind_rotation_basis`。Trace 和 scheme-switch 配置直接构造不含 codec 的 NLev 参数，各自选择噪声。
+`accumulator_ntru()` 借用盲旋转 gadget 在 Q 下的环与采样状态。密钥参数不保存消息 codec。Trace 和 scheme-switch 配置构造不含 codec 的 NLev 参数，各自选择噪声。
 
 `ClientKey` 保存独立 LWE 秘密 s 与 NTRU 环秘密 f。使用 `context.try_generate_keys(cbs_config, rng)` 生成配套密钥，或用 `ClientKey::new(s, f)` 导入。只有 f 需要可逆性检查，Fourier 还检查逆稳定性；外部秘密不要求补零、可逆或奇数重量。`external_lwe_secret_key()` 返回 q 下的 LWE 秘密。
 
@@ -25,29 +25,29 @@ Classic PBS、ManyLUT、CBS、Boolean 和 MVB 支持 binary/ternary 外部秘密
 
 ## 客户端与 LUT
 
-使用 context 的 `encryptor(&client)`、`public_encryptor(&public)` 和 `decryptor(&client)`；`client.try_generate_public_key(parameters, rng)` 生成独立外部 s 下的 LWE 公钥。它不是 NTRU 环公钥，总噪声要求见 [LWE 公钥契约](../primus_lwe/README.zh_CN.md#公钥加密)。普通消息使用 T，`decrypt` 返回 `Result<T, ClientError>`。
+选择外部 q 下的 `RoundedCodec`，再使用 context 的 `encryptor(&client, &input_codec)`、`public_encryptor(&public, &input_codec)` 和 `decryptor(&client, &input_codec)`；`client.try_generate_public_key(parameters, rng)` 生成独立外部 s 下的 LWE 公钥。它不是 NTRU 环公钥，总噪声要求见 [LWE 公钥契约](../primus_lwe/README.zh_CN.md#公钥加密)。普通消息使用 T，`decrypt` 返回 `Result<T, ClientError>`。
 
 客户端读写接收 LWE 借用视图：向 `encrypt_to` 传入 `output.as_mut_view()`，向 `decrypt` 或 `decrypt_phase` 传入 `ciphertext.as_view()`。分配型加密方法仍返回 `LweCiphertext<T>`；Boolean 客户端遵循同样的约定。
 
-前半区 LUT 使用 `encrypt_padded`，奇数全域 LUT 使用普通 `encrypt`。`parameters.lookup_table_compiler()` 创建可复用编译器，支持 `compile_fn` / `compile_slice` 及交错、奇数全域方法。默认按参数的明文模数在 Q 下编码，返回 q 后用普通 `decrypt` 解码。`compiler.try_with_output_codec(&codec)?` 可选择其他输出 codec，传入的 `RoundedCodec` 必须使用 Q；解码 `decrypt_phase` 时使用相同输出明文模数、密文模数为 q 的 codec。返回路径缩放既有编码，不重新编码；须预算舍入和 key-switch 误差。
+前半区 LUT 使用 `encrypt_padded`，奇数全域 LUT 使用普通 `encrypt`。`parameters.lookup_table_compiler(&input_codec)?` 创建可复用编译器，支持 `compile_fn` / `compile_slice` 及交错、奇数全域方法。编译器检查输入 q 和 Q 下的默认输出 codec 是否有效。默认按输入 codec 的明文模数在 Q 下编码，返回 q 后用普通 `decrypt` 解码。`compiler.try_with_output_codec(&codec)?` 可选择其他输出 codec，传入的 `RoundedCodec` 必须使用 Q；解码 `decrypt_phase` 时使用相同输出明文模数、密文模数为 q 的 codec。返回路径缩放既有编码，不重新编码；须预算舍入和 key-switch 误差。
 
 [公共指南](../primus_tfhe/README.zh_CN.md) 说明 ManyLUT、奇数全域和 MVB。MVB 使用 Q 下的 unsigned `ScaledCodec` 编译，q 下的 Scaled codec 解码，并预算两端固定尺度的差异。有界双输入 `BivariateLookupTable` 目前仅支持 q=Q。
 
 ## Boolean 客户端与门
 
-t=4 时使用 `boolean_encryptor`、`boolean_public_encryptor`、`boolean_decryptor` 和 `boolean_evaluator`。它们处理外部 LWE 的 bool 编码，使用普通 PBS 密钥；调用与串联契约见 [Boolean 门](../primus_tfhe/README.zh_CN.md#boolean-门)。
+显式传入 t=4 的 `RoundedCodec`，使用 `boolean_encryptor`、`boolean_public_encryptor`、`boolean_decryptor` 和 `boolean_evaluator`。它们处理外部 LWE 的 bool 编码，使用普通 PBS 密钥；调用与串联契约见 [Boolean 门](../primus_tfhe/README.zh_CN.md#boolean-门)。
 
 ## CBS 与示例
 
-`context.try_generate_keys(Some(cbs_config), rng)` 添加 trace/scheme-switch 材料；绑定 `context.circuit_bootstrap_evaluator(&server)`。CBS 跳过普通 PBS 返回路径，生成 f 下的 NGSW。输入 0/1 时它可控制 CMux，候选环密文须使用同一 f、Q 和编码；完整消费过程见后端示例。
+`context.try_generate_keys(Some(cbs_config), rng)` 添加 trace/scheme-switch 材料；绑定 `context.circuit_bootstrap_evaluator(&server, &input_codec)`。CBS 跳过普通 PBS 返回路径，生成 f 下的 NGSW。输入 0/1 时它可控制 CMux，候选环密文须使用同一 f、Q 和编码；完整消费过程见后端示例。
 
-`CircuitBootstrapParameters` 独立选择 output、trace、scheme-switch basis。输出保留请求的层数，scheme-switch key 绑定完整 output basis；相同长度不能证明 basis 或实际秘密相同。BR 分解必须能解析 LUT 和最小输出 gadget 尺度。
+`CircuitBootstrapParameters` 独立选择 output、trace、scheme-switch basis。输出保留请求的层数，scheme-switch key 绑定完整 output basis；相同长度不能证明 basis 或实际秘密相同。BR 分解必须能解析 LUT 和最小输出 gadget 尺度。CBS 的输入编码和 ManyLUT 容量在 evaluator 绑定时检查；同一密钥材料可服务多个 t。`accumulator_client(&client, scaled_codec)` 独立绑定 Q 下的普通环消息，复用 gadget 的采样状态；其明文模数可与输入 LWE 不同。
 
 NTT reverse trace 使用模逆元，Fourier 使用原生整数减半并引入 FFT 误差。Scheme switching 的输入误差乘 f、分解误差乘 f²；发布 `NGSW_f[f]` 材料需要独立论证 key-dependent-message/circular-security 假设，见 [NTRU 契约](../primus_ntru/README.zh_CN.md#同一秘密下的-scheme-switching)。
 
 ## One-hot CBS
 
-`OneHotCircuitBootstrapEvaluator::try_new(&context, &server)` 复用 classic binary/ternary CBS 材料。要求 t=2M、M=2^tau、tau>=1；输入用 `encrypt_padded` 加密 0..M。输出基有 L 层时，令 W=next_power_of_two(L)，要求 2MW<=N。
+`OneHotCircuitBootstrapEvaluator::try_new(&context, &server, &input_codec)` 复用 classic binary/ternary CBS 材料。要求 t=2M、M=2^tau、tau>=1；输入用 `encrypt_padded` 加密 0..M。输出基有 L 层时，令 W=next_power_of_two(L)，要求 2MW<=N。
 
 完整接口通过 `allocate_nlev_output` / `allocate_ngsw_output` 分配，再用 `one_hot_nlev_to`、`one_hot_ngsw_to` 或 `one_hot_to` 写入 δ_r(m)，r=0..M-1。NLEV 是 Q 下的系数表示，NGSW 是后端变换表示。布局为 `[selector][level][row element]`，层顺序与 `output_basis().scalar_iter()` 一致；每行 N 个整数，Fourier NGSW 每行 N/2 个复数。NLEV 先变换后可用于公开多项式提升，NGSW 用于加密候选的 CMux。
 
