@@ -33,6 +33,8 @@ Messages must be canonical residues in `[0,t)`. Unsigned embedding lifts them to
 
 `BfvRnsCodec::try_new` returns `BfvRnsCodecError<T>` for invalid modulus or recovery conditions; `new` delegates and panics on failure. The supplied `RNSBase` already validates the nonempty, pairwise-coprime ciphertext basis. These checks prepare the codec once; they do not establish an encryption noise or security budget.
 
+The codec and its decoder converter share the supplied base's immutable CRT tables and numeric modulus cache. Codec clones also share those base tables; BFV scaling factors and conversion matrices remain independently owned. Gadget parameters can share the same `RNSBase` without acquiring BFV encoding data.
+
 For a complete phase-noise magnitude bound `E`, call `validate_noise_bound(E, embedding)` once when preparing parameters. It checks `(t*E + (Q % t)*A)/Q + k/gamma < 1/2`, with `A=t-1` for unsigned lifting and `A=floor(t/2)` for centered lifting, using exact multi-limb integer arithmetic. Failure returns `InsufficientNoiseRecovery`; this sufficient bound can reject cases that would still decode. The caller must include all encryption/evaluation contributions in `E`.
 
 RNS encoding produces coefficient-domain `CrtPolynomial` data; callers perform NTT conversions separately. `decode_coeffs_to` overwrites its coefficient-domain input and needs exactly `decode_scratch_len(output.len())` scratch elements. This is zero for a single-modulus basis and one RNS polynomial for other bases. The codec is a BFV building block, not a complete BFV scheme.

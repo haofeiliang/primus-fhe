@@ -64,6 +64,8 @@ The ordinary constructor above prepares all parts. For gadget-only encryption or
 
 `CrtGlweParameters::try_new` and `try_from_parts` report errors through `CrtGlweParametersError<T>`, preserving their causes. `CrtGlevParameters::try_with_glwe_params` remains the convenient way to derive gadget parameters from existing ordinary parameters and shares their samplers. Gadget construction reports `CrtGlevParametersError`; its `Layout` variant reports length overflow. Distinct noise roles require independently prepared sampling states.
 
+Derived gadget parameters also share the ordinary codec's immutable `RNSBase` tables and numeric modulus cache; the codec's internal converter shares that base too. BFV's `floor(Q/t)` factors and the gadget's per-level reconstruction residues serve different roles and remain separate. Parameter clones share samplers and base tables, but still copy codec-specific or gadget-specific weights. Ordinary encryption uses `delta_factor_mod_q()` directly, without an additional raw delta-residue cache.
+
 Ordinary parameter construction passes the noise sampler's maximum magnitude to `BfvRnsCodec::validate_noise_bound` with unsigned lifting, covering both plaintext embeddings for fresh private-key encryption. An insufficient margin returns `CrtGlweParametersError::Encoding`. Public-key encryption and homomorphic evaluation require bounds on their complete phase noise; parameter construction does not cover those additional contributions.
 
 ## Evaluation resources

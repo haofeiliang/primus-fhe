@@ -17,6 +17,9 @@ use primus_rns::{BaseConverter, RNSBase, ResidueFactors};
 /// where `delta = floor(Q/t)`. Decoding uses fast base conversion to `{t, gamma}`
 /// and an auxiliary-modulus correction to recover canonical residues modulo `t`.
 /// CRT buffers use coefficient-domain, modulus-major layout in [`Self::base_q`] order.
+/// The codec and its converter share the base's immutable tables and numeric
+/// modulus cache. Cloning shares those bases but copies codec-specific factors
+/// and the conversion matrix.
 #[derive(Clone)]
 pub struct BfvRnsCodec<T, M>
 where
@@ -26,7 +29,6 @@ where
     // Plaintext / ciphertext bases
     t: T,
     base_q: RNSBase<T, M>,
-    moduli_values: Vec<T>,
 
     // For encoding: Δ = floor(Q / t) as BigUint, pre-decomposed into Shoup factors mod each q_i
     delta: BigUint<Vec<T>>,
@@ -88,9 +90,7 @@ where
         let t = t_modulus.value();
         let gamma = gamma_modulus.value();
 
-        let moduli_values: Vec<T> = base_q.moduli().iter().map(|m| m.value()).collect();
-
-        Self::validate_moduli(t, &moduli_values, gamma)?;
+        Self::validate_moduli(t, base_q.moduli_values(), gamma)?;
 
         let cipher_modulus = base_q.moduli_product();
 
@@ -133,7 +133,6 @@ where
         Ok(Self {
             t,
             base_q,
-            moduli_values,
             delta,
             delta_factor_mod_q,
             gamma,
@@ -225,7 +224,7 @@ where
     /// Returns the ordered numeric values of the ciphertext moduli.
     #[must_use]
     pub fn moduli_values(&self) -> &[T] {
-        &self.moduli_values
+        self.base_q.moduli_values()
     }
 
     /// Returns the Shoup factors for `floor(Q/t) mod q_i` in [`Self::base_q`] order.

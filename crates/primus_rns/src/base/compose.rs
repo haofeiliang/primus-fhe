@@ -44,9 +44,9 @@ where
 
         izip!(
             residues,
-            &self.inv_punctured_product_mod_modulus,
+            self.inv_punctured_product_mod_modulus(),
             self.iter_punctured_product(),
-            self.moduli_values()
+            self.moduli_values().iter().copied()
         )
         .for_each(|(&ai, &inv_q_div_qi_mod_qi, q_div_qi, qi_val)| {
             let product = inv_q_div_qi_mod_qi.factor_mul_modulo(ai, qi_val);

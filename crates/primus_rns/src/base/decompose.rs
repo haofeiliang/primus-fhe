@@ -19,7 +19,7 @@ where
     #[inline]
     pub fn decompose(&self, BigUint(value): BigUint<&[T]>) -> Residues<Vec<T>> {
         Residues(
-            self.moduli
+            self.moduli()
                 .iter()
                 .map(|&modulus| modulus.reduce(value))
                 .collect(),
@@ -37,7 +37,7 @@ where
         F: FactorBase<T>,
     {
         ResidueFactors(
-            self.moduli
+            self.moduli()
                 .iter()
                 .map(|&modulus| F::new(modulus.reduce(value), modulus.value()))
                 .collect(),
@@ -58,7 +58,7 @@ where
         let residues = residues.as_mut();
         assert_eq!(self.moduli_count(), residues.len());
 
-        for (&modulus, residue) in self.moduli.iter().zip(residues) {
+        for (&modulus, residue) in self.moduli().iter().zip(residues) {
             *residue = modulus.reduce(value);
         }
     }

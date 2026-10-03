@@ -29,7 +29,6 @@ where
     inner: Arc<CrtGlweParametersInner<T>>,
     size: RnsGadgetSize,
     base_q: RNSBase<T, M>,
-    cipher_moduli_value: Vec<T>,
     basis: BigUintApproxSignedBasis<T>,
     /// Reconstruction weights in level-major order, then ordered RNS modulus.
     scalar_residues: Vec<T>,
@@ -121,12 +120,10 @@ where
         {
             base_q.decompose_to(BigUint(scalar), &mut Residues(residues));
         }
-        let cipher_moduli_value = base_q.moduli().iter().map(|q| q.value()).collect();
         Ok(Self {
             inner,
             size,
             base_q,
-            cipher_moduli_value,
             basis,
             scalar_residues,
         })
@@ -184,7 +181,7 @@ where
 
     /// Returns a reference to the cipher moduli value of this [`CrtGlevParameters<T, M>`].
     pub fn cipher_moduli_value(&self) -> &[T] {
-        &self.cipher_moduli_value
+        self.base_q.moduli_values()
     }
 
     /// Returns a reference to the cipher moduli minus one of this [`CrtGlevParameters<T, M>`].

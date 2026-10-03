@@ -22,7 +22,8 @@ enum BaseConversionKernel<T> {
 
 /// Precomputed converter between two RNS bases.
 ///
-/// The converter owns cloned input and output bases. A multi-modulus source
+/// The converter owns input and output base handles, sharing their immutable
+/// CRT precomputations with other handles. A multi-modulus source
 /// stores the matrix `(Q / q_i) mod p_j`, where `q_i` are input-base moduli,
 /// `p_j` are output-base moduli, and `Q` is the input-base product. A
 /// one-modulus source uses a direct-reduction kernel and stores no matrix.
@@ -59,7 +60,8 @@ pub struct BaseConverter<T: FheUint, M: FieldContext<T>> {
 }
 
 impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
-    /// Creates a converter from references; clones both bases.
+    /// Creates a converter from references, sharing both bases' precomputations.
+    /// The conversion matrix is prepared separately for this ordered pair.
     ///
     /// See [`from_owned_bases`](Self::from_owned_bases) for the owned variant.
     pub fn new(input_base: &RNSBase<T, M>, output_base: &RNSBase<T, M>) -> Self {
@@ -68,8 +70,9 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
 
     /// Creates a converter from owned bases.
     ///
-    /// Takes ownership of `input_base` and `output_base` instead of cloning,
-    /// avoiding two `RNSBase` allocations when the caller already owns them.
+    /// Moves `input_base` and `output_base`, avoiding the two Arc reference-count
+    /// increments of [`Self::new`]. Both constructors share existing base tables;
+    /// only the conversion-specific matrix is allocated for a multi-modulus source.
     ///
     /// # Panics
     ///

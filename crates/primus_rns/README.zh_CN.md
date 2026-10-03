@@ -62,6 +62,8 @@ assert_eq!(base.decompose(value.view()).as_ref(), [2, 4, 6]);
 
 `RNSBase::new` 从非空、模数两两互素的 slice 克隆构造基； `from_owned_moduli` 可以避免这次克隆。RNS 基会预计算 `Q`、每个穿孔积 `Q / q_i` 以及 `(Q / q_i)^-1 mod q_i`。
 
+`RNSBase::clone` 通过内部 `Arc` 共享不可变预计算，不复制缓冲区。`moduli_values()` 按基的顺序借用共享的模数值切片。Codec、gadget 参数和转换器可以各自持有克隆的基句柄；独立调用 `new` 仍会创建独立的表。`extend` / `extend_with` 创建新基，原基及其克隆保持不变。在线操作只借用这些表，不更新引用计数。
+
 主要操作族包括：
 
 - `compose*` 和 `decompose*`：执行 scalar、批量及多项式 CRT 转换；
@@ -73,7 +75,7 @@ assert_eq!(base.decompose(value.view()).as_ref(), [2, 4, 6]);
 
 ## 基转换
 
-`BaseConverter` 拥有输入基和输出基。`new` 会克隆现有基； `from_owned_bases` 则转移所有权。
+`BaseConverter` 拥有输入基和输出基的句柄。`new` 共享已有基表，`from_owned_bases` 则移动句柄，避免增加引用计数。转换矩阵仍按各转换器独立准备和拥有；克隆转换器仍会复制其矩阵。
 
 两类转换具有不同的数学契约：
 

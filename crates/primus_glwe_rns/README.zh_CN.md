@@ -64,6 +64,8 @@ m 个模数下，普通密文包含 `(k+1)*m*N` 个元素，顺序为 `[componen
 
 `CrtGlweParameters::try_new` 和 `try_from_parts` 通过 `CrtGlweParametersError<T>` 报告错误并保留底层原因。`CrtGlevParameters::try_with_glwe_params` 仍可便捷地从已有普通参数派生 gadget，并共享其采样器。Gadget 构造返回 `CrtGlevParametersError`，其中 `Layout` 变体报告长度溢出。不同噪声角色需要独立准备采样状态。
 
+派生 gadget 还与普通 codec 共享不可变的 `RNSBase` 表及模数值缓存，codec 内部转换器也共享该基。BFV 的 `floor(Q/t)` 因子与 gadget 的各层重组 residues 用途不同，仍分别保存。参数克隆共享采样器和基表，但仍复制 codec 或 gadget 专用的权重。普通加密直接使用 `delta_factor_mod_q()`，不再缓存另一份原始 delta residues。
+
 普通参数构造将噪声采样器的最大幅度传给 `BfvRnsCodec::validate_noise_bound`，按 unsigned 提升验证新鲜私钥密文的恢复条件，因此也覆盖 centered 提升。恢复余量不足时返回 `CrtGlweParametersError::Encoding`。公钥加密及同态求值须使用完整相位噪声界；参数构造不覆盖这些额外噪声贡献。
 
 ## 求值资源

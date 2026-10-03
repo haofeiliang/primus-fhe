@@ -33,6 +33,8 @@ TFHE 普通 LUT 的输出 `RoundedCodec` 使用 accumulator 模数，明文模�
 
 `BfvRnsCodec::try_new` 在模数或恢复条件无效时返回 `BfvRnsCodecError<T>`；`new` 委托它构造，失败时 panic。传入的 `RNSBase` 已验证密文基非空且两两互素。这些检查在构造时完成，不建立加密的噪声或安全预算。
 
+Codec 和内部解码转换器共享传入基的不可变 CRT 表及模数值缓存。Codec 的克隆也共享这些基表，BFV 缩放因子和转换矩阵仍独立拥有。Gadget 参数可以共享同一个 `RNSBase`，无需持有 BFV 编码数据。
+
 给定完整相位噪声幅度上界 `E`，在准备参数时调用一次 `validate_noise_bound(E, embedding)`。它用精确多 limb 整数运算检查 `(t*E + (Q % t)*A)/Q + k/gamma < 1/2`，其中 unsigned 的 `A=t-1`，centered 的 `A=floor(t/2)`。失败返回 `InsufficientNoiseRecovery`；这是充分条件，可能拒绝实际仍能解码的情形。调用方须在 `E` 中计入加密与求值的全部噪声贡献。
 
 RNS 编码输出系数域 `CrtPolynomial`，调用方单独执行 NTT 转换。 `decode_coeffs_to` 会覆盖系数域输入，并要求工作区恰好包含 `decode_scratch_len(output.len())` 个元素。单模数基不需要工作区，其他基需要 一个 RNS 多项式大小的工作区。该编码器是 BFV 的组成部分， 并非完整 BFV 方案。

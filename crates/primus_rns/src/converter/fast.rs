@@ -51,6 +51,9 @@ impl<T: FheUint, M: FieldContext<T>> FastConversionLimb<'_, T, M> {
                 debug_assert_eq!(base_change_matrix_row.len(), input_moduli_count);
                 let adjusted_residues = adjusted_residues.chunks_exact(input_moduli_count);
                 assert_eq!(output.len(), adjusted_residues.len());
+                // Copy the small arithmetic context before the coefficient loop;
+                // it no longer needs to borrow through the shared base table.
+                let modulus = *modulus;
                 output
                     .iter_mut()
                     .zip(adjusted_residues)
@@ -145,7 +148,7 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
         izip!(
             residues_in,
             self.input_base.inv_punctured_product_mod_modulus(),
-            self.input_base.moduli_values(),
+            self.input_base.moduli_values().iter().copied(),
             scratch.iter_mut()
         )
         .for_each(|(&ai, &inv_q_div_qi_mod_qi, qi, result)| {

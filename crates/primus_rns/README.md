@@ -62,6 +62,8 @@ Base construction/extension and hybrid partitioning return `RnsError`. Non-copri
 
 `RNSBase::new` clones a non-empty slice of pairwise-coprime moduli; `from_owned_moduli` avoids that clone. The base precomputes `Q`, every punctured product `Q / q_i`, and `(Q / q_i)^-1 mod q_i`.
 
+`RNSBase::clone` shares immutable precomputations through an internal `Arc`, without copying buffers. `moduli_values()` borrows the shared numeric modulus slice in basis order. Codecs, gadget parameters and converters can retain cloned base handles; independently calling `new` still creates independent tables. `extend` / `extend_with` create a new base and leave the original and its clones unchanged. Online operations borrow these tables without changing reference counts.
+
 The main operation families are:
 
 - `compose*` and `decompose*` for scalar, batched, and polynomial CRT conversion;
@@ -73,7 +75,7 @@ Centered small-value decomposition interprets values below `ceil(t / 2)` as nonn
 
 ## Base conversion
 
-`BaseConverter` owns its input and output bases. Use `new` to clone existing bases or `from_owned_bases` to transfer ownership.
+`BaseConverter` owns its input and output base handles. `new` shares existing base tables; `from_owned_bases` moves the handles without incrementing their reference counts. Conversion-specific matrices are prepared for each converter and remain independently owned; cloning a converter still copies its matrix.
 
 The two conversion families have different mathematical contracts:
 

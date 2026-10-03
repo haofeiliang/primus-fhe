@@ -25,6 +25,26 @@ fn construction_rejects_invalid_bases() {
 }
 
 #[test]
+fn clones_share_ordered_precomputation() {
+    for values in [&[97][..], &[97, 101, 103]] {
+        let original = base(values);
+        let clone = original.clone();
+        assert_eq!(clone.moduli_values(), values);
+        // Sharing is part of the base's resource contract, including the
+        // contiguous numeric cache consumed by samplers and codecs.
+        assert!(std::ptr::eq(original.moduli(), clone.moduli()));
+        assert!(std::ptr::eq(
+            original.moduli_values(),
+            clone.moduli_values()
+        ));
+        assert!(std::ptr::eq(
+            original.moduli_product().0,
+            clone.moduli_product().0,
+        ));
+    }
+}
+
+#[test]
 fn scalar_crt_matches_known_representatives() {
     let singleton = base(&[3]);
     assert_eq!(singleton.moduli_product().digits(), &[3]);
@@ -156,6 +176,7 @@ fn extending_a_base_matches_fresh_construction() {
     // Extension must rebuild CRT precomputations when the product gains limbs.
     // Singleton extension and whole-base extension take different paths.
     let assert_equivalent = |extended: &Base, direct: &Base, residues: &[Value]| {
+        assert_eq!(extended.moduli_values(), direct.moduli_values());
         assert_eq!(extended.moduli_product(), direct.moduli_product());
         assert_eq!(
             extended.compose(&Residues(residues)),

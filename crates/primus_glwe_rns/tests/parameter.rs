@@ -354,6 +354,14 @@ fn prepared_parts_require_the_same_ordered_base_and_product() {
     for params in [&gadget, &derived, &gadget.clone()] {
         assert!(std::ptr::eq(ordinary.inner(), params.inner()));
         assert!(std::ptr::eq(
+            ordinary.base_q().moduli_product().0,
+            params.base_q().moduli_product().0,
+        ));
+        assert!(std::ptr::eq(
+            ordinary.cipher_moduli_value(),
+            params.cipher_moduli_value(),
+        ));
+        assert!(std::ptr::eq(
             ordinary.noise_distribution(),
             params.noise_distribution()
         ));

@@ -33,6 +33,8 @@ where
         Residues(if small_value_modulus != T::TWO {
             let half = (small_value_modulus + T::ONE) / T::TWO;
             self.moduli_values()
+                .iter()
+                .copied()
                 .map(|modulus| {
                     if value < half {
                         value
@@ -63,6 +65,8 @@ where
         if small_value_modulus != T::TWO {
             let half = (small_value_modulus + T::ONE) / T::TWO;
             self.moduli_values()
+                .iter()
+                .copied()
                 .zip(residues)
                 .for_each(|(modulus, residue)| {
                     *residue = if value < half {
@@ -95,12 +99,17 @@ where
     ) {
         let value_count = small_values.len();
         debug_assert_eq!(multi_residues.len(), self.moduli_count() * value_count);
-        debug_assert!(self.moduli_values().all(|m| m > small_value_modulus));
+        debug_assert!(
+            self.moduli_values()
+                .iter()
+                .copied()
+                .all(|m| m > small_value_modulus)
+        );
         if small_value_modulus != T::TWO {
             let half = (small_value_modulus + T::ONE) / T::TWO;
             for (residues, modulus) in multi_residues
                 .chunks_exact_mut(value_count)
-                .zip(self.moduli_values())
+                .zip(self.moduli_values().iter().copied())
             {
                 let temp = modulus - small_value_modulus;
 
@@ -166,13 +175,18 @@ where
         let value_count = small_values.len();
         debug_assert_eq!(acc.len(), self.moduli_count() * value_count);
         debug_assert_eq!(factors.len(), self.moduli_count());
-        debug_assert!(self.moduli_values().all(|m| m > small_value_modulus));
+        debug_assert!(
+            self.moduli_values()
+                .iter()
+                .copied()
+                .all(|m| m > small_value_modulus)
+        );
 
         if small_value_modulus != T::TWO {
             let half = (small_value_modulus + T::ONE) / T::TWO;
             izip!(
                 acc.chunks_exact_mut(value_count),
-                self.moduli_values(),
+                self.moduli_values().iter().copied(),
                 factors.iter(),
             )
             .for_each(|(acc_chunk, modulus, &factor)| {
@@ -201,7 +215,7 @@ where
         } else {
             izip!(
                 acc.chunks_exact_mut(value_count),
-                self.moduli_values(),
+                self.moduli_values().iter().copied(),
                 factors.iter(),
             )
             .for_each(|(acc_chunk, modulus, &factor)| {
@@ -268,7 +282,7 @@ where
 
         izip!(
             acc.chunks_exact_mut(value_count),
-            self.moduli_values(),
+            self.moduli_values().iter().copied(),
             factors.iter(),
         )
         .for_each(|(acc_chunk, modulus, &factor)| {

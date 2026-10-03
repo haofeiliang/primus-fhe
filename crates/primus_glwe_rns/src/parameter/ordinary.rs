@@ -29,7 +29,6 @@ where
 {
     pub(super) inner: Arc<CrtGlweParametersInner<T>>,
     codec: BfvRnsCodec<T, M>,
-    delta_mod_q: Vec<T>,
 }
 
 impl<T, M> CrtGlweParameters<T, M>
@@ -125,16 +124,7 @@ where
         // fits T. For private-key plaintext encryption it bounds the phase noise.
         let maximum_noise_magnitude = T::as_from(inner.noise_distribution.maximum_magnitude());
         codec.validate_noise_bound(maximum_noise_magnitude, PlaintextEmbedding::Unsigned)?;
-        let delta_mod_q = codec
-            .delta_factor_mod_q()
-            .iter()
-            .map(|factor| factor.value())
-            .collect();
-        Ok(Self {
-            inner,
-            codec,
-            delta_mod_q,
-        })
+        Ok(Self { inner, codec })
     }
 
     /// Returns the shared layout and sampling state, without BFV encoding.
@@ -230,11 +220,6 @@ where
     /// Returns a reference to the delta of this [`CrtGlweParameters<T, M>`].
     pub fn delta(&self) -> BigUint<&[T]> {
         self.codec.delta()
-    }
-
-    /// Returns a reference to the delta residues of this [`CrtGlweParameters<T, M>`].
-    pub fn delta_mod_q(&self) -> &[T] {
-        &self.delta_mod_q
     }
 
     /// Returns a reference to the delta residues of this [`CrtGlweParameters<T, M>`].

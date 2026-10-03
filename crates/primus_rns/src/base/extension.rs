@@ -4,7 +4,8 @@ use primus_reduce::FieldContext;
 
 use crate::RnsError;
 
-use super::RNSBase;
+use super::{RNSBase, RNSBaseInner};
+use std::sync::Arc;
 
 impl<T, M> RNSBase<T, M>
 where
@@ -28,14 +29,14 @@ where
         let p_val = p.value();
 
         // Check coprimality between p and every q_i.
-        for qi in self.moduli_values() {
+        for qi in self.moduli_values().iter().copied() {
             if !p_val.is_coprime(qi) {
                 return Err(RnsError::NonCoprimeModuli);
             }
         }
 
         let qp_moduli_count = self.moduli_count() + 1;
-        let mut qp_moduli = self.moduli.clone();
+        let mut qp_moduli = self.moduli().to_vec();
         qp_moduli.push(p);
 
         let BigUint(q) = self.moduli_product();
@@ -85,10 +86,10 @@ where
         };
 
         let mut inv_qp_punctured_product_mod_modulus: Vec<ShoupFactor<T>> = self
-            .inv_punctured_product_mod_modulus
+            .inv_punctured_product_mod_modulus()
             .iter()
             .zip(self.moduli())
-            .zip(self.moduli_values())
+            .zip(self.moduli_values().iter().copied())
             .map(|((inv_q_div_qi_mod_qi, &qi), qi_val)| {
                 let p_mod_qi = if p_val < qi_val {
                     p_val
@@ -107,10 +108,13 @@ where
         inv_qp_punctured_product_mod_modulus.push(ShoupFactor::new(inv_q_mod_p, p_val));
 
         Ok(Self {
-            moduli: qp_moduli,
-            moduli_product: qp,
-            punctured_product: qp_punctured_product,
-            inv_punctured_product_mod_modulus: inv_qp_punctured_product_mod_modulus,
+            inner: Arc::new(RNSBaseInner {
+                moduli_values: qp_moduli.iter().map(|q| q.value()).collect(),
+                moduli: qp_moduli,
+                moduli_product: qp,
+                punctured_product: qp_punctured_product,
+                inv_punctured_product_mod_modulus: inv_qp_punctured_product_mod_modulus,
+            }),
         })
     }
 
@@ -124,10 +128,10 @@ where
     /// coprime with at least one modulus in `self`.
     #[inline]
     pub fn extend_with(&self, p_base: &Self) -> Result<Self, RnsError> {
-        let p_moduli_values: Vec<T> = p_base.moduli_values().collect();
+        let p_moduli_values = p_base.moduli_values();
 
-        for qi in self.moduli_values() {
-            for &pi in &p_moduli_values {
+        for qi in self.moduli_values().iter().copied() {
+            for &pi in p_moduli_values {
                 if !pi.is_coprime(qi) {
                     return Err(RnsError::NonCoprimeModuli);
                 }
@@ -135,7 +139,7 @@ where
         }
 
         let qp_moduli_count = self.moduli_count() + p_base.moduli_count();
-        let mut qp_moduli = self.moduli.clone();
+        let mut qp_moduli = self.moduli().to_vec();
         qp_moduli.extend_from_slice(p_base.moduli());
 
         let BigUint(q) = self.moduli_product();
@@ -143,7 +147,7 @@ where
 
         let mut qp_added_limb_count = 0;
         let mut qp = BigUint(q.to_vec());
-        for &pi in &p_moduli_values {
+        for &pi in p_moduli_values {
             let carry = qp.mul_value_assign(pi);
             if !carry.is_zero() {
                 qp.0.push(carry);
@@ -164,7 +168,7 @@ where
         {
             qp_div_qi[..q_big_uint_len].copy_from_slice(q_div_qi.digits());
             let mut qp_div_qi = BigUint(qp_div_qi);
-            for &pi in &p_moduli_values {
+            for &pi in p_moduli_values {
                 let _carry = qp_div_qi.mul_value_assign(pi);
                 debug_assert!(_carry.is_zero());
             }
@@ -184,10 +188,10 @@ where
         }
 
         let mut inv_qp_punctured_product_mod_modulus: Vec<ShoupFactor<T>> = self
-            .inv_punctured_product_mod_modulus
+            .inv_punctured_product_mod_modulus()
             .iter()
             .zip(self.moduli())
-            .zip(self.moduli_values())
+            .zip(self.moduli_values().iter().copied())
             .map(|((inv_q_div_qi_mod_qi, &qi), qi_val)| {
                 let p_mod_qi = qi.reduce(p);
                 let inv_p_mod_qi = qi.reduce_inv(p_mod_qi);
@@ -201,7 +205,7 @@ where
             .chunks_exact(qp_big_uint_len)
             .skip(self.moduli_count())
             .zip(p_base.moduli())
-            .zip(&p_moduli_values)
+            .zip(p_moduli_values)
         {
             let qp_div_pi_mod_pi = pi.reduce(qp_div_pi);
             let inv_qp_div_pi_mod_pi = pi.reduce_inv(qp_div_pi_mod_pi);
@@ -210,10 +214,13 @@ where
         }
 
         Ok(Self {
-            moduli: qp_moduli,
-            moduli_product: qp,
-            punctured_product: qp_punctured_product,
-            inv_punctured_product_mod_modulus: inv_qp_punctured_product_mod_modulus,
+            inner: Arc::new(RNSBaseInner {
+                moduli_values: qp_moduli.iter().map(|q| q.value()).collect(),
+                moduli: qp_moduli,
+                moduli_product: qp,
+                punctured_product: qp_punctured_product,
+                inv_punctured_product_mod_modulus: inv_qp_punctured_product_mod_modulus,
+            }),
         })
     }
 }

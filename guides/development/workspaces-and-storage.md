@@ -61,6 +61,34 @@ cargo bench -p primus_ntru --bench encryption -- 'n1024/encrypt_to' --sample-siz
 
 This short local comparison found no regression; Fourier changes were not statistically significant, and NTT was slightly faster. The reason for sharing is reduced parameter duplication, not a general claim of faster encryption. SIMD was checked functionally, not benchmarked in this comparison. The ordinary encoding, RNG draw order, inverse filtering and gadget arithmetic are unchanged.
 
+## RNS base sharing
+
+`RNSBase` owns an `Arc` to its immutable ordered moduli, numeric modulus cache, Q, punctured products and inverse factors. Cloning a base shares these buffers; independent construction or extension creates a new table. `BfvRnsCodec`, its internal converter and derived `CrtGlevParameters` therefore retain handles to the same Q precomputation. Sampling remains in its existing shared state. BFV scaling, gadget reconstruction weights and conversion matrices keep their separate ownership. The unused ordinary `delta_mod_q` vector was removed; encryption already uses the codec's Shoup factors.
+
+Measured on 2026-10-03, on AMD Ryzen 9 9955HX3D, x86_64 Linux, rustc 1.98.1 (48a229cea, LLVM 22.1.8), default features and repository compiler flags. As in the NTRU comparison above, the existing `CountingAllocator` measured requested allocation traffic while retaining returned objects. The fixture used u64 Barrett moduli `[1125899906826241, 1125899906629633]`, k=1, N=1024, t=2, gamma=2305843009213554689, sparse ternary secrets, sigma=3.2 and a full gadget basis with logB=20. Measure ordinary construction, `CrtGlevParameters::with_glwe_params`, and gadget clone separately.
+
+| Stage | Allocation count before → after | Allocated bytes before → after | Released bytes before → after |
+| --- | --- | --- | --- |
+| Base construction alone | 6 → 7 | 176 → 312 | 48 → 32 |
+| Base clone | 4 → 0 | 128 → 0 | 0 → 0 |
+| Ordinary construction | 35 → 31 | 2080 → 2192 | 576 → 544 |
+| Gadget derivation | 12 → 7 | 488 → 344 | 0 → 0 |
+| Gadget clone | 12 → 7 | 488 → 344 | 0 → 0 |
+
+For the ordinary parameter, derived gadget and gadget clone together, inline storage plus retained requested heap fell from **3888 to 3208 bytes** (about 17.5%). This excludes allocator overhead and is not RSS. Creating an unshared base now costs an extra Arc allocation and retains the numeric cache; the benefit comes from sharing the repeated bases. No global interning is performed. BFV encode and decode with prepared buffers made zero measured allocations. The temporary allocation probe was removed after measurement.
+
+Online screening used the existing `decompose`, `bfv_rns` and `key_switching` benchmarks, with setup outside measurement. Old and new executables ran sequentially on CPU 2; no compilation ran concurrently. Use these commands on each tree, with `--save-baseline rns-owned` before and `--baseline rns-owned` after:
+
+```sh
+taskset -c 2 cargo bench -p primus_rns --bench decompose -- --warm-up-time 0.5 --measurement-time 1.5 --sample-size 20 --noplot
+taskset -c 2 cargo bench -p primus_encoding --features rns --bench bfv_rns -- --warm-up-time 0.5 --measurement-time 1.5 --sample-size 20 --noplot
+taskset -c 2 cargo bench -p primus_glwe_rns --bench key_switching -- 'N=1024' --warm-up-time 0.5 --measurement-time 1.5 --sample-size 20 --noplot
+```
+
+The key-switch group fixes its sample count to 10. An initial roughly 1.7% fast-conversion regression was removed by copying the small destination arithmetic context before its coefficient loop. Alternating old/new runs then measured 3-to-2 conversion at 36.22–36.42 µs before and 36.02–36.18 µs after (point estimates, N=4096, 20 samples, 1.5 s). This is a check against regression, not a general speedup claim. SIMD is checked functionally; these timings use default features.
+
+Final N=4096 BFV point estimates were 16.54 → 16.53 µs (single-limb decode), 2.33 → 2.31 µs (two-limb unsigned accumulation), 6.20 → 6.24 µs (centered accumulation), and 43.65 → 43.75 µs (two-limb decode). N=1024 full key switches measured 24.52 → 24.38 µs (CRT), 36.15 → 36.11 µs (grouped hybrid), and 36.73 → 36.57 µs (singleton hybrid). These local results are within about 1%; they do not establish a universal performance bound.
+
 ## Batched NTRU-to-LWE return
 
 `NtruLweKeySwitchingBatchWorkspace` keeps one canonical Q→q polynomial and fixed

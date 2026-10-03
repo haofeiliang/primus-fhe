@@ -157,7 +157,7 @@ where
         msg_mod_q.mul_factor_assign(
             self.t_gamma_factor_mod_q.as_ref(),
             poly_length,
-            &self.moduli_values,
+            self.base_q.moduli_values(),
         );
 
         self.converter_q_to_t_gamma

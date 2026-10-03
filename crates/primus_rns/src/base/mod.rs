@@ -8,6 +8,7 @@ use itertools::Itertools;
 use primus_factor::ShoupFactor;
 use primus_integer::{BigUint, FheUint, multiply_many_values};
 use primus_reduce::FieldContext;
+use std::sync::Arc;
 
 use crate::RnsError;
 
@@ -20,14 +21,27 @@ use crate::RnsError;
 ///
 /// Batched APIs use modulus-major residue storage: for `k` values, chunk `i`
 /// of length `k` stores residues modulo `moduli()[i]`.
+///
+/// Clones share immutable moduli and CRT precomputations through an internal Arc;
+/// they neither allocate tables nor recompute them. Extending a base creates new
+/// precomputations and leaves every clone of the original base unchanged.
 #[derive(Clone)]
 pub struct RNSBase<T, M>
 where
     T: FheUint,
     M: FieldContext<T>,
 {
+    inner: Arc<RNSBaseInner<T, M>>,
+}
+
+/// One immutable ordered basis and all data derived solely from its moduli.
+/// Codecs, gadgets and converters share this allocation; their operation-specific
+/// weights and conversion matrices remain separately owned.
+struct RNSBaseInner<T: FheUint, M> {
     /// Moduli in basis order. The same order is used by every residue vector.
     moduli: Vec<M>,
+    /// Contiguous numeric values for sampling and coefficient arithmetic.
+    moduli_values: Vec<T>,
     /// Product `Q` of all moduli, stored as little-endian limbs.
     moduli_product: BigUint<Vec<T>>,
     /// Flattened punctured products `Q / q_i`, one `big_uint_value_len` chunk per modulus.
@@ -88,21 +102,24 @@ where
             return Err(RnsError::EmptyBase);
         }
 
-        if moduli.len() == 1 {
-            let modulus = moduli[0];
-            let value = modulus.value();
-            return Ok(Self {
-                moduli,
-                moduli_product: BigUint(vec![value]),
-                punctured_product: vec![T::ONE],
-                inv_punctured_product_mod_modulus: vec![ShoupFactor::new(T::ONE, value)],
-            });
-        }
-
         let moduli_values = moduli
             .iter()
             .map(|modulus| modulus.value())
             .collect::<Vec<_>>();
+
+        if moduli.len() == 1 {
+            let modulus = moduli[0];
+            let value = modulus.value();
+            return Ok(Self {
+                inner: Arc::new(RNSBaseInner {
+                    moduli,
+                    moduli_values,
+                    moduli_product: BigUint(vec![value]),
+                    punctured_product: vec![T::ONE],
+                    inv_punctured_product_mod_modulus: vec![ShoupFactor::new(T::ONE, value)],
+                }),
+            });
+        }
 
         if moduli_values
             .iter()
@@ -135,41 +152,46 @@ where
             .collect::<Vec<ShoupFactor<T>>>();
 
         Ok(Self {
-            moduli,
-            moduli_product,
-            punctured_product,
-            inv_punctured_product_mod_modulus,
+            inner: Arc::new(RNSBaseInner {
+                moduli,
+                moduli_values,
+                moduli_product,
+                punctured_product,
+                inv_punctured_product_mod_modulus,
+            }),
         })
     }
 
     /// Returns the moduli in basis order.
     #[inline]
     pub fn moduli(&self) -> &[M] {
-        &self.moduli
+        &self.inner.moduli
     }
 
-    /// Returns the moduli values in basis order.
+    /// Returns the cached numeric moduli in the same order as [`Self::moduli`].
+    /// Clones of this base borrow the same slice.
+    #[must_use]
     #[inline]
-    pub(crate) fn moduli_values(&self) -> impl Iterator<Item = T> {
-        self.moduli.iter().map(|m| m.value())
+    pub fn moduli_values(&self) -> &[T] {
+        &self.inner.moduli_values
     }
 
     /// Returns the number of moduli in this basis.
     #[inline]
     pub fn moduli_count(&self) -> usize {
-        self.moduli.len()
+        self.inner.moduli.len()
     }
 
     /// Returns the product of all moduli as a little-endian big integer.
     #[inline]
     pub fn moduli_product(&self) -> BigUint<&[T]> {
-        self.moduli_product.view()
+        self.inner.moduli_product.view()
     }
 
     /// Returns the limb count used by composed big integers for this basis.
     #[inline]
     pub fn big_uint_value_len(&self) -> usize {
-        self.moduli_product.len()
+        self.inner.moduli_product.len()
     }
 
     /// Iterates over punctured products `Q / q_i` as fixed-width big integers.
@@ -180,7 +202,8 @@ where
     pub(crate) fn iter_punctured_product(
         &self,
     ) -> impl ExactSizeIterator<Item = BigUint<&[T]>> + DoubleEndedIterator {
-        self.punctured_product
+        self.inner
+            .punctured_product
             .chunks_exact(self.big_uint_value_len())
             .map(BigUint)
     }
@@ -191,6 +214,6 @@ where
     /// `moduli()[i]` and must not be reused with another modulus.
     #[inline]
     pub(crate) fn inv_punctured_product_mod_modulus(&self) -> &[ShoupFactor<T>] {
-        &self.inv_punctured_product_mod_modulus
+        &self.inner.inv_punctured_product_mod_modulus
     }
 }

@@ -54,7 +54,7 @@ where
         for ((chunk, &q), &factor) in output
             .as_mut()
             .chunks_exact_mut(input.as_ref().len())
-            .zip(&self.moduli_values)
+            .zip(self.base_q.moduli_values())
             .zip(self.delta_factor_mod_q.iter())
         {
             match embedding {
@@ -109,7 +109,7 @@ where
         for (((chunk, &q), modulus), &factor) in acc
             .as_mut()
             .chunks_exact_mut(input.as_ref().len())
-            .zip(&self.moduli_values)
+            .zip(self.base_q.moduli_values())
             .zip(self.base_q.moduli())
             .zip(self.delta_factor_mod_q.iter())
         {
