@@ -46,7 +46,7 @@ Both examples default to `type Word = u32`. For u64, change that alias; in the N
 
 ```sh
 cargo run --release -p primus_tfhe_ntru_lut --example ntt_lookup
-cargo run --release -p primus_tfhe_ntru_lut --example fourier_lookup
+cargo run --release -p primus_tfhe_ntru_lut --example fourier_lookup --features rustfft
 ```
 
 ## Encoding and table partition
@@ -100,13 +100,17 @@ Inputs must satisfy the [one-hot guard](../primus_tfhe_ntru/README.md#one-hot-cb
 
 The [parameter guide](../../guides/development/tfhe-parameters.md) records example choices and validation scope, the [testing guide](../../guides/development/testing.md) maps independent contracts, and the [implementation notes](IMPLEMENTATION.md) describe the algorithm and internal buffers.
 
+## Features
+
+Default features are empty; generic Fourier APIs do not select an FFT engine. `rustfft` / `tfhe-fft` forward to the corresponding `primus_fft` implementation and may be enabled together. Tests, examples, and benchmarks that instantiate an engine declare `required-features` on their Cargo targets; comparisons using both engines require both features. `simd` does not enable an FFT engine.
+
 ## Benchmarks
 
 ```sh
 # Create and drop one public high-precision LUT.
-cargo bench -p primus_tfhe_ntru_lut --bench pipeline -- '/create_lut_and_drop$'
+cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features rustfft,tfhe-fft -- '/create_lut_and_drop$'
 # Homomorphically evaluate all output chunks using a prepared LUT and workspace.
-cargo bench -p primus_tfhe_ntru_lut --bench pipeline -- '/evaluate$'
+cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features rustfft,tfhe-fft -- '/evaluate$'
 ```
 
 Creation includes allocation, coefficient filling and destruction. Evaluation excludes key generation, public LUT creation, input encryption and workspace allocation. See the [benchmark fixture](IMPLEMENTATION.md#benchmark-fixture) for workloads and resource measurements.

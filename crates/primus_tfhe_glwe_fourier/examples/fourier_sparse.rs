@@ -1,7 +1,8 @@
 //! Use sparse GLWE PBS to return message, carry and parity from one encrypted input.
 //!
-//! Run: `cargo run --release -p primus_tfhe_glwe_fourier --example fourier_sparse`
-//! For u64, change Word to u64; for TFHE-FFT, use TfheFftTable as Table.
+//! Run: `cargo run --release -p primus_tfhe_glwe_fourier --example fourier_sparse --features rustfft`
+//! For u64, change Word to u64. To use TfheFftTable, also switch this target's
+//! required-features and the command above to tfhe-fft.
 //! Arithmetic profiles: guides/development/tfhe-parameters.md (not security presets).
 
 use primus_decompose::DecompositionBaseLog;

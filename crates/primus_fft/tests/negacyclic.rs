@@ -1,4 +1,10 @@
-use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable};
+#![cfg(any(feature = "rustfft", feature = "tfhe-fft"))]
+
+#[cfg(feature = "rustfft")]
+use primus_fft::RustFftTable;
+#[cfg(feature = "tfhe-fft")]
+use primus_fft::TfheFftTable;
+use primus_fft::{Complex64, FftEngine, FftTable};
 use primus_poly::PolyLength;
 
 // Independent O(N^2) convolution applies X^N = -1 with exact signed arithmetic.
@@ -39,11 +45,13 @@ fn convolution<Table: FftTable>() {
     assert_eq!(output, negacyclic_reference(&torus, &integer));
 }
 
+#[cfg(feature = "rustfft")]
 #[test]
 fn rustfft_negacyclic_convolution() {
     convolution::<RustFftTable>();
 }
 
+#[cfg(feature = "tfhe-fft")]
 #[test]
 fn tfhe_fft_negacyclic_convolution() {
     convolution::<TfheFftTable>();

@@ -1,7 +1,8 @@
 //! Evaluate (x*x + 3*x + 7) mod 65536 on eight two-bit chunks: 16-bit input and output.
 //!
-//! Run: `cargo run --release -p primus_tfhe_ntru_lut --example fourier_lookup`
-//! For u64, change Word to u64; for TFHE-FFT, use TfheFftTable as Table.
+//! Run: `cargo run --release -p primus_tfhe_ntru_lut --example fourier_lookup --features rustfft`
+//! For u64, change Word to u64. To use TfheFftTable, also switch this target's
+//! required-features and the command above to tfhe-fft.
 //! Arithmetic profiles: guides/development/tfhe-parameters.md (not security presets).
 
 use primus_encoding::RoundedCodec;

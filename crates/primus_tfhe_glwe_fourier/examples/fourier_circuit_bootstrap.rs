@@ -1,7 +1,8 @@
 //! Use an encrypted LWE bit to select between two encrypted ring messages via CBS and CMux.
 //!
-//! Run: `cargo run --release -p primus_tfhe_glwe_fourier --example fourier_circuit_bootstrap`
-//! For u64, change Word to u64; for TFHE-FFT, use TfheFftTable as Table.
+//! Run: `cargo run --release -p primus_tfhe_glwe_fourier --example fourier_circuit_bootstrap --features rustfft`
+//! For u64, change Word to u64. To use TfheFftTable, also switch this target's
+//! required-features and the command above to tfhe-fft.
 //! Arithmetic profiles: guides/development/tfhe-parameters.md (not security presets).
 
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};

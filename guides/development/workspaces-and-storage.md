@@ -49,8 +49,8 @@ For these three live parameter objects, `sum(size_of_val)` fell from 1856 to 408
 Online encryption was measured separately using the existing [encryption benchmark](../../crates/primus_ntru/benches/encryption.rs), with one `encrypt_to` per iteration. Setup, keys, tables and output allocation were excluded. N=1024, u64, t=16, sparse ternary secret, noise sigma=3.2; NTT used q=1125899906826241 and Fourier used the native modulus. Commands on the baseline and changed tree, respectively:
 
 ```sh
-cargo bench -p primus_ntru --bench encryption -- 'n1024/encrypt_to' --sample-size 20 --warm-up-time 0.2 --measurement-time 1 --save-baseline before-3b
-cargo bench -p primus_ntru --bench encryption -- 'n1024/encrypt_to' --sample-size 20 --warm-up-time 0.2 --measurement-time 1 --baseline before-3b
+cargo bench -p primus_ntru --bench encryption --features rustfft,tfhe-fft -- 'n1024/encrypt_to' --sample-size 20 --warm-up-time 0.2 --measurement-time 1 --save-baseline before-3b
+cargo bench -p primus_ntru --bench encryption --features rustfft,tfhe-fft -- 'n1024/encrypt_to' --sample-size 20 --warm-up-time 0.2 --measurement-time 1 --baseline before-3b
 ```
 
 | Backend | Before, µs (95% CI) | After, µs (95% CI) |
@@ -336,7 +336,7 @@ after; compile both versions before running their benchmark executables when
 alternating them:
 
 ```sh
-taskset -c 2 cargo bench -p primus_tfhe_ntru_lut --bench pipeline -- 'u(32|64)/n800_N1024/c8_d5_o8/evaluate' --warm-up-time 0.5 --measurement-time 1.5 --sample-size 20 --noplot
+taskset -c 2 cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features rustfft,tfhe-fft -- 'u(32|64)/n800_N1024/c8_d5_o8/evaluate' --warm-up-time 0.5 --measurement-time 1.5 --sample-size 20 --noplot
 taskset -c 2 cargo bench -p primus_tfhe_ntru_ntt --bench pbs -- 'u64/binary/boolean/.*/complete' --warm-up-time 0.5 --measurement-time 3 --sample-size 30 --noplot
 taskset -c 2 cargo bench -p primus_tfhe_ntru_ntt --bench mvb -- 'u64/mvb/classic/.*/D8_k3/(interleaved|factorized)' --warm-up-time 0.5 --measurement-time 3 --sample-size 30 --noplot
 ```
@@ -675,7 +675,7 @@ Memory reduction is established; latency is a tradeoff. RustFFT was about 2.3% s
 For future comparisons, use the pipeline target on an available fixed CPU and separate baseline names for each revision. The command below measures the current geometry; reproducing the historical numbers requires the old fixture from `e55ec2e` and its comparison revision:
 
 ```sh
-taskset -c 0 cargo +nightly bench -p primus_tfhe_ntru_lut --bench pipeline --features simd -- '/evaluate$' --sample-size 20 --warm-up-time 0.5 --measurement-time 2 --noplot --save-baseline workspace-current
+taskset -c 0 cargo +nightly bench -p primus_tfhe_ntru_lut --bench pipeline --features simd,rustfft,tfhe-fft -- '/evaluate$' --sample-size 20 --warm-up-time 0.5 --measurement-time 2 --noplot --save-baseline workspace-current
 ```
 
 Construction heap and online allocation are measured by that harness; key-generation latency and Vec-to-aligned-key conversion latency were not claimed or optimized. The lattice comparisons can be repeated with `ntru_ntt` and `ntru_fourier`, filtering `n1024.*external_product_coeff`, and preparing a second key with `AVec::from_iter(CACHELINE_ALIGN, key.as_ref().iter().copied()).into_boxed_slice()` before timing. Borrow it through the same NGSW slice view as the ordinary key.

@@ -1,7 +1,8 @@
 //! Compute x % 4 with one LUT and reuse the PBS evaluator for a second request.
 //!
-//! Run: `cargo run --release -p primus_tfhe_ntru_fourier --example ntru_fourier_basic`
-//! For u64, change Word to u64; for TFHE-FFT, use TfheFftTable as Table.
+//! Run: `cargo run --release -p primus_tfhe_ntru_fourier --example ntru_fourier_basic --features rustfft`
+//! For u64, change Word to u64. To use TfheFftTable, also switch this target's
+//! required-features and the command above to tfhe-fft.
 //! Arithmetic profiles: guides/development/tfhe-parameters.md (not security presets).
 
 use primus_decompose::DecompositionBaseLog;

@@ -30,17 +30,63 @@ criterion = { workspace = true }
 [[bench]]
 name = "encryption"
 harness = false
+required-features = ["rustfft"]
 
 [[bench]]
 name = "primitives"
 harness = false
+required-features = ["rustfft", "tfhe-fft"]
 
 [[bench]]
 name = "key_conversion"
 harness = false
+required-features = ["rustfft"]
+
+# Targets instantiate these FFT engines explicitly; generic library APIs need neither.
+[[test]]
+name = "automorphism"
+required-features = ["rustfft", "tfhe-fft"]
+
+[[test]]
+name = "boundaries"
+required-features = ["rustfft"]
+
+[[test]]
+name = "cmux"
+required-features = ["rustfft", "tfhe-fft"]
+
+[[test]]
+name = "constant_gadget"
+required-features = ["rustfft", "tfhe-fft"]
+
+[[test]]
+name = "fourier_glwe_secret_key"
+required-features = ["rustfft"]
+
+[[test]]
+name = "gadget_generation"
+required-features = ["rustfft"]
+
+[[test]]
+name = "glwe_key_switch"
+required-features = ["rustfft"]
+
+[[test]]
+name = "packing_key_switch"
+required-features = ["rustfft", "tfhe-fft"]
+
+[[test]]
+name = "scheme_switch"
+required-features = ["rustfft", "tfhe-fft"]
+
+[[test]]
+name = "trace_packing"
+required-features = ["rustfft", "tfhe-fft"]
 
 [features]
 default = []
+rustfft = ["primus_fft/rustfft"]
+tfhe-fft = ["primus_fft/tfhe-fft"]
 simd = [
     "primus_encoding/simd",
     "primus_factor/simd",

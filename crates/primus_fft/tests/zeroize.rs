@@ -1,3 +1,5 @@
+#![cfg(any(feature = "rustfft", feature = "tfhe-fft"))]
+
 //! Observe owned workspace allocations while live and immediately before release.
 use primus_poly::PolyLength;
 use std::{
@@ -7,7 +9,11 @@ use std::{
     sync::atomic::{AtomicBool, AtomicPtr, AtomicUsize, Ordering},
 };
 
-use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable};
+#[cfg(feature = "rustfft")]
+use primus_fft::RustFftTable;
+#[cfg(feature = "tfhe-fft")]
+use primus_fft::TfheFftTable;
+use primus_fft::{Complex64, FftEngine, FftTable};
 use zeroize::Zeroize;
 
 struct ObservingAllocator;
@@ -136,7 +142,9 @@ where
 fn scratch_is_erased_and_reusable() {
     // Retain sub-alignment buffers and a plan with backend work storage.
     for log_n in [5, 10] {
+        #[cfg(feature = "rustfft")]
         check_backend::<RustFftTable>(log_n);
+        #[cfg(feature = "tfhe-fft")]
         check_backend::<TfheFftTable>(log_n);
     }
 }

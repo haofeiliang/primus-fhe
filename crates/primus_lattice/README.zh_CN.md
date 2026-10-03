@@ -140,10 +140,11 @@ assert_eq!(sample.b(), 76);
 
 默认不启用任何 feature。
 
-NTT 和 Fourier 支持及其变换依赖目前仍无条件启用；空的默认 feature 不表示仅构建系数运算。
+NTT/Fourier API 及其公共变换依赖仍无条件启用；空的默认 feature 不表示仅构建系数运算。具体 FFT 引擎已可选。
 
+- `rustfft` / `tfhe-fft` 选择 `primus_fft` 的对应引擎。双引擎对照 target 需要两者；Fourier 泛型接口不要求具体引擎。
 - `rns` 启用 CRT/DCRT 密文、对应乘法工作区，以及 `BigUintGlwe` 的 CRT 转换。
-- `simd` 启用算术依赖中的 nightly SIMD 支持，不会自动启用 `rns`；RNS SIMD 运算需要同时启用两者。
+- `simd` 启用算术依赖中的 nightly SIMD 支持，不会自动启用 FFT 引擎或 `rns`；RNS SIMD 运算需要同时启用两者。
 - `BigUintGlwe`、`RnsGlweSize` 和 `RnsGadgetSize` 不依赖 `rns` feature。
 
 ## 测试与基准
@@ -151,11 +152,11 @@ NTT 和 Fourier 支持及其变换依赖目前仍无条件启用；空的默认 
 在 workspace 根目录运行：
 
 ```sh
-cargo test -p primus_lattice
-cargo test -p primus_lattice --features rns
-cargo clippy -p primus_lattice --all-targets --features rns -- -D warnings
-cargo +nightly test -p primus_lattice --features rns,simd
-cargo doc -p primus_lattice --no-deps --features rns
+cargo test -p primus_lattice --features rustfft,tfhe-fft
+cargo test -p primus_lattice --features rns,rustfft,tfhe-fft
+cargo clippy -p primus_lattice --all-targets --features rns,rustfft,tfhe-fft -- -D warnings
+cargo +nightly test -p primus_lattice --features rns,simd,rustfft,tfhe-fft
+cargo doc -p primus_lattice --no-deps --features rns,rustfft,tfhe-fft
 ```
 
 [测试说明](tests/README.md) 列出了独立契约与测试文件的对应关系。[基准说明](benches/README.md) 描述了可独立运行的 GLWE/NTRU × Fourier/NTT、样本抽取和 RNS 目标。基准用于隔离热工作区下的 lattice 运算，完整 PBS 和连续读取密钥的成本应在更高层测量。基础模算术与 factor 运算的基准由其所属 crate 维护。

@@ -19,6 +19,15 @@
 
 对于 `N = 2^log_n`，每个 table 将 `N` 个系数转换成 `N / 2` 个复数值。table 拥有后端 plan 和 twist factor；engine 拥有每次变换使用的临时内存。
 
+## Features
+
+默认不启用具体 FFT 引擎。`FftTable`、`FftEngine`、`Complex64` 和 `TorusFftValue` 始终可用。
+
+- `rustfft` 导出 `RustFftTable` / `RustFftWorkspace`，仅引入 RustFFT 实现。
+- `tfhe-fft` 导出 `TfheFftTable` / `TfheFftWorkspace`，仅引入 TFHE-FFT 实现及其动态栈依赖。
+
+两者可以同时启用。依赖声明显式选择，例如 `primus_fft = { path = "../primus_fft", features = ["rustfft"] }`；未选择引擎时仍可实现自己的 `FftTable`。下方示例使用 `rustfft`。
+
 ## 示例
 
 ```rust
@@ -79,8 +88,8 @@ Table 不可变并实现 `Send + Sync`，因此可以在线程间共享。每个
 ## 测试与 benchmark
 
 ```text
-cargo test -p primus_fft
-cargo bench -p primus_fft --bench fft
+cargo test -p primus_fft --features rustfft,tfhe-fft
+cargo bench -p primus_fft --bench fft --features rustfft,tfhe-fft
 ```
 
 ## 许可证

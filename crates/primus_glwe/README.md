@@ -138,6 +138,10 @@ The batch input is a flat slice of complete LWEs. These keys write consecutive m
 
 `NttGlweSchemeSwitchKey<T>` and `FourierGlweSchemeSwitchKey<T>` convert a coefficient-domain GLev into a GGSW in the key's transform domain using `apply_to`. Both secret representations passed to `generate` must represent the same secret. Construct `primus_lattice::workspace::{NttGlweExternalProductWorkspace, FourierGlweExternalProductWorkspace}` with `key.key_size()`. These buffers can be shared with other external products: `rebind` changes decomposition levels without allocation when the GLWE layout is unchanged; restore `key.key_size()` before scheme switching. The output inherits the input GLev's gadget scaling; `key.key_basis()` only controls external-product decomposition and can differ from the output basis. Each mask row uses an encryption of the negated secret polynomial; the body row is transformed directly from the input. Fourier products accumulate directly into output without an inverse/forward FFT roundtrip.
 
+## Features
+
+Default features are empty; generic Fourier APIs do not select an FFT engine. `rustfft` / `tfhe-fft` forward to the corresponding `primus_fft` implementation and may be enabled together. Tests, examples, and benchmarks that instantiate an engine declare `required-features` on their Cargo targets; comparisons using both engines require both features. `simd` does not enable an FFT engine.
+
 ## Further reading
 
 Public contracts are documented in the [API sources](src). The [test and benchmark guide](benches/README.md) records coverage, workloads and reproduction commands; workspace validation entry points are in the [testing guide](../../guides/development/testing.md).

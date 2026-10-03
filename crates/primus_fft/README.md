@@ -19,6 +19,15 @@ English | [简体中文](README.zh_CN.md)
 
 For `N = 2^log_n`, each table transforms `N` coefficients into `N / 2` complex values. The table owns the backend plan and twist factors; the engine owns the temporary memory used by each transform.
 
+## Features
+
+No FFT engine is enabled by default. `FftTable`, `FftEngine`, `Complex64`, and `TorusFftValue` are always available.
+
+- `rustfft` exports `RustFftTable` / `RustFftWorkspace` and selects only RustFFT.
+- `tfhe-fft` exports `TfheFftTable` / `TfheFftWorkspace` and selects only TFHE-FFT and its dynamic stack dependency.
+
+Both may be enabled together. Select explicitly in your dependency, for example `primus_fft = { path = "../primus_fft", features = ["rustfft"] }`. Without either engine, you can still implement your own `FftTable`. The example below uses `rustfft`.
+
 ## Example
 
 ```rust
@@ -79,8 +88,8 @@ The transform uses `f64` and is approximate. Whether a Fourier computation can b
 ## Testing and benchmarks
 
 ```text
-cargo test -p primus_fft
-cargo bench -p primus_fft --bench fft
+cargo test -p primus_fft --features rustfft,tfhe-fft
+cargo bench -p primus_fft --bench fft --features rustfft,tfhe-fft
 ```
 
 ## License

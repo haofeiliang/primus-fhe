@@ -1,12 +1,12 @@
 set windows-shell := ["powershell.exe", "-NoLogo", "-Command"]
 export RUSTDOCFLAGS := "-D warnings"
 
-default: fmt-check lint test
+default: fmt-check (lint "*" "rustfft,tfhe-fft") (test "*" "rustfft,tfhe-fft")
 
 # CI selects stable; local commands use the active toolchain.
 ci: default test-doc
   cargo check -p primus_data --lib --no-default-features
-  cargo check -p primus_lattice --lib --no-default-features
+  cargo check -p primus_lattice -p primus_fft --lib --no-default-features
   cargo check -p primus_encoding --lib --no-default-features
   cargo check -p primus_modulus -p primus_distr --lib --features primus_modulus/derive,primus_distr/high_precision
 
@@ -22,15 +22,15 @@ fmt:
 fmt-check:
   cargo fmt --all -- --check
 
-check package="*":
-  cargo check -p '{{package}}' --all-targets
+check package="*" features="":
+  cargo check -p '{{package}}' --features '{{features}}' --all-targets
 
-lint package="*":
-  cargo clippy -p '{{package}}' --all-targets -- -D warnings
+lint package="*" features="":
+  cargo clippy -p '{{package}}' --features '{{features}}' --all-targets -- -D warnings
 
 # All-targets is for compilation; keep Criterion out of nextest.
-test package="*":
-  cargo nextest run -p '{{package}}' --lib --tests
+test package="*" features="":
+  cargo nextest run -p '{{package}}' --features '{{features}}' --lib --tests
 
 # Nextest does not execute doctests.
 test-doc package="*":
@@ -40,7 +40,7 @@ simd package="*":
   cargo +nightly clippy -p '{{package}}' --all-targets --all-features -- -D warnings
   cargo +nightly nextest run -p '{{package}}' --lib --tests --all-features
 
-tfhe: (lint "primus_tfhe*") (test "primus_tfhe*")
+tfhe: (lint "primus_tfhe*" "rustfft,tfhe-fft") (test "primus_tfhe*" "rustfft,tfhe-fft")
 
 tfhe-simd: (simd "primus_tfhe*")
 

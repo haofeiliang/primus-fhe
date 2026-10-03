@@ -1,4 +1,10 @@
-use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable};
+#![cfg(any(feature = "rustfft", feature = "tfhe-fft"))]
+
+#[cfg(feature = "rustfft")]
+use primus_fft::RustFftTable;
+#[cfg(feature = "tfhe-fft")]
+use primus_fft::TfheFftTable;
+use primus_fft::{Complex64, FftEngine, FftTable};
 use primus_poly::PolyLength;
 
 fn check_automorphism<Table: FftTable>() {
@@ -50,7 +56,9 @@ fn check_automorphism<Table: FftTable>() {
 }
 
 #[test]
-fn both_backend_maps_match_coefficient_automorphisms() {
+fn enabled_backend_maps_match_coefficient_automorphisms() {
+    #[cfg(feature = "rustfft")]
     check_automorphism::<RustFftTable>();
+    #[cfg(feature = "tfhe-fft")]
     check_automorphism::<TfheFftTable>();
 }

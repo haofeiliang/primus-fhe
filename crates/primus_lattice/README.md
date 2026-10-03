@@ -142,11 +142,13 @@ This illustrates layout and arithmetic, not randomized encryption or secure para
 
 Default features are empty.
 
-NTT and Fourier support, including their transform dependencies, is currently
-unconditional; empty default features do not select a coefficient-only build.
+NTT and Fourier APIs and their common transform dependencies remain unconditional;
+empty default features do not select a coefficient-only build. Concrete FFT engines
+are optional.
 
+- `rustfft` / `tfhe-fft` select the corresponding `primus_fft` engine. Targets comparing both require both features; generic Fourier APIs need neither.
 - `rns` enables CRT/DCRT ciphertexts, their product workspace, and CRT conversions on `BigUintGlwe`.
-- `simd` enables nightly SIMD support in arithmetic dependencies. It does not enable `rns`; use both for SIMD RNS operations.
+- `simd` enables nightly SIMD support in arithmetic dependencies. It does not enable an FFT engine or `rns`; use both for SIMD RNS operations.
 - `BigUintGlwe`, `RnsGlweSize`, and `RnsGadgetSize` are available without `rns`.
 
 ## Tests and benchmarks
@@ -154,11 +156,11 @@ unconditional; empty default features do not select a coefficient-only build.
 Run from the workspace root:
 
 ```sh
-cargo test -p primus_lattice
-cargo test -p primus_lattice --features rns
-cargo clippy -p primus_lattice --all-targets --features rns -- -D warnings
-cargo +nightly test -p primus_lattice --features rns,simd
-cargo doc -p primus_lattice --no-deps --features rns
+cargo test -p primus_lattice --features rustfft,tfhe-fft
+cargo test -p primus_lattice --features rns,rustfft,tfhe-fft
+cargo clippy -p primus_lattice --all-targets --features rns,rustfft,tfhe-fft -- -D warnings
+cargo +nightly test -p primus_lattice --features rns,simd,rustfft,tfhe-fft
+cargo doc -p primus_lattice --no-deps --features rns,rustfft,tfhe-fft
 ```
 
 The [test guide](tests/README.md) maps independent contracts to test files. The [benchmark guide](benches/README.md) describes independently runnable GLWE/NTRU × Fourier/NTT, extraction, and RNS targets. Benchmarks isolate warmed lattice operations; full PBS and key-streaming costs must be measured in the upper layers. Basic modular and factor arithmetic are benchmarked in their owning crates.

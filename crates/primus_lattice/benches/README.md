@@ -50,9 +50,9 @@ Deterministic independent residues exercise full-width CRT recomposition, and ga
 Run from the workspace root:
 
 ```sh
-cargo bench -p primus_lattice --bench glwe_fourier
+cargo bench -p primus_lattice --bench glwe_fourier --features rustfft,tfhe-fft
 cargo bench -p primus_lattice --bench glwe_ntt
-cargo bench -p primus_lattice --bench ntru_fourier
+cargo bench -p primus_lattice --bench ntru_fourier --features rustfft,tfhe-fft
 cargo bench -p primus_lattice --bench ntru_ntt
 cargo bench -p primus_lattice --bench extraction
 cargo bench -p primus_lattice --features rns --bench rns_glev
@@ -60,7 +60,7 @@ cargo bench -p primus_lattice --features rns --bench rns_ggsw
 # Select one parameter group or operation using Criterion's regex filter.
 cargo bench -p primus_lattice --bench glwe_ntt -- 'n1024/k1/logb5/l5'
 # Exercise every fixture once without collecting timing statistics.
-cargo bench -p primus_lattice --bench glwe_fourier --bench glwe_ntt --bench ntru_fourier --bench ntru_ntt --bench extraction -- --test
+cargo bench -p primus_lattice --bench glwe_fourier --bench glwe_ntt --bench ntru_fourier --bench ntru_ntt --bench extraction --features rustfft,tfhe-fft -- --test
 # Dependency SIMD configuration; replace the target to select another path.
 cargo +nightly bench -p primus_lattice --bench ntru_ntt --features simd
 ```

@@ -119,6 +119,10 @@ Sample extraction、NLev/NGSW 外积与 CMUX 位于 [`primus_lattice`](../primus
 
 求值密钥保存 `NGSW_f[f]`，通过加密 f 生成，无需显式计算有符号多项式平方。 输入误差乘 f，分解误差乘 f²，还须计入求值密钥与 FFT 误差。公开这种秘密相关 消息的密钥需要独立论证 key-dependent-message/circular-security 假设及参数； 代数推导和功能测试不构成安全性证明或 CBS 参数建议。消息 m 为 bit 时，输出可供 CMUX 使用。
 
+## Features
+
+默认 features 为空，Fourier 泛型接口不选择具体 FFT 引擎。`rustfft` / `tfhe-fft` 分别转发到 `primus_fft` 的对应实现；可以同时启用。使用具体引擎的测试、示例和基准在 Cargo target 上声明 `required-features`；双引擎对照 target 需要两者。`simd` 不会自动启用 FFT 引擎。
+
 ## 进一步阅读
 
 公开契约见 [rustdoc 对应源码](src)；[测试与基准指南](benches/README.zh_CN.md)保存覆盖范围、工作负载和复现命令。Workspace 验证入口见[测试指南](../../guides/development/testing.md)。

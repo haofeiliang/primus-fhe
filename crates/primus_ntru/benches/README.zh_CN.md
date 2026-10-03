@@ -8,14 +8,14 @@
 ## 测试与基准
 
 ```sh
-cargo test -p primus_ntru
-cargo clippy -p primus_ntru --all-targets -- -D warnings
-cargo +nightly test -p primus_ntru --features simd
-cargo bench -p primus_ntru --bench encryption
+cargo test -p primus_ntru --features rustfft,tfhe-fft
+cargo clippy -p primus_ntru --all-targets --features rustfft,tfhe-fft -- -D warnings
+cargo +nightly test -p primus_ntru --features simd,rustfft,tfhe-fft
+cargo bench -p primus_ntru --bench encryption --features rustfft,tfhe-fft
 cargo bench -p primus_ntru --bench lwe_return
-cargo bench -p primus_ntru --bench primitives -- 'ntt/n4096/logb3'
-cargo bench -p primus_ntru --bench constant_gadget
-cargo bench -p primus_ntru --bench ternary_cmux
+cargo bench -p primus_ntru --bench primitives --features rustfft,tfhe-fft -- 'ntt/n4096/logb3'
+cargo bench -p primus_ntru --bench constant_gadget --features rustfft
+cargo bench -p primus_ntru --bench ternary_cmux --features rustfft,tfhe-fft
 ```
 
 `encryption` 测量普通加密和未解码相位提取。`primitives` 测量 key switching、 自同构、trace/reverse trace、三个系数投影、八系数前缀展开及 scheme switching （输出 B=2^8、L=3），覆盖 `N = 1024/4096/8192`、`B = 2^3/2^10` 和分解基支持的最大层数。两者使用 `u64`、稀疏三元私钥及 sigma 3.2；NTT 使用 `q = 1_125_899_906_826_241`，Fourier 覆盖两个 FFT 后端。`constant_gadget` 保留常数 NLev 和八控制位 NGSW 生成基准。 设置、table、密钥生成及分配位于计时 closure 外。附加 `-- --test` 可执行 fixture 冒烟检查；该检查不测量性能，也不能证明可解密性。

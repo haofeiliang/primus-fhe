@@ -10,7 +10,7 @@ NTRU-based TFHE with the native torus. Start with the [task and encoding guide](
 ## Quick start
 
 ```sh
-cargo run -p primus_tfhe_ntru_fourier --release --example ntru_fourier_basic
+cargo run -p primus_tfhe_ntru_fourier --release --example ntru_fourier_basic --features rustfft
 ```
 
 The [basic example](examples/ntru_fourier_basic.rs) shows parameters → context → paired keys → clients → one compiled LUT → reused evaluator and ciphertext buffers. It computes `x % 4`, keeping `t=32` encoding for both input and output, and decodes with `decrypt`. `parameters.lookup_table_compiler(&input_codec)?` creates a reusable compiler; `compiler.compile_fn(function)` uses the input codec’s plaintext modulus at Q. Select a different output encoding with `compiler.try_with_output_codec(&output_codec)?`; see [choosing the output encoding](../primus_tfhe/README.md#choosing-the-output-encoding). Public-key encryption starts with `context.public_encryptor(&public, &input_codec)`; see the [family guide](../primus_tfhe_ntru/README.md#clients-and-luts). The example uses external `q=2^24`, distinct from ring `Q`: LUT compilation is at `Q` and the returned LWE is at `q`.
@@ -111,6 +111,6 @@ Rustdoc groups server material in `key`, CBS in `circuit_bootstrap`, MVB program
 
 ## Further reading
 
-Default features are empty; optional `simd` enables nightly SIMD arithmetic in dependencies.
+Default features are empty. Select an FFT engine explicitly with `rustfft` or `tfhe-fft`, or enable both; generic APIs do not force an engine. Examples use `rustfft`; tests and benchmarks comparing both engines require `rustfft,tfhe-fft`. Optional `simd` enables only nightly SIMD arithmetic in dependencies, without selecting an FFT engine.
 
 [Boolean gates](../primus_tfhe/README.md#boolean-gates) · [Error boundaries](../primus_tfhe/README.md#error-boundaries) · [Implementation notes](../primus_tfhe/IMPLEMENTATION.md) · [Benchmark guide](../primus_tfhe/BENCHMARKS.md)

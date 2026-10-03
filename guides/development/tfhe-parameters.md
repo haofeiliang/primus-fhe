@@ -104,8 +104,8 @@ The 27-bit u32 candidate did not provide a sufficient joint CBS/product budget a
 Run the full matrix explicitly:
 
 ```sh
-cargo run --release -p primus_tfhe_test_support --example validate_parameters
-cargo +nightly run --release -p primus_tfhe_test_support --example validate_parameters --features simd
+cargo run --release -p primus_tfhe_test_support --example validate_parameters --features rustfft,tfhe-fft
+cargo +nightly run --release -p primus_tfhe_test_support --example validate_parameters --features simd,rustfft,tfhe-fft
 ```
 
 A substring selects before any keys are generated, for example `-- ntru/ntt/u32`, `-- glwe/rustfft/u64`, or `-- lut/compile`. Unknown filters fail. This entry is not a Criterion timing target and is not run by ordinary `nextest --lib --tests`.

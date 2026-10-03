@@ -1,7 +1,7 @@
 //! Opt-in numerical validation of the representative TFHE parameter matrix.
 //!
 //! Run all profiles:
-//! `cargo run --release -p primus_tfhe_test_support --example validate_parameters`
+//! `cargo run --release -p primus_tfhe_test_support --example validate_parameters --features rustfft,tfhe-fft`
 //!
 //! Append a substring such as `ntru/ntt/u32`, `glwe/rustfft` or `lut/compile`
 //! after `--` to select profiles before key generation. Ordinary CI tests use

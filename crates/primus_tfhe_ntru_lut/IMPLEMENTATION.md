@@ -228,14 +228,14 @@ contracts remain covered by library tests and lower-level primitive benchmarks.
 ## Reproducing measurements
 
 ```sh
-cargo bench -p primus_tfhe_ntru_lut --bench pipeline -- --list
-cargo bench -p primus_tfhe_ntru_lut --bench pipeline -- --test
-taskset -c 0 cargo bench -p primus_tfhe_ntru_lut --bench pipeline -- \
+cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features rustfft,tfhe-fft -- --list
+cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features rustfft,tfhe-fft -- --test
+taskset -c 0 cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features rustfft,tfhe-fft -- \
   '/create_lut_and_drop$' --sample-size 20 --warm-up-time 0.5 --measurement-time 2 --noplot
-taskset -c 0 cargo bench -p primus_tfhe_ntru_lut --bench pipeline -- \
+taskset -c 0 cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features rustfft,tfhe-fft -- \
   '/evaluate$' --sample-size 20 --warm-up-time 0.5 --measurement-time 2 --noplot
 # SIMD configuration; use the same nightly compiler for both sides of a feature comparison.
-taskset -c 0 cargo +nightly bench -p primus_tfhe_ntru_lut --bench pipeline --features simd -- \
+taskset -c 0 cargo +nightly bench -p primus_tfhe_ntru_lut --bench pipeline --features simd,rustfft,tfhe-fft -- \
   '/evaluate$' --sample-size 20 --warm-up-time 0.5 --measurement-time 2 --noplot
 ```
 

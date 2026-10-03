@@ -27,8 +27,15 @@ primus_tfhe_ntru_fourier = { path = "../../crates/primus_tfhe_ntru_fourier" }
 primus_tfhe_ntru_lut = { path = "../../crates/primus_tfhe_ntru_lut" }
 rand = { workspace = true }
 
+# Targets instantiate these FFT engines explicitly; generic library APIs need neither.
+[[example]]
+name = "validate_parameters"
+required-features = ["rustfft", "tfhe-fft"]
+
 [features]
 default = []
+rustfft = ["primus_fft/rustfft"]
+tfhe-fft = ["primus_fft/tfhe-fft"]
 simd = [
     "primus_tfhe_glwe_ntt/simd",
     "primus_tfhe_glwe_fourier/simd",

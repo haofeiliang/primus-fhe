@@ -136,6 +136,10 @@ Trace key 的 packing 使用 [RevHomTrace 算法](https://github.com/Stirling75/
 
 `NttGlweSchemeSwitchKey<T>` 和 `FourierGlweSchemeSwitchKey<T>` 通过 `apply_to` 将系数域 GLev 转换为密钥对应变换域的 GGSW。传入 `generate` 的两种私钥表示必须对应同一个私钥。使用 `key.key_size()` 构造 `primus_lattice::workspace::{NttGlweExternalProductWorkspace, FourierGlweExternalProductWorkspace}`。工作区可与其他外积共享：GLWE 布局不变时，`rebind` 无分配切换分解层数；scheme switch 前恢复为 `key.key_size()`。输出继承输入 GLev 的 gadget 缩放；`key.key_basis()` 只控制 external product 分解，可以不同于输出基。每个 mask row 使用私钥多项式取负后的加密，body row 直接变换输入。Fourier 乘积直接累加到输出，无需逆 FFT 再正向 FFT。
 
+## Features
+
+默认 features 为空，Fourier 泛型接口不选择具体 FFT 引擎。`rustfft` / `tfhe-fft` 分别转发到 `primus_fft` 的对应实现；可以同时启用。使用具体引擎的测试、示例和基准在 Cargo target 上声明 `required-features`；双引擎对照 target 需要两者。`simd` 不会自动启用 FFT 引擎。
+
 ## 进一步阅读
 
 公开契约见 [rustdoc 对应源码](src)；[测试与基准指南](benches/README.zh_CN.md)保存覆盖范围、工作负载和复现命令。Workspace 验证入口见[测试指南](../../guides/development/testing.md)。

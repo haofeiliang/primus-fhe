@@ -10,7 +10,7 @@
 ## 快速开始
 
 ```sh
-cargo run -p primus_tfhe_glwe_fourier --release --example fourier_basic
+cargo run -p primus_tfhe_glwe_fourier --release --example fourier_basic --features rustfft
 ```
 
 [basic 示例](examples/fourier_basic.rs)展示参数 → context → 配对密钥 → 客户端 → 单个 LUT → 复用 evaluator 和密文缓冲。它计算 `x % 4`，输入和输出均采用 `t=32` 编码，直接用 `decrypt` 解码。 `parameters.lookup_table_compiler(&input_codec)?` 创建可复用编译器，`compiler.compile_fn(function)` 默认使用所选输入 codec 编码输出；用 `compiler.try_with_output_codec(&output_codec)?` 选择其他输出编码，见[选择输出编码](../primus_tfhe/README.zh_CN.md#选择输出编码)。 公钥加密通过 `context.public_encryptor(&public, &input_codec)` 创建客户端，见[家族说明](../primus_tfhe_glwe/README.zh_CN.md#客户端与-lut)。
@@ -92,6 +92,6 @@ Rustdoc 按职责组织 `key`（服务端材料）、`circuit_bootstrap`（CBS�
 
 ## 进一步阅读
 
-默认 features 为空；可选 `simd` 启用依赖中的 nightly SIMD 算术。
+默认 features 为空；`rustfft` / `tfhe-fft` 显式选择 FFT 引擎，可同时启用。泛型 API 不强制具体引擎。示例使用 `rustfft`；双引擎对照测试和基准需要 `rustfft,tfhe-fft`。可选 `simd` 只启用依赖中的 nightly SIMD 算术，不选择 FFT 引擎。
 
 [Boolean 门](../primus_tfhe/README.zh_CN.md#boolean-门) · [错误边界](../primus_tfhe/README.zh_CN.md#错误边界) · [实现说明](../primus_tfhe/IMPLEMENTATION.md) · [基准指南](../primus_tfhe/BENCHMARKS.md)

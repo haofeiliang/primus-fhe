@@ -152,7 +152,7 @@ assert_eq!(level_count, 9); // (k+1) 行 * L 层
 | NLev/NGSW 共用 gadget 内核 | [NTT](../../crates/primus_lattice/src/ntru/ntt/gadget_product.rs)、[Fourier](../../crates/primus_lattice/src/ntru/fourier/gadget_product.rs) |
 | 工作区所有者与内部视图 | [NTT](../../crates/primus_lattice/src/workspace/ntt.rs)、[Fourier](../../crates/primus_lattice/src/workspace/fourier.rs)、[DCRT](../../crates/primus_lattice/src/workspace/dcrt_glev_mul.rs) |
 
-后端专属实现放在上述模块内。NTT/Fourier 目前仍无条件可用；源码拆分本身不会使依赖可选。
+后端专属实现放在上述模块内。NTT/Fourier API 和公共变换依赖目前仍无条件可用。具体 FFT 引擎通过 `rustfft` / `tfhe-fft` 显式选择，默认不启用任何引擎，见 [FFT 指南](../../crates/primus_fft/README.zh_CN.md#features)。
 当前 feature 行为见 [lattice README](../../crates/primus_lattice/README.zh_CN.md#features)。
 
 ## 组合密文工作流

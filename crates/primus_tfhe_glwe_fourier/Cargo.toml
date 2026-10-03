@@ -29,22 +29,84 @@ criterion = { workspace = true }
 [[bench]]
 name = "pbs"
 harness = false
-
+required-features = ["rustfft", "tfhe-fft"]
 
 [[bench]]
 name = "circuit_bootstrap"
 harness = false
+required-features = ["rustfft", "tfhe-fft"]
 
 [[bench]]
 name = "sparse_pbs"
 harness = false
+required-features = ["rustfft", "tfhe-fft"]
 
 [[bench]]
 name = "mvb"
 harness = false
+required-features = ["rustfft", "tfhe-fft"]
+
+# Targets instantiate these FFT engines explicitly; generic library APIs need neither.
+[[example]]
+name = "fourier_basic"
+required-features = ["rustfft"]
+
+[[example]]
+name = "fourier_circuit_bootstrap"
+required-features = ["rustfft"]
+
+[[example]]
+name = "fourier_mvb_thresholds"
+required-features = ["rustfft"]
+
+[[example]]
+name = "fourier_sparse"
+required-features = ["rustfft"]
+
+[[example]]
+name = "fourier_sparse_circuit_bootstrap"
+required-features = ["rustfft"]
+
+[[test]]
+name = "blind_rotation"
+required-features = ["rustfft"]
+
+[[test]]
+name = "boolean"
+required-features = ["rustfft"]
+
+[[test]]
+name = "circuit_bootstrap"
+required-features = ["rustfft", "tfhe-fft"]
+
+[[test]]
+name = "context"
+required-features = ["rustfft"]
+
+[[test]]
+name = "factorized_pbs"
+required-features = ["rustfft", "tfhe-fft"]
+
+[[test]]
+name = "pbs"
+required-features = ["rustfft", "tfhe-fft"]
+
+[[test]]
+name = "sparse_blind_rotation"
+required-features = ["rustfft", "tfhe-fft"]
+
+[[test]]
+name = "sparse_key"
+required-features = ["rustfft", "tfhe-fft"]
+
+[[test]]
+name = "sparse_pbs"
+required-features = ["rustfft", "tfhe-fft"]
 
 [features]
 default = []
+rustfft = ["primus_fft/rustfft"]
+tfhe-fft = ["primus_fft/tfhe-fft"]
 simd = [
     "primus_glwe/simd",
     "primus_lattice/simd",

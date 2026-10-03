@@ -29,6 +29,7 @@ criterion = { workspace = true }
 [[bench]]
 name = "glwe_fourier"
 harness = false
+required-features = ["rustfft", "tfhe-fft"]
 
 [[bench]]
 name = "glwe_ntt"
@@ -37,6 +38,7 @@ harness = false
 [[bench]]
 name = "ntru_fourier"
 harness = false
+required-features = ["rustfft", "tfhe-fft"]
 
 [[bench]]
 name = "ntru_ntt"
@@ -56,8 +58,31 @@ name = "rns_ggsw"
 harness = false
 required-features = ["rns"]
 
+# Targets instantiate these FFT engines explicitly; generic library APIs need neither.
+[[test]]
+name = "cmux_k"
+required-features = ["rustfft", "tfhe-fft"]
+
+[[test]]
+name = "external_product"
+required-features = ["rustfft", "tfhe-fft"]
+
+[[test]]
+name = "external_product_sum"
+required-features = ["rustfft", "tfhe-fft"]
+
+[[test]]
+name = "fourier"
+required-features = ["rustfft", "tfhe-fft"]
+
+[[test]]
+name = "ternary_cmux"
+required-features = ["rustfft", "tfhe-fft"]
+
 [features]
 default = []
+rustfft = ["primus_fft/rustfft"]
+tfhe-fft = ["primus_fft/tfhe-fft"]
 rns = ["dep:primus_rns"]
 simd = [
     "primus_integer/simd",

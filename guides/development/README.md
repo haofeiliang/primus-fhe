@@ -155,8 +155,9 @@ callers do not need extension traits.
 | Shared NLev/NGSW gadget kernels | [NTT](../../crates/primus_lattice/src/ntru/ntt/gadget_product.rs), [Fourier](../../crates/primus_lattice/src/ntru/fourier/gadget_product.rs) |
 | Workspace owners and internal views | [NTT](../../crates/primus_lattice/src/workspace/ntt.rs), [Fourier](../../crates/primus_lattice/src/workspace/fourier.rs), [DCRT](../../crates/primus_lattice/src/workspace/dcrt_glev_mul.rs) |
 
-Keep backend-specific code within these modules. NTT/Fourier currently remain
-unconditionally available; source separation alone does not make dependencies optional.
+Keep backend-specific code within these modules. NTT/Fourier APIs and common transform
+dependencies currently remain unconditional. The concrete FFT engines are selected
+explicitly with `rustfft` / `tfhe-fft`, as described in the [FFT guide](../../crates/primus_fft/README.md#features); neither engine is enabled by default.
 Current feature availability is documented in the [lattice README](../../crates/primus_lattice/README.md#features).
 
 ## Compose an encrypted workflow

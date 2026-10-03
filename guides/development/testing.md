@@ -14,8 +14,8 @@
 | `just ci` | 上述默认验证、doctest 和必要的可选依赖编译检查；沿用当前工具链，CI 中为 stable |
 | `just ci-nightly` | nightly 全 features 的 all-targets Clippy、普通测试、doctest、严格/private rustdoc 和 SIMD-only 库编译检查 |
 | `just fmt-check` / `just fmt` | 检查格式 / 写入格式化结果 |
-| `just check [package]` / `just lint [package]` | 当前工具链的 all-targets 编译 / Clippy `-D warnings` |
-| `just test [package]` / `just test-doc [package]` | 当前工具链的普通测试 / doctest；nextest 不执行 doctest |
+| `just check [package] [features]` / `just lint [package] [features]` | 当前工具链的 all-targets 编译 / Clippy `-D warnings`，可选逗号分隔的 feature 列表 |
+| `just test [package] [features]` / `just test-doc [package]` | 当前工具链的普通测试 / doctest；nextest 不执行 doctest |
 | `just simd [package]` | nightly 全 features 的 Clippy 和普通测试 |
 | `just tfhe` / `just tfhe-simd` | 对 `primus_tfhe*` 执行 Clippy 和普通测试，分别使用当前工具链/default features 和 nightly/all features |
 | `just bench-smoke <package> <target> [Cargo options…]` | 显式选择一个 Criterion target，以 `--test` 执行工作负载及断言，不做统计采样 |
@@ -25,13 +25,13 @@
 ```sh
 just ci                                    # 当前工具链；GitHub 中为 stable
 just ci-nightly                            # 单独验证 nightly
-just test primus_tfhe_ntru_lut
+just test primus_tfhe_ntru_lut rustfft,tfhe-fft
 just simd 'primus_tfhe*'
-just bench-smoke primus_tfhe_ntru_lut pipeline
+just bench-smoke primus_tfhe_ntru_lut pipeline --features rustfft,tfhe-fft
 just bench-smoke primus_lattice rns_glev --features rns
 # 示例与性能测量直接使用其 README/源码中的 Cargo 命令。
 cargo run --release -p primus_tfhe_ntru_lut --example ntt_lookup
-cargo bench -p primus_tfhe_ntru_lut --bench pipeline
+cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features rustfft,tfhe-fft
 ```
 
 Nightly 基准 smoke 的显式命令为 `cargo +nightly bench -p <package> --bench <target> --features simd -- --test`。所有 smoke 和示例执行都由维护者按改动选择，CI 不生成密钥运行大参数工作负载，也不自动执行全量性能采样。Smoke 耗时包含构造、密钥生成和断言，不能当作 kernel 延迟。
@@ -52,7 +52,7 @@ Feature 边界只增加五条库编译命令，不再单独重复运行五组测
 
 ## 测试参数与 CI 成本
 
-代表性大尺寸配置见 [TFHE 参数矩阵](tfhe-parameters.md)。使用 `cargo run --release -p primus_tfhe_test_support --example validate_parameters` 手动验证；加 `-- ntru/ntt/u32` 可在密钥生成前筛选后端和字宽。Nightly SIMD 使用 `cargo +nightly run --release -p primus_tfhe_test_support --example validate_parameters --features simd`。这是参数与误差余量诊断，不加入普通 nextest，也不是性能采样；配置构造器与各后端诊断分开维护。
+代表性大尺寸配置见 [TFHE 参数矩阵](tfhe-parameters.md)。使用 `cargo run --release -p primus_tfhe_test_support --example validate_parameters --features rustfft,tfhe-fft` 手动验证；加 `-- ntru/ntt/u32` 可在密钥生成前筛选后端和字宽。Nightly SIMD 使用 `cargo +nightly run --release -p primus_tfhe_test_support --example validate_parameters --features simd,rustfft,tfhe-fft`。这是参数与误差余量诊断，不加入普通 nextest，也不是性能采样；配置构造器与各后端诊断分开维护。
 
 `test-support` 的职责入口见 [TFHE support](../../test-support/tfhe/src/lib.rs) 和[分配计数](../../test-support/allocations/src/lib.rs)。参数验证按家族/表示拆分，检查清单见 [validation 模块](../../test-support/tfhe/examples/validation/mod.rs)；入口只选择参数组和 seed。每组检查用简短注释说明目标契约、预期结果来源和输入选择理由，复杂部分解释模数/编码、gadget 相位和误差预算；示例文件说明用途及运行方式。后端的密钥生成、变换和相位提取保持显式，共享辅助函数集中真正相同的 oracle 或计量逻辑，避免引入统一后端框架。普通测试继续使用小参数；产品示例专注推荐用法，大参数诊断集中在这个独立入口。
 
@@ -97,6 +97,23 @@ cargo nextest list --binaries-metadata /tmp/primus-test-binaries.json \
 - `primus_modulus/derive` 启用 `derives` 集成测试和 `derived_mac` 基准；默认 workspace 不启用它。`primus_distr/high_precision` 增加高精度 CDT 覆盖。
 - `primus_lattice/rns`、`primus_encoding/rns` 及 `primus_data/aligned-vec` 在默认 workspace 中可由其他成员依赖启用。独立包运行不能假定这种 feature 合并；`rns_glev`、`rns_ggsw`、`bfv_rns` 等基准需要对应的 required-features。
 - 算术、模数、变换和基础同态层具有 u32/u64 及必要的较小字宽、多 limb 验证；每个运算的具体字宽从所属测试入口确认，不能从包内出现某个类型名推断全部路径均被覆盖。普通 PBS 和高精度密文求值有 u32/u64 路径；CBS/one-hot 的专用相位测试侧重 u64，u32 的实际消费由高精度求值和双字宽基准 smoke 补充。FFT 底层谱运算 fixture 使用 u32，u64 转换 oracle 及上层 Fourier 密文消费另行保留，不将转换测试称作完整谱运算覆盖。
+
+### FFT 引擎与 target 覆盖
+
+`primus_fft` 默认只提供公共接口和 torus 转换；`rustfft` / `tfhe-fft` 分别启用具体实现。实际使用 FFT 的 lattice、GLWE/NTRU、Fourier TFHE、LUT 及参数诊断包转发同名 feature。普通库依赖不强制选择引擎，`simd` 也不替代这两个开关。
+
+使用具体引擎的测试、示例和基准通过 Cargo target 的 `required-features` 声明需求。没有满足要求时，Cargo 跳过整个 target；混合 NTT/Fourier 对照文件也如此，不能把无 feature 的通过当作完整数值覆盖。`just` / `just ci` 的默认 Clippy、普通测试，以及 `just tfhe` 显式启用两个引擎，保持原有覆盖；nightly 的 all-features 入口保持不变。单包 `just check/lint/test` 默认使用空 feature 列表，可显式传入需要的组合。
+
+FFT 自身按实际启用的引擎执行既有契约测试，纯 torus 转换单独保留在无引擎配置：
+
+```sh
+cargo nextest run -p primus_fft --lib --tests
+cargo nextest run -p primus_fft --lib --tests --features rustfft
+cargo nextest run -p primus_fft --lib --tests --features tfhe-fft
+cargo nextest run -p primus_fft --lib --tests --features rustfft,tfhe-fft
+```
+
+单引擎的依赖隔离用独立 manifest 验证，不引用 test-support：在具体 Fourier TFHE 依赖上启用一个引擎，直接 `primus_fft` 依赖保持无 feature，编译并运行一次普通 PBS；`cargo tree -e normal,features` 应只有选定的 FFT 引擎。测试 target 的 dev-dependencies、workspace feature 合并和 all-features 构建都不能证明这个边界。CI 沿用原有两套 job，只在无默认 feature 的库检查中加入 FFT 公共接口，不增加配置全排列。
 
 ## 契约与主要 setup 归属
 
@@ -194,13 +211,13 @@ cargo +nightly nextest run -p primus_encoding --lib --tests --features simd
 | 提取 | [extraction.rs](../../crates/primus_lattice/tests/extraction.rs) 保留手算样本顺序、NTRU `c*f` 与 GLWE `b-a*s` 的整数卷积 oracle、完整/部分秘密、native/显式模数逆提取、padding 和 packed 拒绝；它们各自保护不同的符号或布局契约 |
 | 首次融合与在线分配 | 首次融合的秘密和分解残差由 [NTRU phase contracts](../../crates/primus_ntru/tests/phase_contracts.rs) 验证；在线计数由这些消费者及四后端 PBS/CBS/高精度 LUT 测试承担。本层保留资源复用断言，不对每个数学样本重复计数，也不把指针相等当作零临时分配证明 |
 
-默认、独立 RNS、nightly SIMD/RNS 及 release 拒绝契约分别验证：
+双引擎、独立 RNS、nightly SIMD/RNS 及 release 拒绝契约分别验证：
 
 ```sh
-cargo nextest run -p primus_lattice --lib --tests
-cargo nextest run -p primus_lattice --lib --tests --features rns
+cargo nextest run -p primus_lattice --lib --tests --features rustfft,tfhe-fft
+cargo nextest run -p primus_lattice --lib --tests --features rns,rustfft,tfhe-fft
 cargo +nightly nextest run -p primus_lattice --lib --tests --all-features
-cargo nextest run -p primus_lattice --lib --tests --release --features rns
+cargo nextest run -p primus_lattice --lib --tests --release --features rns,rustfft,tfhe-fft
 ```
 
 默认和扩展配置复用同一套测试；无需为普通测试单独标记 SIMD。按同一 feature 范围运行 all-targets 编译/Clippy，doctest 单独运行。改变实际算术或资源接口时，额外验证受影响的 GLWE/NTRU/RNS/TFHE 消费者；纯测试整理无需重新运行全 workspace 数值矩阵。
@@ -261,16 +278,16 @@ Release 验证公开拒绝和擦除失效不依赖 debug assertions；doctest �
 just tfhe
 just tfhe-simd
 cargo run --release -p primus_tfhe_ntru_lut --example ntt_lookup
-just bench-smoke primus_tfhe_ntru_lut pipeline
+just bench-smoke primus_tfhe_ntru_lut pipeline --features rustfft,tfhe-fft
 # 显式复查 release 的拒绝/输出保持契约。
-cargo nextest run -p 'primus_tfhe*' --lib --tests --release
+cargo nextest run -p 'primus_tfhe*' --lib --tests --release --features rustfft,tfhe-fft
 ```
 
 大参数扩展入口是 [validate_parameters](../../test-support/tfhe/examples/validate_parameters.rs)，不加入默认测试。它验证 [参数矩阵](tfhe-parameters.md) 的 n≈800、N=1024/2048，保留两个固定 seed、raw phase 误差预算和全部后端/字宽；支持在密钥生成前按名称筛选。Boolean PBS 的消息为 0→1→0，不重复其与 midpoint/末值相同的 1；CBS、one-hot、完整查表和阈值诊断仍保留各自的边界输入与复用。
 
 ```sh
-cargo run --release -p primus_tfhe_test_support --example validate_parameters
-cargo run --release -p primus_tfhe_test_support --example validate_parameters -- ntru/ntt/u32
+cargo run --release -p primus_tfhe_test_support --example validate_parameters --features rustfft,tfhe-fft
+cargo run --release -p primus_tfhe_test_support --example validate_parameters --features rustfft,tfhe-fft -- ntru/ntt/u32
 ```
 
 ## 成本记录方法

@@ -46,7 +46,7 @@ evaluator.evaluate_to(&encrypted_chunks, &mut output);
 
 ```sh
 cargo run --release -p primus_tfhe_ntru_lut --example ntt_lookup
-cargo run --release -p primus_tfhe_ntru_lut --example fourier_lookup
+cargo run --release -p primus_tfhe_ntru_lut --example fourier_lookup --features rustfft
 ```
 
 ## 编码与表分区
@@ -100,13 +100,17 @@ Evaluator 借用 context、server key 和 table，并在构造时分配全部缓
 
 [参数指南](../../guides/development/tfhe-parameters.md)记录示例选择与验证范围，[测试指南](../../guides/development/testing.md)说明独立契约的覆盖，[实现说明](IMPLEMENTATION.md)记录算法和内部缓冲布局。
 
+## Features
+
+默认 features 为空，Fourier 泛型接口不选择具体 FFT 引擎。`rustfft` / `tfhe-fft` 分别转发到 `primus_fft` 的对应实现；可以同时启用。使用具体引擎的测试、示例和基准在 Cargo target 上声明 `required-features`；双引擎对照 target 需要两者。`simd` 不会自动启用 FFT 引擎。
+
 ## 基准
 
 ```sh
 # 创建并释放一个公开的高精度 LUT。
-cargo bench -p primus_tfhe_ntru_lut --bench pipeline -- '/create_lut_and_drop$'
+cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features rustfft,tfhe-fft -- '/create_lut_and_drop$'
 # 使用已准备的 LUT 和工作区，同态求值全部输出 chunk。
-cargo bench -p primus_tfhe_ntru_lut --bench pipeline -- '/evaluate$'
+cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features rustfft,tfhe-fft -- '/evaluate$'
 ```
 
 创建计时包含分配、系数填充和释放；求值计时不包含密钥生成、公开 LUT 创建、输入加密和工作区分配。工作负载与资源统计见[基准说明](IMPLEMENTATION.md#benchmark-fixture)。

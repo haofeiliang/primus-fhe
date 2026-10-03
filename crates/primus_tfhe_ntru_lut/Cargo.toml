@@ -30,7 +30,19 @@ rand = { workspace = true }
 [[bench]]
 name = "pipeline"
 harness = false
+required-features = ["rustfft", "tfhe-fft"]
+
+# Targets instantiate these FFT engines explicitly; generic library APIs need neither.
+[[example]]
+name = "fourier_lookup"
+required-features = ["rustfft"]
+
+[[test]]
+name = "evaluation"
+required-features = ["rustfft", "tfhe-fft"]
 
 [features]
 default = []
+rustfft = ["primus_fft/rustfft"]
+tfhe-fft = ["primus_fft/tfhe-fft"]
 simd = ["primus_tfhe_ntru_ntt/simd", "primus_tfhe_ntru_fourier/simd"]

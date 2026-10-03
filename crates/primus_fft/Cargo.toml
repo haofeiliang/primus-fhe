@@ -6,11 +6,11 @@ edition = "2024"
 [dependencies]
 primus_integer = { path = "../primus_integer" }
 primus_poly = { path = "../primus_poly" }
-aligned-vec = "0.6.4"
+aligned-vec = { version = "0.6.4", optional = true }
 num-complex = { workspace = true }
-rustfft = { workspace = true }
-tfhe-fft = "0.10.1"
-dyn-stack = "0.13.2"
+rustfft = { workspace = true, optional = true }
+tfhe-fft = { version = "0.10.1", optional = true }
+dyn-stack = { version = "0.13.2", optional = true }
 zeroize = { workspace = true }
 
 [dev-dependencies]
@@ -19,6 +19,9 @@ criterion = { workspace = true }
 [[bench]]
 name = "fft"
 harness = false
+required-features = ["rustfft", "tfhe-fft"]
 
 [features]
 default = []
+rustfft = ["dep:rustfft", "dep:aligned-vec"]
+tfhe-fft = ["dep:tfhe-fft", "dep:dyn-stack", "dep:aligned-vec"]

@@ -147,7 +147,7 @@ the workspace `simd` feature is a distinct configuration.
 For the SIMD benchmark configuration only:
 
 ```sh
-taskset -c 0 cargo +nightly bench -p primus_tfhe_ntru_lut --bench pipeline --features simd -- \
+taskset -c 0 cargo +nightly bench -p primus_tfhe_ntru_lut --bench pipeline --features simd,rustfft,tfhe-fft -- \
   '/evaluate$' --sample-size 20 --warm-up-time 0.5 --measurement-time 2 --noplot
 ```
 

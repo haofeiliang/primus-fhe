@@ -1,7 +1,8 @@
 //! Build four one-hot gadget controls from a two-bit input; use delta_2 in a CMux.
 //!
-//! Run: `cargo run --release -p primus_tfhe_ntru_fourier --example ntru_fourier_one_hot`
-//! For u64, change Word to u64; for TFHE-FFT, use TfheFftTable as Table.
+//! Run: `cargo run --release -p primus_tfhe_ntru_fourier --example ntru_fourier_one_hot --features rustfft`
+//! For u64, change Word to u64. To use TfheFftTable, also switch this target's
+//! required-features and the command above to tfhe-fft.
 //! Arithmetic profiles: guides/development/tfhe-parameters.md (not security presets).
 
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
