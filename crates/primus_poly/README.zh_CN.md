@@ -86,7 +86,7 @@ Raw wrapper 使用 `len()` / `is_empty()` 查看完整存储：
 
 `Polynomial::add_mul_monomial_pair_assign` 在一次输出遍历中累加两个旋转输入，不分配临时空间。自由函数 `add_mul_monomial_pair_assign` 还可处理包含完整多项式的连续批量存储，每批只计算一次旋转偏移，64 位整数的每个分段符号分派位于多项式循环外。两个贡献按顺序分别约简；两种接口都要求多项式长度为相同的 2 次幂、输入与累加器为规范余数，指数在 `[0, 2N)` 内。
 
-`CoeffAutomorphismPermutation` 缓存模 `X^N + 1` 的系数代换 `X -> X^d`。为 2 次幂 `N >= 32` 和 `[1, 2N)` 内的奇数 `d` 构造后，使用 `apply_to` 处理规范 residue。`apply_signed_to` 用于所需取负均可表示的小有符号系数。置换本身不执行 密码学 key switching；对应的 NTT 置换位于 `primus_ntt`。
+`CoeffAutomorphismPermutation` 缓存模 `X^N + 1` 的系数代换 `X -> X^d`。为 2 次幂 `N >= 32` 和 `[1, 2N)` 内的奇数 `d` 构造后，使用 `apply_to` 处理规范 residue。`apply_signed_to` 用于所需取负均可表示的小有符号系数。置换本身不执行密码学 key switching；对应的 NTT 置换位于 `primus_ntt`。Identity 直接复制，`d=N+1` 仅对奇数位置取负；这两种情况不分配置换表。一般 degree 用一个 `u32` 同时存储源索引和符号，单模与 RNS 消费者共用此实现。
 
 ## 随机采样
 

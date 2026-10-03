@@ -37,9 +37,9 @@ fn coefficient_automorphism(
 
 /// Test GLWE automorphism in the coefficient (CRT) domain.
 ///
-/// A GLWE ciphertext is encrypted, transformed by a fixed nonidentity odd-degree
-/// automorphism k → k·α mod 2N, then decrypted. The result is checked
-/// against an independent coefficient-domain plaintext automorphism.
+/// Reuse one ciphertext and dirty output/workspace across identity, N+1 sign
+/// changes and a general odd-degree gather. Decryption is checked against an
+/// independent coefficient-domain plaintext automorphism.
 #[test]
 fn test_crt_glwe_auto() {
     type ValueT = u64;
@@ -81,10 +81,6 @@ fn test_crt_glwe_auto() {
         CrtGlevParameters::with_glwe_params(&glwe_params, DecompositionBaseLog::new(20), None);
     let domain = DcrtGadgetDomain::try_new(&glev_params, &table).unwrap();
 
-    let auto_degree = 3; // Includes both permutation and negacyclic sign changes.
-
-    let auto_key = CrtGlweAutoKey::new(&domain, auto_degree, &sk, &dcrt_sk, &mut rng);
-
     let input1: Polynomial<Vec<ValueT>> = Polynomial::random(poly_length, mod_t, &mut rng);
     let mut c1: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
     let mut c2: CrtGlwe<Vec<ValueT>> = CrtGlwe::zero(rns_glwe_len);
@@ -96,19 +92,21 @@ fn test_crt_glwe_auto() {
 
     let c1 = c1.into_coeff_form(&table);
 
-    auto_key.automorphism_to(
-        &c1.as_view(),
-        &mut c2.as_mut_view(),
-        &domain,
-        &mut auto_workspace,
-    );
+    let mut transformed = DcrtGlweCiphertext::<Vec<ValueT>>::zero(rns_glwe_len);
+    for degree in [1, poly_length + 1, 3] {
+        let auto_key = CrtGlweAutoKey::new(&domain, degree, &sk, &dcrt_sk, &mut rng);
+        auto_key.automorphism_to(
+            &c1.as_view(),
+            &mut c2.as_mut_view(),
+            &domain,
+            &mut auto_workspace,
+        );
 
-    let c2 = c2.into_ntt_form(&table);
-
-    let auto_msg_2 = dcrt_sk_context.decrypt(&c2, &mut decrypt_workspace);
-
-    let expected = coefficient_automorphism(input1.as_ref(), auto_degree, mod_t);
-    assert_eq!(auto_msg_2.as_ref(), expected);
+        c2.write_ntt_form(&mut transformed, &table);
+        let actual = dcrt_sk_context.decrypt(&transformed, &mut decrypt_workspace);
+        let expected = coefficient_automorphism(input1.as_ref(), degree, mod_t);
+        assert_eq!(actual.as_ref(), expected, "degree={degree}");
+    }
 }
 
 /// Test GLWE automorphism in the NTT (DCRT) domain.
@@ -156,10 +154,6 @@ fn test_dcrt_glwe_auto() {
         CrtGlevParameters::with_glwe_params(&glwe_params, DecompositionBaseLog::new(20), None);
     let domain = DcrtGadgetDomain::try_new(&glev_params, &table).unwrap();
 
-    let auto_degree = 3; // Includes both permutation and negacyclic sign changes.
-
-    let auto_key = DcrtGlweAutoKey::new(&domain, auto_degree, &dcrt_sk, &mut rng);
-
     let input1: Polynomial<Vec<ValueT>> = Polynomial::random(poly_length, mod_t, &mut rng);
     let mut c1: DcrtGlweCiphertext<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
     let mut c2: DcrtGlweCiphertext<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
@@ -169,15 +163,17 @@ fn test_dcrt_glwe_auto() {
     let dcrt_sk_context = dcrt_sk.try_bind(&glwe_params, &table).unwrap();
     dcrt_sk_context.encrypt_to(&input1, &mut c1, &mut rng);
 
-    auto_key.automorphism_to(
-        &c1.as_view(),
-        &mut c2.as_mut_view(),
-        &domain,
-        &mut auto_workspace,
-    );
+    for degree in [1, poly_length + 1, 3] {
+        let auto_key = DcrtGlweAutoKey::new(&domain, degree, &dcrt_sk, &mut rng);
+        auto_key.automorphism_to(
+            &c1.as_view(),
+            &mut c2.as_mut_view(),
+            &domain,
+            &mut auto_workspace,
+        );
 
-    let auto_msg_2 = dcrt_sk_context.decrypt(&c2, &mut decrypt_workspace);
-
-    let expected = coefficient_automorphism(input1.as_ref(), auto_degree, mod_t);
-    assert_eq!(auto_msg_2.as_ref(), expected);
+        let actual = dcrt_sk_context.decrypt(&c2, &mut decrypt_workspace);
+        let expected = coefficient_automorphism(input1.as_ref(), degree, mod_t);
+        assert_eq!(actual.as_ref(), expected, "degree={degree}");
+    }
 }

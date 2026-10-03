@@ -86,7 +86,7 @@ Many shape checks in repeated arithmetic paths are `debug_assert*!` diagnostics.
 
 `Polynomial::add_mul_monomial_pair_assign` accumulates two rotated inputs in one output traversal without allocation. `add_mul_monomial_pair_assign` also accepts a flat batch of complete polynomials, computing rotation offsets once and dispatching each interval outside the polynomial loop for 64-bit words. Each contribution is reduced in order; both APIs require equally sized power-of-two polynomials, canonical residues, and exponents in `[0, 2N)`.
 
-`CoeffAutomorphismPermutation` caches the coefficient substitution `X -> X^d` modulo `X^N + 1`. Construct it for a power-of-two `N >= 32` and odd `d` in `[1, 2N)`, then reuse `apply_to` on canonical residues. `apply_signed_to` is for small signed coefficients whose required negations are representable. The map does not perform cryptographic key switching. Its NTT counterpart lives in `primus_ntt`.
+`CoeffAutomorphismPermutation` caches the coefficient substitution `X -> X^d` modulo `X^N + 1`. Construct it for a power-of-two `N >= 32` and odd `d` in `[1, 2N)`, then reuse `apply_to` on canonical residues. `apply_signed_to` is for small signed coefficients whose required negations are representable. The map does not perform cryptographic key switching. Its NTT counterpart lives in `primus_ntt`. Identity copies the coefficients; `d=N+1` negates only odd positions. These two cases allocate no index table. General degrees store a packed source index and sign in one `u32` per coefficient, shared by single-modulus and RNS consumers.
 
 ## Random sampling
 

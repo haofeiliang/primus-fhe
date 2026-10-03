@@ -5,8 +5,8 @@ use primus_poly::{CoeffAutomorphismPermutation, PolyLength};
 fn coefficient_permutation_matches_monomial_substitution() {
     const Q: u32 = 257;
     let modulus = BarrettModulus::new(Q);
-    // The gather has no size-dependent dispatch; exhaust all odd degrees at
-    // the minimum size and with an additional index bit.
+    // Exhaust all odd degrees, including identity and the N+1 sign-only path,
+    // at the minimum size and with an additional index bit.
     for n in [32, 64] {
         let input: Vec<i32> = (0..n).map(|i| i as i32 - n as i32 / 2).collect();
         let residues: Vec<u32> = input
@@ -33,12 +33,27 @@ fn coefficient_permutation_matches_monomial_substitution() {
         }
     }
     // Full-width bit patterns use modular negation, not signed-key negation.
-    let permutation = CoeffAutomorphismPermutation::new(3, PolyLength::new(32));
-    let mut input = [0u32; 32];
-    input[16] = i32::MIN as u32;
-    let mut output = [0; 32];
-    permutation.apply_to(&input, &mut output, NativeModulus::new());
-    assert_eq!(output, input);
+    for degree in [3, 33] {
+        let permutation = CoeffAutomorphismPermutation::new(degree, PolyLength::new(32));
+        let mut input = [0u32; 32];
+        // Both degrees negate coefficient 17 after negacyclic reduction.
+        input[17] = i32::MIN as u32;
+        let mut output = [0; 32];
+        permutation.apply_to(&input, &mut output, NativeModulus::new());
+        let mut expected = [0; 32];
+        expected[(17 * degree) % 32] = i32::MIN as u32;
+        assert_eq!(output, expected);
+    }
+
+    // The gather's input-extent check also protects the release build.
+    assert!(
+        std::panic::catch_unwind(|| {
+            let permutation = CoeffAutomorphismPermutation::new(3, PolyLength::new(32));
+            let mut output = [0u32; 32];
+            permutation.apply_to(&[0u32; 31], &mut output, modulus);
+        })
+        .is_err()
+    );
 
     for (degree, n) in [(0, 32), (2, 32), (65, 32)] {
         assert!(

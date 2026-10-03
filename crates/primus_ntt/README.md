@@ -42,7 +42,7 @@ assert_eq!(values, expected);
 
 Construct and reuse a table outside repeated transform paths. The table is immutable and implements `Send + Sync`, so it may be shared across threads.
 
-`NttAutomorphismPermutation::new(degree, poly_length)` takes the table's checked `PolyLength` and caches `X -> X^degree` in bit-reversed order. It requires odd `degree` in `[1, 2N)`, where `N = poly_length.get()`. `apply_to` only permutes evaluations, preserving their residue range; homomorphic use still requires a scheme-specific key switch.
+`NttAutomorphismPermutation::new(degree, poly_length)` takes the table's checked `PolyLength` and caches `X -> X^degree` in bit-reversed order. It requires odd `degree` in `[1, 2N)`, where `N = poly_length.get()`. `apply_to` only permutes evaluations, preserving their residue range; homomorphic use still requires a scheme-specific key switch. Identity copies the input without allocating an index table; other degrees retain one `u32` source index per evaluation. The same map applies independently to each DCRT modulus component.
 
 ## Representation and ranges
 

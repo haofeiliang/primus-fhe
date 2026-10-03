@@ -10,13 +10,14 @@ fn ntt_permutation_matches_coefficient_automorphism() {
     // Transform kernel dispatch is checked in ntt.rs, independently of this map.
     for log_n in [5, 6] {
         let n = 1 << log_n;
-        let ntt = UintNttTable::new(PolyLength::new(1usize << log_n), modulus).unwrap();
+        let poly_length = PolyLength::new(n);
+        let ntt = UintNttTable::new(poly_length, modulus).unwrap();
         let input: Vec<u32> = (0..n).map(|index| (19 * index as u32 + 5) % Q).collect();
         let mut input_ntt = input.clone();
         ntt.transform_slice(&mut input_ntt);
         for degree in (1..2 * n).step_by(2) {
-            let coefficient = CoeffAutomorphismPermutation::new(degree, PolyLength::new(n));
-            let permutation = NttAutomorphismPermutation::new(degree, PolyLength::new(n));
+            let coefficient = CoeffAutomorphismPermutation::new(degree, poly_length);
+            let permutation = NttAutomorphismPermutation::new(degree, poly_length);
             assert_eq!(permutation.poly_length().get(), n);
             let mut expected = vec![0; n];
             coefficient.apply_to(&input, &mut expected, modulus);

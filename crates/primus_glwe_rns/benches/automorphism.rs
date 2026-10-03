@@ -1,3 +1,6 @@
+//! Run: cargo bench -p primus_glwe_rns --bench automorphism
+//! Each iteration applies one prepared key; setup and buffers are outside timing.
+
 use primus_decompose::DecompositionBaseLog;
 use primus_lattice::GlweDimension;
 use primus_poly::PolyLength;
@@ -25,7 +28,6 @@ fn bench_automorphism(c: &mut Criterion) {
     let mod_gamma = BarrettModulus::new(gamma);
     let moduli_values: [V; 2] = [1125899906826241, 1125899906629633];
     let moduli = moduli_values.map(BarrettModulus::new);
-    let auto_degree = 5;
 
     let mut rng = StdRng::seed_from_u64(42);
 
@@ -33,7 +35,7 @@ fn bench_automorphism(c: &mut Criterion) {
 
     for log_n in [10u32, 11, 12] {
         let poly_length = 1usize << log_n;
-        let table = U64DcrtTable::new(PolyLength::new(1usize << log_n), &moduli).unwrap();
+        let table = U64DcrtTable::new(PolyLength::new(poly_length), &moduli).unwrap();
 
         let glwe_params = CrtGlweParameters::new(
             GlweDimension::new(dimension),
@@ -61,10 +63,6 @@ fn bench_automorphism(c: &mut Criterion) {
 
         let domain = DcrtGadgetDomain::try_new(&glev_params, &table).unwrap();
 
-        let crt_auto_key = CrtGlweAutoKey::new(&domain, auto_degree, &sk, &dcrt_sk, &mut rng);
-
-        let dcrt_auto_key = DcrtGlweAutoKey::new(&domain, auto_degree, &dcrt_sk, &mut rng);
-
         let table_ref = &table;
 
         // Ciphertexts
@@ -86,29 +84,36 @@ fn bench_automorphism(c: &mut Criterion) {
         let mut dcrt_result: DcrtGlweCiphertext<Vec<V>> = DcrtGlweCiphertext::zero(rns_glwe_len);
         let mut auto_workspace = CrtGlweAutomorphismWorkspace::new(&domain);
 
-        let n_label = format!("N={poly_length}");
+        // Identity and N+1 retain their specialized coefficient paths; degree 5
+        // exercises the general gather. Key switching remains part of all cases.
+        for auto_degree in [1, poly_length + 1, 5] {
+            let crt_auto_key = CrtGlweAutoKey::new(&domain, auto_degree, &sk, &dcrt_sk, &mut rng);
+            let dcrt_auto_key = DcrtGlweAutoKey::new(&domain, auto_degree, &dcrt_sk, &mut rng);
 
-        group.bench_function(BenchmarkId::new("CRT", &n_label), |b| {
-            b.iter(|| {
-                crt_auto_key.automorphism_to(
-                    black_box(&c_coeff),
-                    black_box(&mut crt_result),
-                    &domain,
-                    &mut auto_workspace,
-                );
-            });
-        });
+            let label = format!("N={poly_length}/degree={auto_degree}");
 
-        group.bench_function(BenchmarkId::new("DCRT", &n_label), |b| {
-            b.iter(|| {
-                dcrt_auto_key.automorphism_to(
-                    black_box(&c_ntt),
-                    black_box(&mut dcrt_result),
-                    &domain,
-                    &mut auto_workspace,
-                );
+            group.bench_function(BenchmarkId::new("CRT", &label), |b| {
+                b.iter(|| {
+                    crt_auto_key.automorphism_to(
+                        black_box(&c_coeff),
+                        black_box(&mut crt_result),
+                        &domain,
+                        &mut auto_workspace,
+                    );
+                });
             });
-        });
+
+            group.bench_function(BenchmarkId::new("DCRT", &label), |b| {
+                b.iter(|| {
+                    dcrt_auto_key.automorphism_to(
+                        black_box(&c_ntt),
+                        black_box(&mut dcrt_result),
+                        &domain,
+                        &mut auto_workspace,
+                    );
+                });
+            });
+        }
     }
 
     group.finish();

@@ -80,6 +80,8 @@ m 个模数下，普通密文包含 `(k+1)*m*N` 个元素，顺序为 `[componen
 
 Client 根据秘密生成求值密钥，交给 server。按已绑定布局复用操作对应的 `*Workspace`；形状和模数检查不能证明实际秘密一致、系数规范或噪声余量。CRT 与 DCRT trace/展开接口的输入、输出与归一化契约分别见 rustdoc。
 
+CRT 自同构复用 `primus_poly::CoeffAutomorphismPermutation`，DCRT 复用 `primus_ntt::NttAutomorphismPermutation`。有序模数分量和所有密钥行共享同一映射；RNS 层负责分量遍历与密钥切换，共有 helper 负责系数符号和 bit-reversed 点值顺序。Trace 和展开继续复用这些自同构密钥及工作区。
+
 两种表示均提供 `expand_coefficients_to` 和 `expand_partial_coefficients_to`，复用串行工作区。并行版本以 `_parallel_to` 结尾，复用预分配的 `CrtGlweExpandCoeffSyncPool` 或 `DcrtGlweExpandCoeffSyncPool`。
 
 ## Feature 与进一步阅读

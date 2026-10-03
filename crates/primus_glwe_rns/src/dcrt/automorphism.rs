@@ -1,22 +1,8 @@
-//! NTT-domain automorphism implementation (SEAL / CKKS / BGV style).
+//! DCRT automorphism keeps the body in the evaluation domain. Each mask is
+//! permuted, inverse-transformed for decomposition, then key-switched.
 //!
-//! Automorphism σ_k: x → x^k in the NTT (evaluation) domain corresponds to
-//! a permutation of evaluation points rather than coefficient manipulation.
-//!
-//! Compared to the coefficient-domain approach in the parent module, this saves
-//! two NTT transforms for the `b` polynomial:
-//! - Coefficient path for b: INTT → coeff permutation → NTT  (2 transforms + O(N))
-//! - NTT path for b:         NTT permutation                 (O(N) only)
-//!
-//! For the `a` polynomials, the cost is equivalent either way because key-switch
-//! decomposition requires coefficient-domain data.
-//!
-//! # NTT storage order
-//!
-//! This codebase uses **bit-reversed** NTT output. In natural order, index `i`
-//! corresponds to evaluation point ω^(2i+1). In bit-reversed storage, index
-//! `br(i)` stores the evaluation at ω^(2i+1). The permutation table accounts
-//! for this: `out[br(i)] = in[br(i')]` where `i' = ((k·(2i+1)) mod 2N − 1) / 2`.
+//! [`NttAutomorphismPermutation`] owns the bit-reversed index map. This module
+//! applies that same map independently to each ordered RNS modulus component.
 
 use primus_data::{Data, DataMut};
 use primus_integer::FheUint;
@@ -24,143 +10,42 @@ use primus_lattice::{
     RnsGadgetSize,
     glev::{DcrtGlevIter, DcrtGlevIterMut},
 };
-use primus_modulus::PowOf2Modulus;
-use primus_ntt::{NttTable, ReverseLsbs};
-use primus_poly::DcrtPolynomial;
-use primus_reduce::{FieldContext, ReduceMul};
+use primus_ntt::{NttAutomorphismPermutation, NttTable};
+use primus_poly::{DcrtPolynomial, NttPolynomialIter, NttPolynomialIterMut};
+use primus_reduce::FieldContext;
 use zeroize::Zeroizing;
 
 use crate::{
     CrtGlweAutomorphismWorkspace, DcrtGadgetDomain, DcrtGlweCiphertext, DcrtGlweSecretKey,
 };
 
-// ---------------------------------------------------------------------------
-// NTT-domain permutation generation
-// ---------------------------------------------------------------------------
-
-/// Generate the NTT-domain permutation table for automorphism x → x^degree
-/// in **bit-reversed** storage order.
-///
-/// Returns `perm` where `perm[dst] = src`, meaning `out[dst] = in[perm[dst]]`.
-fn generate_ntt_permutation(degree: usize, poly_length: usize) -> Vec<u32> {
-    let twice_n = poly_length << 1;
-    let log_n = poly_length.trailing_zeros();
-    let modulus = <PowOf2Modulus<usize>>::new(twice_n);
-    let mut perm = vec![0u32; poly_length];
-
-    for i in 0..poly_length {
-        // Natural NTT index i → evaluation point ω^(2i+1).
-        // NTT(σ_k(f))[i] = f(ω^(k·(2i+1) mod 2N)) = NTT(f)[target].
-        let j = modulus.reduce_mul(degree, 2 * i + 1);
-        let target = (j - 1) / 2;
-
-        // In bit-reversed storage: out[br(i)] = in[br(target)].
-        let out_br = i.reverse_lsbs(log_n);
-        let in_br = target.reverse_lsbs(log_n);
-
-        perm[out_br] = in_br as u32;
-    }
-
-    perm
-}
-
-// ---------------------------------------------------------------------------
-// NTT-domain AutoHelper
-// ---------------------------------------------------------------------------
-
-/// NTT-domain automorphism helper.
-///
-/// Stores a precomputed permutation table that maps evaluation-point indices
-/// in bit-reversed NTT storage order.
-#[derive(Clone)]
-enum NttAutoOperation {
-    /// Permutation table: `out[i] = in[perm[i]]` in bit-reversed storage.
-    Permutation(Vec<u32>),
-    /// Identity mapping (degree = 1).
-    Identity,
-}
-
-#[derive(Clone)]
-struct NttAutoHelper {
-    poly_length: usize,
-    operation: NttAutoOperation,
-}
-
-impl NttAutoHelper {
-    fn new(degree: usize, poly_length: usize) -> Self {
-        let operation = if degree == 1 {
-            NttAutoOperation::Identity
-        } else {
-            NttAutoOperation::Permutation(generate_ntt_permutation(degree, poly_length))
-        };
-
-        Self {
-            poly_length,
-            operation,
-        }
-    }
-
-    #[inline]
-    fn poly_length(&self) -> usize {
-        self.poly_length
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Permutation application
-// ---------------------------------------------------------------------------
-
-/// Apply NTT-domain automorphism permutation to a single polynomial.
+/// Applies one bit-reversed evaluation map to each DCRT modulus component.
+/// The caller supplies complete, matching RNS polynomials; no arithmetic or
+/// transform is performed here, so each component retains its residue range.
 #[inline]
-fn ntt_poly_auto_inplace<T: FheUint>(poly: &[T], result: &mut [T], operation: &NttAutoOperation) {
-    match operation {
-        NttAutoOperation::Permutation(perm) => {
-            for (dst, &src) in result.iter_mut().zip(perm.iter()) {
-                // SAFETY: for a validated odd degree modulo `2N`, the generated
-                // target lies in `0..N`; reversing its `log2(N)` low bits keeps
-                // it in that range. The DCRT wrapper passes exact-length chunks.
-                *dst = unsafe { *poly.get_unchecked(src as usize) };
-            }
-        }
-        NttAutoOperation::Identity => {
-            result.copy_from_slice(poly);
-        }
-    }
-}
-
-/// Apply NTT-domain automorphism to a DCRT polynomial (all RNS moduli).
-///
-/// The same permutation is applied independently to each modulus component.
-#[inline]
-fn dcrt_poly_ntt_auto_to<T: FheUint>(
-    dcrt_poly: &[T],
-    result: &mut [T],
-    auto_helper: &NttAutoHelper,
+fn dcrt_polynomial_automorphism_to<T: FheUint>(
+    input: &[T],
+    output: &mut [T],
+    permutation: &NttAutomorphismPermutation,
 ) {
-    let poly_length = auto_helper.poly_length();
-
-    dcrt_poly
-        .chunks_exact(poly_length)
-        .zip(result.chunks_exact_mut(poly_length))
-        .for_each(|(poly, auto_poly)| {
-            ntt_poly_auto_inplace(poly, auto_poly, &auto_helper.operation);
-        });
+    let n = permutation.poly_length().get();
+    for (input, mut output) in
+        NttPolynomialIter::new(input, n).zip(NttPolynomialIterMut::new(output, n))
+    {
+        permutation.apply_to(input.as_ref(), output.as_mut());
+    }
 }
-
-// ---------------------------------------------------------------------------
-// NTT-domain auto key generation
-// ---------------------------------------------------------------------------
 
 /// Generate automorphism key data entirely in the NTT domain.
 ///
 /// For each secret-key polynomial s_i (in NTT domain), apply NTT-domain
 /// permutation σ_k(s_i) and encrypt under a GLEV ciphertext.
 ///
-/// Unlike `super::crt::generate_auto_key_data` which requires a coefficient-domain
-/// secret key, this only needs the NTT-domain secret key.
+/// This path needs only the NTT-domain secret key; coefficient key generation
+/// instead permutes the signed secret before encoding it into each RNS modulus.
 fn generate_ntt_auto_key_data<T, M, Table, R>(
     domain: &DcrtGadgetDomain<'_, T, M, Table>,
-    ntt_auto_helper: &NttAutoHelper,
+    permutation: &NttAutomorphismPermutation,
     dcrt_sk: &DcrtGlweSecretKey<T>,
     rng: &mut R,
 ) -> Vec<T>
@@ -187,17 +72,13 @@ where
         .iter_dcrt_poly()
         .zip(key_iter)
         .for_each(|(si, mut dcrt_glev)| {
-            dcrt_poly_ntt_auto_to(si.0, auto_si.as_mut(), ntt_auto_helper);
+            dcrt_polynomial_automorphism_to(si.0, auto_si.as_mut(), permutation);
 
             encryptor.encrypt_dcrt_to(&auto_si, &mut dcrt_glev, rng);
         });
 
     key
 }
-
-// ---------------------------------------------------------------------------
-// DcrtGlweAutoKey (NTT-domain)
-// ---------------------------------------------------------------------------
 
 /// Automorphism key for NTT-domain automorphism.
 ///
@@ -213,7 +94,7 @@ where
 #[derive(Clone)]
 pub struct DcrtGlweAutoKey<T: FheUint> {
     key: Vec<T>,
-    auto_helper: NttAutoHelper,
+    permutation: NttAutomorphismPermutation,
     size: RnsGadgetSize,
 }
 
@@ -238,21 +119,14 @@ impl<T: FheUint> DcrtGlweAutoKey<T> {
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
     {
-        let params = domain.parameters();
+        let permutation =
+            NttAutomorphismPermutation::new(degree, domain.parameters().poly_length());
 
-        let poly_length = params.poly_length().get();
-        assert!(
-            degree < poly_length * 2 && degree & 1 == 1,
-            "automorphism degree must be odd and less than twice the polynomial length"
-        );
-
-        let auto_helper = NttAutoHelper::new(degree, poly_length);
-
-        let key = generate_ntt_auto_key_data(domain, &auto_helper, dcrt_sk, rng);
+        let key = generate_ntt_auto_key_data(domain, &permutation, dcrt_sk, rng);
 
         Self {
             key,
-            auto_helper,
+            permutation,
             size: domain.size(),
         }
     }
@@ -315,10 +189,10 @@ impl<T: FheUint> DcrtGlweAutoKey<T> {
             .zip(a_in)
             .for_each(|(auto_key_i, in_dcrt_poly)| {
                 // 1. NTT-domain permutation (evaluation-point reordering)
-                dcrt_poly_ntt_auto_to(
+                dcrt_polynomial_automorphism_to(
                     in_dcrt_poly.as_ref(),
                     auto_dcrt_poly.as_mut(),
-                    &self.auto_helper,
+                    &self.permutation,
                 );
 
                 // 2. INTT → coefficient domain (required for key-switch decomposition)
@@ -336,7 +210,7 @@ impl<T: FheUint> DcrtGlweAutoKey<T> {
             });
 
         // ----- Process b polynomial: NTT permutation only (no transform needed) -----
-        dcrt_poly_ntt_auto_to(b_in.as_ref(), auto_dcrt_poly.as_mut(), &self.auto_helper);
+        dcrt_polynomial_automorphism_to(b_in.as_ref(), auto_dcrt_poly.as_mut(), &self.permutation);
 
         // ----- Combine: result = (−a', σ(b) − b') -----
         let (a_out, mut b_out) = result.a_b_mut(rns_poly_len);

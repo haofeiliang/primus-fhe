@@ -80,6 +80,8 @@ Construct `DcrtGlweKeySwitchEvaluator::try_new(&key, &domain)` or `HybridRnsGlwe
 
 The client generates evaluation keys from its secrets and supplies them to the server. Reuse the operation's `*Workspace` with the bound layout; shape and modulus checks do not prove actual secret identity, canonical residues or a noise margin. CRT and DCRT trace/expansion APIs retain their own input/output and normalization contracts in rustdoc.
 
+CRT automorphism reuses `primus_poly::CoeffAutomorphismPermutation`; DCRT reuses `primus_ntt::NttAutomorphismPermutation`. One map is shared across the ordered modulus components and all key rows. The RNS layer owns component traversal and key switching; the helpers own coefficient signs and bit-reversed evaluation order. Trace and expansion reuse the same automorphism keys and workspaces.
+
 Both representations provide `expand_coefficients_to` and `expand_partial_coefficients_to` with a reusable serial workspace. Their parallel variants end in `_parallel_to` and reuse a preallocated `CrtGlweExpandCoeffSyncPool` or `DcrtGlweExpandCoeffSyncPool`.
 
 ## Features and further reading
