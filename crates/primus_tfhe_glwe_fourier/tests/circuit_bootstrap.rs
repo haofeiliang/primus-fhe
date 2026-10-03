@@ -11,7 +11,6 @@ use primus_lwe::{LweCiphertext, LweParametersInner};
 use primus_modulus::NativeModulus;
 use primus_poly::PolyLength;
 use primus_test_allocations as allocations;
-use primus_tfhe::ProgrammableBootstrap as _;
 use primus_tfhe_glwe_fourier::{
     CircuitBootstrapConfig, CircuitBootstrapEvaluator, CircuitBootstrapParameters, ClientKey,
     DecompositionConfig, KeyGenerationError, KeyGenerator, PbsOrder, TfheConfig, TfheContext,
@@ -137,6 +136,12 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
     );
     let key = circuit.as_ref().unwrap();
     let parameters = key.parameters();
+    let mut resources = context
+        .bootstrap_resources(
+            &blind_rotation,
+            (order == PbsOrder::KeyswitchBootstrap).then_some(&key_switching),
+        )
+        .unwrap();
     // GLWE scheme switching binds the output layout, not its exact gadget basis.
     let alternate = CircuitBootstrapParameters::try_new(
         context.parameters(),
@@ -213,33 +218,24 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
             .unwrap()
             .encrypt_padded(1, &mut rng)
             .unwrap();
-        let mut other = CircuitBootstrapEvaluator::try_from_parts(
-            &context,
-            &blind_rotation,
-            Some(&key_switching),
-            parameters,
-            key,
-            &other_codec,
-        )
-        .unwrap();
-        let control = other.circuit_bootstrap(input.as_view());
+        let mut other =
+            CircuitBootstrapEvaluator::try_new(&resources, parameters, key, &other_codec).unwrap();
+        let control = other.circuit_bootstrap(input.as_view(), &mut resources);
         let mut selected = context.allocate_accumulator_ciphertext();
-        other.cmux_to(&control, &choices[0], &choices[1], &mut selected);
+        other.cmux_to(
+            &control,
+            &choices[0],
+            &choices[1],
+            &mut selected,
+            &mut resources,
+        );
         assert_eq!(accumulator_client.decrypt(&selected), messages[1]);
     }
 
     // Missing input KS must fail at binding, for classic and sparse alike.
     if order == PbsOrder::KeyswitchBootstrap {
-        let (result, allocation) = allocations::measure(|| {
-            CircuitBootstrapEvaluator::try_from_parts(
-                &context,
-                &blind_rotation,
-                None,
-                parameters,
-                key,
-                &input_codec,
-            )
-        });
+        let (result, allocation) =
+            allocations::measure(|| context.bootstrap_resources(&blind_rotation, None));
         assert!(matches!(
             result,
             Err(TfheEvaluationError::MissingGlweKeySwitchingKey)
@@ -247,50 +243,34 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
         assert_eq!(allocation.count, 0);
     }
 
-    let (parameters, mut evaluator) = match order {
-        PbsOrder::BootstrapKeyswitch => (parameters, {
-            let mut standalone = CircuitBootstrapEvaluator::try_from_parts(
-                &context,
-                &blind_rotation,
-                None,
-                parameters,
-                key,
-                &input_codec,
-            )
-            .unwrap();
-            assert!(standalone.bootstrapper_mut().is_none());
-            // Exercise the missing-KS form before recovery fills that workspace.
-            let mut control = standalone.allocate_output();
-            let mut selected = context.allocate_accumulator_ciphertext();
-            let mut decoded = vec![0; POLY_LENGTH];
-            let (_, online) = allocations::measure(|| {
-                standalone.circuit_bootstrap_to(input.as_view(), &mut control);
-                standalone.cmux_to(&control, &choices[0], &choices[1], &mut selected);
-            });
-            assert_eq!(online.count, 0, "standalone BK CBS/CMUX must not allocate");
-            accumulator_client.decrypt_to(&selected, &mut decoded);
-            assert_eq!(decoded, messages[1]);
-            let (pbs, allocation) =
-                allocations::measure(|| standalone.try_into_bootstrapper(&key_switching).unwrap());
-            assert!(
-                allocation.count > 0,
-                "standalone BK recovery explicitly creates return-KS scratch"
-            );
-            CircuitBootstrapEvaluator::try_from_bootstrapper(pbs, key, &input_codec).unwrap()
-        }),
-        PbsOrder::KeyswitchBootstrap => (
-            &alternate,
-            CircuitBootstrapEvaluator::try_from_parts(
-                &context,
-                &blind_rotation,
-                Some(&key_switching),
-                &alternate,
-                key,
-                &input_codec,
-            )
-            .unwrap(),
-        ),
+    let parameters = if order == PbsOrder::KeyswitchBootstrap {
+        &alternate
+    } else {
+        parameters
     };
+    let mut evaluator =
+        CircuitBootstrapEvaluator::try_new(&resources, parameters, key, &input_codec).unwrap();
+    // Standalone resources contain input KS only when the selected order needs it.
+    let mut control = evaluator.allocate_output();
+    let mut selected = context.allocate_accumulator_ciphertext();
+    let (_, online) = allocations::measure(|| {
+        evaluator.circuit_bootstrap_to(input.as_view(), &mut control, &mut resources);
+        evaluator.cmux_to(
+            &control,
+            &choices[0],
+            &choices[1],
+            &mut selected,
+            &mut resources,
+        );
+    });
+    assert_eq!(online.count, 0);
+    assert_eq!(accumulator_client.decrypt(&selected), messages[1]);
+    // Moving common resources preserves both the FFT engine and prepared CBS.
+    // Only BR→KS needs to allocate a missing output-KS stage.
+    let (mut pbs, assembly) = allocations::measure(|| {
+        primus_tfhe_glwe_fourier::Evaluator::try_from_resources(resources, &key_switching).unwrap()
+    });
+    assert_eq!(assembly.count == 0, order == PbsOrder::KeyswitchBootstrap);
     assert_eq!(parameters.lookup_table_padded_output_count(), 4);
 
     let mut control = evaluator.allocate_output();
@@ -305,7 +285,13 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
     let short_control = FourierGgsw::new(&control.as_ref()[..control.as_ref().len() - 1]);
     assert!(
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            evaluator.cmux_to(&short_control, &choices[0], &choices[1], &mut selected);
+            evaluator.cmux_to(
+                &short_control,
+                &choices[0],
+                &choices[1],
+                &mut selected,
+                pbs.bootstrap_resources_mut(),
+            );
         }))
         .is_err()
     );
@@ -316,14 +302,25 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
     for bit in [1u64, 0] {
         let input = encryptor.encrypt_padded(bit, &mut rng).unwrap();
         let (_, allocation) = allocations::measure(|| {
-            evaluator.circuit_bootstrap_to(input.as_view(), &mut control);
-            evaluator.cmux_to(&control, &choices[0], &choices[1], &mut selected);
-            evaluator.external_product_to(&control, &choices[1], &mut product);
-            evaluator.bootstrapper_mut().unwrap().apply_lookup_table_to(
+            evaluator.circuit_bootstrap_to(
                 input.as_view(),
-                &identity,
-                output.as_mut_view(),
+                &mut control,
+                pbs.bootstrap_resources_mut(),
             );
+            evaluator.cmux_to(
+                &control,
+                &choices[0],
+                &choices[1],
+                &mut selected,
+                pbs.bootstrap_resources_mut(),
+            );
+            evaluator.external_product_to(
+                &control,
+                &choices[1],
+                &mut product,
+                pbs.bootstrap_resources_mut(),
+            );
+            pbs.apply_lookup_table_to(input.as_view(), &identity, output.as_mut_view());
             accumulator_client.decrypt_to(&selected, &mut decoded);
             accumulator_client.decrypt_to(&product, &mut decoded_product);
         });
@@ -383,13 +380,13 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
     let replacement = generator
         .try_generate_glwe_key_switching_key(&client, &mut rng)
         .unwrap();
-    let (mut recovered, recovery) =
-        allocations::measure(|| evaluator.try_into_bootstrapper(&replacement).unwrap());
+    let (_, rebind) =
+        allocations::measure(|| pbs.try_rebind_key_switching_key(&replacement).unwrap());
     assert_eq!(
-        recovery.count, 0,
-        "converted CBS retains ordinary workspace"
+        rebind.count, 0,
+        "compatible KS rebind retains ordinary workspace"
     );
-    recovered.apply_lookup_table_to(input.as_view(), &identity, output.as_mut_view());
+    pbs.apply_lookup_table_to(input.as_view(), &identity, output.as_mut_view());
     assert_eq!(
         context
             .decryptor(client.external_lwe_secret_key(), &input_codec)
@@ -438,6 +435,9 @@ fn evaluator_rejects_resource_mismatches_and_checks_shapes_before_writes() {
     let server = generator
         .try_generate_sparse_server_key(&client, 3, 4, None, &mut rng)
         .unwrap();
+    let mut resources = context
+        .bootstrap_resources(server.bootstrapping_key(), None)
+        .unwrap();
     // Keep level counts equal for basis mismatches, so layout checks cannot mask them.
     for (output, trace, scheme_switch) in [
         (
@@ -480,14 +480,7 @@ fn evaluator_rejects_resource_mismatches_and_checks_shapes_before_writes() {
             CircuitBootstrapParameters::try_new(context.parameters(), output, trace, scheme_switch)
                 .unwrap();
         assert!(matches!(
-            CircuitBootstrapEvaluator::try_from_parts(
-                &context,
-                server.bootstrapping_key(),
-                Some(server.glwe_key_switching_key()),
-                &foreign,
-                &key,
-                &input_codec
-            ),
+            CircuitBootstrapEvaluator::try_new(&resources, &foreign, &key, &input_codec),
             Err(Error::IncompatibleCircuitBootstrapKey)
         ));
     }
@@ -503,39 +496,38 @@ fn evaluator_rejects_resource_mismatches_and_checks_shapes_before_writes() {
     )
     .unwrap();
     assert!(matches!(
-        CircuitBootstrapEvaluator::try_from_parts(
-            &foreign_context,
+        foreign_context.bootstrap_resources(
             server.bootstrapping_key(),
-            Some(server.glwe_key_switching_key()),
-            &parameters,
-            &key,
-            &input_codec
+            Some(server.glwe_key_switching_key())
         ),
         Err(Error::IncompatibleBlindRotationKey)
     ));
     // Message t belongs to the program, so both encodings bind the same CBS key.
     let other_codec = primus_encoding::RoundedCodec::new(8, context.parameters().cipher_modulus());
     assert!(
-        CircuitBootstrapEvaluator::try_from_parts(
-            &context,
-            server.bootstrapping_key(),
-            Some(server.glwe_key_switching_key()),
-            &parameters,
-            &key,
-            &other_codec,
-        )
-        .is_ok()
+        CircuitBootstrapEvaluator::try_new(&resources, &parameters, &key, &other_codec).is_ok()
     );
 
-    let mut evaluator = CircuitBootstrapEvaluator::try_from_parts(
-        &context,
-        server.bootstrapping_key(),
-        Some(server.glwe_key_switching_key()),
-        &parameters,
-        &key,
-        &input_codec,
-    )
-    .unwrap();
+    let mut evaluator =
+        CircuitBootstrapEvaluator::try_new(&resources, &parameters, &key, &input_codec).unwrap();
+    // Equal parameters do not identify an FFT table. Reject a foreign resource
+    // owner before writing even when its geometry and keys are compatible.
+    let foreign_context =
+        TfheContext::<_, RustFftTable>::from_parameters(context.parameters().clone());
+    let mut foreign_resources = foreign_context
+        .bootstrap_resources(server.bootstrapping_key(), None)
+        .unwrap();
+    let input = context.allocate_lwe_ciphertext();
+    let marker = Complex64::new(7.0, -3.0);
+    let mut output = evaluator.allocate_output();
+    output.as_mut().fill(marker);
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            evaluator.circuit_bootstrap_to(input.as_view(), &mut output, &mut foreign_resources);
+        }))
+        .is_err()
+    );
+    assert!(output.as_ref().iter().all(|&value| value == marker));
     let input_dimension = context.parameters().external_lwe_dimension().get();
     let output_len = parameters.output_size().fourier_ggsw_len();
     for (dimension, length) in [
@@ -547,7 +539,7 @@ fn evaluator_rejects_resource_mismatches_and_checks_shapes_before_writes() {
         let mut output = FourierGgsw::new(vec![marker; length]);
         assert!(
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(
-                || evaluator.circuit_bootstrap_to(input.as_view(), &mut output)
+                || evaluator.circuit_bootstrap_to(input.as_view(), &mut output, &mut resources)
             ))
             .is_err()
         );

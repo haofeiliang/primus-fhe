@@ -44,7 +44,7 @@
 
 显式传入 t=4 的 `RoundedCodec` 时，context 提供 `boolean_encryptor`、`boolean_public_encryptor`、`boolean_decryptor` 和 `boolean_evaluator`。这些接口使用普通 PBS 材料；调用与串联约定见[公共 Boolean 契约](../primus_tfhe/README.zh_CN.md#boolean-门)。
 
-输入编码与 ManyLUT 容量在 CBS 程序绑定时检查：NTT 使用 `CircuitBootstrapEvaluator::try_new(&resources, parameters, key, &input_codec)`，Fourier 使用 `context.circuit_bootstrap_evaluator(&server, &input_codec)`。同一套密钥可服务多个明文模数，前提是各程序满足容量与噪声余量。`accumulator_client(client.glwe_secret_key(), scaled_codec)` 独立绑定普通环消息，其 `ScaledCodec` 不必采用输入 LWE 的明文模数。
+输入编码与 ManyLUT 容量在 CBS 程序绑定时检查：两后端均使用 `CircuitBootstrapEvaluator::try_new(&resources, parameters, key, &input_codec)`。同一套密钥可服务多个明文模数，前提是各程序满足容量与噪声余量。`accumulator_client(client.glwe_secret_key(), scaled_codec)` 独立绑定普通环消息，其 `ScaledCodec` 不必采用输入 LWE 的明文模数。
 
 CBS 是两个后端的可选能力，提供独立的 output basis、trace/scheme-switch 参数及密钥， 两种 PBS order 均支持经典 binary/ternary 和 sparse binary。CBS 输出留在 accumulator secret 下，使用 gadget 尺度。`CircuitBootstrapParameters<T, M>` 由公共层定义，后端提供具体模数别名； 同层数的不同输出 basis 可复用 scheme-switch key。噪声与变换要求见对应后端契约。
 

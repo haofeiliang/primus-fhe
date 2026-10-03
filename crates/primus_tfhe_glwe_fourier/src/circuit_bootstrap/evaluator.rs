@@ -2,7 +2,7 @@ use primus_data::{Data, DataMut};
 use primus_encoding::RoundedCodec;
 use primus_fft::{Complex64, FftTable, TorusFftValue};
 use primus_glwe::GlweCiphertext;
-use primus_glwe::{FourierGlweKeySwitchingKey, FourierGlweTraceWorkspace, GlevCiphertext};
+use primus_glwe::{FourierGlweTraceWorkspace, GlevCiphertext};
 use primus_lattice::ggsw::FourierGgsw;
 use primus_modulus::NativeModulus;
 use primus_tfhe::InterleavedLookupTable;
@@ -10,21 +10,21 @@ use primus_tfhe::InterleavedLookupTable;
 use super::key::CircuitBootstrapBinding;
 
 use crate::{
-    BootstrappingKey, CircuitBootstrapKey, CircuitBootstrapParameters, Evaluator, Lwe, ServerKey,
-    TfheContext, TfheEvaluationError, bootstrap::CircuitBootstrapResources,
+    BootstrapResources, CircuitBootstrapKey, CircuitBootstrapParameters, Lwe, TfheContext,
+    TfheEvaluationError,
 };
 
 /// Classic binary/ternary or sparse binary CBS producing Fourier GGSW controls.
 ///
-/// Both PBS orders share the same BR, reverse-trace projection and scheme-switch
-/// stages; KeyswitchBootstrap adds an input key switch. After construction,
-/// [`Self::circuit_bootstrap_to`] performs no heap allocation.
+/// Owns the programmed LUT and projection buffers. Common input/BR/FFT/EP
+/// resources are borrowed per call; both BR variants share trace and scheme switching.
+/// After construction, [`Self::circuit_bootstrap_to`] performs no heap allocation.
 pub struct CircuitBootstrapEvaluator<'a, T, Table>
 where
     T: TorusFftValue,
     Table: FftTable,
 {
-    resources: CircuitBootstrapResources<'a, T, Table>,
+    context: &'a TfheContext<T, Table>,
     circuit: CircuitBootstrapBinding<'a, T>,
     lookup_table: InterleavedLookupTable<T>,
     trace: FourierGlweTraceWorkspace<T>,
@@ -36,135 +36,35 @@ where
     T: TorusFftValue,
     Table: FftTable,
 {
-    /// Binds the CBS parameters and material carried by one server key.
-    /// Rejects missing CBS material, an incompatible input codec modulus,
-    /// or an input domain that does not fit the gadget identity ManyLUT.
+    /// Checks CBS material, compiles the gadget identity LUT and allocates projection buffers.
+    /// `parameters` may select another compatible output basis with the same layout.
+    /// Common resources are borrowed only for construction and each online operation.
+    /// Both classic and sparse BR and both PBS orders are supported.
     ///
     /// # Correctness
-    /// Inherits [`Self::try_from_parts`]'s secret and transform requirements.
-    /// Bundled generation pairs secrets; layout checks do not establish identity
-    /// for externally assembled material or another transform representation.
+    /// CBS and resource keys must use the same paired secrets and this context's
+    /// FFT table instance. Compatibility checks do not establish these identities
+    /// or a noise margin; see [`primus_glwe::FourierGlweSchemeSwitchKey::apply_to`].
     pub fn try_new(
-        context: &'a TfheContext<T, Table>,
-        server_key: &'a ServerKey<T>,
-        input_codec: &RoundedCodec<T, NativeModulus<T>>,
-    ) -> Result<Self, TfheEvaluationError> {
-        let key = server_key
-            .circuit_bootstrap_key()
-            .ok_or(TfheEvaluationError::MissingCircuitBootstrapKey)?;
-        Self::try_from_parts(
-            context,
-            server_key.bootstrapping_key(),
-            (context.parameters().pbs_order() == crate::PbsOrder::KeyswitchBootstrap)
-                .then_some(server_key.glwe_key_switching_key()),
-            key.parameters(),
-            key,
-            input_codec,
-        )
-    }
-
-    /// Checks resource layouts/bases, compiles the gadget-scaled identity LUT
-    /// and allocates workspace for the selected classic or sparse BR. These checks
-    /// do not establish a noise margin for the selected output gadget scales.
-    ///
-    /// `input_key_switching_key` is required for KS→BR and may be `None` for
-    /// BR→KS. Any supplied KS key is validated; BR→KS does not retain it or
-    /// allocate return scratch. Missing KS→BR material is reported before evaluation.
-    ///
-    /// # Correctness
-    ///
-    /// BR, optional KS, and `circuit_key` must be generated from the same paired
-    /// client secrets and this context's FFT table instance. Compatibility
-    /// checks cannot verify actual secret or transform identity. See
-    /// [`primus_glwe::FourierGlweSchemeSwitchKey::apply_to`] for the underlying
-    /// representation and error requirements.
-    pub fn try_from_parts(
-        context: &'a TfheContext<T, Table>,
-        bootstrapping_key: &'a BootstrappingKey<T>,
-        input_key_switching_key: Option<&'a FourierGlweKeySwitchingKey<T>>,
+        resources: &BootstrapResources<'a, T, Table>,
         parameters: &'a CircuitBootstrapParameters<T>,
         circuit_key: &'a CircuitBootstrapKey<T>,
         input_codec: &RoundedCodec<T, NativeModulus<T>>,
     ) -> Result<Self, TfheEvaluationError> {
-        Self::from_resources_and_parts(
-            CircuitBootstrapResources::try_new(
-                context,
-                bootstrapping_key,
-                input_key_switching_key,
-            )?,
-            parameters,
-            circuit_key,
-            input_codec,
-        )
-    }
-
-    /// Consumes complete PBS workspace and preserves it for ordinary operations and recovery.
-    /// Compiles the selected input encoding and allocates only additional CBS buffers;
-    /// checks the supplied CBS key and ManyLUT capacity.
-    ///
-    /// # Correctness
-    /// `circuit_key` must use the bootstrapper's accumulator secret and transform;
-    /// see [`Self::try_from_parts`].
-    pub fn try_from_bootstrapper(
-        pbs: Evaluator<'a, T, Table>,
-        circuit_key: &'a CircuitBootstrapKey<T>,
-        input_codec: &RoundedCodec<T, NativeModulus<T>>,
-    ) -> Result<Self, TfheEvaluationError> {
-        Self::from_resources_and_parts(
-            CircuitBootstrapResources::Bootstrapper(pbs),
-            circuit_key.parameters(),
-            circuit_key,
-            input_codec,
-        )
-    }
-
-    /// Borrows ordinary PBS without allocation, while preventing replacement of the bound evaluator.
-    /// Returns `None` only for standalone BootstrapKeyswitch CBS, which omits return-KS storage.
-    /// Use [`Self::try_from_bootstrapper`] when alternating ordinary PBS and CBS.
-    #[must_use]
-    pub fn bootstrapper_mut(
-        &mut self,
-    ) -> Option<
-        impl primus_tfhe::ProgrammableBootstrap<T>
-        + primus_tfhe::ProgrammableBootstrapInterleaved<T>
-        + use<'_, 'a, T, Table>,
-    > {
-        self.resources.bootstrapper_mut()
-    }
-
-    /// Recovers ordinary PBS workspace and releases CBS-only buffers.
-    /// Reuses all allocations when constructed from an ordinary bootstrapper or with KS→BR order.
-    /// Standalone BR→KS CBS explicitly allocates its missing return-KS workspace here.
-    ///
-    /// # Correctness
-    /// The supplied KS key must use the original paired secrets and transform.
-    /// A compatible replacement reuses the active KS stage's buffers.
-    pub fn try_into_bootstrapper(
-        self,
-        key_switching_key: &'a FourierGlweKeySwitchingKey<T>,
-    ) -> Result<Evaluator<'a, T, Table>, TfheEvaluationError> {
-        self.resources.try_into_bootstrapper(key_switching_key)
-    }
-
-    /// Bind the circuit parameters once and compile the gadget-scaled identity LUT.
-    fn from_resources_and_parts(
-        resources: CircuitBootstrapResources<'a, T, Table>,
-        parameters: &'a CircuitBootstrapParameters<T>,
-        circuit_key: &'a CircuitBootstrapKey<T>,
-        input_codec: &RoundedCodec<T, NativeModulus<T>>,
-    ) -> Result<Self, TfheEvaluationError> {
-        let context = resources.engine().context;
+        let context = resources.context;
         let tfhe = context.parameters();
         let circuit = CircuitBootstrapBinding::try_new(tfhe, parameters, circuit_key)?;
 
         let glwe = tfhe.blind_rotation_ggsw();
         let lookup_table = parameters.compile_lookup_table(input_codec)?;
 
+        let glwe_size = glwe.glwe_size();
+
         Ok(Self {
-            resources,
+            context,
             circuit,
             lookup_table,
-            trace: FourierGlweTraceWorkspace::new(glwe.glwe_size()),
+            trace: FourierGlweTraceWorkspace::new(glwe_size),
             projected: GlevCiphertext::zero(parameters.output_size().glev_len()),
         })
     }
@@ -187,20 +87,21 @@ where
     /// See [`FourierGgsw::cmux_to`] for the underlying numerical contract.
     ///
     /// # Panics
-    /// Panics before output writes if any ciphertext has the wrong length.
+    /// Panics before output writes on a different resource context or a wrong ciphertext length.
     pub fn cmux_to<A, B, C, D>(
         &mut self,
         control: &FourierGgsw<A>,
         lhs: &GlweCiphertext<B>,
         rhs: &GlweCiphertext<C>,
         output: &mut GlweCiphertext<D>,
+        resources: &mut BootstrapResources<'a, T, Table>,
     ) where
         A: Data<Elem = Complex64>,
         B: Data<Elem = T>,
         C: Data<Elem = T>,
         D: DataMut<Elem = T>,
     {
-        let engine = self.resources.engine_mut();
+        resources.check_context(self.context);
         let parameters = self.circuit.parameters;
         let ring_len = parameters.output_size().glwe_size().glwe_len();
         assert_eq!(
@@ -218,7 +119,7 @@ where
             ),
             "CMUX ciphertext layout mismatch"
         );
-        engine.with_external_product(parameters.output_size(), |scratch, fft| {
+        resources.with_external_product(parameters.output_size(), |scratch, fft| {
             control.cmux_to(lhs, rhs, output, parameters.output_basis(), fft, scratch);
         });
     }
@@ -232,18 +133,19 @@ where
     /// See [`FourierGgsw::external_product_to`].
     ///
     /// # Panics
-    /// Panics before output writes if any ciphertext has the wrong length.
+    /// Panics before output writes on a different resource context or a wrong ciphertext length.
     pub fn external_product_to<A, B, C>(
         &mut self,
         control: &FourierGgsw<A>,
         input: &GlweCiphertext<B>,
         output: &mut GlweCiphertext<C>,
+        resources: &mut BootstrapResources<'a, T, Table>,
     ) where
         A: Data<Elem = Complex64>,
         B: Data<Elem = T>,
         C: DataMut<Elem = T>,
     {
-        let engine = self.resources.engine_mut();
+        resources.check_context(self.context);
         let parameters = self.circuit.parameters;
         let ring_len = parameters.output_size().glwe_size().glwe_len();
         assert_eq!(
@@ -259,17 +161,21 @@ where
             ),
             "external-product ciphertext layout mismatch"
         );
-        engine.with_external_product(parameters.output_size(), |scratch, fft| {
+        resources.with_external_product(parameters.output_size(), |scratch, fft| {
             control.external_product_to(input, output, parameters.output_basis(), fft, scratch);
         });
     }
 
     /// Allocates a Fourier GGSW output. Inherits [`Self::circuit_bootstrap_to`]'s
-    /// encoding, secret, FFT representation, noise and input-dimension contracts.
+    /// encoding, secret, FFT representation, noise and borrowing contracts.
     #[must_use]
-    pub fn circuit_bootstrap(&mut self, input: Lwe<&[T]>) -> FourierGgsw<Vec<Complex64>> {
+    pub fn circuit_bootstrap(
+        &mut self,
+        input: Lwe<&[T]>,
+        resources: &mut BootstrapResources<'a, T, Table>,
+    ) -> FourierGgsw<Vec<Complex64>> {
         let mut output = self.allocate_output();
-        self.circuit_bootstrap_to(input, &mut output);
+        self.circuit_bootstrap_to(input, &mut output, resources);
         output
     }
 
@@ -292,18 +198,24 @@ where
     /// # Panics
     ///
     /// Panics before output writes if the input dimension or output Fourier
-    /// GGSW length is wrong. LUT and resource compatibility is fixed at construction.
+    /// GGSW length is wrong, or resources belong to a different context.
+    /// LUT parameters are fixed during construction.
     pub fn circuit_bootstrap_to<S: DataMut<Elem = Complex64>>(
         &mut self,
         input: Lwe<&[T]>,
         output: &mut FourierGgsw<S>,
+        resources: &mut BootstrapResources<'a, T, Table>,
     ) {
-        let engine = self.resources.engine_mut();
+        resources.check_context(self.context);
         let parameters = self.circuit.parameters;
         let circuit_key = self.circuit.key;
         assert_eq!(
             input.dimension(),
-            engine.context.parameters().external_lwe_dimension().get(),
+            resources
+                .context
+                .parameters()
+                .external_lwe_dimension()
+                .get(),
             "circuit-bootstrap input dimension mismatch"
         );
         assert_eq!(
@@ -312,7 +224,7 @@ where
             "circuit-bootstrap output Fourier GGSW layout mismatch"
         );
 
-        let (accumulator, fft) = engine.blind_rotate(
+        let (accumulator, fft) = resources.blind_rotate(
             input,
             self.lookup_table.polynomial(),
             self.lookup_table.padded_output_count(),
@@ -327,29 +239,10 @@ where
             &mut self.trace,
         );
         // CMUX can bind the same buffers to a different output decomposition.
-        engine.with_external_product(parameters.scheme_switch().size(), |scratch, fft| {
+        resources.with_external_product(parameters.scheme_switch().size(), |scratch, fft| {
             circuit_key
                 .scheme_switch_key()
                 .apply_to(&self.projected, output, fft, scratch);
         });
-    }
-}
-
-impl<T, Table> TfheContext<T, Table>
-where
-    T: TorusFftValue,
-    Table: FftTable,
-{
-    /// Binds the server key's optional CBS material to reusable workspace.
-    /// Returns an error if the capability is absent or incompatible.
-    ///
-    /// # Correctness
-    /// Inherits [`CircuitBootstrapEvaluator::try_new`]'s transform requirements.
-    pub fn circuit_bootstrap_evaluator<'a>(
-        &'a self,
-        server_key: &'a ServerKey<T>,
-        input_codec: &RoundedCodec<T, NativeModulus<T>>,
-    ) -> Result<CircuitBootstrapEvaluator<'a, T, Table>, TfheEvaluationError> {
-        CircuitBootstrapEvaluator::try_new(self, server_key, input_codec)
     }
 }

@@ -13,7 +13,8 @@ use primus_lattice::{GlweDimension, LweDimension};
 use primus_lwe::LweParametersInner;
 use primus_modulus::NativeModulus;
 use primus_tfhe_glwe_fourier::{
-    ClientKey, DecompositionConfig, KeyGenerator, PbsOrder, TfheConfig, TfheContext, TfheParameters,
+    ClientKey, DecompositionConfig, FactorizedEvaluator, KeyGenerator, PbsOrder, TfheConfig,
+    TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -99,7 +100,8 @@ fn main() {
             |score, i| Word::from(score >= thresholds[i]),
         )
         .unwrap();
-    let mut evaluator = context.factorized_evaluator(&server_key).unwrap();
+    let mut pbs = context.evaluator(&server_key).unwrap();
+    let mut evaluator = FactorizedEvaluator::new(&pbs);
     let mut outputs = vec![context.allocate_lwe_ciphertext(); OUTPUTS];
 
     for score in [12 as Word, 45] {
@@ -109,7 +111,7 @@ fn main() {
             .unwrap();
 
         // Server -> client: return one ciphertext per threshold, reusing all buffers.
-        evaluator.apply_lookup_table_to(input.as_view(), &program, &mut outputs);
+        evaluator.apply_lookup_table_to(input.as_view(), &program, &mut outputs, &mut pbs);
 
         // Client: decrypt phases and decode with the agreed output codec.
         for (flag, output) in flags.iter_mut().zip(&outputs) {

@@ -179,14 +179,22 @@ where
                                     value,
                                 )
                                 .unwrap();
-                            let mut evaluator = context.factorized_evaluator(server).unwrap();
-                            evaluator.apply_lookup_table_to(input.as_view(), &lut, &mut outputs);
+                            let mut pbs = context.evaluator(server).unwrap();
+                            let mut evaluator =
+                                primus_tfhe_glwe_fourier::FactorizedEvaluator::new(&pbs);
+                            evaluator.apply_lookup_table_to(
+                                input.as_view(),
+                                &lut,
+                                &mut outputs,
+                                &mut pbs,
+                            );
                             check(&outputs);
                             b.iter(|| {
                                 evaluator.apply_lookup_table_to(
                                     black_box(input.as_view()),
                                     black_box(&lut),
                                     black_box(&mut outputs),
+                                    &mut pbs,
                                 )
                             });
                         }

@@ -1,7 +1,6 @@
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_lattice::{GlweDimension, LweDimension};
 use primus_poly::PolyLength;
-use primus_tfhe::ProgrammableBootstrap as _;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use primus_decompose::primitive::ApproxSignedBasis;
@@ -108,9 +107,8 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(order: PbsOrder, ternary: b
     });
     // Reuse the same client/program for classic and sparse binary controls.
     for server in std::iter::once(&server).chain(sparse.as_ref()) {
-        let mut evaluator = primus_tfhe_glwe_fourier::FactorizedEvaluator::from_bootstrapper(
-            context.evaluator(server).unwrap(),
-        );
+        let mut pbs = context.evaluator(server).unwrap();
+        let mut evaluator = primus_tfhe_glwe_fourier::FactorizedEvaluator::new(&pbs);
         let encryptor = context
             .encryptor(client.external_lwe_secret_key(), &input_codec)
             .unwrap();
@@ -146,7 +144,7 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(order: PbsOrder, ternary: b
                 .encrypt_padded(T::as_from(message), &mut rng)
                 .unwrap();
             let (_, allocation) = allocations::measure(|| {
-                evaluator.apply_lookup_table_to(input.as_view(), &lut, &mut outputs)
+                evaluator.apply_lookup_table_to(input.as_view(), &lut, &mut outputs, &mut pbs)
             });
             assert_eq!(
                 allocation.count, 0,
@@ -162,20 +160,13 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(order: PbsOrder, ternary: b
                     .into_signed_f64()
                     .abs();
                 assert!(error * T::TORUS_SCALE < 0.01);
-                evaluator.bootstrapper_mut().apply_lookup_table_to(
-                    input.as_view(),
-                    &singles[i],
-                    reference.as_mut_view(),
-                );
+                pbs.apply_lookup_table_to(input.as_view(), &singles[i], reference.as_mut_view());
                 assert_eq!(
                     codec.decode_value(decryptor.decrypt_phase(reference.as_view()).unwrap()),
                     expected
                 );
             }
         }
-
-        let (_, recovered) = allocations::measure(|| evaluator.into_bootstrapper());
-        assert_eq!(recovered.count, 0, "recovery must retain PBS allocations");
     }
 }
 
@@ -219,8 +210,10 @@ fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
         .encrypt_padded(3, &mut rng)
         .unwrap();
     let wrong = LweCiphertext::zero(DIM - 1);
-    let mut evaluator = context.factorized_evaluator(&server).unwrap();
-    for case in 0..4 {
+    let mut pbs = context.evaluator(&server).unwrap();
+    let mut evaluator = primus_tfhe_glwe_fourier::FactorizedEvaluator::new(&pbs);
+    let mut foreign_pbs = other.evaluator(&server).unwrap();
+    for case in 0..5 {
         let mut outputs = vec![input.clone(); if case == 0 { 2 } else { 3 }];
         if case == 1 {
             outputs[2] = wrong.clone();
@@ -234,7 +227,12 @@ fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
                     input.as_view()
                 },
                 if case == 3 { &foreign } else { &lut },
-                &mut outputs
+                &mut outputs,
+                if case == 4 {
+                    &mut foreign_pbs
+                } else {
+                    &mut pbs
+                },
             )))
             .is_err()
         );
@@ -243,7 +241,7 @@ fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
     let decryptor = context
         .decryptor(client.external_lwe_secret_key(), &input_codec)
         .unwrap();
-    let outputs = evaluator.apply_lookup_table(input.as_view(), &lut);
+    let outputs = evaluator.apply_lookup_table(input.as_view(), &lut, &mut pbs);
     assert_eq!(
         outputs
             .iter()
@@ -257,7 +255,9 @@ fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
     assert_eq!(
         codec.decode_value(
             decryptor
-                .decrypt_phase(evaluator.apply_lookup_table(input.as_view(), &single)[0].as_view())
+                .decrypt_phase(
+                    evaluator.apply_lookup_table(input.as_view(), &single, &mut pbs)[0].as_view()
+                )
                 .unwrap()
         ),
         3

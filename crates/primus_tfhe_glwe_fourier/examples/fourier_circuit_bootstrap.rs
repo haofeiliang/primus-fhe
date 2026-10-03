@@ -140,10 +140,11 @@ fn main() {
     let mut decoded = vec![0; N];
 
     // Server: receive BR/CBS material, optional input KS, and encrypted candidates.
-    let mut cbs = CircuitBootstrapEvaluator::try_from_parts(
-        &context,
-        &blind_rotation,
-        input_key_switching.as_ref(),
+    let mut resources = context
+        .bootstrap_resources(&blind_rotation, input_key_switching.as_ref())
+        .unwrap();
+    let mut cbs = CircuitBootstrapEvaluator::try_new(
+        &resources,
         circuit_key.parameters(),
         &circuit_key,
         &input_codec,
@@ -159,8 +160,8 @@ fn main() {
             .unwrap();
 
         // Server: CBS produces a gadget control; CMux selects rhs for 1, lhs for 0.
-        cbs.circuit_bootstrap_to(input.as_view(), &mut control);
-        cbs.cmux_to(&control, &lhs, &rhs, &mut selected);
+        cbs.circuit_bootstrap_to(input.as_view(), &mut control, &mut resources);
+        cbs.cmux_to(&control, &lhs, &rhs, &mut selected, &mut resources);
 
         // Client: decrypt the returned ring ciphertext, reusing the decoding buffer.
         ring_client.decrypt_to(&selected, &mut decoded);

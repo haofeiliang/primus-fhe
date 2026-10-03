@@ -161,8 +161,7 @@ are unchanged; no new latency claim is made.
 
 ## Input, blind rotation and return ownership
 
-The NTRU backends' and GLWE NTT's public `BootstrapResources`, and GLWE Fourier's
-private `BlindRotationEngine`, bind the context, key,
+Each of the four backends exposes its own `BootstrapResources`, binding the context, key,
 selected BR scratch and coefficient accumulator; Fourier also owns its FFT
 engine there. GLWE input preparation is direct for BR→KS, or owns the required
 input KS and compact small LWE for KS→BR. The latter cannot be omitted by CBS.
@@ -170,26 +169,11 @@ Ordinary `Evaluator` adds its complete return stage: output KS for GLWE BR→KS,
 direct extraction for GLWE KS→BR, or the NTRU return evaluator. It has no optional
 missing essential workspace. GLWE BR→KS no longer allocates an unused input LWE.
 
-For GLWE Fourier, a private two-state CBS resource enum contains either standalone BR/input
-resources or the full retained PBS. Standalone Fourier KS→BR already has a complete
-PBS, since its return is direct extraction. `bootstrapper_mut` exposes only PBS
-operations, preventing replacement of the key-bound evaluator.
-
-| CBS construction | Ordinary PBS borrow | Recovery allocation |
-| --- | --- | --- |
-| Standalone GLWE Fourier BR→KS | `None` | Allocate output KS |
-| Standalone GLWE Fourier KS→BR | `Some` | None |
-| GLWE Fourier CBS from complete PBS | `Some` | None |
-
 Both GLWE backends borrow the selected BR key directly. Each active KS stage binds
 its own ring KS key alongside the existing scratch. Independent BR→KS CBS can
 omit the KS owner entirely; KS→BR requires it at construction, with a structured
-error for missing material. Fourier `try_from_bootstrapper(pbs, circuit_key, input_codec)`
-retains complete PBS. `try_into_bootstrapper(glwe_ks_key)` validates the explicit
-KS key and reuses an existing stage's buffers, including for another compatible
-key from the same paired secrets/transform. Only standalone BR→KS allocates
-missing output KS scratch. These conversions do not change numerical kernels
-or workspace layouts.
+error for missing material. CBS/MVB borrow resources per call and do not own a
+nested PBS. See the [GLWE resource table](#glwe-resource-ownership).
 
 Each NTRU backend's ordinary `Evaluator` owns `BootstrapResources` and both return buffers.
 CBS/one-hot retains a compiled LUT, trace scratch and projected NLEV, then borrows
@@ -218,10 +202,12 @@ Existing size/domain boundaries and semantic polynomial/ciphertext iterators des
 
 Partial reverse trace with r>1 retains r equally spaced coefficients; CBS needs separate constant projections of gadget entries. It cannot replace those projections. The real serial consumer already uses `project_prefix_coefficients_with_scratch_to`. Standalone partial-trace callers have their own trace workspace, so an additional partial-trace scratch API currently has no independent consumer.
 
-## GLWE NTT resource ownership
+## GLWE resource ownership
 
 CBS retains its programmed LUT, trace scratch and projected GLev; MVB retains
-one extra NTT GLWE for the shared rotation. They borrow common resources or
+one extra transform-domain GLWE for the shared rotation. Fourier MVB also keeps
+one component-sized Fourier product, then inverse-transforms into the common
+coefficient accumulator. They borrow common resources or
 complete PBS per call, without a nested evaluator or recovery protocol.
 
 | Resource | BR→KS | KS→BR | Serial reuse |
@@ -233,7 +219,9 @@ complete PBS per call, without a nested evaluator or recovery protocol.
 | Output KS scratch and switched GLWE | Ordinary `Evaluator` | Absent | One KS for ordinary/ManyLUT, one per factorized output |
 | Output extraction | Compact small LWE after KS | Direct accumulator LWE | Writes caller buffers, no owned intermediate LWE |
 | Trace scratch and projected GLev | CBS state | CBS state | Overwritten for each gadget result |
-| Shared NTT rotation | MVB state | MVB state | Preserved until every factor output has returned |
+| Shared transform-domain rotation | MVB state | MVB state | Preserved until every factor output has returned |
+| Fourier component product | MVB state | MVB state | Overwritten and inverse-transformed for each component |
+| FFT engine and table-bound scratch (Fourier only) | `BootstrapResources` | `BootstrapResources` | Input/output KS, BR, trace, scheme switch, CMux and MVB |
 
 `context.bootstrap_resources(br, input_ks)` checks material before allocation;
 only KS→BR requires `Some(ks)`. `Evaluator::try_from_resources(resources, ks)`
@@ -249,7 +237,10 @@ There is no extra identity token or general backend trait. CBS accepts independe
 compatible output parameters because its scheme-switch key binds output layout.
 EP buffers use existing `with_rebound` to change decomposition levels while
 preserving GLWE geometry, then restore their layout on return or unwind. No
-allocation, extra transform or coefficient-loop validation was added.
+allocation, extra transform or coefficient-loop validation was added. Fourier
+retains the same FFT table/engine throughout: factors use integer transforms,
+GLWE/gadget values use torus transforms, and native trace halving retains its
+rounding contract.
 
 ## NTRU resource ownership
 
@@ -574,7 +565,8 @@ Both revisions used that same CPU, with after/before/before/after run order,
 CPU 8 does not reproduce the sparse CBS increase; it does not invalidate the
 CPU 4 result. Other CPU 2/4 runs varied substantially for both revisions.
 Zero extra allocation and unchanged retained heap are established, but the
-CPU-dependent sparse CBS latency difference remains unresolved. Do not claim
+CPU-dependent sparse CBS latency difference remains unresolved. Its analysis and
+sparse PBS optimization are deferred; no resolution is claimed here. Do not claim
 an online speedup or unconditional performance parity from these measurements.
 
 Reproduce with `pbs`, `sparse_pbs`, `mvb`, and `circuit_bootstrap` in
@@ -583,6 +575,82 @@ separately, then run saved executables with `taskset -c 4` (or 8), `--bench`,
 `--warm-up-time 0.5 --measurement-time 2 --sample-size 20 --noplot`.
 The MVB filter is `u64/mvb/.*/D8_k3/(interleaved|factorized)`; CBS uses `u64/cbs/`.
 SIMD and u32 are validated functionally, not timed.
+
+## GLWE Fourier borrowed-resource measurement
+
+Compared with `07c3117e` on 2026-10-03, AMD Ryzen 9 9955HX3D, x86_64 Linux,
+rustc 1.98.1 (48a229cea, LLVM 22.1.8), default features and the repository's
+`target-cpu=native`. Each revision was built in the same checkout and its
+executables saved; timing ran sequentially on CPU 8 without concurrent builds.
+The fixtures are arithmetic profiles, not security recommendations.
+
+The temporary constructor probe used u64/Native/N1024, seed 42, t=4 and
+`glwe::cbs`. Classic used n800 binary `glwe::circuit`; sparse used n728/h32
+`glwe::diagnostic`, three copies and 64 buckets. The probe retained the complete
+PBS, standalone CBS or PBS+MVB resource set, including the owners moved out of
+CBS/MVB. Requested allocation counts and retained heap (allocated minus released
+bytes, excluding allocator metadata) are unchanged for both FFT engines:
+
+| Order / key | PBS count / heap bytes | CBS count / heap bytes | PBS+MVB count / heap bytes |
+| --- | --- | --- | --- |
+| BR→KS / classic | 13 / 133120 | 18 / 198656 | 15 / 157696 |
+| BR→KS / sparse | 16 / 663232 | 21 / 728768 | 18 / 687808 |
+| KS→BR / classic | 14 / 139528 | 24 / 255240 | 16 / 164104 |
+| KS→BR / sparse | 17 / 669064 | 27 / 784776 | 19 / 693640 |
+
+For either order/key, RustFFT inline sizes are PBS 544 → 544, CBS 800 → 712,
+and PBS+MVB 592 → 600 bytes. TFHE-FFT adds 8 bytes to each size on both revisions.
+The removed CBS ownership enum saves 88 inline bytes; MVB adds one context
+reference. The probe has been removed, and constructor latency was not measured.
+Tests cover zero online allocation from the first call and after alternating
+CBS/CMux/external product/PBS or MVB/PBS. Moving resources into ordinary PBS
+allocates output KS only for BR→KS; compatible KS rebinding does not allocate.
+
+One timed iteration evaluates one complete request, excluding setup, keys,
+input, LUT, outputs and workspace allocation. Classic PBS/CBS use n800/N1024;
+classic MVB uses n728/h32/N1024, D8/k3 and returns all three ciphertexts.
+Sparse online latency was deliberately not measured: sparse CBS analysis and
+sparse PBS optimization are deferred. Initial u64 point estimates in ms,
+with 0.5 s warmup, 2 s measurement and 20 samples:
+
+| Engine / request | BR→KS before → after | KS→BR before → after |
+| --- | --- | --- |
+| RustFFT binary PBS | 3.164 → 3.158 | 3.194 → 3.182 |
+| TFHE-FFT binary PBS | 2.769 → 2.803 | 2.807 → 2.721 |
+| RustFFT classic CBS | 16.266 → 16.316 | 16.144 → 16.314 |
+| TFHE-FFT classic CBS | 15.012 → 14.514 | 14.907 → 15.651 |
+| RustFFT interleaved MVB | 16.086 → 15.950 | 16.164 → 16.335 |
+| RustFFT factorized MVB | 15.736 → 15.828 | 15.968 → 16.035 |
+| TFHE-FFT interleaved MVB | 14.105 → 13.445 | 13.986 → 14.254 |
+| TFHE-FFT factorized MVB | 13.850 → 13.378 | 13.899 → 13.365 |
+
+The initial TFHE-FFT KS→BR CBS increase prompted an after/before/before/after
+recheck on CPU 8, with 0.5 s warmup, 3 s measurement and 20 samples. It also
+rechecked classic CBS on RustFFT, TFHE-FFT PBS and the slower interleaved MVB case:
+
+| Rechecked request | Before, two runs (ms) | After, two runs (ms) |
+| --- | --- | --- |
+| RustFFT CBS BR→KS | 16.411 / 16.138 | 16.285 / 16.248 |
+| RustFFT CBS KS→BR | 16.294 / 18.021 | 16.272 / 16.388 |
+| TFHE-FFT CBS BR→KS | 15.708 / 14.453 | 15.197 / 14.444 |
+| TFHE-FFT CBS KS→BR | 15.919 / 16.044 | 15.268 / 14.436 |
+| TFHE-FFT PBS BR→KS | 2.729 / 2.740 | 2.729 / 2.727 |
+| TFHE-FFT PBS KS→BR | 2.730 / 2.753 | 2.731 / 2.790 |
+| TFHE-FFT interleaved MVB KS→BR | 12.916 / 12.984 | 13.228 / 12.921 |
+
+The initial increases did not persist consistently; baseline latency also
+varied. The retained implementation keeps the original arithmetic, transform
+schedule and inline hints. These measurements establish neither a general
+speedup nor exact latency parity across environments. Sparse online performance
+remains outside this comparison.
+
+Reproduce with `pbs`, `circuit_bootstrap`, and `mvb` in
+`primus_tfhe_glwe_fourier`. Build each revision separately, then run its saved
+executable with `taskset -c 8`, `--bench`, `--warm-up-time 0.5`,
+`--measurement-time 2 --sample-size 20 --noplot`. Filters are
+`u64/binary/boolean/.*/complete`, `u64/cbs/classic/`, and
+`u64/mvb/classic/.*/D8_k3/(interleaved|factorized)` respectively.
+SIMD and u32 are checked functionally, not timed.
 
 ## Historical fixed-workspace comparison
 

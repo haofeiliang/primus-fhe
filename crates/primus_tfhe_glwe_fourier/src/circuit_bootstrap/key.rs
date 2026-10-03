@@ -11,7 +11,7 @@ use crate::{CircuitBootstrapParameters, KeyGenerationError, KeyGenerator, TfheCo
 /// context's FFT table. The ordinary PBS keys remain in [`crate::ServerKey`].
 /// Layout and basis equality do not establish secret or FFT representation
 /// identity; consumers must use the same secret and FFT table instance as
-/// generation; see [`crate::CircuitBootstrapEvaluator::try_from_parts`].
+/// generation; see [`crate::CircuitBootstrapEvaluator::try_new`].
 pub struct CircuitBootstrapKey<T: TorusFftValue> {
     parameters: CircuitBootstrapParameters<T>,
     trace: FourierGlweTraceKey<T>,

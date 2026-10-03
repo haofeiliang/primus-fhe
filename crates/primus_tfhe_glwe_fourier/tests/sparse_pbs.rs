@@ -173,10 +173,9 @@ fn sparse_pbs_preserves_external_secret_and_interleaved_outputs_in_both_orders()
 }
 
 #[test]
-fn sparse_keys_bind_parameters_and_require_cbs_material() {
+fn sparse_keys_bind_parameters() {
     let order = PbsOrder::BootstrapKeyswitch;
     let context = context::<RustFftTable>(order, 4, 8);
-    let input_codec = primus_encoding::RoundedCodec::new(15, context.parameters().cipher_modulus());
     let mut rng = StdRng::seed_from_u64(0x4234_3243);
     let client = ClientKey::generate(context.parameters(), &mut rng);
     let mut generator = KeyGenerator::new(&context);
@@ -192,8 +191,4 @@ fn sparse_keys_bind_parameters_and_require_cbs_material() {
             Err(TfheEvaluationError::IncompatibleBlindRotationKey)
         ));
     }
-    assert!(matches!(
-        context.circuit_bootstrap_evaluator(&server, &input_codec),
-        Err(TfheEvaluationError::MissingCircuitBootstrapKey)
-    ));
 }

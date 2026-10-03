@@ -90,7 +90,7 @@ assert!(!decryptor.decrypt(output.as_view())?);
 
 ## CBS 输出与消费
 
-四后端都在同一个 CBS evaluator 中绑定输出布局与消费参数。下例为 GLWE NTT，独立选择 Rounded 输入 codec 和 Scaled accumulator codec。NTRU 使用 `client_key.accumulator_ntru_secret_key()` 取代 GLWE 访问器，接收相同的 codec 参数，输入 codec 使用外部 q，环 codec 使用累加 Q：
+四后端都在同一个 CBS evaluator 中绑定输出布局与消费参数。下例为 GLWE，独立选择 Rounded 输入 codec 和 Scaled accumulator codec。NTRU 使用 `client_key.accumulator_ntru_secret_key()` 取代 GLWE 访问器，接收相同的 codec 参数，输入 codec 使用外部 q，环 codec 使用累加 Q：
 
 ```rust,ignore
 // 客户端：加密两条候选消息。
@@ -116,7 +116,7 @@ cbs.cmux_to(&control, &lhs, &rhs, &mut selected, pbs.bootstrap_resources_mut());
 ring_client.decrypt_to(&selected, &mut decoded);
 ```
 
-NTRU 两后端同样借用公共资源，但 CBS 构造器直接从 circuit key 取得输出参数。GLWE Fourier 保留拥有型 CBS 构造器，调用时不传资源参数，见下文资源复用。
+GLWE 两后端均使用上述借用接口。NTRU 两后端同样借用公共资源，但 CBS 构造器直接从 circuit key 取得输出参数，见下文资源复用。
 
 `allocate_output` 返回后端原有的 GGSW/NGSW，环密文仍是系数域 GLWE/NTRU。 `cmux_to` 在控制位为 0/1 时选择 lhs/rhs；`external_product_to` 也允许非 bit 的 gadget 控制。控制必须使用此 evaluator 的输出 basis、accumulator 私钥和变换表示， 候选使用该私钥/模数与相同编码。身份及噪声余量由调用方保证；所有密文长度在写输出前检查。
 
@@ -130,15 +130,9 @@ Context 保存不可变参数和变换表，ServerKey 保存求值材料；Evalu
 
 NTRU 两后端使用短借用组合：普通 PBS 拥有公共 BR/EP（Fourier 含 FFT）和返回缓冲，CBS/one-hot 只准备 LUT/投影状态。构造用 `try_new(pbs.bootstrap_resources(), circuit_key, &input_codec)`，执行时最后一个参数传 `pbs.bootstrap_resources_mut()`。Factorized MVB 用 `FactorizedEvaluator::try_new(&pbs)` 构造，执行时传 `&mut pbs`。仅需 CBS 时可用 `context.bootstrap_resources(br)` 独立准备公共资源。完整用法见 [NTT 资源复用](../primus_tfhe_ntru_ntt/README.zh_CN.md#复用-evaluator)与 [Fourier 资源复用](../primus_tfhe_ntru_fourier/README.zh_CN.md#复用-evaluator)。
 
-GLWE NTT 同样使用短借用。CBS 构造器另传所选输出参数；MVB 用无错误返回的 `FactorizedEvaluator::new(&pbs)`，支持 classic 和 sparse。公共资源在 KS→BR 时保留输入 KS；独立 BR→KS 不分配输出 KS。见 [GLWE NTT 资源复用](../primus_tfhe_glwe_ntt/README.zh_CN.md#复用-evaluator)。
+GLWE 两后端同样使用短借用。CBS 构造器另传所选输出参数；MVB 用无错误返回的 `FactorizedEvaluator::new(&pbs)`，支持 classic 和 sparse。公共资源在 KS→BR 时保留输入 KS；独立 BR→KS 不分配输出 KS。Fourier 整个流程复用同一 FFT engine。见 [GLWE NTT 资源复用](../primus_tfhe_glwe_ntt/README.zh_CN.md#复用-evaluator)与 [GLWE Fourier 资源复用](../primus_tfhe_glwe_fourier/README.zh_CN.md#复用-evaluator)。
 
-GLWE Fourier 保留以下所有权接口：
-
-- MVB 用 `FactorizedEvaluator::from_bootstrapper(pbs)` 消费 PBS。
-- CBS 使用 `try_from_bootstrapper(pbs, circuit_key, &input_codec)`；`bootstrapper_mut()` 借用普通 PBS 操作，MVB 用 `into_bootstrapper()` 回收。
-- CBS 用 `try_into_bootstrapper(glwe_ks_key)` 恢复，复用已有返回缓冲；独立 BR→KS CBS 在此分配缺失返回缓冲，KS→BR 已有输入 KS，返回直接提取。
-
-GLWE Fourier 只需单一能力时可用 `context.factorized_evaluator` 或 `context.circuit_bootstrap_evaluator`。所有后端均在构造时准备存储，在线求值不隐式分配。Boolean 的 `try_new` 接受 PBS 所有权，`into_bootstrapper` 可回收。
+所有后端均在构造时准备存储，在线 `_to` 操作不隐式分配。Boolean 的 `try_new` 接受 PBS 所有权，`into_bootstrapper` 可回收。
 
 ## LUT 与资源生命周期
 
