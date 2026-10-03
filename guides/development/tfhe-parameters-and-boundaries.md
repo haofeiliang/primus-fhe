@@ -70,13 +70,16 @@ TFHE 显式拥有普通 accumulator 参数以及共享其 inner 的 BR 参数。
 
 `ClientKey` 是生成服务端材料的拥有型 setup 组合，`check_compatible` 校验整套秘密。普通加解密、Boolean 客户端和 LWE 公钥生成改为接收外部秘密；`AccumulatorClient` 只接收系数域累加秘密。工厂绑定之后仍借用 raw view 执行，不复制秘密、不逐消息检查，也不扫描无关秘密。
 
-| 客户端角色 | 最小秘密输入 | 绑定与生成的检查 |
+| 使用场景 | 秘密输入 | 绑定与生成的检查 |
 | --- | --- | --- |
 | GLWE BR→KS 外部消息 | `ExternalLweSecretKey::SmallLwe(&LweSecretKey)` | order、n、q、分布与 binary/ternary 系数 |
 | GLWE KS→BR 外部消息 | `ExternalLweSecretKey::ExtractedGlwe(&GlweSecretKey)` | order、k/N 与分布；借用 signed kN 系数，幅度界继承 raw LWE 契约 |
 | NTRU 外部消息 | `&LweSecretKey` | n、外部 q、分布与 binary/ternary 系数；不依赖 f 或 Q |
 | GLWE/NTRU 环消息 | `&GlweSecretKey` / `&NtruSecretKey` | 累加布局、分布、Scaled codec 的 Q；按后端转换秘密并准备私有 scratch |
-| 服务端密钥生成 | 完整 `&ClientKey` | 保留整套 setup 检查；NTRU 还检查 f 在返回 q 下的幅度界及变换可逆性 |
+| 完整服务端材料生成 | 完整 `&ClientKey` | 保留整套 setup 检查；NTRU 还检查 f 在返回 q 下的幅度界及变换可逆性 |
+| 独立 BR 生成 | `&ClientKey` 中的输入与累加秘密 | 按家族检查两类秘密的域、布局和分布，并满足后端转换契约；NTRU 不要求 f 满足返回 q 的幅度界 |
+| 独立环 KS / NTRU→LWE 返回生成 | 完整 `&ClientKey` | 检查源、目标秘密与参数配对；NTRU 返回要求 f 的幅度小于显式 q，不需要准备环秘密的变换表示 |
+| 独立 CBS 生成 | `&GlweSecretKey` / `&NtruSecretKey` | 检查累加秘密的布局、分布及 CBS 参数兼容性，并满足后端转换契约；不需要 small/external LWE 秘密 |
 
 `ClientKey::external_lwe_secret_key()` 提供便捷借用；GLWE 的借用枚举保留 owner 元数据到绑定，不是新的身份系统。独立持有的秘密可直接传入工厂；`into_parts()` 只移动 buffer。LWE 公钥生成位于 `parameters.try_generate_public_key(external_secret, rng)`。Accumulator client 不要求外部 LWE 的返回界；NTT 输入系数的幅度、NTT roots/order 和实际秘密身份继续由调用方承担。
 
@@ -197,7 +200,7 @@ CBS 私有小枚举只区分独立 BR/input 与完整 PBS 两种实际所有权�
 
 | 工作流 | 从输入到消费者 | 独立约束及检查归属 |
 | --- | --- | --- |
-| 普通 CBS → CMux | Rounded LWE → gadget-scaled identity ManyLUT 的 BR → reverse-trace 系数投影 → GLev/NLev → scheme switch → GGSW/NGSW → CMux | CBS 参数检查 output basis 模数、trace/SS 环布局及 ManyLUT 容量；CMux 控制必须表示 0/1，输出为 gadget 尺度 |
+| 普通 CBS → CMux | Rounded LWE → gadget-scaled identity ManyLUT 的 BR → reverse-trace 系数投影 → GLev/NLev → scheme switch → GGSW/NGSW → CMux | CBS 参数检查 output basis 模数及 trace/SS 环布局；输入 codec、编程域和 ManyLUT 容量在 evaluator 绑定及其 LUT 编译时检查；CMux 控制必须表示 0/1，输出为 gadget 尺度 |
 | Factorized MVB | 公共 common polynomial 和 factors → 一次 BR → 每输出乘 factor → 按所属 PBS 返回链路输出 LWE | 共享编译器约束固定 Scaled 输出；后端准备变换 factors 并绑定 context 身份；factor 会放大共用 BR 噪声，NTRU 返回还会缩放 Q→q |
 | NTRU one-hot CBS | t=2M 的 chunk → packed LUT BR → 各 selector 的偏移/投影 → NLEV，可选 scheme switch 成 NGSW | 使用已有 CBS key/output basis；`W=next_power_of_two(L)`，要求 `2MW≤N`；guard 在 one-hot LUT 上，classic binary/ternary 由后端支持检查限定 |
 | NTRU 高精度 LUT | 每个输入 chunk 一次 one-hot → 高 c-d 个 chunk 选择多项式 → 低 d 个 chunk 聚合 `NGSW[X^(-m_i*M^i)]` 并旋转 → 独立 LWE 返回 | 编译器检查 chunk、`M^d≤N`、枚举/存储溢出及输出 digit；evaluator 绑定 N/q/Q、表中 t 的 one-hot 几何、CBS 能力及资源；在线入口在写入前检查全部 chunk 数和 LWE 维数 |
