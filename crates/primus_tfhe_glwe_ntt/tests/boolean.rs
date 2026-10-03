@@ -72,8 +72,10 @@ fn boolean_factories_support_truth_tables_and_reused_output_in_both_orders() {
             encryptor.encrypt(true, &mut rng).unwrap(),
         ];
         let mut output = LweCiphertext::zero(context.parameters().external_lwe_dimension().get());
-        encryptor.encrypt_to(false, &mut output, &mut rng).unwrap();
-        assert!(!decryptor.decrypt(&output).unwrap());
+        encryptor
+            .encrypt_to(false, output.as_mut_view(), &mut rng)
+            .unwrap();
+        assert!(!decryptor.decrypt(output.as_view()).unwrap());
         assert_eq!(
             output.dimension(),
             context.parameters().external_lwe_dimension().get()
@@ -85,7 +87,7 @@ fn boolean_factories_support_truth_tables_and_reused_output_in_both_orders() {
             .encrypt(2, &mut rng)
             .unwrap();
         assert_eq!(
-            decryptor.decrypt(&invalid),
+            decryptor.decrypt(invalid.as_view()),
             Err(BooleanError::InvalidPlaintext)
         );
 
@@ -112,7 +114,7 @@ fn boolean_factories_support_truth_tables_and_reused_output_in_both_orders() {
             &inputs,
             &mut output,
             &mut current,
-            |ciphertext| decryptor.decrypt(ciphertext).unwrap(),
+            |ciphertext| decryptor.decrypt(ciphertext.as_view()).unwrap(),
         );
     }
 }

@@ -65,7 +65,7 @@ fn check_context(distr: SecretKeyDistr) {
             &inputs,
             &mut output,
             &mut current,
-            |ciphertext| decryptor.decrypt(ciphertext).unwrap(),
+            |ciphertext| decryptor.decrypt(ciphertext.as_view()).unwrap(),
         );
     });
     assert_eq!(allocation.count, 0, "Boolean gates must reuse storage");
@@ -90,10 +90,10 @@ fn check_context(distr: SecretKeyDistr) {
     for bit in [false, true, false] {
         let (_, allocation) = allocations::measure(|| {
             public_encryptor
-                .encrypt_to(bit, &mut rhs, &mut rng)
+                .encrypt_to(bit, rhs.as_mut_view(), &mut rng)
                 .unwrap();
             evaluator.evaluate_binary_to(BooleanGate::Nand, &inputs[1], &rhs, &mut output);
-            assert_eq!(decryptor.decrypt(&output).unwrap(), !bit);
+            assert_eq!(decryptor.decrypt(output.as_view()).unwrap(), !bit);
         });
         assert_eq!(allocation.count, 0, "Boolean operations must reuse storage");
     }

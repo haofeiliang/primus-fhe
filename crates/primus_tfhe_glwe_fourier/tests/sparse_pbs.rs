@@ -100,7 +100,7 @@ fn check_pbs<Table: FftTable>() {
         assert_eq!(many.padded_output_count(), 4);
         let mut outputs = vec![LweCiphertext::zero(dimension); 3];
         let check = |output: &LweCiphertext<u64>, message| {
-            let phase = decryptor.decrypt_phase(output).unwrap();
+            let phase = decryptor.decrypt_phase(output.as_view()).unwrap();
             let expected = codec.encode_value(message, PlaintextEmbedding::Unsigned);
             let error = phase.wrapping_sub(expected);
             assert!(

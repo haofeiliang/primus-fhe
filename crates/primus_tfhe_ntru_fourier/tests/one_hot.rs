@@ -175,7 +175,7 @@ fn selectors<Table: FftTable>(distr: SecretKeyDistr) {
             context
                 .decryptor(&client)
                 .unwrap()
-                .decrypt(&lwe_output)
+                .decrypt(lwe_output.as_view())
                 .unwrap(),
             message as u64
         );

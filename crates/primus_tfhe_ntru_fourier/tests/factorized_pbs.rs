@@ -115,7 +115,7 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(distr: SecretKeyDistr) {
         );
         for (i, output) in outputs.iter().enumerate() {
             let expected = T::as_from(value(message, i));
-            let phase = decryptor.decrypt_phase(output).unwrap();
+            let phase = decryptor.decrypt_phase(output.as_view()).unwrap();
             assert_eq!(codec.decode_value(phase), expected);
             // Keep a deterministic margin, not just a rounded decoding check.
             let error = phase
@@ -127,7 +127,7 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(distr: SecretKeyDistr) {
                 .bootstrapper_mut()
                 .apply_lookup_table_to(&input, &singles[i], &mut reference);
             assert_eq!(
-                codec.decode_value(decryptor.decrypt_phase(&reference).unwrap()),
+                codec.decode_value(decryptor.decrypt_phase(reference.as_view()).unwrap()),
                 expected
             );
         }
@@ -199,7 +199,7 @@ fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
     assert_eq!(
         outputs
             .iter()
-            .map(|output| codec.decode_value(decryptor.decrypt_phase(output).unwrap()))
+            .map(|output| codec.decode_value(decryptor.decrypt_phase(output.as_view()).unwrap()))
             .collect::<Vec<_>>(),
         [3, 4, 5]
     );
@@ -209,7 +209,7 @@ fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
     assert_eq!(
         codec.decode_value(
             decryptor
-                .decrypt_phase(&evaluator.apply_lookup_table(&input, &single)[0])
+                .decrypt_phase(evaluator.apply_lookup_table(&input, &single)[0].as_view())
                 .unwrap()
         ),
         3

@@ -109,7 +109,7 @@ fn main() {
     for message in [7 as Word, 2] {
         // Client -> server: send an encrypted padded input in 0..8.
         encryptor
-            .encrypt_padded_to(message, &mut input, &mut rng)
+            .encrypt_padded_to(message, input.as_mut_view(), &mut rng)
             .unwrap();
 
         // Server -> client: return message, carry and parity, reusing the evaluator.
@@ -117,7 +117,8 @@ fn main() {
 
         // Client: decode with the output codec, not the input's t=16 codec.
         for (output, expected) in outputs.iter().zip([message % 4, message / 4, message % 2]) {
-            let value = output_codec.decode_value(decryptor.decrypt_phase(output).unwrap());
+            let value =
+                output_codec.decode_value(decryptor.decrypt_phase(output.as_view()).unwrap());
             assert_eq!(value, expected);
         }
         println!("input {message}: message/carry/parity decoded correctly");

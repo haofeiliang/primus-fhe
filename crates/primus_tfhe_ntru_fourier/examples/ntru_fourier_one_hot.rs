@@ -115,7 +115,7 @@ fn main() {
     for message in [TARGET as Word, 0] {
         // Client -> server: one padded two-bit input; the server never sees message.
         encryptor
-            .encrypt_padded_to(message, &mut input, &mut rng)
+            .encrypt_padded_to(message, input.as_mut_view(), &mut rng)
             .unwrap();
 
         // Server: selector r encrypts [message == r]; r=0 is included in this full batch.

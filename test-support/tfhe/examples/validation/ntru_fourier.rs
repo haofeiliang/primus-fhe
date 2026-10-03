@@ -257,11 +257,11 @@ fn lookup<T: TorusFftValue, Table: FftTable>(
         // Server -> client: return the encrypted output chunks for local checks.
         for (i, result) in output.iter().enumerate() {
             assert_eq!(
-                decryptor.decrypt(result).unwrap(),
+                decryptor.decrypt(result.as_view()).unwrap(),
                 digit(x, i),
                 "{name}, seed={seed}, x={x}, output={i}"
             );
-            let phase: u64 = decryptor.decrypt_phase(result).unwrap().as_into();
+            let phase: u64 = decryptor.decrypt_phase(result.as_view()).unwrap().as_into();
             let expected: u64 = digit(x, i).as_into();
             let distance = (phase + LWE_MODULUS - expected * ENCODING_SCALE) % LWE_MODULUS;
             max_error = max_error.max(distance.min(LWE_MODULUS - distance));
@@ -337,12 +337,12 @@ fn pbs<T: TorusFftValue, Table: FftTable>(
 
         // Server -> client: return the outputs for decryption and error checks.
         assert_eq!(
-            decryptor.decrypt(&output).unwrap(),
+            decryptor.decrypt(output.as_view()).unwrap(),
             value(m),
             "{name},seed={seed},m={m}"
         );
         margin.decoded(
-            decryptor.decrypt_phase(&output).unwrap(),
+            decryptor.decrypt_phase(output.as_view()).unwrap(),
             codec.encode_value(value(m), PlaintextEmbedding::Unsigned),
             modulus,
             domain * 2,
@@ -350,12 +350,12 @@ fn pbs<T: TorusFftValue, Table: FftTable>(
         for (i, output) in outputs.iter().enumerate() {
             let expected = T::as_from((m + 2 * i) % domain);
             assert_eq!(
-                decryptor.decrypt(output).unwrap(),
+                decryptor.decrypt(output.as_view()).unwrap(),
                 expected,
                 "{name},seed={seed},m={m},many={i}"
             );
             margin.decoded(
-                decryptor.decrypt_phase(output).unwrap(),
+                decryptor.decrypt_phase(output.as_view()).unwrap(),
                 codec.encode_value(expected, PlaintextEmbedding::Unsigned),
                 modulus,
                 domain * 2,
@@ -382,7 +382,7 @@ fn pbs<T: TorusFftValue, Table: FftTable>(
             &inputs,
             &mut output,
             &mut current,
-            |cipher| decryptor.decrypt(cipher).unwrap(),
+            |cipher| decryptor.decrypt(cipher.as_view()).unwrap(),
         );
     }
 }
@@ -429,7 +429,7 @@ fn thresholds<T: TorusFftValue, Table: FftTable>(
 
         // Server -> client: decode the binary outputs and check their margins.
         for (i, output) in outputs.iter().enumerate() {
-            let phase = decryptor.decrypt_phase(output).unwrap();
+            let phase = decryptor.decrypt_phase(output.as_view()).unwrap();
             assert_eq!(
                 output_codec.decode_value(phase),
                 value(m, i),

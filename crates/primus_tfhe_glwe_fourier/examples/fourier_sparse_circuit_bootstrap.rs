@@ -116,7 +116,7 @@ fn main() {
     for bit in [1 as Word, 0] {
         // Client -> server: send the encrypted selection bit.
         encryptor
-            .encrypt_padded_to(bit, &mut input, &mut rng)
+            .encrypt_padded_to(bit, input.as_mut_view(), &mut rng)
             .unwrap();
 
         // Server: CBS produces a gadget control; CMux selects rhs for 1, lhs for 0.

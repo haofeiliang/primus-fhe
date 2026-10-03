@@ -7,7 +7,7 @@ use primus_reduce::RingContext;
 use primus_test_allocations as allocations;
 use primus_tfhe_ntru::{
     BooleanDecryptor, BooleanEncryptor, BooleanError, ClientError, ClientKey, EncryptionKey,
-    Encryptor, TfheKeyError, TfheParameters,
+    Encryptor, Lwe, TfheKeyError, TfheParameters,
 };
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
@@ -91,7 +91,7 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
     assert_eq!(rng.next_u64(), reference_rng.next_u64());
     check_reused_output(&params, &client, params.public_encryptor(&public).unwrap());
     check_reused_output(&params, &client, params.encryptor(&client).unwrap());
-    check_boolean_errors(&params, &client);
+    check_boolean_client(&params, &client);
 
     let foreign_params = LweParameters::new(
         LweDimension::new(4),
@@ -149,7 +149,7 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
     assert_eq!(rng.next_u64(), expected_rng.next_u64());
 }
 
-fn check_boolean_errors<M: RingContext<u32>>(
+fn check_boolean_client<M: RingContext<u32>>(
     parameters: &TfheParameters<u32, M>,
     client: &ClientKey<u32>,
 ) {
@@ -168,10 +168,27 @@ fn check_boolean_errors<M: RingContext<u32>>(
     let decryptor = BooleanDecryptor::try_new(parameters.decryptor(client).unwrap()).unwrap();
     let raw_encryptor = parameters.encryptor(client).unwrap();
     let mut rng = StdRng::seed_from_u64(0xB202);
+    // Reuse a stack-backed view; only its mask/body may be overwritten.
+    // The fixture's external LWE dimension is four, independent of ring N.
+    let mut storage = [u32::MAX; 7];
+    let mut output = Lwe::new(&mut storage[1..6]);
+    for message in [false, true, false] {
+        let (result, allocation) = allocations::measure(|| {
+            encryptor.encrypt_to(message, output.as_mut_view(), &mut rng)?;
+            decryptor.decrypt(output.as_view())
+        });
+        assert_eq!(result, Ok(message));
+        assert_eq!(
+            allocation.count, 0,
+            "Boolean client views must not allocate"
+        );
+    }
+    assert_eq!([storage[0], storage[6]], [u32::MAX; 2]);
+
     for message in [2, 3] {
         let invalid = raw_encryptor.encrypt(message, &mut rng).unwrap();
         assert_eq!(
-            decryptor.decrypt(&invalid),
+            decryptor.decrypt(invalid.as_view()),
             Err(BooleanError::InvalidPlaintext)
         );
     }
@@ -186,12 +203,12 @@ fn check_boolean_errors<M: RingContext<u32>>(
         actual: dimension - 1,
     });
     assert_eq!(
-        encryptor.encrypt_to(true, &mut wrong, &mut rng),
+        encryptor.encrypt_to(true, wrong.as_mut_view(), &mut rng),
         Err(error.clone())
     );
     assert_eq!(wrong, before);
     assert_eq!(rng.next_u64(), expected_rng.next_u64());
-    assert_eq!(decryptor.decrypt(&wrong), Err(error));
+    assert_eq!(decryptor.decrypt(wrong.as_view()), Err(error));
 }
 
 #[test]
@@ -235,9 +252,9 @@ fn check_reused_output<M, Key>(
         };
         let encrypt_to = |message, output: &mut LweCiphertext<u32>, rng: &mut StdRng| match encoding
         {
-            Encoding::Unsigned => encryptor.encrypt_to(message, output, rng),
-            Encoding::Padded => encryptor.encrypt_padded_to(message, output, rng),
-            Encoding::Centered => encryptor.encrypt_centered_to(message, output, rng),
+            Encoding::Unsigned => encryptor.encrypt_to(message, output.as_mut_view(), rng),
+            Encoding::Padded => encryptor.encrypt_padded_to(message, output.as_mut_view(), rng),
+            Encoding::Centered => encryptor.encrypt_centered_to(message, output.as_mut_view(), rng),
         };
         // Compare identical randomness across the small domain, including the
         // centered sign boundary, then overwrite the last ciphertext with zero.
@@ -258,7 +275,7 @@ fn check_reused_output<M, Key>(
             assert_eq!(allocation.count, 0, "client encryption must not allocate");
             assert_eq!(output, expected);
             assert_eq!(rng.next_u64(), expected_rng.next_u64());
-            assert_eq!(decryptor.decrypt(&output).unwrap(), message);
+            assert_eq!(decryptor.decrypt(output.as_view()).unwrap(), message);
         }
         let padded_error = matches!(encoding, Encoding::Padded)
             .then_some((limit, ClientError::MessageOutsidePaddedDomain));

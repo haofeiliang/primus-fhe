@@ -145,7 +145,9 @@ fn main() {
         // Client -> server: split before encryption, least-significant chunk first.
         for (i, chunk) in input.iter_mut().enumerate() {
             let digit = ((x >> (CHUNK_BITS * i)) & 3) as Word;
-            encryptor.encrypt_padded_to(digit, chunk, &mut rng).unwrap();
+            encryptor
+                .encrypt_padded_to(digit, chunk.as_mut_view(), &mut rng)
+                .unwrap();
         }
 
         // Server -> client: select, rotate and return encrypted output chunks.
@@ -154,7 +156,7 @@ fn main() {
         // Client: decode and join chunks in the same least-significant-first order.
         let mut result = 0usize;
         for (i, chunk) in output.iter().enumerate() {
-            let digit = decryptor.decrypt(chunk).unwrap() as usize;
+            let digit = decryptor.decrypt(chunk.as_view()).unwrap() as usize;
             result |= digit << (CHUNK_BITS * i);
         }
         assert_eq!(result, function(x));

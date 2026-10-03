@@ -174,7 +174,7 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
             context
                 .decryptor(&client_key)
                 .unwrap()
-                .decrypt(&output)
+                .decrypt(output.as_view())
                 .unwrap(),
             1
         );
@@ -321,7 +321,7 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
                 context
                     .decryptor(&client_key)
                     .unwrap()
-                    .decrypt(&output)
+                    .decrypt(output.as_view())
                     .unwrap(),
                 bit
             );

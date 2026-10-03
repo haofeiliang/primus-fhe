@@ -79,14 +79,14 @@ fn main() {
     for message in [7 as Word, 2] {
         // Client -> server: send one encrypted, padded input.
         encryptor
-            .encrypt_padded_to(message, &mut input, &mut rng)
+            .encrypt_padded_to(message, input.as_mut_view(), &mut rng)
             .unwrap();
 
         // Server -> client: return the result, reusing the LUT and buffers.
         evaluator.apply_lookup_table_to(&input, &lut, &mut output);
 
         // Client: decrypt with the original external LWE secret.
-        let result = decryptor.decrypt(&output).unwrap();
+        let result = decryptor.decrypt(output.as_view()).unwrap();
         assert_eq!(result, message % 4);
         println!("f({message}) = {result}");
     }

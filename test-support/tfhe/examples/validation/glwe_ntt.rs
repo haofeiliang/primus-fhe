@@ -143,12 +143,12 @@ fn pbs<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
 
         // Server -> client: return the outputs for decryption and error checks.
         assert_eq!(
-            decryptor.decrypt(&output).unwrap(),
+            decryptor.decrypt(output.as_view()).unwrap(),
             value(m),
             "{name},seed={seed},m={m}"
         );
         margin.decoded(
-            decryptor.decrypt_phase(&output).unwrap(),
+            decryptor.decrypt_phase(output.as_view()).unwrap(),
             codec.encode_value(value(m), PlaintextEmbedding::Unsigned),
             modulus,
             domain * 2,
@@ -156,12 +156,12 @@ fn pbs<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
         for (i, output) in outputs.iter().enumerate() {
             let expected = T::as_from((m + 2 * i) % domain);
             assert_eq!(
-                decryptor.decrypt(output).unwrap(),
+                decryptor.decrypt(output.as_view()).unwrap(),
                 expected,
                 "{name},seed={seed},m={m},many={i}"
             );
             margin.decoded(
-                decryptor.decrypt_phase(output).unwrap(),
+                decryptor.decrypt_phase(output.as_view()).unwrap(),
                 codec.encode_value(expected, PlaintextEmbedding::Unsigned),
                 modulus,
                 domain * 2,
@@ -188,7 +188,7 @@ fn pbs<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
             &inputs,
             &mut output,
             &mut current,
-            |cipher| decryptor.decrypt(cipher).unwrap(),
+            |cipher| decryptor.decrypt(cipher.as_view()).unwrap(),
         );
     }
 }
@@ -231,7 +231,7 @@ fn thresholds<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
 
         // Server -> client: decode the binary outputs and check their margins.
         for (i, output) in outputs.iter().enumerate() {
-            let phase = decryptor.decrypt_phase(output).unwrap();
+            let phase = decryptor.decrypt_phase(output.as_view()).unwrap();
             assert_eq!(
                 output_codec.decode_value(phase),
                 value(m, i),

@@ -12,6 +12,7 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use criterion::{SamplingMode, Throughput};
 use primus_encoding::{PlaintextEmbedding, ScaledCodec};
 use primus_fft::{FftTable, RustFftTable, TfheFftTable, TorusFftValue};
+use primus_lwe::LweCiphertext;
 use primus_modulus::NativeModulus;
 use primus_tfhe_glwe_fourier::{
     ClientKey, InterleavedLookupTable, KeyGenerator, LookupTable, PbsOrder, TfheContext,
@@ -86,13 +87,14 @@ where
                         .map(|_| context.allocate_lwe_ciphertext())
                         .collect();
                     // Branch once during setup; the measured closure has no path dispatch.
-                    let mut check = |outputs: &[_]| {
+                    let mut check = |outputs: &[LweCiphertext<T>]| {
                         if !verified {
                             let decryptor = context.decryptor(client).unwrap();
                             for (i, output) in outputs.iter().enumerate() {
                                 assert_eq!(
-                                    output_codec
-                                        .decode_value(decryptor.decrypt_phase(output).unwrap()),
+                                    output_codec.decode_value(
+                                        decryptor.decrypt_phase(output.as_view()).unwrap()
+                                    ),
                                     value(domain / 2, i)
                                 );
                             }

@@ -170,7 +170,7 @@ fn split_keys_support_both_pbs_orders() {
                 public_encryptor.encrypt_padded(message, &mut rng).unwrap(),
             ] {
                 let output = evaluator.apply_lookup_table(&input, &lookup_table);
-                assert_eq!(decryptor.decrypt(&output).unwrap(), 1 - message);
+                assert_eq!(decryptor.decrypt(output.as_view()).unwrap(), 1 - message);
             }
         }
         let boolean_encryptor = context.boolean_public_encryptor(&public).unwrap();
@@ -180,7 +180,7 @@ fn split_keys_support_both_pbs_orders() {
         let rhs = boolean_encryptor.encrypt(false, &mut rng).unwrap();
         assert!(
             boolean_decryptor
-                .decrypt(&boolean_evaluator.xor(&lhs, &rhs))
+                .decrypt(boolean_evaluator.xor(&lhs, &rhs).as_view())
                 .unwrap()
         );
     }

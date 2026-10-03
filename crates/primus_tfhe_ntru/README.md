@@ -25,6 +25,8 @@ Classic PBS, ManyLUT, CBS, Boolean and MVB support binary/ternary external secre
 
 Use the context's `encryptor(&client)`, `public_encryptor(&public)` and `decryptor(&client)`. `client.try_generate_public_key(parameters, rng)` creates an LWE public key under independent external s. This is not an NTRU ring public key; see the [LWE public-key contract](../primus_lwe/README.md#public-key-encryption) for total noise requirements. Ordinary messages use T and `decrypt` returns `Result<T, ClientError>`.
 
+Client reads/writes accept borrowed LWE views: pass `output.as_mut_view()` to `encrypt_to` and `ciphertext.as_view()` to `decrypt` or `decrypt_phase`. Allocating encryption methods still return `LweCiphertext<T>`; Boolean clients follow the same convention.
+
 Use `encrypt_padded` for front-half LUTs and ordinary `encrypt` for odd full domains. `parameters.lookup_table_compiler()` creates a reusable compiler; call `compile_fn` / `compile_slice`, or the interleaved / odd full-domain methods. Default LUTs compile at Q with the parameter plaintext modulus and use ordinary `decrypt` after returning to q. `compiler.try_with_output_codec(&codec)?` selects a different output `RoundedCodec` at Q. Decode `decrypt_phase` with the same plaintext modulus and a codec at q. The return path scales existing encodings rather than re-encoding; budget rounding and key-switch errors.
 
 The [common guide](../primus_tfhe/README.md) covers ManyLUT, odd full domains and MVB. MVB compiles with an unsigned `ScaledCodec` at Q and decodes with a Scaled codec at q, budgeting the difference between their fixed scales. Bounded two-input `BivariateLookupTable` currently requires q=Q.

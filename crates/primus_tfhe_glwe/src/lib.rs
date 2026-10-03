@@ -30,8 +30,9 @@
 //! # Reusing client ciphertext storage
 //!
 //! [`Encryptor::encrypt_to`], [`Encryptor::encrypt_padded_to`] and
-//! [`Encryptor::encrypt_centered_to`] overwrite an existing [`LweCiphertext`]
-//! without allocating, for either secret or public keys. Message and dimension
+//! [`Encryptor::encrypt_centered_to`] overwrite a mutable [`Lwe`] view without
+//! allocating, for either secret or public keys. Use `as_mut_view()` to reuse
+//! an owned ciphertext, and `as_view()` to decrypt it. Message and dimension
 //! errors leave output and RNG unchanged. Backend `Encryptor` aliases expose
 //! these same methods.
 
@@ -61,7 +62,7 @@ pub use primus_tfhe::{
     BOOLEAN_PLAINTEXT_BITS, BivariateLookupTable, BooleanDecryptor, BooleanEncryptor, BooleanError,
     BooleanEvaluator, BooleanGate, CircuitBootstrapConfig, ClientError, DecompositionConfig,
     Decryptor, EncryptionKey, Encryptor, InterleavedLookupTable, LookupTable, LookupTableCompiler,
-    LookupTableError, LweCiphertext, LweSecretKeyRef, ProgrammableBootstrap,
+    LookupTableError, Lwe, LweCiphertext, LweSecretKeyRef, ProgrammableBootstrap,
     ProgrammableBootstrapInterleaved, TfheEvaluationError,
 };
 

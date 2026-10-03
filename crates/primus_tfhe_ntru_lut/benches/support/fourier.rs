@@ -84,7 +84,7 @@ fn benchmark_workload<T: TorusFftValue, Table: FftTable>(
             let decryptor = context.decryptor(client).unwrap();
             for (i, chunk) in output.iter().enumerate() {
                 assert_eq!(
-                    decryptor.decrypt(chunk).unwrap(),
+                    decryptor.decrypt(chunk.as_view()).unwrap(),
                     workload.digit::<T>(INPUT, i)
                 );
             }

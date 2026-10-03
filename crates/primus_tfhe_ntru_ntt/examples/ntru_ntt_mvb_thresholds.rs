@@ -93,7 +93,7 @@ fn main() {
     for score in [12 as Word, 45] {
         // Client -> server: send the encrypted score.
         encryptor
-            .encrypt_padded_to(score, &mut input, &mut rng)
+            .encrypt_padded_to(score, input.as_mut_view(), &mut rng)
             .unwrap();
 
         // Server -> client: return one ciphertext per threshold, reusing all buffers.
@@ -101,7 +101,7 @@ fn main() {
 
         // Client: decrypt phases and decode with the agreed output codec.
         for (flag, output) in flags.iter_mut().zip(&outputs) {
-            *flag = output_codec.decode_value(decryptor.decrypt_phase(output).unwrap());
+            *flag = output_codec.decode_value(decryptor.decrypt_phase(output.as_view()).unwrap());
         }
         for (&flag, &threshold) in flags.iter().zip(&thresholds) {
             assert_eq!(flag, Word::from(score as usize >= threshold));

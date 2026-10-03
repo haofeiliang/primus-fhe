@@ -9,7 +9,7 @@ use primus_reduce::RingContext;
 use primus_test_allocations as allocations;
 use primus_tfhe_glwe::{
     BooleanDecryptor, BooleanEncryptor, BooleanError, ClientError, ClientKey, EncryptionKey,
-    Encryptor, PbsOrder, TfheClientError, TfheKeyError, TfheParameters,
+    Encryptor, Lwe, PbsOrder, TfheClientError, TfheKeyError, TfheParameters,
 };
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
@@ -288,7 +288,8 @@ fn check_reused_output<M, Key>(
     let t = parameters.plain_modulus_value();
     let mut rng = StdRng::seed_from_u64(0x434c_4945_4e54);
     let mut expected_rng = StdRng::seed_from_u64(0x434c_4945_4e54);
-    let mut output = LweCiphertext::new(vec![u32::MAX; dimension + 1]);
+    // Borrow non-Vec storage through the same client path for both PBS orders.
+    let mut output = Lwe::new(vec![u32::MAX; dimension + 1].into_boxed_slice());
     for (encoding, limit) in [
         (Encoding::Unsigned, t),
         (Encoding::Padded, t.div_ceil(2)),
@@ -299,8 +300,7 @@ fn check_reused_output<M, Key>(
             Encoding::Padded => encryptor.encrypt_padded(message, rng),
             Encoding::Centered => encryptor.encrypt_centered(message, rng),
         };
-        let encrypt_to = |message, output: &mut LweCiphertext<u32>, rng: &mut StdRng| match encoding
-        {
+        let encrypt_to = |message, output: Lwe<&mut [u32]>, rng: &mut StdRng| match encoding {
             Encoding::Unsigned => encryptor.encrypt_to(message, output, rng),
             Encoding::Padded => encryptor.encrypt_padded_to(message, output, rng),
             Encoding::Centered => encryptor.encrypt_centered_to(message, output, rng),
@@ -319,12 +319,12 @@ fn check_reused_output<M, Key>(
                 (dimension + 1) * size_of::<u32>()
             );
             let (result, allocation) =
-                allocations::measure(|| encrypt_to(message, &mut output, &mut rng));
+                allocations::measure(|| encrypt_to(message, output.as_mut_view(), &mut rng));
             result.unwrap();
             assert_eq!(allocation.count, 0, "client encryption must not allocate");
-            assert_eq!(output, expected);
+            assert_eq!(output.as_ref(), expected.as_ref());
             assert_eq!(rng.next_u64(), expected_rng.next_u64());
-            assert_eq!(decryptor.decrypt(&output).unwrap(), message);
+            assert_eq!(decryptor.decrypt(output.as_view()).unwrap(), message);
         }
         let padded_error = matches!(encoding, Encoding::Padded)
             .then_some((limit, ClientError::MessageOutsidePaddedDomain));
@@ -334,7 +334,10 @@ fn check_reused_output<M, Key>(
         {
             let before = output.clone();
             assert_eq!(encrypt(message, &mut rng).err(), Some(error.clone()));
-            assert_eq!(encrypt_to(message, &mut output, &mut rng), Err(error));
+            assert_eq!(
+                encrypt_to(message, output.as_mut_view(), &mut rng),
+                Err(error)
+            );
             assert_eq!(output, before);
             assert_eq!(rng.next_u64(), expected_rng.next_u64());
         }
@@ -342,7 +345,7 @@ fn check_reused_output<M, Key>(
             let mut wrong = LweCiphertext::new(vec![u32::MAX; actual + 1]);
             let before = wrong.clone();
             assert_eq!(
-                encrypt_to(0, &mut wrong, &mut rng),
+                encrypt_to(0, wrong.as_mut_view(), &mut rng),
                 Err(ClientError::CiphertextDimensionMismatch {
                     expected: dimension,
                     actual

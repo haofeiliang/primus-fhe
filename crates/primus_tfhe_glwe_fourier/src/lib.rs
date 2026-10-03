@@ -81,8 +81,8 @@ pub use key::BootstrappingKey;
 pub use key::{KeyGenerator, ServerKey};
 pub use primus_tfhe::{
     BivariateLookupTable, CircuitBootstrapConfig, ClientError, DecompositionConfig,
-    FactorizedLookupTable, InterleavedLookupTable, LookupTable, LookupTableCompiler, LweCiphertext,
-    LweSecretKeyRef,
+    FactorizedLookupTable, InterleavedLookupTable, LookupTable, LookupTableCompiler, Lwe,
+    LweCiphertext, LweSecretKeyRef,
 };
 pub use primus_tfhe_glwe::{ClientKey, EncryptionKey, PbsOrder};
 #[doc(no_inline)]

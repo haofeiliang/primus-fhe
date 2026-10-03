@@ -83,7 +83,7 @@ fn check_complete(distr: SecretKeyDistr) {
         for (i, output) in outputs.iter().enumerate() {
             assert_eq!(output.dimension(), dimension);
             assert_eq!(
-                codec.decode_value(decryptor.decrypt_phase(output).unwrap()),
+                codec.decode_value(decryptor.decrypt_phase(output.as_view()).unwrap()),
                 value(message, i),
                 "message={message}, output={i}"
             );
@@ -124,8 +124,8 @@ fn check_complete(distr: SecretKeyDistr) {
                         &mut reference,
                     );
                     assert_eq!(
-                        codec.decode_value(decryptor.decrypt_phase(&reference).unwrap()),
-                        codec.decode_value(decryptor.decrypt_phase(output).unwrap())
+                        codec.decode_value(decryptor.decrypt_phase(reference.as_view()).unwrap()),
+                        codec.decode_value(decryptor.decrypt_phase(output.as_view()).unwrap())
                     );
                 }
             }
@@ -155,7 +155,7 @@ fn check_complete(distr: SecretKeyDistr) {
         let input = encryptor.encrypt_padded(message, &mut rng).unwrap();
         let output = evaluator.apply_lookup_table(&input, &binary);
         assert_eq!(
-            binary_codec.decode_value(decryptor.decrypt_phase(&output[0]).unwrap()),
+            binary_codec.decode_value(decryptor.decrypt_phase(output[0].as_view()).unwrap()),
             u32::from(message >= 3)
         );
     }

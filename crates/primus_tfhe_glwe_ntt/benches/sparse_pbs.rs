@@ -68,7 +68,11 @@ fn backend<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
             if !verified {
                 evaluator.apply_lookup_table_to(&input, &lut, &mut output);
                 assert_eq!(
-                    context.decryptor(client).unwrap().decrypt(&output).unwrap(),
+                    context
+                        .decryptor(client)
+                        .unwrap()
+                        .decrypt(output.as_view())
+                        .unwrap(),
                     T::TWO
                 );
                 verified = true;

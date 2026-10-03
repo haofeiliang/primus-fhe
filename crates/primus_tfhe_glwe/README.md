@@ -34,6 +34,8 @@ Prefer `context.try_generate_keys(circuit_bootstrap, rng)` for paired client/ser
 
 Bind the external key with the context's `encryptor(&client)`, `public_encryptor(&public)` and `decryptor(&client)`. `client.try_generate_public_key(parameters, rng)` creates the corresponding LWE public key. Each PBS order uses its own external secret and dimension. See the [LWE public-key contract](../primus_lwe/README.md#public-key-encryption) for its total noise requirements.
 
+Client reads/writes accept borrowed LWE views: pass `output.as_mut_view()` to `encrypt_to` and `ciphertext.as_view()` to `decrypt` or `decrypt_phase`. Allocating encryption methods still return `LweCiphertext<T>`; Boolean clients follow the same convention.
+
 Use `encrypt_padded` for front-half LUTs and ordinary `encrypt` for odd full domains. `parameters.lookup_table_compiler()` creates a reusable compiler with the parameter codec for outputs; call `compile_fn` / `compile_slice`, or the interleaved / odd full-domain methods. `compiler.try_with_output_codec(&codec)?` selects a different output plaintext modulus. Supply a `RoundedCodec` at the same ciphertext modulus and use it to decode `decrypt_phase`. ManyLUT, Boolean, bivariate and MVB interfaces and encodings are described in the [common guide](../primus_tfhe/README.md).
 
 ## Boolean and CBS

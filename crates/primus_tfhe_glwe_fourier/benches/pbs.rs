@@ -78,7 +78,11 @@ fn backend<T, Table>(
         if !verified {
             evaluator.apply_lookup_table_to(input, lut, &mut output);
             assert_eq!(
-                context.decryptor(client).unwrap().decrypt(&output).unwrap(),
+                context
+                    .decryptor(client)
+                    .unwrap()
+                    .decrypt(output.as_view())
+                    .unwrap(),
                 T::ZERO
             );
             verified = true;
@@ -190,7 +194,7 @@ fn stages<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) {
                         context
                             .decryptor(client)
                             .unwrap()
-                            .decrypt(&small_lwe)
+                            .decrypt(small_lwe.as_view())
                             .unwrap(),
                         T::ZERO
                     );

@@ -100,17 +100,20 @@ fn check<T: FheUint, Table: MonomialNttTable<ValueT = T>>(ring_q: T) {
             assert_eq!(allocation.count, 0);
             assert!(output.as_ref().iter().all(|&x| x < q));
             assert_eq!(
-                decode_codec.decode_value(decryptor.decrypt_phase(&output).unwrap()),
+                decode_codec.decode_value(decryptor.decrypt_phase(output.as_view()).unwrap()),
                 T::as_from(m + 3)
             );
             for (i, output) in outputs.iter().enumerate() {
                 assert_eq!(
-                    decode_codec.decode_value(decryptor.decrypt_phase(output).unwrap()),
+                    decode_codec.decode_value(decryptor.decrypt_phase(output.as_view()).unwrap()),
                     T::as_from(m + i + 1)
                 );
             }
             evaluator.apply_lookup_table_to(&input, &default, &mut output);
-            assert_eq!(decryptor.decrypt(&output).unwrap(), T::as_from(1 - m));
+            assert_eq!(
+                decryptor.decrypt(output.as_view()).unwrap(),
+                T::as_from(1 - m)
+            );
         }
         // Boolean correction is at q even though its internal LUT is encoded at Q.
         let mut boolean = context.boolean_evaluator(&server).unwrap();
@@ -121,7 +124,7 @@ fn check<T: FheUint, Table: MonomialNttTable<ValueT = T>>(ring_q: T) {
                 let a_ct = bool_encrypt.encrypt(a, &mut rng).unwrap();
                 let b_ct = bool_encrypt.encrypt(b, &mut rng).unwrap();
                 let result = boolean.and(&a_ct, &b_ct);
-                assert_eq!(bool_decrypt.decrypt(&result).unwrap(), a && b);
+                assert_eq!(bool_decrypt.decrypt(result.as_view()).unwrap(), a && b);
             }
         }
         // Public factor products use the same Q-to-q return conversion.
@@ -138,7 +141,7 @@ fn check<T: FheUint, Table: MonomialNttTable<ValueT = T>>(ring_q: T) {
         factorized.apply_lookup_table_to(&input, &program, &mut outputs[..2]);
         for (i, output) in outputs[..2].iter().enumerate() {
             assert_eq!(
-                scaled_q.decode_value(decryptor.decrypt_phase(output).unwrap()),
+                scaled_q.decode_value(decryptor.decrypt_phase(output.as_view()).unwrap()),
                 T::as_from(i + 1)
             );
         }
@@ -153,7 +156,7 @@ fn check<T: FheUint, Table: MonomialNttTable<ValueT = T>>(ring_q: T) {
             assert_eq!(allocation.count, 0);
             for (i, output) in outputs.iter().enumerate() {
                 assert_eq!(
-                    decode_codec.decode_value(decryptor.decrypt_phase(output).unwrap()),
+                    decode_codec.decode_value(decryptor.decrypt_phase(output.as_view()).unwrap()),
                     T::as_from(i + 2)
                 );
             }

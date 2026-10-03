@@ -49,6 +49,8 @@ Sparse mode requires explicit key generation; sparse ternary is unsupported. NTR
 
 The shared layer accepts `LweSecretKeyRef` or `&LwePublicKey`; its only client trait, `EncryptionKey<T, M>`, selects the encryption kernel without family parameter or error types. Raw operations return `ClientError`; Boolean operations return `BooleanError`.
 
+Allocating encryption methods return `LweCiphertext<T>`. Client writes take `Lwe<&mut [T]>` and reads take `Lwe<&[T]>` by value: use `encryptor.encrypt_padded_to(message, output.as_mut_view(), rng)` and `decryptor.decrypt(output.as_view())`. These views borrow the coefficients without copying or allocating. For caller-owned slices, wrap them with `primus_tfhe::Lwe::new`; the same API supports boxed, aligned and stack storage. Boolean clients use the same borrowing convention.
+
 The client generates paired keys, keeps `ClientKey` and encryption/decryption helpers, and gives `ServerKey` to the server. The server needs only public context, evaluation keys, LUTs/programs and input ciphertexts; it returns encrypted results to the client. Examples show these stages in one process, with parameter construction kept separate. Input and output encodings are public agreements between the two sides.
 
 Ordinary buffer allocation needs no secret: all four backends provide `context.allocate_lwe_ciphertext()` for the external LWE mask/body and `context.allocate_accumulator_ciphertext()` for coefficient-domain GLWE/NTRU storage. Both allocate zeros without encrypting. CBS controls also depend on output decomposition and transform representation, so use `cbs.allocate_output()`. Each side prepares and reuses its own workspace and result buffers.
@@ -70,10 +72,10 @@ let rhs = encryptor.encrypt(false, &mut rng)?;
 let mut output = context.allocate_lwe_ciphertext();
 let mut next = context.allocate_lwe_ciphertext();
 gates.evaluate_binary_to(BooleanGate::Nand, &lhs, &rhs, &mut output);
-assert!(decryptor.decrypt(&output)?);
+assert!(decryptor.decrypt(output.as_view())?);
 gates.mux_to(&output, &rhs, &lhs, &mut next);
 core::mem::swap(&mut output, &mut next);
-assert!(!decryptor.decrypt(&output)?);
+assert!(!decryptor.decrypt(output.as_view())?);
 ```
 
 `BooleanEvaluator` shares affine preprocessing, signed modulus-8 LUTs and the restoring output shift between families. Binary gates use one PBS; NOT uses none, and MUX uses two. Reuse `evaluate_binary_to`, `not_to` and `mux_to` with existing outputs. Outputs keep the external Boolean encoding and can feed subsequent gates directly. Client dimension errors return `BooleanError::Client`; gate dimension mismatches panic. Raw ciphertexts do not carry key identity or encoding metadata; those remain caller contracts.
@@ -166,7 +168,7 @@ Choose the compiler's output encoding once, then use any of its function or slic
 
 | Output encoding | Compiler construction | Decoding |
 | --- | --- | --- |
-| Default: parameter plaintext modulus, encoded at the accumulator modulus | `parameters.lookup_table_compiler()` | `decryptor.decrypt(output)` |
+| Default: parameter plaintext modulus, encoded at the accumulator modulus | `parameters.lookup_table_compiler()` | `decryptor.decrypt(output.as_view())` |
 | Explicit output codec | `compiler.try_with_output_codec(&codec)?` | Decode `decrypt_phase(output)` with a codec at the return modulus |
 
 The function's output range can be smaller than the plaintext modulus: `x % 4` can still use `t=32` encoding. Basic examples use this default workflow:
@@ -190,7 +192,7 @@ let compiler = context.parameters().lookup_table_compiler()
 let lut = compiler.compile_fn(|x| (x % 4) as u32).unwrap();
 let input = encryptor.encrypt_padded(7u32, &mut rng).unwrap();
 let output = evaluator.apply_lookup_table(&input, &lut);
-let message = output_codec.decode_value(decryptor.decrypt_phase(&output).unwrap());
+let message = output_codec.decode_value(decryptor.decrypt_phase(output.as_view()).unwrap());
 assert_eq!(message, 3);
 ```
 
@@ -208,7 +210,7 @@ let compiler = context.parameters().lookup_table_compiler()
 let lut = compiler.compile_odd_full_domain_fn(|x| ((x * x + 3) % 8) as u32).unwrap();
 let input = encryptor.encrypt(14u32, &mut rng).unwrap();
 evaluator.apply_lookup_table_to(&input, &lut, &mut output);
-let message = output_codec.decode_value(decryptor.decrypt_phase(&output).unwrap());
+let message = output_codec.decode_value(decryptor.decrypt_phase(output.as_view()).unwrap());
 assert_eq!(message, 7);
 ```
 

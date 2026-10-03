@@ -69,7 +69,11 @@ fn backend<T: TorusFftValue, Table: FftTable>(
         if !verified {
             evaluator.apply_lookup_table_to(input, lut, &mut output);
             assert_eq!(
-                context.decryptor(client).unwrap().decrypt(&output).unwrap(),
+                context
+                    .decryptor(client)
+                    .unwrap()
+                    .decrypt(output.as_view())
+                    .unwrap(),
                 T::ZERO
             );
             verified = true;

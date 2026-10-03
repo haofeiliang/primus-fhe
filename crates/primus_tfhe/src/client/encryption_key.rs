@@ -1,4 +1,5 @@
 use primus_integer::FheUint;
+use primus_lattice::lwe::Lwe;
 use primus_lwe::{LweCiphertext, LwePublicKey, LweSecretKeyRef};
 use primus_reduce::RingContext;
 
@@ -47,7 +48,7 @@ pub trait EncryptionKey<T: FheUint, M: RingContext<T>> {
     fn encrypt_encoded_to<R: rand::Rng + rand::CryptoRng>(
         &self,
         plaintext: T,
-        output: &mut LweCiphertext<T>,
+        output: Lwe<&mut [T]>,
         parameters: &LweClientParameters<'_, T, M>,
         rng: &mut R,
     );
@@ -80,13 +81,13 @@ impl<T: FheUint, M: RingContext<T>> EncryptionKey<T, M> for LweSecretKeyRef<'_, 
     fn encrypt_encoded_to<R: rand::Rng + rand::CryptoRng>(
         &self,
         plaintext: T,
-        output: &mut LweCiphertext<T>,
+        mut output: Lwe<&mut [T]>,
         parameters: &LweClientParameters<'_, T, M>,
         rng: &mut R,
     ) {
         (*self).encrypt_encoded_to(
             plaintext,
-            output,
+            &mut output,
             parameters.codec().ciphertext_modulus(),
             parameters.uniform(),
             parameters.noise(),
@@ -125,14 +126,14 @@ impl<T: FheUint, M: RingContext<T>> EncryptionKey<T, M> for &LwePublicKey<T> {
     fn encrypt_encoded_to<R: rand::Rng + rand::CryptoRng>(
         &self,
         plaintext: T,
-        output: &mut LweCiphertext<T>,
+        mut output: Lwe<&mut [T]>,
         parameters: &LweClientParameters<'_, T, M>,
         rng: &mut R,
     ) {
         LwePublicKey::encrypt_encoded_to(
             self,
             plaintext,
-            output,
+            &mut output,
             parameters.codec().ciphertext_modulus(),
             parameters.noise(),
             rng,

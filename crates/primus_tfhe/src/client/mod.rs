@@ -10,6 +10,7 @@ pub use parameters::LweClientParameters;
 
 use primus_encoding::{PlaintextEmbedding, RoundedCodec};
 use primus_integer::FheUint;
+use primus_lattice::lwe::Lwe;
 use primus_lwe::{LweCiphertext, LweSecretKeyRef};
 use primus_reduce::RingContext;
 
@@ -17,6 +18,8 @@ use primus_reduce::RingContext;
 ///
 /// Both secret and public keys use the same message checks, encoding and output
 /// reuse. Public keys inherit [`EncryptionKey`]'s identity and noise contracts.
+/// Allocating methods return [`LweCiphertext`]; `*_to` methods take mutable LWE
+/// views, obtained with `as_mut_view()` or by wrapping a borrowed slice in [`Lwe`].
 pub struct Encryptor<'a, T: FheUint, M: RingContext<T>, Key = LweSecretKeyRef<'a, T>> {
     parameters: LweClientParameters<'a, T, M>,
     key: Key,
@@ -79,7 +82,7 @@ impl<'a, T: FheUint, M: RingContext<T>, Key: EncryptionKey<T, M>> Encryptor<'a, 
     ///
     /// # Correctness
     ///
-    /// `output` must contain a body, as required by [`LweCiphertext`].
+    /// `output` must contain a body, as required by [`Lwe`].
     ///
     /// # Panics
     ///
@@ -88,7 +91,7 @@ impl<'a, T: FheUint, M: RingContext<T>, Key: EncryptionKey<T, M>> Encryptor<'a, 
     pub fn encrypt_to<R>(
         &self,
         message: T,
-        output: &mut LweCiphertext<T>,
+        output: Lwe<&mut [T]>,
         rng: &mut R,
     ) -> Result<(), ClientError>
     where
@@ -104,7 +107,7 @@ impl<'a, T: FheUint, M: RingContext<T>, Key: EncryptionKey<T, M>> Encryptor<'a, 
     pub fn encrypt_padded_to<R>(
         &self,
         message: T,
-        output: &mut LweCiphertext<T>,
+        output: Lwe<&mut [T]>,
         rng: &mut R,
     ) -> Result<(), ClientError>
     where
@@ -120,7 +123,7 @@ impl<'a, T: FheUint, M: RingContext<T>, Key: EncryptionKey<T, M>> Encryptor<'a, 
     pub fn encrypt_centered_to<R>(
         &self,
         message: T,
-        output: &mut LweCiphertext<T>,
+        output: Lwe<&mut [T]>,
         rng: &mut R,
     ) -> Result<(), ClientError>
     where
@@ -146,7 +149,7 @@ impl<'a, T: FheUint, M: RingContext<T>, Key: EncryptionKey<T, M>> Encryptor<'a, 
     fn encrypt_with_embedding_to<R>(
         &self,
         message: T,
-        output: &mut LweCiphertext<T>,
+        output: Lwe<&mut [T]>,
         rng: &mut R,
         embedding: PlaintextEmbedding,
     ) -> Result<(), ClientError>
@@ -190,6 +193,8 @@ impl<'a, T: FheUint, M: RingContext<T>, Key: EncryptionKey<T, M>> Encryptor<'a, 
 }
 
 /// Decrypts rounded TFHE messages under a borrowed external LWE secret.
+///
+/// Inputs are LWE views; use `as_view()` to borrow an owning ciphertext.
 pub struct Decryptor<'a, T: FheUint, M: RingContext<T>> {
     codec: &'a RoundedCodec<T, M>,
     key: LweSecretKeyRef<'a, T>,
@@ -209,7 +214,7 @@ impl<'a, T: FheUint, M: RingContext<T>> Decryptor<'a, T, M> {
 
     /// Decodes a canonical message in `[0, t)` using the input codec.
     /// For a different LUT output codec, decode [`Self::decrypt_phase`] instead.
-    pub fn decrypt(&self, ciphertext: &LweCiphertext<T>) -> Result<T, ClientError> {
+    pub fn decrypt(&self, ciphertext: Lwe<&[T]>) -> Result<T, ClientError> {
         let phase = self.decrypt_phase(ciphertext)?;
         Ok(self.codec.decode_value(phase))
     }
@@ -221,7 +226,7 @@ impl<'a, T: FheUint, M: RingContext<T>> Decryptor<'a, T, M> {
     /// The ciphertext must use this client's external secret and modulus, with
     /// canonical coefficients in `[0, q)`. Only its dimension is checked;
     /// raw ciphertexts carry neither key identity nor encoding metadata.
-    pub fn decrypt_phase(&self, ciphertext: &LweCiphertext<T>) -> Result<T, ClientError> {
+    pub fn decrypt_phase(&self, ciphertext: Lwe<&[T]>) -> Result<T, ClientError> {
         let expected = self.key.dimension();
         let actual = ciphertext.dimension();
         if actual != expected {
@@ -229,6 +234,6 @@ impl<'a, T: FheUint, M: RingContext<T>> Decryptor<'a, T, M> {
         }
         Ok(self
             .key
-            .decrypt_phase(ciphertext, self.codec.ciphertext_modulus()))
+            .decrypt_phase(&ciphertext, self.codec.ciphertext_modulus()))
     }
 }

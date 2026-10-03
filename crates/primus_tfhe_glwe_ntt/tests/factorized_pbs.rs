@@ -89,7 +89,7 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
             for (i, output) in outputs.iter().enumerate() {
                 assert_eq!(output.dimension(), dimension);
                 assert_eq!(
-                    codec.decode_value(decryptor.decrypt_phase(output).unwrap()),
+                    codec.decode_value(decryptor.decrypt_phase(output.as_view()).unwrap()),
                     value(message, i)
                 );
             }
@@ -274,7 +274,7 @@ fn factorized_pbs_accepts_ternary_controls_without_online_allocation() {
             assert_eq!(allocation.count, 0);
             for (i, output) in outputs.iter().enumerate() {
                 assert_eq!(
-                    codec.decode_value(decryptor.decrypt_phase(output).unwrap()),
+                    codec.decode_value(decryptor.decrypt_phase(output.as_view()).unwrap()),
                     value(message as usize, i)
                 );
             }

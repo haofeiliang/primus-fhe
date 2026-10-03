@@ -103,7 +103,7 @@ fn sparse_pbs_preserves_external_secret_and_interleaved_outputs_in_both_orders()
         assert_eq!(many.padded_output_count(), 4);
         let mut outputs = vec![LweCiphertext::zero(dimension); 3];
         let check = |output: &LweCiphertext<u32>, message: u32| {
-            let phase = decryptor.decrypt_phase(output).unwrap();
+            let phase = decryptor.decrypt_phase(output.as_view()).unwrap();
             let expected = codec.encode_value(message, PlaintextEmbedding::Unsigned);
             let distance = phase.abs_diff(expected);
             assert!(distance.min(Q - distance) < Q / 32 - 1);
@@ -206,8 +206,8 @@ fn sparse_boolean_gates_chain_in_both_orders_without_allocating() {
                 &mut output,
                 &mut current,
                 |ciphertext| {
-                    let value = decryptor.decrypt(ciphertext).unwrap();
-                    let phase = phase_decryptor.decrypt_phase(ciphertext).unwrap();
+                    let value = decryptor.decrypt(ciphertext.as_view()).unwrap();
+                    let phase = phase_decryptor.decrypt_phase(ciphertext.as_view()).unwrap();
                     let center = codec.encode_value(u32::from(value), PlaintextEmbedding::Unsigned);
                     assert!(centered_error(phase, center).abs() < i64::from(Q / 8 - 1));
                     value
@@ -237,7 +237,9 @@ fn sparse_bivariate_and_odd_full_domain_respect_input_margins_in_both_orders() {
         let output_codec = RoundedCodec::new(8, BarrettModulus::new(Q));
         let encode_input =
             |message| input_codec.encode_value(message, PlaintextEmbedding::Unsigned);
-        let phase = |ciphertext: &LweCiphertext<u32>| decryptor.decrypt_phase(ciphertext).unwrap();
+        let phase = |ciphertext: &LweCiphertext<u32>| {
+            decryptor.decrypt_phase(ciphertext.as_view()).unwrap()
+        };
         let check_output = |output: &LweCiphertext<u32>, expected| {
             let center = output_codec.encode_value(expected, PlaintextEmbedding::Unsigned);
             let phase = phase(output);
@@ -294,7 +296,7 @@ fn sparse_bivariate_and_odd_full_domain_respect_input_margins_in_both_orders() {
         // Check both folds, zero wraparound, and the last message, at half margin.
         for (message, sign) in [(0, -1), (7, 1), (8, -1), (14, 1), (1, 0)] {
             encryptor
-                .encrypt_to(message, &mut packed, &mut rng)
+                .encrypt_to(message, packed.as_mut_view(), &mut rng)
                 .unwrap();
             add_phase_error(&mut packed, sign * i64::from(Q / (8 * 15)));
             let (_, allocation) = allocations::measure(|| {

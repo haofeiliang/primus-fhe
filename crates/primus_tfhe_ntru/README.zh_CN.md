@@ -25,6 +25,8 @@ Classic PBS、ManyLUT、CBS、Boolean 和 MVB 支持 binary/ternary 外部秘密
 
 使用 context 的 `encryptor(&client)`、`public_encryptor(&public)` 和 `decryptor(&client)`；`client.try_generate_public_key(parameters, rng)` 生成独立外部 s 下的 LWE 公钥。它不是 NTRU 环公钥，总噪声要求见 [LWE 公钥契约](../primus_lwe/README.zh_CN.md#公钥加密)。普通消息使用 T，`decrypt` 返回 `Result<T, ClientError>`。
 
+客户端读写接收 LWE 借用视图：向 `encrypt_to` 传入 `output.as_mut_view()`，向 `decrypt` 或 `decrypt_phase` 传入 `ciphertext.as_view()`。分配型加密方法仍返回 `LweCiphertext<T>`；Boolean 客户端遵循同样的约定。
+
 前半区 LUT 使用 `encrypt_padded`，奇数全域 LUT 使用普通 `encrypt`。`parameters.lookup_table_compiler()` 创建可复用编译器，支持 `compile_fn` / `compile_slice` 及交错、奇数全域方法。默认按参数的明文模数在 Q 下编码，返回 q 后用普通 `decrypt` 解码。`compiler.try_with_output_codec(&codec)?` 可选择其他输出 codec，传入的 `RoundedCodec` 必须使用 Q；解码 `decrypt_phase` 时使用相同输出明文模数、密文模数为 q 的 codec。返回路径缩放既有编码，不重新编码；须预算舍入和 key-switch 误差。
 
 [公共指南](../primus_tfhe/README.zh_CN.md) 说明 ManyLUT、奇数全域和 MVB。MVB 使用 Q 下的 unsigned `ScaledCodec` 编译，q 下的 Scaled codec 解码，并预算两端固定尺度的差异。有界双输入 `BivariateLookupTable` 目前仅支持 q=Q。

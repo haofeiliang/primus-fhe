@@ -69,7 +69,7 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
             t - 1,
         );
         let input = encryptor.encrypt_padded(domain_len - 1, &mut rng).unwrap();
-        assert_eq!(decryptor.decrypt(&input).unwrap(), domain_len - 1);
+        assert_eq!(decryptor.decrypt(input.as_view()).unwrap(), domain_len - 1);
         assert_eq!(
             encryptor.encrypt_padded(domain_len, &mut rng).unwrap_err(),
             ClientError::MessageOutsidePaddedDomain

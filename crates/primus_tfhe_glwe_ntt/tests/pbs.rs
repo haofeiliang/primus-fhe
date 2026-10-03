@@ -122,7 +122,7 @@ where
             }
             for (index, output) in outputs.iter().enumerate() {
                 assert_eq!(
-                    output_codec.decode_value(decryptor.decrypt_phase(output).unwrap()),
+                    output_codec.decode_value(decryptor.decrypt_phase(output.as_view()).unwrap()),
                     value(message, index)
                 );
             }
@@ -271,15 +271,15 @@ where
     // Rejected calls leave the reusable evaluator usable.
     evaluator.apply_interleaved_lookup_table_to(&input, &good, &mut outputs);
     assert_eq!(
-        output_codec.decode_value(decryptor.decrypt_phase(&outputs[0]).unwrap()),
+        output_codec.decode_value(decryptor.decrypt_phase(outputs[0].as_view()).unwrap()),
         T::as_from(3u32)
     );
     assert_eq!(
-        output_codec.decode_value(decryptor.decrypt_phase(&outputs[1]).unwrap()),
+        output_codec.decode_value(decryptor.decrypt_phase(outputs[1].as_view()).unwrap()),
         T::as_from(0u32)
     );
     assert_eq!(
-        output_codec.decode_value(decryptor.decrypt_phase(&outputs[2]).unwrap()),
+        output_codec.decode_value(decryptor.decrypt_phase(outputs[2].as_view()).unwrap()),
         T::as_from(3u32)
     );
 
@@ -304,7 +304,7 @@ where
         });
         assert_eq!(allocation.count, 0, "packing and PBS must reuse storage");
         assert_eq!(
-            output_codec.decode_value(decryptor.decrypt_phase(&result).unwrap()),
+            output_codec.decode_value(decryptor.decrypt_phase(result.as_view()).unwrap()),
             x * x + y
         );
     }
@@ -323,7 +323,7 @@ where
         });
         assert_eq!(allocation.count, 0, "full-domain PBS must reuse storage");
         assert_eq!(
-            output_codec.decode_value(decryptor.decrypt_phase(&result).unwrap()),
+            output_codec.decode_value(decryptor.decrypt_phase(result.as_view()).unwrap()),
             expected
         );
     }

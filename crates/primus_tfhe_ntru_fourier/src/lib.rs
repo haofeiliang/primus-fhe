@@ -77,8 +77,8 @@ pub use sparse::SparseNtruBootstrappingKey;
 
 pub use primus_tfhe::{
     BivariateLookupTable, CircuitBootstrapConfig, ClientError, DecompositionConfig,
-    FactorizedLookupTable, InterleavedLookupTable, LookupTable, LookupTableCompiler, LweCiphertext,
-    LweSecretKeyRef,
+    FactorizedLookupTable, InterleavedLookupTable, LookupTable, LookupTableCompiler, Lwe,
+    LweCiphertext, LweSecretKeyRef,
 };
 pub use primus_tfhe_ntru::{ClientKey, EncryptionKey, LwePublicKey, LweReturnEvaluator};
 

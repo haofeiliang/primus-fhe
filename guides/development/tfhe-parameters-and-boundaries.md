@@ -38,6 +38,8 @@
 
 [共享客户端参数](../../crates/primus_tfhe/src/client/parameters.rs)从已验证的 `LweParameters` 构造，字段私有，mask 采样器从 codec 的密文模数派生。GLWE KS→BR 显式选取 `kN` 维数及 accumulator fresh-noise，并在客户端构造时核对噪声模数。没有在逐次加密或逐系数操作中重复核对采样器；预算与秘密身份仍由调用方负责。
 
+共享客户端及 Boolean 客户端的单项读取使用 `Lwe<&[T]>`，写入使用 `Lwe<&mut [T]>`，视图按值传递。普通拥有型密文通过 `as_view()` / `as_mut_view()` 借用；其他存储可用已有 `Lwe::new` 包装切片，无需复制或构造临时 view 集合。`Lwe` 在共享层、两家族及四后端直接重新导出。分配型加密仍返回 `LweCiphertext<T>`，保留底层原有初始化路径；消息与维数错误仍发生在 RNG 消费和输出写入前。
+
 ## Ordinary PBS 的三个返回链路
 
 | 家族 / order | 外部域及完整路径 | 参数和检查入口 |

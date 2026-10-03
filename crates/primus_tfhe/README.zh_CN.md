@@ -49,6 +49,8 @@ Sparse 模式需显式选择生成入口，暂不支持 sparse ternary。NTRU �
 
 公共层接收 `LweSecretKeyRef` 或 `&LwePublicKey`；唯一的客户端 trait `EncryptionKey<T, M>` 只分派加密实现，不关联家族参数或错误类型。普通操作返回 `ClientError`，Boolean 操作返回 `BooleanError`。
 
+分配型加密方法返回 `LweCiphertext<T>`。客户端写入接口按值接收 `Lwe<&mut [T]>`，读取接口按值接收 `Lwe<&[T]>`：使用 `encryptor.encrypt_padded_to(message, output.as_mut_view(), rng)` 和 `decryptor.decrypt(output.as_view())`。视图只借用系数，不复制或分配；已有切片可通过 `primus_tfhe::Lwe::new` 包装，因此同一接口也支持 boxed、对齐及栈存储。Boolean 客户端遵循同样的借用方式。
+
 客户端生成配套密钥，保留 `ClientKey` 和加解密器，将 `ServerKey` 提供给服务端。 服务端只需公开 context、求值密钥、LUT/程序和输入密文；计算后将密文结果返回客户端。 示例在同一进程展示这些阶段，参数构造单独放置。输入和输出编码是双方约定的公开信息。
 
 普通缓冲分配不依赖私钥：四个后端的 `context.allocate_lwe_ciphertext()` 按外部 LWE 维度分配 mask/body；`context.allocate_accumulator_ciphertext()` 按累加器布局分配系数域 GLWE/NTRU。两者只分配零存储，不执行加密。CBS 控制的布局还依赖输出分解和变换表示， 因此使用 `cbs.allocate_output()`。工作区和结果缓冲在各自一端创建一次并复用。
@@ -70,10 +72,10 @@ let rhs = encryptor.encrypt(false, &mut rng)?;
 let mut output = context.allocate_lwe_ciphertext();
 let mut next = context.allocate_lwe_ciphertext();
 gates.evaluate_binary_to(BooleanGate::Nand, &lhs, &rhs, &mut output);
-assert!(decryptor.decrypt(&output)?);
+assert!(decryptor.decrypt(output.as_view())?);
 gates.mux_to(&output, &rhs, &lhs, &mut next);
 core::mem::swap(&mut output, &mut next);
-assert!(!decryptor.decrypt(&output)?);
+assert!(!decryptor.decrypt(output.as_view())?);
 ```
 
 `BooleanEvaluator` 在两族间共享仿射预处理、内部模 8 正负 LUT 和恢复输出编码的平移。 二元门使用一次 PBS，NOT 无需 PBS，MUX 使用两次。通过 `evaluate_binary_to`、`not_to`、 `mux_to` 和已有输出复用存储。 输出保持外部 Boolean 编码，可直接送入后续门。 客户端维数错误返回 `BooleanError::Client`，门求值维数错误则 panic。 原始密文不携带密钥身份或编码元数据，这些仍由调用方保证。
@@ -166,7 +168,7 @@ Raw 构造器 `LookupTable::try_new` / `InterleavedLookupTable::try_new` 显式�
 
 | 输出编码 | 编译器构造 | 解码 |
 | --- | --- | --- |
-| 默认：参数的明文模数，在 accumulator 模数下编码 | `parameters.lookup_table_compiler()` | `decryptor.decrypt(output)` |
+| 默认：参数的明文模数，在 accumulator 模数下编码 | `parameters.lookup_table_compiler()` | `decryptor.decrypt(output.as_view())` |
 | 显式指定输出 codec | `compiler.try_with_output_codec(&codec)?` | 用返回模数下的 codec 解码 `decrypt_phase(output)` |
 
 函数输出范围可以小于明文模数，例如 `x % 4` 仍可采用 `t=32` 编码。Basic 示例使用这个默认流程：
@@ -190,7 +192,7 @@ let compiler = context.parameters().lookup_table_compiler()
 let lut = compiler.compile_fn(|x| (x % 4) as u32).unwrap();
 let input = encryptor.encrypt_padded(7u32, &mut rng).unwrap();
 let output = evaluator.apply_lookup_table(&input, &lut);
-let message = output_codec.decode_value(decryptor.decrypt_phase(&output).unwrap());
+let message = output_codec.decode_value(decryptor.decrypt_phase(output.as_view()).unwrap());
 assert_eq!(message, 3);
 ```
 
@@ -208,7 +210,7 @@ let compiler = context.parameters().lookup_table_compiler()
 let lut = compiler.compile_odd_full_domain_fn(|x| ((x * x + 3) % 8) as u32).unwrap();
 let input = encryptor.encrypt(14u32, &mut rng).unwrap();
 evaluator.apply_lookup_table_to(&input, &lut, &mut output);
-let message = output_codec.decode_value(decryptor.decrypt_phase(&output).unwrap());
+let message = output_codec.decode_value(decryptor.decrypt_phase(output.as_view()).unwrap());
 assert_eq!(message, 7);
 ```
 

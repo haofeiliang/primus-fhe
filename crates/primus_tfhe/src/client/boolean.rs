@@ -1,5 +1,6 @@
 use super::{BooleanError, Decryptor, EncryptionKey, Encryptor};
 use primus_integer::FheUint;
+use primus_lattice::lwe::Lwe;
 use primus_lwe::{LweCiphertext, LweSecretKeyRef};
 use primus_reduce::RingContext;
 
@@ -32,7 +33,7 @@ impl<'a, T: FheUint, M: RingContext<T>, Key: EncryptionKey<T, M>> BooleanEncrypt
     pub fn encrypt_to<R>(
         &self,
         message: bool,
-        output: &mut LweCiphertext<T>,
+        output: Lwe<&mut [T]>,
         rng: &mut R,
     ) -> Result<(), BooleanError>
     where
@@ -61,7 +62,7 @@ impl<'a, T: FheUint, M: RingContext<T>> BooleanDecryptor<'a, T, M> {
     /// Uses rounded encoding modulo 4 and rejects decoded values other than 0/1.
     /// The raw ciphertext must satisfy [`Decryptor::decrypt_phase`]'s key,
     /// modulus and canonical-coefficient requirements.
-    pub fn decrypt(&self, ciphertext: &LweCiphertext<T>) -> Result<bool, BooleanError> {
+    pub fn decrypt(&self, ciphertext: Lwe<&[T]>) -> Result<bool, BooleanError> {
         let message = self.inner.decrypt(ciphertext)?;
         if message == T::ZERO {
             Ok(false)

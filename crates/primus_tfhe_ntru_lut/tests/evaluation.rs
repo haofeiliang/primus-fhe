@@ -362,7 +362,7 @@ fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T) {
                     evaluator.allocate_output(),
                     |input, output| evaluator.evaluate_to(input, output),
                     |m| encryptor.encrypt_padded(m, &mut rng).unwrap(),
-                    |c| decryptor.decrypt_phase(c).unwrap(),
+                    |c| decryptor.decrypt_phase(c.as_view()).unwrap(),
                 );
             }
             let config = cases(radix)[0].0;
@@ -427,7 +427,7 @@ fn fourier<T: TorusFftValue, Table: FftTable>() {
                     evaluator.allocate_output(),
                     |input, output| evaluator.evaluate_to(input, output),
                     |m| encryptor.encrypt_padded(m, &mut rng).unwrap(),
-                    |c| decryptor.decrypt_phase(c).unwrap(),
+                    |c| decryptor.decrypt_phase(c.as_view()).unwrap(),
                 );
             }
             let config = cases(radix)[0].0;

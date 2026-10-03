@@ -104,7 +104,7 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr) {
         context
             .decryptor(&client)
             .unwrap()
-            .decrypt(&output)
+            .decrypt(output.as_view())
             .unwrap(),
         1
     );
@@ -158,7 +158,7 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr) {
             context
                 .decryptor(&client)
                 .unwrap()
-                .decrypt(&output)
+                .decrypt(output.as_view())
                 .unwrap(),
             bit
         );

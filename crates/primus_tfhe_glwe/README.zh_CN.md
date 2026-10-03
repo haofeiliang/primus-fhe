@@ -34,6 +34,8 @@
 
 通过 context 的 `encryptor(&client)`、`public_encryptor(&public)`、`decryptor(&client)` 绑定外部密钥；`client.try_generate_public_key(parameters, rng)` 生成对应的 LWE 公钥。两种 PBS 顺序使用各自的外部秘密与维数。公钥加密的总噪声要求见 [LWE 公钥契约](../primus_lwe/README.zh_CN.md#公钥加密)。
 
+客户端读写接收 LWE 借用视图：向 `encrypt_to` 传入 `output.as_mut_view()`，向 `decrypt` 或 `decrypt_phase` 传入 `ciphertext.as_view()`。分配型加密方法仍返回 `LweCiphertext<T>`；Boolean 客户端遵循同样的约定。
+
 前半区 LUT 使用 `encrypt_padded`，奇数全域 LUT 使用普通 `encrypt`。`parameters.lookup_table_compiler()` 创建可复用编译器，默认使用参数 codec 编码输出；调用 `compile_fn` / `compile_slice`，或交错、奇数全域方法。`compiler.try_with_output_codec(&codec)?` 可选择其他输出明文模数；传入同一密文模数下的 `RoundedCodec`，再用它解码 `decrypt_phase`。ManyLUT、Boolean、双输入和 MVB 的接口及编码要求见[公共指南](../primus_tfhe/README.zh_CN.md)。
 
 ## Boolean 与 CBS
