@@ -1,4 +1,4 @@
-use primus_data::{Data, DataMut};
+use primus_data::DataMut;
 use primus_factor::ShoupFactor;
 use primus_integer::{AsInto, BigUint, FheUint};
 use primus_ntt::NttTable;
@@ -6,22 +6,36 @@ use primus_reduce::FieldContext;
 use primus_rns::ResidueFactors;
 use rayon::prelude::*;
 
-use crate::{
-    CrtGlweAutoKey, CrtGlweAutomorphismWorkspace, CrtGlweCiphertext, DcrtGadgetDomain,
-    DcrtGlweSecretKey, GlweSecretKey,
-};
+use crate::{CrtGlweCiphertext, DcrtGadgetDomain, DcrtGlweSecretKey, GlweSecretKey};
 
-use super::{CrtGlweExpandCoeffSyncPool, CrtGlweExpandCoeffWorkspace};
+use super::automorphism::CrtGlweAutoKeyData;
+use super::trace::CrtGlweTraceWorkspace;
+use crate::automorphism::{AutomorphismKeyMetadata, AutomorphismWorkspace};
+use crate::workspace_pool::WorkspacePool;
+
+mod evaluator;
+pub use evaluator::{CrtGlweExpandCoeffEvaluator, CrtGlweExpandCoeffParallelEvaluator};
 
 #[derive(Clone)]
 /// Automorphism keys used to expand CRT GLWE coefficients into ciphertexts.
 pub struct CrtGlweExpandCoeffKey<T: FheUint> {
-    auto_keys: Vec<CrtGlweAutoKey<T>>,
+    metadata: AutomorphismKeyMetadata<T>,
+    // All entries are generated here from the same domain; no foreign entry can
+    // bypass the single metadata check at evaluator construction.
+    auto_keys: Vec<CrtGlweAutoKeyData<T>>,
     inv_count_residues_by_level: Vec<ResidueFactors<Vec<ShoupFactor<T>>>>,
 }
 
 impl<T: FheUint> CrtGlweExpandCoeffKey<T> {
     /// Generates the automorphism keys required for coefficient expansion.
+    ///
+    /// # Panics
+    /// Panics if secret layouts or ordered moduli do not match the domain.
+    ///
+    /// # Correctness
+    /// Both secret representations must describe the same key, with the DCRT
+    /// secret using the domain table's NTT representation.
+    #[must_use]
     pub fn new<M, Table, R>(
         domain: &DcrtGadgetDomain<'_, T, M, Table>,
         sk: &GlweSecretKey<T>,
@@ -35,10 +49,10 @@ impl<T: FheUint> CrtGlweExpandCoeffKey<T> {
     {
         let params = domain.parameters();
         let log_n = params.poly_length().log_n();
-        let auto_keys: Vec<CrtGlweAutoKey<T>> = (1..=log_n)
+        let auto_keys: Vec<CrtGlweAutoKeyData<T>> = (1..=log_n)
             .rev()
             .map(|x| (1usize << x) + 1)
-            .map(|degree| CrtGlweAutoKey::new(domain, degree, sk, dcrt_sk, rng))
+            .map(|degree| CrtGlweAutoKeyData::new(domain, degree, sk, dcrt_sk, rng))
             .collect();
 
         let base_q = params.base_q();
@@ -60,51 +74,28 @@ impl<T: FheUint> CrtGlweExpandCoeffKey<T> {
             .collect();
 
         Self {
+            metadata: AutomorphismKeyMetadata::new(domain),
             auto_keys,
             inv_count_residues_by_level,
         }
     }
 
-    /// Coefficient Expansion Algorithm.
-    ///
-    /// Expands all `poly_length` coefficients.
-    /// (Alg. 1)<https://eprint.iacr.org/2024/266.pdf>
-    pub fn expand_coefficients_to<M, Table, A, B>(
+    /// Expands a validated power-of-two prefix with the bound serial scratch.
+    /// Converts each output to a view only when visiting its node; no view list is allocated.
+    fn expand_kernel_to<M, Table, B>(
         &self,
-        ciphertext: &CrtGlweCiphertext<A>,
+        ciphertext: CrtGlweCiphertext<&[T]>,
         result: &mut [CrtGlweCiphertext<B>],
         domain: &DcrtGadgetDomain<'_, T, M, Table>,
-        workspace: &mut CrtGlweExpandCoeffWorkspace<T>,
+        workspace: &mut CrtGlweTraceWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: Data<Elem = T>,
-        B: DataMut<Elem = T>,
-    {
-        assert_eq!(result.len(), domain.parameters().poly_length().get());
-        self.expand_partial_coefficients_to(ciphertext, result, domain, workspace)
-    }
-
-    /// Coefficient Expansion Algorithm.
-    ///
-    /// (Alg. 1)<https://eprint.iacr.org/2024/266.pdf>
-    pub fn expand_partial_coefficients_to<M, Table, A, B>(
-        &self,
-        ciphertext: &CrtGlweCiphertext<A>,
-        result: &mut [CrtGlweCiphertext<B>],
-        domain: &DcrtGadgetDomain<'_, T, M, Table>,
-        workspace: &mut CrtGlweExpandCoeffWorkspace<T>,
-    ) where
-        M: FieldContext<T>,
-        Table: NttTable<ValueT = T>,
-        A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
         let params = domain.parameters();
         let poly_length = params.poly_length().get();
         let count = result.len();
-        assert!(count.is_power_of_two() && count <= poly_length);
-        let ciphertext = ciphertext.as_view();
 
         let log_d = count.trailing_zeros() as usize;
         let rns_poly_len = params.rns_poly_len();
@@ -137,46 +128,22 @@ impl<T: FheUint> CrtGlweExpandCoeffKey<T> {
         }
     }
 
-    /// Parallel Coefficient Expansion Algorithm.
-    ///
-    /// Expands all `poly_length` coefficients using rayon parallelism.
-    /// (Alg. 1)<https://eprint.iacr.org/2024/266.pdf>
-    pub fn expand_coefficients_parallel_to<M, Table, A, B>(
+    /// Parallel traversal of the same expansion tree. Each task exclusively owns
+    /// a preallocated workspace guard, which returns scratch on completion or unwind.
+    fn expand_parallel_kernel_to<M, Table, B>(
         &self,
-        ciphertext: &CrtGlweCiphertext<A>,
+        ciphertext: CrtGlweCiphertext<&[T]>,
         result: &mut [CrtGlweCiphertext<B>],
         domain: &DcrtGadgetDomain<'_, T, M, Table>,
-        workspace_pool: &CrtGlweExpandCoeffSyncPool<T>,
+        workspace_pool: &WorkspacePool<CrtGlweTraceWorkspace<T>>,
     ) where
         M: FieldContext<T> + Sync,
-        A: Data<Elem = T> + Sync,
-        B: DataMut<Elem = T> + Send,
-        Table: NttTable<ValueT = T>,
-    {
-        assert_eq!(result.len(), domain.parameters().poly_length().get());
-        self.expand_partial_coefficients_parallel_to(ciphertext, result, domain, workspace_pool)
-    }
-
-    /// Parallel Coefficient Expansion Algorithm.
-    ///
-    /// (Alg. 1)<https://eprint.iacr.org/2024/266.pdf>
-    pub fn expand_partial_coefficients_parallel_to<M, Table, A, B>(
-        &self,
-        ciphertext: &CrtGlweCiphertext<A>,
-        result: &mut [CrtGlweCiphertext<B>],
-        domain: &DcrtGadgetDomain<'_, T, M, Table>,
-        workspace_pool: &CrtGlweExpandCoeffSyncPool<T>,
-    ) where
-        M: FieldContext<T> + Sync,
-        A: Data<Elem = T> + Sync,
         B: DataMut<Elem = T> + Send,
         Table: NttTable<ValueT = T>,
     {
         let params = domain.parameters();
         let poly_length = params.poly_length().get();
         let count = result.len();
-        assert!(count.is_power_of_two() && count <= poly_length);
-        let ciphertext = ciphertext.as_view();
 
         let log_d = count.trailing_zeros() as usize;
         let rns_poly_len = params.rns_poly_len();
@@ -195,7 +162,7 @@ impl<T: FheUint> CrtGlweExpandCoeffKey<T> {
             let monomial_degree = poly_length * 2 - level_len;
 
             x.par_iter_mut().zip(y.par_iter_mut()).for_each_init(
-                || workspace_pool.acquire_guard(),
+                || workspace_pool.acquire(),
                 |guard, (a_0, b_0)| {
                     let (crt_glwe, auto_workspace) = guard.workspace_mut().as_mut();
                     Self::expand_pair_kernel(
@@ -220,11 +187,11 @@ impl<T: FheUint> CrtGlweExpandCoeffKey<T> {
     fn expand_pair_kernel<M, Table>(
         mut lhs: CrtGlweCiphertext<&mut [T]>,
         mut rhs: CrtGlweCiphertext<&mut [T]>,
-        auto_key: &CrtGlweAutoKey<T>,
+        auto_key: &CrtGlweAutoKeyData<T>,
         monomial_degree: usize,
         domain: &DcrtGadgetDomain<'_, T, M, Table>,
         mut scratch: CrtGlweCiphertext<&mut [T]>,
-        auto_workspace: &mut CrtGlweAutomorphismWorkspace<T>,
+        auto_workspace: &mut AutomorphismWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,

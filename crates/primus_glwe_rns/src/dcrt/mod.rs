@@ -1,13 +1,13 @@
-//! DCRT-domain GLWE operations (NTT domain within CRT, multi-modulus).
+//! DCRT-domain GLWE operations over an ordered RNS basis.
 
 mod automorphism;
 mod expand_coeff;
-mod expand_coeff_pool;
 mod rev_trace;
 mod trace;
 
-pub use automorphism::DcrtGlweAutoKey;
-pub use expand_coeff::DcrtGlweExpandCoeffKey;
-pub use expand_coeff_pool::{DcrtGlweExpandCoeffSyncPool, DcrtGlweExpandCoeffWorkspace};
-pub use rev_trace::{DcrtGlweRevTraceKey, DcrtGlweRevTraceWorkspace};
-pub use trace::{DcrtGlweTraceKey, DcrtGlweTraceWorkspace};
+pub use automorphism::{DcrtGlweAutoEvaluator, DcrtGlweAutoKey};
+pub use expand_coeff::{
+    DcrtGlweExpandCoeffEvaluator, DcrtGlweExpandCoeffKey, DcrtGlweExpandCoeffParallelEvaluator,
+};
+pub use rev_trace::{DcrtGlweRevTraceEvaluator, DcrtGlweRevTraceKey};
+pub use trace::{DcrtGlweTraceEvaluator, DcrtGlweTraceKey};

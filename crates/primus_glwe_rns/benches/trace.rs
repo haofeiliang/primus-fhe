@@ -6,9 +6,9 @@ use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use primus_glwe_rns::{
-    CrtGlevParameters, CrtGlweParameters, CrtGlweTraceKey, CrtGlweTraceWorkspace, DcrtGadgetDomain,
-    DcrtGlweCiphertext, DcrtGlweRevTraceKey, DcrtGlweRevTraceWorkspace, DcrtGlweSecretKey,
-    DcrtGlweTraceKey, DcrtGlweTraceWorkspace, GlweSecretKey, SecretKeyDistr,
+    CrtGlevParameters, CrtGlweParameters, CrtGlweTraceEvaluator, CrtGlweTraceKey, DcrtGadgetDomain,
+    DcrtGlweCiphertext, DcrtGlweRevTraceEvaluator, DcrtGlweRevTraceKey, DcrtGlweSecretKey,
+    DcrtGlweTraceEvaluator, DcrtGlweTraceKey, GlweSecretKey, SecretKeyDistr,
 };
 use primus_lattice::glwe::{CrtGlwe, DcrtGlwe};
 use primus_modulus::BarrettModulus;
@@ -86,42 +86,28 @@ fn bench_trace(c: &mut Criterion) {
         // Buffers
         let mut crt_result: CrtGlwe<Vec<V>> = CrtGlwe::zero(rns_glwe_len);
         let mut dcrt_result: DcrtGlweCiphertext<Vec<V>> = DcrtGlweCiphertext::zero(rns_glwe_len);
-        let mut crt_trace_ctx = CrtGlweTraceWorkspace::new(&domain);
-        let mut dcrt_trace_ctx = DcrtGlweTraceWorkspace::new(&domain);
-        let mut dcrt_rev_trace_ctx = DcrtGlweRevTraceWorkspace::new(&domain);
+        let mut crt_trace_evaluator = CrtGlweTraceEvaluator::new(&crt_trace_key, &domain);
+        let mut dcrt_trace_evaluator = DcrtGlweTraceEvaluator::new(&dcrt_trace_key, &domain);
+        let mut dcrt_rev_trace_evaluator =
+            DcrtGlweRevTraceEvaluator::new(&dcrt_rev_trace_key, &domain);
 
         let n_label = format!("N={poly_length}");
 
         group.bench_function(BenchmarkId::new("CRT", &n_label), |b| {
             b.iter(|| {
-                crt_trace_key.trace_inplace(
-                    black_box(&c_coeff),
-                    black_box(&mut crt_result),
-                    &domain,
-                    &mut crt_trace_ctx,
-                );
+                crt_trace_evaluator.trace_to(black_box(&c_coeff), black_box(&mut crt_result));
             });
         });
 
         group.bench_function(BenchmarkId::new("DCRT", &n_label), |b| {
             b.iter(|| {
-                dcrt_trace_key.trace_inplace(
-                    black_box(&c_ntt),
-                    black_box(&mut dcrt_result),
-                    &domain,
-                    &mut dcrt_trace_ctx,
-                );
+                dcrt_trace_evaluator.trace_to(black_box(&c_ntt), black_box(&mut dcrt_result));
             });
         });
 
         group.bench_function(BenchmarkId::new("RevHomTrace", &n_label), |b| {
             b.iter(|| {
-                dcrt_rev_trace_key.trace_inplace(
-                    black_box(&c_ntt),
-                    black_box(&mut dcrt_result),
-                    &domain,
-                    &mut dcrt_rev_trace_ctx,
-                );
+                dcrt_rev_trace_evaluator.trace_to(black_box(&c_ntt), black_box(&mut dcrt_result));
             });
         });
     }

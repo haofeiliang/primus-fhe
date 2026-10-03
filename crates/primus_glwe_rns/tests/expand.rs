@@ -2,10 +2,10 @@
 //! N=32 retains a multi-level tree; two ~50-bit limbs retain wide CRT arithmetic.
 use primus_decompose::DecompositionBaseLog;
 use primus_glwe_rns::{
-    CrtGlevParameters, CrtGlweExpandCoeffKey, CrtGlweExpandCoeffSyncPool,
-    CrtGlweExpandCoeffWorkspace, CrtGlweParameters, DcrtGadgetDomain, DcrtGlweCiphertext,
-    DcrtGlweDecryptWorkspace, DcrtGlweExpandCoeffKey, DcrtGlweExpandCoeffSyncPool,
-    DcrtGlweExpandCoeffWorkspace, DcrtGlweSecretKey, GlweSecretKey, SecretKeyDistr,
+    CrtGlevParameters, CrtGlweExpandCoeffEvaluator, CrtGlweExpandCoeffKey,
+    CrtGlweExpandCoeffParallelEvaluator, CrtGlweParameters, DcrtGadgetDomain, DcrtGlweCiphertext,
+    DcrtGlweDecryptWorkspace, DcrtGlweExpandCoeffEvaluator, DcrtGlweExpandCoeffKey,
+    DcrtGlweExpandCoeffParallelEvaluator, DcrtGlweSecretKey, GlweSecretKey, SecretKeyDistr,
 };
 use primus_lattice::GlweDimension;
 use primus_lattice::glwe::CrtGlwe;
@@ -18,7 +18,7 @@ use rand::{SeedableRng, rngs::StdRng};
 ///
 /// Expands a GLWE ciphertext encrypting m(X) into N ciphertexts,
 /// one per coefficient: the i-th output encrypts m_i (the i-th coefficient).
-/// Verifies full expansion (all N coefficients) and partial expansion (first N/2 coefficients).
+/// Verifies full expansion and partial expansion with N/2 and one output.
 #[test]
 fn crt_expansion_matches_parallel_and_plaintext() {
     type ValueT = u64;
@@ -67,11 +67,11 @@ fn crt_expansion_matches_parallel_and_plaintext() {
     let mut input1: Polynomial<Vec<ValueT>> = Polynomial::random(poly_length, mod_t, &mut rng);
     let mut c1: DcrtGlweCiphertext<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
     let mut c_expand: Vec<CrtGlwe<Vec<ValueT>>> = vec![CrtGlwe::zero(rns_glwe_len); poly_length];
-    let mut expand_workspace = CrtGlweExpandCoeffWorkspace::new(&domain);
-    let workspace_pool = CrtGlweExpandCoeffSyncPool::with_capacity(2, &domain);
+    let mut evaluator = CrtGlweExpandCoeffEvaluator::new(&expand_key, &domain);
+    let mut parallel_evaluator = CrtGlweExpandCoeffParallelEvaluator::new(&expand_key, &domain, 2);
     let mut parallel_output = c_expand.clone();
     // Use a local pool so this small correctness test does not create a worker
-    // per CI core. Both expansion trees reuse these two scratch workspaces.
+    // per CI core. Parallel evaluations reuse the two preallocated workspaces.
     let workers = rayon::ThreadPoolBuilder::new()
         .num_threads(2)
         .build()
@@ -85,14 +85,29 @@ fn crt_expansion_matches_parallel_and_plaintext() {
     // Requires conversion to coefficient domain first.
     let c1 = c1.into_coeff_form(&table);
 
-    expand_key.expand_coefficients_to(&c1, &mut c_expand, &domain, &mut expand_workspace);
-    workers.install(|| {
-        expand_key.expand_coefficients_parallel_to(
-            &c1,
-            &mut parallel_output,
-            &domain,
-            &workspace_pool,
+    // Rejected output counts must not write any ciphertext or acquire scratch.
+    for count in [0, 3] {
+        let before = c_expand.clone();
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                evaluator.expand_partial_coefficients_to(&c1, &mut c_expand[..count]);
+            }))
+            .is_err()
         );
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                parallel_evaluator.expand_partial_coefficients_to(&c1, &mut c_expand[..count]);
+            }))
+            .is_err()
+        );
+        for (actual, expected) in c_expand.iter().zip(&before) {
+            assert_eq!(actual.as_ref(), expected.as_ref());
+        }
+    }
+
+    evaluator.expand_coefficients_to(&c1, &mut c_expand);
+    workers.install(|| {
+        parallel_evaluator.expand_coefficients_to(&c1, &mut parallel_output);
     });
     for (sequential, parallel) in c_expand.iter().zip(&parallel_output) {
         assert_eq!(sequential.as_ref(), parallel.as_ref());
@@ -111,34 +126,30 @@ fn crt_expansion_matches_parallel_and_plaintext() {
 
     // Partial expansion assumes the omitted coefficients are zero. Reuse dirty
     // output buffers and both workspaces from the full expansion.
-    let retained = poly_length / 2;
-    input1[retained..].fill(0);
+    for retained in [poly_length / 2, 1] {
+        input1[retained..].fill(0);
 
-    dcrt_sk_context.encrypt_to(&input1, &mut c1, &mut rng);
+        dcrt_sk_context.encrypt_to(&input1, &mut c1, &mut rng);
 
-    let c1 = c1.into_coeff_form(&table);
+        let crt_input = c1.clone().into_coeff_form(&table);
 
-    c_expand.truncate(retained);
-    parallel_output.truncate(retained);
+        c_expand.truncate(retained);
+        parallel_output.truncate(retained);
 
-    expand_key.expand_partial_coefficients_to(&c1, &mut c_expand, &domain, &mut expand_workspace);
-    workers.install(|| {
-        expand_key.expand_partial_coefficients_parallel_to(
-            &c1,
-            &mut parallel_output,
-            &domain,
-            &workspace_pool,
-        );
-    });
-    for (sequential, parallel) in c_expand.iter().zip(&parallel_output) {
-        assert_eq!(sequential.as_ref(), parallel.as_ref());
-    }
+        evaluator.expand_partial_coefficients_to(&crt_input, &mut c_expand);
+        workers.install(|| {
+            parallel_evaluator.expand_partial_coefficients_to(&crt_input, &mut parallel_output);
+        });
+        for (sequential, parallel) in c_expand.iter().zip(&parallel_output) {
+            assert_eq!(sequential.as_ref(), parallel.as_ref());
+        }
 
-    for (cipher, &input) in c_expand.iter().zip(input1.iter()) {
-        cipher.write_ntt_form(&mut transformed, &table);
-        let m_dec = dcrt_sk_context.decrypt(&transformed, &mut decrypt_workspace);
-        assert_eq!(input, m_dec[0]);
-        assert!(m_dec[1..].iter().all(|&v| v == 0));
+        for (cipher, &input) in c_expand.iter().zip(input1.iter()) {
+            cipher.write_ntt_form(&mut transformed, &table);
+            let m_dec = dcrt_sk_context.decrypt(&transformed, &mut decrypt_workspace);
+            assert_eq!(input, m_dec[0]);
+            assert!(m_dec[1..].iter().all(|&v| v == 0));
+        }
     }
 }
 
@@ -195,11 +206,11 @@ fn dcrt_expansion_matches_parallel_and_plaintext() {
     let mut c1: DcrtGlweCiphertext<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
     let mut c_expand: Vec<DcrtGlweCiphertext<Vec<ValueT>>> =
         vec![DcrtGlweCiphertext::zero(rns_glwe_len); poly_length];
-    let mut expand_workspace = DcrtGlweExpandCoeffWorkspace::new(&domain);
-    let workspace_pool = DcrtGlweExpandCoeffSyncPool::with_capacity(2, &domain);
+    let mut evaluator = DcrtGlweExpandCoeffEvaluator::new(&expand_key, &domain);
+    let mut parallel_evaluator = DcrtGlweExpandCoeffParallelEvaluator::new(&expand_key, &domain, 2);
     let mut parallel_output = c_expand.clone();
     // Use a local pool so this small correctness test does not create a worker
-    // per CI core. Both expansion trees reuse these two scratch workspaces.
+    // per CI core. Parallel evaluations reuse the two preallocated workspaces.
     let workers = rayon::ThreadPoolBuilder::new()
         .num_threads(2)
         .build()
@@ -209,14 +220,29 @@ fn dcrt_expansion_matches_parallel_and_plaintext() {
     let dcrt_sk_context = dcrt_sk.try_bind(&glwe_params, &table).unwrap();
     dcrt_sk_context.encrypt_to(&input1, &mut c1, &mut rng);
 
-    expand_key.expand_coefficients_to(&c1, &mut c_expand, &domain, &mut expand_workspace);
-    workers.install(|| {
-        expand_key.expand_coefficients_parallel_to(
-            &c1,
-            &mut parallel_output,
-            &domain,
-            &workspace_pool,
+    // Rejected output counts must not write any ciphertext or acquire scratch.
+    for count in [0, 3] {
+        let before = c_expand.clone();
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                evaluator.expand_partial_coefficients_to(&c1, &mut c_expand[..count]);
+            }))
+            .is_err()
         );
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                parallel_evaluator.expand_partial_coefficients_to(&c1, &mut c_expand[..count]);
+            }))
+            .is_err()
+        );
+        for (actual, expected) in c_expand.iter().zip(&before) {
+            assert_eq!(actual.as_ref(), expected.as_ref());
+        }
+    }
+
+    evaluator.expand_coefficients_to(&c1, &mut c_expand);
+    workers.install(|| {
+        parallel_evaluator.expand_coefficients_to(&c1, &mut parallel_output);
     });
     for (sequential, parallel) in c_expand.iter().zip(&parallel_output) {
         assert_eq!(sequential.as_ref(), parallel.as_ref());
@@ -231,30 +257,26 @@ fn dcrt_expansion_matches_parallel_and_plaintext() {
 
     // Partial expansion assumes the omitted coefficients are zero. Reuse dirty
     // output buffers and both workspaces from the full expansion.
-    let retained = poly_length / 2;
-    input1[retained..].fill(0);
+    for retained in [poly_length / 2, 1] {
+        input1[retained..].fill(0);
 
-    dcrt_sk_context.encrypt_to(&input1, &mut c1, &mut rng);
+        dcrt_sk_context.encrypt_to(&input1, &mut c1, &mut rng);
 
-    c_expand.truncate(retained);
-    parallel_output.truncate(retained);
+        c_expand.truncate(retained);
+        parallel_output.truncate(retained);
 
-    expand_key.expand_partial_coefficients_to(&c1, &mut c_expand, &domain, &mut expand_workspace);
-    workers.install(|| {
-        expand_key.expand_partial_coefficients_parallel_to(
-            &c1,
-            &mut parallel_output,
-            &domain,
-            &workspace_pool,
-        );
-    });
-    for (sequential, parallel) in c_expand.iter().zip(&parallel_output) {
-        assert_eq!(sequential.as_ref(), parallel.as_ref());
-    }
+        evaluator.expand_partial_coefficients_to(&c1, &mut c_expand);
+        workers.install(|| {
+            parallel_evaluator.expand_partial_coefficients_to(&c1, &mut parallel_output);
+        });
+        for (sequential, parallel) in c_expand.iter().zip(&parallel_output) {
+            assert_eq!(sequential.as_ref(), parallel.as_ref());
+        }
 
-    for (cipher, &input) in c_expand.iter().zip(input1.iter()) {
-        let m_dec = dcrt_sk_context.decrypt(cipher, &mut decrypt_workspace);
-        assert_eq!(input, m_dec[0]);
-        assert!(m_dec[1..].iter().all(|&v| v == 0));
+        for (cipher, &input) in c_expand.iter().zip(input1.iter()) {
+            let m_dec = dcrt_sk_context.decrypt(cipher, &mut decrypt_workspace);
+            assert_eq!(input, m_dec[0]);
+            assert!(m_dec[1..].iter().all(|&v| v == 0));
+        }
     }
 }

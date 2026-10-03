@@ -1,9 +1,9 @@
 //! CRT/DCRT trace and reverse trace, including modular-inverse normalization.
 use primus_decompose::DecompositionBaseLog;
 use primus_glwe_rns::{
-    CrtGlevParameters, CrtGlweParameters, CrtGlweTraceKey, CrtGlweTraceWorkspace, DcrtGadgetDomain,
-    DcrtGlweCiphertext, DcrtGlweDecryptWorkspace, DcrtGlweRevTraceKey, DcrtGlweRevTraceWorkspace,
-    DcrtGlweSecretKey, DcrtGlweTraceKey, DcrtGlweTraceWorkspace, GlweSecretKey, SecretKeyDistr,
+    CrtGlevParameters, CrtGlweParameters, CrtGlweTraceEvaluator, CrtGlweTraceKey, DcrtGadgetDomain,
+    DcrtGlweCiphertext, DcrtGlweDecryptWorkspace, DcrtGlweRevTraceEvaluator, DcrtGlweRevTraceKey,
+    DcrtGlweSecretKey, DcrtGlweTraceEvaluator, DcrtGlweTraceKey, GlweSecretKey, SecretKeyDistr,
 };
 use primus_lattice::GlweDimension;
 use primus_lattice::glwe::CrtGlwe;
@@ -71,7 +71,7 @@ fn test_crt_glwe_trace() {
     let input1: Polynomial<Vec<ValueT>> = Polynomial::random(poly_length, mod_t, &mut rng);
     let mut c1: DcrtGlweCiphertext<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
     let mut c2: CrtGlwe<Vec<ValueT>> = CrtGlwe::zero(rns_glwe_len);
-    let mut trace_workspace = CrtGlweTraceWorkspace::new(&domain);
+    let mut evaluator = CrtGlweTraceEvaluator::new(&trace_key, &domain);
     let mut decrypt_workspace = DcrtGlweDecryptWorkspace::new(glwe_params.size());
 
     let dcrt_sk_context = dcrt_sk.try_bind(&glwe_params, &table).unwrap();
@@ -79,12 +79,7 @@ fn test_crt_glwe_trace() {
 
     let mut c1 = c1.into_coeff_form(&table);
 
-    trace_key.trace_inplace(
-        &c1.as_view(),
-        &mut c2.as_mut_view(),
-        &domain,
-        &mut trace_workspace,
-    );
+    evaluator.trace_to(&c1.as_view(), &mut c2.as_mut_view());
 
     let c2 = c2.into_ntt_form(&table);
 
@@ -114,12 +109,7 @@ fn test_crt_glwe_trace() {
 
     let mut c2: CrtGlwe<Vec<ValueT>> = CrtGlwe::new(c2.0);
 
-    trace_key.trace_inplace(
-        &c1.as_view(),
-        &mut c2.as_mut_view(),
-        &domain,
-        &mut trace_workspace,
-    );
+    evaluator.trace_to(&c1.as_view(), &mut c2.as_mut_view());
 
     let c2 = c2.into_ntt_form(&table);
 
@@ -182,18 +172,13 @@ fn test_dcrt_glwe_trace() {
     let input1: Polynomial<Vec<ValueT>> = Polynomial::random(poly_length, mod_t, &mut rng);
     let mut c1: DcrtGlweCiphertext<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
     let mut c2: DcrtGlweCiphertext<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
-    let mut trace_workspace = DcrtGlweTraceWorkspace::new(&domain);
+    let mut evaluator = DcrtGlweTraceEvaluator::new(&trace_key, &domain);
     let mut decrypt_workspace = DcrtGlweDecryptWorkspace::new(glwe_params.size());
 
     let dcrt_sk_context = dcrt_sk.try_bind(&glwe_params, &table).unwrap();
     dcrt_sk_context.encrypt_to(&input1, &mut c1, &mut rng);
 
-    trace_key.trace_inplace(
-        &c1.as_view(),
-        &mut c2.as_mut_view(),
-        &domain,
-        &mut trace_workspace,
-    );
+    evaluator.trace_to(&c1.as_view(), &mut c2.as_mut_view());
 
     let trace_msg = dcrt_sk_context.decrypt(&c2, &mut decrypt_workspace);
 
@@ -217,7 +202,7 @@ fn test_dcrt_glwe_trace() {
         &moduli,
     );
 
-    trace_key.trace_inplace(&c1, &mut c2, &domain, &mut trace_workspace);
+    evaluator.trace_to(&c1, &mut c2);
 
     let trace_msg = dcrt_sk_context.decrypt(&c2, &mut decrypt_workspace);
 
@@ -277,18 +262,17 @@ fn test_dcrt_glwe_rev_trace() {
     let input1: Polynomial<Vec<ValueT>> = Polynomial::random(poly_length, mod_t, &mut rng);
     let mut c1: DcrtGlweCiphertext<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
     let mut c2: DcrtGlweCiphertext<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
-    let mut trace_workspace = DcrtGlweRevTraceWorkspace::new(&domain);
+    let mut evaluator = DcrtGlweRevTraceEvaluator::new(&rev_trace_key, &domain);
     let mut decrypt_workspace = DcrtGlweDecryptWorkspace::new(glwe_params.size());
 
     let dcrt_sk_context = dcrt_sk.try_bind(&glwe_params, &table).unwrap();
     dcrt_sk_context.encrypt_to(&input1, &mut c1, &mut rng);
 
-    rev_trace_key.trace_inplace(
-        &c1.as_view(),
-        &mut c2.as_mut_view(),
-        &domain,
-        &mut trace_workspace,
-    );
+    evaluator.trace_to(&c1.as_view(), &mut c2.as_mut_view());
+
+    let first = c2.as_ref().to_vec();
+    evaluator.trace_to(&c1, &mut c2);
+    assert_eq!(c2.as_ref(), first);
 
     let trace_msg = dcrt_sk_context.decrypt(&c2, &mut decrypt_workspace);
 

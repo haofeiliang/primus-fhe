@@ -6,18 +6,15 @@
 
 use primus_data::{Data, DataMut};
 use primus_integer::FheUint;
-use primus_lattice::{
-    RnsGadgetSize,
-    glev::{DcrtGlevIter, DcrtGlevIterMut},
-};
+use primus_lattice::glev::{DcrtGlevIter, DcrtGlevIterMut};
 use primus_ntt::{NttAutomorphismPermutation, NttTable};
 use primus_poly::{DcrtPolynomial, NttPolynomialIter, NttPolynomialIterMut};
 use primus_reduce::FieldContext;
 use zeroize::Zeroizing;
 
-use crate::{
-    CrtGlweAutomorphismWorkspace, DcrtGadgetDomain, DcrtGlweCiphertext, DcrtGlweSecretKey,
-};
+use crate::RnsDomainError;
+use crate::automorphism::{AutomorphismKeyMetadata, AutomorphismWorkspace};
+use crate::{DcrtGadgetDomain, DcrtGlweCiphertext, DcrtGlweSecretKey};
 
 /// Applies one bit-reversed evaluation map to each DCRT modulus component.
 /// The caller supplies complete, matching RNS polynomials; no arithmetic or
@@ -93,9 +90,8 @@ where
 /// 1. NTT-domain permutation — O(N), stays in NTT domain
 #[derive(Clone)]
 pub struct DcrtGlweAutoKey<T: FheUint> {
-    key: Vec<T>,
-    permutation: NttAutomorphismPermutation,
-    size: RnsGadgetSize,
+    data: DcrtGlweAutoKeyData<T>,
+    metadata: AutomorphismKeyMetadata<T>,
 }
 
 impl<T: FheUint> DcrtGlweAutoKey<T> {
@@ -108,7 +104,48 @@ impl<T: FheUint> DcrtGlweAutoKey<T> {
     /// # Panics
     ///
     /// Panics if `degree` is not odd and less than twice the polynomial length.
+    /// Also panics if the secret layout or ordered moduli do not match the domain.
+    ///
+    /// # Correctness
+    /// Secrets must use the intended key and the domain table's NTT representation.
+    #[must_use]
     pub fn new<M, Table, R>(
+        domain: &DcrtGadgetDomain<'_, T, M, Table>,
+        degree: usize,
+        dcrt_sk: &DcrtGlweSecretKey<T>,
+        rng: &mut R,
+    ) -> Self
+    where
+        R: rand::Rng + rand::CryptoRng,
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+    {
+        Self {
+            data: DcrtGlweAutoKeyData::new(domain, degree, dcrt_sk, rng),
+            metadata: AutomorphismKeyMetadata::new(domain),
+        }
+    }
+}
+
+/// Encrypted transformed secret and its permutation, generated as one part of a
+/// numerically homogeneous key set. The owner stores and validates its metadata.
+#[derive(Clone)]
+pub(super) struct DcrtGlweAutoKeyData<T: FheUint> {
+    key: Vec<T>,
+    permutation: NttAutomorphismPermutation,
+}
+
+impl<T: FheUint> DcrtGlweAutoKeyData<T> {
+    /// Create a new NTT-domain automorphism key for the mapping x → x^degree.
+    ///
+    /// Key generation applies the NTT-domain permutation to each secret key
+    /// polynomial and encrypts the result under a GLEV ciphertext. Only the
+    /// NTT-domain secret key is needed.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `degree` is not odd and less than twice the polynomial length.
+    pub(super) fn new<M, Table, R>(
         domain: &DcrtGadgetDomain<'_, T, M, Table>,
         degree: usize,
         dcrt_sk: &DcrtGlweSecretKey<T>,
@@ -124,49 +161,18 @@ impl<T: FheUint> DcrtGlweAutoKey<T> {
 
         let key = generate_ntt_auto_key_data(domain, &permutation, dcrt_sk, rng);
 
-        Self {
-            key,
-            permutation,
-            size: domain.size(),
-        }
-    }
-
-    pub(crate) fn iter_dcrt_glev(&self) -> DcrtGlevIter<'_, T> {
-        DcrtGlevIter::new(self.key.as_slice(), self.size.rns_glev_len())
-    }
-
-    /// Perform NTT-domain automorphism on a DCRT GLWE ciphertext.
-    ///
-    /// Both input `ciphertext` and output `result` are in NTT (evaluation) domain.
-    pub fn automorphism_to<M, Table, A, B>(
-        &self,
-        ciphertext: &DcrtGlweCiphertext<A>,
-        result: &mut DcrtGlweCiphertext<B>,
-        domain: &DcrtGadgetDomain<'_, T, M, Table>,
-        workspace: &mut CrtGlweAutomorphismWorkspace<T>,
-    ) where
-        M: FieldContext<T>,
-        Table: NttTable<ValueT = T>,
-        A: Data<Elem = T>,
-        B: DataMut<Elem = T>,
-    {
-        self.automorphism_kernel(
-            ciphertext.as_view(),
-            result.as_mut_view(),
-            domain,
-            workspace,
-        );
+        Self { key, permutation }
     }
 
     /// Internal kernel used by composed operations.
     /// Callers must ensure workspace compatibility and input/output layouts
     /// before invoking this kernel; it performs no boundary validation.
-    pub(crate) fn automorphism_kernel<M, Table>(
+    pub(super) fn automorphism_kernel<M, Table>(
         &self,
         ciphertext: DcrtGlweCiphertext<&[T]>,
         mut result: DcrtGlweCiphertext<&mut [T]>,
         domain: &DcrtGadgetDomain<'_, T, M, Table>,
-        workspace: &mut CrtGlweAutomorphismWorkspace<T>,
+        workspace: &mut AutomorphismWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -185,7 +191,7 @@ impl<T: FheUint> DcrtGlweAutoKey<T> {
         let (a_in, b_in) = ciphertext.a_b(rns_poly_len);
 
         // ----- Process a polynomials: NTT permutation → INTT → key switch -----
-        self.iter_dcrt_glev()
+        DcrtGlevIter::new(self.key.as_slice(), params.rns_glev_len())
             .zip(a_in)
             .for_each(|(auto_key_i, in_dcrt_poly)| {
                 // 1. NTT-domain permutation (evaluation-point reordering)
@@ -218,5 +224,76 @@ impl<T: FheUint> DcrtGlweAutoKey<T> {
         a_out.for_each(|mut ai| ai.neg_assign(poly_length, moduli));
 
         DcrtPolynomial(auto_dcrt_poly.as_ref()).sub_rev_assign(&mut b_out, poly_length, moduli);
+    }
+}
+
+/// DCRT automorphism, bound to one key, numerical domain and owned scratch.
+///
+/// Construct once and reuse. Numerical checks do not establish secret identity
+/// or agreement on the table's NTT representation; callers maintain both.
+/// Ciphertexts must contain canonical residues in the bound ordered Q basis.
+pub struct DcrtGlweAutoEvaluator<'a, T, M, Table>
+where
+    T: FheUint,
+    M: FieldContext<T>,
+    Table: NttTable<ValueT = T>,
+{
+    key: &'a DcrtGlweAutoKey<T>,
+    domain: &'a DcrtGadgetDomain<'a, T, M, Table>,
+    workspace: AutomorphismWorkspace<T>,
+}
+
+impl<'a, T, M, Table> DcrtGlweAutoEvaluator<'a, T, M, Table>
+where
+    T: FheUint,
+    M: FieldContext<T>,
+    Table: NttTable<ValueT = T>,
+{
+    /// Creates a new [`DcrtGlweAutoEvaluator`] for a compatible key and domain.
+    ///
+    /// # Panics
+    /// Panics if [`Self::try_new`] rejects the binding.
+    #[must_use]
+    pub fn new(key: &'a DcrtGlweAutoKey<T>, domain: &'a DcrtGadgetDomain<'a, T, M, Table>) -> Self {
+        Self::try_new(key, domain)
+            .unwrap_or_else(|error| panic!("invalid DCRT automorphism binding: {error}"))
+    }
+
+    /// Checks layout, ordered Q, radix and retained levels before allocating scratch.
+    ///
+    /// # Errors
+    /// Returns [`RnsDomainError`] if the key and domain are numerically incompatible.
+    pub fn try_new(
+        key: &'a DcrtGlweAutoKey<T>,
+        domain: &'a DcrtGadgetDomain<'a, T, M, Table>,
+    ) -> Result<Self, RnsDomainError<T>> {
+        key.metadata.validate(domain)?;
+        let workspace = AutomorphismWorkspace::from_parameters(domain.parameters());
+        Ok(Self {
+            key,
+            domain,
+            workspace,
+        })
+    }
+
+    /// Applies `X -> X^degree`, overwriting the complete output and internal scratch.
+    ///
+    /// # Correctness
+    /// Both ciphertexts must have the bound domain's complete RNS GLWE layout and
+    /// NTT representation, and use the secret for which the key was generated.
+    pub fn automorphism_to<A: Data<Elem = T>, B: DataMut<Elem = T>>(
+        &mut self,
+        input: &DcrtGlweCiphertext<A>,
+        output: &mut DcrtGlweCiphertext<B>,
+    ) {
+        let len = self.domain.parameters().rns_glwe_len();
+        debug_assert_eq!(input.as_ref().len(), len);
+        debug_assert_eq!(output.as_ref().len(), len);
+        self.key.data.automorphism_kernel(
+            input.as_view(),
+            output.as_mut_view(),
+            self.domain,
+            &mut self.workspace,
+        );
     }
 }

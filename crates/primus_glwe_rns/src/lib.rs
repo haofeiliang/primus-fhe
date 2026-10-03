@@ -6,6 +6,7 @@
 
 #![deny(missing_docs)]
 
+mod automorphism;
 mod crt;
 mod dcrt;
 mod key_switch;
@@ -21,14 +22,13 @@ pub type CrtGlweCiphertext<T> = primus_lattice::glwe::CrtGlwe<T>;
 pub type DcrtGlweCiphertext<T> = primus_lattice::glwe::DcrtGlwe<T>;
 
 pub use crt::{
-    CrtGlweAutoKey, CrtGlweAutomorphismWorkspace, CrtGlweExpandCoeffKey,
-    CrtGlweExpandCoeffSyncPool, CrtGlweExpandCoeffWorkspace, CrtGlweTraceKey,
-    CrtGlweTraceWorkspace,
+    CrtGlweAutoEvaluator, CrtGlweAutoKey, CrtGlweExpandCoeffEvaluator, CrtGlweExpandCoeffKey,
+    CrtGlweExpandCoeffParallelEvaluator, CrtGlweTraceEvaluator, CrtGlweTraceKey,
 };
 pub use dcrt::{
-    DcrtGlweAutoKey, DcrtGlweExpandCoeffKey, DcrtGlweExpandCoeffSyncPool,
-    DcrtGlweExpandCoeffWorkspace, DcrtGlweRevTraceKey, DcrtGlweRevTraceWorkspace, DcrtGlweTraceKey,
-    DcrtGlweTraceWorkspace,
+    DcrtGlweAutoEvaluator, DcrtGlweAutoKey, DcrtGlweExpandCoeffEvaluator, DcrtGlweExpandCoeffKey,
+    DcrtGlweExpandCoeffParallelEvaluator, DcrtGlweRevTraceEvaluator, DcrtGlweRevTraceKey,
+    DcrtGlweTraceEvaluator, DcrtGlweTraceKey,
 };
 pub use key_switch::{
     DcrtGlweKeySwitchEvaluator, DcrtGlweKeySwitchingKey, HybridRnsGlweKeySwitchEvaluator,

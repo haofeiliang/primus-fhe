@@ -169,7 +169,7 @@ NTRU 将外部 LWE 的秘密/模数/维数与累加 NTRU 环的秘密/模数/长
 
 对加密 chunk 计算高精度函数，使用 [primus_tfhe_ntru_lut](../../crates/primus_tfhe_ntru_lut/README.zh_CN.md)。默认仅提供公开表编译；`ntt` / `fourier` 选择 evaluator，`rustfft` / `tfhe-fft` 同时启用 Fourier 与具体引擎。纯编译无需变换依赖。One-hot CBS 位于 NTRU 后端，表分区、选择和旋转位于查表库。其 evaluator 借用 context、server key 和编译后的 LUT，拥有可复用缓冲。输出只分配一次并复用 `evaluate_to`，在线循环内不重新构造密钥或表。
 
-RNS GLWE 的普通秘密/公钥使用 `try_bind(parameters, table)`，gadget 加密使用 `try_bind_gadget(domain)`；这些 context 借用已检查的资源。普通与 hybrid 密钥切换 evaluator 借用密钥/domain，拥有 workspace，在在线调用前一次性检查有序基及分解/分区兼容性。见 [RNS GLWE 流程](../../crates/primus_glwe_rns/README.zh_CN.md#求值资源)。
+RNS GLWE 的普通秘密/公钥使用 `try_bind(parameters, table)`，gadget 加密使用 `try_bind_gadget(domain)`；这些 context 借用已检查的资源。密钥切换、自同构、trace 和展开 evaluator 借用密钥/domain，拥有 workspace，在在线调用前一次性检查有序基及分解/分区兼容性。并行展开拥有预分配池，求值时独占借用 evaluator。见 [RNS GLWE 流程](../../crates/primus_glwe_rns/README.zh_CN.md#求值资源)。
 
 GLWE 参数分别由[共享模数/采样状态](../../crates/primus_glwe/src/parameter/core.rs)、[普通布局/编码](../../crates/primus_glwe/src/parameter/ordinary.rs)、[gadget basis](../../crates/primus_glwe/src/parameter/gadget.rs) 和 [key-switch 布局](../../crates/primus_glwe/src/parameter/key_switch.rs) 模块拥有；[RNS 参数](../../crates/primus_glwe_rns/src/parameter/mod.rs) 使用同样的职责划分，保留 RNS 专有契约。[DCRT 秘密模块](../../crates/primus_glwe_rns/src/secret_key/dcrt/mod.rs) 区分所有权/绑定、有符号转换、普通加密、gadget 加密、解密和擦除工作区。私有数值 helper 与拥有资源绑定的操作放在一起，公开类型仍从 crate 根导出。
 

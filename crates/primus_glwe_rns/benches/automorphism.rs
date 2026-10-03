@@ -9,8 +9,8 @@ use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use primus_glwe_rns::{
-    CrtGlevParameters, CrtGlweAutoKey, CrtGlweAutomorphismWorkspace, CrtGlweParameters,
-    DcrtGadgetDomain, DcrtGlweAutoKey, DcrtGlweCiphertext, DcrtGlweSecretKey, GlweSecretKey,
+    CrtGlevParameters, CrtGlweAutoEvaluator, CrtGlweAutoKey, CrtGlweParameters, DcrtGadgetDomain,
+    DcrtGlweAutoEvaluator, DcrtGlweAutoKey, DcrtGlweCiphertext, DcrtGlweSecretKey, GlweSecretKey,
     SecretKeyDistr,
 };
 use primus_lattice::glwe::{CrtGlwe, DcrtGlwe};
@@ -82,7 +82,6 @@ fn bench_automorphism(c: &mut Criterion) {
         // Buffers
         let mut crt_result: CrtGlwe<Vec<V>> = CrtGlwe::zero(rns_glwe_len);
         let mut dcrt_result: DcrtGlweCiphertext<Vec<V>> = DcrtGlweCiphertext::zero(rns_glwe_len);
-        let mut auto_workspace = CrtGlweAutomorphismWorkspace::new(&domain);
 
         // Identity and N+1 retain their specialized coefficient paths; degree 5
         // exercises the general gather. Key switching remains part of all cases.
@@ -90,27 +89,20 @@ fn bench_automorphism(c: &mut Criterion) {
             let crt_auto_key = CrtGlweAutoKey::new(&domain, auto_degree, &sk, &dcrt_sk, &mut rng);
             let dcrt_auto_key = DcrtGlweAutoKey::new(&domain, auto_degree, &dcrt_sk, &mut rng);
 
+            let mut crt_evaluator = CrtGlweAutoEvaluator::new(&crt_auto_key, &domain);
+            let mut dcrt_evaluator = DcrtGlweAutoEvaluator::new(&dcrt_auto_key, &domain);
+
             let label = format!("N={poly_length}/degree={auto_degree}");
 
             group.bench_function(BenchmarkId::new("CRT", &label), |b| {
                 b.iter(|| {
-                    crt_auto_key.automorphism_to(
-                        black_box(&c_coeff),
-                        black_box(&mut crt_result),
-                        &domain,
-                        &mut auto_workspace,
-                    );
+                    crt_evaluator.automorphism_to(black_box(&c_coeff), black_box(&mut crt_result));
                 });
             });
 
             group.bench_function(BenchmarkId::new("DCRT", &label), |b| {
                 b.iter(|| {
-                    dcrt_auto_key.automorphism_to(
-                        black_box(&c_ntt),
-                        black_box(&mut dcrt_result),
-                        &domain,
-                        &mut auto_workspace,
-                    );
+                    dcrt_evaluator.automorphism_to(black_box(&c_ntt), black_box(&mut dcrt_result));
                 });
             });
         }

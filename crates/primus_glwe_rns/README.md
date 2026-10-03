@@ -78,11 +78,29 @@ Both parameter types expose their sampling state through `inner()`. Public-key g
 
 Construct `DcrtGlweKeySwitchEvaluator::try_new(&key, &domain)` or `HybridRnsGlweKeySwitchEvaluator::try_new(&key, &domain)` once. Each evaluator borrows its key/domain and owns scratch; online calls take only `key_switch_to(&input, &mut output)`. Classic binding checks the gadget layout, ordered Q and decomposition radix; hybrid binding checks N, ordered QP, the Q/P boundary and actual partition width. No complete parameters, tables or converters are copied into keys.
 
-The client generates evaluation keys from its secrets and supplies them to the server. Reuse the operation's `*Workspace` with the bound layout; shape and modulus checks do not prove actual secret identity, canonical residues or a noise margin. CRT and DCRT trace/expansion APIs retain their own input/output and normalization contracts in rustdoc.
+The client generates evaluation keys from its secrets and supplies them to the server. Automorphism, trace, reverse trace and expansion each use a concrete evaluator with `new` / `try_new`. It borrows the key and `DcrtGadgetDomain`, validates N, dimension, ordered Q, radix and retained levels once, then allocates its own scratch. A complete key set stores one metadata record; individual automorphism entries do not copy parameters or tables. Equal numerical domains do not prove secret identity, canonical residues, matching NTT roots/order or a sufficient noise margin.
 
-CRT automorphism reuses `primus_poly::CoeffAutomorphismPermutation`; DCRT reuses `primus_ntt::NttAutomorphismPermutation`. One map is shared across the ordered modulus components and all key rows. The RNS layer owns component traversal and key switching; the helpers own coefficient signs and bit-reversed evaluation order. Trace and expansion reuse the same automorphism keys and workspaces.
+For example, continuing the encryption workflow above (also add `primus_decompose` as a dependency):
 
-Both representations provide `expand_coefficients_to` and `expand_partial_coefficients_to` with a reusable serial workspace. Their parallel variants end in `_parallel_to` and reuse a preallocated `CrtGlweExpandCoeffSyncPool` or `DcrtGlweExpandCoeffSyncPool`.
+```rust
+use primus_decompose::DecompositionBaseLog;
+use primus_glwe_rns::{CrtGlevParameters, DcrtGadgetDomain, DcrtGlweAutoEvaluator, DcrtGlweAutoKey};
+
+let gadget = CrtGlevParameters::with_glwe_params(&parameters, DecompositionBaseLog::new(8), None);
+let domain = DcrtGadgetDomain::try_new(&gadget, &table).unwrap();
+let auto_key = DcrtGlweAutoKey::new(&domain, 3, &key, &mut rng);
+let mut evaluator = DcrtGlweAutoEvaluator::try_new(&auto_key, &domain).unwrap();
+let mut output = DcrtGlweCiphertext::<Vec<u32>>::zero(parameters.rns_glwe_len());
+evaluator.automorphism_to(&ciphertext, &mut output);
+```
+
+`CrtGlweAutoEvaluator` uses coefficient ciphertexts; `DcrtGlweAutoEvaluator` uses NTT ciphertexts. Their kernels share the respective `CoeffAutomorphismPermutation` and `NttAutomorphismPermutation` across modulus components and key rows. Trace and expansion call these kernels under their existing binding, without rechecking or allocating per automorphism.
+
+`CrtGlweTraceEvaluator` / `DcrtGlweTraceEvaluator` expose `trace_to(&input, &mut output)` and return the ordinary ring trace, whose plaintext is `N*m[0]`. `DcrtGlweRevTraceEvaluator` exposes the same method but reverses the automorphism order and multiplies by `2^-1 mod q_i` at each step, retaining normalized output `m[0]`. Inputs remain unchanged; output and internal scratch are overwritten.
+
+For either CRT or DCRT, construct `*GlweExpandCoeffEvaluator::new(&key, &domain)` for serial use or `*GlweExpandCoeffParallelEvaluator::new(&key, &domain, worker_count)` for a preallocated parallel pool. Both offer `expand_coefficients_to` (exactly N outputs) and `expand_partial_coefficients_to` (a power-of-two output count in 1..=N). Output j encrypts coefficient m[j], with no extra count factor. For partial expansion, omitted plaintext coefficients must be zero to obtain constant-polynomial outputs.
+
+Parallel calls use Rayon; initialize its worker pool before evaluation, and set `worker_count` to cover its maximum simultaneous workers. Each call borrows the evaluator mutably, preventing concurrent calls from competing for the same pool. Guards return scratch on completion or worker unwind; an undersized pool can panic after partial output writes. Serial evaluators allocate only one workspace. Repeated evaluations reuse all arithmetic scratch; neither path creates replacement workspaces online.
 
 ## Features and further reading
 

@@ -4,13 +4,88 @@ Use the [library guide](README.md#distinguish-environment-from-workspace) for AP
 
 ## Names and binding
 
-A `Workspace` owns reusable temporary buffers and their shape. NTT/Fourier external products, CMux, encryption, decryption, key switching, automorphisms, trace, RNS conversion and expansion use this name. Borrowed groups use `WorkspaceRefMut`. The lattice entry point is `primus_lattice::workspace`; scheme crates re-export their workspaces.
+A `Workspace` owns reusable temporary buffers and their shape. NTT/Fourier external products, CMux, encryption, decryption, key switching, automorphisms, trace, RNS conversion and expansion use this name. Borrowed groups use `WorkspaceRefMut`. The lattice entry point is `primus_lattice::workspace`; scheme crates expose standalone workspaces or keep them private inside a bound evaluator.
 
 FFT backends implement `FftTable::Workspace` and `new_workspace`. `FftEngine::from_workspace`, `zeroize_workspace` and `into_parts` support explicit reuse. Built-in FFT workspaces retain their allocation and length when erased. Local temporary slices and third-party `PodBuffer`/`PodStack` remain scratch; they are not new wrapper types.
 
 `TfheContext` retains validated parameters and a transform table. `RingContext` and `FieldContext` describe arithmetic capabilities. An `Evaluator` or `FftEngine` binds resources and runs operations. The private NTRU `RotationState` couples a borrowed control-key variant with its required workspace. These roles are distinct from a buffer group.
 
 Workspace lengths do not establish key identity, a decomposition basis, a modulus, or an FFT table's evaluation order. Read each operation's representation requirements. GLWE external-product `rebind` changes decomposition metadata without allocation when the GLWE shape is unchanged; `with_rebound` restores the original layout on unwind. Resizing to another GLWE shape may allocate.
+
+## RNS automorphism bindings
+
+CRT/DCRT automorphism, trace, reverse trace and coefficient expansion use concrete
+owning evaluators, following the RNS key-switch API. Each borrows a key and
+`DcrtGadgetDomain`, checks N, dimension, ordered Q, radix and retained levels at
+construction, then creates scratch from that domain. Ordered Q fixes the product
+modulus and fixed-width integer representation already checked by gadget
+parameter construction. Secret identity and NTT representation identity remain
+caller contracts; equal numerical values do not prove either.
+
+A standalone auto key or complete trace/expansion key set stores one metadata
+record. Private entries contain only encrypted key data and the coefficient/NTT
+permutation. All entries are generated from one domain; there is no public entry
+replacement or way to combine entries from different domains. Bound trace and
+expansion kernels call the private auto kernel without rebuilding an evaluator
+or repeating numerical compatibility checks.
+
+Serial expansion owns one workspace. Parallel expansion owns a preallocated
+pool sized explicitly for its Rayon worker demand, and requires `&mut self` for
+each request. Per-task guards return scratch on completion or unwind; neither
+path creates workspaces online. An undersized pool can panic after partial
+output writes. This does not make a failed output valid. Full/partial expansion
+and ordinary/normalized reverse trace retain separate mathematical contracts;
+see the [RNS API workflow](../../crates/primus_glwe_rns/README.md#evaluation-resources).
+
+### Binding migration measurements
+
+Compared with `9564b7b5` on 2026-10-04, AMD Ryzen 9 9955HX3D,
+rustc 1.98.1, release/default features and the repository's `target-cpu=native`.
+Both versions used the existing u64/N1024/k2 fixtures, two approximately 50-bit
+Q limbs, base_log=20 and seed=42. Executables were built in the same checkout,
+saved, and run sequentially on CPUs 0/1; expansion used two Rayon workers.
+Setup, binding and output allocation stayed outside each single-operation
+iteration. Initial median timings in milliseconds:
+
+| Operation | Before | After |
+| --- | ---: | ---: |
+| CRT trace | 0.572 | 0.573 |
+| DCRT trace | 0.582 | 0.590 |
+| Normalized reverse trace | 0.574 | 0.600 |
+| CRT serial expansion | 67.406 | 68.349 |
+| DCRT serial expansion | 69.601 | 67.742 |
+| CRT parallel expansion | 35.321 | 34.747 |
+| DCRT parallel expansion | 34.952 | 39.468 |
+
+Automorphisms covered identity, N+1 and degree 5, taking roughly 50–54 us;
+initial changes ranged from -0.1% to +5.4%. The larger differences prompted an
+after/before/before/after recheck of the saved executables (two runs per version):
+
+| Rechecked operation | Before medians, min–max | After medians, min–max |
+| --- | ---: | ---: |
+| CRT auto, degree N+1 (us) | 51.41–53.71 | 53.49–53.70 |
+| DCRT auto, degree N+1 (us) | 50.90–53.48 | 53.43–54.05 |
+| CRT trace (us) | 568.5–593.9 | 572.3–604.1 |
+| DCRT trace (us) | 581.7–583.4 | 586.2–589.7 |
+| Reverse trace (us) | 588.0–589.6 | 579.5–596.7 |
+| DCRT parallel expansion (ms) | 40.01–40.17 | 37.63–37.79 |
+
+The initial 13% parallel-expansion increase reversed; latency also varied within
+the same binary. DCRT trace retained a small increase in this sample. These
+results do not establish a general speedup or exact parity on other machines.
+No arithmetic, scheduling or inlining adjustment was retained to tune this sample.
+Reproduce with the crate's `automorphism`, `trace` and `expand_coeff` benches,
+filtering `N=1024/|N=1024$`, with `RAYON_NUM_THREADS=2` and `taskset -c 0,1`.
+Initial runs used 0.3 s warmup, 1 s measurement and 20 samples; rechecks used
+0.5 s, 2 s and 30 samples. Expansion retains its fixture's 10-sample setting.
+
+A temporary process-wide allocator probe checked the first and repeated online
+calls for all three automorphism degrees, CRT/DCRT trace, reverse trace and both
+expansion modes. With a two-worker Rayon pool initialized before measurement,
+all reported zero allocations, including worker threads. An incompatible-radix
+parallel binding was also rejected with zero allocations. The probe was removed;
+ordinary tests retain domain rejection, dirty-buffer reuse and guard unwind
+coverage. Other sizes, u32 timing and SIMD timing were not measured.
 
 ## Storage decisions
 

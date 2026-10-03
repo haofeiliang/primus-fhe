@@ -2,10 +2,14 @@
 
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_glwe_rns::{
-    CrtGlevParameters, CrtGlweParameters, DcrtGadgetDomain, DcrtGlweKeySwitchEvaluator,
-    DcrtGlweKeySwitchingKey, DcrtGlwePublicKey, DcrtGlweSecretKey, GlweSecretKey,
-    HybridRnsGlweKeySwitchEvaluator, HybridRnsGlweKeySwitchingKey, HybridRnsKeySwitchDomain,
-    RnsDomainError, SecretKeyDistr,
+    CrtGlevParameters, CrtGlweAutoEvaluator, CrtGlweAutoKey, CrtGlweExpandCoeffEvaluator,
+    CrtGlweExpandCoeffKey, CrtGlweExpandCoeffParallelEvaluator, CrtGlweParameters,
+    CrtGlweTraceEvaluator, CrtGlweTraceKey, DcrtGadgetDomain, DcrtGlweAutoEvaluator,
+    DcrtGlweAutoKey, DcrtGlweExpandCoeffEvaluator, DcrtGlweExpandCoeffKey,
+    DcrtGlweExpandCoeffParallelEvaluator, DcrtGlweKeySwitchEvaluator, DcrtGlweKeySwitchingKey,
+    DcrtGlwePublicKey, DcrtGlweRevTraceEvaluator, DcrtGlweRevTraceKey, DcrtGlweSecretKey,
+    DcrtGlweTraceEvaluator, DcrtGlweTraceKey, GlweSecretKey, HybridRnsGlweKeySwitchEvaluator,
+    HybridRnsGlweKeySwitchingKey, HybridRnsKeySwitchDomain, RnsDomainError, SecretKeyDistr,
 };
 use primus_lattice::GlweDimension;
 use primus_modulus::BarrettModulus;
@@ -233,4 +237,172 @@ fn hybrid_binding_checks_qp_order_split_and_partition_width() {
         rand::Rng::next_u64(&mut generation_rng),
         rand::Rng::next_u64(&mut expected_rng)
     );
+}
+
+/// Key sets retain a single numerical metadata record. Every public binding must
+/// consult it, including the parallel expansion constructors, before scratch
+/// can be created from a foreign domain. Storage shape alone is insufficient.
+#[test]
+fn automorphism_bindings_check_layout_order_and_decomposition() {
+    use RnsDomainError::*;
+
+    let n = PolyLength::new(32);
+    let q = [257u32, 769].map(BarrettModulus::new);
+    let params = parameters(1, n.get(), &q);
+    let table = UintDcrtTable::new(n, &q).unwrap();
+    let gadget = CrtGlevParameters::with_glwe_params(
+        &params,
+        DecompositionBaseLog::new(4),
+        Some(DecompositionLevelCount::new(1)),
+    );
+    let domain = DcrtGadgetDomain::try_new(&gadget, &table).unwrap();
+    let mut rng = StdRng::seed_from_u64(0x4155_544f);
+    let secret = GlweSecretKey::generate(params.glwe_size(), params.secret_key_sampler(), &mut rng);
+    let dcrt_secret = DcrtGlweSecretKey::from_coeff_secret_key(&secret, &table);
+    let crt_auto = CrtGlweAutoKey::new(&domain, 3, &secret, &dcrt_secret, &mut rng);
+    let dcrt_auto = DcrtGlweAutoKey::new(&domain, 3, &dcrt_secret, &mut rng);
+    let crt_trace = CrtGlweTraceKey::new(&domain, &secret, &dcrt_secret, &mut rng);
+    let dcrt_trace = DcrtGlweTraceKey::new(&domain, &dcrt_secret, &mut rng);
+    let reverse_trace = DcrtGlweRevTraceKey::new(&domain, &dcrt_secret, &mut rng);
+    let crt_expand = CrtGlweExpandCoeffKey::new(&domain, &secret, &dcrt_secret, &mut rng);
+    let dcrt_expand = DcrtGlweExpandCoeffKey::new(&domain, &dcrt_secret, &mut rng);
+
+    // Each alternative domain is internally valid. The first one has independent
+    // parameters and tables but identical values, and must be accepted.
+    for (n, dimension, q, radix, levels, expected) in [
+        (32, 1, &[257, 769][..], 4, 1, None),
+        (
+            64,
+            1,
+            &[257, 769][..],
+            4,
+            1,
+            Some(PolynomialLengthMismatch {
+                expected: 32,
+                actual: 64,
+            }),
+        ),
+        (
+            32,
+            2,
+            &[257, 769][..],
+            4,
+            1,
+            Some(DimensionMismatch {
+                expected: 1,
+                actual: 2,
+            }),
+        ),
+        (
+            32,
+            1,
+            &[257][..],
+            4,
+            1,
+            Some(ModuliCountMismatch {
+                expected: 2,
+                actual: 1,
+            }),
+        ),
+        (
+            32,
+            1,
+            &[769, 257][..],
+            4,
+            1,
+            Some(ModulusOrderMismatch {
+                index: 0,
+                expected: 257,
+                actual: 769,
+            }),
+        ),
+        (
+            32,
+            1,
+            &[257, 1153][..],
+            4,
+            1,
+            Some(ModulusOrderMismatch {
+                index: 1,
+                expected: 769,
+                actual: 1153,
+            }),
+        ),
+        (
+            32,
+            1,
+            &[257, 769][..],
+            5,
+            1,
+            Some(DecompositionBaseLogMismatch {
+                expected: 4,
+                actual: 5,
+            }),
+        ),
+        (
+            32,
+            1,
+            &[257, 769][..],
+            4,
+            2,
+            Some(DecompositionLevelCountMismatch {
+                expected: 1,
+                actual: 2,
+            }),
+        ),
+    ] {
+        let moduli: Vec<_> = q.iter().copied().map(BarrettModulus::new).collect();
+        let params = parameters(dimension, n, &moduli);
+        let table = UintDcrtTable::new(PolyLength::new(n), &moduli).unwrap();
+        let gadget = CrtGlevParameters::with_glwe_params(
+            &params,
+            DecompositionBaseLog::new(radix),
+            Some(DecompositionLevelCount::new(levels)),
+        );
+        let domain = DcrtGadgetDomain::try_new(&gadget, &table).unwrap();
+        let bindings = [
+            (
+                "CRT auto",
+                CrtGlweAutoEvaluator::try_new(&crt_auto, &domain).err(),
+            ),
+            (
+                "DCRT auto",
+                DcrtGlweAutoEvaluator::try_new(&dcrt_auto, &domain).err(),
+            ),
+            (
+                "CRT trace",
+                CrtGlweTraceEvaluator::try_new(&crt_trace, &domain).err(),
+            ),
+            (
+                "DCRT trace",
+                DcrtGlweTraceEvaluator::try_new(&dcrt_trace, &domain).err(),
+            ),
+            (
+                "reverse trace",
+                DcrtGlweRevTraceEvaluator::try_new(&reverse_trace, &domain).err(),
+            ),
+            (
+                "CRT expand",
+                CrtGlweExpandCoeffEvaluator::try_new(&crt_expand, &domain).err(),
+            ),
+            (
+                "DCRT expand",
+                DcrtGlweExpandCoeffEvaluator::try_new(&dcrt_expand, &domain).err(),
+            ),
+            (
+                "CRT parallel",
+                CrtGlweExpandCoeffParallelEvaluator::try_new(&crt_expand, &domain, 2).err(),
+            ),
+            (
+                "DCRT parallel",
+                DcrtGlweExpandCoeffParallelEvaluator::try_new(&dcrt_expand, &domain, 2).err(),
+            ),
+        ];
+        for (name, actual) in bindings {
+            assert_eq!(
+                actual, expected,
+                "{name}, N={n}, k={dimension}, Q={q:?}, radix={radix}, levels={levels}"
+            );
+        }
+    }
 }

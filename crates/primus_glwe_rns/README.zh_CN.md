@@ -78,11 +78,29 @@ m 个模数下，普通密文包含 `(k+1)*m*N` 个元素，顺序为 `[componen
 
 一次性构造 `DcrtGlweKeySwitchEvaluator::try_new(&key, &domain)` 或 `HybridRnsGlweKeySwitchEvaluator::try_new(&key, &domain)`。Evaluator 借用密钥及 domain，拥有 scratch；在线调用仅需 `key_switch_to(&input, &mut output)`。普通绑定检查 gadget 布局、有序 Q 和分解 radix；hybrid 绑定检查 N、有序 QP、Q/P 分界及实际分区宽度。密钥不复制完整参数、table 或转换器。
 
-Client 根据秘密生成求值密钥，交给 server。按已绑定布局复用操作对应的 `*Workspace`；形状和模数检查不能证明实际秘密一致、系数规范或噪声余量。CRT 与 DCRT trace/展开接口的输入、输出与归一化契约分别见 rustdoc。
+Client 根据秘密生成求值密钥，交给 server。自同构、trace、reverse trace 与展开各自使用具体 evaluator，通过 `new` / `try_new` 借用密钥和 `DcrtGadgetDomain`，一次性检查 N、维数、有序 Q、radix 及保留层数，再创建内部 scratch。完整密钥集只存一份元数据，各自同构条目不复制参数或 table。数值域一致不能证明秘密一致、系数规范、NTT roots/order 相同或噪声余量充足。
 
-CRT 自同构复用 `primus_poly::CoeffAutomorphismPermutation`，DCRT 复用 `primus_ntt::NttAutomorphismPermutation`。有序模数分量和所有密钥行共享同一映射；RNS 层负责分量遍历与密钥切换，共有 helper 负责系数符号和 bit-reversed 点值顺序。Trace 和展开继续复用这些自同构密钥及工作区。
+例如，接着上述加密流程使用（另需直接依赖 `primus_decompose`）：
 
-两种表示均提供 `expand_coefficients_to` 和 `expand_partial_coefficients_to`，复用串行工作区。并行版本以 `_parallel_to` 结尾，复用预分配的 `CrtGlweExpandCoeffSyncPool` 或 `DcrtGlweExpandCoeffSyncPool`。
+```rust
+use primus_decompose::DecompositionBaseLog;
+use primus_glwe_rns::{CrtGlevParameters, DcrtGadgetDomain, DcrtGlweAutoEvaluator, DcrtGlweAutoKey};
+
+let gadget = CrtGlevParameters::with_glwe_params(&parameters, DecompositionBaseLog::new(8), None);
+let domain = DcrtGadgetDomain::try_new(&gadget, &table).unwrap();
+let auto_key = DcrtGlweAutoKey::new(&domain, 3, &key, &mut rng);
+let mut evaluator = DcrtGlweAutoEvaluator::try_new(&auto_key, &domain).unwrap();
+let mut output = DcrtGlweCiphertext::<Vec<u32>>::zero(parameters.rns_glwe_len());
+evaluator.automorphism_to(&ciphertext, &mut output);
+```
+
+`CrtGlweAutoEvaluator` 使用系数密文，`DcrtGlweAutoEvaluator` 使用 NTT 密文。内部 kernel 分别复用 `CoeffAutomorphismPermutation` 和 `NttAutomorphismPermutation`，模数分量及密钥行共享置换。Trace 和展开在已建立的绑定下调用这些 kernel，不逐次检查或分配。
+
+`CrtGlweTraceEvaluator` / `DcrtGlweTraceEvaluator` 提供 `trace_to(&input, &mut output)`，普通环 trace 的明文结果为 `N*m[0]`。`DcrtGlweRevTraceEvaluator` 提供同名方法，但反转自同构顺序，每步乘 `2^-1 mod q_i`，保持归一化结果 `m[0]`。输入不变，输出及内部 scratch 被覆盖。
+
+CRT 和 DCRT 均通过 `*GlweExpandCoeffEvaluator::new(&key, &domain)` 构造串行 evaluator，通过 `*GlweExpandCoeffParallelEvaluator::new(&key, &domain, worker_count)` 构造持有预分配池的并行 evaluator。两者均提供 `expand_coefficients_to`（恰好 N 个输出）和 `expand_partial_coefficients_to`（输出数为 1..=N 内的二次幂）。输出 j 加密系数 m[j]，无额外 count 倍数。部分展开若要得到常数多项式输出，被省略的明文系数必须为零。
+
+并行调用使用 Rayon；求值前先初始化线程池，`worker_count` 必须覆盖最多同时工作的线程数。调用可变借用 evaluator，避免多个调用争抢同一个池。Guard 在线程完成或 unwind 时归还 scratch；池容量不足可能在部分输出已写入后 panic。串行 evaluator 只分配一份工作区。重复求值复用全部算术 scratch；两条路径均不在线创建替代工作区。
 
 ## Feature 与进一步阅读
 

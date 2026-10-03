@@ -6,9 +6,9 @@ use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use primus_glwe_rns::{
-    CrtGlevParameters, CrtGlweExpandCoeffKey, CrtGlweExpandCoeffSyncPool,
-    CrtGlweExpandCoeffWorkspace, CrtGlweParameters, DcrtGadgetDomain, DcrtGlweCiphertext,
-    DcrtGlweExpandCoeffKey, DcrtGlweExpandCoeffSyncPool, DcrtGlweExpandCoeffWorkspace,
+    CrtGlevParameters, CrtGlweExpandCoeffEvaluator, CrtGlweExpandCoeffKey,
+    CrtGlweExpandCoeffParallelEvaluator, CrtGlweParameters, DcrtGadgetDomain, DcrtGlweCiphertext,
+    DcrtGlweExpandCoeffEvaluator, DcrtGlweExpandCoeffKey, DcrtGlweExpandCoeffParallelEvaluator,
     DcrtGlweSecretKey, GlweSecretKey, SecretKeyDistr,
 };
 use primus_lattice::glwe::{CrtGlwe, DcrtGlwe};
@@ -90,57 +90,46 @@ fn bench_expand_coeff(c: &mut Criterion) {
         let mut dcrt_result: Vec<DcrtGlweCiphertext<Vec<V>>> =
             vec![DcrtGlweCiphertext::zero(rns_glwe_len); poly_length];
 
-        let mut crt_ctx = CrtGlweExpandCoeffWorkspace::new(&domain);
-        let mut dcrt_ctx = DcrtGlweExpandCoeffWorkspace::new(&domain);
+        let mut crt_evaluator = CrtGlweExpandCoeffEvaluator::new(&crt_expand_key, &domain);
+        let mut dcrt_evaluator = DcrtGlweExpandCoeffEvaluator::new(&dcrt_expand_key, &domain);
 
-        let crt_pool = CrtGlweExpandCoeffSyncPool::with_capacity(current_num_threads, &domain);
-        let dcrt_pool = DcrtGlweExpandCoeffSyncPool::with_capacity(current_num_threads, &domain);
+        let mut crt_parallel_evaluator =
+            CrtGlweExpandCoeffParallelEvaluator::new(&crt_expand_key, &domain, current_num_threads);
+        let mut dcrt_parallel_evaluator = DcrtGlweExpandCoeffParallelEvaluator::new(
+            &dcrt_expand_key,
+            &domain,
+            current_num_threads,
+        );
 
         let n_label = format!("N={poly_length}");
 
         // ---- Single-threaded ----
         group.bench_function(BenchmarkId::new("CRT/single", &n_label), |b| {
             b.iter(|| {
-                crt_expand_key.expand_coefficients_to(
-                    black_box(&c_coeff),
-                    black_box(&mut crt_result),
-                    &domain,
-                    &mut crt_ctx,
-                );
+                crt_evaluator
+                    .expand_coefficients_to(black_box(&c_coeff), black_box(&mut crt_result));
             });
         });
 
         group.bench_function(BenchmarkId::new("DCRT/single", &n_label), |b| {
             b.iter(|| {
-                dcrt_expand_key.expand_coefficients_to(
-                    black_box(&c_ntt),
-                    black_box(&mut dcrt_result),
-                    &domain,
-                    &mut dcrt_ctx,
-                );
+                dcrt_evaluator
+                    .expand_coefficients_to(black_box(&c_ntt), black_box(&mut dcrt_result));
             });
         });
 
         // ---- Multi-threaded ----
         group.bench_function(BenchmarkId::new("CRT/parallel", &n_label), |b| {
             b.iter(|| {
-                crt_expand_key.expand_coefficients_parallel_to(
-                    black_box(&c_coeff),
-                    black_box(&mut crt_result),
-                    &domain,
-                    &crt_pool,
-                );
+                crt_parallel_evaluator
+                    .expand_coefficients_to(black_box(&c_coeff), black_box(&mut crt_result));
             });
         });
 
         group.bench_function(BenchmarkId::new("DCRT/parallel", &n_label), |b| {
             b.iter(|| {
-                dcrt_expand_key.expand_coefficients_parallel_to(
-                    black_box(&c_ntt),
-                    black_box(&mut dcrt_result),
-                    &domain,
-                    &dcrt_pool,
-                );
+                dcrt_parallel_evaluator
+                    .expand_coefficients_to(black_box(&c_ntt), black_box(&mut dcrt_result));
             });
         });
     }

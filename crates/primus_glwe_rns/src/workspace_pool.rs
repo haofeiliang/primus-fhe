@@ -47,3 +47,29 @@ impl<W> Drop for WorkspaceGuard<'_, W> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::WorkspacePool;
+
+    /// A worker may fail after touching scratch. Its guard must return the same
+    /// allocation without holding the mutex while the worker unwinds.
+    #[test]
+    fn worker_unwind_returns_dirty_workspace() {
+        let pool = WorkspacePool::new(vec![vec![0u32; 8]]);
+        let mut guard = pool.acquire();
+        let allocation = guard.workspace_mut().as_ptr();
+        drop(guard);
+        assert!(
+            std::panic::catch_unwind(|| {
+                let mut guard = pool.acquire();
+                guard.workspace_mut()[0] = 17;
+                panic!("simulated worker failure");
+            })
+            .is_err()
+        );
+        let mut guard = pool.acquire();
+        assert_eq!(guard.workspace_mut().as_ptr(), allocation);
+        assert_eq!(guard.workspace_mut()[0], 17);
+    }
+}
