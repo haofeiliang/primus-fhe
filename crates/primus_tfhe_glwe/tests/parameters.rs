@@ -54,7 +54,7 @@ fn derives_bootstrapping_and_key_switching_for_both_orders() {
             Some(DecompositionLevelCount::new(4)),
         );
         let parameters = TfheParameters::try_from_config(TfheConfig {
-            small_lwe,
+            small_lwe: small_lwe.into_inner(),
             accumulator_dimension: GlweDimension::new(GLWE_DIMENSION),
             poly_length: POLY_LENGTH,
             accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
@@ -70,31 +70,32 @@ fn derives_bootstrapping_and_key_switching_for_both_orders() {
             pbs_order: order,
         })
         .unwrap();
-        assert!(parameters.accumulator_glwe().inner() == glwe.inner());
-        assert_eq!(
-            parameters.accumulator_glwe().plain_modulus_value(),
-            PLAIN_MODULUS
-        );
+        assert!(parameters.blind_rotation_ggsw().inner() == glwe.inner());
+        // Ordinary ring messages bind their own codec and retain the same sampler tables.
+        let ordinary = GlweParameters::try_from_glev(
+            parameters.blind_rotation_ggsw(),
+            primus_encoding::ScaledCodec::new(3, NativeModulus::new()),
+        )
+        .unwrap();
+        assert_eq!(ordinary.plain_modulus_value(), 3);
+        assert!(std::ptr::eq(
+            ordinary.inner(),
+            parameters.blind_rotation_ggsw().inner()
+        ));
 
         assert_eq!(
             parameters.blind_rotation_ggsw().basis(),
             &expected_blind_rotation_basis
         );
-        assert!(std::ptr::eq(
-            parameters.blind_rotation_ggsw().inner(),
-            parameters.accumulator_glwe().inner(),
-        ));
-        assert_eq!(
-            parameters.blind_rotation_ggsw().glwe_size(),
-            parameters.accumulator_glwe().size()
-        );
+
+        assert_eq!(parameters.blind_rotation_ggsw().glwe_size(), glwe.size());
         assert_eq!(
             parameters
                 .glwe_key_switching()
                 .output()
                 .noise_standard_deviation(),
             parameters
-                .accumulator_glwe()
+                .blind_rotation_ggsw()
                 .noise_distribution()
                 .standard_deviation()
         );
@@ -126,48 +127,32 @@ fn derives_bootstrapping_and_key_switching_for_both_orders() {
 }
 
 #[test]
-fn rejects_bases_from_another_modulus() {
-    use primus_glwe::GlevParameterError::BasisModulusMismatch;
+fn rejects_key_switching_basis_from_another_modulus() {
+    use primus_glwe::{GgswParameters, GlevParameterError::BasisModulusMismatch};
     use primus_tfhe_glwe::TfheParameterError;
-
-    for (bsk_modulus, ksk_modulus, expected) in [
-        (
+    let (small_lwe, glwe, basis) = components();
+    let result = TfheParameters::try_new(
+        small_lwe.into_inner(),
+        GgswParameters::try_with_basis(&glwe, basis).unwrap(),
+        ApproxSignedBasis::new(
             Some(257),
-            None,
-            TfheParameterError::BootstrappingParameters(BasisModulusMismatch),
+            DecompositionBaseLog::new(4),
+            Some(DecompositionLevelCount::new(2)),
         ),
-        (
-            None,
-            Some(257),
-            TfheParameterError::KeySwitchingParameters(BasisModulusMismatch),
-        ),
-    ] {
-        let (small_lwe, glwe, _) = components();
-        let result = TfheParameters::try_new(
-            small_lwe,
-            glwe,
-            ApproxSignedBasis::new(
-                bsk_modulus,
-                DecompositionBaseLog::new(4),
-                Some(DecompositionLevelCount::new(2)),
-            ),
-            ApproxSignedBasis::new(
-                ksk_modulus,
-                DecompositionBaseLog::new(4),
-                Some(DecompositionLevelCount::new(2)),
-            ),
-            PbsOrder::BootstrapKeyswitch,
-        );
-        let error = result.err().unwrap();
-        assert_eq!(error, expected);
-        assert_eq!(
-            error
-                .source()
-                .unwrap()
-                .downcast_ref::<primus_glwe::GlevParameterError>(),
-            Some(&BasisModulusMismatch),
-        );
-    }
+        PbsOrder::BootstrapKeyswitch,
+    );
+    let error = result.err().unwrap();
+    assert_eq!(
+        error,
+        TfheParameterError::KeySwitchingParameters(BasisModulusMismatch)
+    );
+    assert_eq!(
+        error
+            .source()
+            .unwrap()
+            .downcast_ref::<primus_glwe::GlevParameterError>(),
+        Some(&BasisModulusMismatch)
+    );
 }
 
 #[test]
@@ -198,11 +183,10 @@ fn rotation_domain_must_be_representable_by_input_coefficients() {
         let basis = ApproxSignedBasis::new(None, DecompositionBaseLog::new(4), None);
         assert_eq!(
             TfheParameters::try_new(
-                small_lwe,
-                glwe,
-                basis.clone(),
+                small_lwe.into_inner(),
+                primus_glwe::GgswParameters::try_with_basis(&glwe, basis.clone()).unwrap(),
                 basis,
-                PbsOrder::BootstrapKeyswitch,
+                PbsOrder::BootstrapKeyswitch
             )
             .err(),
             expected,
@@ -235,9 +219,8 @@ fn check_ternary_padding<M: primus_reduce::RingContext<u32>>(modulus: M) {
         SecretKeyDistr::gaussian(0.7),
     ] {
         let result = TfheParameters::try_new(
-            LweParameters::new(LweDimension::new(33), 2, modulus, distribution, 0.7),
-            glwe.clone(),
-            basis.clone(),
+            (LweParameters::new(LweDimension::new(33), 2, modulus, distribution, 0.7)).into_inner(),
+            primus_glwe::GgswParameters::try_with_basis(&glwe, basis.clone()).unwrap(),
             basis.clone(),
             PbsOrder::BootstrapKeyswitch,
         );
@@ -295,15 +278,15 @@ fn check_circuit_parameters<M: primus_reduce::RingContext<u64>>(modulus: M, fore
     let basis =
         ApproxSignedBasis::new(modulus.explicit_value(), DecompositionBaseLog::new(8), None);
     let tfhe = TfheParameters::try_new(
-        LweParameters::new(
+        (LweParameters::new(
             LweDimension::new(4),
             32,
             modulus,
             SecretKeyDistr::UniformBinary,
             0.7,
-        ),
-        glwe.clone(),
-        basis.clone(),
+        ))
+        .into_inner(),
+        primus_glwe::GgswParameters::try_with_basis(&glwe, basis.clone()).unwrap(),
         basis,
         PbsOrder::BootstrapKeyswitch,
     )
@@ -363,10 +346,31 @@ fn check_circuit_parameters<M: primus_reduce::RingContext<u64>>(modulus: M, fore
     assert!(
         CircuitBootstrapParameters::try_new(&tfhe, output(2), trace.clone(), trace.clone()).is_ok()
     );
-    assert_eq!(
-        CircuitBootstrapParameters::try_new(&tfhe, output(3), trace.clone(), trace.clone()).err(),
-        Some(Error::OutputDecompositionTooLarge),
+    // Key geometry can be valid even when one message program does not fit.
+    // Two lanes fit t=32 at N=32; three levels pad to four lanes and do not.
+    let two = CircuitBootstrapParameters::try_new(&tfhe, output(2), trace.clone(), trace.clone())
+        .unwrap();
+    let three = CircuitBootstrapParameters::try_new(&tfhe, output(3), trace.clone(), trace.clone())
+        .unwrap();
+    let codec = primus_encoding::RoundedCodec::new(32, modulus);
+    assert!(two.compile_lookup_table(&codec).is_ok());
+    assert!(matches!(
+        three.compile_lookup_table(&codec),
+        Err(primus_tfhe::LookupTableError::PlaintextDomainTooLarge { .. })
+    ));
+    assert!(
+        three
+            .compile_lookup_table(&primus_encoding::RoundedCodec::new(8, modulus))
+            .is_ok()
     );
+    if foreign_modulus != modulus {
+        assert_eq!(
+            three
+                .compile_lookup_table(&primus_encoding::RoundedCodec::new(8, foreign_modulus))
+                .err(),
+            Some(primus_tfhe::LookupTableError::InputModulusMismatch)
+        );
+    }
     // Distinguish a different explicit modulus from Native/explicit representation mismatch.
     for other in [
         Some(132_120_577),
@@ -445,10 +449,9 @@ fn configs_return_accumulator_and_cbs_construction_errors() {
         level_count: Some(DecompositionLevelCount::new(2)),
     };
     let config = TfheConfig {
-        small_lwe: LweParameters::new(
+        small_lwe: primus_lwe::LweParametersInner::new(
             LweDimension::new(4),
-            4u32,
-            NativeModulus::new(),
+            NativeModulus::<u32>::new(),
             SecretKeyDistr::UniformBinary,
             0.7,
         ),
@@ -465,9 +468,7 @@ fn configs_return_accumulator_and_cbs_construction_errors() {
     invalid.poly_length = 3;
     assert!(matches!(
         TfheParameters::try_from_config(invalid),
-        Err(TfheParameterError::AccumulatorParameters(
-            GlweParameterError::Layout(_)
-        ))
+        Err(TfheParameterError::AccumulatorLayout(_))
     ));
     let mut invalid = config.clone();
     invalid.accumulator_noise_standard_deviation = f64::NAN;

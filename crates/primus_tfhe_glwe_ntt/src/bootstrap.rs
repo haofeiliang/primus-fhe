@@ -1,6 +1,7 @@
 use primus_glwe::{GlweCiphertext, NttGlweKeySwitchingWorkspace};
 use primus_integer::FheUint;
 use primus_lwe::LweCiphertext;
+use primus_modulus::BarrettModulus;
 use primus_ntt::MonomialNttTable;
 use primus_poly::Polynomial;
 use primus_tfhe::TfheEvaluationError;
@@ -33,7 +34,7 @@ impl<T: FheUint> KeySwitchingWorkspace<T> {
 /// Pair each selected key with its own scratch; only one algorithm is allocated.
 enum BlindRotation<'a, T: FheUint> {
     Classic {
-        key: &'a NttGlweBootstrappingKey<T, primus_modulus::BarrettModulus<T>>,
+        key: &'a NttGlweBootstrappingKey<T, BarrettModulus<T>>,
         scratch: NttGlweBlindRotationWorkspace<T>,
     },
     Sparse {
@@ -100,7 +101,7 @@ where
                     small_lwe: LweCiphertext::zero(parameters.small_lwe().dimension().get()),
                 },
             },
-            accumulator: GlweCiphertext::zero(parameters.accumulator_glwe().glwe_len()),
+            accumulator: GlweCiphertext::zero(parameters.blind_rotation_ggsw().glwe_len()),
         })
     }
 
@@ -135,7 +136,7 @@ where
                 workspace: ks,
                 small_lwe,
             } => {
-                let glwe = parameters.accumulator_glwe();
+                let glwe = parameters.blind_rotation_ggsw();
                 input.inverse_extract_glwe_to(
                     &mut self.accumulator,
                     glwe.poly_length().get(),
@@ -163,7 +164,7 @@ where
                     lookup_table.as_view(),
                     rotation_step,
                     self.accumulator.as_mut_view(),
-                    parameters.accumulator_glwe().cipher_modulus(),
+                    parameters.blind_rotation_ggsw().cipher_modulus(),
                     self.context.table(),
                     scratch,
                 ),

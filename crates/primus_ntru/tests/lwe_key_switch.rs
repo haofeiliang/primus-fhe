@@ -628,7 +628,7 @@ fn check_encrypted_return<T: FheUint, Q: Modulus<ValueT = T>>(
         0.7,
     );
     let mut rng = StdRng::seed_from_u64(0x4e54524c57);
-    let output_secret = LweSecretKey::generate(&params, &mut rng);
+    let output_secret = LweSecretKey::generate(params.inner(), &mut rng);
     let key = NtruLweKeySwitchingKey::generate(
         secret,
         source,

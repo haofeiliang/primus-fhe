@@ -84,27 +84,32 @@ fn check_raw<Table: FftTable>() {
             Some(DecompositionLevelCount::new(3)),
         );
         let parameters = TfheParameters::try_new(
-            LweParameters::new(
+            (LweParameters::new(
                 LweDimension::new(16),
                 8,
                 modulus,
                 SecretKeyDistr::fixed_hamming_weight_binary(16, 4),
                 0.7,
-            ),
-            GlweParameters::new(
-                GlweDimension::new(dimension),
-                N,
-                8,
-                modulus,
-                SecretKeyDistr::UniformTernary,
-                0.7,
-            ),
-            basis.clone(),
+            ))
+            .into_inner(),
+            primus_glwe::GgswParameters::try_with_basis(
+                &(GlweParameters::new(
+                    GlweDimension::new(dimension),
+                    N,
+                    8,
+                    modulus,
+                    SecretKeyDistr::UniformTernary,
+                    0.7,
+                )),
+                basis.clone(),
+            )
+            .unwrap(),
             basis,
             PbsOrder::BootstrapKeyswitch,
         )
         .unwrap();
         let context = TfheContext::<u32, Table>::from_parameters(parameters);
+
         let mut rng = StdRng::seed_from_u64(0x4234_3252 + dimension as u64);
         let client = ClientKey::generate(context.parameters(), &mut rng);
         let mut generator = KeyGenerator::new(&context);

@@ -7,6 +7,8 @@
 
 Primus FHE 的单模数 LWE 密钥生成、私钥加密、公钥加密和密钥切换实现。 密文存储与算术来自 [`primus_lattice`](../primus_lattice/README.zh_CN.md)， 消息编码使用 [`RoundedCodec`](../primus_encoding/README.zh_CN.md)。
 
+`LweParametersInner` 保存已验证的密文域和预计算采样器，不含消息 codec；`LweParameters` 再绑定 `RoundedCodec` 供普通加解密使用。生成密钥传入 `params.inner()`，`params.into_inner()` 可直接移出采样状态而不克隆。TFHE 可直接构造 inner，稍后再选择消息编码。
+
 ## API
 
 公开类型均从 crate 根导出，实现模块为私有模块。
@@ -42,7 +44,7 @@ fn main() {
         0.7,
     );
     let mut rng = rand::rng();
-    let secret = LweSecretKey::generate(&params, &mut rng);
+    let secret = LweSecretKey::generate(params.inner(), &mut rng);
 
     let ciphertext = secret.encrypt(3u32, &params, &mut rng);
     assert_eq!(secret.decrypt(&ciphertext, &params), 3);
@@ -54,7 +56,7 @@ fn main() {
         2
     );
 
-    let public = LwePublicKey::generate(secret.as_view(), &params, &mut rng);
+    let public = LwePublicKey::generate(secret.as_view(), params.inner(), &mut rng);
     let messages = [0u32, 1, 2, 3];
     let batch = public.encrypt_batch(&messages, &params, &mut rng);
     assert_eq!(secret.decrypt_batch(&batch, &params), messages);
@@ -69,7 +71,7 @@ fn main() {
         SecretKeyDistr::UniformBinary,
         0.7,
     );
-    let output_secret = LweSecretKey::generate(&output_params, &mut rng);
+    let output_secret = LweSecretKey::generate(output_params.inner(), &mut rng);
     let basis = ApproxSignedBasis::new(params.cipher_modulus_value(), DecompositionBaseLog::new(4), None);
     let switching = LweKeySwitchingKey::generate(
         secret.as_view(),

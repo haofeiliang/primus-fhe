@@ -1,5 +1,6 @@
 use primus_fft::{FftTable, TorusFftValue};
 use primus_lwe::LweCiphertext;
+use primus_reduce::Modulus;
 use primus_tfhe::{
     InterleavedLookupTable, LookupTable, ProgrammableBootstrap, ProgrammableBootstrapInterleaved,
 };
@@ -130,11 +131,10 @@ where
     ) {
         let parameters = self.engine.context.parameters();
         assert!(
-            lookup_table.is_compatible(
-                parameters.accumulator_glwe().poly_length(),
-                parameters.plain_modulus_value(),
+            lookup_table.is_compatible_with_ciphertext_domain(
+                parameters.blind_rotation_ggsw().poly_length(),
                 parameters.small_lwe().cipher_modulus_value(),
-                parameters.accumulator_glwe().cipher_modulus_value(),
+                parameters.cipher_modulus().explicit_value(),
             ),
             "PBS lookup-table encoding or polynomial length mismatch"
         );
@@ -198,11 +198,10 @@ where
     ) {
         let parameters = self.engine.context.parameters();
         assert!(
-            lookup_table.is_compatible(
-                parameters.accumulator_glwe().poly_length(),
-                parameters.plain_modulus_value(),
+            lookup_table.is_compatible_with_ciphertext_domain(
+                parameters.blind_rotation_ggsw().poly_length(),
                 parameters.small_lwe().cipher_modulus_value(),
-                parameters.accumulator_glwe().cipher_modulus_value(),
+                parameters.cipher_modulus().explicit_value(),
             ),
             "PBS lookup-table encoding or polynomial length mismatch"
         );
@@ -242,7 +241,7 @@ where
         outputs: impl Iterator<Item = Lwe<&'out mut [T]>>,
     ) {
         let engine = &mut self.engine;
-        let glwe = engine.context.parameters().accumulator_glwe();
+        let glwe = engine.context.parameters().blind_rotation_ggsw();
         match &mut self.lwe_return {
             LweReturn::Keyswitch(ks) => {
                 engine.server_key.glwe_key_switching_key().key_switch_to(

@@ -28,17 +28,22 @@ const DOMAIN: usize = 8;
 fn context(order: PbsOrder, distribution: SecretKeyDistr) -> TfheContext<u32, U32NttTable> {
     let modulus = BarrettModulus::new(Q);
     let parameters = TfheParameters::try_new(
-        LweParameters::new(LweDimension::new(8), 15, modulus, distribution, 0.7),
-        // d=2 also exercises multiplication of all mask components, not just a,b.
-        GlweParameters::new(
-            GlweDimension::new(2),
-            N,
-            15,
-            modulus,
-            SecretKeyDistr::UniformBinary,
-            0.7,
-        ),
-        ApproxSignedBasis::new(Some(Q), DecompositionBaseLog::new(8), None),
+        (LweParameters::new(LweDimension::new(8), 15, modulus, distribution, 0.7)).into_inner(),
+        primus_glwe::GgswParameters::try_with_basis(
+            &(
+                // d=2 also exercises multiplication of all mask components, not just a,b.
+                GlweParameters::new(
+                    GlweDimension::new(2),
+                    N,
+                    15,
+                    modulus,
+                    SecretKeyDistr::UniformBinary,
+                    0.7,
+                )
+            ),
+            ApproxSignedBasis::new(Some(Q), DecompositionBaseLog::new(8), None),
+        )
+        .unwrap(),
         ApproxSignedBasis::new(Some(Q), DecompositionBaseLog::new(8), None),
         order,
     )
@@ -62,7 +67,9 @@ fn value(m: usize, i: usize) -> u32 {
 fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
     for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
         let context = context(order, SecretKeyDistr::fixed_hamming_weight_binary(8, 2));
-        let modulus = context.parameters().accumulator_glwe().cipher_modulus();
+        let input_codec =
+            primus_encoding::RoundedCodec::new(15, context.parameters().cipher_modulus());
+        let modulus = context.parameters().blind_rotation_ggsw().cipher_modulus();
         let codec = ScaledCodec::new(8, modulus);
         let mut rng = StdRng::seed_from_u64(0x5034_3201);
         let mut generator = KeyGenerator::new(&context);
@@ -83,8 +90,8 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
             }))
             .get()
         );
-        let encryptor = context.encryptor(&client).unwrap();
-        let decryptor = context.decryptor(&client).unwrap();
+        let encryptor = context.encryptor(&client, &input_codec).unwrap();
+        let decryptor = context.decryptor(&client, &input_codec).unwrap();
         let check = |outputs: &[LweCiphertext<u32>], message: usize| {
             for (i, output) in outputs.iter().enumerate() {
                 assert_eq!(output.dimension(), dimension);
@@ -102,7 +109,13 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
             for count in [1, 3, 17] {
                 let (lut, allocation) = allocations::measure(|| {
                     context
-                        .compile_factorized_lookup_table_fn(&codec, DOMAIN, count, value)
+                        .compile_factorized_lookup_table_fn(
+                            &input_codec,
+                            &codec,
+                            DOMAIN,
+                            count,
+                            value,
+                        )
                         .unwrap()
                 });
                 assert_eq!(
@@ -192,12 +205,12 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
         ));
 
         let lut = context
-            .compile_factorized_lookup_table_fn(&codec, DOMAIN, 3, value)
+            .compile_factorized_lookup_table_fn(&input_codec, &codec, DOMAIN, 3, value)
             .unwrap();
         // Same q,N, but deliberately a different instance.
         let other_context = self::context(order, SecretKeyDistr::fixed_hamming_weight_binary(8, 2));
         let foreign = other_context
-            .compile_factorized_lookup_table_fn(&codec, DOMAIN, 3, value)
+            .compile_factorized_lookup_table_fn(&input_codec, &codec, DOMAIN, 3, value)
             .unwrap();
         let mut evaluator = context.factorized_evaluator(&classic).unwrap();
         let input = encryptor.encrypt_padded(3, &mut rng).unwrap();
@@ -225,12 +238,7 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
         check(&evaluator.apply_lookup_table(input.as_view(), &lut), 3);
 
         // Preparing raw coefficient programs rejects each incompatible metadata field.
-        for (n, t, input_q, output_q) in [
-            (N / 2, 15, Q, Q),
-            (N, 8, Q, Q),
-            (N, 15, 97, Q),
-            (N, 15, Q, 97),
-        ] {
+        for (n, t, input_q, output_q) in [(N / 2, 15, Q, Q), (N, 15, 97, Q), (N, 15, Q, 97)] {
             let raw = FactorizedLookupTable::try_new(
                 2,
                 PolyLength::new(n),
@@ -249,6 +257,7 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
         }
         assert!(matches!(
             context.compile_factorized_lookup_table_fn(
+                &input_codec,
                 &ScaledCodec::new(8, BarrettModulus::new(97)),
                 DOMAIN,
                 3,
@@ -265,14 +274,19 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
 fn factorized_pbs_accepts_ternary_controls_without_online_allocation() {
     for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
         let context = context(order, SecretKeyDistr::fixed_composition_ternary(8, 2, 2));
+        let input_codec =
+            primus_encoding::RoundedCodec::new(15, context.parameters().cipher_modulus());
         let mut rng = StdRng::seed_from_u64(0x0054_334d_5642);
         let (client, server) = context.try_generate_keys(None, &mut rng).unwrap();
-        let codec = ScaledCodec::new(8, context.parameters().accumulator_glwe().cipher_modulus());
+        let codec = ScaledCodec::new(
+            8,
+            context.parameters().blind_rotation_ggsw().cipher_modulus(),
+        );
         let lut = context
-            .compile_factorized_lookup_table_fn(&codec, DOMAIN, 3, value)
+            .compile_factorized_lookup_table_fn(&input_codec, &codec, DOMAIN, 3, value)
             .unwrap();
-        let encryptor = context.encryptor(&client).unwrap();
-        let decryptor = context.decryptor(&client).unwrap();
+        let encryptor = context.encryptor(&client, &input_codec).unwrap();
+        let decryptor = context.decryptor(&client, &input_codec).unwrap();
         let mut evaluator = context.factorized_evaluator(&server).unwrap();
         let mut outputs =
             vec![LweCiphertext::zero(context.parameters().external_lwe_dimension().get()); 3];

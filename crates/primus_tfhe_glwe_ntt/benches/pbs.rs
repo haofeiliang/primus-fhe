@@ -52,6 +52,10 @@ fn backend<T, Table>(
     } else {
         glwe::ntt_pbs::<T>(order, workload)
     };
+    let input_codec = primus_encoding::RoundedCodec::new(
+        T::as_from(workload.plaintext_modulus),
+        parameters.cipher_modulus(),
+    );
     // Cached owned state avoids both eager setup during --list and repeated key
     // generation for each Criterion sample. Evaluators borrow this state locally.
     let mut fixture = None;
@@ -62,14 +66,15 @@ fn backend<T, Table>(
             let mut rng = StdRng::seed_from_u64(42);
             let (client, server) = context.try_generate_keys(None, &mut rng).unwrap();
             let input = context
-                .encryptor(&client)
+                .encryptor(&client, &input_codec)
                 .unwrap()
                 .encrypt_padded(T::ONE, &mut rng)
                 .unwrap();
             let domain = workload.plaintext_modulus as usize / 2;
             let lut = context
                 .parameters()
-                .lookup_table_compiler()
+                .lookup_table_compiler(&input_codec)
+                .unwrap()
                 .compile_fn(|x| T::as_from((x + domain - 1) % domain))
                 .unwrap();
             (context, client, server, input, lut)
@@ -80,7 +85,7 @@ fn backend<T, Table>(
             evaluator.apply_lookup_table_to(input.as_view(), lut, output.as_mut_view());
             assert_eq!(
                 context
-                    .decryptor(client)
+                    .decryptor(client, &input_codec)
                     .unwrap()
                     .decrypt(output.as_view())
                     .unwrap(),
@@ -148,16 +153,21 @@ fn stages<T: FheUint, Table: MonomialNttTable<ValueT = T>>(c: &mut Criterion, ba
                     (context, client, server)
                 });
                 let parameters = context.parameters();
-                let poly_length = parameters.accumulator_glwe().poly_length();
-                let modulus = parameters.accumulator_glwe().cipher_modulus();
+                let input_codec = primus_encoding::RoundedCodec::new(
+                    T::as_from(4u32),
+                    parameters.cipher_modulus(),
+                );
+                let poly_length = parameters.blind_rotation_ggsw().poly_length();
+                let modulus = parameters.blind_rotation_ggsw().cipher_modulus();
                 let mut rng = StdRng::seed_from_u64(43);
                 let input = context
-                    .encryptor(client)
+                    .encryptor(client, &input_codec)
                     .unwrap()
                     .encrypt_padded(T::ONE, &mut rng)
                     .unwrap();
                 let lookup_table = parameters
-                    .lookup_table_compiler()
+                    .lookup_table_compiler(&input_codec)
+                    .unwrap()
                     .compile_fn(|m| T::as_from(m ^ 1))
                     .unwrap();
                 let BootstrappingKey::Classic(bootstrapping_key) = server_key.bootstrapping_key()
@@ -169,7 +179,7 @@ fn stages<T: FheUint, Table: MonomialNttTable<ValueT = T>>(c: &mut Criterion, ba
                     parameters.glwe_key_switching().output().size().glwe_size(),
                 );
                 let mut main_glwe: GlweCiphertext<Vec<T>> =
-                    GlweCiphertext::zero(parameters.accumulator_glwe().glwe_len());
+                    GlweCiphertext::zero(parameters.blind_rotation_ggsw().glwe_len());
                 let mut switched: GlweCiphertext<Vec<T>> =
                     GlweCiphertext::zero(parameters.glwe_key_switching().output().glwe_len());
                 let mut small_lwe: LweCiphertext<T> =
@@ -194,7 +204,7 @@ fn stages<T: FheUint, Table: MonomialNttTable<ValueT = T>>(c: &mut Criterion, ba
                 if !verified {
                     assert_eq!(
                         context
-                            .decryptor(client)
+                            .decryptor(client, &input_codec)
                             .unwrap()
                             .decrypt(small_lwe.as_view())
                             .unwrap(),

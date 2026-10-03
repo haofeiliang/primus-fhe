@@ -1,19 +1,21 @@
 //! Client-side coefficient-ring encryption and decryption under the accumulator secret.
 
 use primus_data::{Data, DataMut};
+use primus_encoding::ScaledCodec;
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
 use primus_glwe::{
     FourierGlweCiphertext, FourierGlweDecryptWorkspace, FourierGlweEncryptWorkspace,
-    FourierGlweSecretKey, GlweCiphertext,
+    FourierGlweSecretKey, GlweCiphertext, GlweParameters,
 };
+use primus_modulus::NativeModulus;
 use primus_poly::Polynomial;
 
-use crate::{ClientKey, TfheContext, TfheKeyError};
+use crate::{ClientKey, TfheClientError, TfheContext};
 
 /// Prepared private-key client for the accumulator GLWE domain.
 ///
 /// Owns one transformed accumulator secret and reusable conversion workspace,
-/// borrowing the context that fixes its table, modulus and plaintext codec.
+/// borrowing the transform context and owning independently bound message parameters.
 /// Ciphertexts use coefficient representation and the accumulator secret, which
 /// differs from the external LWE domain used by [`crate::Encryptor`].
 /// Construction prepares all buffers; `encrypt_to` and `decrypt_to` do not allocate.
@@ -23,6 +25,7 @@ where
     Table: FftTable,
 {
     context: &'a TfheContext<T, Table>,
+    parameters: GlweParameters<T, NativeModulus<T>>,
     secret: FourierGlweSecretKey,
     transformed: FourierGlweCiphertext<Vec<Complex64>>,
     fft: FftEngine<'a, Table>,
@@ -35,13 +38,17 @@ where
     T: TorusFftValue,
     Table: FftTable,
 {
-    /// Validates the client key and prepares its accumulator representation once.
+    /// Binds the client key and a Scaled message codec to the accumulator domain.
+    /// Rejects an incompatible key or codec modulus before preparing the secret.
     pub fn try_new(
         context: &'a TfheContext<T, Table>,
         client_key: &ClientKey<T>,
-    ) -> Result<Self, TfheKeyError> {
+        codec: ScaledCodec<T, NativeModulus<T>>,
+    ) -> Result<Self, TfheClientError> {
         client_key.check_compatible(context.parameters())?;
-        let parameters = context.parameters().accumulator_glwe();
+        let parameters =
+            GlweParameters::try_from_glev(context.parameters().blind_rotation_ggsw(), codec)
+                .map_err(|_| crate::ClientError::CodecModulusMismatch)?;
         let mut fft = context.new_fft_engine();
         let secret =
             FourierGlweSecretKey::from_coeff_secret_key(client_key.glwe_secret_key(), &mut fft);
@@ -52,6 +59,7 @@ where
             fft,
             encrypt: FourierGlweEncryptWorkspace::new(parameters.poly_length()),
             decrypt: FourierGlweDecryptWorkspace::new(parameters.poly_length()),
+            parameters,
         })
     }
 
@@ -69,7 +77,7 @@ where
     }
 
     /// Encrypts exactly N unsigned coefficients in `[0, t)` under the accumulator secret.
-    /// Uses the accumulator plaintext codec and overwrites the entire coefficient output.
+    /// Uses this client's Scaled codec and overwrites the entire coefficient output.
     ///
     /// # Panics
     /// Panics before sampling if message or output length is wrong. A plaintext-range
@@ -81,7 +89,7 @@ where
         R: rand::Rng + rand::CryptoRng,
         S: DataMut<Elem = T>,
     {
-        let parameters = self.context.parameters().accumulator_glwe();
+        let parameters = &self.parameters;
         assert_eq!(
             (message.len(), output.as_ref().len()),
             (parameters.poly_length().get(), parameters.glwe_len()),
@@ -104,7 +112,7 @@ where
         let n = self
             .context
             .parameters()
-            .accumulator_glwe()
+            .blind_rotation_ggsw()
             .poly_length()
             .get();
         let mut output = vec![T::ZERO; n];
@@ -121,7 +129,7 @@ where
     /// # Panics
     /// Panics before output writes if ciphertext or plaintext length is wrong.
     pub fn decrypt_to<S: Data<Elem = T>>(&mut self, input: &GlweCiphertext<S>, output: &mut [T]) {
-        let parameters = self.context.parameters().accumulator_glwe();
+        let parameters = &self.parameters;
         assert_eq!(
             (input.as_ref().len(), output.len()),
             (parameters.glwe_len(), parameters.poly_length().get()),
@@ -148,7 +156,8 @@ where
     pub fn accumulator_client(
         &self,
         client_key: &ClientKey<T>,
-    ) -> Result<crate::AccumulatorClient<'_, T, Table>, crate::TfheKeyError> {
-        crate::AccumulatorClient::try_new(self, client_key)
+        codec: ScaledCodec<T, NativeModulus<T>>,
+    ) -> Result<crate::AccumulatorClient<'_, T, Table>, crate::TfheClientError> {
+        crate::AccumulatorClient::try_new(self, client_key, codec)
     }
 }

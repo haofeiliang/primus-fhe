@@ -46,9 +46,8 @@ fn parameters<T: TorusFftValue>(order: PbsOrder) -> TfheParameters<T> {
         None,
     );
     TfheParameters::try_new(
-        lwe,
-        glwe,
-        bsk,
+        lwe.into_inner(),
+        primus_glwe::GgswParameters::try_with_basis(&glwe, bsk).unwrap(),
         ApproxSignedBasis::new(None, DecompositionBaseLog::new(8), None),
         order,
     )
@@ -69,9 +68,13 @@ where
     TABLE: FftTable,
 {
     let mut rng = StdRng::seed_from_u64(0x4d41_4e59_5042_5301);
+    let input_codec = primus_encoding::RoundedCodec::new(
+        T::as_from(15u32),
+        context.parameters().cipher_modulus(),
+    );
     let (client_key, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
-    let encryptor = context.encryptor(&client_key).unwrap();
-    let decryptor = context.decryptor(&client_key).unwrap();
+    let encryptor = context.encryptor(&client_key, &input_codec).unwrap();
+    let decryptor = context.decryptor(&client_key, &input_codec).unwrap();
     let mut evaluator = context.evaluator(&server_key).unwrap();
     // Input centers use t_in=15; output values use the independent t_out=8 scale.
     let output_codec = RoundedCodec::new(
@@ -80,7 +83,8 @@ where
     );
     let compiler = context
         .parameters()
-        .lookup_table_compiler()
+        .lookup_table_compiler(&input_codec)
+        .unwrap()
         .try_with_output_codec(&output_codec)
         .unwrap();
     // Shared tests cover geometry; keep output counts 1, 3 (padded to 4), and 4 here.
@@ -148,19 +152,42 @@ where
         }
     }
 
+    // A program chooses its own message scale. Reuse the same client/server
+    // keys and evaluator with a different t; ciphertexts carry no codec metadata.
+    let other_codec = RoundedCodec::new(T::as_from(4u32), context.parameters().cipher_modulus());
+    let other_input = context
+        .encryptor(&client_key, &other_codec)
+        .unwrap()
+        .encrypt_padded(T::ONE, &mut rng)
+        .unwrap();
+    let other_lut = context
+        .parameters()
+        .lookup_table_compiler(&other_codec)
+        .unwrap()
+        .compile_fn(|message| T::as_from(1 - message))
+        .unwrap();
+    let other_output = evaluator.apply_lookup_table(other_input.as_view(), &other_lut);
+    assert_eq!(
+        context
+            .decryptor(&client_key, &other_codec)
+            .unwrap()
+            .decrypt(other_output.as_view())
+            .unwrap(),
+        T::ZERO
+    );
+
     let input = encryptor
         .encrypt_padded(T::as_from(3u32), &mut rng)
         .unwrap();
     let good = compiler.compile_interleaved_fn(3, value).unwrap();
     let mut outputs = vec![input.clone(); 3];
     // Isolate each piece of LUT metadata, including equal-length wrong-domain tables.
-    let mut mismatched_tables = Vec::new();
-    for (n, t) in [(N / 2, 15), (N, 8)] {
-        mismatched_tables.push((
+    let mismatched_tables = [
+        (
             LookupTable::try_new(
                 2,
-                PolyLength::new(n),
-                T::as_from(t),
+                PolyLength::new(N / 2),
+                T::as_from(15u32),
                 NativeModulus::new(),
                 NativeModulus::new(),
                 |_| Ok(T::ZERO),
@@ -168,58 +195,58 @@ where
             .unwrap(),
             InterleavedLookupTable::try_new(
                 2,
-                PolyLength::new(n),
+                PolyLength::new(N / 2),
                 3,
-                T::as_from(t),
+                T::as_from(15u32),
                 NativeModulus::new(),
                 NativeModulus::new(),
                 |_, _| Ok(T::ZERO),
             )
             .unwrap(),
-        ));
-    }
-    mismatched_tables.push((
-        LookupTable::try_new(
-            2,
-            PolyLength::new(N),
-            T::as_from(15u32),
-            BarrettModulus::new(T::as_from(132_120_577u32)),
-            NativeModulus::new(),
-            |_| Ok(T::ZERO),
-        )
-        .unwrap(),
-        InterleavedLookupTable::try_new(
-            2,
-            PolyLength::new(N),
-            3,
-            T::as_from(15u32),
-            BarrettModulus::new(T::as_from(132_120_577u32)),
-            NativeModulus::new(),
-            |_, _| Ok(T::ZERO),
-        )
-        .unwrap(),
-    ));
-    mismatched_tables.push((
-        LookupTable::try_new(
-            2,
-            PolyLength::new(N),
-            T::as_from(15u32),
-            NativeModulus::new(),
-            BarrettModulus::new(T::as_from(132_120_577u32)),
-            |_| Ok(T::ZERO),
-        )
-        .unwrap(),
-        InterleavedLookupTable::try_new(
-            2,
-            PolyLength::new(N),
-            3,
-            T::as_from(15u32),
-            NativeModulus::new(),
-            BarrettModulus::new(T::as_from(132_120_577u32)),
-            |_, _| Ok(T::ZERO),
-        )
-        .unwrap(),
-    ));
+        ),
+        (
+            LookupTable::try_new(
+                2,
+                PolyLength::new(N),
+                T::as_from(15u32),
+                BarrettModulus::new(T::as_from(132_120_577u32)),
+                NativeModulus::new(),
+                |_| Ok(T::ZERO),
+            )
+            .unwrap(),
+            InterleavedLookupTable::try_new(
+                2,
+                PolyLength::new(N),
+                3,
+                T::as_from(15u32),
+                BarrettModulus::new(T::as_from(132_120_577u32)),
+                NativeModulus::new(),
+                |_, _| Ok(T::ZERO),
+            )
+            .unwrap(),
+        ),
+        (
+            LookupTable::try_new(
+                2,
+                PolyLength::new(N),
+                T::as_from(15u32),
+                NativeModulus::new(),
+                BarrettModulus::new(T::as_from(132_120_577u32)),
+                |_| Ok(T::ZERO),
+            )
+            .unwrap(),
+            InterleavedLookupTable::try_new(
+                2,
+                PolyLength::new(N),
+                3,
+                T::as_from(15u32),
+                NativeModulus::new(),
+                BarrettModulus::new(T::as_from(132_120_577u32)),
+                |_, _| Ok(T::ZERO),
+            )
+            .unwrap(),
+        ),
+    ];
     for (single, many) in mismatched_tables {
         let before = outputs.clone();
         assert!(
@@ -305,7 +332,7 @@ where
         3,
         2,
         PolyLength::new(N),
-        context.parameters().input_plaintext_codec(),
+        &input_codec,
         &output_codec,
         |x, y| T::as_from(x * x + y),
     )

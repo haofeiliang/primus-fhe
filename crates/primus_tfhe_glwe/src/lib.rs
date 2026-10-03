@@ -45,10 +45,8 @@ mod key;
 mod lookup_table;
 mod parameters;
 
-use primus_glwe::{
-    GgswParameters, GlevParameters, GlweKeySwitchingParameters, GlweParameters, GlweSecretKey,
-};
-use primus_lwe::{LweParameters, LweSecretKey};
+use primus_glwe::{GgswParameters, GlevParameters, GlweKeySwitchingParameters, GlweSecretKey};
+use primus_lwe::LweSecretKey;
 
 pub use circuit_bootstrap::CircuitBootstrapParameters;
 pub use error::{

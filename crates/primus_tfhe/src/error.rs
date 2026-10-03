@@ -29,6 +29,9 @@ pub enum TfheEvaluationError {
 /// An error produced while compiling a TFHE lookup table.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum LookupTableError {
+    /// The program's input codec uses another external ciphertext modulus.
+    #[error("input codec ciphertext modulus differs from the external modulus")]
+    InputModulusMismatch,
     /// The rotation domain `2N` cannot be represented by the coefficient word.
     #[error("lookup-table rotation domain does not fit the coefficient word")]
     RotationDomainTooLarge,

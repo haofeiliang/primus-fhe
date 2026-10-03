@@ -8,7 +8,7 @@ use primus_lattice::{
     GadgetSize,
     ggsw::{FourierGgsw, FourierGgswIter},
 };
-use primus_lwe::{LweParameters, LweSecretKey};
+use primus_lwe::{LweParametersInner, LweSecretKey};
 use primus_modulus::NativeModulus;
 use primus_reduce::{Modulus, RingContext};
 use primus_tfhe::rotation::RotationModulusSwitch;
@@ -95,7 +95,7 @@ impl<T: TorusFftValue, LM: Modulus<ValueT = T>> FourierGlweBootstrappingKey<T, L
     /// by the input coefficient type also panics. Checks precede sampling.
     pub fn generate_fourier<Table, R>(
         input_secret_key: &LweSecretKey<T>,
-        input_parameters: &LweParameters<T, LM>,
+        input_parameters: &LweParametersInner<T, LM>,
         output_secret_key: &FourierGlweSecretKey,
         parameters: &GlevParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,

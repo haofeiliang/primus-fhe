@@ -4,17 +4,17 @@
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_fft::{Complex64, FftTable, RustFftTable, TfheFftTable};
-use primus_glwe::{GlevParameters, GlweParameters, SecretKeyDistr};
+use primus_glwe::{GlevParameters, SecretKeyDistr};
 use primus_lattice::ggsw::{FourierGgsw, Ggsw};
 use primus_lattice::{GlweDimension, LweDimension};
-use primus_lwe::{LweCiphertext, LweParameters};
+use primus_lwe::{LweCiphertext, LweParametersInner};
 use primus_modulus::NativeModulus;
 use primus_poly::PolyLength;
 use primus_test_allocations as allocations;
 use primus_tfhe::ProgrammableBootstrap as _;
 use primus_tfhe_glwe_fourier::{
     CircuitBootstrapConfig, CircuitBootstrapEvaluator, CircuitBootstrapParameters, ClientKey,
-    DecompositionConfig, KeyGenerationError, KeyGenerator, PbsOrder, TfheContext,
+    DecompositionConfig, KeyGenerationError, KeyGenerator, PbsOrder, TfheConfig, TfheContext,
     TfheEvaluationError, TfheParameters,
 };
 use rand::{RngExt, SeedableRng, rngs::StdRng};
@@ -25,11 +25,10 @@ static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocato
 const POLY_LENGTH: usize = 64;
 const DIMENSION: usize = 2;
 
-fn parameters(dimension: usize, poly_length: usize, plaintext_modulus: u64) -> TfheParameters<u64> {
+fn parameters(dimension: usize, poly_length: usize) -> TfheParameters<u64> {
     parameters_with_order_and_distribution(
         dimension,
         poly_length,
-        plaintext_modulus,
         PbsOrder::BootstrapKeyswitch,
         SecretKeyDistr::fixed_hamming_weight_binary(4, 2),
     )
@@ -38,39 +37,29 @@ fn parameters(dimension: usize, poly_length: usize, plaintext_modulus: u64) -> T
 fn parameters_with_order_and_distribution(
     dimension: usize,
     poly_length: usize,
-    plaintext_modulus: u64,
     order: PbsOrder,
     distribution: SecretKeyDistr,
 ) -> TfheParameters<u64> {
-    TfheParameters::try_new(
-        LweParameters::new(
+    // Retain enough precision below the smallest CBS output gadget scale.
+    let decomposition = DecompositionConfig {
+        log_basis: DecompositionBaseLog::new(8),
+        level_count: Some(DecompositionLevelCount::new(6)),
+    };
+    TfheParameters::try_from_config(TfheConfig {
+        small_lwe: LweParametersInner::new(
             LweDimension::new(4),
-            plaintext_modulus,
             NativeModulus::new(),
             distribution,
             0.7,
         ),
-        GlweParameters::new(
-            GlweDimension::new(dimension),
-            poly_length,
-            plaintext_modulus,
-            NativeModulus::new(),
-            SecretKeyDistr::UniformTernary,
-            0.7,
-        ),
-        // Retain enough precision below the smallest CBS output gadget scale.
-        ApproxSignedBasis::new(
-            None,
-            DecompositionBaseLog::new(8),
-            Some(DecompositionLevelCount::new(6)),
-        ),
-        ApproxSignedBasis::new(
-            None,
-            DecompositionBaseLog::new(8),
-            Some(DecompositionLevelCount::new(6)),
-        ),
-        order,
-    )
+        accumulator_dimension: GlweDimension::new(dimension),
+        poly_length,
+        accumulator_secret_key_distr: SecretKeyDistr::UniformTernary,
+        accumulator_noise_standard_deviation: 0.7,
+        blind_rotation: decomposition,
+        key_switching: decomposition,
+        pbs_order: order,
+    })
     .unwrap()
 }
 
@@ -127,10 +116,10 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
     let context = TfheContext::<_, Table>::from_parameters(parameters_with_order_and_distribution(
         DIMENSION,
         POLY_LENGTH,
-        4,
         order,
         distribution,
     ));
+    let input_codec = primus_encoding::RoundedCodec::new(4, context.parameters().cipher_modulus());
     let mut rng = StdRng::seed_from_u64(0x4342_534b_4559 ^ order as u64);
     let client = ClientKey::generate(context.parameters(), &mut rng);
     let mut generator = KeyGenerator::new(&context);
@@ -155,13 +144,21 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
     )
     .unwrap();
     let mut fft = context.new_fft_engine();
-    let glwe = context.parameters().accumulator_glwe();
+    let glwe = context.parameters().blind_rotation_ggsw();
     let messages = [1u64, 3].map(|offset| {
         (0..POLY_LENGTH)
             .map(|i| (i as u64 + offset) % 4)
             .collect::<Vec<_>>()
     });
-    let mut accumulator_client = context.accumulator_client(&client).unwrap();
+    let mut accumulator_client = context
+        .accumulator_client(
+            &client,
+            primus_encoding::ScaledCodec::new(
+                input_codec.plaintext_modulus(),
+                input_codec.ciphertext_modulus(),
+            ),
+        )
+        .unwrap();
     let choices = messages.each_ref().map(|message| {
         let mut output = context.allocate_accumulator_ciphertext();
         let (_, allocation) =
@@ -173,11 +170,12 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
         output
     });
 
-    let encryptor = context.encryptor(&client).unwrap();
+    let encryptor = context.encryptor(&client, &input_codec).unwrap();
     // The same CBS-enabled server key also supports ordinary PBS.
     let identity = context
         .parameters()
-        .lookup_table_compiler()
+        .lookup_table_compiler(&input_codec)
+        .unwrap()
         .compile_fn(|message| message as u64)
         .unwrap();
     let input = encryptor.encrypt_padded(1u64, &mut rng).unwrap();
@@ -187,16 +185,42 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
         .apply_lookup_table(input.as_view(), &identity);
     assert_eq!(
         context
-            .decryptor(&client)
+            .decryptor(&client, &input_codec)
             .unwrap()
             .decrypt(output.as_view())
             .unwrap(),
         1
     );
 
+    // Compile another input encoding with the same CBS keys and consume its
+    // gadget output. Accumulator messages keep their independently chosen t=4.
+    if !sparse && order == PbsOrder::BootstrapKeyswitch {
+        let other_codec =
+            primus_encoding::RoundedCodec::new(8, context.parameters().cipher_modulus());
+        let input = context
+            .encryptor(&client, &other_codec)
+            .unwrap()
+            .encrypt_padded(1, &mut rng)
+            .unwrap();
+        let mut other = CircuitBootstrapEvaluator::try_from_parts(
+            &context,
+            &server,
+            parameters,
+            key,
+            &other_codec,
+        )
+        .unwrap();
+        let control = other.circuit_bootstrap(input.as_view());
+        let mut selected = context.allocate_accumulator_ciphertext();
+        other.cmux_to(&control, &choices[0], &choices[1], &mut selected);
+        assert_eq!(accumulator_client.decrypt(&selected), messages[1]);
+    }
+
     let (parameters, mut evaluator) = match order {
         PbsOrder::BootstrapKeyswitch => (parameters, {
-            let mut standalone = context.circuit_bootstrap_evaluator(&server).unwrap();
+            let mut standalone = context
+                .circuit_bootstrap_evaluator(&server, &input_codec)
+                .unwrap();
             assert!(standalone.bootstrapper_mut().is_none());
             // Exercise the missing-KS form before recovery fills that workspace.
             let mut control = standalone.allocate_output();
@@ -214,11 +238,18 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
                 allocation.count > 0,
                 "standalone BK recovery explicitly creates return-KS scratch"
             );
-            CircuitBootstrapEvaluator::try_from_bootstrapper(pbs).unwrap()
+            CircuitBootstrapEvaluator::try_from_bootstrapper(pbs, &input_codec).unwrap()
         }),
         PbsOrder::KeyswitchBootstrap => (
             &alternate,
-            CircuitBootstrapEvaluator::try_from_parts(&context, &server, &alternate, key).unwrap(),
+            CircuitBootstrapEvaluator::try_from_parts(
+                &context,
+                &server,
+                &alternate,
+                key,
+                &input_codec,
+            )
+            .unwrap(),
         ),
     };
     assert_eq!(parameters.lookup_table_padded_output_count(), 4);
@@ -259,7 +290,7 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
         });
         assert_eq!(
             context
-                .decryptor(&client)
+                .decryptor(&client, &input_codec)
                 .unwrap()
                 .decrypt(output.as_view())
                 .unwrap(),
@@ -338,10 +369,11 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
 fn evaluator_rejects_resource_mismatches_and_checks_shapes_before_writes() {
     use TfheEvaluationError as Error;
     let context = TfheContext::try_new(
-        parameters(DIMENSION, POLY_LENGTH, 4),
+        parameters(DIMENSION, POLY_LENGTH),
         RustFftTable::new(PolyLength::new(POLY_LENGTH)),
     )
     .unwrap();
+    let input_codec = primus_encoding::RoundedCodec::new(4, context.parameters().cipher_modulus());
     let mut rng = StdRng::seed_from_u64(42);
     let client = ClientKey::generate(context.parameters(), &mut rng);
     let parameters = circuit_parameters(context.parameters());
@@ -367,7 +399,11 @@ fn evaluator_rejects_resource_mismatches_and_checks_shapes_before_writes() {
         (
             parameters.output_basis().clone(),
             GlevParameters::with_glwe_params(
-                context.parameters().accumulator_glwe(),
+                &primus_glwe::GlweParameters::try_from_glev(
+                    context.parameters().blind_rotation_ggsw(),
+                    primus_encoding::ScaledCodec::new(4, NativeModulus::new()),
+                )
+                .unwrap(),
                 DecompositionBaseLog::new(7),
                 Some(DecompositionLevelCount::new(7)),
             ),
@@ -377,7 +413,11 @@ fn evaluator_rejects_resource_mismatches_and_checks_shapes_before_writes() {
             parameters.output_basis().clone(),
             parameters.trace().clone(),
             GlevParameters::with_glwe_params(
-                context.parameters().accumulator_glwe(),
+                &primus_glwe::GlweParameters::try_from_glev(
+                    context.parameters().blind_rotation_ggsw(),
+                    primus_encoding::ScaledCodec::new(4, NativeModulus::new()),
+                )
+                .unwrap(),
                 DecompositionBaseLog::new(9),
                 Some(DecompositionLevelCount::new(5)),
             ),
@@ -387,14 +427,19 @@ fn evaluator_rejects_resource_mismatches_and_checks_shapes_before_writes() {
             CircuitBootstrapParameters::try_new(context.parameters(), output, trace, scheme_switch)
                 .unwrap();
         assert!(matches!(
-            CircuitBootstrapEvaluator::try_from_parts(&context, &server, &foreign, &key),
+            CircuitBootstrapEvaluator::try_from_parts(
+                &context,
+                &server,
+                &foreign,
+                &key,
+                &input_codec
+            ),
             Err(Error::IncompatibleCircuitBootstrapKey)
         ));
     }
     let foreign_tfhe = parameters_with_order_and_distribution(
         DIMENSION,
         POLY_LENGTH,
-        4,
         PbsOrder::BootstrapKeyswitch,
         SecretKeyDistr::fixed_composition_ternary(4, 1, 1),
     );
@@ -404,23 +449,36 @@ fn evaluator_rejects_resource_mismatches_and_checks_shapes_before_writes() {
     )
     .unwrap();
     assert!(matches!(
-        CircuitBootstrapEvaluator::try_from_parts(&foreign_context, &server, &parameters, &key),
+        CircuitBootstrapEvaluator::try_from_parts(
+            &foreign_context,
+            &server,
+            &parameters,
+            &key,
+            &input_codec
+        ),
         Err(Error::IncompatibleServerKey)
     ));
-    let foreign_parameters = circuit_parameters(&parameters_with_order_and_distribution(
-        DIMENSION,
-        POLY_LENGTH,
-        8,
-        PbsOrder::BootstrapKeyswitch,
-        SecretKeyDistr::fixed_hamming_weight_binary(4, 2),
-    ));
-    assert!(matches!(
-        CircuitBootstrapEvaluator::try_from_parts(&context, &server, &foreign_parameters, &key),
-        Err(Error::IncompatibleCircuitBootstrapParameters)
-    ));
+    // Message t belongs to the program, so both encodings bind the same CBS key.
+    let other_codec = primus_encoding::RoundedCodec::new(8, context.parameters().cipher_modulus());
+    assert!(
+        CircuitBootstrapEvaluator::try_from_parts(
+            &context,
+            &server,
+            &parameters,
+            &key,
+            &other_codec,
+        )
+        .is_ok()
+    );
 
-    let mut evaluator =
-        CircuitBootstrapEvaluator::try_from_parts(&context, &server, &parameters, &key).unwrap();
+    let mut evaluator = CircuitBootstrapEvaluator::try_from_parts(
+        &context,
+        &server,
+        &parameters,
+        &key,
+        &input_codec,
+    )
+    .unwrap();
     let input_dimension = context.parameters().external_lwe_dimension().get();
     let output_len = parameters.output_size().fourier_ggsw_len();
     for (dimension, length) in [
@@ -443,18 +501,15 @@ fn evaluator_rejects_resource_mismatches_and_checks_shapes_before_writes() {
 #[test]
 fn incompatible_parameters_and_client_keys_are_rejected_before_sampling() {
     let context = TfheContext::try_new(
-        parameters(DIMENSION, POLY_LENGTH, 4),
+        parameters(DIMENSION, POLY_LENGTH),
         RustFftTable::new(PolyLength::new(POLY_LENGTH)),
     )
     .unwrap();
+
     let mut rng = StdRng::seed_from_u64(42);
     let client = ClientKey::generate(context.parameters(), &mut rng);
-    for (dimension, poly_length, plaintext_modulus) in [
-        (DIMENSION + 1, POLY_LENGTH, 4),
-        (DIMENSION, POLY_LENGTH * 2, 4),
-        (DIMENSION, POLY_LENGTH, 8),
-    ] {
-        let foreign = circuit_parameters(&parameters(dimension, poly_length, plaintext_modulus));
+    for (dimension, poly_length) in [(DIMENSION + 1, POLY_LENGTH), (DIMENSION, POLY_LENGTH * 2)] {
+        let foreign = circuit_parameters(&parameters(dimension, poly_length));
         let mut rng = StdRng::seed_from_u64(43);
         let mut untouched_rng = StdRng::seed_from_u64(43);
         assert!(matches!(
@@ -485,7 +540,7 @@ fn incompatible_parameters_and_client_keys_are_rejected_before_sampling() {
         Err(KeyGenerationError::CircuitBootstrapParameters(_))
     ));
     assert_eq!(rng.random::<u64>(), untouched_rng.random::<u64>());
-    let foreign_client = ClientKey::generate(&parameters(DIMENSION + 1, POLY_LENGTH, 4), &mut rng);
+    let foreign_client = ClientKey::generate(&parameters(DIMENSION + 1, POLY_LENGTH), &mut rng);
     let mut rng = StdRng::seed_from_u64(43);
     let mut untouched_rng = StdRng::seed_from_u64(43);
     assert!(matches!(

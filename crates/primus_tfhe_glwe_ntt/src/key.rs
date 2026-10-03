@@ -62,7 +62,7 @@ impl<T: FheUint> BootstrappingKey<T> {
             && input_modulus == parameters.small_lwe().cipher_modulus_value()
             && size == parameters.blind_rotation_ggsw().size()
             && basis == parameters.blind_rotation_ggsw().basis()
-            && cipher_modulus == parameters.accumulator_glwe().cipher_modulus_value()
+            && cipher_modulus == parameters.cipher_modulus().explicit_value()
     }
 }
 
@@ -310,11 +310,14 @@ where
         let circuit_parameters = self.prepare_circuit_bootstrap(circuit_bootstrap)?;
         let parameters = self.context.parameters();
         let small_lwe_secret_key = LweSecretKey::generate(parameters.small_lwe(), rng);
-        let (glwe_secret_key, main_glwe_secret_key) = NttGlweSecretKey::generate_pair(
-            parameters.accumulator_glwe(),
-            self.context.table(),
+        let accumulator = parameters.blind_rotation_ggsw();
+        let glwe_secret_key = primus_glwe::GlweSecretKey::generate(
+            accumulator.glwe_size(),
+            accumulator.inner().secret_key_sampler(),
             rng,
         );
+        let main_glwe_secret_key =
+            NttGlweSecretKey::from_coeff_secret_key(&glwe_secret_key, self.context.table());
         let client_key = ClientKey::new(
             small_lwe_secret_key,
             glwe_secret_key,

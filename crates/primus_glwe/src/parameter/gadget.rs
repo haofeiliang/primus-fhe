@@ -24,7 +24,7 @@ where
     M: RingContext<T>,
 {
     size: GadgetSize,
-    inner: Arc<GlweParametersInner<T, M>>,
+    pub(super) inner: Arc<GlweParametersInner<T, M>>,
     /// Decompose basis for `Q`.
     basis: ApproxSignedBasis<T>,
 }

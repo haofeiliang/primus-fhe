@@ -15,6 +15,7 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
     let mut rng = StdRng::seed_from_u64(0x5041_4444_4544);
     for t in [3u32, 4, 5] {
         let modulus = NativeModulus::new();
+        let codec = RoundedCodec::new(t, modulus);
         let lwe = LweParameters::new(
             LweDimension::new(4),
             t,
@@ -36,9 +37,8 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
             None,
         );
         let parameters = TfheParameters::try_new(
-            lwe,
-            glwe,
-            bsk,
+            lwe.into_inner(),
+            primus_glwe::GgswParameters::try_with_basis(&glwe, bsk).unwrap(),
             ApproxSignedBasis::new(None, DecompositionBaseLog::new(8), None),
             PbsOrder::BootstrapKeyswitch,
         )
@@ -52,19 +52,15 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
             ),
             PbsOrder::BootstrapKeyswitch,
         );
-        let encryptor = parameters.encryptor(&key).unwrap();
-        let decryptor = parameters.decryptor(&key).unwrap();
+        let encryptor = parameters.encryptor(&key, &codec).unwrap();
+        let decryptor = parameters.decryptor(&key, &codec).unwrap();
         let domain_len = t.div_ceil(2);
         let default = parameters
-            .lookup_table_compiler()
+            .lookup_table_compiler(&codec)
+            .unwrap()
             .compile_slice(&vec![t - 1; domain_len as usize])
             .unwrap();
-        assert_eq!(
-            parameters
-                .input_plaintext_codec()
-                .decode_value(default.polynomial().as_ref()[0]),
-            t - 1,
-        );
+        assert_eq!(codec.decode_value(default.polynomial().as_ref()[0]), t - 1,);
         let input = encryptor.encrypt_padded(domain_len - 1, &mut rng).unwrap();
         assert_eq!(decryptor.decrypt(input.as_view()).unwrap(), domain_len - 1);
         assert_eq!(
@@ -73,7 +69,8 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
         );
         let output_codec = RoundedCodec::new(8, NativeModulus::new());
         let compiler = parameters
-            .lookup_table_compiler()
+            .lookup_table_compiler(&codec)
+            .unwrap()
             .try_with_output_codec(&output_codec)
             .unwrap();
         let values: Vec<_> = (0..domain_len).map(|m| 7 - m).collect();

@@ -52,6 +52,8 @@ GLWE 布局优先使用已有的 [size 类型](../../crates/primus_lattice/src/s
 
 这些类型检查组合长度及展平长度溢出，不检查实际存储，也不验证 basis、表或噪声。各资源的布局在拥有它的构造或绑定边界建立；数值内核依赖调用方提供正确的几何尺寸和表示。NTRU 中一个 Ntru 占 N 个值，一个 Nlev/Ngsw 占 L*N 个值；使用运算参数/basis，在准备存储时建立批次长度。Nlev 与 Ngsw 虽然布局相同，但加密相位和合法乘积不同。
 
+LWE 密钥生成接收 `LweParametersInner`，它保存维数、模数与预计算采样器，不含编码。普通 `LweParameters` 再绑定 Rounded codec，通过 `inner()` / `into_inner()` 提供采样状态。GLWE TFHE 使用 core 与 GGSW 参数构造，随后在客户端/程序编译器绑定 codec，详见[参数归属表](tfhe-parameters-and-boundaries.md)。
+
 ## 遍历数学对象
 
 分块代表一个完整多项式或密文时使用语义迭代器。`new(data, object_len)` 接受的是**存储元素数**，不是维数、层数或字节数。可变版本以 `IterMut` 结尾，子结构方法有 `_mut` 版本。标量权重、索引以及没有对应对象类型的批次，仍使用普通 slice iterator 或 `chunks_exact(_mut)`。

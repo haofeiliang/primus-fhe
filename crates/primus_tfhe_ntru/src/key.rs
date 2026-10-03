@@ -72,7 +72,7 @@ impl<T: FheUint> ClientKey<T> {
         self.check_compatible(parameters)?;
         Ok(crate::LwePublicKey::generate(
             self.external_lwe_secret_key().as_view(),
-            parameters.external_lwe(),
+            (parameters.external_lwe()).inner(),
             rng,
         ))
     }

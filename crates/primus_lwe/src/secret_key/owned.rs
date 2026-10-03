@@ -2,14 +2,14 @@ use primus_integer::{FheUint, Size};
 use primus_reduce::RingContext;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-use crate::{LweParameters, SecretKeyDistr};
+use crate::{LweParametersInner, SecretKeyDistr};
 
 use super::LweSecretKeyRef;
 
 /// Represents a secret key for the Learning with Errors (LWE) cryptographic scheme.
 ///
 /// Secret coefficients are erased when the key (including each clone) is dropped.
-/// Message operations use [`LweParameters`] for encoding and sampling; use
+/// Message operations use [`crate::LweParameters`] for encoding and sampling; use
 /// [`Self::as_view`] to borrow the coefficients for single-ciphertext raw operations.
 /// Batch operations, including raw encoded encryption and phase decryption,
 /// require this owned key, ensuring that reused single-ciphertext operations
@@ -96,7 +96,7 @@ impl<T: FheUint> LweSecretKey<T> {
 
     /// Generates a new [`LweSecretKey<T>`] with random values.
     #[inline]
-    pub fn generate<R, M>(params: &LweParameters<T, M>, rng: &mut R) -> Self
+    pub fn generate<R, M>(params: &LweParametersInner<T, M>, rng: &mut R) -> Self
     where
         R: rand::Rng + rand::CryptoRng,
         M: RingContext<T>,

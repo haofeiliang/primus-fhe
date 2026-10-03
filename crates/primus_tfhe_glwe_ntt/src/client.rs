@@ -1,7 +1,9 @@
 //! External LWE client constructors for the bound TFHE context.
 
+use primus_encoding::RoundedCodec;
 use primus_integer::FheUint;
 use primus_lwe::LwePublicKey;
+use primus_modulus::BarrettModulus;
 use primus_ntt::MonomialNttTable;
 
 use crate::{ClientError, ClientKey, Decryptor, Encryptor, TfheClientError, TfheContext};
@@ -15,8 +17,9 @@ where
     pub fn encryptor<'a>(
         &'a self,
         client_key: &'a ClientKey<T>,
+        codec: &'a RoundedCodec<T, BarrettModulus<T>>,
     ) -> Result<Encryptor<'a, T>, TfheClientError> {
-        self.parameters().encryptor(client_key)
+        self.parameters().encryptor(client_key, codec)
     }
 
     /// Checks an external LWE public key and creates its encryptor.
@@ -24,15 +27,17 @@ where
     pub fn public_encryptor<'a>(
         &'a self,
         public_key: &'a LwePublicKey<T>,
+        codec: &'a RoundedCodec<T, BarrettModulus<T>>,
     ) -> Result<Encryptor<'a, T, &'a LwePublicKey<T>>, ClientError> {
-        self.parameters().public_encryptor(public_key)
+        self.parameters().public_encryptor(public_key, codec)
     }
 
     /// Creates a decryptor after checking the family client key.
     pub fn decryptor<'a>(
         &'a self,
         client_key: &'a ClientKey<T>,
+        codec: &'a RoundedCodec<T, BarrettModulus<T>>,
     ) -> Result<Decryptor<'a, T>, TfheClientError> {
-        self.parameters().decryptor(client_key)
+        self.parameters().decryptor(client_key, codec)
     }
 }

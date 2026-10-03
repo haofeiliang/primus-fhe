@@ -52,6 +52,8 @@ Use the existing [size descriptors](../../crates/primus_lattice/src/size.rs) for
 
 Descriptors check composed lengths and flattened-length overflow. They do not inspect storage or validate basis, tables or noise. Establish each resource's layout at its owning construction or binding boundary; numerical kernels rely on caller geometry and representation. For NTRU, one Ntru occupies N values and one Nlev/Ngsw occupies L*N; use the operation's parameters/basis and establish batch lengths where storage is prepared. Nlev and Ngsw have the same flat shape but different encrypted phases and valid products.
 
+LWE key generation takes `LweParametersInner`, which owns dimension, modulus and prepared samplers without encoding. Ordinary `LweParameters` adds a Rounded codec and exposes `inner()` / `into_inner()`. GLWE TFHE builds from the core and GGSW parameters, then binds codecs at clients/program compilers; see the [parameter ownership map](tfhe-parameters-and-boundaries.md).
+
 ## Traverse mathematical objects
 
 Use semantic iterators when a chunk is one complete polynomial or ciphertext. Their `new(data, object_len)` arguments are **stored element counts**, not dimensions, levels or bytes. Mutable variants end in `IterMut`; child methods have an `_mut` variant. Scalar weights, indices and batches without a matching object type still use ordinary slice iteration or `chunks_exact(_mut)`.

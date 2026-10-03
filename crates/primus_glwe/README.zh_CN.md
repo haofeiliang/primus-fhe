@@ -7,6 +7,8 @@
 
 单模数 GLWE 密钥和运算，分别提供 NTT 与原生环面 Fourier 表示。下文 `k` 为 GLWE 维数，`N` 为多项式长度。
 
+`GlweParameters::try_from_glev(&gadget, codec)` 为已有 gadget 域绑定普通 `ScaledCodec`，共享预计算采样状态并检查 codec 模数，不保留或复制 gadget basis。
+
 ## 密钥与表示
 
 `GlweParameters::try_new` 对布局、固定尺度编码和采样错误返回 `GlweParameterError`，包括固定重量超过完整 kN 密钥长度。`GlweParametersInner::try_new` 不持有布局，只检查模数/采样。对应 `new` 构造器在非法参数下 panic；变换可用性及噪声/安全预算仍需另外验证。 `GlweParameterError::SecretKey` 以 `SecretKeySamplerError` 保留采样配置、重量或模数适配的具体原因；`Noise` 保留 `GaussianError`。

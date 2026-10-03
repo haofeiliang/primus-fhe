@@ -5,10 +5,11 @@
 //! 1. Check mathematical choices with [`TfheParameters::try_from_config`].
 //! 2. Create a [`TfheContext`] and paired [`ClientKey`]/[`ServerKey`] with
 //!    [`TfheContext::try_generate_keys`]; `None` selects ordinary PBS material.
-//! 3. Bind [`Encryptor`], [`Decryptor`] and [`Evaluator`] from that context.
-//! 4. Create a compiler with [`TfheParameters::lookup_table_compiler`] and call
+//! 3. Choose a Rounded message codec; bind [`Encryptor`] and [`Decryptor`] with it,
+//!    and create an [`Evaluator`] from the context.
+//! 4. Pass the input codec to [`TfheParameters::lookup_table_compiler`] and call
 //!    [`LookupTableCompiler::compile_fn`]. Reuse [`Evaluator::apply_lookup_table_to`]
-//!    with caller-owned LWE output storage. Default outputs retain the parameter
+//!    with caller-owned LWE output storage. Default outputs retain the input codec's
 //!    plaintext modulus and use [`Decryptor::decrypt`].
 //!    [`LookupTableCompiler::try_with_output_codec`] selects another output encoding.
 //!    Decode [`Decryptor::decrypt_phase`] with that output codec.

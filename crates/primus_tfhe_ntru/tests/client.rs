@@ -106,8 +106,9 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
         SecretKeyDistr::UniformBinary,
         0.7,
     );
-    let foreign_secret = LweSecretKey::generate(&foreign_params, &mut rng);
-    let foreign = LwePublicKey::generate(foreign_secret.as_view(), &foreign_params, &mut rng);
+    let foreign_secret = LweSecretKey::generate(foreign_params.inner(), &mut rng);
+    let foreign =
+        LwePublicKey::generate(foreign_secret.as_view(), foreign_params.inner(), &mut rng);
     assert_eq!(
         params.public_encryptor(&foreign).err(),
         Some(ClientError::PublicKeyModulusMismatch)
@@ -119,8 +120,8 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
         SecretKeyDistr::UniformBinary,
         0.7,
     );
-    let full_secret = LweSecretKey::generate(&full_params, &mut rng);
-    let full = LwePublicKey::generate(full_secret.as_view(), &full_params, &mut rng);
+    let full_secret = LweSecretKey::generate(full_params.inner(), &mut rng);
+    let full = LwePublicKey::generate(full_secret.as_view(), full_params.inner(), &mut rng);
     assert_eq!(
         params.public_encryptor(&full).err(),
         Some(ClientError::KeyDimensionMismatch {

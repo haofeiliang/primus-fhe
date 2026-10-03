@@ -1,30 +1,31 @@
+use primus_encoding::RoundedCodec;
 use primus_integer::FheUint;
 use primus_reduce::RingContext;
-use primus_tfhe::LookupTableCompiler;
+use primus_tfhe::{LookupTableCompiler, LookupTableError};
 
 use crate::TfheParameters;
 
-impl<T, M> TfheParameters<T, M>
-where
-    T: FheUint,
-    M: RingContext<T>,
-{
-    /// Returns a [`LookupTableCompiler`] using the parameter codec for outputs.
+impl<T: FheUint, M: RingContext<T>> TfheParameters<T, M> {
+    /// Creates a program compiler with explicit input encoding and matching outputs.
     ///
-    /// The compiler owns its encoding state and can compile multiple programs.
-    /// Default outputs belong to `0..t_in` and are decoded with the client's
-    /// `decrypt`. Use [`LookupTableCompiler::try_with_output_codec`] to choose a
-    /// different output plaintext modulus; its ciphertext modulus must equal
-    /// the accumulator modulus. Decode such outputs with that codec and the
-    /// client's `decrypt_phase`.
-    #[must_use]
-    pub fn lookup_table_compiler(&self) -> LookupTableCompiler<T, M, M> {
+    /// The input codec must use the key's ciphertext modulus. The compiler owns
+    /// its encoding state; program capacity is checked when compiling. Use
+    /// [`LookupTableCompiler::try_with_output_codec`] for a different output
+    /// message space, and decode with that output codec under the same secret.
+    pub fn lookup_table_compiler(
+        &self,
+        input_codec: &RoundedCodec<T, M>,
+    ) -> Result<LookupTableCompiler<T, M, M>, LookupTableError> {
+        if input_codec.ciphertext_modulus().explicit_value()
+            != self.cipher_modulus().explicit_value()
+        {
+            return Err(LookupTableError::InputModulusMismatch);
+        }
         LookupTableCompiler::try_new(
-            self.accumulator_glwe().poly_length(),
-            self.input_plaintext_codec(),
-            self.accumulator_glwe().cipher_modulus(),
-            self.input_plaintext_codec(),
+            self.blind_rotation_ggsw().poly_length(),
+            input_codec,
+            self.cipher_modulus(),
+            input_codec,
         )
-        .expect("TFHE input and accumulator moduli must match")
     }
 }

@@ -1,6 +1,9 @@
 /// Errors shared by external LWE client construction and operations.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ClientError {
+    /// The selected message codec belongs to another ciphertext domain.
+    #[error("message codec ciphertext modulus mismatch")]
+    CodecModulusMismatch,
     /// The key has the wrong external LWE dimension.
     #[error("key LWE dimension mismatch: expected {expected}, got {actual}")]
     KeyDimensionMismatch {

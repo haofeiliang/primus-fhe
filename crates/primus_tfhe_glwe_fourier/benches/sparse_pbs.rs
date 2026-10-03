@@ -15,7 +15,9 @@ use primus_tfhe_test_support::parameters::glwe;
 use rand::{SeedableRng, rngs::StdRng};
 
 fn backend<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str, order: PbsOrder) {
-    let parameters = glwe::diagnostic(NativeModulus::<T>::new(), order, 8);
+    let parameters = glwe::diagnostic(NativeModulus::<T>::new(), order);
+    let input_codec =
+        primus_encoding::RoundedCodec::new(T::as_from(8u32), parameters.cipher_modulus());
     let name = format!(
         "glwe/{backend}/u{}/fixed_weight/n728_h32_N1024/{order:?}",
         T::BITS
@@ -48,13 +50,14 @@ fn backend<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str, 
             });
             let mut rng = StdRng::seed_from_u64(43);
             let input = context
-                .encryptor(client)
+                .encryptor(client, &input_codec)
                 .unwrap()
                 .encrypt_padded(T::ONE, &mut rng)
                 .unwrap();
             let lut = context
                 .parameters()
-                .lookup_table_compiler()
+                .lookup_table_compiler(&input_codec)
+                .unwrap()
                 .compile_fn(|m| T::as_from((m + 1) % 4))
                 .unwrap();
             let mut evaluator = context.evaluator(server).unwrap();
@@ -63,7 +66,7 @@ fn backend<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str, 
                 evaluator.apply_lookup_table_to(input.as_view(), &lut, output.as_mut_view());
                 assert_eq!(
                     context
-                        .decryptor(client)
+                        .decryptor(client, &input_codec)
                         .unwrap()
                         .decrypt(output.as_view())
                         .unwrap(),

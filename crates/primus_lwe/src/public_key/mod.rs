@@ -9,7 +9,9 @@ use primus_lattice::LweDimension;
 use primus_lattice::lwe::Lwe;
 use primus_reduce::RingContext;
 
-use crate::{LweCiphertext, LweParameters, LweSecretKeyRef, PlaintextEmbedding};
+use crate::{
+    LweCiphertext, LweParameters, LweParametersInner, LweSecretKeyRef, PlaintextEmbedding,
+};
 
 // A full row block consumes whole random words for any ciphertext tile count.
 const ROWS_PER_BLOCK: usize = 16;
@@ -60,7 +62,7 @@ impl<T: FheUint> LwePublicKey<T> {
     ///
     /// Borrows encoded or signed coefficients without copying the secret.
     /// Only the dimension and modulus identity are retained from
-    /// `params`; the plaintext codec and samplers remain caller-owned.
+    /// `params`; the samplers remain caller-owned. No message codec is needed.
     ///
     /// # Correctness
     ///
@@ -75,7 +77,7 @@ impl<T: FheUint> LwePublicKey<T> {
     #[must_use]
     pub fn generate<M, R>(
         secret_key: LweSecretKeyRef<'_, T>,
-        params: &LweParameters<T, M>,
+        params: &LweParametersInner<T, M>,
         rng: &mut R,
     ) -> Self
     where

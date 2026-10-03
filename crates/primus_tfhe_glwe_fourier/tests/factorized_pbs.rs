@@ -37,21 +37,27 @@ fn context<T: TorusFftValue, Table: FftTable>(
     };
     TfheContext::from_parameters(
         TfheParameters::try_new(
-            LweParameters::new(LweDimension::new(DIM), t, modulus, distribution, 0.7),
-            // Multiple masks and a different KS output dimension protect component reuse.
-            GlweParameters::new(
-                GlweDimension::new(2),
-                N,
-                t,
-                modulus,
-                SecretKeyDistr::UniformBinary,
-                0.7,
-            ),
-            ApproxSignedBasis::new(
-                None,
-                DecompositionBaseLog::new(8),
-                Some(DecompositionLevelCount::new(3)),
-            ),
+            (LweParameters::new(LweDimension::new(DIM), t, modulus, distribution, 0.7))
+                .into_inner(),
+            primus_glwe::GgswParameters::try_with_basis(
+                &(
+                    // Multiple masks and a different KS output dimension protect component reuse.
+                    GlweParameters::new(
+                        GlweDimension::new(2),
+                        N,
+                        t,
+                        modulus,
+                        SecretKeyDistr::UniformBinary,
+                        0.7,
+                    )
+                ),
+                ApproxSignedBasis::new(
+                    None,
+                    DecompositionBaseLog::new(8),
+                    Some(DecompositionLevelCount::new(3)),
+                ),
+            )
+            .unwrap(),
             ApproxSignedBasis::new(
                 None,
                 DecompositionBaseLog::new(4),
@@ -73,13 +79,19 @@ fn value(m: usize, i: usize) -> usize {
 
 fn check_complete<T: TorusFftValue, Table: FftTable>(order: PbsOrder, ternary: bool) {
     let context = context::<T, Table>(order, ternary);
+    let input_codec = primus_encoding::RoundedCodec::new(
+        T::as_from(15u32),
+        context.parameters().cipher_modulus(),
+    );
     let mut rng = StdRng::seed_from_u64(0x4235_3201);
     let (client, server) = context.try_generate_keys(None, &mut rng).unwrap();
     let modulus = NativeModulus::new();
     // Nonbinary t_out=10 has an even actual delta for both u32 and u64.
     let codec = ScaledCodec::new(T::as_from(10usize), modulus);
     let lut = context
-        .compile_factorized_lookup_table_fn(&codec, DOMAIN, 3, |m, i| T::as_from(value(m, i)))
+        .compile_factorized_lookup_table_fn(&input_codec, &codec, DOMAIN, 3, |m, i| {
+            T::as_from(value(m, i))
+        })
         .unwrap();
     assert_eq!(
         (
@@ -99,8 +111,8 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(order: PbsOrder, ternary: b
         let mut evaluator = primus_tfhe_glwe_fourier::FactorizedEvaluator::from_bootstrapper(
             context.evaluator(server).unwrap(),
         );
-        let encryptor = context.encryptor(&client).unwrap();
-        let decryptor = context.decryptor(&client).unwrap();
+        let encryptor = context.encryptor(&client, &input_codec).unwrap();
+        let decryptor = context.decryptor(&client, &input_codec).unwrap();
         let dimension = context.parameters().external_lwe_dimension().get();
         assert_eq!(
             dimension,
@@ -179,25 +191,26 @@ fn factorized_pbs_preserves_both_external_secrets_and_integer_scales() {
 #[test]
 fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
     let context = context::<u32, RustFftTable>(PbsOrder::BootstrapKeyswitch, false);
+    let input_codec = primus_encoding::RoundedCodec::new(15, context.parameters().cipher_modulus());
     let mut rng = StdRng::seed_from_u64(0x4235_3202);
     let (client, server) = context.try_generate_keys(None, &mut rng).unwrap();
     let codec = ScaledCodec::new(8u32, NativeModulus::new());
-    let compile = |context: &TfheContext<u32, RustFftTable>| {
+    let compile = || {
         FactorizedLookupTable::try_new(
             DOMAIN,
             PolyLength::new(N),
             3,
-            context.parameters().input_plaintext_codec(),
+            &input_codec,
             &codec,
             |m, i| ((m + i) % 8) as u32,
         )
         .unwrap()
     };
-    let lut = FourierFactorizedLookupTable::new(&context, compile(&context));
+    let lut = FourierFactorizedLookupTable::new(&context, compile());
     let other = self::context::<u32, RustFftTable>(PbsOrder::BootstrapKeyswitch, false);
-    let foreign = FourierFactorizedLookupTable::new(&other, compile(&other));
+    let foreign = FourierFactorizedLookupTable::new(&other, compile());
     let input = context
-        .encryptor(&client)
+        .encryptor(&client, &input_codec)
         .unwrap()
         .encrypt_padded(3, &mut rng)
         .unwrap();
@@ -223,7 +236,7 @@ fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
         );
         assert_eq!(outputs, before);
     }
-    let decryptor = context.decryptor(&client).unwrap();
+    let decryptor = context.decryptor(&client, &input_codec).unwrap();
     let outputs = evaluator.apply_lookup_table(input.as_view(), &lut);
     assert_eq!(
         outputs
@@ -233,7 +246,7 @@ fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
         [3, 4, 5]
     );
     let single = context
-        .compile_factorized_lookup_table_fn(&codec, DOMAIN, 1, |m, _| m as u32)
+        .compile_factorized_lookup_table_fn(&input_codec, &codec, DOMAIN, 1, |m, _| m as u32)
         .unwrap();
     assert_eq!(
         codec.decode_value(
@@ -246,21 +259,16 @@ fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
 
     let native = NativeModulus::new();
     let explicit = BarrettModulus::new(97);
-    let mut mismatched = Vec::new();
-    for (n, t) in [(N / 2, 15), (N, 8)] {
-        mismatched.push(
-            FactorizedLookupTable::try_new(
-                2,
-                PolyLength::new(n),
-                1,
-                &RoundedCodec::new(t, native),
-                &codec,
-                |_, _| 0,
-            )
-            .unwrap(),
-        );
-    }
-    mismatched.push(
+    let mismatched = [
+        FactorizedLookupTable::try_new(
+            2,
+            PolyLength::new(N / 2),
+            1,
+            &RoundedCodec::new(15, native),
+            &codec,
+            |_, _| 0,
+        )
+        .unwrap(),
         FactorizedLookupTable::try_new(
             2,
             PolyLength::new(N),
@@ -270,18 +278,16 @@ fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
             |_, _| 0,
         )
         .unwrap(),
-    );
-    mismatched.push(
         FactorizedLookupTable::try_new(
             2,
             PolyLength::new(N),
             1,
-            context.parameters().input_plaintext_codec(),
+            &input_codec,
             &ScaledCodec::new(8, explicit),
             |_, _| 0,
         )
         .unwrap(),
-    );
+    ];
     for raw in mismatched {
         assert!(
             catch_unwind(AssertUnwindSafe(|| FourierFactorizedLookupTable::new(
@@ -292,6 +298,7 @@ fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
     }
     assert!(matches!(
         context.compile_factorized_lookup_table_fn(
+            &input_codec,
             &ScaledCodec::new(8, BarrettModulus::new(97)),
             DOMAIN,
             1,
@@ -301,6 +308,7 @@ fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
     ));
     assert!(matches!(
         context.compile_factorized_lookup_table_fn(
+            &input_codec,
             &ScaledCodec::new(3, NativeModulus::new()),
             DOMAIN,
             1,

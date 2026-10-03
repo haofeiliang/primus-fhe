@@ -8,7 +8,7 @@ use primus_lattice::{
     GadgetSize,
     ggsw::{NttGgsw, NttGgswIter},
 };
-use primus_lwe::{LweParameters, LweSecretKey};
+use primus_lwe::{LweParametersInner, LweSecretKey};
 use primus_ntt::NttTable;
 use primus_reduce::{FieldContext, Modulus, RingContext};
 use primus_tfhe::rotation::RotationModulusSwitch;
@@ -94,7 +94,7 @@ impl<T: FheUint, LM: Modulus<ValueT = T>> NttGlweBootstrappingKey<T, LM> {
     /// or a rotation domain `2N` not representable by the input coefficient type.
     pub fn generate_ntt<M, Table, R>(
         input_secret_key: &LweSecretKey<T>,
-        input_parameters: &LweParameters<T, LM>,
+        input_parameters: &LweParametersInner<T, LM>,
         output_secret_key: &NttGlweSecretKey<T>,
         parameters: &GlevParameters<T, M>,
         ntt: &Table,

@@ -161,6 +161,20 @@ impl<T: FheUint> FactorizedLookupTable<T> {
             )
     }
 
+    /// Checks the execution domain without fixing a plaintext modulus.
+    /// Raw ciphertexts must use the input encoding selected by this program.
+    #[must_use]
+    pub fn is_compatible_with_ciphertext_domain(
+        &self,
+        poly_length: PolyLength,
+        input_ciphertext_modulus: Option<T>,
+        coefficient_modulus: Option<T>,
+    ) -> bool {
+        self.common_polynomial.as_ref().len() == poly_length.get()
+            && self.encoding.input_ciphertext_modulus == input_ciphertext_modulus
+            && self.encoding.coefficient_modulus == coefficient_modulus
+    }
+
     /// Returns V in coefficient form, ready to initialize blind rotation.
     #[must_use]
     pub fn common_polynomial(&self) -> &PolynomialOwned<T> {

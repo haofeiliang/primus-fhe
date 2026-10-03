@@ -42,9 +42,8 @@ fn parameters(pbs_order: PbsOrder) -> TfheParameters<u32> {
         Some(DecompositionLevelCount::new(3)),
     );
     TfheParameters::try_new(
-        lwe,
-        glwe,
-        bootstrapping,
+        lwe.into_inner(),
+        primus_glwe::GgswParameters::try_with_basis(&glwe, bootstrapping).unwrap(),
         ApproxSignedBasis::new(
             Some(MODULUS),
             DecompositionBaseLog::new(4),
@@ -62,11 +61,19 @@ fn boolean_factories_support_truth_tables_and_reused_output_in_both_orders() {
         let modulus = BarrettModulus::new(MODULUS);
         let table = U32NttTable::new(PolyLength::new(POLY_LENGTH), modulus).unwrap();
         let context = TfheContext::try_new(parameters(order), table).unwrap();
+        let input_codec =
+            primus_encoding::RoundedCodec::new(4, context.parameters().cipher_modulus());
         let mut rng = StdRng::seed_from_u64(42);
         let (client_key, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
-        let encryptor = context.boolean_encryptor(&client_key).unwrap();
-        let decryptor = context.boolean_decryptor(&client_key).unwrap();
-        let mut evaluator = context.boolean_evaluator(&server_key).unwrap();
+        let encryptor = context
+            .boolean_encryptor(&client_key, &input_codec)
+            .unwrap();
+        let decryptor = context
+            .boolean_decryptor(&client_key, &input_codec)
+            .unwrap();
+        let mut evaluator = context
+            .boolean_evaluator(&server_key, &input_codec)
+            .unwrap();
         let inputs = [
             encryptor.encrypt(false, &mut rng).unwrap(),
             encryptor.encrypt(true, &mut rng).unwrap(),
@@ -82,7 +89,7 @@ fn boolean_factories_support_truth_tables_and_reused_output_in_both_orders() {
         );
 
         let invalid = context
-            .encryptor(&client_key)
+            .encryptor(&client_key, &input_codec)
             .unwrap()
             .encrypt(2, &mut rng)
             .unwrap();

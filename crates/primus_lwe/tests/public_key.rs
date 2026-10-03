@@ -33,14 +33,14 @@ fn check_equations<T: FheUint, M: RingContext<T>>(modulus: M) {
             noise_sigma,
         );
         let mut key_rng = StdRng::seed_from_u64(0x1_ee10);
-        let secret = LweSecretKey::generate(&params, &mut key_rng);
+        let secret = LweSecretKey::generate(params.inner(), &mut key_rng);
         let signed_secret: Vec<i128> = secret
             .as_ref()
             .iter()
             .map(|&s| centered(s.as_into(), q))
             .collect();
         let mut rng = StdRng::seed_from_u64(0x1_ee11);
-        let key = LwePublicKey::generate(secret.as_view(), &params, &mut rng);
+        let key = LwePublicKey::generate(secret.as_view(), params.inner(), &mut rng);
         assert_eq!(key.dimension(), LweDimension::new(dimension));
         assert_eq!(key.as_slice().len(), dimension * (dimension + 1));
 
@@ -175,9 +175,9 @@ fn check_messages<M: RingContext<u32>>(modulus: M) {
         3.2,
     );
     let mut rng = StdRng::seed_from_u64(0x1_ee13);
-    let secret = LweSecretKey::generate(&params, &mut rng);
-    let key = LwePublicKey::generate(secret.as_view(), &params, &mut rng);
-    let output_secret = LweSecretKey::generate(&output_params, &mut rng);
+    let secret = LweSecretKey::generate(params.inner(), &mut rng);
+    let key = LwePublicKey::generate(secret.as_view(), params.inner(), &mut rng);
+    let output_secret = LweSecretKey::generate(output_params.inner(), &mut rng);
     let switching = LweKeySwitchingKey::generate(
         secret.as_view(),
         &output_secret,
@@ -229,8 +229,8 @@ fn public_key_boundaries_reject_before_writing_or_sampling() {
         0.7,
     );
     let mut rng = StdRng::seed_from_u64(0x1_ee14);
-    let secret = LweSecretKey::generate(&params, &mut rng);
-    let key = LwePublicKey::generate(secret.as_view(), &params, &mut rng);
+    let secret = LweSecretKey::generate(params.inner(), &mut rng);
+    let key = LwePublicKey::generate(secret.as_view(), params.inner(), &mut rng);
     for (length, dimension, q, message) in [
         (0, 3, 97, 0),
         (3, 3, 97, 0),
@@ -271,7 +271,7 @@ fn public_key_boundaries_reject_before_writing_or_sampling() {
         let mut expected_rng = StdRng::seed_from_u64(seed);
         assert!(
             catch_unwind(AssertUnwindSafe(|| {
-                LwePublicKey::generate(wrong_secret.as_view(), &params, &mut rng)
+                LwePublicKey::generate(wrong_secret.as_view(), params.inner(), &mut rng)
             }))
             .is_err()
         );
@@ -299,10 +299,10 @@ fn public_key_generation_matches_encoded_and_signed_secrets() {
         let mut encoded_rng = StdRng::seed_from_u64(0x5055_424c_4943);
         let public = LwePublicKey::generate(
             primus_lwe::LweSecretKeyRef::Signed(&signed),
-            &params,
+            params.inner(),
             &mut signed_rng,
         );
-        let expected = LwePublicKey::generate(encoded.as_view(), &params, &mut encoded_rng);
+        let expected = LwePublicKey::generate(encoded.as_view(), params.inner(), &mut encoded_rng);
         assert_eq!(public.as_slice(), expected.as_slice());
         assert_eq!(signed_rng.next_u64(), encoded_rng.next_u64());
     }

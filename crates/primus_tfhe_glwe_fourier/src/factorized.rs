@@ -1,10 +1,12 @@
 //! Prepared factorized MVB programs and their reusable evaluator.
 
-use primus_encoding::ScaledCodec;
+use primus_encoding::{RoundedCodec, ScaledCodec};
 use primus_fft::{Complex64, FftTable, TorusFftValue};
 use primus_lattice::glwe::FourierGlwe;
 use primus_lwe::LweCiphertext;
+use primus_modulus::NativeModulus;
 use primus_poly::{FourierPolynomial, FourierPolynomialIter, PolynomialIter, PolynomialOwned};
+use primus_reduce::Modulus;
 use primus_tfhe::FactorizedLookupTable;
 
 use crate::{Evaluator, LookupTableError, Lwe, ServerKey, TfheContext, TfheEvaluationError};
@@ -33,7 +35,7 @@ impl<'a, T: TorusFftValue, Table: FftTable> FourierFactorizedLookupTable<'a, T, 
     /// # Panics
     ///
     /// Panics before transforming unless T is u32/u64 and the program's ring
-    /// length, input encoding and coefficient modulus match this context.
+    /// length, input modulus and coefficient modulus match this context.
     #[must_use]
     pub fn new(context: &'a TfheContext<T, Table>, lookup_table: FactorizedLookupTable<T>) -> Self {
         assert!(
@@ -41,15 +43,14 @@ impl<'a, T: TorusFftValue, Table: FftTable> FourierFactorizedLookupTable<'a, T, 
             "Fourier MVB requires u32 or u64 coefficients"
         );
         let parameters = context.parameters();
-        let n = parameters.accumulator_glwe().poly_length().get();
+        let n = parameters.blind_rotation_ggsw().poly_length().get();
         assert!(
-            lookup_table.is_compatible(
-                parameters.accumulator_glwe().poly_length(),
-                parameters.plain_modulus_value(),
+            lookup_table.is_compatible_with_ciphertext_domain(
+                parameters.blind_rotation_ggsw().poly_length(),
                 parameters.small_lwe().cipher_modulus_value(),
-                parameters.accumulator_glwe().cipher_modulus_value(),
+                parameters.cipher_modulus().explicit_value(),
             ),
-            "MVB lookup-table encoding or polynomial length mismatch"
+            "MVB lookup-table modulus or polynomial length mismatch"
         );
         let input_domain_len = lookup_table.input_domain_len();
         let output_plaintext_modulus = lookup_table.output_plaintext_modulus();
@@ -125,12 +126,12 @@ impl<'a, T: TorusFftValue, Table: FftTable> FactorizedEvaluator<'a, T, Table> {
         Self {
             evaluator,
             shared_rotation: FourierGlwe::zero(
-                context.parameters().accumulator_glwe().glwe_len() / 2,
+                context.parameters().blind_rotation_ggsw().glwe_len() / 2,
             ),
             product: FourierPolynomial::zero(
                 context
                     .parameters()
-                    .accumulator_glwe()
+                    .blind_rotation_ggsw()
                     .poly_length()
                     .fourier_poly_len(),
             ),
@@ -218,7 +219,7 @@ impl<'a, T: TorusFftValue, Table: FftTable> FactorizedEvaluator<'a, T, Table> {
             "MVB output ciphertext dimension mismatch"
         );
 
-        let glwe = parameters.accumulator_glwe();
+        let glwe = parameters.blind_rotation_ggsw();
         let n = glwe.poly_length().get();
         let engine = &mut evaluator.engine;
         engine.blind_rotate(input, &lookup_table.common_polynomial, 1);
@@ -261,7 +262,8 @@ where
 
     /// Compiles and Fourier-prepares a Native even-scale MVB program.
     ///
-    /// `input_domain_len` selects a nonempty prefix of the parameter codec's
+    /// Both codecs must use the context ciphertext modulus.
+    /// `input_domain_len` selects a nonempty prefix of the input codec's
     /// front half; `output_count` is positive and unpadded. The output codec
     /// must use Native and have an even scale, including for nonbinary plaintext
     /// moduli. Callback order follows [`FactorizedLookupTable::try_new`].
@@ -272,6 +274,7 @@ where
     /// Panics for coefficient types other than u32/u64.
     pub fn compile_factorized_lookup_table_fn<OM, F>(
         &self,
+        input_codec: &RoundedCodec<T, NativeModulus<T>>,
         output_codec: &ScaledCodec<T, OM>,
         input_domain_len: usize,
         output_count: usize,
@@ -281,16 +284,21 @@ where
         OM: primus_reduce::RingContext<T>,
         F: Fn(usize, usize) -> T,
     {
+        if input_codec.ciphertext_modulus().explicit_value()
+            != self.parameters().cipher_modulus().explicit_value()
+        {
+            return Err(LookupTableError::InputModulusMismatch);
+        }
         if output_codec.ciphertext_modulus().explicit_value()
-            != self.parameters().accumulator_glwe().cipher_modulus_value()
+            != self.parameters().cipher_modulus().explicit_value()
         {
             return Err(LookupTableError::OutputModulusMismatch);
         }
         let lookup_table = FactorizedLookupTable::try_new(
             input_domain_len,
-            self.parameters().accumulator_glwe().poly_length(),
+            self.parameters().blind_rotation_ggsw().poly_length(),
             output_count,
-            self.parameters().input_plaintext_codec(),
+            input_codec,
             output_codec,
             function,
         )?;

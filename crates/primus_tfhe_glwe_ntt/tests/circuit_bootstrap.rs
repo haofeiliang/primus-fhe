@@ -3,10 +3,10 @@
 
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
-use primus_glwe::{GgswParameters, GlweParameters, NttGlweSecretKey, SecretKeyDistr};
+use primus_glwe::{GgswParameters, NttGlweSecretKey, SecretKeyDistr};
 use primus_lattice::ggsw::NttGgsw;
 use primus_lattice::{GlweDimension, LweDimension};
-use primus_lwe::{LweCiphertext, LweParameters};
+use primus_lwe::{LweCiphertext, LweParametersInner};
 use primus_modulus::BarrettModulus;
 use primus_ntt::U64NttTable;
 use primus_poly::Polynomial;
@@ -14,7 +14,8 @@ use primus_test_allocations as allocations;
 use primus_tfhe::ProgrammableBootstrap as _;
 use primus_tfhe_glwe_ntt::{
     CircuitBootstrapConfig, CircuitBootstrapEvaluator, CircuitBootstrapParameters,
-    DecompositionConfig, KeyGenerator, PbsOrder, TfheContext, TfheEvaluationError, TfheParameters,
+    DecompositionConfig, KeyGenerator, PbsOrder, TfheConfig, TfheContext, TfheEvaluationError,
+    TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -24,44 +25,29 @@ static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocato
 const POLY_LENGTH: usize = 64;
 const MODULUS: u64 = 1_125_899_906_826_241;
 
-fn parameters(
-    order: PbsOrder,
-    plain_modulus: u64,
-    distribution: SecretKeyDistr,
-) -> TfheParameters<u64> {
-    let modulus = BarrettModulus::new(MODULUS);
-    let lwe = LweParameters::new(
-        LweDimension::new(4),
-        plain_modulus,
-        modulus,
-        distribution,
-        0.7,
-    );
-    let glwe = GlweParameters::new(
-        GlweDimension::new(1),
-        POLY_LENGTH,
-        plain_modulus,
-        modulus,
-        SecretKeyDistr::UniformBinary,
-        0.7,
-    );
-    // Full decomposition keeps the phase error below the third output level.
-    let bootstrapping = ApproxSignedBasis::new(
-        glwe.cipher_modulus_value(),
-        DecompositionBaseLog::new(10),
-        None,
-    );
-    TfheParameters::try_new(
-        lwe,
-        glwe,
-        bootstrapping,
-        ApproxSignedBasis::new(
-            Some(MODULUS),
-            DecompositionBaseLog::new(10),
-            Some(DecompositionLevelCount::new(4)),
+fn parameters(order: PbsOrder, distribution: SecretKeyDistr) -> TfheParameters<u64> {
+    TfheParameters::try_from_config(TfheConfig {
+        small_lwe: LweParametersInner::new(
+            LweDimension::new(4),
+            BarrettModulus::new(MODULUS),
+            distribution,
+            0.7,
         ),
-        order,
-    )
+        accumulator_dimension: GlweDimension::new(1),
+        poly_length: POLY_LENGTH,
+        accumulator_secret_key_distr: SecretKeyDistr::UniformBinary,
+        accumulator_noise_standard_deviation: 0.7,
+        // Full decomposition keeps phase error below the third output level.
+        blind_rotation: DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(10),
+            level_count: None,
+        },
+        key_switching: DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(10),
+            level_count: Some(DecompositionLevelCount::new(4)),
+        },
+        pbs_order: order,
+    })
     .unwrap()
 }
 
@@ -94,9 +80,11 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
             false,
         ),
     ] {
-        let tfhe = parameters(order, 4, distribution);
+        let tfhe = parameters(order, distribution);
         let modulus = BarrettModulus::new(MODULUS);
         let context = TfheContext::<_, U64NttTable>::try_from_parameters(tfhe).unwrap();
+        let input_codec =
+            primus_encoding::RoundedCodec::new(4, context.parameters().cipher_modulus());
         let mut rng = StdRng::seed_from_u64(0x0050_4154_4348_4544 ^ order as u64);
         // Three gadget levels exercise multiple scales and an internal padding slot.
         let levels = 3;
@@ -129,7 +117,7 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
         let server_key = sparse_server_key.as_ref().unwrap_or(&classic_server_key);
         if sparse && order == PbsOrder::KeyswitchBootstrap {
             assert!(matches!(
-                context.circuit_bootstrap_evaluator(server_key),
+                context.circuit_bootstrap_evaluator(server_key, &input_codec),
                 Err(TfheEvaluationError::MissingCircuitBootstrapKey)
             ));
         }
@@ -139,8 +127,16 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
         let circuit_parameters = circuit_key.parameters();
         let main_secret =
             NttGlweSecretKey::from_coeff_secret_key(client_key.glwe_secret_key(), context.table());
-        let glwe = context.parameters().accumulator_glwe();
-        let mut accumulator_client = context.accumulator_client(&client_key).unwrap();
+        let glwe = context.parameters().blind_rotation_ggsw();
+        let mut accumulator_client = context
+            .accumulator_client(
+                &client_key,
+                primus_encoding::ScaledCodec::new(
+                    input_codec.plaintext_modulus(),
+                    input_codec.ciphertext_modulus(),
+                ),
+            )
+            .unwrap();
         let messages = [0u64, 1].map(|offset| {
             (0..POLY_LENGTH)
                 .map(|i| (i as u64 + offset) % 4)
@@ -158,11 +154,12 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
             output
         });
 
-        let encryptor = context.encryptor(&client_key).unwrap();
+        let encryptor = context.encryptor(&client_key, &input_codec).unwrap();
         // The same CBS-enabled server key also supports ordinary PBS.
         let identity = context
             .parameters()
-            .lookup_table_compiler()
+            .lookup_table_compiler(&input_codec)
+            .unwrap()
             .compile_fn(|message| message as u64)
             .unwrap();
         let input = encryptor.encrypt_padded(1u64, &mut rng).unwrap();
@@ -172,16 +169,39 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
             .apply_lookup_table(input.as_view(), &identity);
         assert_eq!(
             context
-                .decryptor(&client_key)
+                .decryptor(&client_key, &input_codec)
                 .unwrap()
                 .decrypt(output.as_view())
                 .unwrap(),
             1
         );
 
+        // Compile another input encoding with the same CBS keys and consume its
+        // gadget output. Accumulator messages keep their independently chosen t=4.
+        if !sparse && order == PbsOrder::BootstrapKeyswitch {
+            let other_codec =
+                primus_encoding::RoundedCodec::new(8, context.parameters().cipher_modulus());
+            let input = context
+                .encryptor(&client_key, &other_codec)
+                .unwrap()
+                .encrypt_padded(1, &mut rng)
+                .unwrap();
+            let mut other = CircuitBootstrapEvaluator::try_from_parts(
+                &context,
+                server_key,
+                circuit_parameters,
+                circuit_key,
+                &other_codec,
+            )
+            .unwrap();
+            let control = other.circuit_bootstrap(input.as_view());
+            let mut selected = context.allocate_accumulator_ciphertext();
+            other.cmux_to(&control, &choices[0], &choices[1], &mut selected);
+            assert_eq!(accumulator_client.decrypt(&selected), messages[1]);
+        }
+
         let other_context = TfheContext::<_, U64NttTable>::try_from_parameters(parameters(
             order,
-            4,
             SecretKeyDistr::UniformBinary,
         ))
         .unwrap();
@@ -190,28 +210,17 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
                 &other_context,
                 server_key,
                 circuit_parameters,
-                circuit_key
+                circuit_key,
+                &input_codec
             ),
             Err(TfheEvaluationError::IncompatibleServerKey)
         ));
-        let other_input_domain = CircuitBootstrapParameters::try_new(
-            &parameters(order, 8, distribution),
-            circuit_parameters.output_basis().clone(),
-            circuit_parameters.trace().clone(),
-            circuit_parameters.scheme_switch().clone(),
-        )
-        .unwrap();
-        assert!(matches!(
-            CircuitBootstrapEvaluator::try_from_parts(
-                &context,
-                server_key,
-                &other_input_domain,
-                circuit_key,
-            ),
-            Err(TfheEvaluationError::IncompatibleCircuitBootstrapParameters)
-        ));
         let incompatible_trace = GgswParameters::with_glwe_params(
-            context.parameters().accumulator_glwe(),
+            &primus_glwe::GlweParameters::try_from_glev(
+                context.parameters().blind_rotation_ggsw(),
+                primus_encoding::ScaledCodec::new(4, modulus),
+            )
+            .unwrap(),
             DecompositionBaseLog::new(9),
             None,
         );
@@ -227,7 +236,8 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
                 &context,
                 server_key,
                 &incompatible_parameters,
-                circuit_key
+                circuit_key,
+                &input_codec
             ),
             Err(TfheEvaluationError::IncompatibleCircuitBootstrapKey)
         ));
@@ -246,7 +256,9 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
         .unwrap();
         let (circuit_parameters, mut evaluator) = match order {
             PbsOrder::BootstrapKeyswitch => (circuit_parameters, {
-                let mut standalone = context.circuit_bootstrap_evaluator(server_key).unwrap();
+                let mut standalone = context
+                    .circuit_bootstrap_evaluator(server_key, &input_codec)
+                    .unwrap();
                 assert!(standalone.bootstrapper_mut().is_none());
                 // Exercise the missing-KS form before recovery fills that workspace.
                 let mut control = standalone.allocate_output();
@@ -264,7 +276,7 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
                     allocation.count > 0,
                     "standalone BK recovery explicitly creates return-KS scratch"
                 );
-                CircuitBootstrapEvaluator::try_from_bootstrapper(pbs).unwrap()
+                CircuitBootstrapEvaluator::try_from_bootstrapper(pbs, &input_codec).unwrap()
             }),
             PbsOrder::KeyswitchBootstrap => (
                 &alternate,
@@ -273,6 +285,7 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
                     server_key,
                     &alternate,
                     circuit_key,
+                    &input_codec,
                 )
                 .unwrap(),
             ),
@@ -319,7 +332,7 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
             });
             assert_eq!(
                 context
-                    .decryptor(&client_key)
+                    .decryptor(&client_key, &input_codec)
                     .unwrap()
                     .decrypt(output.as_view())
                     .unwrap(),

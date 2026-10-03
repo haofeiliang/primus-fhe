@@ -6,7 +6,7 @@ use primus_glwe::GlweDimension;
 use primus_glwe::SecretKeyDistr;
 use primus_integer::FheUint;
 use primus_lwe::LweDimension;
-use primus_lwe::LweParameters;
+use primus_lwe::LweParametersInner;
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_reduce::RingContext;
 use primus_tfhe::{DecompositionBaseLog, DecompositionLevelCount};
@@ -28,7 +28,7 @@ fn decomposition(log_basis: u32, level_count: Option<usize>) -> DecompositionCon
 ///
 /// # Panics
 /// Panics unless the coefficient word is u32 or u64. The family parameter
-/// constructor also rejects invalid geometry, plaintext modulus or basis/modulus combinations.
+/// constructor also rejects invalid geometry or basis/modulus combinations.
 #[must_use]
 pub fn ntt_pbs<T: FheUint>(
     order: PbsOrder,
@@ -47,7 +47,7 @@ pub fn ntt_pbs<T: FheUint>(
 ///
 /// # Panics
 /// Panics unless the coefficient word is u32 or u64. The family parameter
-/// constructor also rejects invalid geometry, plaintext modulus or basis/modulus combinations.
+/// constructor also rejects invalid geometry or basis/modulus combinations.
 #[must_use]
 pub fn fourier_pbs<T: FheUint>(
     order: PbsOrder,
@@ -80,9 +80,8 @@ where
         .explicit_value()
         .map_or(2f64.powi(T::BITS as i32), |q| q.as_into());
     TfheParameters::try_from_config(TfheConfig {
-        small_lwe: LweParameters::new(
+        small_lwe: LweParametersInner::new(
             LweDimension::new(workload.lwe_dimension),
-            T::as_from(workload.plaintext_modulus),
             modulus,
             SecretKeyDistr::UniformBinary,
             q * LWE_STD_DEV,
@@ -103,7 +102,7 @@ where
 ///
 /// # Panics
 /// Panics unless the coefficient word is u32 or u64. The family parameter
-/// constructor also rejects invalid geometry, plaintext modulus or basis/modulus combinations.
+/// constructor also rejects invalid geometry or basis/modulus combinations.
 #[must_use]
 pub fn circuit<T, M>(modulus: M, order: PbsOrder, secret: SecretKeyDistr) -> TfheParameters<T, M>
 where
@@ -115,9 +114,8 @@ where
         .explicit_value()
         .map_or(2f64.powi(T::BITS as i32), |q| q.as_into());
     TfheParameters::try_from_config(TfheConfig {
-        small_lwe: LweParameters::new(
+        small_lwe: LweParametersInner::new(
             LweDimension::new(DIMENSION),
-            T::as_from(4u32),
             modulus,
             secret,
             q * LWE_STD_DEV,
@@ -157,9 +155,9 @@ pub fn cbs<T: FheUint>() -> CircuitBootstrapConfig {
 ///
 /// # Panics
 /// Panics unless the coefficient word is u32 or u64. The family parameter
-/// constructor also rejects invalid geometry, plaintext modulus or basis/modulus combinations.
+/// constructor also rejects invalid geometry or basis/modulus combinations.
 #[must_use]
-pub fn diagnostic<T, M>(modulus: M, order: PbsOrder, plaintext_modulus: u32) -> TfheParameters<T, M>
+pub fn diagnostic<T, M>(modulus: M, order: PbsOrder) -> TfheParameters<T, M>
 where
     T: FheUint,
     M: RingContext<T>,
@@ -169,9 +167,8 @@ where
         .explicit_value()
         .map_or(2f64.powi(T::BITS as i32), |q| q.as_into());
     TfheParameters::try_from_config(TfheConfig {
-        small_lwe: LweParameters::new(
+        small_lwe: LweParametersInner::new(
             LweDimension::new(SPARSE_DIMENSION),
-            T::as_from(plaintext_modulus),
             modulus,
             SecretKeyDistr::fixed_hamming_weight_binary(SPARSE_DIMENSION, SPARSE_WEIGHT),
             3.2 * q / 16384.0,

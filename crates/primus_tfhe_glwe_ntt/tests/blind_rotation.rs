@@ -84,7 +84,7 @@ fn functional_bootstrapping_key_blind_rotates() {
     let mut gadget_workspace = NttGlweGadgetEncryptWorkspace::new(ggsw_params.size());
     let key = NttGlweBootstrappingKey::generate_ntt(
         &input_secret_key,
-        &lwe_params,
+        lwe_params.inner(),
         &output_secret_key,
         &ggsw_params,
         &ntt,

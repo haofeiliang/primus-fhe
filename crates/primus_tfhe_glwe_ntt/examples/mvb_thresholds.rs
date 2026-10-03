@@ -5,10 +5,11 @@
 //! Arithmetic profiles: guides/development/tfhe-parameters.md (not security presets).
 
 use primus_decompose::DecompositionBaseLog;
+use primus_encoding::RoundedCodec;
 use primus_encoding::ScaledCodec;
 use primus_glwe::SecretKeyDistr;
 use primus_lattice::{GlweDimension, LweDimension};
-use primus_lwe::LweParameters;
+use primus_lwe::LweParametersInner;
 use primus_modulus::BarrettModulus;
 use primus_ntt::U32NttTable as Table;
 use primus_tfhe_glwe_ntt::{
@@ -27,7 +28,7 @@ const ORDER: PbsOrder = PbsOrder::KeyswitchBootstrap;
 const DOMAIN: usize = 64;
 const OUTPUTS: usize = 17;
 
-// Public parameters: n=728, N=1024, t=128; LWE and GLWE share the ciphertext modulus.
+// Key parameters: n=728, N=1024; LWE and GLWE share the ciphertext modulus.
 // Noise sigmas below are in coefficient units; these are arithmetic examples, not security presets.
 fn parameters() -> TfheParameters<Word> {
     // NTT requires a prime admitting a 2N-th root, rather than a power-of-two modulus.
@@ -50,9 +51,8 @@ fn parameters() -> TfheParameters<Word> {
     };
 
     TfheParameters::try_from_config(TfheConfig {
-        small_lwe: LweParameters::new(
+        small_lwe: LweParametersInner::new(
             LweDimension::new(728),
-            128, // Padded inputs occupy 0..64.
             modulus,
             SecretKeyDistr::fixed_hamming_weight_binary(728, 32),
             3.2 * q / 16384.0,
@@ -75,6 +75,9 @@ fn main() {
     // Numeric 0/1 flags use Scaled encoding, distinct from the Boolean gate codec.
     let output_codec = ScaledCodec::new(2, context.parameters().small_lwe().cipher_modulus());
 
+    // Public message encoding is independent of the evaluation keys.
+    let input_codec = RoundedCodec::new(128 as Word, context.parameters().cipher_modulus());
+
     // Client: keep client_key and the decryptor; give server_key to the server.
     let mut rng = StdRng::seed_from_u64(42);
     let client_key = ClientKey::generate(context.parameters(), &mut rng);
@@ -85,16 +88,20 @@ fn main() {
         generator.try_generate_server_key(&client_key, None, &mut rng)
     }
     .unwrap();
-    let encryptor = context.encryptor(&client_key).unwrap();
-    let decryptor = context.decryptor(&client_key).unwrap();
+    let encryptor = context.encryptor(&client_key, &input_codec).unwrap();
+    let decryptor = context.decryptor(&client_key, &input_codec).unwrap();
     let mut input = context.allocate_lwe_ciphertext();
     let mut flags = vec![0; OUTPUTS];
 
     // Server: MVB keeps all 64 inputs; interleaving 17 outputs fits only 32 here.
     let program = context
-        .compile_factorized_lookup_table_fn(&output_codec, DOMAIN, OUTPUTS, |score, i| {
-            Word::from(score >= thresholds[i])
-        })
+        .compile_factorized_lookup_table_fn(
+            &input_codec,
+            &output_codec,
+            DOMAIN,
+            OUTPUTS,
+            |score, i| Word::from(score >= thresholds[i]),
+        )
         .unwrap();
     let mut evaluator = context.factorized_evaluator(&server_key).unwrap();
     let mut outputs = vec![context.allocate_lwe_ciphertext(); OUTPUTS];

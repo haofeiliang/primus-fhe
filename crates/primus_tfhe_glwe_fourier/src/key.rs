@@ -300,8 +300,14 @@ where
         let circuit_parameters = self.prepare_circuit_bootstrap(circuit_bootstrap)?;
         let parameters = self.context.parameters();
         let small_lwe_secret_key = LweSecretKey::generate(parameters.small_lwe(), rng);
-        let (glwe_secret_key, main_glwe_secret_key) =
-            FourierGlweSecretKey::generate_pair(parameters.accumulator_glwe(), &mut self.fft, rng);
+        let accumulator = parameters.blind_rotation_ggsw();
+        let glwe_secret_key = primus_glwe::GlweSecretKey::generate(
+            accumulator.glwe_size(),
+            accumulator.inner().secret_key_sampler(),
+            rng,
+        );
+        let main_glwe_secret_key =
+            FourierGlweSecretKey::from_coeff_secret_key(&glwe_secret_key, &mut self.fft);
         let client_key = ClientKey::new(
             small_lwe_secret_key,
             glwe_secret_key,

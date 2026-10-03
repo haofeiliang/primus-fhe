@@ -1,11 +1,13 @@
 //! Prepared factorized MVB programs and their reusable evaluator.
 
-use primus_encoding::ScaledCodec;
+use primus_encoding::{RoundedCodec, ScaledCodec};
 use primus_glwe::NttGlweCiphertext;
 use primus_integer::FheUint;
 use primus_lwe::LweCiphertext;
+use primus_modulus::BarrettModulus;
 use primus_ntt::MonomialNttTable;
 use primus_poly::{NttPolynomialIter, PolynomialIterMut, PolynomialOwned};
+use primus_reduce::Modulus;
 use primus_tfhe::FactorizedLookupTable;
 
 use crate::{Evaluator, LookupTableError, Lwe, ServerKey, TfheContext, TfheEvaluationError};
@@ -37,19 +39,18 @@ where
     ///
     /// # Panics
     ///
-    /// Panics if the program's polynomial length or input/coefficient encoding
+    /// Panics if the program's polynomial length or input/coefficient modulus
     /// does not match the context, before performing any transforms.
     #[must_use]
     pub fn new(context: &'a TfheContext<T, Table>, lookup_table: FactorizedLookupTable<T>) -> Self {
         let parameters = context.parameters();
         assert!(
-            lookup_table.is_compatible(
-                parameters.accumulator_glwe().poly_length(),
-                parameters.plain_modulus_value(),
+            lookup_table.is_compatible_with_ciphertext_domain(
+                parameters.blind_rotation_ggsw().poly_length(),
                 parameters.small_lwe().cipher_modulus_value(),
-                parameters.accumulator_glwe().cipher_modulus_value(),
+                parameters.cipher_modulus().explicit_value(),
             ),
-            "MVB lookup-table encoding or polynomial length mismatch"
+            "MVB lookup-table modulus or polynomial length mismatch"
         );
         let input_domain_len = lookup_table.input_domain_len();
         let output_plaintext_modulus = lookup_table.output_plaintext_modulus();
@@ -130,7 +131,7 @@ where
         Self {
             evaluator,
             shared_rotation: NttGlweCiphertext::zero(
-                context.parameters().accumulator_glwe().glwe_len(),
+                context.parameters().blind_rotation_ggsw().glwe_len(),
             ),
         }
     }
@@ -182,7 +183,7 @@ where
     /// LUT interval. Each difference factor amplifies the shared BR noise; BK
     /// adds a separate KS error after multiplication. These conditions are not
     /// checked. Decode each output phase with the unsigned Scaled codec used at
-    /// compilation, not necessarily the parameter codec. See
+    /// compilation, which is independent of the input codec. See
     /// [`FactorizedLookupTable`] for the factorization and noise bound.
     ///
     /// # Panics
@@ -220,7 +221,7 @@ where
             "MVB output ciphertext dimension mismatch"
         );
 
-        let glwe = parameters.accumulator_glwe();
+        let glwe = parameters.blind_rotation_ggsw();
         let table = evaluator.engine.context.table();
         let engine = &mut evaluator.engine;
         engine.blind_rotate(input, &lookup_table.common_polynomial, 1);
@@ -261,7 +262,8 @@ where
 
     /// Compiles and NTT-prepares a fixed-scale MVB program for this context.
     ///
-    /// `input_domain_len` selects a nonempty prefix of the parameter codec's
+    /// Both codecs must use the context ciphertext modulus.
+    /// `input_domain_len` selects a nonempty prefix of the input codec's
     /// front half; `output_count` is positive and unpadded. Outputs must lie in
     /// the supplied Scaled codec's domain, and its ciphertext modulus must match
     /// the accumulator. Callback order and noise requirements follow
@@ -269,6 +271,7 @@ where
     /// may only be evaluated by its [`FactorizedEvaluator`].
     pub fn compile_factorized_lookup_table_fn<OM, F>(
         &self,
+        input_codec: &RoundedCodec<T, BarrettModulus<T>>,
         output_codec: &ScaledCodec<T, OM>,
         input_domain_len: usize,
         output_count: usize,
@@ -278,16 +281,21 @@ where
         OM: primus_reduce::RingContext<T>,
         F: Fn(usize, usize) -> T,
     {
+        if input_codec.ciphertext_modulus().explicit_value()
+            != self.parameters().cipher_modulus().explicit_value()
+        {
+            return Err(LookupTableError::InputModulusMismatch);
+        }
         if output_codec.ciphertext_modulus().explicit_value()
-            != self.parameters().accumulator_glwe().cipher_modulus_value()
+            != self.parameters().cipher_modulus().explicit_value()
         {
             return Err(LookupTableError::OutputModulusMismatch);
         }
         let lookup_table = FactorizedLookupTable::try_new(
             input_domain_len,
-            self.parameters().accumulator_glwe().poly_length(),
+            self.parameters().blind_rotation_ggsw().poly_length(),
             output_count,
-            self.parameters().input_plaintext_codec(),
+            input_codec,
             output_codec,
             function,
         )?;

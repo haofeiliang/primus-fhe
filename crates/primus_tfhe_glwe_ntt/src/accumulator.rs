@@ -1,18 +1,20 @@
 //! Client-side coefficient-ring encryption and decryption under the accumulator secret.
 
 use primus_data::{Data, DataMut};
-use primus_glwe::{GlweCiphertext, NttGlweSecretKey};
+use primus_encoding::ScaledCodec;
+use primus_glwe::{GlweCiphertext, GlweParameters, NttGlweSecretKey};
 use primus_integer::FheUint;
+use primus_modulus::BarrettModulus;
 use primus_ntt::MonomialNttTable;
 use primus_poly::Polynomial;
 use zeroize::Zeroizing;
 
-use crate::{ClientKey, TfheContext, TfheKeyError};
+use crate::{ClientKey, TfheClientError, TfheContext};
 
 /// Prepared private-key client for the accumulator GLWE domain.
 ///
 /// Owns one transformed accumulator secret and an N-coefficient scratch buffer,
-/// both erased on drop. Borrows the context fixing its table, modulus and codec.
+/// both erased on drop. The selected codec is bound once to the context's ring domain.
 /// Ciphertexts use coefficient representation and the accumulator secret, which
 /// differs from the external LWE domain used by [`crate::Encryptor`].
 /// Construction prepares all buffers; `encrypt_to` and `decrypt_to` do not allocate.
@@ -22,6 +24,7 @@ where
     Table: MonomialNttTable<ValueT = T>,
 {
     context: &'a TfheContext<T, Table>,
+    parameters: GlweParameters<T, BarrettModulus<T>>,
     secret: NttGlweSecretKey<T>,
     scratch: Zeroizing<Vec<T>>,
 }
@@ -31,7 +34,8 @@ where
     T: FheUint,
     Table: MonomialNttTable<ValueT = T>,
 {
-    /// Validates the client key and prepares its accumulator representation once.
+    /// Binds the client key and a Scaled message codec to the accumulator domain.
+    /// Rejects an incompatible key or codec modulus before preparing the secret.
     ///
     /// # Correctness
     /// Imported accumulator coefficients must have unsigned magnitude below q;
@@ -39,15 +43,19 @@ where
     pub fn try_new(
         context: &'a TfheContext<T, Table>,
         client_key: &ClientKey<T>,
-    ) -> Result<Self, TfheKeyError> {
+        codec: ScaledCodec<T, BarrettModulus<T>>,
+    ) -> Result<Self, TfheClientError> {
         client_key.check_compatible(context.parameters())?;
-        let parameters = context.parameters().accumulator_glwe();
+        let parameters =
+            GlweParameters::try_from_glev(context.parameters().blind_rotation_ggsw(), codec)
+                .map_err(|_| crate::ClientError::CodecModulusMismatch)?;
         let secret =
             NttGlweSecretKey::from_coeff_secret_key(client_key.glwe_secret_key(), context.table());
         Ok(Self {
             context,
             secret,
             scratch: Zeroizing::new(vec![T::ZERO; parameters.poly_length().get()]),
+            parameters,
         })
     }
 
@@ -65,7 +73,7 @@ where
     }
 
     /// Encrypts exactly N unsigned coefficients in `[0, t)` under the accumulator secret.
-    /// Uses the accumulator plaintext codec and overwrites the entire coefficient output.
+    /// Uses this client's Scaled codec and overwrites the entire coefficient output.
     ///
     /// # Panics
     /// Panics before sampling if message or output length is wrong. A plaintext-range
@@ -76,7 +84,7 @@ where
         R: rand::Rng + rand::CryptoRng,
         S: DataMut<Elem = T>,
     {
-        let parameters = self.context.parameters().accumulator_glwe();
+        let parameters = &self.parameters;
         self.secret.encrypt_coeff_to(
             &Polynomial::new(message),
             output,
@@ -93,7 +101,7 @@ where
         let n = self
             .context
             .parameters()
-            .accumulator_glwe()
+            .blind_rotation_ggsw()
             .poly_length()
             .get();
         let mut output = vec![T::ZERO; n];
@@ -111,7 +119,7 @@ where
     /// # Panics
     /// Panics before output writes if ciphertext or plaintext length is wrong.
     pub fn decrypt_to<S: Data<Elem = T>>(&mut self, input: &GlweCiphertext<S>, output: &mut [T]) {
-        let parameters = self.context.parameters().accumulator_glwe();
+        let parameters = &self.parameters;
         self.secret.decrypt_coeff_to(
             input,
             &mut Polynomial::new(output),
@@ -132,7 +140,8 @@ where
     pub fn accumulator_client(
         &self,
         client_key: &ClientKey<T>,
-    ) -> Result<crate::AccumulatorClient<'_, T, Table>, crate::TfheKeyError> {
-        crate::AccumulatorClient::try_new(self, client_key)
+        codec: ScaledCodec<T, BarrettModulus<T>>,
+    ) -> Result<crate::AccumulatorClient<'_, T, Table>, crate::TfheClientError> {
+        crate::AccumulatorClient::try_new(self, client_key, codec)
     }
 }

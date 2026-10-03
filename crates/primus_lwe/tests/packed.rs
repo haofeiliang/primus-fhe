@@ -20,7 +20,7 @@ fn packed_capacity_is_enforced() {
         0.7,
     );
     let mut rng = StdRng::seed_from_u64(0x1_ee03);
-    let key = LweSecretKey::generate(&params, &mut rng);
+    let key = LweSecretKey::generate(params.inner(), &mut rng);
 
     // The first disallowed body reuses a mask up to sign.
     let count = params.dimension().ciphertext_len();

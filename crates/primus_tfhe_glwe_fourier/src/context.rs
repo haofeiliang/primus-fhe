@@ -28,13 +28,13 @@ where
     /// keys must use the bound table. The parameters already establish its length.
     #[must_use]
     pub fn from_parameters(parameters: TfheParameters<T>) -> Self {
-        let table = Table::new(parameters.accumulator_glwe().poly_length());
+        let table = Table::new(parameters.blind_rotation_ggsw().poly_length());
         Self { parameters, table }
     }
 
     /// Binds TFHE parameters to a compatible Fourier table.
     pub fn try_new(parameters: TfheParameters<T>, table: Table) -> Result<Self, TfheContextError> {
-        let expected = parameters.accumulator_glwe().poly_length().get();
+        let expected = parameters.blind_rotation_ggsw().poly_length().get();
         let actual = table.poly_length().get();
         if actual != expected {
             return Err(TfheContextError::PolynomialLengthMismatch { expected, actual });
@@ -74,7 +74,7 @@ where
     /// Requires only public parameters; this does not encrypt a message.
     #[must_use]
     pub fn allocate_accumulator_ciphertext(&self) -> GlweCiphertext<Vec<T>> {
-        GlweCiphertext::zero(self.parameters.accumulator_glwe().glwe_len())
+        GlweCiphertext::zero(self.parameters.blind_rotation_ggsw().glwe_len())
     }
 
     /// Decomposes this context into its parameters and Fourier table.

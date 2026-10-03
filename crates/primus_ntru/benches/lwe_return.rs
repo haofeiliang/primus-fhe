@@ -56,7 +56,7 @@ fn source<T: FheUint, Q: RingContext<T>>(c: &mut Criterion, source: Q, name: &st
                             .collect(),
                         SecretKeyDistr::UniformTernary,
                     );
-                    let secret = LweSecretKey::generate(&parameters, &mut rng);
+                    let secret = LweSecretKey::generate(parameters.inner(), &mut rng);
                     let key = NtruLweKeySwitchingKey::generate(
                         &f,
                         source,

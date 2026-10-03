@@ -2,17 +2,15 @@
 
 use crate::TfheParameterError;
 use primus_decompose::{DecompositionConfig, primitive::ApproxSignedBasis};
-use primus_encoding::RoundedCodec;
 use primus_glwe::{GlweParametersInner, GlweSize};
 use primus_integer::FheUint;
 use primus_lattice::{GlweDimension, LweDimension};
+use primus_lwe::LweParametersInner;
+use primus_poly::PolyLength;
 use primus_reduce::RingContext;
 use std::sync::Arc;
 
-use crate::{
-    GgswParameters, GlevParameters, GlweKeySwitchingParameters, GlweParameters, LweParameters,
-    SecretKeyDistr,
-};
+use crate::{GgswParameters, GlevParameters, GlweKeySwitchingParameters, SecretKeyDistr};
 
 /// Execution order of programmable bootstrapping and key switching.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,16 +23,16 @@ pub enum PbsOrder {
     KeyswitchBootstrap,
 }
 
-/// GLWE-TFHE choices with one shared plaintext/ciphertext modulus domain.
+/// GLWE-TFHE key-generation choices with one ciphertext modulus domain.
 ///
-/// The accumulator inherits `t` and `q` from `small_lwe`; the padded key-switch
-/// target needs only `q`. Blind rotation and key switching use the accumulator noise,
+/// The accumulator inherits `q` from `small_lwe`. Message codecs are selected
+/// when constructing clients or compiling programs. BR and KS use accumulator noise,
 /// as in [`TfheParameters::try_new`].
 #[derive(Clone)]
 pub struct TfheConfig<T: FheUint, M: RingContext<T>> {
-    /// Small BR-control secret, dimension, shared moduli and its fresh LWE noise.
+    /// Small BR-control secret, dimension, ciphertext modulus and fresh LWE noise.
     /// This is the external domain only for [`PbsOrder::BootstrapKeyswitch`].
-    pub small_lwe: LweParameters<T, M>,
+    pub small_lwe: LweParametersInner<T, M>,
     /// Number of secret polynomials in the accumulator.
     pub accumulator_dimension: GlweDimension,
     /// Accumulator polynomial length `N`.
@@ -59,10 +57,14 @@ impl<T: FheUint, M: RingContext<T>> TfheParameters<T, M> {
     /// errors of [`Self::try_new`]. This does not validate a noise/security budget.
     pub fn try_from_config(config: TfheConfig<T, M>) -> Result<Self, TfheParameterError> {
         let modulus = config.small_lwe.cipher_modulus();
-        let accumulator = GlweParameters::try_new(
-            config.accumulator_dimension,
-            config.poly_length,
-            config.small_lwe.plain_modulus_value(),
+        let poly_length = PolyLength::try_new(config.poly_length).map_err(|_| {
+            TfheParameterError::AccumulatorLayout(
+                primus_lattice::GlweSizeError::InvalidPolynomialLength,
+            )
+        })?;
+        let size = GlweSize::try_new(config.accumulator_dimension, poly_length)
+            .map_err(TfheParameterError::AccumulatorLayout)?;
+        let inner = GlweParametersInner::try_new(
             modulus,
             config.accumulator_secret_key_distr,
             config.accumulator_noise_standard_deviation,
@@ -76,9 +78,10 @@ impl<T: FheUint, M: RingContext<T>> TfheParameters<T, M> {
             .key_switching
             .try_build(modulus.explicit_value())
             .map_err(|error| TfheParameterError::KeySwitchingParameters(error.into()))?;
+        let blind_rotation = GgswParameters::try_from_parts(size, Arc::new(inner), blind_rotation)
+            .map_err(TfheParameterError::BootstrappingParameters)?;
         Self::try_new(
             config.small_lwe,
-            accumulator,
             blind_rotation,
             key_switching,
             config.pbs_order,
@@ -86,19 +89,19 @@ impl<T: FheUint, M: RingContext<T>> TfheParameters<T, M> {
     }
 }
 
-/// Mathematical parameters for GLWE-based TFHE.
+/// Checked execution domains and sampling state for GLWE-based TFHE keys.
 ///
 /// This type is independent of the Fourier or NTT execution backend. A
-/// backend-specific context binds it to an FFT/NTT table and validates the
-/// table separately.
+/// backend-specific context binds it to an FFT/NTT table. No plaintext modulus
+/// or message codec is retained: the same keys can serve compatible programs
+/// with different encodings. Programs establish their own geometry and noise budget.
 #[derive(Clone)]
 pub struct TfheParameters<T, M>
 where
     T: FheUint,
     M: RingContext<T>,
 {
-    small_lwe: LweParameters<T, M>,
-    accumulator_glwe: GlweParameters<T, M>,
+    small_lwe: LweParametersInner<T, M>,
     blind_rotation_ggsw: GgswParameters<T, M>,
     glwe_key_switching: GlweKeySwitchingParameters<T, M>,
     pbs_order: PbsOrder,
@@ -109,8 +112,7 @@ where
     T: FheUint,
     M: RingContext<T>,
 {
-    /// Derives bootstrapping parameters and the padded GLWE key-switching layout
-    /// from one accumulator description.
+    /// Binds the small secret and blind-rotation gadget, deriving the padded KS target.
     ///
     /// Both gadget bases must belong to the accumulator modulus. Bootstrapping
     /// uses its layout, secret distribution and noise; key switching inherits
@@ -118,13 +120,12 @@ where
     ///
     /// # Errors
     ///
-    /// Returns an error for incompatible secrets, plaintext/ciphertext moduli,
+    /// Returns an error for incompatible secrets, ciphertext moduli,
     /// dimensions or decomposition bases, a rotation domain `2N` not representable
     /// by `T`, or a derived gadget layout overflow.
     pub fn try_new(
-        small_lwe: LweParameters<T, M>,
-        accumulator_glwe: GlweParameters<T, M>,
-        blind_rotation_basis: ApproxSignedBasis<T>,
+        small_lwe: LweParametersInner<T, M>,
+        blind_rotation_ggsw: GgswParameters<T, M>,
         key_switching_basis: ApproxSignedBasis<T>,
         pbs_order: PbsOrder,
     ) -> Result<Self, TfheParameterError> {
@@ -132,35 +133,29 @@ where
         if !distribution.is_binary() && !distribution.is_ternary() {
             return Err(TfheParameterError::UnsupportedInputLweSecretKey);
         }
-        if small_lwe.plain_modulus_value() != accumulator_glwe.plain_modulus_value() {
-            return Err(TfheParameterError::PlainModulusMismatch);
-        }
 
-        let capacity = LweDimension::from(accumulator_glwe.size());
+        let capacity = LweDimension::from(blind_rotation_ggsw.glwe_size());
         if small_lwe.dimension() > capacity {
             return Err(TfheParameterError::SmallLweDimensionExceedsGlweCapacity {
                 small_lwe_dimension: small_lwe.dimension().get(),
                 capacity: capacity.get(),
             });
         }
-        if small_lwe.cipher_modulus_value() != accumulator_glwe.cipher_modulus_value() {
+        if small_lwe.cipher_modulus_value() != blind_rotation_ggsw.cipher_modulus().explicit_value()
+        {
             return Err(TfheParameterError::CipherModulusMismatch);
         }
-        if T::try_from(accumulator_glwe.poly_length().get() * 2).is_err() {
+        if T::try_from(blind_rotation_ggsw.poly_length().get() * 2).is_err() {
             return Err(TfheParameterError::RotationDomainTooLarge);
         }
-        let blind_rotation_ggsw =
-            GgswParameters::try_with_basis(&accumulator_glwe, blind_rotation_basis)
-                .map_err(TfheParameterError::BootstrappingParameters)?;
         let glwe_key_switching = Self::derive_glwe_key_switching(
             small_lwe.dimension(),
             small_lwe.secret_key_distr(),
-            &accumulator_glwe,
+            &blind_rotation_ggsw,
             key_switching_basis,
         )?;
         Ok(Self {
             small_lwe,
-            accumulator_glwe,
             blind_rotation_ggsw,
             glwe_key_switching,
             pbs_order,
@@ -174,33 +169,33 @@ where
     fn derive_glwe_key_switching(
         small_lwe_dimension: LweDimension,
         small_lwe_distr: SecretKeyDistr,
-        accumulator_glwe: &GlweParameters<T, M>,
+        accumulator: &GgswParameters<T, M>,
         basis: ApproxSignedBasis<T>,
     ) -> Result<GlweKeySwitchingParameters<T, M>, TfheParameterError> {
         let output_dimension = small_lwe_dimension
             .get()
-            .div_ceil(accumulator_glwe.poly_length().get());
+            .div_ceil(accumulator.poly_length().get());
         let output_size = GlweSize::new(
             GlweDimension::new(output_dimension),
-            accumulator_glwe.poly_length(),
+            accumulator.poly_length(),
         );
         // These samplers were validated in the source parameters at the same q;
         // combine the small-secret distribution with the accumulator's KS noise.
         let inner = Arc::new(GlweParametersInner::new(
-            accumulator_glwe.cipher_modulus(),
+            accumulator.cipher_modulus(),
             small_lwe_distr,
-            accumulator_glwe.noise_distribution().standard_deviation(),
+            accumulator.noise_distribution().standard_deviation(),
         ));
         let output = GlevParameters::try_from_parts(output_size, inner, basis)
             .map_err(TfheParameterError::KeySwitchingParameters)?;
-        GlweKeySwitchingParameters::try_new(accumulator_glwe.dimension(), output)
+        GlweKeySwitchingParameters::try_new(accumulator.dimension(), output)
             .map_err(|error| TfheParameterError::KeySwitchingParameters(error.into()))
     }
 
     /// Returns the small-LWE parameters used by the bootstrapping key.
     #[must_use]
     #[inline]
-    pub fn small_lwe(&self) -> &LweParameters<T, M> {
+    pub fn small_lwe(&self) -> &LweParametersInner<T, M> {
         &self.small_lwe
     }
 
@@ -209,13 +204,6 @@ where
     #[inline]
     pub fn blind_rotation_ggsw(&self) -> &GgswParameters<T, M> {
         &self.blind_rotation_ggsw
-    }
-
-    /// Returns the GLWE accumulator parameters.
-    #[must_use]
-    #[inline]
-    pub fn accumulator_glwe(&self) -> &GlweParameters<T, M> {
-        &self.accumulator_glwe
     }
 
     /// Returns the GLWE key-switching parameters shared by both PBS orders.
@@ -238,24 +226,16 @@ where
     pub fn external_lwe_dimension(&self) -> LweDimension {
         match self.pbs_order() {
             PbsOrder::BootstrapKeyswitch => self.small_lwe.dimension(),
-            PbsOrder::KeyswitchBootstrap => LweDimension::from(self.accumulator_glwe.size()),
+            PbsOrder::KeyswitchBootstrap => {
+                LweDimension::from(self.blind_rotation_ggsw.glwe_size())
+            }
         }
     }
 
-    /// Returns the plaintext modulus shared by LWE ciphertexts and the GLWE
-    /// accumulator.
+    /// Returns the common LWE and accumulator ciphertext modulus.
     #[must_use]
     #[inline]
-    pub fn plain_modulus_value(&self) -> T {
-        self.small_lwe.plain_modulus_value()
-    }
-
-    /// Returns the rounded encoding shared by client inputs and LUT input domains.
-    /// LUT outputs may use a different codec; the accumulator's fixed-scale
-    /// GLWE codec does not determine the PBS input encoding.
-    #[must_use]
-    #[inline]
-    pub fn input_plaintext_codec(&self) -> &RoundedCodec<T, M> {
-        self.small_lwe.plaintext_codec()
+    pub fn cipher_modulus(&self) -> M {
+        self.small_lwe.cipher_modulus()
     }
 }

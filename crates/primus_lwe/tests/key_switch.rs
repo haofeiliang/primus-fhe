@@ -203,7 +203,7 @@ fn check_batch_sum<T: primus_integer::FheUint, M: RingContext<T>>(modulus: M) {
         SecretKeyDistr::UniformBinary,
         0.7,
     );
-    let output_key = LweSecretKey::generate(&params, &mut rng);
+    let output_key = LweSecretKey::generate(params.inner(), &mut rng);
     for log_basis in [2, 4] {
         let basis = ApproxSignedBasis::new(
             modulus.explicit_value(),

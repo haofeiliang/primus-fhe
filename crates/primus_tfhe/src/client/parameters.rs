@@ -40,25 +40,24 @@ impl<'a, T: FheUint, M: RingContext<T>> LweClientParameters<'a, T, M> {
         }
     }
 
-    /// Creates [`LweClientParameters`] with an alternate secret dimension and noise.
+    /// Binds an external dimension, message codec and prepared noise sampler.
     ///
-    /// Keeps the validated LWE codec and its derived mask sampler, and rejects a
-    /// noise sampler using another ciphertext modulus. GLWE KS→BR uses this
-    /// constructor for the extracted `kN` secret and accumulator noise instead
-    /// of the small-LWE dimension and noise. The caller selects the matching key
-    /// and remains responsible for the noise budget.
-    pub fn try_with_dimension_and_noise(
-        parameters: &'a LweParameters<T, M>,
+    /// Rejects noise using another ciphertext modulus. The family selects the
+    /// dimension and noise for its active external secret; the codec determines
+    /// the message space, independently of key generation. No sampler table is built.
+    pub fn try_from_parts(
         dimension: LweDimension,
+        codec: &'a RoundedCodec<T, M>,
         noise: &'a DiscreteGaussian<T>,
     ) -> Result<Self, ClientError> {
-        if noise.modulus_minus_one() != parameters.cipher_modulus_minus_one() {
+        if noise.modulus_minus_one() != codec.ciphertext_modulus().minus_one() {
             return Err(ClientError::NoiseModulusMismatch);
         }
         Ok(Self {
             dimension,
+            codec,
+            uniform: codec.ciphertext_modulus().uniform_distribution(),
             noise,
-            ..Self::new(parameters)
         })
     }
 

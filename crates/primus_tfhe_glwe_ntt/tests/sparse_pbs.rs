@@ -32,26 +32,30 @@ fn context(
 ) -> TfheContext<u32, U32NttTable> {
     let modulus = BarrettModulus::new(Q);
     let parameters = TfheParameters::try_new(
-        LweParameters::new(
+        (LweParameters::new(
             LweDimension::new(16),
             plaintext_modulus,
             modulus,
             SecretKeyDistr::fixed_hamming_weight_binary(16, weight),
             0.7,
-        ),
-        GlweParameters::new(
-            GlweDimension::new(1),
-            N,
-            plaintext_modulus,
-            modulus,
-            SecretKeyDistr::UniformBinary,
-            0.7,
-        ),
-        ApproxSignedBasis::new(
-            Some(Q),
-            DecompositionBaseLog::new(log_basis),
-            Some(DecompositionLevelCount::new(3)),
-        ),
+        ))
+        .into_inner(),
+        primus_glwe::GgswParameters::try_with_basis(
+            &(GlweParameters::new(
+                GlweDimension::new(1),
+                N,
+                plaintext_modulus,
+                modulus,
+                SecretKeyDistr::UniformBinary,
+                0.7,
+            )),
+            ApproxSignedBasis::new(
+                Some(Q),
+                DecompositionBaseLog::new(log_basis),
+                Some(DecompositionLevelCount::new(3)),
+            ),
+        )
+        .unwrap(),
         ApproxSignedBasis::new(Some(Q), DecompositionBaseLog::new(9), None),
         order,
     )
@@ -67,6 +71,8 @@ fn context(
 fn sparse_pbs_preserves_external_secret_and_interleaved_outputs_in_both_orders() {
     for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
         let context = context(order, 8, 4, 7);
+        let input_codec =
+            primus_encoding::RoundedCodec::new(8, context.parameters().cipher_modulus());
         let mut generator = KeyGenerator::new(&context);
         let mut rng = StdRng::seed_from_u64(0x5035_5042);
         let client = ClientKey::generate(context.parameters(), &mut rng);
@@ -87,13 +93,14 @@ fn sparse_pbs_preserves_external_secret_and_interleaved_outputs_in_both_orders()
                 N
             }
         );
-        let encryptor = context.encryptor(&client).unwrap();
-        let decryptor = context.decryptor(&client).unwrap();
+        let encryptor = context.encryptor(&client, &input_codec).unwrap();
+        let decryptor = context.decryptor(&client, &input_codec).unwrap();
         // A distinct output scale exercises P2.1 through both dispatch branches.
         let codec = RoundedCodec::new(16, BarrettModulus::new(Q));
         let compiler = context
             .parameters()
-            .lookup_table_compiler()
+            .lookup_table_compiler(&input_codec)
+            .unwrap()
             .try_with_output_codec(&codec)
             .unwrap();
         let function = |m: usize| (3 * m as u32 + 1) % 16;
@@ -179,15 +186,17 @@ fn centered_error(phase: u32, expected: u32) -> i64 {
 fn sparse_boolean_gates_chain_in_both_orders_without_allocating() {
     for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
         let context = context(order, 4, 4, 7);
+        let input_codec =
+            primus_encoding::RoundedCodec::new(4, context.parameters().cipher_modulus());
         let mut rng = StdRng::seed_from_u64(0xB303_0004);
         let client = ClientKey::generate(context.parameters(), &mut rng);
         let server = KeyGenerator::new(&context)
             .try_generate_sparse_server_key(&client, 3, 8, None, &mut rng)
             .unwrap();
-        let encryptor = context.boolean_encryptor(&client).unwrap();
-        let decryptor = context.boolean_decryptor(&client).unwrap();
-        let phase_decryptor = context.decryptor(&client).unwrap();
-        let mut evaluator = context.boolean_evaluator(&server).unwrap();
+        let encryptor = context.boolean_encryptor(&client, &input_codec).unwrap();
+        let decryptor = context.boolean_decryptor(&client, &input_codec).unwrap();
+        let phase_decryptor = context.decryptor(&client, &input_codec).unwrap();
+        let mut evaluator = context.boolean_evaluator(&server, &input_codec).unwrap();
         let mut inputs = [
             encryptor.encrypt(false, &mut rng).unwrap(),
             encryptor.encrypt(true, &mut rng).unwrap(),
@@ -198,7 +207,7 @@ fn sparse_boolean_gates_chain_in_both_orders_without_allocating() {
         let dimension = context.parameters().external_lwe_dimension().get();
         let mut output = LweCiphertext::zero(dimension);
         let mut current = LweCiphertext::zero(dimension);
-        let codec = context.parameters().input_plaintext_codec();
+        let codec = &input_codec;
         let (_, allocation) = allocations::measure(|| {
             boolean::check_truth_tables_and_chain(
                 &mut evaluator,
@@ -225,15 +234,17 @@ fn sparse_boolean_gates_chain_in_both_orders_without_allocating() {
 fn sparse_bivariate_and_odd_full_domain_respect_input_margins_in_both_orders() {
     for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
         let context = context(order, 15, 4, 7);
+        let input_codec =
+            primus_encoding::RoundedCodec::new(15, context.parameters().cipher_modulus());
         let mut rng = StdRng::seed_from_u64(0xB303_000F);
         let client = ClientKey::generate(context.parameters(), &mut rng);
         let server = KeyGenerator::new(&context)
             .try_generate_sparse_server_key(&client, 3, 8, None, &mut rng)
             .unwrap();
-        let encryptor = context.encryptor(&client).unwrap();
-        let decryptor = context.decryptor(&client).unwrap();
+        let encryptor = context.encryptor(&client, &input_codec).unwrap();
+        let decryptor = context.decryptor(&client, &input_codec).unwrap();
         let mut evaluator = context.evaluator(&server).unwrap();
-        let input_codec = context.parameters().input_plaintext_codec();
+
         let output_codec = RoundedCodec::new(8, BarrettModulus::new(Q));
         let encode_input =
             |message| input_codec.encode_value(message, PlaintextEmbedding::Unsigned);
@@ -250,7 +261,7 @@ fn sparse_bivariate_and_odd_full_domain_respect_input_margins_in_both_orders() {
             3,
             2,
             PolyLength::new(N),
-            input_codec,
+            &input_codec,
             &output_codec,
             |x, y| (x * x + y) as u32,
         )
@@ -258,7 +269,8 @@ fn sparse_bivariate_and_odd_full_domain_respect_input_margins_in_both_orders() {
         let full_value = |m: usize| ((m * m + 3) % 8) as u32;
         let full = context
             .parameters()
-            .lookup_table_compiler()
+            .lookup_table_compiler(&input_codec)
+            .unwrap()
             .try_with_output_codec(&output_codec)
             .unwrap()
             .compile_odd_full_domain_fn(full_value)

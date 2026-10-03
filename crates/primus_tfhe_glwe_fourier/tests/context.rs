@@ -49,9 +49,8 @@ fn parameters_with_bases(
         Some(DecompositionLevelCount::new(3)),
     );
     TfheParameters::try_new(
-        lwe,
-        glwe,
-        bootstrapping,
+        lwe.into_inner(),
+        primus_glwe::GgswParameters::try_with_basis(&glwe, bootstrapping).unwrap(),
         ApproxSignedBasis::new(
             None,
             DecompositionBaseLog::new(key_switching_log_basis),
@@ -89,6 +88,8 @@ fn split_keys_support_both_pbs_orders() {
             table,
         )
         .unwrap();
+        let input_codec =
+            primus_encoding::RoundedCodec::new(4, context.parameters().cipher_modulus());
         let mut rng = StdRng::seed_from_u64(43);
         // Fresh key generation is covered by the PBS and Boolean tests.
         let mut generator = KeyGenerator::new(&context);
@@ -98,15 +99,16 @@ fn split_keys_support_both_pbs_orders() {
             .unwrap();
         let lookup_table = context
             .parameters()
-            .lookup_table_compiler()
+            .lookup_table_compiler(&input_codec)
+            .unwrap()
             .compile_slice(&[1u32, 0])
             .unwrap();
         let public = client
             .try_generate_public_key(context.parameters(), &mut rng)
             .unwrap();
-        let secret_encryptor = context.encryptor(&client).unwrap();
-        let public_encryptor = context.public_encryptor(&public).unwrap();
-        let decryptor = context.decryptor(&client).unwrap();
+        let secret_encryptor = context.encryptor(&client, &input_codec).unwrap();
+        let public_encryptor = context.public_encryptor(&public, &input_codec).unwrap();
+        let decryptor = context.decryptor(&client, &input_codec).unwrap();
         let mut evaluator = context.evaluator(&server).unwrap();
         for message in 0..2u32 {
             for input in [
@@ -117,9 +119,11 @@ fn split_keys_support_both_pbs_orders() {
                 assert_eq!(decryptor.decrypt(output.as_view()).unwrap(), 1 - message);
             }
         }
-        let boolean_encryptor = context.boolean_public_encryptor(&public).unwrap();
-        let boolean_decryptor = context.boolean_decryptor(&client).unwrap();
-        let mut boolean_evaluator = context.boolean_evaluator(&server).unwrap();
+        let boolean_encryptor = context
+            .boolean_public_encryptor(&public, &input_codec)
+            .unwrap();
+        let boolean_decryptor = context.boolean_decryptor(&client, &input_codec).unwrap();
+        let mut boolean_evaluator = context.boolean_evaluator(&server, &input_codec).unwrap();
         let lhs = boolean_encryptor.encrypt(true, &mut rng).unwrap();
         let rhs = boolean_encryptor.encrypt(false, &mut rng).unwrap();
         assert!(
@@ -141,11 +145,12 @@ fn server_keys_are_bound_to_both_decomposition_bases() {
         RustFftTable::new(PolyLength::new(POLY_LENGTH)),
     )
     .unwrap();
+    let input_codec = primus_encoding::RoundedCodec::new(4, source.parameters().cipher_modulus());
     let mut rng = StdRng::seed_from_u64(42);
     let (_, server_key) = source.try_generate_keys(None, &mut rng).unwrap();
     assert!(server_key.circuit_bootstrap_key().is_none());
     assert!(matches!(
-        source.circuit_bootstrap_evaluator(&server_key),
+        source.circuit_bootstrap_evaluator(&server_key, &input_codec),
         Err(primus_tfhe_glwe_fourier::TfheEvaluationError::MissingCircuitBootstrapKey)
     ));
     for (bootstrapping_log_basis, key_switching_log_basis, distribution) in [
@@ -177,6 +182,7 @@ fn public_blind_rotation_rejects_mismatches_before_output_writes() {
         RustFftTable::new(PolyLength::new(POLY_LENGTH)),
     )
     .unwrap();
+
     let mut rng = StdRng::seed_from_u64(42);
     let (_, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
     let BootstrappingKey::Classic(key) = server_key.bootstrapping_key() else {

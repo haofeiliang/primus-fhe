@@ -41,7 +41,9 @@ fn bench_generation<T: FheUint>(c: &mut Criterion, name: &str, modulus: impl Rin
     ] {
         group.bench_function(name, |b| {
             let mut rng = StdRng::seed_from_u64(0x1_ee15);
-            b.iter(|| LwePublicKey::generate(black_box(secret), black_box(&params), &mut rng));
+            b.iter(|| {
+                LwePublicKey::generate(black_box(secret), (black_box(&params)).inner(), &mut rng)
+            });
         });
     }
     group.finish();
@@ -66,8 +68,8 @@ fn bench_batch_domain<M: RingContext<u32>>(c: &mut Criterion, name: &str, modulu
             SecretKeyDistr::UniformBinary,
             sigma,
         );
-        let secret = LweSecretKey::generate(&params, &mut rng);
-        let public = LwePublicKey::generate(secret.as_view(), &params, &mut rng);
+        let secret = LweSecretKey::generate(params.inner(), &mut rng);
+        let public = LwePublicKey::generate(secret.as_view(), params.inner(), &mut rng);
         let messages = vec![1u32; count];
         let mut output = vec![0u32; (dimension + 1) * count];
         let mut group = c.benchmark_group(format!(

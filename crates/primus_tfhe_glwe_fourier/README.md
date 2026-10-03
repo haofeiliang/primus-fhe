@@ -13,7 +13,7 @@ GLWE-based TFHE with the native torus. Start with the [task and encoding guide](
 cargo run -p primus_tfhe_glwe_fourier --release --example fourier_basic
 ```
 
-The [basic example](examples/fourier_basic.rs) shows parameters → context → paired keys → clients → one compiled LUT → reused evaluator and ciphertext buffers. It computes `x % 4`, keeping `t=32` encoding for both input and output, and decodes with `decrypt`. `parameters.lookup_table_compiler()` creates a reusable compiler; `compiler.compile_fn(function)` uses the parameter plaintext modulus. Select a different output encoding with `compiler.try_with_output_codec(&output_codec)?`; see [choosing the output encoding](../primus_tfhe/README.md#choosing-the-output-encoding). Public-key encryption starts with `context.public_encryptor(&public)`; see the [family guide](../primus_tfhe_glwe/README.md#clients-and-luts).
+The [basic example](examples/fourier_basic.rs) shows parameters → context → paired keys → clients → one compiled LUT → reused evaluator and ciphertext buffers. It computes `x % 4`, keeping `t=32` encoding for both input and output, and decodes with `decrypt`. `parameters.lookup_table_compiler(&input_codec)?` creates a reusable compiler; `compiler.compile_fn(function)` uses the selected input codec for outputs. Select a different output encoding with `compiler.try_with_output_codec(&output_codec)?`; see [choosing the output encoding](../primus_tfhe/README.md#choosing-the-output-encoding). Public-key encryption starts with `context.public_encryptor(&public, &input_codec)`; see the [family guide](../primus_tfhe_glwe/README.md#clients-and-luts).
 
 Examples default to u32; change `type Word = u32` to `u64`; select TFHE-FFT by replacing the `RustFftTable as Table` import with `TfheFftTable as Table`. Rerun the same command after the edit. Each file defines its own `parameters()` using an explicit `TfheConfig`: dimensions, modulus types, secret distributions, noise and BR/KS decompositions are visible together. CBS examples also define `circuit_config()` for the output, trace and scheme-switch bases. The [parameter and validation guide](../../guides/development/tfhe-parameters.md) records numerical choices; each example handles two requests with the same buffers.
 
@@ -45,7 +45,7 @@ Ordinary/interleaved `Evaluator` `_to` calls reuse workspace and caller outputs.
 
 ## Fixed-scale factorized MVB
 
-Compile through `context.compile_factorized_lookup_table_fn` and bind a `FactorizedEvaluator`. The program borrows that context; outputs use unsigned Scaled encoding.
+Compile through `context.compile_factorized_lookup_table_fn(&input_codec, &output_codec, domain_len, output_count, function)` and bind a `FactorizedEvaluator`. The input codec is Rounded and the output codec is Scaled, both at the context modulus. The program borrows that context; outputs use unsigned Scaled encoding.
 
 The actual scale `round(2^BITS/t_out)` must be even (`t_out=10` works for u32/u64). Odd scales return `LookupTableError::OddFactorizationScale`. Factors are transformed as signed integers without torus scaling; budget their amplification and FFT error.
 
@@ -68,9 +68,11 @@ Both orders support ordinary/interleaved PBS, MVB and CBS. Pass `Some(cbs_config
 
 ## Circuit bootstrapping
 
-Generate paired material with `context.try_generate_keys(Some(cbs_config), &mut rng)`; `ServerKey` owns the additional parameters and trace/scheme-switch keys. Create `context.circuit_bootstrap_evaluator(&server)` or consume ordinary workspace as above. With a classic key generated using `None`, binding CBS returns `MissingCircuitBootstrapKey`. Use `allocate_output`, `circuit_bootstrap_to` and `cmux_to`; the [CBS → CMUX example](examples/fourier_circuit_bootstrap.rs) shows their complete consumption chain.
+Generate paired material with `context.try_generate_keys(Some(cbs_config), &mut rng)`; `ServerKey` owns the additional parameters and trace/scheme-switch keys. Create `context.circuit_bootstrap_evaluator(&server, &input_codec)` or consume ordinary workspace as above. With a classic key generated using `None`, binding CBS returns `MissingCircuitBootstrapKey`. Use `allocate_output`, `circuit_bootstrap_to` and `cmux_to`; the [CBS → CMUX example](examples/fourier_circuit_bootstrap.rs) shows their complete consumption chain.
 
 The [sparse CBS example](examples/fourier_sparse_circuit_bootstrap.rs) shows the fixed-weight secret, sparse key generation and CBS configuration together. Both PBS orders work; subsequent CBS and CMux calls are identical.
+
+Input encoding and interleaved capacity are checked when binding the evaluator, so compatible programs can reuse the keys with another `t`.
 
 The output is `FourierGgsw` under the accumulator secret. The key binds output layout and trace/scheme-switch bases; advanced `try_from_parts` can use another output basis with the same level count. Budget native trace halving and FFT error against the smallest output gadget scale.
 

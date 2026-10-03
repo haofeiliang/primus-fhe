@@ -25,6 +25,7 @@ pub fn validate<T: FheUint, Table: MonomialNttTable<ValueT = T>>(seed: u64, name
             let context = TfheContext::<T, Table>::try_from_parameters(parameters).unwrap();
             pbs(
                 &context,
+                workload.plaintext_modulus,
                 seed,
                 &format!("{name}/{order:?}/{}", workload.name),
                 false,
@@ -42,6 +43,7 @@ pub fn validate<T: FheUint, Table: MonomialNttTable<ValueT = T>>(seed: u64, name
             .unwrap();
             pbs(
                 &context,
+                4,
                 seed,
                 &format!("{name}/{order:?}/{secret:?}"),
                 false,
@@ -54,19 +56,18 @@ pub fn validate<T: FheUint, Table: MonomialNttTable<ValueT = T>>(seed: u64, name
             );
         }
         let context =
-            TfheContext::<T, Table>::try_from_parameters(glwe::diagnostic(modulus, order, 8))
-                .unwrap();
+            TfheContext::<T, Table>::try_from_parameters(glwe::diagnostic(modulus, order)).unwrap();
         pbs(
             &context,
+            8,
             seed,
             &format!("{name}/{order:?}/fixed_weight"),
             false,
         );
-        pbs(&context, seed, &format!("{name}/{order:?}/sparse"), true);
+        pbs(&context, 8, seed, &format!("{name}/{order:?}/sparse"), true);
         let context = TfheContext::<T, Table>::try_from_parameters(glwe::diagnostic(
             primus_tfhe_test_support::parameters::ntt_circuit_modulus(),
             order,
-            4,
         ))
         .unwrap();
         circuit(
@@ -76,8 +77,7 @@ pub fn validate<T: FheUint, Table: MonomialNttTable<ValueT = T>>(seed: u64, name
             true,
         );
         let context =
-            TfheContext::<T, Table>::try_from_parameters(glwe::diagnostic(modulus, order, 128))
-                .unwrap();
+            TfheContext::<T, Table>::try_from_parameters(glwe::diagnostic(modulus, order)).unwrap();
         thresholds(&context, seed, &format!("{name}/{order:?}/mvb"));
     }
 }
@@ -86,13 +86,15 @@ pub fn validate<T: FheUint, Table: MonomialNttTable<ValueT = T>>(seed: u64, name
 /// and repeated output/workspace use. The Boolean profile also chains gate outputs.
 fn pbs<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     context: &TfheContext<T, Table>,
+    plaintext_modulus: u32,
     seed: u64,
     name: &str,
     sparse: bool,
 ) {
     // Public setup: agree on the padded domain and the functions to evaluate.
     let modulus = context.parameters().small_lwe().cipher_modulus();
-    let t = context.parameters().plain_modulus_value();
+    let t = T::as_from(plaintext_modulus);
+    let input_codec = RoundedCodec::new(t, modulus);
     let domain: usize = t.as_into();
     // Padded inputs occupy only the first half of the plaintext domain.
     let domain = domain / 2;
@@ -109,13 +111,16 @@ fn pbs<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     }
     .unwrap();
 
-    let encryptor = context.encryptor(&client_key).unwrap();
-    let decryptor = context.decryptor(&client_key).unwrap();
+    let encryptor = context.encryptor(&client_key, &input_codec).unwrap();
+    let decryptor = context.decryptor(&client_key, &input_codec).unwrap();
     let codec = RoundedCodec::new(t, modulus);
     let mut margin = ErrorMargin::new(name, seed);
 
     // Server: compile the public functions and allocate local evaluation storage.
-    let compiler = context.parameters().lookup_table_compiler();
+    let compiler = context
+        .parameters()
+        .lookup_table_compiler(&input_codec)
+        .unwrap();
     let lut = compiler.compile_fn(value).unwrap();
     // Three outputs force padding to four interleaved lanes.
     let many = compiler
@@ -172,12 +177,18 @@ fn pbs<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
 
     if domain == 2 {
         // Client: prepare encrypted Boolean inputs and keep decryption local.
-        let encryptor = context.boolean_encryptor(&client_key).unwrap();
-        let decryptor = context.boolean_decryptor(&client_key).unwrap();
+        let encryptor = context
+            .boolean_encryptor(&client_key, &input_codec)
+            .unwrap();
+        let decryptor = context
+            .boolean_decryptor(&client_key, &input_codec)
+            .unwrap();
         let inputs = [false, true].map(|bit| encryptor.encrypt(bit, &mut rng).unwrap());
 
         // Server: own the gate evaluator and its reusable output buffers.
-        let mut evaluator = context.boolean_evaluator(&server_key).unwrap();
+        let mut evaluator = context
+            .boolean_evaluator(&server_key, &input_codec)
+            .unwrap();
         let mut output = context.allocate_lwe_ciphertext();
         let mut current = context.allocate_lwe_ciphertext();
 
@@ -201,6 +212,8 @@ fn thresholds<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     seed: u64,
     name: &str,
 ) {
+    let input_codec = RoundedCodec::new(T::as_from(128u32), context.parameters().cipher_modulus());
+
     // Public setup: 64 padded inputs, 17 thresholds, binary output encoding.
     let modulus = context.parameters().small_lwe().cipher_modulus();
     let value = |m: usize, i: usize| T::as_from(usize::from(m >= (i + 1) * 64 / 18));
@@ -209,15 +222,15 @@ fn thresholds<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     let mut rng = StdRng::seed_from_u64(seed);
     let (client_key, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
 
-    let encryptor = context.encryptor(&client_key).unwrap();
-    let decryptor = context.decryptor(&client_key).unwrap();
+    let encryptor = context.encryptor(&client_key, &input_codec).unwrap();
+    let decryptor = context.decryptor(&client_key, &input_codec).unwrap();
     let output_codec = ScaledCodec::new(T::as_from(2u32), modulus);
     let mut margin = ErrorMargin::new(name, seed);
 
     // Server: compile the public thresholds and allocate evaluation storage.
     let ring_codec = ScaledCodec::new(T::as_from(2u32), modulus);
     let program = context
-        .compile_factorized_lookup_table_fn(&ring_codec, 64, 17, value)
+        .compile_factorized_lookup_table_fn(&input_codec, &ring_codec, 64, 17, value)
         .unwrap();
     let mut evaluator = context.factorized_evaluator(&server_key).unwrap();
     let mut outputs = vec![context.allocate_lwe_ciphertext(); 17];
@@ -256,6 +269,8 @@ fn circuit<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     name: &str,
     sparse: bool,
 ) {
+    let input_codec = RoundedCodec::new(T::as_from(4u32), context.parameters().cipher_modulus());
+
     // Client: generate both keys; give only the evaluation key to the server.
     let mut rng = StdRng::seed_from_u64(seed);
     let client_key = ClientKey::generate(context.parameters(), &mut rng);
@@ -278,8 +293,13 @@ fn circuit<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     let size = cbs.output_size();
 
     // Client: encrypt both candidate messages; only choices go to the server.
-    let encryptor = context.encryptor(&client_key).unwrap();
-    let mut accumulator = context.accumulator_client(&client_key).unwrap();
+    let encryptor = context.encryptor(&client_key, &input_codec).unwrap();
+    let mut accumulator = context
+        .accumulator_client(
+            &client_key,
+            ScaledCodec::new(T::as_from(4u32), context.parameters().cipher_modulus()),
+        )
+        .unwrap();
     // Vary all coefficients so CMux cannot pass by selecting only a constant term.
     let messages = [0, 1].map(|offset| {
         (0..N)
@@ -301,7 +321,9 @@ fn circuit<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     let mut margin = ErrorMargin::new(name, seed);
 
     // Server: bind the evaluation key and allocate CBS/CMux outputs locally.
-    let mut evaluator = context.circuit_bootstrap_evaluator(&server_key).unwrap();
+    let mut evaluator = context
+        .circuit_bootstrap_evaluator(&server_key, &input_codec)
+        .unwrap();
     let mut control = evaluator.allocate_output();
     let mut selected = context.allocate_accumulator_ciphertext();
 

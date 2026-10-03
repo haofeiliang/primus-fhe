@@ -80,7 +80,7 @@ fn functional_bootstrapping_key_blind_rotates() {
     let mut gadget_workspace = FourierGlweGadgetEncryptWorkspace::new(ggsw_params.size());
     let key = FourierGlweBootstrappingKey::generate_fourier(
         &input_secret_key,
-        &lwe_params,
+        lwe_params.inner(),
         &output_secret_key,
         &ggsw_params,
         &mut fft,

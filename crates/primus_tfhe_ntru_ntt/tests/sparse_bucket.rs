@@ -79,7 +79,7 @@ fn check_bucket<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, level_cou
         0.7,
     );
     let mut rng = StdRng::seed_from_u64(0xB801);
-    let client = primus_lwe::LweSecretKey::generate(&client_params, &mut rng);
+    let client = primus_lwe::LweSecretKey::generate(client_params.inner(), &mut rng);
     let nonzero_indices = Zeroizing::new(
         client
             .as_ref()

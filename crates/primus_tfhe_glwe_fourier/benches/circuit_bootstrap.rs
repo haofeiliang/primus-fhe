@@ -26,7 +26,7 @@ where
     let kind = if sparse { "sparse" } else { "classic" };
     let dimension = if sparse { 728 } else { 800 };
     let parameters = if sparse {
-        glwe::diagnostic(NativeModulus::<T>::new(), order, 4)
+        glwe::diagnostic(NativeModulus::<T>::new(), order)
     } else {
         glwe::circuit(
             NativeModulus::<T>::new(),
@@ -34,6 +34,8 @@ where
             SecretKeyDistr::UniformBinary,
         )
     };
+    let input_codec =
+        primus_encoding::RoundedCodec::new(T::as_from(4u32), parameters.cipher_modulus());
     let name = format!(
         "glwe/{backend}/u{}/cbs/{kind}/n{dimension}_N1024/{order:?}/complete",
         T::BITS
@@ -62,16 +64,25 @@ where
                     .unwrap()
             };
             let input = context
-                .encryptor(&client)
+                .encryptor(&client, &input_codec)
                 .unwrap()
                 .encrypt_padded(T::ONE, &mut rng)
                 .unwrap();
-            let mut ring = context.accumulator_client(&client).unwrap();
+            let mut ring = context
+                .accumulator_client(
+                    &client,
+                    primus_encoding::ScaledCodec::new(
+                        input_codec.plaintext_modulus(),
+                        input_codec.ciphertext_modulus(),
+                    ),
+                )
+                .unwrap();
             let lhs = ring.encrypt(&[T::ZERO; N], &mut rng);
             let rhs = ring.encrypt(&[T::ONE; N], &mut rng);
             (context, client, server, input, lhs, rhs)
         });
-        let mut evaluator = CircuitBootstrapEvaluator::try_new(context, server).unwrap();
+        let mut evaluator =
+            CircuitBootstrapEvaluator::try_new(context, server, &input_codec).unwrap();
         let mut output = evaluator.allocate_output();
         if !verified {
             evaluator.circuit_bootstrap_to(input.as_view(), &mut output);
@@ -79,7 +90,13 @@ where
             evaluator.cmux_to(&output, lhs, rhs, &mut selected);
             let mut decoded = vec![T::ZERO; N];
             context
-                .accumulator_client(client)
+                .accumulator_client(
+                    client,
+                    primus_encoding::ScaledCodec::new(
+                        input_codec.plaintext_modulus(),
+                        input_codec.ciphertext_modulus(),
+                    ),
+                )
                 .unwrap()
                 .decrypt_to(&selected, &mut decoded);
             assert!(decoded.iter().all(|&value| value == T::ONE));

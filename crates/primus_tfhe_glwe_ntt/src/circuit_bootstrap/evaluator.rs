@@ -2,12 +2,13 @@
 //! switching.
 
 use primus_data::{Data, DataMut};
+use primus_encoding::RoundedCodec;
 use primus_glwe::{GlevCiphertext, GlweCiphertext, NttGlweTraceWorkspace};
 use primus_integer::FheUint;
 use primus_lattice::ggsw::NttGgsw;
+use primus_modulus::BarrettModulus;
 use primus_ntt::MonomialNttTable;
-use primus_reduce::ReduceMul;
-use primus_tfhe::{InterleavedLookupTable, LookupTableError};
+use primus_tfhe::InterleavedLookupTable;
 
 use super::key::CircuitBootstrapBinding;
 
@@ -41,7 +42,8 @@ where
     Table: MonomialNttTable<ValueT = T>,
 {
     /// Binds the CBS parameters and material carried by one server key.
-    /// Returns an error if CBS was not requested during key generation.
+    /// Rejects missing CBS material, an incompatible input codec modulus,
+    /// or an input domain that does not fit the gadget identity ManyLUT.
     ///
     /// # Correctness
     /// Inherits [`Self::try_from_parts`]'s secret and transform requirements.
@@ -50,17 +52,19 @@ where
     pub fn try_new(
         context: &'a TfheContext<T, Table>,
         server_key: &'a ServerKey<T>,
+        input_codec: &RoundedCodec<T, BarrettModulus<T>>,
     ) -> Result<Self, TfheEvaluationError> {
         let key = server_key
             .circuit_bootstrap_key()
             .ok_or(TfheEvaluationError::MissingCircuitBootstrapKey)?;
-        Self::try_from_parts(context, server_key, key.parameters(), key)
+        Self::try_from_parts(context, server_key, key.parameters(), key, input_codec)
     }
 
     /// Creates an evaluator and compiles the gadget-scaled identity
     /// PBSManyLUT used by circuit bootstrapping.
     ///
-    /// Checks parameter, layout and decomposition-basis compatibility and binds
+    /// Checks parameter, layout, decomposition-basis and input-codec compatibility,
+    /// validates ManyLUT capacity for that encoding, and binds
     /// the server key's classic or sparse blind rotation. These checks do not
     /// establish a noise margin for the selected output gadget scales.
     ///
@@ -77,18 +81,22 @@ where
         server_key: &'a ServerKey<T>,
         parameters: &'a CircuitBootstrapParameters<T>,
         circuit_key: &'a CircuitBootstrapKey<T>,
+        input_codec: &RoundedCodec<T, BarrettModulus<T>>,
     ) -> Result<Self, TfheEvaluationError> {
         Self::from_resources_and_parts(
             CircuitBootstrapResources::try_new(context, server_key)?,
             parameters,
             circuit_key,
+            input_codec,
         )
     }
 
     /// Consumes complete PBS workspace and preserves it for ordinary operations and recovery.
-    /// Allocates only the additional CBS buffers; requires bundled CBS key material.
+    /// Compiles the selected input encoding and allocates only additional CBS buffers;
+    /// requires bundled CBS key material and sufficient ManyLUT capacity.
     pub fn try_from_bootstrapper(
         pbs: Evaluator<'a, T, Table>,
+        input_codec: &RoundedCodec<T, BarrettModulus<T>>,
     ) -> Result<Self, TfheEvaluationError> {
         let key = pbs
             .engine
@@ -99,6 +107,7 @@ where
             CircuitBootstrapResources::Bootstrapper(pbs),
             key.parameters(),
             key,
+            input_codec,
         )
     }
 
@@ -129,33 +138,16 @@ where
         resources: CircuitBootstrapResources<'a, T, Table>,
         parameters: &'a CircuitBootstrapParameters<T>,
         circuit_key: &'a CircuitBootstrapKey<T>,
+        input_codec: &RoundedCodec<T, BarrettModulus<T>>,
     ) -> Result<Self, TfheEvaluationError> {
         let context = resources.engine().context;
         let tfhe = context.parameters();
         let circuit = CircuitBootstrapBinding::try_new(tfhe, parameters, circuit_key)?;
 
-        let glwe = tfhe.accumulator_glwe();
-        let modulus = glwe.cipher_modulus();
-        let poly_length = glwe.poly_length();
-        let domain_len =
-            primus_tfhe::front_half_domain_len(tfhe.plain_modulus_value(), poly_length)?;
-        let gadget_scalars: Vec<T> = parameters.output_basis().scalar_iter().collect();
-        let lookup_table = InterleavedLookupTable::try_new(
-            domain_len,
-            poly_length,
-            parameters.output_basis().decompose_length().get(),
-            tfhe.plain_modulus_value(),
-            tfhe.small_lwe().cipher_modulus(),
-            modulus,
-            |input, output_index| {
-                let scalar = gadget_scalars[output_index];
-                let input =
-                    T::try_from(input).map_err(|_| LookupTableError::PlaintextModulusTooLarge)?;
-                Ok(modulus.reduce_mul(scalar, input))
-            },
-        )?;
+        let glwe = tfhe.blind_rotation_ggsw();
+        let lookup_table = parameters.compile_lookup_table(input_codec)?;
 
-        let glwe_size = glwe.size();
+        let glwe_size = glwe.glwe_size();
 
         Ok(Self {
             resources,
@@ -222,7 +214,7 @@ where
                 rhs,
                 output,
                 parameters.output_basis(),
-                context.parameters().accumulator_glwe().cipher_modulus(),
+                context.parameters().blind_rotation_ggsw().cipher_modulus(),
                 context.table(),
                 scratch,
             );
@@ -267,7 +259,7 @@ where
                 input,
                 output,
                 parameters.output_basis(),
-                context.parameters().accumulator_glwe().cipher_modulus(),
+                context.parameters().blind_rotation_ggsw().cipher_modulus(),
                 context.table(),
                 scratch,
             );
@@ -303,8 +295,8 @@ where
     /// The key/NTT representation requirements of [`Self::try_new`] must hold.
     /// Input must use the external client secret paired with `server_key`, this
     /// context's external LWE modulus and unsigned rounded encoding, with a
-    /// plaintext in `0..ceil(t/2)` and canonical residues, where `t` is the TFHE
-    /// plaintext modulus. Noise must fit the coarser ManyLUT rotation intervals;
+    /// plaintext in `0..ceil(t/2)` and canonical residues, where `t` is the selected
+    /// input codec's plaintext modulus. Noise must fit the coarser ManyLUT rotation intervals;
     /// trace and scheme-switching errors must also fit the independent CBS
     /// budget described by [`CircuitBootstrapParameters`]. For sparse keys, include
     /// aggregation noise from every bucket, including zero selections and dummies.
@@ -346,7 +338,7 @@ where
             accumulator,
             parameters.output_basis().decompose_length().get(),
             self.traced.as_mut(),
-            context.parameters().accumulator_glwe().cipher_modulus(),
+            context.parameters().blind_rotation_ggsw().cipher_modulus(),
             context.table(),
             &mut self.trace,
         );
@@ -355,7 +347,7 @@ where
             circuit_key.scheme_switch_key().apply_to(
                 &self.traced,
                 output,
-                context.parameters().accumulator_glwe().cipher_modulus(),
+                context.parameters().blind_rotation_ggsw().cipher_modulus(),
                 context.table(),
                 scratch,
             );
@@ -376,7 +368,8 @@ where
     pub fn circuit_bootstrap_evaluator<'a>(
         &'a self,
         server_key: &'a ServerKey<T>,
+        input_codec: &RoundedCodec<T, BarrettModulus<T>>,
     ) -> Result<CircuitBootstrapEvaluator<'a, T, Table>, TfheEvaluationError> {
-        CircuitBootstrapEvaluator::try_new(self, server_key)
+        CircuitBootstrapEvaluator::try_new(self, server_key, input_codec)
     }
 }

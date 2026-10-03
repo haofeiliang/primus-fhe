@@ -24,9 +24,12 @@ fn check_noise_binding<M: RingContext<u32>>(modulus: M, other_modulus_minus_one:
     // Small and large supports exercise CDT and Ziggurat modulus metadata.
     for deviation in [1.4, 300.0] {
         let noise = DiscreteGaussian::new(deviation, modulus.minus_one()).unwrap();
-        let extracted =
-            LweClientParameters::try_with_dimension_and_noise(&lwe, LweDimension::new(7), &noise)
-                .unwrap();
+        let extracted = LweClientParameters::try_from_parts(
+            LweDimension::new(7),
+            lwe.plaintext_codec(),
+            &noise,
+        )
+        .unwrap();
         assert_eq!(extracted.dimension(), LweDimension::new(7));
         assert!(std::ptr::eq(extracted.codec(), ordinary.codec()));
         assert!(std::ptr::eq(extracted.noise(), &noise));
@@ -34,10 +37,10 @@ fn check_noise_binding<M: RingContext<u32>>(modulus: M, other_modulus_minus_one:
 
         let wrong_noise = DiscreteGaussian::new(deviation, other_modulus_minus_one).unwrap();
         assert_eq!(
-            LweClientParameters::try_with_dimension_and_noise(
-                &lwe,
+            LweClientParameters::try_from_parts(
                 LweDimension::new(7),
-                &wrong_noise,
+                lwe.plaintext_codec(),
+                &wrong_noise
             )
             .err(),
             Some(ClientError::NoiseModulusMismatch),

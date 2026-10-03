@@ -191,7 +191,7 @@ where
         R: rand::Rng + rand::CryptoRng,
     {
         let parameters = self.context.parameters();
-        let client = primus_lwe::LweSecretKey::generate(parameters.external_lwe(), rng);
+        let client = primus_lwe::LweSecretKey::generate((parameters.external_lwe()).inner(), rng);
         let (accumulator, _) = FourierNtruSecretKey::generate_pair(
             parameters.accumulator_ntru().inner(),
             &mut self.fft,
@@ -396,7 +396,7 @@ where
     {
         let circuit_parameters = self.prepare_circuit_bootstrap(circuit_bootstrap)?;
         let parameters = self.context.parameters();
-        let client = primus_lwe::LweSecretKey::generate(parameters.external_lwe(), rng);
+        let client = primus_lwe::LweSecretKey::generate((parameters.external_lwe()).inner(), rng);
         let (accumulator, accumulator_fourier) = FourierNtruSecretKey::generate_pair(
             parameters.accumulator_ntru().inner(),
             &mut self.fft,

@@ -7,6 +7,8 @@
 
 Single-modulus GLWE keys and operations, with separate NTT and native-torus Fourier representations. Here `k` is the GLWE dimension and `N` the polynomial length.
 
+`GlweParameters::try_from_glev(&gadget, codec)` binds an ordinary `ScaledCodec` to an existing gadget domain. It shares the prepared sampling state and checks the codec modulus, without retaining or copying the gadget basis.
+
 ## Keys and representation
 
 `GlweParameters::try_new` returns `GlweParameterError` for layout, fixed-scale encoding and sampler errors, including fixed weights exceeding the complete kN secret length. `GlweParametersInner::try_new` checks only modulus/samplers because it has no layout. The corresponding `new` constructors panic on invalid parameters; transform availability and noise/security budgets remain separate. `GlweParameterError::SecretKey` preserves the sampling/weight/modulus cause as `SecretKeySamplerError`; `Noise` preserves `GaussianError`.

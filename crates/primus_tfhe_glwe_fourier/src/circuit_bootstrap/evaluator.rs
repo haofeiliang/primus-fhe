@@ -1,10 +1,11 @@
 use primus_data::{Data, DataMut};
+use primus_encoding::RoundedCodec;
 use primus_fft::{Complex64, FftTable, TorusFftValue};
 use primus_glwe::GlweCiphertext;
 use primus_glwe::{FourierGlweTraceWorkspace, GlevCiphertext};
 use primus_lattice::ggsw::FourierGgsw;
-use primus_reduce::ReduceMul;
-use primus_tfhe::{InterleavedLookupTable, LookupTableError};
+use primus_modulus::NativeModulus;
+use primus_tfhe::InterleavedLookupTable;
 
 use super::key::CircuitBootstrapBinding;
 
@@ -36,7 +37,8 @@ where
     Table: FftTable,
 {
     /// Binds the CBS parameters and material carried by one server key.
-    /// Returns an error if CBS was not requested during key generation.
+    /// Rejects missing CBS material, an incompatible input codec modulus,
+    /// or an input domain that does not fit the gadget identity ManyLUT.
     ///
     /// # Correctness
     /// Inherits [`Self::try_from_parts`]'s secret and transform requirements.
@@ -45,11 +47,12 @@ where
     pub fn try_new(
         context: &'a TfheContext<T, Table>,
         server_key: &'a ServerKey<T>,
+        input_codec: &RoundedCodec<T, NativeModulus<T>>,
     ) -> Result<Self, TfheEvaluationError> {
         let key = server_key
             .circuit_bootstrap_key()
             .ok_or(TfheEvaluationError::MissingCircuitBootstrapKey)?;
-        Self::try_from_parts(context, server_key, key.parameters(), key)
+        Self::try_from_parts(context, server_key, key.parameters(), key, input_codec)
     }
 
     /// Checks resource layouts/bases, compiles the gadget-scaled identity LUT
@@ -68,18 +71,22 @@ where
         server_key: &'a ServerKey<T>,
         parameters: &'a CircuitBootstrapParameters<T>,
         circuit_key: &'a CircuitBootstrapKey<T>,
+        input_codec: &RoundedCodec<T, NativeModulus<T>>,
     ) -> Result<Self, TfheEvaluationError> {
         Self::from_resources_and_parts(
             CircuitBootstrapResources::try_new(context, server_key)?,
             parameters,
             circuit_key,
+            input_codec,
         )
     }
 
     /// Consumes complete PBS workspace and preserves it for ordinary operations and recovery.
-    /// Allocates only the additional CBS buffers; requires bundled CBS key material.
+    /// Compiles the selected input encoding and allocates only additional CBS buffers;
+    /// requires bundled CBS key material and sufficient ManyLUT capacity.
     pub fn try_from_bootstrapper(
         pbs: Evaluator<'a, T, Table>,
+        input_codec: &RoundedCodec<T, NativeModulus<T>>,
     ) -> Result<Self, TfheEvaluationError> {
         let key = pbs
             .engine
@@ -90,6 +97,7 @@ where
             CircuitBootstrapResources::Bootstrapper(pbs),
             key.parameters(),
             key,
+            input_codec,
         )
     }
 
@@ -120,34 +128,20 @@ where
         resources: CircuitBootstrapResources<'a, T, Table>,
         parameters: &'a CircuitBootstrapParameters<T>,
         circuit_key: &'a CircuitBootstrapKey<T>,
+        input_codec: &RoundedCodec<T, NativeModulus<T>>,
     ) -> Result<Self, TfheEvaluationError> {
         let context = resources.engine().context;
         let tfhe = context.parameters();
         let circuit = CircuitBootstrapBinding::try_new(tfhe, parameters, circuit_key)?;
 
-        let glwe = tfhe.accumulator_glwe();
-        let modulus = glwe.cipher_modulus();
-        let domain_len =
-            primus_tfhe::front_half_domain_len(tfhe.plain_modulus_value(), glwe.poly_length())?;
-        let scalars: Vec<T> = parameters.output_basis().scalar_iter().collect();
-        let lookup_table = InterleavedLookupTable::try_new(
-            domain_len,
-            glwe.poly_length(),
-            scalars.len(),
-            tfhe.plain_modulus_value(),
-            tfhe.small_lwe().cipher_modulus(),
-            modulus,
-            |input, level| {
-                let input =
-                    T::try_from(input).map_err(|_| LookupTableError::PlaintextModulusTooLarge)?;
-                Ok(modulus.reduce_mul(scalars[level], input))
-            },
-        )?;
+        let glwe = tfhe.blind_rotation_ggsw();
+        let lookup_table = parameters.compile_lookup_table(input_codec)?;
+
         Ok(Self {
             resources,
             circuit,
             lookup_table,
-            trace: FourierGlweTraceWorkspace::new(glwe.size()),
+            trace: FourierGlweTraceWorkspace::new(glwe.glwe_size()),
             projected: GlevCiphertext::zero(parameters.output_size().glev_len()),
         })
     }
@@ -264,7 +258,7 @@ where
     /// Inherits [`Self::try_new`]'s paired-secret and FFT table requirements.
     /// Input must use the external client secret paired with `server_key` and
     /// unsigned rounded encoding with a plaintext in `0..ceil(t/2)`, where `t`
-    /// is the TFHE plaintext modulus. Noise must fit the coarser interleaved-LUT
+    /// is the selected input codec's plaintext modulus. Noise must fit the coarser interleaved-LUT
     /// rotation intervals. Trace and scheme-switch errors, including native
     /// halving and FFT rounding, must fit the independent CBS error budget;
     /// see [`CircuitBootstrapParameters`]. Sparse keys also require aggregation
@@ -331,7 +325,8 @@ where
     pub fn circuit_bootstrap_evaluator<'a>(
         &'a self,
         server_key: &'a ServerKey<T>,
+        input_codec: &RoundedCodec<T, NativeModulus<T>>,
     ) -> Result<CircuitBootstrapEvaluator<'a, T, Table>, TfheEvaluationError> {
-        CircuitBootstrapEvaluator::try_new(self, server_key)
+        CircuitBootstrapEvaluator::try_new(self, server_key, input_codec)
     }
 }

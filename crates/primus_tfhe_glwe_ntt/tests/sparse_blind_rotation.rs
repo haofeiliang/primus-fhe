@@ -85,15 +85,16 @@ fn sparse_rotation_matches_direct_phase_and_classic_with_reused_scratch() {
             )
         };
         let parameters = TfheParameters::try_new(
-            lwe,
-            glwe,
-            basis.clone(),
+            lwe.into_inner(),
+            primus_glwe::GgswParameters::try_with_basis(&glwe, basis.clone()).unwrap(),
             basis,
             PbsOrder::KeyswitchBootstrap,
         )
         .unwrap();
         let ntt = U32NttTable::new(PolyLength::new(n), modulus).unwrap();
         let context = TfheContext::try_new(parameters, ntt).unwrap();
+        let input_codec =
+            primus_encoding::RoundedCodec::new(8, context.parameters().cipher_modulus());
         let parameters = context.parameters();
         let ntt = context.table();
         let mut rng = StdRng::seed_from_u64(0x5033_4252 + n as u64 + k as u64);
@@ -189,15 +190,20 @@ fn sparse_rotation_matches_direct_phase_and_classic_with_reused_scratch() {
             let function = |m: usize| (3 * m as u32 + 1) % T;
             let lut = context
                 .parameters()
-                .lookup_table_compiler()
+                .lookup_table_compiler(&input_codec)
+                .unwrap()
                 .try_with_output_codec(&codec)
                 .unwrap()
                 .compile_fn(function)
                 .unwrap();
             for message in 0..T / 2 {
-                let input = client.small_lwe_secret_key().encrypt(
-                    message,
-                    parameters.small_lwe(),
+                // Blind rotation consumes the small control secret even when
+                // complete PBS exposes the extracted kN secret in this order.
+                let input = client.small_lwe_secret_key().as_view().encrypt_encoded(
+                    input_codec.encode_value(message, PlaintextEmbedding::Unsigned),
+                    modulus,
+                    parameters.small_lwe().cipher_modulus_uniform_distr(),
+                    parameters.small_lwe().noise_distribution(),
                     &mut rng,
                 );
                 assert_eq!(check(&input, lut.polynomial()), function(message as usize));

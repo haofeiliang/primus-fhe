@@ -1,6 +1,7 @@
 use primus_fft::{FftEngine, FftTable, TorusFftValue};
 use primus_glwe::{FourierGlweKeySwitchingWorkspace, GlweCiphertext};
 use primus_lwe::LweCiphertext;
+use primus_modulus::NativeModulus;
 use primus_poly::Polynomial;
 use primus_tfhe::TfheEvaluationError;
 use primus_tfhe_glwe::PbsOrder;
@@ -32,7 +33,7 @@ impl<T: TorusFftValue> KeySwitchingWorkspace<T> {
 /// Pair each selected key with its own scratch; only one algorithm is allocated.
 enum BlindRotation<'a, T: TorusFftValue> {
     Classic {
-        key: &'a FourierGlweBootstrappingKey<T, primus_modulus::NativeModulus<T>>,
+        key: &'a FourierGlweBootstrappingKey<T, NativeModulus<T>>,
         scratch: FourierGlweBlindRotationWorkspace<T>,
     },
     Sparse {
@@ -101,7 +102,7 @@ where
                     small_lwe: LweCiphertext::zero(parameters.small_lwe().dimension().get()),
                 },
             },
-            accumulator: GlweCiphertext::zero(parameters.accumulator_glwe().glwe_len()),
+            accumulator: GlweCiphertext::zero(parameters.blind_rotation_ggsw().glwe_len()),
         })
     }
 
@@ -144,7 +145,7 @@ where
                 workspace: ks,
                 small_lwe,
             } => {
-                let glwe = parameters.accumulator_glwe();
+                let glwe = parameters.blind_rotation_ggsw();
                 input.inverse_extract_glwe_to(
                     &mut self.accumulator,
                     glwe.poly_length().get(),

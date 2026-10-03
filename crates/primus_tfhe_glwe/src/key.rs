@@ -28,10 +28,10 @@ impl<T: FheUint> ClientKey<T> {
         M: RingContext<T>,
         R: rand::Rng + rand::CryptoRng,
     {
-        let glwe = parameters.accumulator_glwe();
+        let glwe = parameters.blind_rotation_ggsw();
         Self::new(
             LweSecretKey::generate(parameters.small_lwe(), rng),
-            GlweSecretKey::generate(glwe.size(), glwe.secret_key_sampler(), rng),
+            GlweSecretKey::generate(glwe.glwe_size(), glwe.inner().secret_key_sampler(), rng),
             parameters.pbs_order(),
         )
     }
@@ -102,10 +102,9 @@ impl<T: FheUint> ClientKey<T> {
                 rng,
             ),
             PbsOrder::KeyswitchBootstrap => {
-                let glwe = parameters.accumulator_glwe();
-                let lwe = crate::LweParameters::new(
-                    LweDimension::new(glwe.secret_key_len()),
-                    glwe.plain_modulus_value(),
+                let glwe = parameters.blind_rotation_ggsw();
+                let lwe = primus_lwe::LweParametersInner::new(
+                    LweDimension::from(glwe.glwe_size()),
                     parameters.small_lwe().cipher_modulus(),
                     glwe.secret_key_distr(),
                     glwe.noise_distribution().standard_deviation(),
@@ -151,7 +150,7 @@ impl<T: FheUint> ClientKey<T> {
     {
         let lwe_secret_key = &self.small_lwe_secret_key;
         let lwe_dimension = lwe_secret_key.dimension();
-        let poly_length = parameters.accumulator_glwe().poly_length().get();
+        let poly_length = parameters.blind_rotation_ggsw().poly_length().get();
         let capacity = lwe_dimension
             .checked_next_multiple_of(poly_length)
             .expect("validated TFHE dimensions must fit in usize");
@@ -182,7 +181,7 @@ impl<T: FheUint> ClientKey<T> {
             key,
             GlweSize::new(
                 GlweDimension::new(capacity / poly_length),
-                parameters.accumulator_glwe().poly_length(),
+                parameters.blind_rotation_ggsw().poly_length(),
             ),
             distribution,
         )
@@ -219,19 +218,21 @@ impl<T: FheUint> ClientKey<T> {
         if self.small_lwe_secret_key.distr() != parameters.small_lwe().secret_key_distr() {
             return Err(TfheKeyError::LweSecretKeyDistributionMismatch);
         }
-        if self.glwe_secret_key.dimension() != parameters.accumulator_glwe().dimension() {
+        if self.glwe_secret_key.dimension() != parameters.blind_rotation_ggsw().dimension() {
             return Err(TfheKeyError::GlweDimensionMismatch {
-                expected: parameters.accumulator_glwe().dimension().get(),
+                expected: parameters.blind_rotation_ggsw().dimension().get(),
                 actual: self.glwe_secret_key.dimension().get(),
             });
         }
-        if self.glwe_secret_key.poly_length() != parameters.accumulator_glwe().poly_length().get() {
+        if self.glwe_secret_key.poly_length()
+            != parameters.blind_rotation_ggsw().poly_length().get()
+        {
             return Err(TfheKeyError::PolynomialLengthMismatch {
-                expected: parameters.accumulator_glwe().poly_length().get(),
+                expected: parameters.blind_rotation_ggsw().poly_length().get(),
                 actual: self.glwe_secret_key.poly_length(),
             });
         }
-        if self.glwe_secret_key.distr() != parameters.accumulator_glwe().secret_key_distr() {
+        if self.glwe_secret_key.distr() != parameters.blind_rotation_ggsw().secret_key_distr() {
             return Err(TfheKeyError::GlweSecretKeyDistributionMismatch);
         }
         let ternary = self.small_lwe_secret_key.distr().is_ternary();

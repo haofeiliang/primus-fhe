@@ -8,7 +8,7 @@ use primus_decompose::DecompositionBaseLog;
 use primus_encoding::RoundedCodec;
 use primus_glwe::SecretKeyDistr;
 use primus_lattice::{GlweDimension, LweDimension};
-use primus_lwe::LweParameters;
+use primus_lwe::LweParametersInner;
 use primus_modulus::BarrettModulus;
 use primus_ntt::U32NttTable as Table;
 use primus_tfhe_glwe_ntt::{
@@ -24,7 +24,7 @@ type Word = u32;
 const N: usize = 1024;
 const ORDER: PbsOrder = PbsOrder::BootstrapKeyswitch;
 
-// Public parameters: n=728, N=1024, t=16; LWE and GLWE share the ciphertext modulus.
+// Key parameters: n=728, N=1024; LWE and GLWE share the ciphertext modulus.
 // Noise sigmas below are in coefficient units; these are arithmetic examples, not security presets.
 fn parameters() -> TfheParameters<Word> {
     // NTT requires a prime admitting a 2N-th root, rather than a power-of-two modulus.
@@ -47,9 +47,8 @@ fn parameters() -> TfheParameters<Word> {
     };
 
     TfheParameters::try_from_config(TfheConfig {
-        small_lwe: LweParameters::new(
+        small_lwe: LweParametersInner::new(
             LweDimension::new(728),
-            16, // Padded inputs occupy 0..8.
             modulus,
             SecretKeyDistr::fixed_hamming_weight_binary(728, 32),
             3.2 * q / 16384.0,
@@ -71,6 +70,9 @@ fn main() {
     // The input uses padded t=16; all three outputs use t=8 at the same modulus.
     let output_codec = RoundedCodec::new(8, context.parameters().small_lwe().cipher_modulus());
 
+    // Public message encoding is independent of the evaluation keys.
+    let input_codec = RoundedCodec::new(16 as Word, context.parameters().cipher_modulus());
+
     // Client: explicitly request sparse evaluation material from this fixed-weight secret.
     let mut rng = StdRng::seed_from_u64(42);
     let mut generator = KeyGenerator::new(&context);
@@ -82,14 +84,15 @@ fn main() {
         generator.try_generate_server_key(&client_key, None, &mut rng)
     }
     .unwrap();
-    let encryptor = context.encryptor(&client_key).unwrap();
-    let decryptor = context.decryptor(&client_key).unwrap();
+    let encryptor = context.encryptor(&client_key, &input_codec).unwrap();
+    let decryptor = context.decryptor(&client_key, &input_codec).unwrap();
     let mut input = context.allocate_lwe_ciphertext();
 
     // Server: receive server_key; compile three public functions sharing one rotation.
     let compiler = context
         .parameters()
-        .lookup_table_compiler()
+        .lookup_table_compiler(&input_codec)
+        .unwrap()
         .try_with_output_codec(&output_codec)
         .unwrap();
     let lut = compiler

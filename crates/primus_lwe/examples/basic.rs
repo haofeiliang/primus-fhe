@@ -20,7 +20,7 @@ fn main() {
         0.7,
     );
     let mut rng = rand::rng();
-    let secret_key = LweSecretKey::generate(&parameters, &mut rng);
+    let secret_key = LweSecretKey::generate(parameters.inner(), &mut rng);
 
     // Applications convert message types before encryption and after decryption.
     let message_byte = 3u8;
@@ -39,7 +39,7 @@ fn main() {
     // The public key can be given to a sender who does not have the secret.
     // Public-key output noise grows with the secret and ephemeral vector norms;
     // these demonstration parameters are not a security recommendation.
-    let public_key = LwePublicKey::generate(secret_key.as_view(), &parameters, &mut rng);
+    let public_key = LwePublicKey::generate(secret_key.as_view(), parameters.inner(), &mut rng);
     let ciphertext = public_key.encrypt(message, &parameters, &mut rng);
     assert_eq!(secret_key.decrypt(&ciphertext, &parameters), message);
     public_key.encrypt_to(message, &mut output, &parameters, &mut rng);

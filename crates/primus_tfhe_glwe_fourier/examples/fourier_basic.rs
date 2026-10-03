@@ -5,10 +5,11 @@
 //! Arithmetic profiles: guides/development/tfhe-parameters.md (not security presets).
 
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_encoding::RoundedCodec;
 use primus_fft::RustFftTable as Table;
 use primus_glwe::SecretKeyDistr;
 use primus_lattice::{GlweDimension, LweDimension};
-use primus_lwe::LweParameters;
+use primus_lwe::LweParametersInner;
 use primus_modulus::NativeModulus;
 use primus_tfhe_glwe_fourier::{
     DecompositionConfig, PbsOrder, TfheConfig, TfheContext, TfheParameters,
@@ -20,7 +21,7 @@ type Word = u32;
 const N: usize = 2048;
 const ORDER: PbsOrder = PbsOrder::BootstrapKeyswitch;
 
-// Public parameters: n=866, N=2048, t=32; LWE and GLWE share the ciphertext modulus.
+// Key parameters: n=866, N=2048; LWE and GLWE share the ciphertext modulus.
 // Noise sigmas below are in coefficient units; these are arithmetic examples, not security presets.
 fn parameters() -> TfheParameters<Word> {
     let modulus = NativeModulus::<Word>::new();
@@ -34,9 +35,8 @@ fn parameters() -> TfheParameters<Word> {
     };
 
     TfheParameters::try_from_config(TfheConfig {
-        small_lwe: LweParameters::new(
+        small_lwe: LweParametersInner::new(
             LweDimension::new(866),
-            32, // Padded inputs occupy 0..16.
             modulus,
             SecretKeyDistr::UniformBinary,
             q * 2.046151696979124e-6,
@@ -62,16 +62,22 @@ fn main() {
     let parameters = parameters();
     let context = TfheContext::<Word, Table>::from_parameters(parameters);
 
+    // Public message encoding is independent of the evaluation keys.
+    let input_codec = RoundedCodec::new(32 as Word, context.parameters().cipher_modulus());
+
     // Client: keep client_key secret; send only server_key to the server.
     let mut rng = StdRng::seed_from_u64(42);
     let (client_key, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
-    let encryptor = context.encryptor(&client_key).unwrap();
-    let decryptor = context.decryptor(&client_key).unwrap();
+    let encryptor = context.encryptor(&client_key, &input_codec).unwrap();
+    let decryptor = context.decryptor(&client_key, &input_codec).unwrap();
     let mut input = context.allocate_lwe_ciphertext();
 
     // Server: compile the public function and allocate reusable evaluation state.
     // Outputs use the same t=32 codec, so the client's ordinary decrypt decodes them.
-    let compiler = context.parameters().lookup_table_compiler();
+    let compiler = context
+        .parameters()
+        .lookup_table_compiler(&input_codec)
+        .unwrap();
     let lut = compiler.compile_fn(|x| (x % 4) as Word).unwrap();
     let mut evaluator = context.evaluator(&server_key).unwrap();
     let mut output = context.allocate_lwe_ciphertext();

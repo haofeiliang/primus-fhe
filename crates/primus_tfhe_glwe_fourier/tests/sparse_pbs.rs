@@ -28,26 +28,30 @@ fn context<Table: FftTable>(
 ) -> TfheContext<u64, Table> {
     let modulus = NativeModulus::new();
     let parameters = TfheParameters::try_new(
-        LweParameters::new(
+        (LweParameters::new(
             LweDimension::new(16),
             15,
             modulus,
             SecretKeyDistr::fixed_hamming_weight_binary(16, weight),
             0.7,
-        ),
-        GlweParameters::new(
-            GlweDimension::new(1),
-            N,
-            15,
-            modulus,
-            SecretKeyDistr::UniformTernary,
-            0.7,
-        ),
-        ApproxSignedBasis::new(
-            None,
-            DecompositionBaseLog::new(log_basis),
-            Some(DecompositionLevelCount::new(6)),
-        ),
+        ))
+        .into_inner(),
+        primus_glwe::GgswParameters::try_with_basis(
+            &(GlweParameters::new(
+                GlweDimension::new(1),
+                N,
+                15,
+                modulus,
+                SecretKeyDistr::UniformTernary,
+                0.7,
+            )),
+            ApproxSignedBasis::new(
+                None,
+                DecompositionBaseLog::new(log_basis),
+                Some(DecompositionLevelCount::new(6)),
+            ),
+        )
+        .unwrap(),
         ApproxSignedBasis::new(
             None,
             DecompositionBaseLog::new(8),
@@ -62,6 +66,8 @@ fn context<Table: FftTable>(
 fn check_pbs<Table: FftTable>() {
     for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
         let context = context::<Table>(order, 4, 8);
+        let input_codec =
+            primus_encoding::RoundedCodec::new(15, context.parameters().cipher_modulus());
         let mut generator = KeyGenerator::new(&context);
         let mut rng = StdRng::seed_from_u64(0x4234_3250);
         let client = ClientKey::generate(context.parameters(), &mut rng);
@@ -83,14 +89,15 @@ fn check_pbs<Table: FftTable>() {
             }))
             .get()
         );
-        let encryptor = context.encryptor(&client).unwrap();
-        let decryptor = context.decryptor(&client).unwrap();
+        let encryptor = context.encryptor(&client, &input_codec).unwrap();
+        let decryptor = context.decryptor(&client, &input_codec).unwrap();
         // Non-power-of-two input centers and a different output scale exercise
         // the exact prepared rotation modulus switch through both complete PBS orders.
         let codec = RoundedCodec::new(16, NativeModulus::new());
         let compiler = context
             .parameters()
-            .lookup_table_compiler()
+            .lookup_table_compiler(&input_codec)
+            .unwrap()
             .try_with_output_codec(&codec)
             .unwrap();
         let function = |m: usize| (3 * m as u64 + 1) % 16;
@@ -165,6 +172,7 @@ fn sparse_pbs_preserves_external_secret_and_interleaved_outputs_in_both_orders()
 fn sparse_keys_bind_parameters_and_require_cbs_material() {
     let order = PbsOrder::BootstrapKeyswitch;
     let context = context::<RustFftTable>(order, 4, 8);
+    let input_codec = primus_encoding::RoundedCodec::new(15, context.parameters().cipher_modulus());
     let mut rng = StdRng::seed_from_u64(0x4234_3243);
     let client = ClientKey::generate(context.parameters(), &mut rng);
     let mut generator = KeyGenerator::new(&context);
@@ -181,7 +189,7 @@ fn sparse_keys_bind_parameters_and_require_cbs_material() {
         ));
     }
     assert!(matches!(
-        context.circuit_bootstrap_evaluator(&server),
+        context.circuit_bootstrap_evaluator(&server, &input_codec),
         Err(TfheEvaluationError::MissingCircuitBootstrapKey)
     ));
 }

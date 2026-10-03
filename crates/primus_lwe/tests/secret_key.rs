@@ -15,7 +15,7 @@ fn message_encryption_reuses_storage_for_both_embeddings() {
         0.7,
     );
     let mut rng = StdRng::seed_from_u64(0x1_ee06);
-    let key = LweSecretKey::generate(&params, &mut rng);
+    let key = LweSecretKey::generate(params.inner(), &mut rng);
     let mut storage = [u32::MAX; 8];
     for message in 0..4u32 {
         for centered in [false, true] {

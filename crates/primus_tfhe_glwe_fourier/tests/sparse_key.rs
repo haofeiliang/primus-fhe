@@ -35,9 +35,8 @@ fn context<Table: FftTable>(distribution: SecretKeyDistr) -> TfheContext<u64, Ta
         Some(DecompositionLevelCount::new(6)),
     );
     let parameters = TfheParameters::try_new(
-        lwe,
-        glwe,
-        basis.clone(),
+        lwe.into_inner(),
+        primus_glwe::GgswParameters::try_with_basis(&glwe, basis.clone()).unwrap(),
         basis,
         PbsOrder::KeyswitchBootstrap,
     )
@@ -47,11 +46,20 @@ fn context<Table: FftTable>(distribution: SecretKeyDistr) -> TfheContext<u64, Ta
 
 fn check_selectors<Table: FftTable>() {
     let context = context::<Table>(SecretKeyDistr::fixed_hamming_weight_binary(16, 4));
+    let input_codec = primus_encoding::RoundedCodec::new(4, context.parameters().cipher_modulus());
     let mut generator = KeyGenerator::new(&context);
     let mut rng = StdRng::seed_from_u64(0x5350_4152_5345);
     let client = ClientKey::generate(context.parameters(), &mut rng);
-    let glwe = context.parameters().accumulator_glwe();
-    let mut accumulator_client = context.accumulator_client(&client).unwrap();
+    let glwe = context.parameters().blind_rotation_ggsw();
+    let mut accumulator_client = context
+        .accumulator_client(
+            &client,
+            primus_encoding::ScaledCodec::new(
+                input_codec.plaintext_modulus(),
+                input_codec.ciphertext_modulus(),
+            ),
+        )
+        .unwrap();
     let mut message = vec![0; N];
     message[0] = 1;
     message[N - 1] = 2;
@@ -136,6 +144,7 @@ fn encrypted_selectors_and_dummies_work_with_both_fft_tables() {
 fn sparse_key_errors_do_not_consume_randomness() {
     let distribution = SecretKeyDistr::fixed_hamming_weight_binary(16, 4);
     let context = context::<RustFftTable>(distribution);
+
     let client = ClientKey::generate(context.parameters(), &mut StdRng::seed_from_u64(42));
     let malformed = ClientKey::new(
         LweSecretKey::new(vec![2; 16], distribution),

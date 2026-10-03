@@ -106,6 +106,26 @@ where
         })
     }
 
+    /// Binds an ordinary message codec to an existing gadget's GLWE domain.
+    /// Shares prepared samplers; the gadget basis is neither copied nor retained.
+    ///
+    /// # Errors
+    /// Rejects a codec with another ciphertext modulus.
+    pub fn try_from_glev(
+        gadget: &super::GlevParameters<T, M>,
+        plaintext_codec: ScaledCodec<T, M>,
+    ) -> Result<Self, GlweParameterError> {
+        if plaintext_codec.ciphertext_modulus() != gadget.cipher_modulus() {
+            return Err(GlweParameterError::CodecModulusMismatch);
+        }
+        // The gadget already checked fixed secret weights against this layout.
+        Ok(Self {
+            size: gadget.glwe_size(),
+            inner: Arc::clone(&gadget.inner),
+            plaintext_codec,
+        })
+    }
+
     /// Returns the parameters shared by GLWE and its gadget ciphertexts.
     #[inline]
     pub fn inner(&self) -> &GlweParametersInner<T, M> {

@@ -25,7 +25,7 @@ where
     /// Preserves table-construction errors, including an unavailable primitive
     /// root or unsupported modulus. Use [`Self::try_new`] to inject an existing table.
     pub fn try_from_parameters(parameters: TfheParameters<T>) -> Result<Self, TfheContextError<T>> {
-        let accumulator = parameters.accumulator_glwe();
+        let accumulator = parameters.blind_rotation_ggsw();
         let table = Table::new(accumulator.poly_length(), accumulator.cipher_modulus())?;
         Ok(Self { parameters, table })
     }
@@ -35,13 +35,13 @@ where
         parameters: TfheParameters<T>,
         table: Table,
     ) -> Result<Self, TfheContextError<T>> {
-        let expected = parameters.accumulator_glwe().poly_length().get();
+        let expected = parameters.blind_rotation_ggsw().poly_length().get();
         let actual = table.poly_length().get();
         if actual != expected {
             return Err(TfheContextError::PolynomialLengthMismatch { expected, actual });
         }
 
-        let expected = parameters.accumulator_glwe().cipher_modulus().value();
+        let expected = parameters.blind_rotation_ggsw().cipher_modulus().value();
         let actual = table.modulus();
         if actual != expected {
             return Err(TfheContextError::ModulusMismatch { expected, actual });
@@ -75,7 +75,7 @@ where
     /// Requires only public parameters; this does not encrypt a message.
     #[must_use]
     pub fn allocate_accumulator_ciphertext(&self) -> GlweCiphertext<Vec<T>> {
-        GlweCiphertext::zero(self.parameters.accumulator_glwe().glwe_len())
+        GlweCiphertext::zero(self.parameters.blind_rotation_ggsw().glwe_len())
     }
 
     /// Decomposes this context into its parameters and NTT table.

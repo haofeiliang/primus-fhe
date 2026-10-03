@@ -31,8 +31,11 @@ where
     for (domain, count) in [(8usize, 3usize), (64, 17)] {
         for sparse in [false, true] {
             let kind = if sparse { "sparse" } else { "classic" };
-            let parameters =
-                glwe::diagnostic(NativeModulus::<T>::new(), order, (2 * domain) as u32);
+            let parameters = glwe::diagnostic(NativeModulus::<T>::new(), order);
+            let input_codec = primus_encoding::RoundedCodec::new(
+                T::as_from(2 * domain),
+                parameters.cipher_modulus(),
+            );
             let mut fixture = None;
             let mut group = c.benchmark_group(format!(
                 "glwe/{backend}/u{}/mvb/{kind}/n728_h32_N1024/{order:?}/D{domain}_k{count}",
@@ -62,7 +65,7 @@ where
                                 .unwrap()
                         };
                         let input = context
-                            .encryptor(&client)
+                            .encryptor(&client, &input_codec)
                             .unwrap()
                             .encrypt_padded(T::as_from(domain / 2), &mut rng)
                             .unwrap();
@@ -79,7 +82,7 @@ where
                     // must be decoded in the external LWE modulus (q != Q for NTRU).
                     let table_codec = ScaledCodec::new(
                         T::TWO,
-                        context.parameters().accumulator_glwe().cipher_modulus(),
+                        context.parameters().blind_rotation_ggsw().cipher_modulus(),
                     );
                     let output_codec =
                         ScaledCodec::new(T::TWO, context.parameters().small_lwe().cipher_modulus());
@@ -89,7 +92,7 @@ where
                     // Branch once during setup; the measured closure has no path dispatch.
                     let mut check = |outputs: &[LweCiphertext<T>]| {
                         if !verified {
-                            let decryptor = context.decryptor(client).unwrap();
+                            let decryptor = context.decryptor(client, &input_codec).unwrap();
                             for (i, output) in outputs.iter().enumerate() {
                                 assert_eq!(
                                     output_codec.decode_value(
@@ -107,7 +110,7 @@ where
                                 .map(|i| {
                                     LookupTable::try_new(
                                         domain,
-                                        context.parameters().accumulator_glwe().poly_length(),
+                                        context.parameters().blind_rotation_ggsw().poly_length(),
                                         T::as_from(2 * domain),
                                         output_codec.ciphertext_modulus(),
                                         table_codec.ciphertext_modulus(),
@@ -138,7 +141,7 @@ where
                         "interleaved" => {
                             let lut = InterleavedLookupTable::try_new(
                                 domain,
-                                context.parameters().accumulator_glwe().poly_length(),
+                                context.parameters().blind_rotation_ggsw().poly_length(),
                                 count,
                                 T::as_from(2 * domain),
                                 output_codec.ciphertext_modulus(),
@@ -167,6 +170,7 @@ where
                         "factorized" => {
                             let lut = context
                                 .compile_factorized_lookup_table_fn(
+                                    &input_codec,
                                     &table_codec,
                                     domain,
                                     count,

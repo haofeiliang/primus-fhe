@@ -45,7 +45,7 @@ Sparse mode requires explicit key generation; sparse ternary is unsupported. NTR
 
 ## Client and server roles
 
-`Encryptor`, `Decryptor` and their Boolean wrappers share encoding, range checks and allocation-free `*_to` operations. `LweClientParameters::new(&lwe_parameters)` borrows a validated LWE domain, including its dimension, rounded codec and noise, and derives the mask sampler from the codec modulus. Its fields are private and available through accessors. Family constructors validate their keys and select the active LWE secret and noise once; GLWE KS→BR uses `try_with_dimension_and_noise` for the extracted dimension and accumulator noise, rejecting a different noise modulus. These checks do not establish a noise or security budget.
+`Encryptor`, `Decryptor` and their Boolean wrappers share encoding, range checks and allocation-free `*_to` operations. `LweClientParameters::new(&lwe_parameters)` borrows a validated LWE domain, including its dimension, rounded codec and noise, and derives the mask sampler from the codec modulus. Its fields are private and available through accessors. Family constructors validate their keys and select the active LWE secret and noise once; GLWE uses `LweClientParameters::try_from_parts(dimension, &codec, &noise)` to bind a selected message encoding: BR→KS uses small-LWE noise and dimension, while KS→BR uses the extracted dimension and accumulator noise. Codec/key and codec/noise moduli are checked at binding. These checks do not establish a noise or security budget.
 
 The shared layer accepts `LweSecretKeyRef` or `&LwePublicKey`; its only client trait, `EncryptionKey<T, M>`, selects the encryption kernel without family parameter or error types. Raw operations return `ClientError`; Boolean operations return `BooleanError`.
 
@@ -63,12 +63,13 @@ Prefer `try_*` configuration and binding constructors and handle the error retur
 
 ## Boolean gates
 
-For parameters with `t=4`, all four contexts provide `boolean_encryptor(client)`, `boolean_public_encryptor(public)`, `boolean_decryptor(client)` and `boolean_evaluator(server)`. They use raw `LweCiphertext<T>` with unsigned rounded 0/1 encoding and reject non-Boolean decoded values. Direct Boolean construction wraps a prepared client with `BooleanEncryptor::try_new(encryptor)` or `BooleanDecryptor::try_new(decryptor)`. Boolean evaluation uses ordinary PBS keys, without CBS material.
+Boolean clients require `t=4`. GLWE context factories take an explicit Rounded codec, as shown below. NTRU uses its parameter codec and omits that extra argument from `boolean_encryptor`, `boolean_public_encryptor`, `boolean_decryptor` and `boolean_evaluator`. They use raw `LweCiphertext<T>` with unsigned rounded 0/1 encoding and reject non-Boolean decoded values. Direct Boolean construction wraps a prepared client with `BooleanEncryptor::try_new(encryptor)` or `BooleanDecryptor::try_new(decryptor)`. Boolean evaluation uses ordinary PBS keys, without CBS material.
 
 ```rust,ignore
-let encryptor = context.boolean_encryptor(&client)?;
-let decryptor = context.boolean_decryptor(&client)?;
-let mut gates = context.boolean_evaluator(&server)?;
+let codec = primus_encoding::RoundedCodec::new(4, context.parameters().cipher_modulus());
+let encryptor = context.boolean_encryptor(&client, &codec)?;
+let decryptor = context.boolean_decryptor(&client, &codec)?;
+let mut gates = context.boolean_evaluator(&server, &codec)?;
 let lhs = encryptor.encrypt(true, &mut rng)?;
 let rhs = encryptor.encrypt(false, &mut rng)?;
 let mut output = context.allocate_lwe_ciphertext();
@@ -86,17 +87,19 @@ assert!(!decryptor.decrypt(output.as_view())?);
 
 ## CBS output and consumption
 
-All four backends bind CBS output layout and consumption to the same evaluator:
+All four backends bind CBS output layout and consumption to the same evaluator. This GLWE example selects a Rounded input codec and an independent Scaled accumulator codec. NTRU factories use the parameter codecs and omit these two codec arguments:
 
 ```rust,ignore
 // Client: encrypt the two candidate messages.
-let mut ring_client = context.accumulator_client(&client_key)?;
+let input_codec = primus_encoding::RoundedCodec::new(4, context.parameters().cipher_modulus());
+let ring_codec = primus_encoding::ScaledCodec::new(8, context.parameters().cipher_modulus());
+let mut ring_client = context.accumulator_client(&client_key, ring_codec)?;
 let lhs = ring_client.encrypt(&lhs_message, &mut rng);
 let rhs = ring_client.encrypt(&rhs_message, &mut rng);
 let mut decoded = vec![0; lhs_message.len()];
 
 // Server: receive the encrypted input bit and candidates, then return selected.
-let mut cbs = context.circuit_bootstrap_evaluator(&server_key)?;
+let mut cbs = context.circuit_bootstrap_evaluator(&server_key, &input_codec)?;
 let mut control = cbs.allocate_output();
 let mut selected = context.allocate_accumulator_ciphertext();
 cbs.circuit_bootstrap_to(input_bit.as_view(), &mut control);
@@ -108,7 +111,7 @@ ring_client.decrypt_to(&selected, &mut decoded);
 
 `allocate_output` returns the backend's raw GGSW/NGSW, and ring ciphertexts remain coefficient-domain GLWE/NTRU values. `cmux_to` selects `lhs` for zero and `rhs` for one; `external_product_to(control, input, output)` also accepts non-bit gadget controls. Controls must use this evaluator's output basis, accumulator secret and transform representation. Candidates must use that secret/modulus and a common encoding. These identities and the noise margin remain caller contracts; every ciphertext length is checked before output writes.
 
-`AccumulatorClient` owns the prepared accumulator secret and reusable conversion buffers, borrowing its context. It encrypts/decrypts N unsigned coefficients using the accumulator codec; this ring domain is separate from external LWE clients. Invalid shapes panic before writes or RNG consumption; invalid plaintext values may consume randomness. NTRU preparation returns `TfheClientError` for key validation or secret conversion failures; GLWE preparation returns `TfheKeyError`.
+`AccumulatorClient` owns the prepared accumulator secret and reusable conversion buffers, borrowing its context. It encrypts/decrypts N unsigned coefficients using the accumulator codec; this ring domain is separate from external LWE clients. Invalid shapes panic before writes or RNG consumption; invalid plaintext values may consume randomness. Preparation returns `TfheClientError`: NTRU checks keys and secret conversion; GLWE checks keys and the supplied Scaled codec modulus.
 
 Construct once and reuse `_to` calls and output buffers for allocation-free evaluation.
 
@@ -119,7 +122,7 @@ A context owns immutable parameters/tables; the server key owns evaluation mater
 When alternating PBS and MVB/CBS, consume an existing evaluator to retain one PBS workspace:
 
 - GLWE MVB: `FactorizedEvaluator::from_bootstrapper(pbs)`; NTRU MVB uses fallible `try_from_bootstrapper`.
-- CBS: `CircuitBootstrapEvaluator::try_from_bootstrapper(pbs)` gets CBS material from the bound server key.
+- CBS: GLWE uses `CircuitBootstrapEvaluator::try_from_bootstrapper(pbs, &input_codec)`; NTRU omits the codec argument. Both get CBS material from the bound server key.
 - `bootstrapper_mut()` borrows PBS operations. Import `ProgrammableBootstrap` / `ProgrammableBootstrapInterleaved` to call their `_to` methods; the borrow cannot replace the bound evaluator.
 - `into_bootstrapper()` releases dedicated buffers and recovers ordinary workspace. Recovery allocates nothing when MVB/CBS was constructed from an ordinary evaluator.
 
@@ -136,7 +139,7 @@ Backends accept named `TfheConfig` choices and derive shared ring parameters; `T
 
 The front-half unary function or slice compiler programs `0..ceil(t_in/2)` with outputs in `0..t_out`, as selected by the output codec. Its remaining inputs are not independently programmed. Odd full-domain compilation is a separate entry point described below. For an interleaved LUT (ManyLUT), the effective output count `k` is positive and the padded output count is `s = next_power_of_two(k)`, with `ceil(t/2) <= N/s`. The callback receives `(input, output_index)` once per effective pair, in input-major order; slices contain `D*k` values in the same order. With `k=3`, three outputs occupy four slots: the compiler zeros the fourth slot without calling the callback, and the evaluator returns exactly three ciphertexts. All outputs share one blind rotation (BR). GLWE shares a ring key switch with separate extraction; NTRU returns and LWE-key-switches each output separately. More outputs reduce rotation resolution and the available input-noise margin. This is one input evaluated by multiple functions, not batching independent ciphertexts.
 
-Create a reusable `LookupTableCompiler` with `parameters.lookup_table_compiler()`. For direct shared-layer use, `LookupTableCompiler::try_new(poly_length, &input_codec, accumulator_modulus, &output_codec)` binds the same encoding environment. It copies only the needed encoding state, without allocation or a borrow of the parameters/context. Its methods are:
+Create a reusable `LookupTableCompiler` with GLWE `parameters.lookup_table_compiler(&input_codec)?` or NTRU `parameters.lookup_table_compiler()`. GLWE parameters contain key domains and sampling state without a message modulus; clients and programs choose their codecs independently. For direct shared-layer use, `LookupTableCompiler::try_new(poly_length, &input_codec, accumulator_modulus, &output_codec)` binds the same encoding environment. It copies only the needed encoding state, without allocation or a borrow of the parameters/context. Its methods are:
 
 | Program | Function input | Slice input |
 | --- | --- | --- |
@@ -144,7 +147,7 @@ Create a reusable `LookupTableCompiler` with `parameters.lookup_table_compiler()
 | Front-half, multiple outputs | `compile_interleaved_fn(k, function)` | `compile_interleaved_slice(k, values)` |
 | Odd full domain, one output | `compile_odd_full_domain_fn(function)` | `compile_odd_full_domain_slice(values)` |
 
-Compiler construction checks the output codec's modulus. Compilation checks each program's capacity and slice length before filling, preserving callback order and stopping at the first invalid output or colliding center.
+Compiler construction checks the output codec's modulus; the GLWE factory also checks the input codec against the key modulus. Compilation checks each program's capacity and slice length before filling, preserving callback order and stopping at the first invalid output or colliding center.
 
 All shared LUT constructors and `BooleanEvaluator::try_new` take `PolyLength`, re-exported from `primus_poly`. Pass the checked length from the ring parameters, or construct it once with `PolyLength::try_new(N)`. The type centrally checks the power-of-two range `32..=2^17`; compilation still checks rotation-domain representability in the coefficient word, encoding, output capacity and values.
 
@@ -160,7 +163,7 @@ Raw constructors `LookupTable::try_new` / `InterleavedLookupTable::try_new` acce
 | Boolean (both families) | External `false/true` is `0/1` modulo 4; internal LUTs use signed values at the rounded modulus-8 scale, followed by a restoring shift |
 | CBS | Ordinary unsigned LWE input becomes GGSW/NGSW at the selected gadget scales, under the accumulator secret; a `0/1` input yields a CMUX control |
 
-Client `decrypt` uses the parameter codec and returns a canonical representative in `0..t`. Centered encryption is not a replacement for the unsigned input contract of ordinary LUTs. PBS preserves the LUT's output scale; it does not automatically convert Boolean or gadget outputs to ordinary messages.
+Client `decrypt` uses its bound codec and returns a canonical representative in `0..t`. Centered encryption is not a replacement for the unsigned input contract of ordinary LUTs. PBS preserves the LUT's output scale; it does not automatically convert Boolean or gadget outputs to ordinary messages.
 
 Raw `LweCiphertext` does not track its secret, encoding or noise. Callers must use paired keys, canonical explicit-modulus coefficients and an adequate noise margin. LUT and dimension checks happen before output writes; they cannot verify secret identity. Fourier keys and evaluators must use the same FFT table instance.
 
@@ -172,13 +175,15 @@ Choose the compiler's output encoding once, then use any of its function or slic
 
 | Output encoding | Compiler construction | Decoding |
 | --- | --- | --- |
-| Default: parameter plaintext modulus, encoded at the accumulator modulus | `parameters.lookup_table_compiler()` | `decryptor.decrypt(output.as_view())` |
+| GLWE default: selected input codec | `parameters.lookup_table_compiler(&input_codec)?` | `decryptor.decrypt(output.as_view())` |
+| NTRU default: parameter plaintext modulus, encoded at Q | `parameters.lookup_table_compiler()` | `decryptor.decrypt(output.as_view())` |
 | Explicit output codec | `compiler.try_with_output_codec(&codec)?` | Decode `decrypt_phase(output)` with a codec at the return modulus |
 
-The function's output range can be smaller than the plaintext modulus: `x % 4` can still use `t=32` encoding. Basic examples use this default workflow:
+The function's output range can be smaller than the plaintext modulus: `x % 4` can still use `t=32` encoding. The GLWE basic examples use this default workflow:
 
 ```rust,ignore
-let compiler = context.parameters().lookup_table_compiler();
+let input_codec = primus_encoding::RoundedCodec::new(32, context.parameters().cipher_modulus());
+let compiler = context.parameters().lookup_table_compiler(&input_codec)?;
 let lut = compiler.compile_fn(|x| (x % 4) as u32)?;
 ```
 
@@ -200,7 +205,7 @@ let message = output_codec.decode_value(decryptor.decrypt_phase(output.as_view()
 assert_eq!(message, 3);
 ```
 
-For GLWE use `context.parameters().accumulator_glwe().cipher_modulus()` to construct the output codec. Independent output encoding requires no additional evaluation keys; keep that codec to decode the resulting ciphertext.
+For GLWE use `context.parameters().cipher_modulus()` to construct the output codec. Independent output encoding requires no additional evaluation keys; keep that codec to decode the resulting ciphertext.
 
 `decrypt_phase` returns a canonical noisy residue under the external LWE secret; the caller retains the output codec for decoding. LUT compatibility metadata continues to describe the input and accumulator, without equating `t_out` to `t_in`. Chaining another PBS requires its input encoding and LUT geometry to match the previous output encoding; a context does not infer that change from raw ciphertexts. Custom encodings, per-column scales and Boolean/CBS gadget outputs use the raw constructors and retain their own decoding contracts.
 
@@ -209,7 +214,8 @@ For GLWE use `context.parameters().accumulator_glwe().cipher_modulus()` to const
 Use `compiler.compile_odd_full_domain_fn(function)` or its `_slice` form; configure a different output encoding with `try_with_output_codec` when needed. These methods program **all of `0..t_in`**, with odd `t_in >= 3` and `t_in <= N`. Slices contain exactly `t_in` outputs in input order. Encrypt with ordinary `encrypt`, then use the existing `apply_lookup_table_to`. Decode with `decrypt` for the default encoding, or with the explicit output codec. For example, with a common input/accumulator modulus, `t_in=15` and an output codec for `t_out=8`:
 
 ```rust,ignore
-let compiler = context.parameters().lookup_table_compiler()
+let input_codec = primus_encoding::RoundedCodec::new(15, context.parameters().cipher_modulus());
+let compiler = context.parameters().lookup_table_compiler(&input_codec)?
     .try_with_output_codec(&output_codec).unwrap();
 let lut = compiler.compile_odd_full_domain_fn(|x| ((x * x + 3) % 8) as u32).unwrap();
 let input = encryptor.encrypt(14u32, &mut rng).unwrap();

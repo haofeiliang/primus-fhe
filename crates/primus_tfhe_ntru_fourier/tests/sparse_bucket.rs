@@ -107,7 +107,7 @@ fn check<T: TorusFftValue, Table: FftTable>(level_count: Option<usize>) {
     );
     let basis = gadget.basis();
     let mut rng = StdRng::seed_from_u64(0xB803);
-    let client = primus_lwe::LweSecretKey::generate(&client_params, &mut rng);
+    let client = primus_lwe::LweSecretKey::generate(client_params.inner(), &mut rng);
     let support: Vec<_> = client
         .as_ref()
         .iter()

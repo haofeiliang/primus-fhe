@@ -16,6 +16,8 @@ Validation and benchmark constructors live in [test-support parameters](../../te
 
 All three NTT primes satisfy Q mod 4096 = 1 and the existing NTT table constructors accept N=1024/2048. Each fits the Barrett bound Q<2^(BITS−2). `NativeModulus` never constructs an unrepresentable `1 << BITS`. Explicit powers of two use `PowOf2Modulus`; all NTRU examples use independent external q=2^24.
 
+For GLWE, the plaintext modulus below belongs to the workload codec, not the key parameters. Tests, examples and benchmarks construct a `RoundedCodec` explicitly when binding clients and compiling programs; CBS and factorized compilation check their message capacity at that point.
+
 All geometries below run with u32 and u64. Fourier validation includes both RustFFT and TFHE-FFT. GLWE always has k=1 and validates both `BootstrapKeyswitch` and `KeyswitchBootstrap`. Here n is the small LWE dimension: in `KeyswitchBootstrap`, the external client domain has kN coefficients, not n. GLWE uses q=Q. NTRU has independent external LWE and ring secrets and returns Q→q24→LWE KS.
 
 | Profile | n / N | t (includes padding) | External/small secret | Ring secret |

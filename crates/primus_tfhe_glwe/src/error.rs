@@ -18,9 +18,9 @@ pub enum TfheParameterError {
     #[error("rotation domain must fit the input coefficient type")]
     RotationDomainTooLarge,
 
-    /// The LWE ciphertext and GLWE accumulator use different plaintext spaces.
-    #[error("LWE and GLWE plaintext moduli must match")]
-    PlainModulusMismatch,
+    /// The accumulator layout cannot be represented.
+    #[error("invalid TFHE accumulator layout")]
+    AccumulatorLayout(#[source] primus_lattice::GlweSizeError),
 
     /// The bootstrapping basis or gadget layout is incompatible with the accumulator.
     #[error("invalid GLWE bootstrapping parameters")]
@@ -154,8 +154,8 @@ pub enum CircuitBootstrapParameterError {
         /// Role of the incompatible gadget parameter set.
         role: &'static str,
     },
-    /// The output layout overflows or has too many levels for one PBSManyLUT.
-    #[error("circuit-bootstrap output decomposition does not fit in the accumulator")]
+    /// The output gadget layout cannot be represented.
+    #[error("circuit-bootstrap output gadget layout overflows")]
     OutputDecompositionTooLarge,
 }
 
@@ -171,7 +171,7 @@ pub enum KeyGenerationError {
     /// The requested CBS configuration cannot be prepared.
     #[error(transparent)]
     CircuitBootstrapParameters(#[from] CircuitBootstrapParameterError),
-    /// Prepared CBS parameters belong to another accumulator or input domain.
+    /// Prepared CBS parameters belong to another accumulator domain.
     #[error("circuit-bootstrap parameters do not match this TFHE context")]
     IncompatibleCircuitBootstrapParameters,
 }

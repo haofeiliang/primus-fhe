@@ -33,9 +33,8 @@ fn context(distribution: SecretKeyDistr) -> TfheContext<u32, U32NttTable> {
     );
     let basis = ApproxSignedBasis::new(Some(Q), DecompositionBaseLog::new(9), None);
     let parameters = TfheParameters::try_new(
-        lwe,
-        glwe,
-        basis.clone(),
+        lwe.into_inner(),
+        primus_glwe::GgswParameters::try_with_basis(&glwe, basis.clone()).unwrap(),
         basis,
         PbsOrder::KeyswitchBootstrap,
     )
@@ -47,18 +46,23 @@ fn context(distribution: SecretKeyDistr) -> TfheContext<u32, U32NttTable> {
 #[test]
 fn encrypted_selections_cover_the_support_once_with_dummy_per_bucket() {
     let context = context(SecretKeyDistr::fixed_hamming_weight_binary(16, 4));
+
     let mut generator = KeyGenerator::new(&context);
     let mut rng = StdRng::seed_from_u64(0x5350_4152_5345);
     let client = ClientKey::generate(context.parameters(), &mut rng);
     let ntt = context.table();
-    let glwe = context.parameters().accumulator_glwe();
+    let glwe = primus_glwe::GlweParameters::try_from_glev(
+        context.parameters().blind_rotation_ggsw(),
+        primus_encoding::ScaledCodec::new(8, context.parameters().cipher_modulus()),
+    )
+    .unwrap();
     let output_key = NttGlweSecretKey::from_coeff_secret_key(client.glwe_secret_key(), ntt);
     let mut message = PolynomialOwned::zero(N);
     message.as_mut()[0] = 1;
     message.as_mut()[N - 1] = 2;
     // A nontrivial encrypted mask exercises all GGSW rows through external product.
     let input = output_key
-        .encrypt(&message, glwe, ntt, &mut rng)
+        .encrypt(&message, &glwe, ntt, &mut rng)
         .into_coeff_form(ntt);
     let size = context.parameters().blind_rotation_ggsw().size();
     let mut external_product = NttGlweExternalProductWorkspace::new(size);
@@ -107,7 +111,7 @@ fn encrypted_selections_cover_the_support_once_with_dummy_per_bucket() {
                     &mut external_product,
                 );
                 product.write_ntt_form(&mut product_ntt, ntt);
-                output_key.decrypt_to(&product_ntt, &mut decoded, glwe, ntt);
+                output_key.decrypt_to(&product_ntt, &mut decoded, &glwe, ntt);
                 let bit = decoded.as_ref()[0];
                 assert!(bit <= 1);
                 for (&actual, &expected) in decoded.as_ref().iter().zip(message.as_ref()) {
@@ -134,6 +138,7 @@ fn encrypted_selections_cover_the_support_once_with_dummy_per_bucket() {
 fn sparse_key_rejects_invalid_parameters_and_actual_secret_before_sampling() {
     let distribution = SecretKeyDistr::fixed_hamming_weight_binary(16, 4);
     let context = context(distribution);
+
     let client = ClientKey::generate(context.parameters(), &mut StdRng::seed_from_u64(42));
     let mut generator = KeyGenerator::new(&context);
     let wrong_order = ClientKey::new(
@@ -246,6 +251,7 @@ fn sparse_key_rejects_invalid_parameters_and_actual_secret_before_sampling() {
         ),
     ] {
         let context = self::context(distribution);
+
         let mut generator = KeyGenerator::new(&context);
         let mut rng = StdRng::seed_from_u64(44);
         let client = ClientKey::generate(context.parameters(), &mut rng);

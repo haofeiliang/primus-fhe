@@ -45,7 +45,7 @@ Sparse 模式需显式选择生成入口，暂不支持 sparse ternary。NTRU �
 
 ## 客户端与服务端边界
 
-`Encryptor`、`Decryptor` 及其 Boolean 包装共享编码、范围检查和无分配的 `*_to` 操作。`LweClientParameters::new(&lwe_parameters)` 借用已验证 LWE 域的维数、Rounded codec 和噪声，并从 codec 模数派生 mask 采样器。字段私有，通过访问器读取。家族构造入口先验证密钥，再一次性选定有效 LWE 秘密和噪声；GLWE KS→BR 通过 `try_with_dimension_and_noise` 使用提取维数和 accumulator 噪声，拒绝噪声模数不一致。这些检查不建立噪声或安全预算。
+`Encryptor`、`Decryptor` 及其 Boolean 包装共享编码、范围检查和无分配的 `*_to` 操作。`LweClientParameters::new(&lwe_parameters)` 借用已验证 LWE 域的维数、Rounded codec 和噪声，并从 codec 模数派生 mask 采样器。字段私有，通过访问器读取。家族构造入口先验证密钥，再一次性选定有效 LWE 秘密和噪声；GLWE 通过 `LweClientParameters::try_from_parts(dimension, &codec, &noise)` 绑定所选消息编码：BR→KS 使用 small LWE 的噪声和维数，KS→BR 使用提取维数和 accumulator 噪声。绑定时检查 codec 与密钥、噪声的模数配对。这些检查不建立噪声或安全预算。
 
 公共层接收 `LweSecretKeyRef` 或 `&LwePublicKey`；唯一的客户端 trait `EncryptionKey<T, M>` 只分派加密实现，不关联家族参数或错误类型。普通操作返回 `ClientError`，Boolean 操作返回 `BooleanError`。
 
@@ -63,12 +63,13 @@ Sparse 模式需显式选择生成入口，暂不支持 sparse ternary。NTRU �
 
 ## Boolean 门
 
-参数采用 `t=4` 时，四后端 context 均提供 `boolean_encryptor(client)`、`boolean_public_encryptor(public)`、`boolean_decryptor(client)` 和 `boolean_evaluator(server)`。客户端使用 unsigned rounded `0/1` 编码的 `LweCiphertext<T>`，解密拒绝非 Boolean 值。直接构造时，将已有客户端传给 `BooleanEncryptor::try_new(encryptor)` 或 `BooleanDecryptor::try_new(decryptor)`。门求值使用普通 PBS 密钥，无需 CBS 材料。
+Boolean 客户端要求 `t=4`。GLWE context 工厂显式接收 Rounded codec，如下例；NTRU 使用参数 codec，`boolean_encryptor`、`boolean_public_encryptor`、`boolean_decryptor` 和 `boolean_evaluator` 均省略额外的 codec 参数。客户端使用 unsigned rounded `0/1` 编码的 `LweCiphertext<T>`，解密拒绝非 Boolean 值。直接构造时，将已有客户端传给 `BooleanEncryptor::try_new(encryptor)` 或 `BooleanDecryptor::try_new(decryptor)`。门求值使用普通 PBS 密钥，无需 CBS 材料。
 
 ```rust,ignore
-let encryptor = context.boolean_encryptor(&client)?;
-let decryptor = context.boolean_decryptor(&client)?;
-let mut gates = context.boolean_evaluator(&server)?;
+let codec = primus_encoding::RoundedCodec::new(4, context.parameters().cipher_modulus());
+let encryptor = context.boolean_encryptor(&client, &codec)?;
+let decryptor = context.boolean_decryptor(&client, &codec)?;
+let mut gates = context.boolean_evaluator(&server, &codec)?;
 let lhs = encryptor.encrypt(true, &mut rng)?;
 let rhs = encryptor.encrypt(false, &mut rng)?;
 let mut output = context.allocate_lwe_ciphertext();
@@ -86,17 +87,19 @@ assert!(!decryptor.decrypt(output.as_view())?);
 
 ## CBS 输出与消费
 
-四后端都在同一个 CBS evaluator 中绑定输出布局与消费参数：
+四后端都在同一个 CBS evaluator 中绑定输出布局与消费参数。下例为 GLWE，独立选择 Rounded 输入 codec 和 Scaled accumulator codec。NTRU 工厂使用参数中的 codec，省略这两个 codec 参数：
 
 ```rust,ignore
 // 客户端：加密两条候选消息。
-let mut ring_client = context.accumulator_client(&client_key)?;
+let input_codec = primus_encoding::RoundedCodec::new(4, context.parameters().cipher_modulus());
+let ring_codec = primus_encoding::ScaledCodec::new(8, context.parameters().cipher_modulus());
+let mut ring_client = context.accumulator_client(&client_key, ring_codec)?;
 let lhs = ring_client.encrypt(&lhs_message, &mut rng);
 let rhs = ring_client.encrypt(&rhs_message, &mut rng);
 let mut decoded = vec![0; lhs_message.len()];
 
 // 服务端：接收加密的输入位和候选消息，返回 selected。
-let mut cbs = context.circuit_bootstrap_evaluator(&server_key)?;
+let mut cbs = context.circuit_bootstrap_evaluator(&server_key, &input_codec)?;
 let mut control = cbs.allocate_output();
 let mut selected = context.allocate_accumulator_ciphertext();
 cbs.circuit_bootstrap_to(input_bit.as_view(), &mut control);
@@ -108,7 +111,7 @@ ring_client.decrypt_to(&selected, &mut decoded);
 
 `allocate_output` 返回后端原有的 GGSW/NGSW，环密文仍是系数域 GLWE/NTRU。 `cmux_to` 在控制位为 0/1 时选择 lhs/rhs；`external_product_to(control, input, output)` 也允许非 bit 的 gadget 控制。控制必须使用此 evaluator 的输出 basis、accumulator 私钥和变换表示， 候选使用该私钥/模数与相同编码。身份及噪声余量由调用方保证；所有密文长度在写输出前检查。
 
-`AccumulatorClient` 持有已准备的 accumulator 私钥与复用转换缓冲区，并借用 context。 它使用 accumulator codec 加解密 N 个无符号系数；该环域与外部 LWE 客户端分开。 形状错误在写入或消耗随机数前 panic；明文越界可能消耗随机数。 NTRU 准备的密钥校验/变换失败返回 `TfheClientError`，GLWE 准备返回 `TfheKeyError`。
+`AccumulatorClient` 持有已准备的 accumulator 私钥与复用转换缓冲区，并借用 context。 它使用 accumulator codec 加解密 N 个无符号系数；该环域与外部 LWE 客户端分开。 形状错误在写入或消耗随机数前 panic；明文越界可能消耗随机数。 准备失败返回 `TfheClientError`：NTRU 检查密钥和秘密变换，GLWE 检查密钥以及传入 Scaled codec 的模数。
 
 准备一次，随后复用 `_to` 调用与输出缓冲，在线无需分配。
 
@@ -119,7 +122,7 @@ Context 保存不可变参数和变换表，ServerKey 保存求值材料；Evalu
 普通 PBS 与 MVB/CBS 交替时，消费已有 evaluator，避免为同一工作流同时保留两份 PBS 工作区：
 
 - GLWE MVB：`FactorizedEvaluator::from_bootstrapper(pbs)`；NTRU MVB 使用可失败的 `try_from_bootstrapper`。
-- CBS：`CircuitBootstrapEvaluator::try_from_bootstrapper(pbs)`，从绑定的 ServerKey 取得 CBS 材料。
+- CBS：GLWE 使用 `CircuitBootstrapEvaluator::try_from_bootstrapper(pbs, &input_codec)`，NTRU 省略 codec 参数；均从绑定的 ServerKey 取得 CBS 材料。
 - `bootstrapper_mut()` 借用普通 PBS 操作。导入 `ProgrammableBootstrap` / `ProgrammableBootstrapInterleaved` 即可调用相应 `_to`，借用不能替换内部 evaluator。
 - `into_bootstrapper()` 释放专用缓冲、回收普通 evaluator；从普通 evaluator 转入的 MVB/CBS 回收无分配。
 
@@ -136,7 +139,7 @@ Context 保存不可变参数和变换表，ServerKey 保存求值材料；Evalu
 
 前半区单函数或切片编译器为 `0..ceil(t_in/2)` 输入域编程，输出属于输出 codec 指定的 `0..t_out`。 其余输入不独立编程；奇数全域使用下文的独立入口。交错 LUT（ManyLUT）的有效输出数 `k` 为正， 补齐后的输出数为 `s = next_power_of_two(k)`，满足 `ceil(t/2) <= N/s`。callback 按输入优先 顺序接收 `(input, output_index)`，每个有效组合调用一次；切片包含相同顺序的 `D*k` 个值。 例如 `k=3` 时三个输出占用四个槽：编译器将第四槽置零，不调用 callback；求值端只返回三个密文。 所有输出共享一次盲旋转（BR）。GLWE 共享环 key switch 后分别提取；NTRU 每个输出分别返回并执行 LWE key switch。 输出越多，旋转分辨率与输入噪声余量越低。这是一个输入求多个函数，不是独立密文批处理。
 
-通过 `parameters.lookup_table_compiler()` 创建可复用的 `LookupTableCompiler`。直接使用共享层时，`LookupTableCompiler::try_new(poly_length, &input_codec, accumulator_modulus, &output_codec)` 绑定相同的编码环境。它只复制所需编码状态，不分配内存，也不借用 parameters/context。方法如下：
+通过 GLWE `parameters.lookup_table_compiler(&input_codec)?` 或 NTRU `parameters.lookup_table_compiler()` 创建可复用的 `LookupTableCompiler`。GLWE 参数只保存密钥域和采样状态，不含明文模数；客户端和程序独立选择 codec。直接使用共享层时，`LookupTableCompiler::try_new(poly_length, &input_codec, accumulator_modulus, &output_codec)` 绑定相同的编码环境。它只复制所需编码状态，不分配内存，也不借用 parameters/context。方法如下：
 
 | 程序 | 函数输入 | 切片输入 |
 | --- | --- | --- |
@@ -144,7 +147,7 @@ Context 保存不可变参数和变换表，ServerKey 保存求值材料；Evalu
 | 前半区，多输出 | `compile_interleaved_fn(k, function)` | `compile_interleaved_slice(k, values)` |
 | 奇数全域，单输出 | `compile_odd_full_domain_fn(function)` | `compile_odd_full_domain_slice(values)` |
 
-构造编译器时检查输出 codec 的模数。编译时在填表前检查各程序的容量与切片长度，保持回调顺序，并在首个非法输出或旋转中心碰撞处停止。
+构造编译器时检查输出 codec 的模数；GLWE 工厂还检查输入 codec 与密钥模数的配对。编译时在填表前检查各程序的容量与切片长度，保持回调顺序，并在首个非法输出或旋转中心碰撞处停止。
 
 共享 LUT 构造器和 `BooleanEvaluator::try_new` 都接收从 `primus_poly` 重新导出的 `PolyLength`。直接传入环参数返回的已验证长度，或用 `PolyLength::try_new(N)` 构造一次。该类型集中检查 `32..=2^17` 内的二次幂；编译仍检查旋转域能否由系数字宽表示、编码、输出容量与数值范围。
 
@@ -160,7 +163,7 @@ Raw 构造器 `LookupTable::try_new` / `InterleavedLookupTable::try_new` 显式�
 | 两族 Boolean | 外部 `false/true` 对应模 4 下的 `0/1`；内部 LUT 使用 rounded 模 8 尺度的正负值，随后平移恢复外部编码 |
 | CBS | 普通 unsigned LWE 输入转为指定 gadget 尺度的 GGSW/NGSW，秘密为 accumulator secret；`0/1` 输入可生成 CMUX 控制 |
 
-客户端 `decrypt` 使用参数 codec，返回 `0..t` 中的规范代表元。Centered 加密不能替代普通 LUT 的 unsigned 输入契约。PBS 保留 LUT 的输出尺度，不会自动把 Boolean 或 gadget 输出改为普通消息编码。
+客户端 `decrypt` 使用绑定的 codec，返回 `0..t` 中的规范代表元。Centered 加密不能替代普通 LUT 的 unsigned 输入契约。PBS 保留 LUT 的输出尺度，不会自动把 Boolean 或 gadget 输出改为普通消息编码。
 
 原始 `LweCiphertext` 不记录秘密、编码或噪声。调用方必须使用配套密钥、显式模数下的 规范系数，并保证噪声余量。LUT 与维数错误在写入输出前拒绝，但这些检查不能验证实际 秘密一致性。Fourier 密钥和 evaluator 必须使用同一 FFT table 实例。
 
@@ -172,13 +175,15 @@ Raw 构造器 `LookupTable::try_new` / `InterleavedLookupTable::try_new` 显式�
 
 | 输出编码 | 编译器构造 | 解码 |
 | --- | --- | --- |
-| 默认：参数的明文模数，在 accumulator 模数下编码 | `parameters.lookup_table_compiler()` | `decryptor.decrypt(output.as_view())` |
+| GLWE 默认：所选输入 codec | `parameters.lookup_table_compiler(&input_codec)?` | `decryptor.decrypt(output.as_view())` |
+| NTRU 默认：参数明文模数，在 Q 下编码 | `parameters.lookup_table_compiler()` | `decryptor.decrypt(output.as_view())` |
 | 显式指定输出 codec | `compiler.try_with_output_codec(&codec)?` | 用返回模数下的 codec 解码 `decrypt_phase(output)` |
 
-函数输出范围可以小于明文模数，例如 `x % 4` 仍可采用 `t=32` 编码。Basic 示例使用这个默认流程：
+函数输出范围可以小于明文模数，例如 `x % 4` 仍可采用 `t=32` 编码。GLWE basic 示例使用这个默认流程：
 
 ```rust,ignore
-let compiler = context.parameters().lookup_table_compiler();
+let input_codec = primus_encoding::RoundedCodec::new(32, context.parameters().cipher_modulus());
+let compiler = context.parameters().lookup_table_compiler(&input_codec)?;
 let lut = compiler.compile_fn(|x| (x % 4) as u32)?;
 ```
 
@@ -200,7 +205,7 @@ let message = output_codec.decode_value(decryptor.decrypt_phase(output.as_view()
 assert_eq!(message, 3);
 ```
 
-GLWE 用 `context.parameters().accumulator_glwe().cipher_modulus()` 构造输出 codec。 独立输出编码不需要额外求值密钥；保留该 codec，用于解码结果密文。
+GLWE 用 `context.parameters().cipher_modulus()` 构造输出 codec。 独立输出编码不需要额外求值密钥；保留该 codec，用于解码结果密文。
 
 `decrypt_phase` 返回外部 LWE 秘密下的规范带噪剩余类，调用方保留输出 codec 用于解码。 LUT 兼容性元数据仍描述输入与 accumulator，不要求 `t_out = t_in`。 继续串联 PBS 时，下一次输入编码和 LUT 几何必须与上一次输出编码一致；context 不会从 raw 密文推断编码变化。自定义编码、逐列尺度及 Boolean/CBS gadget 输出使用 raw 构造器， 遵循各自的解码契约。
 
@@ -209,7 +214,8 @@ GLWE 用 `context.parameters().accumulator_glwe().cipher_modulus()` 构造输出
 使用 `compiler.compile_odd_full_domain_fn(function)` 或其 `_slice` 形式；需要不同输出编码时通过 `try_with_output_codec` 配置。这些方法编程整个 **`0..t_in`**。要求奇数 `t_in >= 3`、`t_in <= N`；切片按输入顺序包含 恰好 `t_in` 个输出。输入用普通 `encrypt`，随后复用 `apply_lookup_table_to`。 默认编码用 `decrypt` 解码；显式指定输出编码时使用对应 codec。 例如，输入与 accumulator 共用密文模数、`t_in=15`，输出 codec 配置 `t_out=8`：
 
 ```rust,ignore
-let compiler = context.parameters().lookup_table_compiler()
+let input_codec = primus_encoding::RoundedCodec::new(15, context.parameters().cipher_modulus());
+let compiler = context.parameters().lookup_table_compiler(&input_codec)?
     .try_with_output_codec(&output_codec).unwrap();
 let lut = compiler.compile_odd_full_domain_fn(|x| ((x * x + 3) % 8) as u32).unwrap();
 let input = encryptor.encrypt(14u32, &mut rng).unwrap();
