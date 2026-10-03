@@ -102,9 +102,9 @@ NTT/Fourier PBS evaluators retain this workspace alongside the small scalar
 return workspace. Interleaved ManyLUT shares the conversion across outputs,
 including sparse PBS; ordinary and single-output interleaved PBS keep the direct
 path. At N1024/n728, the extra requested heap is 60,224 bytes for u32 or 120,448
-bytes for u64, excluding object/allocator overhead. Conversion from a complete
-PBS to CBS/MVB retains these buffers. Standalone CBS/one-hot omits ordinary-return buffers and allocates them only when explicitly
-converted into a complete PBS; see the ownership table below.
+bytes for u64, excluding object/allocator overhead. NTT CBS/MVB borrow these resources per call; Fourier conversions from complete
+PBS retain these buffers. Standalone CBS/one-hot omits ordinary-return buffers and allocates them only when explicitly
+combined with a complete PBS; see the ownership table below.
 The [return benchmark](../../crates/primus_ntru/benches/lwe_return.rs) measures
 conversion, extraction, key switching and tile-copy costs together; the backend
 `mvb` benchmarks measure complete interleaved and factorized requests.
@@ -128,12 +128,12 @@ or an owned prefix-index array for table selection.
 Construction hash buckets are temporary. Equal prefixes allow a BR-basis lift
 followed by the usual low-chunk rotations; when all outputs qualify, the evaluator
 omits table selectors and candidates as well as high-chunk CBS. Mixed tables
-keep those shared buffers. Embedded one-hot scratch is retained. See the
+keep those shared buffers. One-hot projection scratch is retained. See the
 [table layout](../../crates/primus_tfhe_ntru_lut/IMPLEMENTATION.md#public-table-storage-and-compiled-choices).
 
-One-hot CBS reuses its BR external-product workspace for BR, trace and scheme switching. Table selection and encrypted rotation now borrow that same workspace between one-hot calls. The NTT entry point is `OneHotCircuitBootstrapEvaluator::external_product_workspace`; Fourier's `external_product_workspaces` returns the FFT engine and external-product buffers together. Borrowers retain polynomial lengths and the FFT table identity. Every subsequent one-hot call overwrites its scratch before reading it.
+One-hot CBS reuses its BR external-product workspace for BR, trace and scheme switching. Table selection and encrypted rotation now borrow that same workspace between one-hot calls. The NTT entry point is `BootstrapResources::external_product_workspace`; Fourier's `external_product_workspaces` returns the FFT engine and external-product buffers together. Borrowers retain polynomial lengths and the FFT table identity. Every subsequent one-hot call overwrites its scratch before reading it.
 
-The high-precision evaluator therefore owns no second external-product workspace or FFT engine. Each evaluator still has independent mutable state, and borrowing excludes concurrent mutation. Existing one-hot/PBS conversion and recovery retain their ownership contracts.
+The high-precision evaluator therefore owns no second external-product workspace or FFT engine. Each evaluator still has independent mutable state, and borrowing excludes concurrent mutation. NTT borrows common resources per operation; Fourier retains its one-hot/PBS conversion and recovery contracts.
 
 The family `LweReturnEvaluator` binds only the coefficient-domain return key
 and q, without allocating or carrying a transform-table generic. Callers prepare
@@ -156,13 +156,14 @@ to the stream boundary, not coefficient kernels.
 
 Each lookup evaluator explicitly owns standalone one-hot and a return binding.
 NTT allocates only scalar scratch; Fourier allocates only batch scratch and keeps
-its bounded streamed schedule. Standalone one-hot has no ordinary-return buffers. Both NTRU factorized MVB backends still retain complete
-PBS and use its private return evaluator. Arithmetic, tile size and scheduling
+its bounded streamed schedule. Standalone one-hot has no ordinary-return buffers. NTT factorized MVB borrows complete PBS per request; Fourier retains it inside
+MVB. Both use its private return evaluator. Arithmetic, tile size and scheduling
 are unchanged; no new latency claim is made.
 
 ## Input, blind rotation and return ownership
 
-Every concrete backend's private `BlindRotationEngine` binds the context, key,
+NTRU NTT's public `BootstrapResources`, and the other concrete backends' private
+`BlindRotationEngine`, bind the context, key,
 selected BR scratch and coefficient accumulator; Fourier also owns its FFT
 engine there. GLWE input preparation is direct for BR→KS, or owns the required
 input KS and compact small LWE for KS→BR. The latter cannot be omitted by CBS.
@@ -170,7 +171,7 @@ Ordinary `Evaluator` adds its complete return stage: output KS for GLWE BR→KS,
 direct extraction for GLWE KS→BR, or the NTRU return evaluator. It has no optional
 missing essential workspace. GLWE BR→KS no longer allocates an unused input LWE.
 
-A private two-state CBS resource enum contains either standalone BR/input
+For GLWE and NTRU Fourier, a private two-state CBS resource enum contains either standalone BR/input
 resources or the full retained PBS. Standalone GLWE KS→BR already has a complete
 PBS, since its return is direct extraction. `bootstrapper_mut` exposes only PBS
 operations, preventing replacement of the key-bound evaluator.
@@ -179,9 +180,9 @@ operations, preventing replacement of the key-bound evaluator.
 | --- | --- | --- |
 | Standalone GLWE BR→KS | `None` | Allocate output KS |
 | Standalone GLWE KS→BR | `Some` | None |
-| Standalone NTRU CBS/one-hot | `None` | Allocate scalar/batch returns |
+| Standalone NTRU Fourier CBS/one-hot | `None` | Allocate scalar/batch returns |
 | GLWE CBS from complete PBS | `Some` | None |
-| NTRU CBS/one-hot from complete PBS | `Some` | None for any compatible return key |
+| NTRU Fourier CBS/one-hot from complete PBS | `Some` | None for any compatible return key |
 
 GLWE engines borrow the selected BR key directly. Each active KS stage binds
 its own ring KS key alongside the existing scratch. Independent BR→KS CBS can
@@ -193,14 +194,25 @@ key from the same paired secrets/transform. Only standalone BR→KS allocates
 missing output KS scratch. These conversions do not change numerical kernels
 or workspace layouts.
 
-NTRU BR, return and CBS material have independent owners. Standalone CBS/one-hot
-borrows only BR and CBS keys; its resources retain no return-key dependency.
-`try_from_bootstrapper(pbs, circuit_key, input_codec)` keeps a complete PBS for
-alternation. `try_into_bootstrapper(return_key)` checks the supplied return
-material and reuses retained buffers for any compatible key, discarding pending
-samples from the previous binding. Only standalone CBS prepares missing return
-buffers while retaining BR/FFT storage. All allocation is
-explicit at construction or conversion; online operations do not allocate.
+NTRU NTT ordinary `Evaluator` owns `BootstrapResources` and both return buffers.
+CBS/one-hot retains a compiled LUT, trace scratch and projected NLEV, then borrows
+common resources for each call. `FactorizedEvaluator::try_new(&pbs)` prepares one
+extra NTT polynomial and borrows `&mut pbs` per request. No evaluator nesting or
+recovery protocol is needed. The short-borrow boundary requires the same context
+and BR key references used at operation construction, before any writes. Multiple
+resource instances prepared from those same references are allowed; these checks
+do not prove actual secret or representation identity of independently generated keys.
+`Evaluator::try_from_resources(resources, return_key)` adds return buffers to
+standalone resources. `try_rebind_return_key` reuses them with compatible material;
+success discards pending samples, failure leaves the binding intact. A valid new
+interleaved/MVB request also supersedes partial samples from an interrupted
+request; scalar PBS uses its independent scratch and does not touch batch state.
+
+NTRU Fourier BR, return and CBS material also have independent owners, but
+CBS/one-hot still uses `try_from_bootstrapper` / `try_into_bootstrapper` to retain
+or recover PBS. Compatible return material reuses existing buffers; only
+standalone CBS allocates missing return buffers on recovery. All allocation is
+explicit at construction or resource assembly; online operations do not allocate.
 
 Existing size/domain boundaries and semantic polynomial/ciphertext iterators describe batches. Table groups contain M polynomials; ciphertext iterators traverse one complete object at a time. Candidate compaction remains indexed because a group must be consumed before its result overwrites the prefix. No additional generic batch abstraction is needed.
 
@@ -213,21 +225,22 @@ resource trait. NTT and Fourier keep distinct numerical representations.
 
 | Resource | Owner | Lifetime and serial reuse |
 | --- | --- | --- |
-| Coefficient accumulator/current and BR temporary polynomial | `BlindRotationEngine::workspace` | BR overwrites both; CBS projects/rotates the result; factorized MVB reuses current for each recovered product |
+| Coefficient accumulator/current and BR temporary polynomial | NTT `BootstrapResources::workspace`; Fourier `BlindRotationEngine::workspace` | BR overwrites both; CBS projects/rotates the result; factorized MVB reuses current for each recovered product |
 | BR CMux/sparse scratch and external-product workspace | Selected `RotationState` | Selected at construction; classic EP scratch is reused by CBS trace/scheme switch, then borrowed by LUT selection/rotation |
 | FFT plan borrow and backend workspace | Fourier `BlindRotationEngine::fft` | One engine for BR, projection, scheme switch and LUT products; NTT uses the context table directly |
 | Reverse-trace scratch and projected NLEV | CBS/one-hot evaluator | One projected selector at a time; buffers are overwritten before the next selector |
-| Common rotation and factor product in transform representation | `FactorizedEvaluator` | Common rotation survives across outputs; product is reused after conversion/extraction |
+| Common rotation in transform representation | `FactorizedEvaluator` | Survives across every factor output; NTT reuses the common coefficient accumulator for each product, while Fourier owns a separate transformed product |
 | Public/encrypted selectors, aggregate rotation controls, compiled selection slots | LUT evaluator | Needed selectors survive one request; selection slots follow the compiled graph's last uses |
 | Rotation factors and current/product polynomials | LUT evaluator | Factors are prepared once; current/product ping-pong during encrypted rotation |
 | Return key and target q | `LweReturnEvaluator` | Read-only, allocation-free binding; no scratch or transform dependency |
 | Scalar intermediate LWE, N+1 elements | `NtruLweKeySwitchingWorkspace` | Complete PBS and NTT LUT; overwritten for each return |
 | Converted polynomial and extracted/switched LWE tiles | `LweReturnBatchWorkspace` | Complete PBS and Fourier LUT; one conversion for a shared source, independent conversion per streamed source; only the prepared prefix may be submitted |
 
-Complete PBS prepares both return workspaces, and factorized MVB retains them to
-permit ordinary PBS alternation. Standalone CBS/one-hot prepares neither. Resource
-enums and evaluator nesting still retain the existing PBS/CBS ownership pattern;
-this separation does not redesign BR/projection storage.
+Complete PBS prepares both return workspaces. NTT factorized MVB borrows them,
+while Fourier retains PBS to permit alternation. Standalone CBS/one-hot prepares
+neither. NTT LUT owns common resources separately from one-hot state and reuses
+them for table selection and rotation; Fourier still embeds the common resources
+inside one-hot. No generic resource trait hides the backend differences.
 
 ## Independent NTRU return workspace measurement
 
@@ -308,6 +321,65 @@ Use `primus_tfhe_ntru_fourier` for the corresponding PBS/MVB commands; both FFT
 engines are selected. Ordinary PBS uses n800/N1024 and MVB uses n728/N1024,
 D8/k3. The shared-input and streamed return schedules, Q→q-before-sign order,
 transform kernels and fixed tile size are unchanged.
+
+## NTT borrowed-resource measurement
+
+Compared with `c6fbb13d` on 2026-10-03 using the machine/toolchain above,
+default features, logical CPU 2, sequential executables and no concurrent builds.
+Common resources and operation state were measured together, so moving storage
+out of an evaluator is not counted as a memory saving. Keys, context, input and
+public programs were prepared outside measurement.
+
+A temporary Criterion probe used the existing `ntru::circuit` u64 binary profile
+(n800/N1024), seed 42, and `ntru::cbs` material. Each iteration constructed and
+dropped one PBS, standalone CBS (t=4), standalone one-hot (t=8), or complete
+PBS+factorized MVB resource set. Warmup was 0.5 s, measurement 1.5 s, 20 samples.
+The counting allocator measured one retained construction separately; requested
+heap excludes allocator metadata. The probe was removed after measurement.
+
+| Resource set | Allocations, unchanged | Retained heap bytes, unchanged | Inline bytes before → after | Construction + drop, µs before → after |
+| --- | --- | --- | --- | --- |
+| Ordinary PBS | 11 | 224392 | 328 → 328 | 3.351 → 3.311 |
+| Standalone CBS | 11 | 140288 | 528 → 440 | 1.092 → 1.115 |
+| Standalone one-hot | 10 | 140288 | 496 → 408 | 1.119 → 1.116 |
+| PBS + factorized MVB | 12 | 232584 | 352 → 368 | 1.416 → 1.433 |
+
+Removing the CBS ownership enum saves inline space; MVB now keeps two binding
+references alongside its separately owned PBS. Allocation count and retained
+heap are unchanged. These short timings depend on allocator reuse and do not
+establish a constructor speedup. The NTT public LUT fixture also retained the
+same heap: 508932 bytes (u32), 787464 bytes (u64), with zero online allocations.
+
+Initial full-request screening used 20 samples, 0.5 s warmup and 1.5 s
+measurement; pipeline measures all eight output chunks in one iteration.
+
+| Request | Before → after, ms |
+| --- | --- |
+| u64 binary PBS, n800/N1024 | 6.169 → 6.043 |
+| u64 fixed-weight classic PBS, n728/h32/N1024 | 5.289 → 5.426 |
+| u64 sparse PBS, same shape | 5.575 → 5.447 |
+| u64 interleaved / factorized MVB, D8/k3 | 6.187 → 6.200 / 6.232 → 6.193 |
+| u64 CBS / full one-hot / nonzero one-hot, n800/N1024 | 4.721 → 4.594 / 5.232 → 5.259 / 5.092 → 5.064 |
+| NTT LUT, u32 / u64, c8/d5/o8 | 66.307 → 66.986 / 49.553 → 49.036 |
+
+The initial fixed-weight classic result was rerun in before/after/after/before
+order. Its increase shrank from about 3% on CPU 2 to about 1% on CPU 4; the
+normalized BR disassembly was unchanged. Scalar PBS was then simplified to leave
+independent batch state untouched. The final CPU 4 comparison (2 s measurement)
+was 5.218/5.255 ms before versus 5.214/5.211 ms after for fixed-weight classic,
+and 6.047/6.035 versus 6.066/6.099 ms for binary PBS. The earlier larger increase
+did not persist. The u32 LUT recheck on CPU 2 was 65.691/65.566 ms before versus
+66.040/65.953 ms after. Sub-percent differences and code-layout/platform effects
+remain unresolved; these measurements support resource reuse, not a speedup or
+an exact latency guarantee.
+
+Reproduce with `pbs`, `sparse_pbs`, `mvb`, `circuit_bootstrap` targets in
+`primus_tfhe_ntru_ntt`, and `pipeline` in `primus_tfhe_ntru_lut`. Select the IDs
+above, build each revision separately, then run the saved executables in
+sequence with `taskset -c 2`, `--bench`, `--sample-size 20`,
+`--warm-up-time 0.5 --measurement-time 1.5 --noplot`. Do not share a Cargo target
+directory between simultaneous revision builds. Default and nightly SIMD tests
+cover semantics and online allocation; SIMD timing is not claimed here.
 
 ## Historical fixed-workspace comparison
 

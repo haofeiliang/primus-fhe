@@ -44,13 +44,15 @@ NTT 表需要实现 `MonomialNttTable`，内置表均支持。Context 检查长�
 
 `ServerKey` 组合独立拥有的 `BlindRotationKey`、`NtruLweKeySwitchingKey` 和可选 `CircuitBootstrapKey`。`into_parts()` 移出组件，不复制密文缓冲；`ServerKey::new(br, return_key, cbs)` 组合各 owner。独立生成分别使用 `KeyGenerator::try_generate_blind_rotation_key(&client, rng)`、`parameters.try_generate_lwe_return_key(&client, rng)` 和 `generator.try_generate_circuit_bootstrap_key(client.accumulator_ntru_secret_key(), cbs_parameters, rng)`。稀疏 BR 使用 `try_generate_sparse_blind_rotation_key`。独立生成可能重复转换累加秘密；成对生成复用同一次变换。
 
-`Evaluator::try_from_parts(context, br, return_key)` 绑定普通 PBS。CBS 与 one-hot 均提供 `try_from_parts(context, br, circuit_key, &input_codec)`，无需返回密钥；CBS 示例展示这一流程。BR 与返回材料不兼容会分别报告。独立生成的材料必须采用相同实际秘密与变换表示，形状和模数检查不能证明身份。
+`Evaluator::try_from_parts(context, br, return_key)` 绑定普通 PBS。独立 CBS/one-hot 先用 `context.bootstrap_resources(br)?` 准备公共 BR/外积资源，再用 `try_new(&resources, circuit_key, &input_codec)` 准备操作状态，无需返回密钥；CBS 示例展示这一流程。独立材料必须采用相同实际秘密与变换表示，形状和模数检查不能证明身份。
 
 `server_key.blind_rotation_key().classic_controls()` 返回借用的 `ClassicControls` 视图，稀疏材料返回 `None`。视图的 `initializer()` 用于提升公开多项式；首坐标使用 NLEV bit，后续坐标使用 NGSW bit，ternary 秘密按正/负 bit 配对。CBS、one-hot 和 MVB 在构造时检查所需能力。可选的 `circuit_bootstrap_key()` 仍可用于查看或组合 CBS 材料。
 
 ## 复用 evaluator
 
-普通/interleaved `Evaluator` 的 `_to` 调用复用工作区和调用方输出。PBS/MVB/CBS 的所有权转换见[资源复用指南](../primus_tfhe/README.zh_CN.md#复用-evaluator)。独立 CBS/one-hot 省略普通 LWE 返回缓冲：`bootstrapper_mut()` 返回 `None`，`try_into_bootstrapper(return_key)` 显式分配缺失的返回缓冲。需要交替调用时使用 `try_from_bootstrapper(pbs, circuit_key, &input_codec)`，保留完整 PBS，其借用返回 `Some`；传入任意兼容返回密钥均可无分配恢复；恢复时丢弃旧返回绑定的待提交样本。
+普通/interleaved `Evaluator` 拥有公共 `BootstrapResources` 和 scalar/batch 返回缓冲。CBS/one-hot 只保存 LUT 与投影缓冲，调用时最后一个参数传 `pbs.bootstrap_resources_mut()`；factorized MVB 使用 `FactorizedEvaluator::try_new(&pbs)` 构造，调用时最后一个参数传 `&mut pbs`。借用结束即可继续普通 PBS，无需转换或恢复 evaluator；在线 `_to` 复用所有缓冲。操作状态要求资源使用构造时的同一 context 和 BR key 引用，在写入前检查。
+
+仅使用 CBS/one-hot 时，单独保留 `BootstrapResources`，不分配返回缓冲。以后需要 PBS，可用 `Evaluator::try_from_resources(resources, return_key)` 接管公共资源并分配返回缓冲。`try_rebind_return_key` 更换兼容返回密钥而不重新分配；成功时丢弃待提交样本，失败保持原绑定。资源所有权变化不验证密钥的实际秘密身份。
 
 ## 固定尺度分解式 MVB
 
@@ -77,15 +79,15 @@ let mut evaluator = context.evaluator(&server)?;
 
 ## 可选电路自举
 
-`context.try_generate_keys(Some(cbs_config), &mut rng)` 生成配对材料， `ServerKey` 持有附加参数及 trace/scheme-switch 密钥。 调用 `context.circuit_bootstrap_evaluator(&server, &input_codec)` 或消费普通 evaluator。 经典密钥若使用 `None` 生成，CBS 绑定返回 `MissingCircuitBootstrapKey`。 使用 `allocate_output`、`circuit_bootstrap_to` 和 `cmux_to`； [CBS → CMUX 示例](examples/ntru_ntt_circuit_bootstrap.rs)展示完整消费链。
+`context.try_generate_keys(Some(cbs_config), &mut rng)` 生成配对材料，`ServerKey` 持有附加参数及 trace/scheme-switch 密钥。取出 `server.circuit_bootstrap_key()`，与公共资源一起传给 `CircuitBootstrapEvaluator::try_new`；该构造器显式要求 CBS 材料。使用 `allocate_output`、`circuit_bootstrap_to` 和 `cmux_to`；[CBS → CMUX 示例](examples/ntru_ntt_circuit_bootstrap.rs)展示完整消费链。
 
-输出为 `f_acc` 下的 `NttNgswCiphertext`。Circuit key 绑定完整输出 basis； `try_from_parts(context, blind_rotation_key, circuit_key, &input_codec)` 从该密钥取得参数。 NTT trace 归一化要求奇数 Q 且小于 `2^(T::BITS-1)`。
+输出为 `f_acc` 下的 `NttNgswCiphertext`。Circuit key 绑定完整输出 basis； `try_new(&resources, circuit_key, &input_codec)` 从该密钥取得参数。 NTT trace 归一化要求奇数 Q 且小于 `2^(T::BITS-1)`。
 
 独立生成组件时须配对秘密并使用同一变换表示，形状检查不能证明身份。 输入/输出与消费要求见[共享 CBS 契约](../primus_tfhe/README.zh_CN.md#cbs-输出与消费)及 [家族 CBS 说明](../primus_tfhe_ntru/README.zh_CN.md#cbs-与示例)。
 
 ## One-hot CBS
 
-[One-hot 示例](examples/ntru_ntt_one_hot.rs)生成四个 selector，并用 `TARGET=2` 对应的 δ₂ 控制 CMux；修改 `TARGET` 选择其他分支。绑定 `OneHotCircuitBootstrapEvaluator::try_new(&context, &server, &input_codec)`，分配后复用 `_to` 调用。
+[One-hot 示例](examples/ntru_ntt_one_hot.rs)生成四个 selector，并用 `TARGET=2` 对应的 δ₂ 控制 CMux；修改 `TARGET` 选择其他分支。绑定 `OneHotCircuitBootstrapEvaluator::try_new(&resources, circuit_key, &input_codec)`，分配后复用 `_to` 调用。
 
 完整/非零输出接口、布局与输入保护区见[家族 one-hot 契约](../primus_tfhe_ntru/README.zh_CN.md#one-hot-cbs)。NLEV 输出为 Q 下的系数，需要 `write_ntt_form` 转换才能做公开多项式外积；NGSW 已在 NTT 表示。输入、密钥和候选必须满足本页的变换契约。
 

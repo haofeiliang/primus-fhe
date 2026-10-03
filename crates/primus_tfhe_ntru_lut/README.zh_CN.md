@@ -78,6 +78,8 @@ cargo run --release -p primus_tfhe_ntru_lut --example fourier_lookup
 
 ## 求值与工作区
 
+NTT evaluator 独立持有公共 `BootstrapResources` 与 one-hot 操作状态；表选择、旋转与 CBS 依次借用同一外积工作区。Fourier 目前仍由 one-hot 拥有公共 BR/FFT 资源。两者的返回绑定均独立于 one-hot；NTT 只分配 scalar 返回缓冲，Fourier 只分配 batch 返回缓冲。
+
 两个 evaluator 均可通过 `try_new` 接收完整 `ServerKey`，或通过 `try_from_parts(context, blind_rotation_key, return_key, circuit_key, lookup_table)` 借用独立材料。可用 `ServerKey::into_parts()` 移出组件而不复制密文缓冲。此流程输出 LWE，始终需要 Q→q、f→s 返回密钥；独立 CBS/one-hot 则无需该密钥。三类材料在绑定时检查，实际秘密和变换身份仍由调用方保证。
 
 每次调用对低位 chunks 及编译计划实际使用的高位 chunks 执行 one-hot CBS。全等分支省去选择，重复子树只计算一次。公开选择用完整 NLEV selectors 同时提升多项式，加密选择用非零 NGSW selectors；同一 chunk 需要两种表示时共享 BR 与投影。完全不依赖高位的输出用 initializer 的 BR basis 直接提升。每个不同的根仍需低位旋转与返回；重复根在同一 evaluator 内的后续操作完全相同，直接复制已完成的输出。

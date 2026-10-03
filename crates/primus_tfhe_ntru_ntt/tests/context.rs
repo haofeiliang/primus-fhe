@@ -65,24 +65,9 @@ fn rejects_server_keys_with_same_layout_but_different_bases_or_modulus() {
     )
     .unwrap();
     let context = TfheContext::try_new(original, table).unwrap();
-    let input_codec = RoundedCodec::new(4, context.parameters().external_lwe().cipher_modulus());
     let mut rng = StdRng::seed_from_u64(0x4e54_5255_4241_5349);
     let (_, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
     assert!(server_key.circuit_bootstrap_key().is_none());
-    assert!(matches!(
-        primus_tfhe_ntru_ntt::OneHotCircuitBootstrapEvaluator::try_new(
-            &context,
-            &server_key,
-            &input_codec
-        ),
-        Err(primus_tfhe_ntru_ntt::OneHotBootstrapError::Evaluation(
-            primus_tfhe_ntru_ntt::TfheEvaluationError::MissingCircuitBootstrapKey
-        ))
-    ));
-    assert!(matches!(
-        context.circuit_bootstrap_evaluator(&server_key, &input_codec),
-        Err(primus_tfhe_ntru_ntt::TfheEvaluationError::MissingCircuitBootstrapKey)
-    ));
     assert!(context.evaluator(&server_key).is_ok());
 
     // Both moduli have 27 bits; bases 2^8 and 2^9 both retain three levels.
@@ -130,10 +115,6 @@ fn rejects_server_keys_with_same_layout_but_different_bases_or_modulus() {
             incompatible
                 .boolean_evaluator(&server_key, &input_codec)
                 .err(),
-            Some(expected.clone())
-        );
-        assert_eq!(
-            incompatible.factorized_evaluator(&server_key).err(),
             Some(expected.clone())
         );
     }

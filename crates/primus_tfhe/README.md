@@ -112,6 +112,8 @@ cbs.cmux_to(&control, &lhs, &rhs, &mut selected);
 ring_client.decrypt_to(&selected, &mut decoded);
 ```
 
+NTRU NTT CBS/CMux calls also take `&mut BootstrapResources` as their final argument; see resource reuse below.
+
 `allocate_output` returns the backend's raw GGSW/NGSW, and ring ciphertexts remain coefficient-domain GLWE/NTRU values. `cmux_to` selects `lhs` for zero and `rhs` for one; `external_product_to(control, input, output)` also accepts non-bit gadget controls. Controls must use this evaluator's output basis, accumulator secret and transform representation. Candidates must use that secret/modulus and a common encoding. These identities and the noise margin remain caller contracts; every ciphertext length is checked before output writes.
 
 `AccumulatorClient` owns the prepared accumulator secret and reusable conversion buffers, borrowing its context. It encrypts/decrypts N unsigned coefficients using the accumulator codec; this ring domain is separate from external LWE clients. Invalid shapes panic before writes or RNG consumption; invalid plaintext values may consume randomness. Preparation returns `TfheClientError`: both families check keys and the supplied Scaled codec modulus; NTRU also checks secret conversion.
@@ -122,14 +124,15 @@ Construct once and reuse `_to` calls and output buffers for allocation-free eval
 
 A context owns immutable parameters/tables; the server key owns evaluation material; an evaluator owns mutable workspace. Keep compiled LUTs/programs and use `_to` with preallocated output ciphertexts.
 
-When alternating PBS and MVB/CBS, consume an existing evaluator to retain one PBS workspace:
+NTRU NTT composes short borrows: ordinary PBS owns common BR/EP and return buffers, while CBS/one-hot prepares only LUT/projection state. Construct with `try_new(pbs.bootstrap_resources(), circuit_key, &input_codec)` and pass `pbs.bootstrap_resources_mut()` as the final execution argument. Construct factorized MVB with `FactorizedEvaluator::try_new(&pbs)` and pass `&mut pbs` for execution. CBS-only callers can prepare common resources independently with `context.bootstrap_resources(br)`. See [NTT resource reuse](../primus_tfhe_ntru_ntt/README.md#reusing-evaluators).
 
-- GLWE MVB: `FactorizedEvaluator::from_bootstrapper(pbs)`; NTRU MVB uses fallible `try_from_bootstrapper`.
-- GLWE/NTRU CBS and NTRU one-hot receive CBS material explicitly: `CircuitBootstrapEvaluator::try_from_bootstrapper(pbs, circuit_key, &input_codec)` (use the corresponding evaluator type for one-hot).
-- `bootstrapper_mut()` borrows PBS operations. Import `ProgrammableBootstrap` / `ProgrammableBootstrapInterleaved` to call their `_to` methods; the borrow cannot replace the bound evaluator.
-- `into_bootstrapper()` recovers MVB workspace. GLWE CBS uses `try_into_bootstrapper(glwe_ks_key)`, reusing existing input or return KS buffers; standalone BR→KS allocates its missing return buffers. NTRU CBS/one-hot uses `try_into_bootstrapper(return_key)`; retained PBS reuses buffers with any compatible return key and discards pending samples; standalone CBS allocates the missing buffers.
+GLWE and NTRU Fourier retain these ownership interfaces:
 
-For one capability alone, use `context.factorized_evaluator` or `context.circuit_bootstrap_evaluator`. Standalone GLWE BR→KS CBS and NTRU CBS/one-hot omit ordinary return buffers: their PBS borrow is `None`, and recovery explicitly allocates those buffers. GLWE KS→BR CBS retains the required input KS and can return `Some` without additional return storage. CBS/one-hot created from complete PBS always returns `Some`; MVB provides a direct borrow. Consume ordinary PBS when frequently alternating. Construction may allocate; online evaluation and borrowing never allocate implicitly. Boolean accepts PBS ownership through `try_new` and recovers it through `into_bootstrapper`.
+- MVB consumes PBS: GLWE uses `FactorizedEvaluator::from_bootstrapper(pbs)`; NTRU Fourier uses `try_from_bootstrapper`.
+- CBS/one-hot uses `try_from_bootstrapper(pbs, circuit_key, &input_codec)`; `bootstrapper_mut()` borrows ordinary PBS operations. MVB recovers ownership with `into_bootstrapper()`.
+- CBS recovery explicitly supplies return material: GLWE uses `try_into_bootstrapper(glwe_ks_key)`, NTRU Fourier uses `try_into_bootstrapper(return_key)`. Existing buffers are reused; standalone GLWE BR→KS and NTRU Fourier CBS/one-hot allocate their missing return buffers on recovery. GLWE KS→BR already owns input KS and returns by direct extraction.
+
+For a single capability in these backends, use `context.factorized_evaluator` or `context.circuit_bootstrap_evaluator`. All backends prepare storage at construction; online evaluation never allocates implicitly. Boolean accepts PBS ownership through `try_new` and recovers it with `into_bootstrapper`.
 
 ## LUTs and resource lifetime
 

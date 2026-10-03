@@ -7,7 +7,7 @@ use primus_ntt::MonomialNttTable;
 use primus_poly::{NttPolynomial, NttPolynomialIter, PolynomialIterMut, PolynomialOwned};
 use primus_tfhe::{FactorizedLookupTable, LweCiphertext};
 
-use crate::{Evaluator, LookupTableError, Lwe, ServerKey, TfheContext, TfheEvaluationError};
+use crate::{Evaluator, LookupTableError, Lwe, TfheContext, TfheEvaluationError};
 
 /// A factorized MVB program prepared for one borrowed NTT context.
 ///
@@ -94,7 +94,8 @@ where
 /// multiplies each public factor. Each product is independently converted Q→q
 /// and extracted, then small LWE tiles share key switching to the external secret.
 /// Only one extra NTT polynomial is allocated beyond the ordinary evaluator's
-/// workspace, regardless of output count. Outputs use the same external secret
+/// workspace, regardless of output count. The ordinary evaluator remains owned
+/// by the caller and is borrowed per request. Outputs use the same external secret
 /// and dimension as [`Evaluator`].
 pub struct FactorizedEvaluator<'a, T, Table, LM = primus_modulus::BarrettModulus<T>>
 where
@@ -102,7 +103,7 @@ where
     Table: MonomialNttTable<ValueT = T>,
     LM: primus_reduce::RingContext<T>,
 {
-    evaluator: Evaluator<'a, T, Table, LM>,
+    binding: crate::bootstrap::BootstrapBinding<'a, T, Table, LM>,
     shared_rotation: NttNtru<Vec<T>>,
 }
 
@@ -112,55 +113,21 @@ where
     Table: MonomialNttTable<ValueT = T>,
     LM: primus_reduce::RingContext<T>,
 {
-    /// Creates the workspace after validating the server key's parameters.
-    /// Rejects sparse keys; sparse MVB requires a separate noise validation.
-    ///
-    /// # Correctness
-    ///
-    /// The server key must use this context's NTT representation and the paired
-    /// client secrets. Layout checks do not establish transform or secret identity.
-    pub fn try_new(
-        context: &'a TfheContext<T, Table, LM>,
-        server_key: &'a ServerKey<T>,
-    ) -> Result<Self, TfheEvaluationError> {
-        Self::try_from_bootstrapper(Evaluator::try_new(context, server_key)?)
-    }
-
-    /// Consumes ordinary PBS workspace and allocates only the additional MVB buffers.
-    /// The underlying key, context and existing allocations are preserved.
-    pub fn try_from_bootstrapper(
-        evaluator: Evaluator<'a, T, Table, LM>,
-    ) -> Result<Self, TfheEvaluationError> {
+    /// Prepares the extra NTT polynomial for factorized MVB. Common BR and
+    /// return resources stay in `evaluator` and are borrowed only while executing.
+    /// Rejects sparse keys; input/output secret and transform requirements inherit PBS.
+    pub fn try_new(evaluator: &Evaluator<'a, T, Table, LM>) -> Result<Self, TfheEvaluationError> {
         evaluator
-            .engine
+            .resources
             .workspace
             .rotation
             .classic_controls()
             .ok_or(TfheEvaluationError::UnsupportedSparseBootstrapping)?;
-        let context = evaluator.engine.context;
+        let context = evaluator.resources.context;
         Ok(Self {
-            evaluator,
+            binding: evaluator.resources.binding(),
             shared_rotation: NttNtru::zero(context.parameters().poly_length().get()),
         })
-    }
-
-    /// Borrows ordinary single-output and interleaved PBS operations without allocation.
-    /// The opaque borrow prevents replacing the bound evaluator and invalidating MVB scratch.
-    #[must_use]
-    pub fn bootstrapper_mut(
-        &mut self,
-    ) -> impl primus_tfhe::ProgrammableBootstrap<T>
-    + primus_tfhe::ProgrammableBootstrapInterleaved<T>
-    + use<'_, 'a, T, Table, LM> {
-        &mut self.evaluator
-    }
-
-    /// Releases the extra MVB buffers and recovers the original PBS workspace without allocation.
-    /// Discards any unfinished return tile left by an interrupted evaluation.
-    #[must_use]
-    pub fn into_bootstrapper(mut self) -> Evaluator<'a, T, Table, LM> {
-        self.evaluator.batch_return.discard_batch();
-        self.evaluator
     }
 
     /// Evaluates the program, allocating one LWE per output.
@@ -172,13 +139,14 @@ where
         &mut self,
         input: Lwe<&[T]>,
         lookup_table: &NttFactorizedLookupTable<'_, T, Table, LM>,
+        evaluator: &mut Evaluator<'a, T, Table, LM>,
     ) -> Vec<LweCiphertext<T>> {
-        let context = self.evaluator.engine.context;
+        let context = self.binding.context;
         let dimension = context.parameters().external_lwe_dimension();
         let mut outputs = (0..lookup_table.output_count())
             .map(|_| LweCiphertext::zero(dimension.get()))
             .collect::<Vec<_>>();
-        self.apply_lookup_table_to(input, lookup_table, &mut outputs);
+        self.apply_lookup_table_to(input, lookup_table, &mut outputs, evaluator);
         outputs
     }
 
@@ -202,32 +170,31 @@ where
     /// Panics before any output write unless the program was prepared by the
     /// same context instance, input and all outputs have the external LWE
     /// dimension, and the output slice has exactly the program's output count.
+    /// The borrowed evaluator must use the context and BR key references selected
+    /// at construction. A new valid request supersedes pending return samples
+    /// from a previous interrupted MVB request.
     pub fn apply_lookup_table_to(
         &mut self,
         input: Lwe<&[T]>,
         lookup_table: &NttFactorizedLookupTable<'_, T, Table, LM>,
         outputs: &mut [LweCiphertext<T>],
+        evaluator: &mut Evaluator<'a, T, Table, LM>,
     ) {
+        self.binding.check(&evaluator.resources);
         self.check_io(input.as_view(), lookup_table, outputs);
-        self.prepare_shared_rotation(input, &lookup_table.common_polynomial);
+        self.prepare_shared_rotation(input, &lookup_table.common_polynomial, evaluator);
 
-        let n = self
-            .evaluator
-            .engine
-            .context
-            .parameters()
-            .poly_length()
-            .get();
-        let batch_size = self.evaluator.batch_return.batch_capacity();
+        let n = self.binding.context.parameters().poly_length().get();
+        let batch_size = evaluator.batch_return.batch_capacity();
         let mut factors = NttPolynomialIter::new(&lookup_table.factors, n);
         for outputs in outputs.chunks_mut(batch_size) {
-            self.evaluator.batch_return.begin_batch();
+            evaluator.batch_return.begin_batch();
             for factor in factors.by_ref().take(outputs.len()) {
-                self.prepare_factor_return(factor);
+                self.prepare_factor_return(factor, evaluator);
             }
-            self.evaluator
+            evaluator
                 .lwe_return
-                .return_batch_to(outputs, &mut self.evaluator.batch_return);
+                .return_batch_to(outputs, &mut evaluator.batch_return);
         }
     }
 
@@ -239,12 +206,11 @@ where
         lookup_table: &NttFactorizedLookupTable<'_, T, Table, LM>,
         outputs: &[LweCiphertext<T>],
     ) {
-        let evaluator = &self.evaluator;
         assert!(
-            core::ptr::eq(evaluator.engine.context, lookup_table.context),
+            core::ptr::eq(self.binding.context, lookup_table.context),
             "MVB program was prepared by a different context"
         );
-        let parameters = evaluator.engine.context.parameters();
+        let parameters = self.binding.context.parameters();
         let dimension = parameters.external_lwe_dimension();
         assert_eq!(
             input.dimension(),
@@ -266,30 +232,38 @@ where
 
     /// Preserve the common blind rotation in transform form for all factors.
     /// Individual products can then overwrite the coefficient accumulator.
-    fn prepare_shared_rotation(&mut self, input: Lwe<&[T]>, common: &PolynomialOwned<T>) {
-        let engine = &mut self.evaluator.engine;
-        engine.blind_rotate(input, common, 1);
-        engine
+    fn prepare_shared_rotation(
+        &mut self,
+        input: Lwe<&[T]>,
+        common: &PolynomialOwned<T>,
+        evaluator: &mut Evaluator<'a, T, Table, LM>,
+    ) {
+        let resources = &mut evaluator.resources;
+        resources.blind_rotate(input, common, 1);
+        resources
             .workspace
             .current
-            .write_ntt_form(&mut self.shared_rotation, engine.context.table());
+            .write_ntt_form(&mut self.shared_rotation, resources.context.table());
     }
 
     /// Multiply one factor and extract its independently rounded q-domain sample.
     /// Only the LWE slot survives; the next factor may overwrite the product buffers.
-    fn prepare_factor_return(&mut self, factor: NttPolynomial<&[T]>) {
-        let evaluator = &mut self.evaluator;
-        let engine = &mut evaluator.engine;
-        let parameters = engine.context.parameters();
-        let mut product = NttNtru::new(engine.workspace.current.as_mut());
+    fn prepare_factor_return(
+        &mut self,
+        factor: NttPolynomial<&[T]>,
+        evaluator: &mut Evaluator<'a, T, Table, LM>,
+    ) {
+        let resources = &mut evaluator.resources;
+        let parameters = resources.context.parameters();
+        let mut product = NttNtru::new(resources.workspace.current.as_mut());
         self.shared_rotation.mul_ntt_polynomial_to(
             &factor,
             &mut product,
             parameters.accumulator_ntru().cipher_modulus(),
         );
-        product.into_coeff_form(engine.context.table());
+        product.into_coeff_form(resources.context.table());
         evaluator.lwe_return.append_at(
-            engine.workspace.current.as_view(),
+            resources.workspace.current.as_view(),
             0,
             &mut evaluator.batch_return,
         );
@@ -302,15 +276,6 @@ where
     Table: MonomialNttTable<ValueT = T>,
     LM: primus_reduce::RingContext<T>,
 {
-    /// Creates reusable MVB workspace. See [`FactorizedEvaluator::try_new`] for
-    /// the server-key secret and NTT representation requirements.
-    pub fn factorized_evaluator<'a>(
-        &'a self,
-        server_key: &'a ServerKey<T>,
-    ) -> Result<FactorizedEvaluator<'a, T, Table, LM>, TfheEvaluationError> {
-        FactorizedEvaluator::try_new(self, server_key)
-    }
-
     /// Compiles and NTT-prepares a fixed-scale MVB program for this context.
     ///
     /// `input_domain_len` selects a nonempty prefix of the parameter codec's

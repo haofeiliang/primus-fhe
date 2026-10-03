@@ -7,17 +7,21 @@ use primus_tfhe::{
 
 use crate::{
     BlindRotationKey, Lwe, LweReturnBatchWorkspace, LweReturnEvaluator, ServerKey, TfheContext,
-    bootstrap::BlindRotationEngine,
+    bootstrap::BootstrapResources,
 };
 
 /// Allocation-free online evaluator for exact NTT NTRU programmable bootstrapping.
+/// Owns common BR/EP and scalar/batch return resources. CBS/one-hot can borrow
+/// the former; factorized MVB borrows the evaluator for a complete request.
+/// Scalar PBS uses independent return scratch. A new interleaved/MVB request
+/// discards pending batch samples from an unwind.
 pub struct Evaluator<'a, T, Table, LM = primus_modulus::BarrettModulus<T>>
 where
     T: FheUint,
     Table: MonomialNttTable<ValueT = T>,
     LM: primus_reduce::RingContext<T>,
 {
-    pub(crate) engine: BlindRotationEngine<'a, T, Table, LM>,
+    pub(crate) resources: BootstrapResources<'a, T, Table, LM>,
     pub(crate) lwe_return: LweReturnEvaluator<'a, T, LM>,
     scalar_return: primus_ntru::NtruLweKeySwitchingWorkspace<T>,
     pub(crate) batch_return: LweReturnBatchWorkspace<T>,
@@ -54,28 +58,74 @@ where
         return_key: &'a primus_ntru::NtruLweKeySwitchingKey<T>,
     ) -> Result<Self, TfheEvaluationError> {
         context.parameters().check_lwe_return_key(return_key)?;
-        let engine = BlindRotationEngine::try_new(context, blind_rotation_key)?;
-        Ok(Self::from_engine(engine, return_key))
+        let resources = BootstrapResources::try_new(context, blind_rotation_key)?;
+        Ok(Self::from_resources(resources, return_key))
     }
 
     /// Adds client-return buffers after the owning boundary checked return compatibility.
     #[must_use]
-    pub(crate) fn from_engine(
-        engine: BlindRotationEngine<'a, T, Table, LM>,
+    fn from_resources(
+        resources: BootstrapResources<'a, T, Table, LM>,
         return_key: &'a primus_ntru::NtruLweKeySwitchingKey<T>,
     ) -> Self {
         let lwe_return = LweReturnEvaluator::new(
             return_key,
-            engine.context.parameters().external_lwe().cipher_modulus(),
+            resources
+                .context
+                .parameters()
+                .external_lwe()
+                .cipher_modulus(),
         );
         let scalar_return = lwe_return.new_scalar_workspace();
         let batch_return = lwe_return.new_batch_workspace();
         Self {
-            engine,
+            resources,
             lwe_return,
             scalar_return,
             batch_return,
         }
+    }
+
+    /// Borrows the shared BR/EP resources to prepare an operation's own buffers.
+    #[must_use]
+    pub fn bootstrap_resources(&self) -> &BootstrapResources<'a, T, Table, LM> {
+        &self.resources
+    }
+
+    /// Lends common resources for CBS/one-hot or table products. Return buffers
+    /// remain owned here, so ordinary PBS can resume after the short borrow ends.
+    #[must_use]
+    pub fn bootstrap_resources_mut(&mut self) -> &mut BootstrapResources<'a, T, Table, LM> {
+        &mut self.resources
+    }
+
+    /// Adds ordinary return buffers to independently prepared BR resources.
+    /// The return key must share the resources' accumulator secret and intended
+    /// external secret; compatibility checks do not establish secret identity.
+    pub fn try_from_resources(
+        resources: BootstrapResources<'a, T, Table, LM>,
+        return_key: &'a primus_ntru::NtruLweKeySwitchingKey<T>,
+    ) -> Result<Self, TfheEvaluationError> {
+        resources
+            .context
+            .parameters()
+            .check_lwe_return_key(return_key)?;
+        Ok(Self::from_resources(resources, return_key))
+    }
+
+    /// Changes compatible return material without reallocating scratch. Success
+    /// discards pending samples; incompatible material leaves this evaluator intact.
+    /// The new key must share the BR accumulator secret and intended output secret.
+    pub fn try_rebind_return_key(
+        &mut self,
+        return_key: &'a primus_ntru::NtruLweKeySwitchingKey<T>,
+    ) -> Result<(), TfheEvaluationError> {
+        let parameters = self.resources.context.parameters();
+        parameters.check_lwe_return_key(return_key)?;
+        self.lwe_return =
+            LweReturnEvaluator::new(return_key, parameters.external_lwe().cipher_modulus());
+        self.batch_return.discard_batch();
+        Ok(())
     }
 
     /// Applies a compiled lookup table and allocates the returned ciphertext.
@@ -92,7 +142,7 @@ where
         input: Lwe<&[T]>,
         lookup_table: &LookupTable<T>,
     ) -> LweCiphertext<T> {
-        let dimension = self.engine.context.parameters().external_lwe_dimension();
+        let dimension = self.resources.context.parameters().external_lwe_dimension();
         let mut output = LweCiphertext::zero(dimension.get());
         self.apply_lookup_table_to(input, lookup_table, output.as_mut_view());
         output
@@ -113,11 +163,7 @@ where
         lookup_table: &LookupTable<T>,
         output: Lwe<&mut [T]>,
     ) {
-        assert!(
-            !self.batch_return.is_batch_active(),
-            "finish or discard the pending NTRU return batch first"
-        );
-        let parameters = self.engine.context.parameters();
+        let parameters = self.resources.context.parameters();
         assert!(
             lookup_table.is_compatible_with_ciphertext_domain(
                 parameters.poly_length(),
@@ -138,7 +184,7 @@ where
             "PBS output dimension mismatch"
         );
 
-        self.engine
+        self.resources
             .blind_rotate(input, lookup_table.polynomial(), 1);
         self.return_accumulator_at_to(0, output);
     }
@@ -159,7 +205,7 @@ where
         input: Lwe<&[T]>,
         lookup_table: &InterleavedLookupTable<T>,
     ) -> Vec<LweCiphertext<T>> {
-        let dimension = self.engine.context.parameters().external_lwe_dimension();
+        let dimension = self.resources.context.parameters().external_lwe_dimension();
         let mut outputs = (0..lookup_table.output_count())
             .map(|_| LweCiphertext::zero(dimension.get()))
             .collect::<Vec<_>>();
@@ -184,11 +230,7 @@ where
         lookup_table: &InterleavedLookupTable<T>,
         outputs: &mut [LweCiphertext<T>],
     ) {
-        assert!(
-            !self.batch_return.is_batch_active(),
-            "finish or discard the pending NTRU return batch first"
-        );
-        let parameters = self.engine.context.parameters();
+        let parameters = self.resources.context.parameters();
         assert!(
             lookup_table.is_compatible_with_ciphertext_domain(
                 parameters.poly_length(),
@@ -215,7 +257,8 @@ where
             "PBSManyLUT output ciphertext dimension mismatch"
         );
 
-        self.engine.blind_rotate(
+        self.batch_return.discard_batch();
+        self.resources.blind_rotate(
             input,
             lookup_table.polynomial(),
             lookup_table.padded_output_count(),
@@ -226,7 +269,7 @@ where
     /// CBS consumes `current` directly; ordinary PBS returns its phase coefficient.
     fn return_accumulator_at_to(&mut self, index: usize, output: Lwe<&mut [T]>) {
         self.lwe_return.return_at_to(
-            self.engine.workspace.current.as_view(),
+            self.resources.workspace.current.as_view(),
             index,
             output,
             &mut self.scalar_return,
@@ -237,7 +280,7 @@ where
     /// singleton outputs directly, without a tile copy.
     fn return_accumulator_prefix_to(&mut self, outputs: &mut [LweCiphertext<T>]) {
         self.lwe_return.return_prefix_to(
-            self.engine.workspace.current.as_view(),
+            self.resources.workspace.current.as_view(),
             outputs,
             &mut self.batch_return,
         );

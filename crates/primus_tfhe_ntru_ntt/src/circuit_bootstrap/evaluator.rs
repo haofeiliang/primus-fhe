@@ -11,12 +11,12 @@ use primus_tfhe::{InterleavedLookupTable, LookupTableError};
 use super::key::CircuitBootstrapBinding;
 
 use crate::{
-    BlindRotationKey, CircuitBootstrapKey, Evaluator, Lwe, ServerKey, TfheContext,
-    TfheEvaluationError,
-    bootstrap::{BlindRotationEngine, CircuitBootstrapResources},
+    CircuitBootstrapKey, Lwe, TfheEvaluationError,
+    bootstrap::{BootstrapBinding, BootstrapResources},
 };
 
-/// Allocation-free online NTRU circuit bootstrapping with optional evaluation keys.
+/// Prepared NTRU circuit-bootstrapping LUT and projection buffers.
+/// Common BR/EP resources are borrowed per operation; no return buffers are owned.
 /// Output is NGSW under f_acc, unlike ordinary PBS's LWE output under independent s at q.
 pub struct CircuitBootstrapEvaluator<'a, T, Table, LM = primus_modulus::BarrettModulus<T>>
 where
@@ -24,7 +24,7 @@ where
     Table: MonomialNttTable<ValueT = T>,
     LM: primus_reduce::RingContext<T>,
 {
-    resources: CircuitBootstrapResources<'a, T, Table, LM>,
+    binding: BootstrapBinding<'a, T, Table, LM>,
     circuit: CircuitBootstrapBinding<'a, T>,
     lookup_table: InterleavedLookupTable<T>,
     trace_scratch: Vec<T>,
@@ -37,108 +37,23 @@ where
     Table: MonomialNttTable<ValueT = T>,
     LM: primus_reduce::RingContext<T>,
 {
-    /// Binds the CBS parameters and material carried by one server key.
-    /// Standalone CBS allocates only BR/projection resources, with no LWE return buffers.
-    /// Rejects sparse keys, absent CBS material, an input codec at another q,
-    /// or an input domain/output count that exceeds ManyLUT capacity.
+    /// Binds the circuit key, compiles the gadget-scaled identity LUT, and allocates
+    /// projection scratch. Does not retain a borrow of the resource owner itself.
+    /// Online calls accept resources made from the same context and BR key references.
     ///
     /// # Correctness
-    /// Inherits [`Self::try_from_parts`]'s secret and transform requirements.
-    /// Bundled generation pairs secrets; layout checks do not establish identity
-    /// for externally assembled material or another transform representation.
+    /// The circuit key must share the resources' actual accumulator secret and
+    /// NTT representation; compatibility checks do not establish these identities.
     pub fn try_new(
-        context: &'a TfheContext<T, Table, LM>,
-        server_key: &'a ServerKey<T>,
-        input_codec: &RoundedCodec<T, LM>,
-    ) -> Result<Self, TfheEvaluationError> {
-        Self::from_resources_and_key(
-            CircuitBootstrapResources::Standalone(BlindRotationEngine::try_new(
-                context,
-                server_key.blind_rotation_key(),
-            )?),
-            server_key.circuit_bootstrap_key(),
-            input_codec,
-        )
-    }
-
-    /// Binds resources and compiles gadget-scaled identity outputs once.
-    /// Uses the circuit key's complete output basis and key parameters.
-    /// Requires no return material. Rejects sparse BR, mismatched input q or insufficient ManyLUT capacity.
-    ///
-    /// # Correctness
-    /// The BR and circuit keys were generated from the same accumulator
-    /// secret and NTT representation. Layout/basis checks do not prove identity.
-    pub fn try_from_parts(
-        context: &'a TfheContext<T, Table, LM>,
-        blind_rotation_key: &'a BlindRotationKey<T>,
+        resources: &BootstrapResources<'a, T, Table, LM>,
         circuit_key: &'a CircuitBootstrapKey<T>,
         input_codec: &RoundedCodec<T, LM>,
     ) -> Result<Self, TfheEvaluationError> {
-        Self::from_resources_and_key(
-            CircuitBootstrapResources::Standalone(BlindRotationEngine::try_new(
-                context,
-                blind_rotation_key,
-            )?),
-            Some(circuit_key),
-            input_codec,
-        )
-    }
-
-    /// Consumes ordinary PBS workspace and allocates only the additional CBS buffers.
-    /// The circuit key must share the PBS accumulator secret and transform representation.
-    /// Rejects sparse keys, incompatible CBS material, codec q or ManyLUT capacity.
-    pub fn try_from_bootstrapper(
-        pbs: Evaluator<'a, T, Table, LM>,
-        circuit_key: &'a CircuitBootstrapKey<T>,
-        input_codec: &RoundedCodec<T, LM>,
-    ) -> Result<Self, TfheEvaluationError> {
-        Self::from_resources_and_key(
-            CircuitBootstrapResources::Bootstrapper(pbs),
-            Some(circuit_key),
-            input_codec,
-        )
-    }
-
-    /// Borrows ordinary PBS only when constructed from a complete bootstrapper,
-    /// without allowing replacement of the bound evaluator.
-    /// Standalone CBS has no client-return buffers and returns `None`.
-    #[must_use]
-    pub fn bootstrapper_mut(
-        &mut self,
-    ) -> Option<
-        impl primus_tfhe::ProgrammableBootstrap<T>
-        + primus_tfhe::ProgrammableBootstrapInterleaved<T>
-        + use<'_, 'a, T, Table, LM>,
-    > {
-        self.resources.bootstrapper_mut()
-    }
-
-    /// Recovers ordinary PBS under the supplied return key.
-    /// Reuses retained return buffers for any compatible `return_key`, discarding
-    /// pending samples from the previous binding. Rejects incompatible return material.
-    ///
-    /// # Correctness
-    /// The return key must use the BR accumulator secret and the intended external
-    /// secret. Layout/modulus checks do not establish this identity.
-    pub fn try_into_bootstrapper(
-        self,
-        return_key: &'a primus_ntru::NtruLweKeySwitchingKey<T>,
-    ) -> Result<Evaluator<'a, T, Table, LM>, TfheEvaluationError> {
-        self.resources.try_into_bootstrapper(return_key)
-    }
-
-    /// Bind the circuit key once and compile the gadget-scaled identity LUT.
-    fn from_resources_and_key(
-        resources: CircuitBootstrapResources<'a, T, Table, LM>,
-        circuit_key: Option<&'a CircuitBootstrapKey<T>>,
-        input_codec: &RoundedCodec<T, LM>,
-    ) -> Result<Self, TfheEvaluationError> {
-        let engine = resources.engine();
-        let context = engine.context;
+        let context = resources.context;
         let tfhe = context.parameters();
         let circuit = CircuitBootstrapBinding::try_new(
             tfhe,
-            engine.workspace.rotation.classic_controls(),
+            resources.workspace.rotation.classic_controls(),
             circuit_key,
         )?;
         let parameters = circuit.parameters;
@@ -151,7 +66,7 @@ where
         }
         let lookup_table = parameters.compile_lookup_table(input_codec)?;
         Ok(Self {
-            resources,
+            binding: resources.binding(),
             circuit,
             lookup_table,
             trace_scratch: vec![T::ZERO; 2 * n],
@@ -177,22 +92,24 @@ where
     /// See [`NttNgswCiphertext::cmux_to`] for the underlying numerical contract.
     ///
     /// # Panics
-    /// Panics before output writes if any ciphertext has the wrong length.
+    /// Panics before output writes on a different context/BR key binding or a
+    /// wrong ciphertext length.
     pub fn cmux_to<A, B, C, D>(
         &mut self,
         control: &NttNgswCiphertext<A>,
         lhs: &NtruCiphertext<B>,
         rhs: &NtruCiphertext<C>,
         output: &mut NtruCiphertext<D>,
+        resources: &mut BootstrapResources<'a, T, Table, LM>,
     ) where
         A: Data<Elem = T>,
         B: Data<Elem = T>,
         C: Data<Elem = T>,
         D: DataMut<Elem = T>,
     {
-        let engine = self.resources.engine_mut();
+        self.binding.check(resources);
         let parameters = self.circuit.parameters;
-        let ring_len = engine.context.parameters().poly_length().get();
+        let ring_len = resources.context.parameters().poly_length().get();
         assert_eq!(
             (
                 control.as_ref().len(),
@@ -208,13 +125,13 @@ where
             rhs,
             output,
             parameters.output_basis(),
-            engine
+            resources
                 .context
                 .parameters()
                 .accumulator_ntru()
                 .cipher_modulus(),
-            engine.context.table(),
-            engine.workspace.rotation.external_product(),
+            resources.context.table(),
+            resources.workspace.rotation.external_product(),
         );
     }
 
@@ -227,20 +144,22 @@ where
     /// See [`NttNgswCiphertext::external_product_to`].
     ///
     /// # Panics
-    /// Panics before output writes if any ciphertext has the wrong length.
+    /// Panics before output writes on a different context/BR key binding or a
+    /// wrong ciphertext length.
     pub fn external_product_to<A, B, C>(
         &mut self,
         control: &NttNgswCiphertext<A>,
         input: &NtruCiphertext<B>,
         output: &mut NtruCiphertext<C>,
+        resources: &mut BootstrapResources<'a, T, Table, LM>,
     ) where
         A: Data<Elem = T>,
         B: Data<Elem = T>,
         C: DataMut<Elem = T>,
     {
-        let engine = self.resources.engine_mut();
+        self.binding.check(resources);
         let parameters = self.circuit.parameters;
-        let ring_len = engine.context.parameters().poly_length().get();
+        let ring_len = resources.context.parameters().poly_length().get();
         assert_eq!(
             (
                 control.as_ref().len(),
@@ -254,21 +173,25 @@ where
             input,
             output,
             parameters.output_basis(),
-            engine
+            resources
                 .context
                 .parameters()
                 .accumulator_ntru()
                 .cipher_modulus(),
-            engine.context.table(),
-            engine.workspace.rotation.external_product(),
+            resources.context.table(),
+            resources.workspace.rotation.external_product(),
         );
     }
 
     /// Allocates the output NGSW. Inherits [`Self::circuit_bootstrap_to`]'s contracts.
     #[must_use]
-    pub fn circuit_bootstrap(&mut self, input: Lwe<&[T]>) -> NttNgswCiphertext<Vec<T>> {
+    pub fn circuit_bootstrap(
+        &mut self,
+        input: Lwe<&[T]>,
+        resources: &mut BootstrapResources<'a, T, Table, LM>,
+    ) -> NttNgswCiphertext<Vec<T>> {
         let mut output = self.allocate_output();
-        self.circuit_bootstrap_to(input, &mut output);
+        self.circuit_bootstrap_to(input, &mut output, resources);
         output
     }
 
@@ -285,16 +208,18 @@ where
     ///
     /// # Panics
     /// Panics before output writes if input dimension or output NGSW length is
-    /// wrong. Fixed LUT/resource compatibility was checked during construction.
+    /// wrong, or resources use a different context/BR key binding. Fixed LUT
+    /// geometry was checked during construction.
     pub fn circuit_bootstrap_to<S: DataMut<Elem = T>>(
         &mut self,
         input: Lwe<&[T]>,
         output: &mut NttNgswCiphertext<S>,
+        resources: &mut BootstrapResources<'a, T, Table, LM>,
     ) {
-        let engine = self.resources.engine_mut();
+        self.binding.check(resources);
         let parameters = self.circuit.parameters;
         let circuit_key = self.circuit.key;
-        let tfhe = engine.context.parameters();
+        let tfhe = resources.context.parameters();
         assert_eq!(
             input.dimension(),
             tfhe.external_lwe_dimension().get(),
@@ -305,7 +230,7 @@ where
             parameters.output_nlev_len(),
             "circuit-bootstrap NGSW output length mismatch"
         );
-        engine.blind_rotate(
+        resources.blind_rotate(
             input,
             self.lookup_table.polynomial(),
             self.lookup_table.padded_output_count(),
@@ -314,41 +239,20 @@ where
         circuit_key
             .trace_key()
             .project_prefix_coefficients_with_scratch_to(
-                &engine.workspace.current,
+                &resources.workspace.current,
                 parameters.output_basis().decompose_length().get(),
                 self.projected.as_mut(),
                 tfhe.accumulator_ntru().cipher_modulus(),
-                engine.context.table(),
+                resources.context.table(),
                 &mut self.trace_scratch,
-                engine.workspace.rotation.external_product(),
+                resources.workspace.rotation.external_product(),
             );
         circuit_key.scheme_switch_key().apply_to(
             &self.projected,
             output,
             tfhe.accumulator_ntru().cipher_modulus(),
-            engine.context.table(),
-            engine.workspace.rotation.external_product(),
+            resources.context.table(),
+            resources.workspace.rotation.external_product(),
         );
-    }
-}
-
-impl<T, Table, LM> TfheContext<T, Table, LM>
-where
-    T: FheUint,
-    Table: MonomialNttTable<ValueT = T>,
-    LM: primus_reduce::RingContext<T>,
-{
-    /// Binds the server key's optional CBS material to reusable workspace.
-    /// Returns an error if the capability is absent or incompatible.
-    ///
-    /// # Correctness
-    /// Inherits [`crate::CircuitBootstrapEvaluator::try_new`]'s transform requirements.
-    pub fn circuit_bootstrap_evaluator<'a>(
-        &'a self,
-        server_key: &'a ServerKey<T>,
-        input_codec: &RoundedCodec<T, LM>,
-    ) -> Result<crate::CircuitBootstrapEvaluator<'a, T, Table, LM>, crate::TfheEvaluationError>
-    {
-        crate::CircuitBootstrapEvaluator::try_new(self, server_key, input_codec)
     }
 }

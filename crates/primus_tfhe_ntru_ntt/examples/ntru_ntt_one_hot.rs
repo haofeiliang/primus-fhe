@@ -123,8 +123,15 @@ fn main() {
     let mut decoded = vec![0; N];
 
     // Server: reserve one transformed NGSW per value in 0..4 and one ring result.
-    let mut cbs =
-        OneHotCircuitBootstrapEvaluator::try_new(&context, &server_key, &input_codec).unwrap();
+    let mut resources = context
+        .bootstrap_resources(server_key.blind_rotation_key())
+        .unwrap();
+    let mut cbs = OneHotCircuitBootstrapEvaluator::try_new(
+        &resources,
+        server_key.circuit_bootstrap_key().unwrap(),
+        &input_codec,
+    )
+    .unwrap();
     let mut selectors = cbs.allocate_ngsw_output();
     let cbs_parameters = cbs.parameters();
     let selector_len = cbs.ngsw_selector_len(); // L*N NTT values per NGSW.
@@ -137,7 +144,7 @@ fn main() {
             .unwrap();
 
         // Server: selector r encrypts [message == r]; r=0 is included in this full batch.
-        cbs.one_hot_ngsw_to(input.as_view(), &mut selectors);
+        cbs.one_hot_ngsw_to(input.as_view(), &mut selectors, &mut resources);
         let control = NttNgswIter::new(&selectors, selector_len)
             .nth(TARGET)
             .unwrap();
@@ -148,7 +155,7 @@ fn main() {
             cbs_parameters.output_basis(),
             context.parameters().accumulator_ntru().cipher_modulus(),
             context.table(),
-            cbs.external_product_workspace(),
+            resources.external_product_workspace(),
         );
 
         // Client: equality selects rhs=3; all other inputs select lhs=1.

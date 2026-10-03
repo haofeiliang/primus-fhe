@@ -62,13 +62,20 @@ fn ordinary<T: FheUint, Table: MonomialNttTable<ValueT = T>>(c: &mut Criterion, 
             let rhs = ring.encrypt(&[T::ONE; N], &mut rng);
             (context, client, server, input, lhs, rhs)
         });
-        let mut evaluator =
-            CircuitBootstrapEvaluator::try_new(context, server, &input_codec).unwrap();
+        let mut resources = context
+            .bootstrap_resources(server.blind_rotation_key())
+            .unwrap();
+        let mut evaluator = CircuitBootstrapEvaluator::try_new(
+            &resources,
+            server.circuit_bootstrap_key().unwrap(),
+            &input_codec,
+        )
+        .unwrap();
         let mut output = evaluator.allocate_output();
         if !verified {
-            evaluator.circuit_bootstrap_to(input.as_view(), &mut output);
+            evaluator.circuit_bootstrap_to(input.as_view(), &mut output, &mut resources);
             let mut selected = context.allocate_accumulator_ciphertext();
-            evaluator.cmux_to(&output, lhs, rhs, &mut selected);
+            evaluator.cmux_to(&output, lhs, rhs, &mut selected, &mut resources);
             let mut decoded = vec![T::ZERO; N];
             context
                 .accumulator_client(
@@ -84,7 +91,11 @@ fn ordinary<T: FheUint, Table: MonomialNttTable<ValueT = T>>(c: &mut Criterion, 
             verified = true;
         }
         b.iter(|| {
-            evaluator.circuit_bootstrap_to(black_box(input.as_view()), black_box(&mut output))
+            evaluator.circuit_bootstrap_to(
+                black_box(input.as_view()),
+                black_box(&mut output),
+                &mut resources,
+            )
         });
     });
 }
@@ -127,8 +138,15 @@ fn one_hot<T: FheUint, Table: MonomialNttTable<ValueT = T>>(c: &mut Criterion, b
                 let rhs = ring.encrypt(&[T::ONE; N], &mut rng);
                 (context, client, server, input, lhs, rhs)
             });
-            let mut evaluator =
-                OneHotCircuitBootstrapEvaluator::try_new(context, server, &input_codec).unwrap();
+            let mut resources = context
+                .bootstrap_resources(server.blind_rotation_key())
+                .unwrap();
+            let mut evaluator = OneHotCircuitBootstrapEvaluator::try_new(
+                &resources,
+                server.circuit_bootstrap_key().unwrap(),
+                &input_codec,
+            )
+            .unwrap();
             let mut output = if compact {
                 evaluator.allocate_nonzero_ngsw_output()
             } else {
@@ -136,9 +154,9 @@ fn one_hot<T: FheUint, Table: MonomialNttTable<ValueT = T>>(c: &mut Criterion, b
             };
             if !verified {
                 if compact {
-                    evaluator.one_hot_nonzero_ngsw_to(input.as_view(), &mut output);
+                    evaluator.one_hot_nonzero_ngsw_to(input.as_view(), &mut output, &mut resources);
                 } else {
-                    evaluator.one_hot_ngsw_to(input.as_view(), &mut output);
+                    evaluator.one_hot_ngsw_to(input.as_view(), &mut output, &mut resources);
                 }
                 let parameters = evaluator.parameters();
                 let mut selected = context.allocate_accumulator_ciphertext();
@@ -164,7 +182,7 @@ fn one_hot<T: FheUint, Table: MonomialNttTable<ValueT = T>>(c: &mut Criterion, b
                         parameters.output_basis(),
                         context.parameters().accumulator_ntru().cipher_modulus(),
                         context.table(),
-                        evaluator.external_product_workspace(),
+                        resources.external_product_workspace(),
                     );
                     ring.decrypt_to(&selected, &mut decoded);
                     let expected = if index + usize::from(compact) == 2 {
@@ -178,12 +196,19 @@ fn one_hot<T: FheUint, Table: MonomialNttTable<ValueT = T>>(c: &mut Criterion, b
             }
             if compact {
                 b.iter(|| {
-                    evaluator
-                        .one_hot_nonzero_ngsw_to(black_box(input.as_view()), black_box(&mut output))
+                    evaluator.one_hot_nonzero_ngsw_to(
+                        black_box(input.as_view()),
+                        black_box(&mut output),
+                        &mut resources,
+                    )
                 });
             } else {
                 b.iter(|| {
-                    evaluator.one_hot_ngsw_to(black_box(input.as_view()), black_box(&mut output))
+                    evaluator.one_hot_ngsw_to(
+                        black_box(input.as_view()),
+                        black_box(&mut output),
+                        &mut resources,
+                    )
                 });
             }
         });

@@ -42,6 +42,7 @@ where
 {
     context: &'a TfheContext<T, Table, LM>,
     lookup_table: &'a HighPrecisionLookupTable<T>,
+    resources: primus_tfhe_ntru_ntt::BootstrapResources<'a, T, Table, LM>,
     one_hot: OneHotCircuitBootstrapEvaluator<'a, T, Table, LM>,
     lwe_return: LweReturnEvaluator<'a, T, LM>,
     scalar_return: primus_ntru::NtruLweKeySwitchingWorkspace<T>,
@@ -111,12 +112,9 @@ where
             lookup_table.plaintext_modulus(),
             context.parameters().external_lwe().cipher_modulus(),
         );
-        let one_hot = OneHotCircuitBootstrapEvaluator::try_from_parts(
-            context,
-            blind_rotation_key,
-            circuit_key,
-            &input_codec,
-        )?;
+        let resources = context.bootstrap_resources(blind_rotation_key)?;
+        let one_hot =
+            OneHotCircuitBootstrapEvaluator::try_new(&resources, circuit_key, &input_codec)?;
         let layout = lookup_table.layout;
         let n = layout.polynomial_length;
         let coefficient_chunk_count = layout.config.coefficient_chunk_count;
@@ -147,6 +145,7 @@ where
             context,
             lookup_table,
             one_hot,
+            resources,
             scalar_return: lwe_return.new_scalar_workspace(),
             lwe_return,
             public_table_selectors: vec![T::ZERO; public_table_selectors_len].into_boxed_slice(),
@@ -281,8 +280,11 @@ where
             ))
             .zip(self.rotation_factors.chunks_exact(factors_chunk_len))
         {
-            self.one_hot
-                .one_hot_nonzero_ngsw_to(input.as_view(), &mut self.nonzero_selectors);
+            self.one_hot.one_hot_nonzero_ngsw_to(
+                input.as_view(),
+                &mut self.nonzero_selectors,
+                &mut self.resources,
+            );
             // Save this chunk's aggregated rotation control.
             // The next chunk overwrites `nonzero_selectors` with its own M-1 selectors.
             aggregate_rotation_control_to(
@@ -308,12 +310,14 @@ where
                     self.one_hot.one_hot_nonzero_ngsw_to(
                         input.as_view(),
                         &mut self.encrypted_table_selectors[batches.ngsw_range(nonzero_len)],
+                        &mut self.resources,
                     );
                 }
                 SelectorBatches::Nlev(_) => {
                     self.one_hot.one_hot_nlev_to(
                         input.as_view(),
                         &mut self.public_table_selectors[batches.nlev_range(full_len)],
+                        &mut self.resources,
                     );
                     self.transform_public_selectors(batches);
                 }
@@ -322,6 +326,7 @@ where
                         input.as_view(),
                         &mut self.public_table_selectors[batches.nlev_range(full_len)],
                         &mut self.encrypted_table_selectors[batches.ngsw_range(nonzero_len)],
+                        &mut self.resources,
                     );
                     self.transform_public_selectors(batches);
                 }
@@ -357,7 +362,7 @@ where
                 basis,
                 modulus,
                 self.context.table(),
-                self.one_hot.external_product_workspace(),
+                self.resources.external_product_workspace(),
             );
             // Keep the new accumulator in `current` for both odd and even
             // rotation counts, without copying its N coefficients.
@@ -412,7 +417,7 @@ where
                 self.context.parameters().blind_rotation().basis(),
                 modulus,
                 self.context.table(),
-                self.one_hot.external_product_workspace(),
+                self.resources.external_product_workspace(),
             );
     }
 
@@ -437,7 +442,7 @@ where
             basis,
             modulus,
             self.context.table(),
-            self.one_hot.external_product_workspace(),
+            self.resources.external_product_workspace(),
         );
     }
 
@@ -468,7 +473,7 @@ where
             basis,
             modulus,
             self.context.table(),
-            self.one_hot.external_product_workspace(),
+            self.resources.external_product_workspace(),
         );
     }
 }

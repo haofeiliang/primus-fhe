@@ -7,7 +7,6 @@ use primus_ntru::SecretKeyDistr;
 use primus_ntt::U32NttTable;
 use primus_poly::PolyLength;
 use primus_test_allocations as allocations;
-use primus_tfhe::ProgrammableBootstrap as _;
 use primus_tfhe_ntru_ntt::{
     DecompositionConfig, FactorizedLookupTable, InterleavedLookupTable, LookupTable,
     LookupTableError, LweCiphertext, NttFactorizedLookupTable, TfheConfig, TfheContext,
@@ -70,10 +69,8 @@ fn check_complete(distr: SecretKeyDistr) {
     let decryptor = context
         .decryptor(client.external_lwe_secret_key(), &input_codec)
         .unwrap();
-    let mut evaluator = primus_tfhe_ntru_ntt::FactorizedEvaluator::try_from_bootstrapper(
-        context.evaluator(&server).unwrap(),
-    )
-    .unwrap();
+    let mut pbs = context.evaluator(&server).unwrap();
+    let mut evaluator = primus_tfhe_ntru_ntt::FactorizedEvaluator::try_new(&pbs).unwrap();
     let dimension = context.parameters().external_lwe_dimension().get();
     // The reference uses the same Scaled centers, not Rounded outputs.
     let singles: [_; 3] = std::array::from_fn(|i| {
@@ -116,17 +113,13 @@ fn check_complete(distr: SecretKeyDistr) {
         for message in [0, 3, 7, 0] {
             let input = encryptor.encrypt_padded(message as u32, &mut rng).unwrap();
             let (_, allocation) = allocations::measure(|| {
-                evaluator.apply_lookup_table_to(input.as_view(), &lut, &mut outputs);
+                evaluator.apply_lookup_table_to(input.as_view(), &lut, &mut outputs, &mut pbs);
             });
             assert_eq!(allocation.count, 0, "MVB must reuse its workspace");
             check(&outputs, message);
             if count == 3 {
                 for (single, output) in singles.iter().zip(&outputs) {
-                    evaluator.bootstrapper_mut().apply_lookup_table_to(
-                        input.as_view(),
-                        single,
-                        reference.as_mut_view(),
-                    );
+                    pbs.apply_lookup_table_to(input.as_view(), single, reference.as_mut_view());
                     assert_eq!(
                         codec.decode_value(decryptor.decrypt_phase(reference.as_view()).unwrap()),
                         codec.decode_value(decryptor.decrypt_phase(output.as_view()).unwrap())
@@ -159,7 +152,7 @@ fn check_complete(distr: SecretKeyDistr) {
         .unwrap();
     for message in [0, 7] {
         let input = encryptor.encrypt_padded(message, &mut rng).unwrap();
-        let output = evaluator.apply_lookup_table(input.as_view(), &binary);
+        let output = evaluator.apply_lookup_table(input.as_view(), &binary, &mut pbs);
         assert_eq!(
             binary_codec.decode_value(decryptor.decrypt_phase(output[0].as_view()).unwrap()),
             u32::from(message >= 3)
@@ -191,12 +184,16 @@ fn check_complete(distr: SecretKeyDistr) {
                 },
                 if case == 3 { &foreign } else { &lut },
                 &mut outputs,
+                &mut pbs
             )))
             .is_err()
         );
         assert_eq!(outputs, before);
     }
-    check(&evaluator.apply_lookup_table(input.as_view(), &lut), 3);
+    check(
+        &evaluator.apply_lookup_table(input.as_view(), &lut, &mut pbs),
+        3,
+    );
 
     for (n, t, input_q, output_q) in [(N / 2, 15, Q, Q), (N, 15, 97, Q), (N, 15, Q, 97)] {
         let raw = FactorizedLookupTable::try_new(
@@ -225,9 +222,6 @@ fn check_complete(distr: SecretKeyDistr) {
         ),
         Err(LookupTableError::OutputModulusMismatch)
     ));
-
-    let (_, recovered) = allocations::measure(|| evaluator.into_bootstrapper());
-    assert_eq!(recovered.count, 0, "recovery must retain PBS allocations");
 }
 
 #[test]

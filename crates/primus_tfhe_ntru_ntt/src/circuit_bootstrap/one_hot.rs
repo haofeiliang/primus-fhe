@@ -9,9 +9,8 @@ pub use primus_tfhe_ntru::{OneHotBootstrapError, OneHotLookupTable};
 use super::key::CircuitBootstrapBinding;
 
 use crate::{
-    BlindRotationKey, CircuitBootstrapKey, CircuitBootstrapParameters, Evaluator, Lwe, ServerKey,
-    TfheContext,
-    bootstrap::{BlindRotationEngine, CircuitBootstrapResources},
+    CircuitBootstrapKey, CircuitBootstrapParameters, Lwe,
+    bootstrap::{BootstrapBinding, BootstrapResources},
 };
 
 /// One-hot extension of CBS for classic binary/ternary LWE secrets.
@@ -24,6 +23,8 @@ use crate::{
 /// in natural selector order and output-basis scalar order, with no padding.
 /// Each call performs one BR and L full constant projections per selector.
 /// Online calls overwrite outputs, reuse BR external-product scratch, and allocate nothing.
+/// Owns only the packed LUT and projection buffers; common BR/EP resources are
+/// borrowed per operation and no return buffers are owned.
 /// Ordinary CBS remains available through [`crate::CircuitBootstrapEvaluator`].
 pub struct OneHotCircuitBootstrapEvaluator<'a, T, Table, LM = primus_modulus::BarrettModulus<T>>
 where
@@ -31,7 +32,7 @@ where
     Table: MonomialNttTable<ValueT = T>,
     LM: primus_reduce::RingContext<T>,
 {
-    resources: CircuitBootstrapResources<'a, T, Table, LM>,
+    binding: BootstrapBinding<'a, T, Table, LM>,
     circuit: CircuitBootstrapBinding<'a, T>,
     lookup_table: OneHotLookupTable<T>,
     trace_scratch: Vec<T>,
@@ -44,84 +45,32 @@ where
     Table: MonomialNttTable<ValueT = T>,
     LM: primus_reduce::RingContext<T>,
 {
-    /// Binds standalone BR/projection resources and compiles the packed LUT.
-    /// LWE return buffers are allocated only when recovering ordinary PBS.
-    /// The input codec chooses t=2M at external q. Rejects sparse keys, absent CBS
-    /// material, mismatched q, or packed geometry without enough guard capacity.
+    /// Compiles the packed LUT and allocates projection buffers without retaining
+    /// a borrow of the resource owner. Online calls accept resources made from
+    /// the same context and BR key references.
     ///
     /// # Correctness
-    /// The context and server material must use the same secrets and transform
-    /// representation. Shape checks cannot establish secret or representation identity.
+    /// The circuit key must share the resources' actual accumulator secret and
+    /// NTT representation; compatibility checks do not establish these identities.
     pub fn try_new(
-        context: &'a TfheContext<T, Table, LM>,
-        server_key: &'a ServerKey<T>,
-        input_codec: &RoundedCodec<T, LM>,
-    ) -> Result<Self, OneHotBootstrapError> {
-        Self::from_resources(
-            CircuitBootstrapResources::Standalone(BlindRotationEngine::try_new(
-                context,
-                server_key.blind_rotation_key(),
-            )?),
-            server_key.circuit_bootstrap_key(),
-            input_codec,
-        )
-    }
-
-    /// Binds independently owned BR and CBS material, without a return key.
-    /// The keys must share the context's secrets and transform representation.
-    /// Rejects sparse BR and incompatible CBS parameters before online evaluation.
-    pub fn try_from_parts(
-        context: &'a TfheContext<T, Table, LM>,
-        blind_rotation_key: &'a BlindRotationKey<T>,
+        resources: &BootstrapResources<'a, T, Table, LM>,
         circuit_key: &'a CircuitBootstrapKey<T>,
         input_codec: &RoundedCodec<T, LM>,
     ) -> Result<Self, OneHotBootstrapError> {
-        Self::from_resources(
-            CircuitBootstrapResources::Standalone(BlindRotationEngine::try_new(
-                context,
-                blind_rotation_key,
-            )?),
-            Some(circuit_key),
-            input_codec,
-        )
-    }
-
-    /// Consumes existing PBS workspace; allocates only the packed LUT and trace buffers.
-    /// Inherits [`Self::try_new`]'s compatibility and error contracts. The supplied
-    /// circuit key must share the PBS accumulator secret and transform representation.
-    pub fn try_from_bootstrapper(
-        pbs: Evaluator<'a, T, Table, LM>,
-        circuit_key: &'a CircuitBootstrapKey<T>,
-        input_codec: &RoundedCodec<T, LM>,
-    ) -> Result<Self, OneHotBootstrapError> {
-        Self::from_resources(
-            CircuitBootstrapResources::Bootstrapper(pbs),
-            Some(circuit_key),
-            input_codec,
-        )
-    }
-
-    /// Binds CBS geometry once and allocates only its projection buffers.
-    fn from_resources(
-        resources: CircuitBootstrapResources<'a, T, Table, LM>,
-        circuit_key: Option<&'a CircuitBootstrapKey<T>>,
-        input_codec: &RoundedCodec<T, LM>,
-    ) -> Result<Self, OneHotBootstrapError> {
-        let engine = resources.engine();
         let circuit = CircuitBootstrapBinding::try_new(
-            engine.context.parameters(),
-            engine.workspace.rotation.classic_controls(),
+            resources.context.parameters(),
+            resources.workspace.rotation.classic_controls(),
             circuit_key,
         )?;
         let lookup_table = OneHotLookupTable::try_new(
-            engine.context.parameters(),
+            resources.context.parameters(),
             circuit.parameters,
             input_codec,
         )?;
-        let n = engine.context.parameters().poly_length().get();
+        let n = resources.context.parameters().poly_length().get();
         let projected = NlevCiphertext::zero(circuit.parameters.output_nlev_len());
         Ok(Self {
-            resources,
+            binding: resources.binding(),
             circuit,
             lookup_table,
             trace_scratch: vec![T::ZERO; 2 * n],
@@ -145,21 +94,6 @@ where
     #[must_use]
     pub fn parameters(&self) -> &'a CircuitBootstrapParameters<T> {
         self.circuit.parameters
-    }
-
-    /// Borrows the external-product workspace already used by one-hot CBS.
-    /// Serial table products can reuse it between calls without allocation or reset.
-    /// Every one-hot call overwrites its scratch before reading it.
-    ///
-    /// # Correctness
-    /// Retain the workspace's polynomial length. It does not establish a product's
-    /// key, modulus, basis or transform compatibility.
-    #[must_use]
-    pub fn external_product_workspace(
-        &mut self,
-    ) -> &mut primus_ntru::NttNtruExternalProductWorkspace<T> {
-        let engine = self.resources.engine_mut();
-        engine.workspace.rotation.external_product()
     }
 
     /// Returns the storage length of one transformed NGSW selector: L*N NTT ring elements.
@@ -196,44 +130,26 @@ where
         vec![T::ZERO; self.ngsw_batch_len() - self.ngsw_selector_len()]
     }
 
-    /// Borrows ordinary PBS only when constructed from a complete bootstrapper,
-    /// without allowing replacement of the bound evaluator.
-    /// Standalone CBS has no client-return buffers and returns `None`.
-    #[must_use]
-    pub fn bootstrapper_mut(
-        &mut self,
-    ) -> Option<
-        impl primus_tfhe::ProgrammableBootstrap<T>
-        + primus_tfhe::ProgrammableBootstrapInterleaved<T>
-        + use<'_, 'a, T, Table, LM>,
-    > {
-        self.resources.bootstrapper_mut()
-    }
-
-    /// Recovers ordinary PBS under the supplied return key.
-    /// Reuses retained return buffers for any compatible `return_key`, discarding
-    /// pending samples from the previous binding. Rejects incompatible return material.
-    ///
-    /// # Correctness
-    /// The return key must use the BR accumulator secret and the intended external
-    /// secret. Layout/modulus checks do not establish this identity.
-    pub fn try_into_bootstrapper(
-        self,
-        return_key: &'a primus_ntru::NtruLweKeySwitchingKey<T>,
-    ) -> Result<Evaluator<'a, T, Table, LM>, crate::TfheEvaluationError> {
-        self.resources.try_into_bootstrapper(return_key)
-    }
-
     /// Writes coefficient NLEV selectors only, without scheme switching.
     /// Inherits [`Self::one_hot_to`]'s input, layout, noise and prewrite checks.
-    pub fn one_hot_nlev_to(&mut self, input: Lwe<&[T]>, output: &mut [T]) {
-        self.evaluate(input, 0, Some(output), None);
+    pub fn one_hot_nlev_to(
+        &mut self,
+        input: Lwe<&[T]>,
+        output: &mut [T],
+        resources: &mut BootstrapResources<'a, T, Table, LM>,
+    ) {
+        self.evaluate(input, 0, Some(output), None, resources);
     }
 
     /// Writes transformed NGSW selectors only; retains no full NLEV output batch.
     /// Inherits [`Self::one_hot_to`]'s input, layout, noise and prewrite checks.
-    pub fn one_hot_ngsw_to(&mut self, input: Lwe<&[T]>, output: &mut [T]) {
-        self.evaluate(input, 0, None, Some(output));
+    pub fn one_hot_ngsw_to(
+        &mut self,
+        input: Lwe<&[T]>,
+        output: &mut [T],
+        resources: &mut BootstrapResources<'a, T, Table, LM>,
+    ) {
+        self.evaluate(input, 0, None, Some(output), resources);
     }
 
     /// Writes only the transformed NGSW selectors for branches r=1..M-1.
@@ -246,9 +162,15 @@ where
     /// Inherits [`Self::one_hot_to`]'s input, representation and noise requirements.
     ///
     /// # Panics
-    /// Rejects input dimension and exact output length before BR or output writes.
-    pub fn one_hot_nonzero_ngsw_to(&mut self, input: Lwe<&[T]>, output: &mut [T]) {
-        self.evaluate(input, 1, None, Some(output));
+    /// Rejects a different context/BR key binding, input dimension or exact output
+    /// length before BR or output writes.
+    pub fn one_hot_nonzero_ngsw_to(
+        &mut self,
+        input: Lwe<&[T]>,
+        output: &mut [T],
+        resources: &mut BootstrapResources<'a, T, Table, LM>,
+    ) {
+        self.evaluate(input, 1, None, Some(output), resources);
     }
 
     /// Writes both selector representations from the same BR and coefficient projections.
@@ -267,10 +189,17 @@ where
     /// certification. See [`CircuitBootstrapParameters`].
     ///
     /// # Panics
-    /// Rejects input dimension and exact output lengths before BR or output writes.
+    /// Rejects a different context/BR key binding, input dimension or exact output
+    /// lengths before BR or output writes.
     /// Output buffers contain no padding and need no prior reset.
-    pub fn one_hot_to(&mut self, input: Lwe<&[T]>, nlev_output: &mut [T], ngsw_output: &mut [T]) {
-        self.evaluate(input, 0, Some(nlev_output), Some(ngsw_output));
+    pub fn one_hot_to(
+        &mut self,
+        input: Lwe<&[T]>,
+        nlev_output: &mut [T],
+        ngsw_output: &mut [T],
+        resources: &mut BootstrapResources<'a, T, Table, LM>,
+    ) {
+        self.evaluate(input, 0, Some(nlev_output), Some(ngsw_output), resources);
     }
 
     /// Writes all M coefficient NLEVs and only the r=1..M-1 transformed NGSWs.
@@ -280,14 +209,16 @@ where
     /// [`Self::one_hot_nonzero_ngsw_to`].
     ///
     /// # Panics
-    /// Rejects input dimension and exact output lengths before any writes.
+    /// Inherits the resource-binding, input-dimension and output-length checks
+    /// of [`Self::one_hot_to`] and [`Self::one_hot_nonzero_ngsw_to`].
     pub fn one_hot_nlev_and_nonzero_ngsw_to(
         &mut self,
         input: Lwe<&[T]>,
         nlev_output: &mut [T],
         ngsw_output: &mut [T],
+        resources: &mut BootstrapResources<'a, T, Table, LM>,
     ) {
-        self.evaluate(input, 1, Some(nlev_output), Some(ngsw_output));
+        self.evaluate(input, 1, Some(nlev_output), Some(ngsw_output), resources);
     }
 
     /// NLEV, when requested, always contains every branch. NGSW may omit zero;
@@ -299,10 +230,11 @@ where
         first_ngsw_selector: usize,
         mut nlev_output: Option<&mut [T]>,
         mut ngsw_output: Option<&mut [T]>,
+        resources: &mut BootstrapResources<'a, T, Table, LM>,
     ) {
         let ngsw_len = self.ngsw_selector_len();
-        let engine = self.resources.engine_mut();
-        let tfhe = engine.context.parameters();
+        self.binding.check(resources);
+        let tfhe = resources.context.parameters();
         let parameters = self.circuit.parameters;
         assert_eq!(
             input.dimension(),
@@ -327,7 +259,7 @@ where
             );
         }
 
-        engine.blind_rotate(
+        resources.blind_rotate(
             input,
             self.lookup_table.polynomial(),
             self.lookup_table.rotation_step(),
@@ -343,9 +275,9 @@ where
             // Negative BR places selector r at -r*S+l, including its negacyclic
             // sign. Rotate by +r*S first; prefix projection then shifts by -l.
             // General BR tails are nonzero: prefix expansion is not valid here.
-            engine.workspace.current.mul_monomial_to(
+            resources.workspace.current.mul_monomial_to(
                 selector * self.lookup_table.selector_stride(),
-                &mut engine.workspace.scratch,
+                &mut resources.workspace.scratch,
                 tfhe.accumulator_ntru().cipher_modulus(),
             );
             let projected = match nlev_output.as_deref_mut() {
@@ -356,13 +288,13 @@ where
                 .key
                 .trace_key()
                 .project_prefix_coefficients_with_scratch_to(
-                    &engine.workspace.scratch,
+                    &resources.workspace.scratch,
                     self.lookup_table.level_count().get(),
                     projected,
                     tfhe.accumulator_ntru().cipher_modulus(),
-                    engine.context.table(),
+                    resources.context.table(),
                     &mut self.trace_scratch,
-                    engine.workspace.rotation.external_product(),
+                    resources.workspace.rotation.external_product(),
                 );
             if let Some(output) = ngsw_output
                 .as_deref_mut()
@@ -375,8 +307,8 @@ where
                         &mut output[output_index * ngsw_len..(output_index + 1) * ngsw_len],
                     ),
                     tfhe.accumulator_ntru().cipher_modulus(),
-                    engine.context.table(),
-                    engine.workspace.rotation.external_product(),
+                    resources.context.table(),
+                    resources.workspace.rotation.external_product(),
                 );
             }
         }

@@ -30,11 +30,10 @@ impl<'a, T: FheUint> CircuitBootstrapBinding<'a, T> {
     pub(super) fn try_new<LM: primus_reduce::RingContext<T>>(
         tfhe: &crate::TfheParameters<T, LM>,
         controls: Option<crate::ClassicControls<'a, T>>,
-        key: Option<&'a CircuitBootstrapKey<T>>,
+        key: &'a CircuitBootstrapKey<T>,
     ) -> Result<Self, crate::TfheEvaluationError> {
         let classic_controls =
             controls.ok_or(crate::TfheEvaluationError::UnsupportedSparseBootstrapping)?;
-        let key = key.ok_or(crate::TfheEvaluationError::MissingCircuitBootstrapKey)?;
         let parameters = key.parameters();
         if !parameters.is_compatible(tfhe) {
             return Err(crate::TfheEvaluationError::IncompatibleCircuitBootstrapParameters);

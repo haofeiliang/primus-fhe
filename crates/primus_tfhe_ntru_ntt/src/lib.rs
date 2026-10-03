@@ -23,11 +23,11 @@
 //!   [`CircuitBootstrapEvaluator`], producing accumulator-secret gadget controls for CMUX.
 //! - [`sparse`]: fixed-weight binary bucket material; select it explicitly at key generation.
 //!
-//! [`FactorizedEvaluator::bootstrapper_mut`] and [`CircuitBootstrapEvaluator::bootstrapper_mut`]
-//! borrow ordinary PBS operations. MVB uses `into_bootstrapper`; CBS/one-hot uses
-//! `try_into_bootstrapper(return_key)`. Standalone CBS/one-hot has no return buffers:
-//! its PBS borrow is `None`, and recovery allocates them. Conversion from complete
-//! PBS reuses those buffers when recovering with any compatible return key.
+//! [`Evaluator`] owns common [`BootstrapResources`] and client-return buffers.
+//! CBS/one-hot prepare only their LUT/projection state and borrow common resources
+//! for each call. [`FactorizedEvaluator`] borrows PBS for each request, retaining
+//! only its extra NTT polynomial. No ownership conversion is needed to alternate.
+//! Standalone CBS/one-hot can use resources without allocating return buffers.
 //! [`LweReturnEvaluator`] supports independent coefficient-domain returns.
 //!
 //! # Composition and representation
@@ -36,7 +36,8 @@
 //! are re-exported at this root; lower-level material is documented in its own module.
 //! [`BlindRotationKey`], [`primus_ntru::NtruLweKeySwitchingKey`] and
 //! [`CircuitBootstrapKey`] can be independently generated and borrowed through
-//! `try_from_parts`. [`ServerKey::into_parts`] moves out the bundle's components.
+//! [`Evaluator::try_from_parts`] or [`BootstrapResources::try_new`] plus CBS/one-hot
+//! `try_new`. [`ServerKey::into_parts`] moves out the bundle's components.
 //! CBS/one-hot needs only BR and CBS material; high-precision LUT also needs return.
 //! Classic binary/ternary keys support PBS/MVB/CBS; sparse keys support ordinary/interleaved PBS.
 //! Only accumulator secrets undergo NTRU invertibility screening; external LWE secrets are independent.
@@ -51,6 +52,7 @@ mod accumulator;
 mod blind_rotation;
 pub mod boolean;
 mod bootstrap;
+pub use bootstrap::BootstrapResources;
 pub mod circuit_bootstrap;
 mod client;
 mod context;

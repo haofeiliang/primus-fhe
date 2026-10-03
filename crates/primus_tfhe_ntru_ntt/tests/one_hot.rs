@@ -13,7 +13,6 @@ use primus_ntru::{
 use primus_ntt::U64NttTable;
 use primus_poly::PolyLength;
 use primus_test_allocations as allocations;
-use primus_tfhe::ProgrammableBootstrap as _;
 use primus_tfhe_ntru_ntt::{
     CircuitBootstrapConfig, CircuitBootstrapEvaluator, DecompositionConfig,
     OneHotCircuitBootstrapEvaluator, TfheContext, TfheParameters,
@@ -103,10 +102,13 @@ fn selectors(distr: SecretKeyDistr) {
     let ((br, return_key, circuit), allocation) = allocations::measure(|| server.into_parts());
     assert_eq!(allocation.count, 0);
     let circuit = circuit.unwrap();
+    let resources = context.bootstrap_resources(&br).unwrap();
     let mut evaluator =
-        OneHotCircuitBootstrapEvaluator::try_from_parts(&context, &br, &circuit, &input_codec)
-            .unwrap();
-    assert!(evaluator.bootstrapper_mut().is_none());
+        OneHotCircuitBootstrapEvaluator::try_new(&resources, &circuit, &input_codec).unwrap();
+    let (mut pbs, allocation) = allocations::measure(|| {
+        primus_tfhe_ntru_ntt::Evaluator::try_from_resources(resources, &return_key).unwrap()
+    });
+    assert!(allocation.count > 0);
     assert_eq!(evaluator.lookup_table().selector_count(), M);
     assert_eq!(evaluator.lookup_table().rotation_step(), 4);
     let scalars: Vec<_> = evaluator
@@ -160,34 +162,34 @@ fn selectors(distr: SecretKeyDistr) {
     // Descending inputs force every selector to overwrite previous nonzero rows.
     for message in (0..M).rev() {
         let input = encryptor.encrypt_padded(message as u64, &mut rng).unwrap();
-        if message == M - 1 {
-            // Standalone one-hot uses no return storage; recovering ordinary PBS
-            // allocates it explicitly. Subsequent alternation retains that PBS.
-            let (_, allocation) = allocations::measure(|| {
-                evaluator.one_hot_to(input.as_view(), &mut nlev, &mut ngsw);
-            });
-            assert_eq!(allocation.count, 0);
-            let (pbs, allocation) =
-                allocations::measure(|| evaluator.try_into_bootstrapper(&return_key).unwrap());
-            assert!(allocation.count > 0);
-            evaluator =
-                OneHotCircuitBootstrapEvaluator::try_from_bootstrapper(pbs, &circuit, &input_codec)
-                    .unwrap();
-        }
         let (_, allocation) = allocations::measure(|| {
-            evaluator.one_hot_to(input.as_view(), &mut nlev, &mut ngsw);
-            evaluator.bootstrapper_mut().unwrap().apply_lookup_table_to(
+            evaluator.one_hot_to(
                 input.as_view(),
-                &identity,
-                lwe_output.as_mut_view(),
+                &mut nlev,
+                &mut ngsw,
+                pbs.bootstrap_resources_mut(),
             );
-            evaluator.one_hot_nlev_to(input.as_view(), &mut nlev_only);
-            evaluator.one_hot_ngsw_to(input.as_view(), &mut ngsw_only);
-            evaluator.one_hot_nonzero_ngsw_to(input.as_view(), &mut nonzero_ngsw);
+            pbs.apply_lookup_table_to(input.as_view(), &identity, lwe_output.as_mut_view());
+            evaluator.one_hot_nlev_to(
+                input.as_view(),
+                &mut nlev_only,
+                pbs.bootstrap_resources_mut(),
+            );
+            evaluator.one_hot_ngsw_to(
+                input.as_view(),
+                &mut ngsw_only,
+                pbs.bootstrap_resources_mut(),
+            );
+            evaluator.one_hot_nonzero_ngsw_to(
+                input.as_view(),
+                &mut nonzero_ngsw,
+                pbs.bootstrap_resources_mut(),
+            );
             evaluator.one_hot_nlev_and_nonzero_ngsw_to(
                 input.as_view(),
                 &mut joint_nlev,
                 &mut joint_nonzero_ngsw,
+                pbs.bootstrap_resources_mut(),
             );
         });
         assert_eq!(allocation.count, 0);
@@ -295,9 +297,15 @@ fn selectors(distr: SecretKeyDistr) {
                             input.as_view(),
                             nlev_output,
                             ngsw_output,
+                            pbs.bootstrap_resources_mut(),
                         );
                     } else {
-                        evaluator.one_hot_to(input.as_view(), nlev_output, ngsw_output);
+                        evaluator.one_hot_to(
+                            input.as_view(),
+                            nlev_output,
+                            ngsw_output,
+                            pbs.bootstrap_resources_mut(),
+                        );
                     }
                 }))
                 .is_err()
@@ -317,30 +325,40 @@ fn selectors(distr: SecretKeyDistr) {
         ngsw.fill(7);
         assert!(
             catch_unwind(AssertUnwindSafe(|| {
-                evaluator.one_hot_nonzero_ngsw_to(input.as_view(), &mut ngsw[..output_len]);
+                evaluator.one_hot_nonzero_ngsw_to(
+                    input.as_view(),
+                    &mut ngsw[..output_len],
+                    pbs.bootstrap_resources_mut(),
+                );
             }))
             .is_err()
         );
         assert!(ngsw.iter().all(|&v| v == 7));
     }
-    // Recovery and rebinding preserve the PBS/ordinary-CBS workflow.
-    let (pbs, allocation) =
-        allocations::measure(|| evaluator.try_into_bootstrapper(&return_key).unwrap());
-    assert_eq!(allocation.count, 0);
+    // Circuit operations borrow the same resources; no owning conversion is needed.
     let mut ordinary =
-        CircuitBootstrapEvaluator::try_from_bootstrapper(pbs, &circuit, &input_codec).unwrap();
+        CircuitBootstrapEvaluator::try_new(pbs.bootstrap_resources(), &circuit, &input_codec)
+            .unwrap();
     let mut control = ordinary.allocate_output();
-    ordinary.circuit_bootstrap_to(input.as_view(), &mut control);
-    ordinary.cmux_to(&control, &choices[0], &choices[1], &mut selected);
+    let (_, allocation) = allocations::measure(|| {
+        ordinary.circuit_bootstrap_to(input.as_view(), &mut control, pbs.bootstrap_resources_mut());
+        ordinary.cmux_to(
+            &control,
+            &choices[0],
+            &choices[1],
+            &mut selected,
+            pbs.bootstrap_resources_mut(),
+        );
+        evaluator.one_hot_to(
+            input.as_view(),
+            &mut nlev,
+            &mut ngsw,
+            pbs.bootstrap_resources_mut(),
+        );
+    });
+    assert_eq!(allocation.count, 0);
     accumulator.decrypt_to(&selected, &mut decoded);
     assert_eq!(decoded, vec![3; N]);
-    let mut evaluator = OneHotCircuitBootstrapEvaluator::try_from_bootstrapper(
-        ordinary.try_into_bootstrapper(&return_key).unwrap(),
-        &circuit,
-        &input_codec,
-    )
-    .unwrap();
-    evaluator.one_hot_to(input.as_view(), &mut nlev, &mut ngsw);
 }
 
 #[test]

@@ -141,26 +141,10 @@ fn check_complete<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, weight:
             .try_generate_sparse_server_key(&client, copies, buckets, &mut key_rng)
             .unwrap();
         assert!(server.blind_rotation_key().classic_controls().is_none());
+        let pbs = context.evaluator(&server).unwrap();
         assert_eq!(
-            context.factorized_evaluator(&server).err(),
+            primus_tfhe_ntru_ntt::FactorizedEvaluator::try_new(&pbs).err(),
             Some(TfheEvaluationError::UnsupportedSparseBootstrapping)
-        );
-        assert_eq!(
-            context
-                .circuit_bootstrap_evaluator(&server, &input_codec)
-                .err(),
-            Some(TfheEvaluationError::UnsupportedSparseBootstrapping)
-        );
-        assert_eq!(
-            primus_tfhe_ntru_ntt::OneHotCircuitBootstrapEvaluator::try_new(
-                &context,
-                &server,
-                &input_codec
-            )
-            .err(),
-            Some(primus_tfhe_ntru_ntt::OneHotBootstrapError::Evaluation(
-                TfheEvaluationError::UnsupportedSparseBootstrapping
-            ))
         );
         let key = server
             .blind_rotation_key()
@@ -389,14 +373,14 @@ fn sparse_generation_boundaries_and_unsupported_combinations() {
     let br = generator
         .try_generate_sparse_blind_rotation_key(&client, 3, 8, &mut rng)
         .unwrap();
+    let resources = context.bootstrap_resources(&br).unwrap();
     assert_eq!(
-        CircuitBootstrapEvaluator::try_from_parts(&context, &br, &circuit, &input_codec).err(),
+        CircuitBootstrapEvaluator::try_new(&resources, &circuit, &input_codec).err(),
         Some(TfheEvaluationError::UnsupportedSparseBootstrapping)
     );
     assert!(matches!(
-        primus_tfhe_ntru_ntt::OneHotCircuitBootstrapEvaluator::try_from_parts(
-            &context,
-            &br,
+        primus_tfhe_ntru_ntt::OneHotCircuitBootstrapEvaluator::try_new(
+            &resources,
             &circuit,
             &input_codec
         ),
