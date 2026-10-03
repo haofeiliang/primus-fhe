@@ -27,7 +27,8 @@ pub enum BootstrappingKey<T: TorusFftValue> {
 }
 
 impl<T: TorusFftValue> BootstrappingKey<T> {
-    fn is_compatible(&self, parameters: &TfheParameters<T>) -> bool {
+    /// Validate the selected BR layout and input domain, independently of ring KS/CBS.
+    pub(crate) fn is_compatible(&self, parameters: &TfheParameters<T>) -> bool {
         // Both variants and the backend parameters fix the modulus to Native<T>.
         let (dimension, distribution, size, basis) = match self {
             Self::Classic(key) => (
@@ -63,20 +64,26 @@ pub struct ServerKey<T: TorusFftValue> {
 }
 
 impl<T: TorusFftValue> ServerKey<T> {
+    /// Combines independently generated material by moving its owned buffers.
+    /// Evaluator construction checks compatibility; this does not prove secret
+    /// or transform identity. Both PBS orders use the same ring KS direction.
+    #[must_use]
+    pub fn new(
+        bootstrapping_key: BootstrappingKey<T>,
+        glwe_key_switching_key: FourierGlweKeySwitchingKey<T>,
+        circuit_bootstrap: Option<CircuitBootstrapKey<T>>,
+    ) -> Self {
+        Self {
+            bootstrapping_key,
+            glwe_key_switching_key,
+            circuit_bootstrap: circuit_bootstrap.map(Box::new),
+        }
+    }
+
     /// Returns the bound CBS parameters and keys, if requested during generation.
     #[must_use]
     pub fn circuit_bootstrap_key(&self) -> Option<&CircuitBootstrapKey<T>> {
         self.circuit_bootstrap.as_deref()
-    }
-
-    pub(crate) fn is_compatible(&self, parameters: &TfheParameters<T>) -> bool {
-        let key_switching = parameters.glwe_key_switching();
-        self.bootstrapping_key.is_compatible(parameters)
-            && self.glwe_key_switching_key.input_dimension() == key_switching.input_dimension()
-            && self.glwe_key_switching_key.output_dimension() == key_switching.output_dimension()
-            && self.glwe_key_switching_key.poly_length() == key_switching.poly_length().get()
-            && self.glwe_key_switching_key.output_size() == key_switching.output_size()
-            && self.glwe_key_switching_key.basis() == key_switching.output().basis()
     }
 
     /// Returns the selected classic or sparse blind-rotation key.
@@ -87,6 +94,7 @@ impl<T: TorusFftValue> ServerKey<T> {
     }
 
     /// Returns the Fourier GLWE key-switching key.
+    #[must_use]
     #[inline]
     pub fn glwe_key_switching_key(&self) -> &FourierGlweKeySwitchingKey<T> {
         &self.glwe_key_switching_key
@@ -109,6 +117,22 @@ impl<T: TorusFftValue> ServerKey<T> {
             self.circuit_bootstrap.map(|key| *key),
         )
     }
+}
+
+/// Checks the ring KS layout and basis once, before allocating evaluation scratch.
+/// Fourier uses `NativeModulus<T>` throughout this backend.
+pub(crate) fn check_glwe_key_switching_key<T: TorusFftValue>(
+    parameters: &TfheParameters<T>,
+    key: &FourierGlweKeySwitchingKey<T>,
+) -> Result<(), crate::TfheEvaluationError> {
+    let expected = parameters.glwe_key_switching();
+    if key.input_dimension() != expected.input_dimension()
+        || key.output_size() != expected.output_size()
+        || key.basis() != expected.output().basis()
+    {
+        return Err(crate::TfheEvaluationError::IncompatibleGlweKeySwitchingKey);
+    }
+    Ok(())
 }
 
 /// Generates client and classic or sparse server keys for one Fourier context.
@@ -135,6 +159,56 @@ where
             fft: context.new_fft_engine(),
             gadget: FourierGlweGadgetEncryptWorkspace::new(blind_rotation_ggsw.size()),
         }
+    }
+
+    /// Generates classic binary/ternary BR material without ring KS or CBS keys.
+    /// Both client secrets are needed; the small secret controls rotation and the
+    /// accumulator secret encrypts those controls.
+    ///
+    /// # Correctness
+    /// Use the same paired secrets and this context's transform representation
+    /// when combining independently generated materials.
+    pub fn try_generate_bootstrapping_key<R>(
+        &mut self,
+        client_key: &ClientKey<T>,
+        rng: &mut R,
+    ) -> Result<FourierGlweBootstrappingKey<T, NativeModulus<T>>, KeyGenerationError>
+    where
+        R: rand::Rng + rand::CryptoRng,
+    {
+        let parameters = self.context.parameters();
+        client_key.check_compatible(parameters)?;
+        let main = FourierGlweSecretKey::from_coeff_secret_key(
+            client_key.glwe_secret_key(),
+            &mut self.fft,
+        );
+        self.gadget.resize(parameters.blind_rotation_ggsw().size());
+        Ok(FourierGlweBootstrappingKey::generate_fourier(
+            client_key.small_lwe_secret_key(),
+            parameters.small_lwe(),
+            &main,
+            parameters.blind_rotation_ggsw(),
+            &mut self.fft,
+            rng,
+            &mut self.gadget,
+        ))
+    }
+
+    /// Generates ring KS material from the accumulator to the padded small secret.
+    /// PBS order determines whether it is used before BR or when returning its result.
+    ///
+    /// # Correctness
+    /// Inherits [`Self::try_generate_bootstrapping_key`]'s secret and transform requirements.
+    pub fn try_generate_glwe_key_switching_key<R>(
+        &mut self,
+        client_key: &ClientKey<T>,
+        rng: &mut R,
+    ) -> Result<FourierGlweKeySwitchingKey<T>, KeyGenerationError>
+    where
+        R: rand::Rng + rand::CryptoRng,
+    {
+        client_key.check_compatible(self.context.parameters())?;
+        Ok(self.generate_glwe_key_switching_key(client_key, rng))
     }
 
     /// Generates the selected capabilities from one compatible client key.
@@ -203,9 +277,12 @@ where
         let bootstrapping_key =
             self.generate_sparse_bootstrapping_key_with_main(prepared, &main, rng);
         let circuit_bootstrap = circuit_parameters.map(|parameters| {
-            Box::new(
-                self.generate_circuit_bootstrap_key_with_main(client_key, &main, parameters, rng),
-            )
+            Box::new(self.generate_circuit_bootstrap_key_with_main(
+                client_key.glwe_secret_key(),
+                &main,
+                parameters,
+                rng,
+            ))
         });
         drop(main);
         let glwe_key_switching_key = self.generate_glwe_key_switching_key(client_key, rng);
@@ -243,7 +320,7 @@ where
         );
         let circuit_bootstrap = circuit_parameters.map(|parameters| {
             Box::new(self.generate_circuit_bootstrap_key_with_main(
-                client_key,
+                client_key.glwe_secret_key(),
                 &main_glwe_secret_key,
                 parameters,
                 rng,
@@ -258,6 +335,7 @@ where
         }
     }
 
+    /// Generates after the setup bundle has passed compatibility checks.
     fn generate_glwe_key_switching_key<R>(
         &mut self,
         client_key: &ClientKey<T>,

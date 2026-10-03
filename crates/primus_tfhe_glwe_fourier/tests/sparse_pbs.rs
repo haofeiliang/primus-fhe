@@ -189,7 +189,7 @@ fn sparse_keys_bind_parameters_and_require_cbs_material() {
     ] {
         assert!(matches!(
             incompatible.evaluator(&server),
-            Err(TfheEvaluationError::IncompatibleServerKey)
+            Err(TfheEvaluationError::IncompatibleBlindRotationKey)
         ));
     }
     assert!(matches!(

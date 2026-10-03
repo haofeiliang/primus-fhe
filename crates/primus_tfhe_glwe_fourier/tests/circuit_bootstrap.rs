@@ -129,7 +129,13 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
         generator.try_generate_server_key(&client, Some(circuit_config()), &mut rng)
     }
     .unwrap();
-    let key = server.circuit_bootstrap_key().unwrap();
+    let ((blind_rotation, key_switching, circuit), split) =
+        allocations::measure(|| server.into_parts());
+    assert_eq!(
+        split.count, 0,
+        "splitting material must move existing buffers"
+    );
+    let key = circuit.as_ref().unwrap();
     let parameters = key.parameters();
     // GLWE scheme switching binds the output layout, not its exact gadget basis.
     let alternate = CircuitBootstrapParameters::try_new(
@@ -181,10 +187,13 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
         .compile_fn(|message| message as u64)
         .unwrap();
     let input = encryptor.encrypt_padded(1u64, &mut rng).unwrap();
-    let mut output = context
-        .evaluator(&server)
-        .unwrap()
-        .apply_lookup_table(input.as_view(), &identity);
+    let mut output = primus_tfhe_glwe_fourier::Evaluator::try_from_parts(
+        &context,
+        &blind_rotation,
+        &key_switching,
+    )
+    .unwrap()
+    .apply_lookup_table(input.as_view(), &identity);
     assert_eq!(
         context
             .decryptor(client.external_lwe_secret_key(), &input_codec)
@@ -206,7 +215,8 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
             .unwrap();
         let mut other = CircuitBootstrapEvaluator::try_from_parts(
             &context,
-            &server,
+            &blind_rotation,
+            Some(&key_switching),
             parameters,
             key,
             &other_codec,
@@ -218,11 +228,36 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
         assert_eq!(accumulator_client.decrypt(&selected), messages[1]);
     }
 
+    // Missing input KS must fail at binding, for classic and sparse alike.
+    if order == PbsOrder::KeyswitchBootstrap {
+        let (result, allocation) = allocations::measure(|| {
+            CircuitBootstrapEvaluator::try_from_parts(
+                &context,
+                &blind_rotation,
+                None,
+                parameters,
+                key,
+                &input_codec,
+            )
+        });
+        assert!(matches!(
+            result,
+            Err(TfheEvaluationError::MissingGlweKeySwitchingKey)
+        ));
+        assert_eq!(allocation.count, 0);
+    }
+
     let (parameters, mut evaluator) = match order {
         PbsOrder::BootstrapKeyswitch => (parameters, {
-            let mut standalone = context
-                .circuit_bootstrap_evaluator(&server, &input_codec)
-                .unwrap();
+            let mut standalone = CircuitBootstrapEvaluator::try_from_parts(
+                &context,
+                &blind_rotation,
+                None,
+                parameters,
+                key,
+                &input_codec,
+            )
+            .unwrap();
             assert!(standalone.bootstrapper_mut().is_none());
             // Exercise the missing-KS form before recovery fills that workspace.
             let mut control = standalone.allocate_output();
@@ -235,18 +270,20 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
             assert_eq!(online.count, 0, "standalone BK CBS/CMUX must not allocate");
             accumulator_client.decrypt_to(&selected, &mut decoded);
             assert_eq!(decoded, messages[1]);
-            let (pbs, allocation) = allocations::measure(|| standalone.into_bootstrapper());
+            let (pbs, allocation) =
+                allocations::measure(|| standalone.try_into_bootstrapper(&key_switching).unwrap());
             assert!(
                 allocation.count > 0,
                 "standalone BK recovery explicitly creates return-KS scratch"
             );
-            CircuitBootstrapEvaluator::try_from_bootstrapper(pbs, &input_codec).unwrap()
+            CircuitBootstrapEvaluator::try_from_bootstrapper(pbs, key, &input_codec).unwrap()
         }),
         PbsOrder::KeyswitchBootstrap => (
             &alternate,
             CircuitBootstrapEvaluator::try_from_parts(
                 &context,
-                &server,
+                &blind_rotation,
+                Some(&key_switching),
                 &alternate,
                 key,
                 &input_codec,
@@ -342,10 +379,24 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
         );
     }
 
-    let (_, recovery) = allocations::measure(|| evaluator.into_bootstrapper());
+    // Rebinding another KS from the same secrets preserves input/output scratch.
+    let replacement = generator
+        .try_generate_glwe_key_switching_key(&client, &mut rng)
+        .unwrap();
+    let (mut recovered, recovery) =
+        allocations::measure(|| evaluator.try_into_bootstrapper(&replacement).unwrap());
     assert_eq!(
         recovery.count, 0,
         "converted CBS retains ordinary workspace"
+    );
+    recovered.apply_lookup_table_to(input.as_view(), &identity, output.as_mut_view());
+    assert_eq!(
+        context
+            .decryptor(client.external_lwe_secret_key(), &input_codec)
+            .unwrap()
+            .decrypt(output.as_view())
+            .unwrap(),
+        1
     );
 }
 
@@ -381,7 +432,7 @@ fn evaluator_rejects_resource_mismatches_and_checks_shapes_before_writes() {
     let parameters = circuit_parameters(context.parameters());
     let mut generator = KeyGenerator::new(&context);
     let key = generator
-        .try_generate_circuit_bootstrap_key(&client, parameters.clone(), &mut rng)
+        .try_generate_circuit_bootstrap_key(client.glwe_secret_key(), parameters.clone(), &mut rng)
         .unwrap();
     // CBS leaves a different gadget layout; the next PBS generation must resize it.
     let server = generator
@@ -431,7 +482,8 @@ fn evaluator_rejects_resource_mismatches_and_checks_shapes_before_writes() {
         assert!(matches!(
             CircuitBootstrapEvaluator::try_from_parts(
                 &context,
-                &server,
+                server.bootstrapping_key(),
+                Some(server.glwe_key_switching_key()),
                 &foreign,
                 &key,
                 &input_codec
@@ -453,19 +505,21 @@ fn evaluator_rejects_resource_mismatches_and_checks_shapes_before_writes() {
     assert!(matches!(
         CircuitBootstrapEvaluator::try_from_parts(
             &foreign_context,
-            &server,
+            server.bootstrapping_key(),
+            Some(server.glwe_key_switching_key()),
             &parameters,
             &key,
             &input_codec
         ),
-        Err(Error::IncompatibleServerKey)
+        Err(Error::IncompatibleBlindRotationKey)
     ));
     // Message t belongs to the program, so both encodings bind the same CBS key.
     let other_codec = primus_encoding::RoundedCodec::new(8, context.parameters().cipher_modulus());
     assert!(
         CircuitBootstrapEvaluator::try_from_parts(
             &context,
-            &server,
+            server.bootstrapping_key(),
+            Some(server.glwe_key_switching_key()),
             &parameters,
             &key,
             &other_codec,
@@ -475,7 +529,8 @@ fn evaluator_rejects_resource_mismatches_and_checks_shapes_before_writes() {
 
     let mut evaluator = CircuitBootstrapEvaluator::try_from_parts(
         &context,
-        &server,
+        server.bootstrapping_key(),
+        Some(server.glwe_key_switching_key()),
         &parameters,
         &key,
         &input_codec,
@@ -515,7 +570,7 @@ fn incompatible_parameters_and_client_keys_are_rejected_before_sampling() {
         let mut rng = StdRng::seed_from_u64(43);
         let mut untouched_rng = StdRng::seed_from_u64(43);
         assert!(matches!(
-            context.try_generate_circuit_bootstrap_key(&client, foreign, &mut rng),
+            context.try_generate_circuit_bootstrap_key(client.glwe_secret_key(), foreign, &mut rng),
             Err(KeyGenerationError::IncompatibleCircuitBootstrapParameters)
         ));
         assert_eq!(rng.random::<u64>(), untouched_rng.random::<u64>());
@@ -547,7 +602,7 @@ fn incompatible_parameters_and_client_keys_are_rejected_before_sampling() {
     let mut untouched_rng = StdRng::seed_from_u64(43);
     assert!(matches!(
         context.try_generate_circuit_bootstrap_key(
-            &foreign_client,
+            foreign_client.glwe_secret_key(),
             circuit_parameters(context.parameters()),
             &mut rng
         ),

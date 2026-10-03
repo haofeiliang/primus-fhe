@@ -24,7 +24,8 @@
 //! - [`sparse`]: fixed-weight binary bucket material; select it explicitly at key generation.
 //!
 //! [`FactorizedEvaluator::bootstrapper_mut`] and [`CircuitBootstrapEvaluator::bootstrapper_mut`]
-//! borrow ordinary PBS operations; `into_bootstrapper` recovers the underlying evaluator.
+//! borrow ordinary PBS operations. MVB uses `into_bootstrapper`; CBS uses
+//! [`CircuitBootstrapEvaluator::try_into_bootstrapper`] with an explicit ring KS key.
 //! The specialized constructors document their allocation and recovery contracts.
 //!
 //! # Composition and representation
@@ -32,6 +33,8 @@
 //! [`key`] contains evaluation material and component generation. Common workflow types
 //! are re-exported at this root; lower-level material is documented in its own module.
 //! [`bootstrapping_key`] and [`blind_rotation`] expose raw ring-control operations.
+//! [`Evaluator::try_from_parts`] borrows independent BR and ring KS material.
+//! CBS component binding omits KS for BR→KS, but requires it for KS→BR input preparation.
 //! Both PBS orders and classic binary/ternary or sparse binary keys are supported.
 //! Keys and values must use the same FFT table instance; equal lengths do not prove identity.
 //! Native MVB requires an even Scaled output scale and an FFT error budget.

@@ -12,7 +12,9 @@ use primus_lattice::{GlweDimension, LweDimension};
 use primus_lwe::LweParametersInner;
 use primus_modulus::NativeModulus;
 use primus_tfhe_glwe_fourier::{
-    CircuitBootstrapConfig, DecompositionConfig, PbsOrder, TfheConfig, TfheContext, TfheParameters,
+    BootstrappingKey, CircuitBootstrapConfig, CircuitBootstrapEvaluator,
+    CircuitBootstrapParameters, ClientKey, DecompositionConfig, KeyGenerator, PbsOrder, TfheConfig,
+    TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -92,11 +94,31 @@ fn main() {
     // Public message encoding is independent of the evaluation keys.
     let input_codec = RoundedCodec::new(4 as Word, context.parameters().cipher_modulus());
 
-    // Client: generate CBS material with the paired keys; send server_key only.
+    // Client: generate BR and CBS material from the same accumulator secret.
+    // BR→KS CBS needs no return key; KS→BR still needs the input KS key.
     let mut rng = StdRng::seed_from_u64(42);
-    let (client_key, server_key) = context
-        .try_generate_keys(Some(circuit_config()), &mut rng)
+    let client_key = ClientKey::generate(context.parameters(), &mut rng);
+    let mut generator = KeyGenerator::new(&context);
+    let blind_rotation = BootstrappingKey::Classic(
+        generator
+            .try_generate_bootstrapping_key(&client_key, &mut rng)
+            .unwrap(),
+    );
+    let circuit_parameters =
+        CircuitBootstrapParameters::try_from_config(context.parameters(), circuit_config())
+            .unwrap();
+    let circuit_key = generator
+        .try_generate_circuit_bootstrap_key(
+            client_key.glwe_secret_key(),
+            circuit_parameters,
+            &mut rng,
+        )
         .unwrap();
+    let input_key_switching = (ORDER == PbsOrder::KeyswitchBootstrap).then(|| {
+        generator
+            .try_generate_glwe_key_switching_key(&client_key, &mut rng)
+            .unwrap()
+    });
     // Ordinary messages borrow only the external secret from the setup bundle.
     let external_secret = client_key.external_lwe_secret_key();
     let encryptor = context.encryptor(external_secret, &input_codec).unwrap();
@@ -117,10 +139,16 @@ fn main() {
     let mut input = context.allocate_lwe_ciphertext();
     let mut decoded = vec![0; N];
 
-    // Server: receive the encrypted candidates; allocate the control and result.
-    let mut cbs = context
-        .circuit_bootstrap_evaluator(&server_key, &input_codec)
-        .unwrap();
+    // Server: receive BR/CBS material, optional input KS, and encrypted candidates.
+    let mut cbs = CircuitBootstrapEvaluator::try_from_parts(
+        &context,
+        &blind_rotation,
+        input_key_switching.as_ref(),
+        circuit_key.parameters(),
+        &circuit_key,
+        &input_codec,
+    )
+    .unwrap();
     let mut control = cbs.allocate_output();
     let mut selected = context.allocate_accumulator_ciphertext();
 

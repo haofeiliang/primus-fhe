@@ -1,3 +1,4 @@
+use primus_glwe::NttGlweKeySwitchingKey;
 use primus_integer::FheUint;
 use primus_lwe::LweCiphertext;
 use primus_ntt::MonomialNttTable;
@@ -8,7 +9,7 @@ use primus_tfhe::{
 use primus_tfhe_glwe::PbsOrder;
 
 use crate::{
-    Lwe, ServerKey, TfheContext,
+    BootstrappingKey, Lwe, ServerKey, TfheContext,
     bootstrap::{BlindRotationEngine, KeySwitchingWorkspace},
     error::TfheEvaluationError,
 };
@@ -20,12 +21,12 @@ where
     Table: MonomialNttTable<ValueT = T>,
 {
     pub(crate) engine: BlindRotationEngine<'a, T, Table>,
-    lwe_return: LweReturn<T>,
+    lwe_return: LweReturn<'a, T>,
 }
 
 /// The result stage is complete and selected once for the bound PBS order.
-enum LweReturn<T: FheUint> {
-    Keyswitch(KeySwitchingWorkspace<T>),
+enum LweReturn<'a, T: FheUint> {
+    Keyswitch(KeySwitchingWorkspace<'a, T>),
     Extract,
 }
 
@@ -78,22 +79,54 @@ where
         context: &'a TfheContext<T, Table>,
         server_key: &'a ServerKey<T>,
     ) -> Result<Self, TfheEvaluationError> {
-        Ok(Self::from_engine(BlindRotationEngine::try_new(
-            context, server_key,
-        )?))
+        Self::try_from_parts(
+            context,
+            server_key.bootstrapping_key(),
+            server_key.glwe_key_switching_key(),
+        )
     }
 
-    /// Complete the output stage; the engine already owns input KS for KS→BR.
+    /// Binds independent BR and ring KS material for either PBS order.
+    /// Checks layouts, input distribution and decomposition bases/moduli once.
+    ///
+    /// # Correctness
+    /// Materials must use the same paired small/accumulator secrets and context
+    /// transform representation; parameter checks cannot establish their identity.
+    /// Inherits [`Self::try_new`]'s transform requirements.
+    pub fn try_from_parts(
+        context: &'a TfheContext<T, Table>,
+        bootstrapping_key: &'a BootstrappingKey<T>,
+        key_switching_key: &'a NttGlweKeySwitchingKey<T>,
+    ) -> Result<Self, TfheEvaluationError> {
+        let engine =
+            BlindRotationEngine::try_new(context, bootstrapping_key, Some(key_switching_key))?;
+        Ok(Self::from_engine(engine, key_switching_key))
+    }
+
+    /// Complete the output stage with an already checked KS key;
+    /// the engine already owns input KS for KS→BR.
     #[must_use]
-    pub(crate) fn from_engine(engine: BlindRotationEngine<'a, T, Table>) -> Self {
+    pub(crate) fn from_engine(
+        engine: BlindRotationEngine<'a, T, Table>,
+        key: &'a NttGlweKeySwitchingKey<T>,
+    ) -> Self {
         let parameters = engine.context.parameters();
         let lwe_return = match parameters.pbs_order() {
             PbsOrder::BootstrapKeyswitch => {
-                LweReturn::Keyswitch(KeySwitchingWorkspace::new(parameters))
+                LweReturn::Keyswitch(KeySwitchingWorkspace::new(parameters, key))
             }
             PbsOrder::KeyswitchBootstrap => LweReturn::Extract,
         };
         Self { engine, lwe_return }
+    }
+
+    /// The conversion boundary has checked this key against the same parameters.
+    /// Reuse the active KS stage's buffers in either PBS order.
+    pub(crate) fn rebind_key_switching_key(&mut self, key: &'a NttGlweKeySwitchingKey<T>) {
+        self.engine.rebind_input_key_switching_key(key);
+        if let LweReturn::Keyswitch(workspace) = &mut self.lwe_return {
+            workspace.key = key;
+        }
     }
 
     /// Applies a compiled lookup table and returns a refreshed ciphertext in
@@ -247,7 +280,7 @@ where
         let glwe = engine.context.parameters().blind_rotation_ggsw();
         match &mut self.lwe_return {
             LweReturn::Keyswitch(ks) => {
-                engine.server_key.glwe_key_switching_key().key_switch_to(
+                ks.key.key_switch_to(
                     &engine.accumulator,
                     &mut ks.switched,
                     glwe.cipher_modulus(),

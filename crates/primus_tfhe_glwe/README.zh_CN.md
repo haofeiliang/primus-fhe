@@ -48,6 +48,8 @@
 
 CBS 是两个后端的可选能力，提供独立的 output basis、trace/scheme-switch 参数及密钥， 两种 PBS order 均支持经典 binary/ternary 和 sparse binary。CBS 输出留在 accumulator secret 下，使用 gadget 尺度。`CircuitBootstrapParameters<T, M>` 由公共层定义，后端提供具体模数别名； 同层数的不同输出 basis 可复用 scheme-switch key。噪声与变换要求见对应后端契约。
 
+后端可独立生成和持有 BR、环 KS 与 CBS 材料，也保留完整 `ServerKey` 的便捷生成。CBS 生成只接收累加器秘密；BR→KS 的独立 CBS 不需要环 KS，KS→BR 仍需用它处理输入。普通 PBS 在两种顺序下都需要 BR 和环 KS。接口及示例见对应后端说明。
+
 ## 示例
 
 后端 basic 示例展示默认编码和普通 PBS 缓冲复用；通过 `ORDER` 常量选择 PBS 顺序。 独立输出编码见共享指南。 MVB/CBS 使用专门示例，Boolean 用法见[共享指南](../primus_tfhe/README.zh_CN.md#boolean-门)。 所有示例 fixture 均用于开发，不是生产参数建议。

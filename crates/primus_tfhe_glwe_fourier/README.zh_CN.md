@@ -45,6 +45,10 @@ Fourier 环只支持 `NativeModulus`；`PowOf2Modulus` 环不受支持。
 
 `Evaluator` 的普通/交错 `_to` 调用复用工作区和已有输出。PBS、MVB 与 CBS 之间的所有权转换及 GLWE 独立 CBS 的返回缓冲限制，统一见[资源复用指南](../primus_tfhe/README.zh_CN.md#复用-evaluator)。
 
+`ServerKey` 仍是完整 PBS 的便捷组合。高级工作流可分别持有 `BootstrappingKey`、环 KS key 和 `CircuitBootstrapKey`，通过 `ServerKey::new` / `into_parts` 移动组合，不复制密文数组。`KeyGenerator::try_generate_bootstrapping_key` 与已有 sparse 入口只生成 BR；`try_generate_glwe_key_switching_key` 独立生成环 KS；`try_generate_circuit_bootstrap_key(accumulator_secret, parameters, rng)` 只需要累加器秘密。独立生成可能重复转换秘密；成对生成继续复用已准备的表示。
+
+`Evaluator::try_from_parts(context, br, ks)` 支持普通 PBS/ManyLUT，之后可转入 MVB。独立 CBS 使用 `CircuitBootstrapEvaluator::try_from_parts(context, br, input_ks, parameters, circuit_key, input_codec)`：BR→KS 可传 `None`，KS→BR 必须提供 `Some(ks)`。两种方式均支持 classic/sparse。布局、basis 和模数在绑定时检查；仍需由调用方确保秘密及变换表示一致。
+
 ## 固定尺度分解式 MVB
 
 通过 `context.compile_factorized_lookup_table_fn(&input_codec, &output_codec, domain_len, output_count, function)` 编译并绑定 `FactorizedEvaluator`；输入 codec 使用 Rounded、输出 codec 使用 Scaled，均须采用 context 的密文模数。程序借用该 context，输出使用 unsigned Scaled 编码。
@@ -70,7 +74,7 @@ let mut evaluator = context.evaluator(&server)?;
 
 ## 电路自举
 
-`context.try_generate_keys(Some(cbs_config), &mut rng)` 生成配对材料， `ServerKey` 持有附加参数及 trace/scheme-switch 密钥。 调用 `context.circuit_bootstrap_evaluator(&server, &input_codec)` 或消费普通 evaluator。 经典密钥若使用 `None` 生成，CBS 绑定返回 `MissingCircuitBootstrapKey`。 使用 `allocate_output`、`circuit_bootstrap_to` 和 `cmux_to`； [CBS → CMUX 示例](examples/fourier_circuit_bootstrap.rs)展示完整消费链。
+`context.try_generate_keys(Some(cbs_config), &mut rng)` 生成配对材料， `ServerKey` 持有附加参数及 trace/scheme-switch 密钥。 调用 `context.circuit_bootstrap_evaluator(&server, &input_codec)` 或消费普通 evaluator。 经典密钥若使用 `None` 生成，CBS 绑定返回 `MissingCircuitBootstrapKey`。 使用 `allocate_output`、`circuit_bootstrap_to` 和 `cmux_to`； [CBS → CMUX 示例](examples/fourier_circuit_bootstrap.rs)展示独立生成 BR/CBS 材料及完整消费链。
 
 [稀疏 CBS 示例](examples/fourier_sparse_circuit_bootstrap.rs)直接展示固定重量秘密、稀疏密钥生成与 CBS 参数。两种 PBS 顺序都支持；后面的 CBS 与 CMux 调用方式相同。
 

@@ -1,10 +1,10 @@
 //! Evaluation keys for patched NTT circuit bootstrapping.
 
-use primus_glwe::{NttGlweSchemeSwitchKey, NttGlweSecretKey, NttGlweTraceKey};
+use primus_glwe::{GlweSecretKey, NttGlweSchemeSwitchKey, NttGlweSecretKey, NttGlweTraceKey};
 use primus_integer::FheUint;
 use primus_ntt::MonomialNttTable;
 
-use crate::{CircuitBootstrapParameters, ClientKey, KeyGenerationError, KeyGenerator, TfheContext};
+use crate::{CircuitBootstrapParameters, KeyGenerationError, KeyGenerator, TfheContext};
 
 /// Trace-projection and scheme-switching keys used after PBSManyLUT.
 ///
@@ -61,12 +61,14 @@ impl<T: FheUint> CircuitBootstrapKey<T> {
     }
 
     /// Returns the trace key used for reverse-trace coefficient projection.
+    #[must_use]
     #[inline]
     pub fn trace_key(&self) -> &NttGlweTraceKey<T> {
         &self.trace
     }
 
     /// Returns the GLev-to-GGSW scheme-switching key.
+    #[must_use]
     #[inline]
     pub fn scheme_switch_key(&self) -> &NttGlweSchemeSwitchKey<T> {
         &self.scheme_switch
@@ -78,21 +80,21 @@ where
     T: FheUint,
     Table: MonomialNttTable<ValueT = T>,
 {
-    /// Generates the optional trace-projection and scheme-switching keys.
+    /// Generates trace-projection and scheme-switching keys from only the accumulator secret.
     ///
     /// # Correctness
     ///
     /// For circuit bootstrapping, generate the ordinary server key from the same
-    /// paired client secrets as `client_key` and use this context's NTT
+    /// accumulator secret as `accumulator_secret` and use this context's NTT
     /// representation for generation and evaluation. The returned key uses
-    /// `client_key`'s accumulator GLWE secret. Parameter/layout checks cannot
+    /// `accumulator_secret`. Parameter/layout checks cannot
     /// establish that another server key uses that secret; see
     /// [`crate::CircuitBootstrapEvaluator::try_from_parts`].
     /// Imported accumulator coefficients must also satisfy
     /// [`NttGlweSecretKey::from_coeff_secret_key`]'s unsigned-magnitude bound.
     pub fn try_generate_circuit_bootstrap_key<R>(
         &mut self,
-        client_key: &ClientKey<T>,
+        accumulator_secret: &GlweSecretKey<T>,
         parameters: CircuitBootstrapParameters<T>,
         rng: &mut R,
     ) -> Result<CircuitBootstrapKey<T>, KeyGenerationError>
@@ -103,14 +105,13 @@ where
         if !parameters.is_compatible(tfhe) {
             return Err(KeyGenerationError::IncompatibleCircuitBootstrapParameters);
         }
-        client_key.check_compatible(tfhe)?;
+        tfhe.check_accumulator_secret_key(accumulator_secret)?;
 
-        let coeff_secret_key = client_key.glwe_secret_key();
         let ntt_secret_key =
-            NttGlweSecretKey::from_coeff_secret_key(coeff_secret_key, self.context.table());
+            NttGlweSecretKey::from_coeff_secret_key(accumulator_secret, self.context.table());
 
         Ok(self.generate_circuit_bootstrap_key_with_main(
-            client_key,
+            accumulator_secret,
             &ntt_secret_key,
             parameters,
             rng,
@@ -120,7 +121,7 @@ where
     /// Uses the accumulator transform already prepared for ordinary PBS key generation.
     pub(crate) fn generate_circuit_bootstrap_key_with_main<R>(
         &mut self,
-        client_key: &ClientKey<T>,
+        accumulator_secret: &GlweSecretKey<T>,
         ntt_secret_key: &NttGlweSecretKey<T>,
         parameters: CircuitBootstrapParameters<T>,
         rng: &mut R,
@@ -128,10 +129,9 @@ where
     where
         R: rand::Rng + rand::CryptoRng,
     {
-        let coeff_secret_key = client_key.glwe_secret_key();
         self.gadget.resize(parameters.trace().size());
         let trace = NttGlweTraceKey::generate(
-            coeff_secret_key,
+            accumulator_secret,
             ntt_secret_key,
             parameters.trace(),
             self.context.table(),
@@ -141,7 +141,7 @@ where
 
         self.gadget.resize(parameters.scheme_switch().size());
         let scheme_switch = NttGlweSchemeSwitchKey::generate(
-            coeff_secret_key,
+            accumulator_secret,
             ntt_secret_key,
             parameters.output_size(),
             parameters.scheme_switch(),
@@ -172,13 +172,17 @@ where
     /// do not establish that the ordinary server key uses the same secrets.
     pub fn try_generate_circuit_bootstrap_key<R>(
         &self,
-        client_key: &ClientKey<T>,
+        accumulator_secret: &GlweSecretKey<T>,
         parameters: CircuitBootstrapParameters<T>,
         rng: &mut R,
     ) -> Result<CircuitBootstrapKey<T>, KeyGenerationError>
     where
         R: rand::Rng + rand::CryptoRng,
     {
-        KeyGenerator::new(self).try_generate_circuit_bootstrap_key(client_key, parameters, rng)
+        KeyGenerator::new(self).try_generate_circuit_bootstrap_key(
+            accumulator_secret,
+            parameters,
+            rng,
+        )
     }
 }

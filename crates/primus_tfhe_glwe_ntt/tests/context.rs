@@ -71,33 +71,31 @@ fn server_keys_are_bound_to_their_decomposition_bases() {
         Err(primus_tfhe_glwe_ntt::TfheEvaluationError::MissingCircuitBootstrapKey)
     ));
 
-    for incompatible in [
-        parameters_with_bases(
-            PbsOrder::BootstrapKeyswitch,
+    for (br_log, ks_log, distribution, expected) in [
+        (
             7,
             4,
             SecretKeyDistr::UniformBinary,
+            TfheEvaluationError::IncompatibleBlindRotationKey,
         ),
-        parameters_with_bases(
-            PbsOrder::BootstrapKeyswitch,
+        (
             8,
             5,
             SecretKeyDistr::UniformBinary,
+            TfheEvaluationError::IncompatibleGlweKeySwitchingKey,
         ),
-        parameters_with_bases(
-            PbsOrder::BootstrapKeyswitch,
+        (
             8,
             4,
             SecretKeyDistr::UniformTernary,
+            TfheEvaluationError::IncompatibleBlindRotationKey,
         ),
     ] {
+        let parameters =
+            parameters_with_bases(PbsOrder::BootstrapKeyswitch, br_log, ks_log, distribution);
         let table = U32NttTable::new(PolyLength::new(POLY_LENGTH), modulus).unwrap();
-        let context = TfheContext::try_new(incompatible, table).unwrap();
-
-        assert!(matches!(
-            context.evaluator(&server_key),
-            Err(TfheEvaluationError::IncompatibleServerKey)
-        ));
+        let context = TfheContext::try_new(parameters, table).unwrap();
+        assert_eq!(context.evaluator(&server_key).err().unwrap(), expected);
     }
 }
 
@@ -152,9 +150,15 @@ fn split_keys_support_both_pbs_orders() {
         // Fresh key generation is covered by the PBS and Boolean tests.
         let mut generator = KeyGenerator::new(&context);
         let client = ClientKey::generate(context.parameters(), &mut rng);
-        let server = generator
-            .try_generate_server_key(&client, None, &mut rng)
+        let blind_rotation = primus_tfhe_glwe_ntt::BootstrappingKey::Classic(
+            generator
+                .try_generate_bootstrapping_key(&client, &mut rng)
+                .unwrap(),
+        );
+        let key_switching = generator
+            .try_generate_glwe_key_switching_key(&client, &mut rng)
             .unwrap();
+        let server = primus_tfhe_glwe_ntt::ServerKey::new(blind_rotation, key_switching, None);
         let lookup_table = context
             .parameters()
             .lookup_table_compiler(&input_codec)

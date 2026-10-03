@@ -94,9 +94,15 @@ fn split_keys_support_both_pbs_orders() {
         // Fresh key generation is covered by the PBS and Boolean tests.
         let mut generator = KeyGenerator::new(&context);
         let client = ClientKey::generate(context.parameters(), &mut rng);
-        let server = generator
-            .try_generate_server_key(&client, None, &mut rng)
+        let blind_rotation = primus_tfhe_glwe_fourier::BootstrappingKey::Classic(
+            generator
+                .try_generate_bootstrapping_key(&client, &mut rng)
+                .unwrap(),
+        );
+        let key_switching = generator
+            .try_generate_glwe_key_switching_key(&client, &mut rng)
             .unwrap();
+        let server = primus_tfhe_glwe_fourier::ServerKey::new(blind_rotation, key_switching, None);
         let lookup_table = context
             .parameters()
             .lookup_table_compiler(&input_codec)
@@ -160,25 +166,31 @@ fn server_keys_are_bound_to_both_decomposition_bases() {
         source.circuit_bootstrap_evaluator(&server_key, &input_codec),
         Err(primus_tfhe_glwe_fourier::TfheEvaluationError::MissingCircuitBootstrapKey)
     ));
-    for (bootstrapping_log_basis, key_switching_log_basis, distribution) in [
-        (8, 5, SecretKeyDistr::UniformBinary),
-        (7, 4, SecretKeyDistr::UniformBinary),
-        (8, 4, SecretKeyDistr::UniformTernary),
+    for (br_log, ks_log, distribution, expected) in [
+        (
+            7,
+            4,
+            SecretKeyDistr::UniformBinary,
+            TfheEvaluationError::IncompatibleBlindRotationKey,
+        ),
+        (
+            8,
+            5,
+            SecretKeyDistr::UniformBinary,
+            TfheEvaluationError::IncompatibleGlweKeySwitchingKey,
+        ),
+        (
+            8,
+            4,
+            SecretKeyDistr::UniformTernary,
+            TfheEvaluationError::IncompatibleBlindRotationKey,
+        ),
     ] {
-        let incompatible = TfheContext::try_new(
-            parameters_with_bases(
-                PbsOrder::BootstrapKeyswitch,
-                bootstrapping_log_basis,
-                key_switching_log_basis,
-                distribution,
-            ),
-            RustFftTable::new(PolyLength::new(POLY_LENGTH)),
-        )
-        .unwrap();
-        assert!(matches!(
-            incompatible.evaluator(&server_key),
-            Err(TfheEvaluationError::IncompatibleServerKey)
-        ));
+        let parameters =
+            parameters_with_bases(PbsOrder::BootstrapKeyswitch, br_log, ks_log, distribution);
+        let table = RustFftTable::new(PolyLength::new(POLY_LENGTH));
+        let context = TfheContext::try_new(parameters, table).unwrap();
+        assert_eq!(context.evaluator(&server_key).err().unwrap(), expected);
     }
 }
 

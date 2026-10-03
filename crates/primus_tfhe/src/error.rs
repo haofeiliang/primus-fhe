@@ -9,9 +9,12 @@ pub enum TfheEvaluationError {
     /// Boolean gates require input modulus 4 and signed LUT values at modulus-8 scale.
     #[error("Boolean evaluation requires plaintext modulus 4 and ciphertext moduli greater than 8")]
     InvalidBooleanEncoding,
-    /// The server key was generated for a different parameter layout.
-    #[error("TFHE server key is incompatible with the evaluation context")]
-    IncompatibleServerKey,
+    /// The selected KS→BR order requires input ring key-switching material.
+    #[error("keyswitch-bootstrap requires a GLWE key-switching key")]
+    MissingGlweKeySwitchingKey,
+    /// Ring KS material has another input/output layout or decomposition basis/modulus.
+    #[error("GLWE key-switching key is incompatible with the evaluation context")]
+    IncompatibleGlweKeySwitchingKey,
     /// Blind-rotation material has another layout, distribution or basis/modulus.
     #[error("blind-rotation key is incompatible with the evaluation context")]
     IncompatibleBlindRotationKey,

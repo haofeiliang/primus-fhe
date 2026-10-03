@@ -1,5 +1,5 @@
 use primus_fft::{FftEngine, FftTable, TorusFftValue};
-use primus_glwe::{FourierGlweKeySwitchingWorkspace, GlweCiphertext};
+use primus_glwe::{FourierGlweKeySwitchingKey, FourierGlweKeySwitchingWorkspace, GlweCiphertext};
 use primus_lwe::LweCiphertext;
 use primus_modulus::NativeModulus;
 use primus_poly::Polynomial;
@@ -8,20 +8,25 @@ use primus_tfhe_glwe::PbsOrder;
 
 use crate::{
     BootstrappingKey, Evaluator, FourierGlweBlindRotationWorkspace, FourierGlweBootstrappingKey,
-    Lwe, ServerKey, SparseGlweBlindRotationWorkspace, SparseGlweBootstrappingKey, TfheContext,
+    Lwe, SparseGlweBlindRotationWorkspace, SparseGlweBootstrappingKey, TfheContext,
 };
 
-/// Reusable ring key-switch scratch shared by input preparation and result return.
-/// Its caller chooses the stage at construction, not through missing resources.
-pub(crate) struct KeySwitchingWorkspace<T: TorusFftValue> {
+/// Ring key-switch material bound to its reusable scratch and output.
+/// The selected PBS order places this complete stage before or after BR.
+pub(crate) struct KeySwitchingWorkspace<'a, T: TorusFftValue> {
+    pub(crate) key: &'a FourierGlweKeySwitchingKey<T>,
     pub(crate) scratch: FourierGlweKeySwitchingWorkspace<T>,
     pub(crate) switched: GlweCiphertext<Vec<T>>,
 }
 
-impl<T: TorusFftValue> KeySwitchingWorkspace<T> {
+impl<'a, T: TorusFftValue> KeySwitchingWorkspace<'a, T> {
     #[must_use]
-    pub(crate) fn new(parameters: &crate::TfheParameters<T>) -> Self {
+    pub(crate) fn new(
+        parameters: &crate::TfheParameters<T>,
+        key: &'a FourierGlweKeySwitchingKey<T>,
+    ) -> Self {
         Self {
+            key,
             scratch: FourierGlweKeySwitchingWorkspace::new(
                 parameters.glwe_key_switching().output().glwe_size(),
             ),
@@ -43,10 +48,10 @@ enum BlindRotation<'a, T: TorusFftValue> {
 }
 
 /// KS→BR requires a compact small-LWE input; BR→KS consumes the external input directly.
-enum InputPreparation<T: TorusFftValue> {
+enum InputPreparation<'a, T: TorusFftValue> {
     Direct,
     Keyswitch {
-        workspace: KeySwitchingWorkspace<T>,
+        workspace: KeySwitchingWorkspace<'a, T>,
         small_lwe: LweCiphertext<T>,
     },
 }
@@ -59,10 +64,9 @@ where
     Table: FftTable,
 {
     pub(crate) context: &'a TfheContext<T, Table>,
-    pub(crate) server_key: &'a ServerKey<T>,
     pub(crate) fft: FftEngine<'a, Table>,
     blind_rotation: BlindRotation<'a, T>,
-    input: InputPreparation<T>,
+    input: InputPreparation<'a, T>,
     // Coefficient GLWE under the accumulator secret after either BR order.
     pub(crate) accumulator: GlweCiphertext<Vec<T>>,
 }
@@ -74,18 +78,26 @@ where
 {
     pub(crate) fn try_new(
         context: &'a TfheContext<T, Table>,
-        server_key: &'a ServerKey<T>,
+        bootstrapping_key: &'a BootstrappingKey<T>,
+        key_switching_key: Option<&'a FourierGlweKeySwitchingKey<T>>,
     ) -> Result<Self, TfheEvaluationError> {
         let parameters = context.parameters();
-        if !server_key.is_compatible(parameters) {
-            return Err(TfheEvaluationError::IncompatibleServerKey);
+        if !bootstrapping_key.is_compatible(parameters) {
+            return Err(TfheEvaluationError::IncompatibleBlindRotationKey);
+        }
+
+        // Validate supplied material even when BR→KS does not use it in this engine.
+        // KS→BR must reject missing material before allocating any scratch.
+        if let Some(key) = key_switching_key {
+            crate::key::check_glwe_key_switching_key(parameters, key)?;
+        } else if parameters.pbs_order() == PbsOrder::KeyswitchBootstrap {
+            return Err(TfheEvaluationError::MissingGlweKeySwitchingKey);
         }
 
         Ok(Self {
             context,
-            server_key,
             fft: context.new_fft_engine(),
-            blind_rotation: match server_key.bootstrapping_key() {
+            blind_rotation: match bootstrapping_key {
                 BootstrappingKey::Classic(key) => BlindRotation::Classic {
                     key,
                     scratch: FourierGlweBlindRotationWorkspace::new(key),
@@ -98,12 +110,26 @@ where
             input: match parameters.pbs_order() {
                 PbsOrder::BootstrapKeyswitch => InputPreparation::Direct,
                 PbsOrder::KeyswitchBootstrap => InputPreparation::Keyswitch {
-                    workspace: KeySwitchingWorkspace::new(parameters),
+                    workspace: KeySwitchingWorkspace::new(
+                        parameters,
+                        key_switching_key.expect("KS→BR material was checked above"),
+                    ),
                     small_lwe: LweCiphertext::zero(parameters.small_lwe().dimension().get()),
                 },
             },
             accumulator: GlweCiphertext::zero(parameters.blind_rotation_ggsw().glwe_len()),
         })
+    }
+
+    /// Rebind a checked compatible KS key without replacing input scratch.
+    /// Used only when converting CBS back to PBS with explicitly supplied material.
+    pub(crate) fn rebind_input_key_switching_key(
+        &mut self,
+        key: &'a FourierGlweKeySwitchingKey<T>,
+    ) {
+        if let InputPreparation::Keyswitch { workspace, .. } = &mut self.input {
+            workspace.key = key;
+        }
     }
 
     /// Bind product scratch to the requested basis without allocating; CBS and
@@ -151,7 +177,7 @@ where
                     glwe.poly_length().get(),
                     glwe.cipher_modulus(),
                 );
-                self.server_key.glwe_key_switching_key().key_switch_to(
+                ks.key.key_switch_to(
                     &self.accumulator,
                     &mut ks.switched,
                     &mut self.fft,
@@ -207,12 +233,16 @@ where
 {
     pub(crate) fn try_new(
         context: &'a TfheContext<T, Table>,
-        server_key: &'a ServerKey<T>,
+        bootstrapping_key: &'a BootstrappingKey<T>,
+        key_switching_key: Option<&'a FourierGlweKeySwitchingKey<T>>,
     ) -> Result<Self, TfheEvaluationError> {
-        let engine = BlindRotationEngine::try_new(context, server_key)?;
+        let engine = BlindRotationEngine::try_new(context, bootstrapping_key, key_switching_key)?;
         Ok(match context.parameters().pbs_order() {
             PbsOrder::BootstrapKeyswitch => Self::Standalone(engine),
-            PbsOrder::KeyswitchBootstrap => Self::Bootstrapper(Evaluator::from_engine(engine)),
+            PbsOrder::KeyswitchBootstrap => Self::Bootstrapper(Evaluator::from_engine(
+                engine,
+                key_switching_key.expect("KS→BR engine requires KS material"),
+            )),
         })
     }
 
@@ -240,12 +270,19 @@ where
         }
     }
 
-    /// Only standalone BR→KS must allocate an output KS workspace here.
-    #[must_use]
-    pub(crate) fn into_bootstrapper(self) -> Evaluator<'a, T, Table> {
-        match self {
-            Self::Standalone(engine) => Evaluator::from_engine(engine),
-            Self::Bootstrapper(pbs) => pbs,
-        }
+    /// Check the explicit KS material, retaining existing PBS buffers when present.
+    /// Only standalone BR→KS allocates its missing output KS workspace.
+    pub(crate) fn try_into_bootstrapper(
+        self,
+        key: &'a FourierGlweKeySwitchingKey<T>,
+    ) -> Result<Evaluator<'a, T, Table>, TfheEvaluationError> {
+        crate::key::check_glwe_key_switching_key(self.engine().context.parameters(), key)?;
+        Ok(match self {
+            Self::Standalone(engine) => Evaluator::from_engine(engine, key),
+            Self::Bootstrapper(mut pbs) => {
+                pbs.rebind_key_switching_key(key);
+                pbs
+            }
+        })
     }
 }

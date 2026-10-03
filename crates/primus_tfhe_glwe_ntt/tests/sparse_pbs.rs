@@ -166,7 +166,7 @@ fn sparse_pbs_preserves_external_secret_and_interleaved_outputs_in_both_orders()
         for incompatible in [self::context(order, 8, 5, 7), self::context(order, 8, 4, 8)] {
             assert!(matches!(
                 incompatible.evaluator(&sparse_key),
-                Err(TfheEvaluationError::IncompatibleServerKey)
+                Err(TfheEvaluationError::IncompatibleBlindRotationKey)
             ));
         }
     }

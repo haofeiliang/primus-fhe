@@ -2,7 +2,7 @@ use primus_data::{Data, DataMut};
 use primus_encoding::RoundedCodec;
 use primus_fft::{Complex64, FftTable, TorusFftValue};
 use primus_glwe::GlweCiphertext;
-use primus_glwe::{FourierGlweTraceWorkspace, GlevCiphertext};
+use primus_glwe::{FourierGlweKeySwitchingKey, FourierGlweTraceWorkspace, GlevCiphertext};
 use primus_lattice::ggsw::FourierGgsw;
 use primus_modulus::NativeModulus;
 use primus_tfhe::InterleavedLookupTable;
@@ -10,8 +10,8 @@ use primus_tfhe::InterleavedLookupTable;
 use super::key::CircuitBootstrapBinding;
 
 use crate::{
-    CircuitBootstrapKey, CircuitBootstrapParameters, Evaluator, Lwe, ServerKey, TfheContext,
-    TfheEvaluationError, bootstrap::CircuitBootstrapResources,
+    BootstrappingKey, CircuitBootstrapKey, CircuitBootstrapParameters, Evaluator, Lwe, ServerKey,
+    TfheContext, TfheEvaluationError, bootstrap::CircuitBootstrapResources,
 };
 
 /// Classic binary/ternary or sparse binary CBS producing Fourier GGSW controls.
@@ -52,29 +52,46 @@ where
         let key = server_key
             .circuit_bootstrap_key()
             .ok_or(TfheEvaluationError::MissingCircuitBootstrapKey)?;
-        Self::try_from_parts(context, server_key, key.parameters(), key, input_codec)
+        Self::try_from_parts(
+            context,
+            server_key.bootstrapping_key(),
+            (context.parameters().pbs_order() == crate::PbsOrder::KeyswitchBootstrap)
+                .then_some(server_key.glwe_key_switching_key()),
+            key.parameters(),
+            key,
+            input_codec,
+        )
     }
 
     /// Checks resource layouts/bases, compiles the gadget-scaled identity LUT
     /// and allocates workspace for the selected classic or sparse BR. These checks
     /// do not establish a noise margin for the selected output gadget scales.
     ///
+    /// `input_key_switching_key` is required for KS→BR and may be `None` for
+    /// BR→KS. Any supplied KS key is validated; BR→KS does not retain it or
+    /// allocate return scratch. Missing KS→BR material is reported before evaluation.
+    ///
     /// # Correctness
     ///
-    /// `server_key` and `circuit_key` must be generated from the same paired
+    /// BR, optional KS, and `circuit_key` must be generated from the same paired
     /// client secrets and this context's FFT table instance. Compatibility
     /// checks cannot verify actual secret or transform identity. See
     /// [`primus_glwe::FourierGlweSchemeSwitchKey::apply_to`] for the underlying
     /// representation and error requirements.
     pub fn try_from_parts(
         context: &'a TfheContext<T, Table>,
-        server_key: &'a ServerKey<T>,
+        bootstrapping_key: &'a BootstrappingKey<T>,
+        input_key_switching_key: Option<&'a FourierGlweKeySwitchingKey<T>>,
         parameters: &'a CircuitBootstrapParameters<T>,
         circuit_key: &'a CircuitBootstrapKey<T>,
         input_codec: &RoundedCodec<T, NativeModulus<T>>,
     ) -> Result<Self, TfheEvaluationError> {
         Self::from_resources_and_parts(
-            CircuitBootstrapResources::try_new(context, server_key)?,
+            CircuitBootstrapResources::try_new(
+                context,
+                bootstrapping_key,
+                input_key_switching_key,
+            )?,
             parameters,
             circuit_key,
             input_codec,
@@ -83,20 +100,20 @@ where
 
     /// Consumes complete PBS workspace and preserves it for ordinary operations and recovery.
     /// Compiles the selected input encoding and allocates only additional CBS buffers;
-    /// requires bundled CBS key material and sufficient ManyLUT capacity.
+    /// checks the supplied CBS key and ManyLUT capacity.
+    ///
+    /// # Correctness
+    /// `circuit_key` must use the bootstrapper's accumulator secret and transform;
+    /// see [`Self::try_from_parts`].
     pub fn try_from_bootstrapper(
         pbs: Evaluator<'a, T, Table>,
+        circuit_key: &'a CircuitBootstrapKey<T>,
         input_codec: &RoundedCodec<T, NativeModulus<T>>,
     ) -> Result<Self, TfheEvaluationError> {
-        let key = pbs
-            .engine
-            .server_key
-            .circuit_bootstrap_key()
-            .ok_or(TfheEvaluationError::MissingCircuitBootstrapKey)?;
         Self::from_resources_and_parts(
             CircuitBootstrapResources::Bootstrapper(pbs),
-            key.parameters(),
-            key,
+            circuit_key.parameters(),
+            circuit_key,
             input_codec,
         )
     }
@@ -118,9 +135,15 @@ where
     /// Recovers ordinary PBS workspace and releases CBS-only buffers.
     /// Reuses all allocations when constructed from an ordinary bootstrapper or with KS→BR order.
     /// Standalone BR→KS CBS explicitly allocates its missing return-KS workspace here.
-    #[must_use]
-    pub fn into_bootstrapper(self) -> Evaluator<'a, T, Table> {
-        self.resources.into_bootstrapper()
+    ///
+    /// # Correctness
+    /// The supplied KS key must use the original paired secrets and transform.
+    /// A compatible replacement reuses the active KS stage's buffers.
+    pub fn try_into_bootstrapper(
+        self,
+        key_switching_key: &'a FourierGlweKeySwitchingKey<T>,
+    ) -> Result<Evaluator<'a, T, Table>, TfheEvaluationError> {
+        self.resources.try_into_bootstrapper(key_switching_key)
     }
 
     /// Bind the circuit parameters once and compile the gadget-scaled identity LUT.
@@ -256,7 +279,7 @@ where
     /// # Correctness
     ///
     /// Inherits [`Self::try_new`]'s paired-secret and FFT table requirements.
-    /// Input must use the external client secret paired with `server_key` and
+    /// Input must use the external client secret paired with the bound BR/KS material and
     /// unsigned rounded encoding with a plaintext in `0..ceil(t/2)`, where `t`
     /// is the selected input codec's plaintext modulus. Noise must fit the coarser interleaved-LUT
     /// rotation intervals. Trace and scheme-switch errors, including native

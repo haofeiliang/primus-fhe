@@ -27,7 +27,8 @@ pub enum BootstrappingKey<T: FheUint> {
 }
 
 impl<T: FheUint> BootstrappingKey<T> {
-    fn is_compatible(&self, parameters: &TfheParameters<T>) -> bool {
+    /// Validate the selected BR layout and input domain, independently of ring KS/CBS.
+    pub(crate) fn is_compatible(&self, parameters: &TfheParameters<T>) -> bool {
         let (dimension, input_modulus, size, basis, cipher_modulus) = match self {
             Self::Classic(key) => {
                 if key.input_distribution() != parameters.small_lwe().secret_key_distr() {
@@ -77,20 +78,26 @@ pub struct ServerKey<T: FheUint> {
 }
 
 impl<T: FheUint> ServerKey<T> {
+    /// Combines independently generated material by moving its owned buffers.
+    /// Evaluator construction checks compatibility; this does not prove secret
+    /// or transform identity. Both PBS orders use the same ring KS direction.
+    #[must_use]
+    pub fn new(
+        bootstrapping_key: BootstrappingKey<T>,
+        glwe_key_switching_key: NttGlweKeySwitchingKey<T>,
+        circuit_bootstrap: Option<CircuitBootstrapKey<T>>,
+    ) -> Self {
+        Self {
+            bootstrapping_key,
+            glwe_key_switching_key,
+            circuit_bootstrap: circuit_bootstrap.map(Box::new),
+        }
+    }
+
     /// Returns the bound CBS parameters and keys, if requested during generation.
     #[must_use]
     pub fn circuit_bootstrap_key(&self) -> Option<&CircuitBootstrapKey<T>> {
         self.circuit_bootstrap.as_deref()
-    }
-
-    pub(crate) fn is_compatible(&self, parameters: &TfheParameters<T>) -> bool {
-        let key_switching = parameters.glwe_key_switching();
-        self.bootstrapping_key.is_compatible(parameters)
-            && self.glwe_key_switching_key.input_dimension() == key_switching.input_dimension()
-            && self.glwe_key_switching_key.output_dimension() == key_switching.output_dimension()
-            && self.glwe_key_switching_key.poly_length() == key_switching.poly_length().get()
-            && self.glwe_key_switching_key.output_size() == key_switching.output_size()
-            && self.glwe_key_switching_key.basis() == key_switching.output().basis()
     }
 
     /// Returns the selected classic or sparse blind-rotation key.
@@ -126,6 +133,22 @@ impl<T: FheUint> ServerKey<T> {
     }
 }
 
+/// Checks the ring KS layout and basis once, before allocating evaluation scratch.
+/// Basis equality also checks the NTT coefficient modulus.
+pub(crate) fn check_glwe_key_switching_key<T: FheUint>(
+    parameters: &TfheParameters<T>,
+    key: &NttGlweKeySwitchingKey<T>,
+) -> Result<(), crate::TfheEvaluationError> {
+    let expected = parameters.glwe_key_switching();
+    if key.input_dimension() != expected.input_dimension()
+        || key.output_size() != expected.output_size()
+        || key.basis() != expected.output().basis()
+    {
+        return Err(crate::TfheEvaluationError::IncompatibleGlweKeySwitchingKey);
+    }
+    Ok(())
+}
+
 /// Generates client and classic or sparse server keys for one NTT context.
 pub struct KeyGenerator<'a, T, Table>
 where
@@ -148,6 +171,58 @@ where
             context,
             gadget: NttGlweGadgetEncryptWorkspace::new(parameters.size()),
         }
+    }
+
+    /// Generates classic binary/ternary BR material without ring KS or CBS keys.
+    /// Both client secrets are needed; the small secret controls rotation and the
+    /// accumulator secret encrypts those controls.
+    ///
+    /// # Correctness
+    /// Use the same paired secrets and this context's transform representation
+    /// when combining independently generated materials.
+    /// Imported coefficients inherit [`NttGlweSecretKey::from_coeff_secret_key`]'s
+    /// unsigned-magnitude bound.
+    pub fn try_generate_bootstrapping_key<R>(
+        &mut self,
+        client_key: &ClientKey<T>,
+        rng: &mut R,
+    ) -> Result<NttGlweBootstrappingKey<T, BarrettModulus<T>>, KeyGenerationError>
+    where
+        R: rand::Rng + rand::CryptoRng,
+    {
+        let parameters = self.context.parameters();
+        client_key.check_compatible(parameters)?;
+        let main = NttGlweSecretKey::from_coeff_secret_key(
+            client_key.glwe_secret_key(),
+            self.context.table(),
+        );
+        self.gadget.resize(parameters.blind_rotation_ggsw().size());
+        Ok(NttGlweBootstrappingKey::generate_ntt(
+            client_key.small_lwe_secret_key(),
+            parameters.small_lwe(),
+            &main,
+            parameters.blind_rotation_ggsw(),
+            self.context.table(),
+            rng,
+            &mut self.gadget,
+        ))
+    }
+
+    /// Generates ring KS material from the accumulator to the padded small secret.
+    /// PBS order determines whether it is used before BR or when returning its result.
+    ///
+    /// # Correctness
+    /// Inherits [`Self::try_generate_bootstrapping_key`]'s secret and transform requirements.
+    pub fn try_generate_glwe_key_switching_key<R>(
+        &mut self,
+        client_key: &ClientKey<T>,
+        rng: &mut R,
+    ) -> Result<NttGlweKeySwitchingKey<T>, KeyGenerationError>
+    where
+        R: rand::Rng + rand::CryptoRng,
+    {
+        client_key.check_compatible(self.context.parameters())?;
+        Ok(self.generate_glwe_key_switching_key(client_key, rng))
     }
 
     /// Generates the selected capabilities from one compatible client key.
@@ -216,7 +291,13 @@ where
         let bootstrapping_key =
             self.try_generate_sparse_bootstrapping_key(client_key, copy_count, bucket_count, rng)?;
         let circuit_bootstrap = circuit_parameters
-            .map(|parameters| self.try_generate_circuit_bootstrap_key(client_key, parameters, rng))
+            .map(|parameters| {
+                self.try_generate_circuit_bootstrap_key(
+                    client_key.glwe_secret_key(),
+                    parameters,
+                    rng,
+                )
+            })
             .transpose()?
             .map(Box::new);
         let glwe_key_switching_key = self.generate_glwe_key_switching_key(client_key, rng);
@@ -253,7 +334,7 @@ where
         );
         let circuit_bootstrap = circuit_parameters.map(|parameters| {
             Box::new(self.generate_circuit_bootstrap_key_with_main(
-                client_key,
+                client_key.glwe_secret_key(),
                 &main_glwe_secret_key,
                 parameters,
                 rng,
@@ -268,6 +349,7 @@ where
         }
     }
 
+    /// Generates after the setup bundle has passed compatibility checks.
     fn generate_glwe_key_switching_key<R>(
         &mut self,
         client_key: &ClientKey<T>,

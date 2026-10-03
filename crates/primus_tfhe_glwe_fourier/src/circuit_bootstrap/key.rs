@@ -1,7 +1,9 @@
 use primus_fft::{FftTable, TorusFftValue};
-use primus_glwe::{FourierGlweSchemeSwitchKey, FourierGlweSecretKey, FourierGlweTraceKey};
+use primus_glwe::{
+    FourierGlweSchemeSwitchKey, FourierGlweSecretKey, FourierGlweTraceKey, GlweSecretKey,
+};
 
-use crate::{CircuitBootstrapParameters, ClientKey, KeyGenerationError, KeyGenerator, TfheContext};
+use crate::{CircuitBootstrapParameters, KeyGenerationError, KeyGenerator, TfheContext};
 
 /// Optional trace-projection and GLev-to-Fourier-GGSW scheme-switch keys.
 ///
@@ -77,19 +79,19 @@ where
     T: TorusFftValue,
     Table: FftTable,
 {
-    /// Generates optional CBS keys, reusing this generator's Fourier workspace.
+    /// Generates CBS keys from only the accumulator secret, reusing Fourier workspace.
     ///
-    /// Rejects incompatible circuit parameters or client keys before sampling.
+    /// Rejects incompatible circuit parameters or accumulator secrets before sampling.
     ///
     /// # Correctness
     ///
-    /// Both keys encrypt under `client_key`'s accumulator GLWE secret. Generate
-    /// the ordinary PBS server key from the same client key and use this
+    /// Both keys encrypt under `accumulator_secret`. Generate
+    /// the ordinary PBS server key from the same accumulator secret and use this
     /// context's FFT table for evaluation. Compatibility checks cannot identify
     /// the actual secret or distinguish FFT representations with equal lengths.
     pub fn try_generate_circuit_bootstrap_key<R>(
         &mut self,
-        client_key: &ClientKey<T>,
+        accumulator_secret: &GlweSecretKey<T>,
         parameters: CircuitBootstrapParameters<T>,
         rng: &mut R,
     ) -> Result<CircuitBootstrapKey<T>, KeyGenerationError>
@@ -100,13 +102,13 @@ where
         if !parameters.is_compatible(tfhe) {
             return Err(KeyGenerationError::IncompatibleCircuitBootstrapParameters);
         }
-        client_key.check_compatible(tfhe)?;
+        tfhe.check_accumulator_secret_key(accumulator_secret)?;
 
-        let secret = client_key.glwe_secret_key();
-        let fourier_secret = FourierGlweSecretKey::from_coeff_secret_key(secret, &mut self.fft);
+        let fourier_secret =
+            FourierGlweSecretKey::from_coeff_secret_key(accumulator_secret, &mut self.fft);
 
         Ok(self.generate_circuit_bootstrap_key_with_main(
-            client_key,
+            accumulator_secret,
             &fourier_secret,
             parameters,
             rng,
@@ -116,7 +118,7 @@ where
     /// Uses the accumulator transform already prepared for ordinary PBS key generation.
     pub(crate) fn generate_circuit_bootstrap_key_with_main<R>(
         &mut self,
-        client_key: &ClientKey<T>,
+        accumulator_secret: &GlweSecretKey<T>,
         fourier_secret: &FourierGlweSecretKey,
         parameters: CircuitBootstrapParameters<T>,
         rng: &mut R,
@@ -124,10 +126,9 @@ where
     where
         R: rand::Rng + rand::CryptoRng,
     {
-        let secret = client_key.glwe_secret_key();
         self.gadget.resize(parameters.trace().size());
         let trace = FourierGlweTraceKey::generate(
-            secret,
+            accumulator_secret,
             fourier_secret,
             parameters.trace(),
             &mut self.fft,
@@ -137,7 +138,7 @@ where
 
         self.gadget.resize(parameters.scheme_switch().size());
         let scheme_switch = FourierGlweSchemeSwitchKey::generate(
-            secret,
+            accumulator_secret,
             fourier_secret,
             parameters.output_size(),
             parameters.scheme_switch(),
@@ -166,13 +167,17 @@ where
     /// multiple standalone CBS keys. For paired generation, use [`Self::try_generate_keys`].
     pub fn try_generate_circuit_bootstrap_key<R>(
         &self,
-        client_key: &ClientKey<T>,
+        accumulator_secret: &GlweSecretKey<T>,
         parameters: CircuitBootstrapParameters<T>,
         rng: &mut R,
     ) -> Result<CircuitBootstrapKey<T>, KeyGenerationError>
     where
         R: rand::Rng + rand::CryptoRng,
     {
-        KeyGenerator::new(self).try_generate_circuit_bootstrap_key(client_key, parameters, rng)
+        KeyGenerator::new(self).try_generate_circuit_bootstrap_key(
+            accumulator_secret,
+            parameters,
+            rng,
+        )
     }
 }

@@ -19,7 +19,7 @@
 | 分解式 MVB | Rounded 前半区前缀 | k 个 unsigned Scaled LWE | 普通密钥 | 预处理程序 + `FactorizedEvaluator`，共享一次 BR、逐输出乘法 |
 | 有界双输入 | 同秘密/编码，`x<B,y<R` 且 `B*R<=ceil(t/2)` | 一个 Rounded LWE | 普通密钥 | `BivariateLookupTable`，另复用一个打包 LWE |
 | Boolean 门 | `t=4` 下的 Rounded 0/1 | 可直接串联的同编码 Boolean LWE | 普通密钥 | `BooleanEvaluator` 持有门 LUT 和临时密文 |
-| CBS → CMUX | Rounded 前半区；CMUX 控制输入为 0/1 | accumulator 秘密下的 GGSW/NGSW gadget 控制，再选择环密文 | 普通密钥 + trace/SS | `CircuitBootstrapEvaluator`；环客户端独立使用 `AccumulatorClient` |
+| CBS → CMUX | Rounded 前半区；CMUX 控制输入为 0/1 | accumulator 秘密下的 GGSW/NGSW gadget 控制，再选择环密文 | BR + trace/SS；GLWE KS→BR 另需输入 KS | `CircuitBootstrapEvaluator`；环客户端独立使用 `AccumulatorClient` |
 | One-hot CBS | 一个 padded chunk，t=2M | δ_r(m) 的 NLEV/NGSW selectors | Classic NTRU CBS 材料 | [One-hot 接口](../primus_tfhe_ntru/README.zh_CN.md#one-hot-cbs) |
 | 高精度查表 | 多个独立加密、统一位宽的 chunks | 可独立指定数量的输出 chunks | Classic NTRU CBS 与返回密钥 | [高精度查表](../primus_tfhe_ntru_lut/README.zh_CN.md) |
 
@@ -125,9 +125,9 @@ Context 保存不可变参数和变换表，ServerKey 保存求值材料；Evalu
 普通 PBS 与 MVB/CBS 交替时，消费已有 evaluator，避免为同一工作流同时保留两份 PBS 工作区：
 
 - GLWE MVB：`FactorizedEvaluator::from_bootstrapper(pbs)`；NTRU MVB 使用可失败的 `try_from_bootstrapper`。
-- GLWE CBS：`CircuitBootstrapEvaluator::try_from_bootstrapper(pbs, &input_codec)` 从 ServerKey 取得 CBS 材料；NTRU CBS/one-hot 显式接收材料：`try_from_bootstrapper(pbs, circuit_key, &input_codec)`。
+- GLWE/NTRU CBS 与 NTRU one-hot 均显式接收 CBS 材料：`CircuitBootstrapEvaluator::try_from_bootstrapper(pbs, circuit_key, &input_codec)`（one-hot 使用自己的 evaluator 类型）。
 - `bootstrapper_mut()` 借用普通 PBS 操作。导入 `ProgrammableBootstrap` / `ProgrammableBootstrapInterleaved` 即可调用相应 `_to`，借用不能替换内部 evaluator。
-- `into_bootstrapper()` 回收 MVB/GLWE CBS 工作区。NTRU CBS/one-hot 使用 `try_into_bootstrapper(return_key)`；从完整 PBS 转入且传回同一返回密钥对象时回收无分配。独立 CBS 或换用另一把兼容返回密钥时准备返回缓冲。
+- `into_bootstrapper()` 回收 MVB 工作区。GLWE CBS 使用 `try_into_bootstrapper(glwe_ks_key)`，复用已有输入或返回 KS 缓冲；独立 BR→KS CBS 在此分配缺失返回缓冲。NTRU CBS/one-hot 使用 `try_into_bootstrapper(return_key)`；从完整 PBS 转入且传回同一返回密钥对象时回收无分配，其他情况准备返回缓冲。
 
 只需一种能力时使用 `context.factorized_evaluator` 或 `context.circuit_bootstrap_evaluator`。独立 GLWE BR→KS CBS 与 NTRU CBS/one-hot 省略普通返回缓冲，其 PBS 借用是 `None`，恢复时显式分配缺失缓冲。GLWE KS→BR CBS 保留必需的输入 KS，不需额外返回存储即可提供 `Some`。从完整 PBS 转入的 CBS/one-hot 始终返回 `Some`；MVB 提供直接借用。需要频繁交替则从普通 PBS 转入。构造允许分配，在线执行和借用不做隐藏分配。Boolean 的 `try_new` 接受 PBS 所有权，`into_bootstrapper` 可回收。
 

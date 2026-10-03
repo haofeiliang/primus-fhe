@@ -180,6 +180,16 @@ operations, preventing replacement of the key-bound evaluator.
 | GLWE CBS from complete PBS | `Some` | None |
 | NTRU CBS/one-hot from complete PBS | `Some` | None when recovering with the same return-key object |
 
+GLWE engines borrow the selected BR key directly. Each active KS stage binds
+its own ring KS key alongside the existing scratch. Independent BR→KS CBS can
+omit the KS owner entirely; KS→BR requires it at construction, with a structured
+error for missing material. `try_from_bootstrapper(pbs, circuit_key, input_codec)`
+retains complete PBS. `try_into_bootstrapper(glwe_ks_key)` validates the explicit
+KS key and reuses an existing stage's buffers, including for another compatible
+key from the same paired secrets/transform. Only standalone BR→KS allocates
+missing output KS scratch. These conversions do not change numerical kernels
+or workspace layouts.
+
 NTRU BR, return and CBS material have independent owners. Standalone CBS/one-hot
 borrows only BR and CBS keys; its resources retain no return-key dependency.
 `try_from_bootstrapper(pbs, circuit_key, input_codec)` keeps a complete PBS for

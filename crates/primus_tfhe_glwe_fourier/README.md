@@ -45,6 +45,10 @@ Choose `PbsOrder::BootstrapKeyswitch` for external dimension n or `KeyswitchBoot
 
 Ordinary/interleaved `Evaluator` `_to` calls reuse workspace and caller outputs. See the [resource reuse guide](../primus_tfhe/README.md#reusing-evaluators) for PBS/MVB/CBS ownership conversions and the return-buffer limitation of standalone GLWE CBS.
 
+`ServerKey` remains the convenient complete PBS bundle. Advanced workflows can own `BootstrappingKey`, the ring KS key and `CircuitBootstrapKey` separately; `ServerKey::new` / `into_parts` move them without copying ciphertext arrays. `KeyGenerator::try_generate_bootstrapping_key` and the existing sparse entry generate only BR; `try_generate_glwe_key_switching_key` generates ring KS separately; `try_generate_circuit_bootstrap_key(accumulator_secret, parameters, rng)` needs only the accumulator secret. Separate generation may transform secrets again; paired generation retains its existing transform reuse.
+
+`Evaluator::try_from_parts(context, br, ks)` binds ordinary PBS/ManyLUT and can then be consumed by MVB. Independent CBS uses `CircuitBootstrapEvaluator::try_from_parts(context, br, input_ks, parameters, circuit_key, input_codec)`: BR→KS accepts `None`, while KS→BR requires `Some(ks)`. Both support classic/sparse. Binding checks layouts, bases and moduli; callers still establish secret and transform identity.
+
 ## Fixed-scale factorized MVB
 
 Compile through `context.compile_factorized_lookup_table_fn(&input_codec, &output_codec, domain_len, output_count, function)` and bind a `FactorizedEvaluator`. The input codec is Rounded and the output codec is Scaled, both at the context modulus. The program borrows that context; outputs use unsigned Scaled encoding.
@@ -70,7 +74,7 @@ Both orders support ordinary/interleaved PBS, MVB and CBS. Pass `Some(cbs_config
 
 ## Circuit bootstrapping
 
-Generate paired material with `context.try_generate_keys(Some(cbs_config), &mut rng)`; `ServerKey` owns the additional parameters and trace/scheme-switch keys. Create `context.circuit_bootstrap_evaluator(&server, &input_codec)` or consume ordinary workspace as above. With a classic key generated using `None`, binding CBS returns `MissingCircuitBootstrapKey`. Use `allocate_output`, `circuit_bootstrap_to` and `cmux_to`; the [CBS → CMUX example](examples/fourier_circuit_bootstrap.rs) shows their complete consumption chain.
+Generate paired material with `context.try_generate_keys(Some(cbs_config), &mut rng)`; `ServerKey` owns the additional parameters and trace/scheme-switch keys. Create `context.circuit_bootstrap_evaluator(&server, &input_codec)` or consume ordinary workspace as above. With a classic key generated using `None`, binding CBS returns `MissingCircuitBootstrapKey`. Use `allocate_output`, `circuit_bootstrap_to` and `cmux_to`; the [CBS → CMUX example](examples/fourier_circuit_bootstrap.rs) shows independent BR/CBS generation and the complete consumption chain.
 
 The [sparse CBS example](examples/fourier_sparse_circuit_bootstrap.rs) shows the fixed-weight secret, sparse key generation and CBS configuration together. Both PBS orders work; subsequent CBS and CMux calls are identical.
 

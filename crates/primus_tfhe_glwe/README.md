@@ -48,6 +48,8 @@ Input encoding and ManyLUT capacity are checked by `circuit_bootstrap_evaluator(
 
 CBS is an optional facility in both backends, with separate output basis, trace/scheme-switch parameters and keys. Both PBS orders support classic binary/ternary and sparse binary keys. CBS outputs remain under the accumulator secret and use gadget scales. The family defines `CircuitBootstrapParameters<T, M>`; backends provide concrete modulus aliases. Output bases with the same level count can reuse the scheme-switch key; numerical and transform requirements belong to the corresponding backend contracts.
 
+Backends support independent BR, ring KS and CBS material alongside convenient complete `ServerKey` generation. CBS generation takes only the accumulator secret. Independent BR→KS CBS needs no ring KS, while KS→BR still needs it to prepare the input. Ordinary PBS requires both BR and ring KS in either order. See the backend guides for APIs and examples.
+
 ## Examples
 
 Backend basic examples show default encoding and reusable ordinary PBS storage; select the PBS order with their `ORDER` constant. Independent output encoding is explained in the shared guide. MVB and CBS have dedicated examples; Boolean usage is in the [shared guide](../primus_tfhe/README.md#boolean-gates). All fixtures are for development, not production recommendations.

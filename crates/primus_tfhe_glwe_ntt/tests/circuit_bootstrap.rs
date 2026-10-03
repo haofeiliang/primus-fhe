@@ -190,7 +190,8 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
                 .unwrap();
             let mut other = CircuitBootstrapEvaluator::try_from_parts(
                 &context,
-                server_key,
+                server_key.bootstrapping_key(),
+                Some(server_key.glwe_key_switching_key()),
                 circuit_parameters,
                 circuit_key,
                 &other_codec,
@@ -210,12 +211,13 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
         assert!(matches!(
             CircuitBootstrapEvaluator::try_from_parts(
                 &other_context,
-                server_key,
+                server_key.bootstrapping_key(),
+                Some(server_key.glwe_key_switching_key()),
                 circuit_parameters,
                 circuit_key,
                 &input_codec
             ),
-            Err(TfheEvaluationError::IncompatibleServerKey)
+            Err(TfheEvaluationError::IncompatibleBlindRotationKey)
         ));
         let incompatible_trace = GgswParameters::with_glwe_params(
             &primus_glwe::GlweParameters::try_from_glev(
@@ -236,7 +238,8 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
         assert!(matches!(
             CircuitBootstrapEvaluator::try_from_parts(
                 &context,
-                server_key,
+                server_key.bootstrapping_key(),
+                Some(server_key.glwe_key_switching_key()),
                 &incompatible_parameters,
                 circuit_key,
                 &input_codec
@@ -256,11 +259,36 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
             circuit_parameters.scheme_switch().clone(),
         )
         .unwrap();
+        // Missing input KS must fail at binding, for classic and sparse alike.
+        if order == PbsOrder::KeyswitchBootstrap {
+            let (result, allocation) = allocations::measure(|| {
+                CircuitBootstrapEvaluator::try_from_parts(
+                    &context,
+                    server_key.bootstrapping_key(),
+                    None,
+                    circuit_parameters,
+                    circuit_key,
+                    &input_codec,
+                )
+            });
+            assert!(matches!(
+                result,
+                Err(TfheEvaluationError::MissingGlweKeySwitchingKey)
+            ));
+            assert_eq!(allocation.count, 0);
+        }
+
         let (circuit_parameters, mut evaluator) = match order {
             PbsOrder::BootstrapKeyswitch => (circuit_parameters, {
-                let mut standalone = context
-                    .circuit_bootstrap_evaluator(server_key, &input_codec)
-                    .unwrap();
+                let mut standalone = CircuitBootstrapEvaluator::try_from_parts(
+                    &context,
+                    server_key.bootstrapping_key(),
+                    None,
+                    circuit_parameters,
+                    circuit_key,
+                    &input_codec,
+                )
+                .unwrap();
                 assert!(standalone.bootstrapper_mut().is_none());
                 // Exercise the missing-KS form before recovery fills that workspace.
                 let mut control = standalone.allocate_output();
@@ -273,18 +301,24 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
                 assert_eq!(online.count, 0, "standalone BK CBS/CMUX must not allocate");
                 accumulator_client.decrypt_to(&selected, &mut decoded);
                 assert_eq!(decoded, messages[1]);
-                let (pbs, allocation) = allocations::measure(|| standalone.into_bootstrapper());
+                let (pbs, allocation) = allocations::measure(|| {
+                    standalone
+                        .try_into_bootstrapper(server_key.glwe_key_switching_key())
+                        .unwrap()
+                });
                 assert!(
                     allocation.count > 0,
                     "standalone BK recovery explicitly creates return-KS scratch"
                 );
-                CircuitBootstrapEvaluator::try_from_bootstrapper(pbs, &input_codec).unwrap()
+                CircuitBootstrapEvaluator::try_from_bootstrapper(pbs, circuit_key, &input_codec)
+                    .unwrap()
             }),
             PbsOrder::KeyswitchBootstrap => (
                 &alternate,
                 CircuitBootstrapEvaluator::try_from_parts(
                     &context,
-                    server_key,
+                    server_key.bootstrapping_key(),
+                    Some(server_key.glwe_key_switching_key()),
                     &alternate,
                     circuit_key,
                     &input_codec,
@@ -376,10 +410,25 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
             );
         }
 
-        let (_, recovery) = allocations::measure(|| evaluator.into_bootstrapper());
+        // Rebinding another KS from the same secrets must retain buffers and
+        // use the replacement in the active stage of either PBS order.
+        let replacement = KeyGenerator::new(&context)
+            .try_generate_glwe_key_switching_key(&client_key, &mut rng)
+            .unwrap();
+        let (mut recovered, recovery) =
+            allocations::measure(|| evaluator.try_into_bootstrapper(&replacement).unwrap());
         assert_eq!(
             recovery.count, 0,
             "converted CBS retains ordinary workspace"
+        );
+        recovered.apply_lookup_table_to(input.as_view(), &identity, output.as_mut_view());
+        assert_eq!(
+            context
+                .decryptor(client_key.external_lwe_secret_key(), &input_codec)
+                .unwrap()
+                .decrypt(output.as_view())
+                .unwrap(),
+            1
         );
     }
 }
