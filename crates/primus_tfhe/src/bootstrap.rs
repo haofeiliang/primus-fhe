@@ -4,10 +4,13 @@
 //! Backends own blind-rotation algorithms, compatible key distributions, transform
 //! representations and reusable workspace. Interleaving is a specific LUT layout;
 //! other multi-value programs need interfaces matching their actual representation.
+//!
+//! Single LWE operands use borrowed [`Lwe`] views, independent of coefficient
+//! storage. Interleaved outputs use a slice of owned [`LweCiphertext`] values.
 
 use primus_integer::FheUint;
 
-use crate::{InterleavedLookupTable, LookupTable, LweCiphertext};
+use crate::{InterleavedLookupTable, LookupTable, Lwe, LweCiphertext};
 
 /// Minimal interface implemented by a complete TFHE programmable-bootstrap
 /// backend.
@@ -37,9 +40,9 @@ pub trait ProgrammableBootstrap<T: FheUint> {
     /// polynomial length, input encoding or accumulator modulus is incompatible.
     fn apply_lookup_table_to(
         &mut self,
-        input: &LweCiphertext<T>,
+        input: Lwe<&[T]>,
         lookup_table: &LookupTable<T>,
-        output: &mut LweCiphertext<T>,
+        output: Lwe<&mut [T]>,
     );
 }
 
@@ -65,7 +68,7 @@ pub trait ProgrammableBootstrapInterleaved<T: FheUint> {
     /// or any wrong output dimension before writing any output.
     fn apply_interleaved_lookup_table_to(
         &mut self,
-        input: &LweCiphertext<T>,
+        input: Lwe<&[T]>,
         lookup_table: &InterleavedLookupTable<T>,
         outputs: &mut [LweCiphertext<T>],
     );
@@ -75,9 +78,9 @@ impl<T: FheUint, B: ProgrammableBootstrap<T> + ?Sized> ProgrammableBootstrap<T> 
     #[inline]
     fn apply_lookup_table_to(
         &mut self,
-        input: &LweCiphertext<T>,
+        input: Lwe<&[T]>,
         lookup_table: &LookupTable<T>,
-        output: &mut LweCiphertext<T>,
+        output: Lwe<&mut [T]>,
     ) {
         B::apply_lookup_table_to(self, input, lookup_table, output);
     }
@@ -89,7 +92,7 @@ impl<T: FheUint, B: ProgrammableBootstrapInterleaved<T> + ?Sized>
     #[inline]
     fn apply_interleaved_lookup_table_to(
         &mut self,
-        input: &LweCiphertext<T>,
+        input: Lwe<&[T]>,
         lookup_table: &InterleavedLookupTable<T>,
         outputs: &mut [LweCiphertext<T>],
     ) {

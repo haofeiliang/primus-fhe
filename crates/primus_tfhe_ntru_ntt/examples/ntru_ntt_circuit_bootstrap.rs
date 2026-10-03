@@ -124,7 +124,7 @@ fn main() {
             .unwrap();
 
         // Server: CBS produces a gadget control; CMux selects rhs for 1, lhs for 0.
-        cbs.circuit_bootstrap_to(&input, &mut control);
+        cbs.circuit_bootstrap_to(input.as_view(), &mut control);
         cbs.cmux_to(&control, &lhs, &rhs, &mut selected);
 
         // Client: decrypt the returned ring ciphertext, reusing the decoding buffer.

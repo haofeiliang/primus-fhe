@@ -122,12 +122,12 @@ where
                                 })
                                 .collect();
                             let mut evaluator = context.evaluator(server).unwrap();
-                            let mut run = |outputs: &mut [_]| {
+                            let mut run = |outputs: &mut [LweCiphertext<T>]| {
                                 for (lut, output) in luts.iter().zip(outputs) {
                                     evaluator.apply_lookup_table_to(
-                                        black_box(input),
+                                        black_box(input.as_view()),
                                         black_box(lut),
-                                        output,
+                                        output.as_mut_view(),
                                     );
                                 }
                             };
@@ -150,11 +150,15 @@ where
                             )
                             .unwrap();
                             let mut evaluator = context.evaluator(server).unwrap();
-                            evaluator.apply_interleaved_lookup_table_to(input, &lut, &mut outputs);
+                            evaluator.apply_interleaved_lookup_table_to(
+                                input.as_view(),
+                                &lut,
+                                &mut outputs,
+                            );
                             check(&outputs);
                             b.iter(|| {
                                 evaluator.apply_interleaved_lookup_table_to(
-                                    black_box(input),
+                                    black_box(input.as_view()),
                                     black_box(&lut),
                                     black_box(&mut outputs),
                                 )
@@ -170,11 +174,11 @@ where
                                 )
                                 .unwrap();
                             let mut evaluator = context.factorized_evaluator(server).unwrap();
-                            evaluator.apply_lookup_table_to(input, &lut, &mut outputs);
+                            evaluator.apply_lookup_table_to(input.as_view(), &lut, &mut outputs);
                             check(&outputs);
                             b.iter(|| {
                                 evaluator.apply_lookup_table_to(
-                                    black_box(input),
+                                    black_box(input.as_view()),
                                     black_box(&lut),
                                     black_box(&mut outputs),
                                 )

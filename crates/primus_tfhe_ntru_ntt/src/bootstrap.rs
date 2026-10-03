@@ -1,10 +1,10 @@
 use primus_integer::FheUint;
 use primus_ntt::MonomialNttTable;
 use primus_poly::Polynomial;
-use primus_tfhe::{LweCiphertext, TfheEvaluationError};
+use primus_tfhe::TfheEvaluationError;
 
 use crate::{
-    Evaluator, ServerKey, TfheContext,
+    Evaluator, Lwe, ServerKey, TfheContext,
     blind_rotation::{BlindRotationWorkspace, blind_rotate_lookup_table_to},
 };
 
@@ -46,14 +46,14 @@ where
     #[inline]
     pub(crate) fn blind_rotate(
         &mut self,
-        input: &LweCiphertext<T>,
+        input: Lwe<&[T]>,
         lookup_table: &Polynomial<Vec<T>>,
         rotation_step: usize,
     ) {
         let parameters = self.context.parameters();
         blind_rotate_lookup_table_to(
             self.server_key,
-            input.as_view(),
+            input,
             lookup_table.as_view(),
             rotation_step,
             &mut self.workspace,

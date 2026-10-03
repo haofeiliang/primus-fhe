@@ -194,8 +194,11 @@ where
                 OutputAction::Evaluate => {
                     self.select_table(index);
                     self.rotate_selected_table();
-                    self.lwe_return
-                        .return_at_to(self.current.as_view(), 0, &mut output[index]);
+                    self.lwe_return.return_at_to(
+                        self.current.as_view(),
+                        0,
+                        output[index].as_mut_view(),
+                    );
                 }
             }
         }
@@ -234,7 +237,7 @@ where
             .zip(self.rotation_factors.chunks_exact(factors_chunk_len))
         {
             self.one_hot
-                .one_hot_nonzero_ngsw_to(input, &mut self.nonzero_selectors);
+                .one_hot_nonzero_ngsw_to(input.as_view(), &mut self.nonzero_selectors);
             // Save this chunk's aggregated rotation control.
             // The next chunk overwrites `nonzero_selectors` with its own M-1 selectors.
             aggregate_rotation_control_to(
@@ -258,20 +261,20 @@ where
                 SelectorBatches::Unused => {}
                 SelectorBatches::Ngsw(_) => {
                     self.one_hot.one_hot_nonzero_ngsw_to(
-                        input,
+                        input.as_view(),
                         &mut self.encrypted_table_selectors[batches.ngsw_range(nonzero_len)],
                     );
                 }
                 SelectorBatches::Nlev(_) => {
                     self.one_hot.one_hot_nlev_to(
-                        input,
+                        input.as_view(),
                         &mut self.public_table_selectors[batches.nlev_range(full_len)],
                     );
                     self.transform_public_selectors(batches);
                 }
                 SelectorBatches::Both { .. } => {
                     self.one_hot.one_hot_nlev_and_nonzero_ngsw_to(
-                        input,
+                        input.as_view(),
                         &mut self.public_table_selectors[batches.nlev_range(full_len)],
                         &mut self.encrypted_table_selectors[batches.ngsw_range(nonzero_len)],
                     );

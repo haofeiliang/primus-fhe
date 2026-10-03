@@ -152,7 +152,7 @@ fn one_hot<T: TorusFftValue, Table: FftTable>(
         );
 
         // Client -> server: send input; the server derives all encrypted selectors.
-        one_hot.one_hot_ngsw_to(&input, &mut selectors);
+        one_hot.one_hot_ngsw_to(input.as_view(), &mut selectors);
 
         // Test-only server -> client: expose selectors for private phase checks.
         // Lookup evaluation normally consumes them entirely on the server.
@@ -332,8 +332,8 @@ fn pbs<T: TorusFftValue, Table: FftTable>(
         let input = encryptor.encrypt_padded(T::as_from(m), &mut rng).unwrap();
 
         // Server: evaluate both programs using only the input ciphertext.
-        evaluator.apply_lookup_table_to(&input, &lut, &mut output);
-        evaluator.apply_interleaved_lookup_table_to(&input, &many, &mut outputs);
+        evaluator.apply_lookup_table_to(input.as_view(), &lut, output.as_mut_view());
+        evaluator.apply_interleaved_lookup_table_to(input.as_view(), &many, &mut outputs);
 
         // Server -> client: return the outputs for decryption and error checks.
         assert_eq!(
@@ -425,7 +425,7 @@ fn thresholds<T: TorusFftValue, Table: FftTable>(
         let input = encryptor.encrypt_padded(T::as_from(m), &mut rng).unwrap();
 
         // Server: produce all 17 encrypted results.
-        evaluator.apply_lookup_table_to(&input, &program, &mut outputs);
+        evaluator.apply_lookup_table_to(input.as_view(), &program, &mut outputs);
 
         // Server -> client: decode the binary outputs and check their margins.
         for (i, output) in outputs.iter().enumerate() {
@@ -503,7 +503,7 @@ fn circuit<T: TorusFftValue, Table: FftTable>(
         let input = encryptor.encrypt_padded(T::as_from(bit), &mut rng).unwrap();
 
         // Server: derive the control and select without seeing bit or messages.
-        cbs.circuit_bootstrap_to(&input, &mut control);
+        cbs.circuit_bootstrap_to(input.as_view(), &mut control);
         cbs.cmux_to(&control, &choices[0], &choices[1], &mut selected);
 
         // Server -> client: return the selected ciphertext for decryption.

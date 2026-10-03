@@ -76,7 +76,7 @@ fn ordinary<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
         let mut evaluator = CircuitBootstrapEvaluator::try_new(context, server).unwrap();
         let mut output = evaluator.allocate_output();
         if !verified {
-            evaluator.circuit_bootstrap_to(input, &mut output);
+            evaluator.circuit_bootstrap_to(input.as_view(), &mut output);
             let mut selected = context.allocate_accumulator_ciphertext();
             evaluator.cmux_to(&output, lhs, rhs, &mut selected);
             let mut decoded = vec![T::ZERO; N];
@@ -87,7 +87,9 @@ fn ordinary<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
             assert!(decoded.iter().all(|&value| value == T::ONE));
             verified = true;
         }
-        b.iter(|| evaluator.circuit_bootstrap_to(black_box(input), black_box(&mut output)));
+        b.iter(|| {
+            evaluator.circuit_bootstrap_to(black_box(input.as_view()), black_box(&mut output))
+        });
     });
 }
 

@@ -35,26 +35,26 @@ pub fn check_truth_tables_and_chain<T, M, E>(
             ] {
                 evaluator.evaluate_binary_to(
                     gate,
-                    &inputs[lhs as usize],
-                    &inputs[rhs as usize],
-                    output,
+                    inputs[lhs as usize].as_view(),
+                    inputs[rhs as usize].as_view(),
+                    output.as_mut_view(),
                 );
                 assert_eq!(decrypt(output), expected, "{gate:?}({lhs}, {rhs})");
             }
         }
     }
     for value in [false, true] {
-        evaluator.not_to(&inputs[value as usize], output);
+        evaluator.not_to(inputs[value as usize].as_view(), output.as_mut_view());
         assert_eq!(decrypt(output), !value, "NOT({value})");
     }
     for condition in [false, true] {
         for then_value in [false, true] {
             for else_value in [false, true] {
                 evaluator.mux_to(
-                    &inputs[condition as usize],
-                    &inputs[then_value as usize],
-                    &inputs[else_value as usize],
-                    output,
+                    inputs[condition as usize].as_view(),
+                    inputs[then_value as usize].as_view(),
+                    inputs[else_value as usize].as_view(),
+                    output.as_mut_view(),
                 );
                 assert_eq!(
                     decrypt(output),
@@ -67,14 +67,29 @@ pub fn check_truth_tables_and_chain<T, M, E>(
 
     // Reconsume each operation's output: NAND -> NOT -> MUX -> XOR, swapping
     // two buffers. MUX's sum must restore the same encoding as a single PBS.
-    evaluator.evaluate_binary_to(BooleanGate::Nand, &inputs[0], &inputs[1], current);
+    evaluator.evaluate_binary_to(
+        BooleanGate::Nand,
+        inputs[0].as_view(),
+        inputs[1].as_view(),
+        current.as_mut_view(),
+    );
     assert!(decrypt(current));
-    evaluator.not_to(current, output);
+    evaluator.not_to(current.as_view(), output.as_mut_view());
     assert!(!decrypt(output));
     core::mem::swap(current, output);
-    evaluator.mux_to(current, &inputs[0], &inputs[1], output);
+    evaluator.mux_to(
+        current.as_view(),
+        inputs[0].as_view(),
+        inputs[1].as_view(),
+        output.as_mut_view(),
+    );
     assert!(decrypt(output));
     core::mem::swap(current, output);
-    evaluator.evaluate_binary_to(BooleanGate::Xor, current, &inputs[1], output);
+    evaluator.evaluate_binary_to(
+        BooleanGate::Xor,
+        current.as_view(),
+        inputs[1].as_view(),
+        output.as_mut_view(),
+    );
     assert!(!decrypt(output));
 }

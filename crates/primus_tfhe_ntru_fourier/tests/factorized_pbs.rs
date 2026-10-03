@@ -107,8 +107,9 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(distr: SecretKeyDistr) {
         let input = encryptor
             .encrypt_padded(T::as_from(message), &mut rng)
             .unwrap();
-        let (_, allocation) =
-            allocations::measure(|| evaluator.apply_lookup_table_to(&input, &lut, &mut outputs));
+        let (_, allocation) = allocations::measure(|| {
+            evaluator.apply_lookup_table_to(input.as_view(), &lut, &mut outputs)
+        });
         assert_eq!(
             allocation.count, 0,
             "first and reused MVB calls must not allocate"
@@ -123,9 +124,11 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(distr: SecretKeyDistr) {
                 .into_signed_f64()
                 .abs();
             assert!(error * T::TORUS_SCALE < 0.01);
-            evaluator
-                .bootstrapper_mut()
-                .apply_lookup_table_to(&input, &singles[i], &mut reference);
+            evaluator.bootstrapper_mut().apply_lookup_table_to(
+                input.as_view(),
+                &singles[i],
+                reference.as_mut_view(),
+            );
             assert_eq!(
                 codec.decode_value(decryptor.decrypt_phase(reference.as_view()).unwrap()),
                 expected
@@ -186,7 +189,11 @@ fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
         let before = outputs.clone();
         assert!(
             catch_unwind(AssertUnwindSafe(|| evaluator.apply_lookup_table_to(
-                if case == 2 { &wrong } else { &input },
+                if case == 2 {
+                    wrong.as_view()
+                } else {
+                    input.as_view()
+                },
                 if case == 3 { &foreign } else { &lut },
                 &mut outputs
             )))
@@ -195,7 +202,7 @@ fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
         assert_eq!(outputs, before);
     }
     let decryptor = context.decryptor(&client).unwrap();
-    let outputs = evaluator.apply_lookup_table(&input, &lut);
+    let outputs = evaluator.apply_lookup_table(input.as_view(), &lut);
     assert_eq!(
         outputs
             .iter()
@@ -209,7 +216,7 @@ fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
     assert_eq!(
         codec.decode_value(
             decryptor
-                .decrypt_phase(evaluator.apply_lookup_table(&input, &single)[0].as_view())
+                .decrypt_phase(evaluator.apply_lookup_table(input.as_view(), &single)[0].as_view())
                 .unwrap()
         ),
         3

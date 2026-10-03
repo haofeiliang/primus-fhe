@@ -10,7 +10,8 @@ use primus_ntt::{NttTable, U32NttTable, U64NttTable};
 use primus_poly::PolyLength;
 use primus_test_allocations as allocations;
 use primus_tfhe::{
-    BivariateLookupTable, InterleavedLookupTable, LookupTable, ProgrammableBootstrapInterleaved,
+    BivariateLookupTable, InterleavedLookupTable, LookupTable, Lwe, ProgrammableBootstrap,
+    ProgrammableBootstrapInterleaved,
 };
 use primus_tfhe_glwe_ntt::{PbsOrder, TfheContext, TfheParameters};
 use rand::{SeedableRng, rngs::StdRng};
@@ -108,7 +109,7 @@ where
             let (_, allocation) = allocations::measure(|| {
                 ProgrammableBootstrapInterleaved::apply_interleaved_lookup_table_to(
                     &mut evaluator,
-                    &input,
+                    input.as_view(),
                     &lut,
                     &mut outputs,
                 );
@@ -117,7 +118,7 @@ where
             if output_count == 3 && message == 3 {
                 assert_eq!(
                     outputs,
-                    evaluator.apply_interleaved_lookup_table(&input, &lut)
+                    evaluator.apply_interleaved_lookup_table(input.as_view(), &lut)
                 );
             }
             for (index, output) in outputs.iter().enumerate() {
@@ -128,13 +129,27 @@ where
             }
             if output_count == 1 && message == 3 {
                 let single = compiler.compile_fn(|input| value(input, 0)).unwrap();
-                let mut output = outputs[0].clone();
+                // Borrow boxed input and a dirty stack sub-slice. The same
+                // PBS must overwrite every coefficient without allocating.
+                let input = Lwe::new(input.0.into_boxed_slice());
+                let lwe_len = input.lwe_len();
+                let mut storage = [T::ONE; N + 3];
                 let (_, allocation) = allocations::measure(|| {
-                    evaluator.apply_lookup_table_to(&input, &single, &mut output);
+                    ProgrammableBootstrap::apply_lookup_table_to(
+                        &mut evaluator,
+                        input.as_view(),
+                        &single,
+                        Lwe::new(&mut storage[1..1 + lwe_len]),
+                    );
                 });
                 assert_eq!(allocation.count, 0, "PBS must reuse its workspace");
-                assert_eq!(outputs[0], output);
-                assert_eq!(outputs[0], evaluator.apply_lookup_table(&input, &single));
+                assert_eq!(outputs[0].as_ref(), &storage[1..1 + lwe_len]);
+                assert_eq!(storage[0], T::ONE);
+                assert_eq!(storage[1 + lwe_len], T::ONE);
+                assert_eq!(
+                    outputs[0],
+                    evaluator.apply_lookup_table(input.as_view(), &single)
+                );
             }
         }
     }
@@ -215,14 +230,14 @@ where
         let before = outputs.clone();
         assert!(
             catch_unwind(AssertUnwindSafe(|| {
-                evaluator.apply_lookup_table_to(&input, &single, &mut outputs[0]);
+                evaluator.apply_lookup_table_to(input.as_view(), &single, outputs[0].as_mut_view());
             }))
             .is_err()
         );
         assert_eq!(outputs, before);
         assert!(
             catch_unwind(AssertUnwindSafe(|| {
-                evaluator.apply_interleaved_lookup_table_to(&input, &many, &mut outputs);
+                evaluator.apply_interleaved_lookup_table_to(input.as_view(), &many, &mut outputs);
             }))
             .is_err()
         );
@@ -240,9 +255,13 @@ where
         assert!(
             catch_unwind(AssertUnwindSafe(|| {
                 evaluator.apply_lookup_table_to(
-                    if bad_input { &wrong } else { &input },
+                    if bad_input {
+                        wrong.as_view()
+                    } else {
+                        input.as_view()
+                    },
                     &single,
-                    &mut output,
+                    output.as_mut_view(),
                 );
             }))
             .is_err()
@@ -259,7 +278,11 @@ where
         assert!(
             catch_unwind(AssertUnwindSafe(|| {
                 evaluator.apply_interleaved_lookup_table_to(
-                    if case == 2 { &wrong } else { &input },
+                    if case == 2 {
+                        wrong.as_view()
+                    } else {
+                        input.as_view()
+                    },
                     &good,
                     &mut outputs,
                 );
@@ -269,7 +292,7 @@ where
         assert_eq!(outputs, before);
     }
     // Rejected calls leave the reusable evaluator usable.
-    evaluator.apply_interleaved_lookup_table_to(&input, &good, &mut outputs);
+    evaluator.apply_interleaved_lookup_table_to(input.as_view(), &good, &mut outputs);
     assert_eq!(
         output_codec.decode_value(decryptor.decrypt_phase(outputs[0].as_view()).unwrap()),
         T::as_from(3u32)
@@ -299,8 +322,12 @@ where
         let lhs = encryptor.encrypt_padded(x, &mut rng).unwrap();
         let rhs = encryptor.encrypt_padded(y, &mut rng).unwrap();
         let (_, allocation) = allocations::measure(|| {
-            bivariate.pack_to(&lhs, &rhs, &mut packed);
-            evaluator.apply_lookup_table_to(&packed, bivariate.lookup_table(), &mut result);
+            bivariate.pack_to(lhs.as_view(), rhs.as_view(), packed.as_mut_view());
+            evaluator.apply_lookup_table_to(
+                packed.as_view(),
+                bivariate.lookup_table(),
+                result.as_mut_view(),
+            );
         });
         assert_eq!(allocation.count, 0, "packing and PBS must reuse storage");
         assert_eq!(
@@ -319,7 +346,7 @@ where
         let expected = values[message];
         let input = encryptor.encrypt(T::as_from(message), &mut rng).unwrap();
         let (_, allocation) = allocations::measure(|| {
-            evaluator.apply_lookup_table_to(&input, &full, &mut result);
+            evaluator.apply_lookup_table_to(input.as_view(), &full, result.as_mut_view());
         });
         assert_eq!(allocation.count, 0, "full-domain PBS must reuse storage");
         assert_eq!(

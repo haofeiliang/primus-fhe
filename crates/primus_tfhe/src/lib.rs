@@ -9,14 +9,14 @@
 //!
 //! [`Encryptor`], [`Decryptor`] and their Boolean wrappers share external LWE
 //! workflows through [`LweClientParameters`], without a transform backend.
-//! Client reads/writes take [`Lwe`] views; allocating
-//! encryption methods return [`LweCiphertext`].
+//! Client and evaluation APIs take borrowed [`Lwe`] views for single operands;
+//! allocating methods return [`LweCiphertext`].
 //!
 //! Ring-length arguments use the checked [`PolyLength`] shared with GLWE/NTRU.
 //! LUT compilation additionally checks rotation-domain and encoding requirements.
 //!
-//! Raw PBS inputs and outputs use [`LweCiphertext`] directly. Encoding and
-//! Boolean evaluators bind encoding and reusable workspace around these raw values.
+//! Raw LWE views carry no encoding or key identity. Encoding and Boolean
+//! evaluators bind encoding and reusable workspace around these raw values.
 
 #![deny(missing_docs)]
 

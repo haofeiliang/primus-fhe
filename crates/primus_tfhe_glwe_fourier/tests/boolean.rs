@@ -97,9 +97,9 @@ fn boolean_factories_support_truth_tables_and_reused_output_in_both_orders() {
             catch_unwind(AssertUnwindSafe(|| {
                 evaluator.evaluate_binary_to(
                     BooleanGate::And,
-                    &inputs[0],
-                    &inputs[1],
-                    &mut wrong_output,
+                    inputs[0].as_view(),
+                    inputs[1].as_view(),
+                    wrong_output.as_mut_view(),
                 );
             }))
             .is_err()

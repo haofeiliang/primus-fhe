@@ -175,10 +175,11 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(weight: usize) {
                     .input_plaintext_codec()
                     .encode_value(T::as_from(message), PlaintextEmbedding::Unsigned);
             }
-            let (_, allocation) =
-                measure(|| sparse.apply_lookup_table_to(&input, &single, &mut output));
+            let (_, allocation) = measure(|| {
+                sparse.apply_lookup_table_to(input.as_view(), &single, output.as_mut_view())
+            });
             assert_eq!(allocation.count, 0);
-            classic.apply_lookup_table_to(&input, &single, &mut reference);
+            classic.apply_lookup_table_to(input.as_view(), &single, reference.as_mut_view());
             for cipher in [&output, &reference] {
                 assert_eq!(
                     codec.decode_value(T::as_from(phase(
@@ -189,8 +190,9 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(weight: usize) {
                     value(message, 0)
                 );
             }
-            let (_, allocation) =
-                measure(|| sparse.apply_interleaved_lookup_table_to(&input, &many, &mut outputs));
+            let (_, allocation) = measure(|| {
+                sparse.apply_interleaved_lookup_table_to(input.as_view(), &many, &mut outputs)
+            });
             assert_eq!(allocation.count, 0);
             // Derive the complete public rotation from quantized mask/body and original secret.
             let modulus_switch =
@@ -225,7 +227,7 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(weight: usize) {
         let invalid = LweCiphertext::zero(DIM - 1);
         assert!(
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                sparse.apply_interleaved_lookup_table_to(&invalid, &many, &mut outputs);
+                sparse.apply_interleaved_lookup_table_to(invalid.as_view(), &many, &mut outputs);
             }))
             .is_err()
         );

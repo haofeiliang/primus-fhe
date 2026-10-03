@@ -8,7 +8,7 @@ use primus_ntt::MonomialNttTable;
 use primus_poly::{NttPolynomialIter, PolynomialIterMut, PolynomialOwned};
 use primus_tfhe::FactorizedLookupTable;
 
-use crate::{Evaluator, LookupTableError, ServerKey, TfheContext, TfheEvaluationError};
+use crate::{Evaluator, LookupTableError, Lwe, ServerKey, TfheContext, TfheEvaluationError};
 
 /// A factorized MVB program prepared for one borrowed NTT context.
 ///
@@ -159,7 +159,7 @@ where
     #[must_use]
     pub fn apply_lookup_table(
         &mut self,
-        input: &LweCiphertext<T>,
+        input: Lwe<&[T]>,
         lookup_table: &NttFactorizedLookupTable<'_, T, Table>,
     ) -> Vec<LweCiphertext<T>> {
         let context = self.evaluator.engine.context;
@@ -192,7 +192,7 @@ where
     /// dimension, and the output slice has exactly the program's output count.
     pub fn apply_lookup_table_to(
         &mut self,
-        input: &LweCiphertext<T>,
+        input: Lwe<&[T]>,
         lookup_table: &NttFactorizedLookupTable<'_, T, Table>,
         outputs: &mut [LweCiphertext<T>],
     ) {
@@ -240,7 +240,7 @@ where
                 glwe.cipher_modulus(),
             );
             product.into_coeff_form(table);
-            evaluator.return_accumulator_to(core::slice::from_mut(output));
+            evaluator.return_accumulator_to(core::iter::once(output.as_mut_view()));
         }
     }
 }

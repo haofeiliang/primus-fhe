@@ -122,9 +122,9 @@ fn check_pbs<Table: FftTable>() {
                 let (_, allocation) = allocations::measure(|| {
                     ProgrammableBootstrap::apply_lookup_table_to(
                         evaluator,
-                        &input,
+                        input.as_view(),
                         &single,
-                        &mut outputs[0],
+                        outputs[0].as_mut_view(),
                     );
                 });
                 assert_eq!(allocation.count, 0);
@@ -132,7 +132,7 @@ fn check_pbs<Table: FftTable>() {
                 let (_, allocation) = allocations::measure(|| {
                     ProgrammableBootstrapInterleaved::apply_interleaved_lookup_table_to(
                         evaluator,
-                        &input,
+                        input.as_view(),
                         &many,
                         &mut outputs,
                     );
@@ -142,7 +142,11 @@ fn check_pbs<Table: FftTable>() {
                     check(output, functions(message as usize, i));
                 }
                 let (_, allocation) = allocations::measure(|| {
-                    evaluator.apply_lookup_table_to(&input, &single, &mut outputs[0]);
+                    evaluator.apply_lookup_table_to(
+                        input.as_view(),
+                        &single,
+                        outputs[0].as_mut_view(),
+                    );
                 });
                 assert_eq!(allocation.count, 0);
                 check(&outputs[0], function(message as usize));

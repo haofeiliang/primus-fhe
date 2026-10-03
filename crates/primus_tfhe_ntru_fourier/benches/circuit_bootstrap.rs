@@ -52,7 +52,7 @@ fn ordinary<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str)
         let mut evaluator = CircuitBootstrapEvaluator::try_new(context, server).unwrap();
         let mut output = evaluator.allocate_output();
         if !verified {
-            evaluator.circuit_bootstrap_to(input, &mut output);
+            evaluator.circuit_bootstrap_to(input.as_view(), &mut output);
             let mut selected = context.allocate_accumulator_ciphertext();
             evaluator.cmux_to(&output, lhs, rhs, &mut selected);
             let mut decoded = vec![T::ZERO; N];
@@ -63,7 +63,9 @@ fn ordinary<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str)
             assert!(decoded.iter().all(|&value| value == T::ONE));
             verified = true;
         }
-        b.iter(|| evaluator.circuit_bootstrap_to(black_box(input), black_box(&mut output)));
+        b.iter(|| {
+            evaluator.circuit_bootstrap_to(black_box(input.as_view()), black_box(&mut output))
+        });
     });
 }
 
@@ -103,9 +105,9 @@ fn one_hot<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) 
             };
             if !verified {
                 if compact {
-                    evaluator.one_hot_nonzero_ngsw_to(input, &mut output);
+                    evaluator.one_hot_nonzero_ngsw_to(input.as_view(), &mut output);
                 } else {
-                    evaluator.one_hot_ngsw_to(input, &mut output);
+                    evaluator.one_hot_ngsw_to(input.as_view(), &mut output);
                 }
                 let parameters = evaluator.parameters();
                 let mut selected = context.allocate_accumulator_ciphertext();
@@ -137,10 +139,13 @@ fn one_hot<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) 
             }
             if compact {
                 b.iter(|| {
-                    evaluator.one_hot_nonzero_ngsw_to(black_box(input), black_box(&mut output))
+                    evaluator
+                        .one_hot_nonzero_ngsw_to(black_box(input.as_view()), black_box(&mut output))
                 });
             } else {
-                b.iter(|| evaluator.one_hot_ngsw_to(black_box(input), black_box(&mut output)));
+                b.iter(|| {
+                    evaluator.one_hot_ngsw_to(black_box(input.as_view()), black_box(&mut output))
+                });
             }
         });
     }

@@ -7,7 +7,7 @@ use primus_ntt::MonomialNttTable;
 use primus_poly::{NttPolynomial, NttPolynomialIter, PolynomialIterMut, PolynomialOwned};
 use primus_tfhe::{FactorizedLookupTable, LweCiphertext};
 
-use crate::{Evaluator, LookupTableError, ServerKey, TfheContext, TfheEvaluationError};
+use crate::{Evaluator, LookupTableError, Lwe, ServerKey, TfheContext, TfheEvaluationError};
 
 /// A factorized MVB program prepared for one borrowed NTT context.
 ///
@@ -171,7 +171,7 @@ where
     #[must_use]
     pub fn apply_lookup_table(
         &mut self,
-        input: &LweCiphertext<T>,
+        input: Lwe<&[T]>,
         lookup_table: &NttFactorizedLookupTable<'_, T, Table, LM>,
     ) -> Vec<LweCiphertext<T>> {
         let context = self.evaluator.engine.context;
@@ -205,11 +205,11 @@ where
     /// dimension, and the output slice has exactly the program's output count.
     pub fn apply_lookup_table_to(
         &mut self,
-        input: &LweCiphertext<T>,
+        input: Lwe<&[T]>,
         lookup_table: &NttFactorizedLookupTable<'_, T, Table, LM>,
         outputs: &mut [LweCiphertext<T>],
     ) {
-        self.check_io(input, lookup_table, outputs);
+        self.check_io(input.as_view(), lookup_table, outputs);
         self.prepare_shared_rotation(input, &lookup_table.common_polynomial);
 
         let n = self
@@ -234,7 +234,7 @@ where
     /// The prepared program fixes factor count and transform layout for this context.
     fn check_io(
         &self,
-        input: &LweCiphertext<T>,
+        input: Lwe<&[T]>,
         lookup_table: &NttFactorizedLookupTable<'_, T, Table, LM>,
         outputs: &[LweCiphertext<T>],
     ) {
@@ -265,7 +265,7 @@ where
 
     /// Preserve the common blind rotation in transform form for all factors.
     /// Individual products can then overwrite the coefficient accumulator.
-    fn prepare_shared_rotation(&mut self, input: &LweCiphertext<T>, common: &PolynomialOwned<T>) {
+    fn prepare_shared_rotation(&mut self, input: Lwe<&[T]>, common: &PolynomialOwned<T>) {
         let engine = &mut self.evaluator.engine;
         engine.blind_rotate(input, common, 1);
         engine

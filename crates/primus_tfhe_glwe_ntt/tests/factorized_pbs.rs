@@ -121,12 +121,12 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
                 for message in [0, 3, 7] {
                     let input = encryptor.encrypt_padded(message as u32, &mut rng).unwrap();
                     let (_, allocation) = allocations::measure(|| {
-                        evaluator.apply_lookup_table_to(&input, &lut, &mut outputs)
+                        evaluator.apply_lookup_table_to(input.as_view(), &lut, &mut outputs)
                     });
                     assert_eq!(allocation.count, 0, "MVB must reuse its workspace");
                     check(&outputs, message);
                     if count == 3 && message == 3 {
-                        assert_eq!(outputs, evaluator.apply_lookup_table(&input, &lut));
+                        assert_eq!(outputs, evaluator.apply_lookup_table(input.as_view(), &lut));
                         // Same functions AND Scaled centers in both existing baselines.
                         let interleaved =
                             InterleavedLookupTable::try_new(
@@ -144,7 +144,11 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
                             .unwrap();
                         evaluator
                             .bootstrapper_mut()
-                            .apply_interleaved_lookup_table_to(&input, &interleaved, &mut outputs);
+                            .apply_interleaved_lookup_table_to(
+                                input.as_view(),
+                                &interleaved,
+                                &mut outputs,
+                            );
                         check(&outputs, message);
                         for (i, output) in outputs.iter_mut().enumerate() {
                             let single = LookupTable::try_new(
@@ -159,9 +163,11 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
                                 },
                             )
                             .unwrap();
-                            evaluator
-                                .bootstrapper_mut()
-                                .apply_lookup_table_to(&input, &single, output);
+                            evaluator.bootstrapper_mut().apply_lookup_table_to(
+                                input.as_view(),
+                                &single,
+                                output.as_mut_view(),
+                            );
                         }
                         check(&outputs, message);
                     }
@@ -204,7 +210,11 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
             let before = outputs.clone();
             assert!(
                 catch_unwind(AssertUnwindSafe(|| evaluator.apply_lookup_table_to(
-                    if case == 2 { &wrong } else { &input },
+                    if case == 2 {
+                        wrong.as_view()
+                    } else {
+                        input.as_view()
+                    },
                     if case == 3 { &foreign } else { &lut },
                     &mut outputs,
                 )))
@@ -212,7 +222,7 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
             );
             assert_eq!(outputs, before);
         }
-        check(&evaluator.apply_lookup_table(&input, &lut), 3);
+        check(&evaluator.apply_lookup_table(input.as_view(), &lut), 3);
 
         // Preparing raw coefficient programs rejects each incompatible metadata field.
         for (n, t, input_q, output_q) in [
@@ -269,7 +279,7 @@ fn factorized_pbs_accepts_ternary_controls_without_online_allocation() {
         for message in [0, 3, 7] {
             let input = encryptor.encrypt_padded(message, &mut rng).unwrap();
             let (_, allocation) = allocations::measure(|| {
-                evaluator.apply_lookup_table_to(&input, &lut, &mut outputs)
+                evaluator.apply_lookup_table_to(input.as_view(), &lut, &mut outputs)
             });
             assert_eq!(allocation.count, 0);
             for (i, output) in outputs.iter().enumerate() {

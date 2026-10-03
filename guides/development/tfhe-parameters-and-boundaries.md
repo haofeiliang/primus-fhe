@@ -40,6 +40,8 @@
 
 共享客户端及 Boolean 客户端的单项读取使用 `Lwe<&[T]>`，写入使用 `Lwe<&mut [T]>`，视图按值传递。普通拥有型密文通过 `as_view()` / `as_mut_view()` 借用；其他存储可用已有 `Lwe::new` 包装切片，无需复制或构造临时 view 集合。`Lwe` 在共享层、两家族及四后端直接重新导出。分配型加密仍返回 `LweCiphertext<T>`，保留底层原有初始化路径；消息与维数错误仍发生在 RNG 消费和输出写入前。
 
+PBS trait、四后端、Boolean 门、双输入打包、CBS、one-hot 与 MVB 的单项 LWE 输入也接收 `Lwe<&[T]>`；普通 PBS、Boolean 和 NTRU `return_at_to` 的单项 LWE 输出接收 `Lwe<&mut [T]>`。分配型求值仍返回拥有型密文。GLWE 返回内核迭代借用输出，单项使用 `once(output)`，批量从已有密文切片逐项借用，保持一次环密钥切换后提取多个系数。ManyLUT/MVB、高精 LUT 和 NTRU 批量返回仍使用现有密文切片；组合消费者在单项调用处借用，不复制系数或收集视图。维数、LUT 兼容性及 NTRU 活跃返回批次检查保留在原有边界；Boolean MUX 仍可能在检查 else 输入前更新内部第一分支，但不写调用方输出。
+
 ## Ordinary PBS 的三个返回链路
 
 | 家族 / order | 外部域及完整路径 | 参数和检查入口 |

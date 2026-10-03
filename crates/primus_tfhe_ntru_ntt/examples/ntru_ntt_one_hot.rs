@@ -125,7 +125,7 @@ fn main() {
             .unwrap();
 
         // Server: selector r encrypts [message == r]; r=0 is included in this full batch.
-        cbs.one_hot_ngsw_to(&input, &mut selectors);
+        cbs.one_hot_ngsw_to(input.as_view(), &mut selectors);
         let control = NttNgswIter::new(&selectors, selector_len)
             .nth(TARGET)
             .unwrap();

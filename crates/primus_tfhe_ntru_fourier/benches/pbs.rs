@@ -67,7 +67,7 @@ fn backend<T: TorusFftValue, Table: FftTable>(
         let mut evaluator = context.evaluator(server).unwrap();
         let mut output = context.allocate_lwe_ciphertext();
         if !verified {
-            evaluator.apply_lookup_table_to(input, lut, &mut output);
+            evaluator.apply_lookup_table_to(input.as_view(), lut, output.as_mut_view());
             assert_eq!(
                 context
                     .decryptor(client)
@@ -80,9 +80,9 @@ fn backend<T: TorusFftValue, Table: FftTable>(
         }
         b.iter(|| {
             evaluator.apply_lookup_table_to(
-                black_box(input),
+                black_box(input.as_view()),
                 black_box(lut),
-                black_box(&mut output),
+                black_box(output.as_mut_view()),
             )
         });
     });

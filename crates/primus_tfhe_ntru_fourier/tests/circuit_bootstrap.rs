@@ -99,7 +99,7 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr) {
     let mut output = context
         .evaluator(&server)
         .unwrap()
-        .apply_lookup_table(&input, &identity);
+        .apply_lookup_table(input.as_view(), &identity);
     assert_eq!(
         context
             .decryptor(&client)
@@ -128,7 +128,7 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr) {
     assert!(standalone.bootstrapper_mut().is_none());
     let mut standalone_control = standalone.allocate_output();
     let (_, allocation) = allocations::measure(|| {
-        standalone.circuit_bootstrap_to(&input, &mut standalone_control);
+        standalone.circuit_bootstrap_to(input.as_view(), &mut standalone_control);
     });
     assert_eq!(allocation.count, 0);
     let (pbs, allocation) = allocations::measure(|| standalone.into_bootstrapper());
@@ -143,13 +143,13 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr) {
     for bit in [1u64, 0] {
         let input = encryptor.encrypt_padded(bit, &mut rng).unwrap();
         let (_, allocation) = allocations::measure(|| {
-            evaluator.circuit_bootstrap_to(&input, &mut control);
+            evaluator.circuit_bootstrap_to(input.as_view(), &mut control);
             evaluator.cmux_to(&control, &choices[0], &choices[1], &mut selected);
             evaluator.external_product_to(&control, &choices[1], &mut product);
             evaluator.bootstrapper_mut().unwrap().apply_lookup_table_to(
-                &input,
+                input.as_view(),
                 &identity,
-                &mut output,
+                output.as_mut_view(),
             );
             accumulator_client.decrypt_to(&selected, &mut decoded);
             accumulator_client.decrypt_to(&product, &mut decoded_product);
@@ -194,7 +194,7 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr) {
     let invalid = primus_tfhe::LweCiphertext::zero(15);
     assert!(
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(
-            || evaluator.circuit_bootstrap_to(&invalid, &mut control)
+            || evaluator.circuit_bootstrap_to(invalid.as_view(), &mut control)
         ))
         .is_err()
     );
@@ -209,7 +209,7 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr) {
     assert!(
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| evaluator
             .circuit_bootstrap_to(
-                &input,
+                input.as_view(),
                 &mut FourierNgswCiphertext::new(&mut control.as_mut()[..short_len])
             )))
         .is_err()

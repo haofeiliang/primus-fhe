@@ -100,7 +100,7 @@ fn main() {
             .unwrap();
 
         // Server -> client: return one ciphertext per threshold, reusing all buffers.
-        evaluator.apply_lookup_table_to(&input, &program, &mut outputs);
+        evaluator.apply_lookup_table_to(input.as_view(), &program, &mut outputs);
 
         // Client: decrypt phases and decode with the agreed output codec.
         for (flag, output) in flags.iter_mut().zip(&outputs) {

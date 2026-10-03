@@ -51,6 +51,8 @@ Sparse 模式需显式选择生成入口，暂不支持 sparse ternary。NTRU �
 
 分配型加密方法返回 `LweCiphertext<T>`。客户端写入接口按值接收 `Lwe<&mut [T]>`，读取接口按值接收 `Lwe<&[T]>`：使用 `encryptor.encrypt_padded_to(message, output.as_mut_view(), rng)` 和 `decryptor.decrypt(output.as_view())`。视图只借用系数，不复制或分配；已有切片可通过 `primus_tfhe::Lwe::new` 包装，因此同一接口也支持 boxed、对齐及栈存储。Boolean 客户端遵循同样的借用方式。
 
+求值端的单项 LWE 参数使用相同视图：`evaluator.apply_lookup_table_to(input.as_view(), &lut, output.as_mut_view())`。Boolean 门和双输入打包借用各自的操作数；CBS、one-hot 和 MVB 借用其 LWE 输入。分配型方法仍返回拥有型密文。ManyLUT/MVB 输出批次以及高精度输入/输出批次使用 `LweCiphertext<T>` 的切片，无需临时收集视图。
+
 客户端生成配套密钥，保留 `ClientKey` 和加解密器，将 `ServerKey` 提供给服务端。 服务端只需公开 context、求值密钥、LUT/程序和输入密文；计算后将密文结果返回客户端。 示例在同一进程展示这些阶段，参数构造单独放置。输入和输出编码是双方约定的公开信息。
 
 普通缓冲分配不依赖私钥：四个后端的 `context.allocate_lwe_ciphertext()` 按外部 LWE 维度分配 mask/body；`context.allocate_accumulator_ciphertext()` 按累加器布局分配系数域 GLWE/NTRU。两者只分配零存储，不执行加密。CBS 控制的布局还依赖输出分解和变换表示， 因此使用 `cbs.allocate_output()`。工作区和结果缓冲在各自一端创建一次并复用。
@@ -71,9 +73,11 @@ let lhs = encryptor.encrypt(true, &mut rng)?;
 let rhs = encryptor.encrypt(false, &mut rng)?;
 let mut output = context.allocate_lwe_ciphertext();
 let mut next = context.allocate_lwe_ciphertext();
-gates.evaluate_binary_to(BooleanGate::Nand, &lhs, &rhs, &mut output);
+gates.evaluate_binary_to(
+    BooleanGate::Nand, lhs.as_view(), rhs.as_view(), output.as_mut_view(),
+);
 assert!(decryptor.decrypt(output.as_view())?);
-gates.mux_to(&output, &rhs, &lhs, &mut next);
+gates.mux_to(output.as_view(), rhs.as_view(), lhs.as_view(), next.as_mut_view());
 core::mem::swap(&mut output, &mut next);
 assert!(!decryptor.decrypt(output.as_view())?);
 ```
@@ -95,7 +99,7 @@ let mut decoded = vec![0; lhs_message.len()];
 let mut cbs = context.circuit_bootstrap_evaluator(&server_key)?;
 let mut control = cbs.allocate_output();
 let mut selected = context.allocate_accumulator_ciphertext();
-cbs.circuit_bootstrap_to(&input_bit, &mut control);
+cbs.circuit_bootstrap_to(input_bit.as_view(), &mut control);
 cbs.cmux_to(&control, &lhs, &rhs, &mut selected);
 
 // 客户端：解密返回结果。
@@ -191,7 +195,7 @@ let compiler = context.parameters().lookup_table_compiler()
     .try_with_output_codec(&table_codec).unwrap();
 let lut = compiler.compile_fn(|x| (x % 4) as u32).unwrap();
 let input = encryptor.encrypt_padded(7u32, &mut rng).unwrap();
-let output = evaluator.apply_lookup_table(&input, &lut);
+let output = evaluator.apply_lookup_table(input.as_view(), &lut);
 let message = output_codec.decode_value(decryptor.decrypt_phase(output.as_view()).unwrap());
 assert_eq!(message, 3);
 ```
@@ -209,7 +213,7 @@ let compiler = context.parameters().lookup_table_compiler()
     .try_with_output_codec(&output_codec).unwrap();
 let lut = compiler.compile_odd_full_domain_fn(|x| ((x * x + 3) % 8) as u32).unwrap();
 let input = encryptor.encrypt(14u32, &mut rng).unwrap();
-evaluator.apply_lookup_table_to(&input, &lut, &mut output);
+evaluator.apply_lookup_table_to(input.as_view(), &lut, output.as_mut_view());
 let message = output_codec.decode_value(decryptor.decrypt_phase(output.as_view()).unwrap());
 assert_eq!(message, 7);
 ```

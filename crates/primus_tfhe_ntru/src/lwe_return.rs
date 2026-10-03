@@ -5,7 +5,7 @@ use primus_ntru::{
 };
 use primus_poly::PolyLength;
 use primus_reduce::RingContext;
-use primus_tfhe::LweCiphertext;
+use primus_tfhe::{Lwe, LweCiphertext};
 
 /// Coefficient-domain NTRU→LWE returns, independent of blind rotation and NTT/FFT scratch.
 ///
@@ -72,11 +72,11 @@ impl<'a, T: FheUint, LM: RingContext<T>> LweReturnEvaluator<'a, T, LM> {
         &mut self,
         input: NtruCiphertext<&[T]>,
         index: usize,
-        output: &mut LweCiphertext<T>,
+        mut output: Lwe<&mut [T]>,
     ) {
         self.check_idle();
         self.key
-            .key_switch_at_to(&input, index, output, self.modulus, &mut self.scalar);
+            .key_switch_at_to(&input, index, &mut output, self.modulus, &mut self.scalar);
     }
 
     /// Returns phase coefficients `0..outputs.len()` from one shared NTRU input.

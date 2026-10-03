@@ -51,6 +51,8 @@ The shared layer accepts `LweSecretKeyRef` or `&LwePublicKey`; its only client t
 
 Allocating encryption methods return `LweCiphertext<T>`. Client writes take `Lwe<&mut [T]>` and reads take `Lwe<&[T]>` by value: use `encryptor.encrypt_padded_to(message, output.as_mut_view(), rng)` and `decryptor.decrypt(output.as_view())`. These views borrow the coefficients without copying or allocating. For caller-owned slices, wrap them with `primus_tfhe::Lwe::new`; the same API supports boxed, aligned and stack storage. Boolean clients use the same borrowing convention.
 
+Evaluation uses the same views for single LWE operands: `evaluator.apply_lookup_table_to(input.as_view(), &lut, output.as_mut_view())`. Boolean gates and bivariate packing borrow their operands; CBS, one-hot and MVB borrow their LWE input. Allocating methods still return owned ciphertexts. ManyLUT/MVB output batches and high-precision input/output batches use slices of `LweCiphertext<T>`; no temporary collection of views is needed.
+
 The client generates paired keys, keeps `ClientKey` and encryption/decryption helpers, and gives `ServerKey` to the server. The server needs only public context, evaluation keys, LUTs/programs and input ciphertexts; it returns encrypted results to the client. Examples show these stages in one process, with parameter construction kept separate. Input and output encodings are public agreements between the two sides.
 
 Ordinary buffer allocation needs no secret: all four backends provide `context.allocate_lwe_ciphertext()` for the external LWE mask/body and `context.allocate_accumulator_ciphertext()` for coefficient-domain GLWE/NTRU storage. Both allocate zeros without encrypting. CBS controls also depend on output decomposition and transform representation, so use `cbs.allocate_output()`. Each side prepares and reuses its own workspace and result buffers.
@@ -71,9 +73,11 @@ let lhs = encryptor.encrypt(true, &mut rng)?;
 let rhs = encryptor.encrypt(false, &mut rng)?;
 let mut output = context.allocate_lwe_ciphertext();
 let mut next = context.allocate_lwe_ciphertext();
-gates.evaluate_binary_to(BooleanGate::Nand, &lhs, &rhs, &mut output);
+gates.evaluate_binary_to(
+    BooleanGate::Nand, lhs.as_view(), rhs.as_view(), output.as_mut_view(),
+);
 assert!(decryptor.decrypt(output.as_view())?);
-gates.mux_to(&output, &rhs, &lhs, &mut next);
+gates.mux_to(output.as_view(), rhs.as_view(), lhs.as_view(), next.as_mut_view());
 core::mem::swap(&mut output, &mut next);
 assert!(!decryptor.decrypt(output.as_view())?);
 ```
@@ -95,7 +99,7 @@ let mut decoded = vec![0; lhs_message.len()];
 let mut cbs = context.circuit_bootstrap_evaluator(&server_key)?;
 let mut control = cbs.allocate_output();
 let mut selected = context.allocate_accumulator_ciphertext();
-cbs.circuit_bootstrap_to(&input_bit, &mut control);
+cbs.circuit_bootstrap_to(input_bit.as_view(), &mut control);
 cbs.cmux_to(&control, &lhs, &rhs, &mut selected);
 
 // Client: decrypt the response.
@@ -191,7 +195,7 @@ let compiler = context.parameters().lookup_table_compiler()
     .try_with_output_codec(&table_codec).unwrap();
 let lut = compiler.compile_fn(|x| (x % 4) as u32).unwrap();
 let input = encryptor.encrypt_padded(7u32, &mut rng).unwrap();
-let output = evaluator.apply_lookup_table(&input, &lut);
+let output = evaluator.apply_lookup_table(input.as_view(), &lut);
 let message = output_codec.decode_value(decryptor.decrypt_phase(output.as_view()).unwrap());
 assert_eq!(message, 3);
 ```
@@ -209,7 +213,7 @@ let compiler = context.parameters().lookup_table_compiler()
     .try_with_output_codec(&output_codec).unwrap();
 let lut = compiler.compile_odd_full_domain_fn(|x| ((x * x + 3) % 8) as u32).unwrap();
 let input = encryptor.encrypt(14u32, &mut rng).unwrap();
-evaluator.apply_lookup_table_to(&input, &lut, &mut output);
+evaluator.apply_lookup_table_to(input.as_view(), &lut, output.as_mut_view());
 let message = output_codec.decode_value(decryptor.decrypt_phase(output.as_view()).unwrap());
 assert_eq!(message, 7);
 ```

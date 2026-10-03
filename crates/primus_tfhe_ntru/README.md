@@ -63,7 +63,7 @@ without an NTT/FFT engine. Both backends re-export it. Construct with
 paired key and external q. Input must be coefficient-domain NTRU under that key's
 ring secret at Q, with canonical residues and a valid return noise budget.
 
-`return_at_to(input.as_view(), index, output)` converts and extracts one phase
+`return_at_to(input.as_view(), index, output.as_mut_view())` converts and extracts one phase
 coefficient. `return_prefix_to(input.as_view(), outputs)` returns consecutive
 coefficients, sharing one Q→q conversion for multiple outputs. For different
 sources, use `begin_batch` → `append_at(input.as_view(), index)` →

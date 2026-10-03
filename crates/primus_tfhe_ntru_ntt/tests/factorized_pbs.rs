@@ -112,16 +112,16 @@ fn check_complete(distr: SecretKeyDistr) {
         for message in [0, 3, 7, 0] {
             let input = encryptor.encrypt_padded(message as u32, &mut rng).unwrap();
             let (_, allocation) = allocations::measure(|| {
-                evaluator.apply_lookup_table_to(&input, &lut, &mut outputs);
+                evaluator.apply_lookup_table_to(input.as_view(), &lut, &mut outputs);
             });
             assert_eq!(allocation.count, 0, "MVB must reuse its workspace");
             check(&outputs, message);
             if count == 3 {
                 for (single, output) in singles.iter().zip(&outputs) {
                     evaluator.bootstrapper_mut().apply_lookup_table_to(
-                        &input,
+                        input.as_view(),
                         single,
-                        &mut reference,
+                        reference.as_mut_view(),
                     );
                     assert_eq!(
                         codec.decode_value(decryptor.decrypt_phase(reference.as_view()).unwrap()),
@@ -153,7 +153,7 @@ fn check_complete(distr: SecretKeyDistr) {
         .unwrap();
     for message in [0, 7] {
         let input = encryptor.encrypt_padded(message, &mut rng).unwrap();
-        let output = evaluator.apply_lookup_table(&input, &binary);
+        let output = evaluator.apply_lookup_table(input.as_view(), &binary);
         assert_eq!(
             binary_codec.decode_value(decryptor.decrypt_phase(output[0].as_view()).unwrap()),
             u32::from(message >= 3)
@@ -178,7 +178,11 @@ fn check_complete(distr: SecretKeyDistr) {
         let before = outputs.clone();
         assert!(
             catch_unwind(AssertUnwindSafe(|| evaluator.apply_lookup_table_to(
-                if case == 2 { &wrong } else { &input },
+                if case == 2 {
+                    wrong.as_view()
+                } else {
+                    input.as_view()
+                },
                 if case == 3 { &foreign } else { &lut },
                 &mut outputs,
             )))
@@ -186,7 +190,7 @@ fn check_complete(distr: SecretKeyDistr) {
         );
         assert_eq!(outputs, before);
     }
-    check(&evaluator.apply_lookup_table(&input, &lut), 3);
+    check(&evaluator.apply_lookup_table(input.as_view(), &lut), 3);
 
     for (n, t, input_q, output_q) in [
         (N / 2, 15, Q, Q),

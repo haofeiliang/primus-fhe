@@ -93,8 +93,8 @@ fn check<T: TorusFftValue, Table: FftTable>() {
         for m in [0usize, 1, 0] {
             let input = encryptor.encrypt_padded(T::as_from(m), &mut rng).unwrap();
             let (_, allocation) = allocations::measure(|| {
-                evaluator.apply_lookup_table_to(&input, &single, &mut output);
-                evaluator.apply_interleaved_lookup_table_to(&input, &many, &mut outputs);
+                evaluator.apply_lookup_table_to(input.as_view(), &single, output.as_mut_view());
+                evaluator.apply_interleaved_lookup_table_to(input.as_view(), &many, &mut outputs);
             });
             assert_eq!(allocation.count, 0);
             assert!(output.as_ref().iter().all(|&x| x < q));
@@ -108,7 +108,7 @@ fn check<T: TorusFftValue, Table: FftTable>() {
                     T::as_from(m + i + 1)
                 );
             }
-            evaluator.apply_lookup_table_to(&input, &default, &mut output);
+            evaluator.apply_lookup_table_to(input.as_view(), &default, output.as_mut_view());
             assert_eq!(
                 decryptor.decrypt(output.as_view()).unwrap(),
                 T::as_from(1 - m)
@@ -122,7 +122,7 @@ fn check<T: TorusFftValue, Table: FftTable>() {
             for b in [false, true] {
                 let a_ct = bool_encrypt.encrypt(a, &mut rng).unwrap();
                 let b_ct = bool_encrypt.encrypt(b, &mut rng).unwrap();
-                let result = boolean.and(&a_ct, &b_ct);
+                let result = boolean.and(a_ct.as_view(), b_ct.as_view());
                 assert_eq!(bool_decrypt.decrypt(result.as_view()).unwrap(), a && b);
             }
         }
@@ -137,7 +137,7 @@ fn check<T: TorusFftValue, Table: FftTable>() {
             .unwrap();
         let mut factorized = context.factorized_evaluator(&server).unwrap();
         let input = encryptor.encrypt_padded(T::ONE, &mut rng).unwrap();
-        factorized.apply_lookup_table_to(&input, &program, &mut outputs[..2]);
+        factorized.apply_lookup_table_to(input.as_view(), &program, &mut outputs[..2]);
         for (i, output) in outputs[..2].iter().enumerate() {
             assert_eq!(
                 scaled_q.decode_value(decryptor.decrypt_phase(output.as_view()).unwrap()),
@@ -150,7 +150,7 @@ fn check<T: TorusFftValue, Table: FftTable>() {
                 .unwrap();
             let mut sparse = context.evaluator(&sparse_server).unwrap();
             let (_, allocation) = allocations::measure(|| {
-                sparse.apply_interleaved_lookup_table_to(&input, &many, &mut outputs)
+                sparse.apply_interleaved_lookup_table_to(input.as_view(), &many, &mut outputs)
             });
             assert_eq!(allocation.count, 0);
             for (i, output) in outputs.iter().enumerate() {

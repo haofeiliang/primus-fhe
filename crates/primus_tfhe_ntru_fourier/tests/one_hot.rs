@@ -139,7 +139,7 @@ fn selectors<Table: FftTable>(distr: SecretKeyDistr) {
             // Standalone one-hot uses no return storage; recovering ordinary PBS
             // allocates it explicitly. Subsequent alternation retains that PBS.
             let (_, allocation) = allocations::measure(|| {
-                evaluator.one_hot_to(&input, &mut nlev, &mut ngsw);
+                evaluator.one_hot_to(input.as_view(), &mut nlev, &mut ngsw);
             });
             assert_eq!(allocation.count, 0);
             let (pbs, allocation) = allocations::measure(|| evaluator.into_bootstrapper());
@@ -147,17 +147,17 @@ fn selectors<Table: FftTable>(distr: SecretKeyDistr) {
             evaluator = OneHotCircuitBootstrapEvaluator::try_from_bootstrapper(pbs).unwrap();
         }
         let (_, allocation) = allocations::measure(|| {
-            evaluator.one_hot_to(&input, &mut nlev, &mut ngsw);
+            evaluator.one_hot_to(input.as_view(), &mut nlev, &mut ngsw);
             evaluator.bootstrapper_mut().unwrap().apply_lookup_table_to(
-                &input,
+                input.as_view(),
                 &identity,
-                &mut lwe_output,
+                lwe_output.as_mut_view(),
             );
-            evaluator.one_hot_nlev_to(&input, &mut nlev_only);
-            evaluator.one_hot_ngsw_to(&input, &mut ngsw_only);
-            evaluator.one_hot_nonzero_ngsw_to(&input, &mut nonzero_ngsw);
+            evaluator.one_hot_nlev_to(input.as_view(), &mut nlev_only);
+            evaluator.one_hot_ngsw_to(input.as_view(), &mut ngsw_only);
+            evaluator.one_hot_nonzero_ngsw_to(input.as_view(), &mut nonzero_ngsw);
             evaluator.one_hot_nlev_and_nonzero_ngsw_to(
-                &input,
+                input.as_view(),
                 &mut joint_nlev,
                 &mut joint_nonzero_ngsw,
             );
@@ -267,9 +267,13 @@ fn selectors<Table: FftTable>(distr: SecretKeyDistr) {
                     let nlev_output = &mut nlev[..if case == 1 { nlev_len - 1 } else { nlev_len }];
                     let ngsw_output = &mut ngsw[..if case == 2 { ngsw_len - 1 } else { ngsw_len }];
                     if compact {
-                        evaluator.one_hot_nlev_and_nonzero_ngsw_to(input, nlev_output, ngsw_output);
+                        evaluator.one_hot_nlev_and_nonzero_ngsw_to(
+                            input.as_view(),
+                            nlev_output,
+                            ngsw_output,
+                        );
                     } else {
-                        evaluator.one_hot_to(input, nlev_output, ngsw_output);
+                        evaluator.one_hot_to(input.as_view(), nlev_output, ngsw_output);
                     }
                 }))
                 .is_err()
@@ -289,7 +293,7 @@ fn selectors<Table: FftTable>(distr: SecretKeyDistr) {
         ngsw.fill(Complex64::new(7.0, 0.0));
         assert!(
             catch_unwind(AssertUnwindSafe(|| {
-                evaluator.one_hot_nonzero_ngsw_to(input, &mut ngsw[..output_len]);
+                evaluator.one_hot_nonzero_ngsw_to(input.as_view(), &mut ngsw[..output_len]);
             }))
             .is_err()
         );
@@ -309,19 +313,20 @@ fn selectors<Table: FftTable>(distr: SecretKeyDistr) {
     let (pbs, allocation) = allocations::measure(|| evaluator.into_bootstrapper());
     assert_eq!(allocation.count, 0);
     let mut ordinary = CircuitBootstrapEvaluator::try_from_bootstrapper(pbs).unwrap();
-    ordinary
-        .bootstrapper_mut()
-        .unwrap()
-        .apply_lookup_table_to(&input, &identity, &mut lwe_output);
+    ordinary.bootstrapper_mut().unwrap().apply_lookup_table_to(
+        input.as_view(),
+        &identity,
+        lwe_output.as_mut_view(),
+    );
     let mut control = ordinary.allocate_output();
-    ordinary.circuit_bootstrap_to(&input, &mut control);
+    ordinary.circuit_bootstrap_to(input.as_view(), &mut control);
     ordinary.cmux_to(&control, &choices[0], &choices[1], &mut selected);
     accumulator.decrypt_to(&selected, &mut decoded);
     assert_eq!(decoded, vec![3; N]);
     let mut evaluator =
         OneHotCircuitBootstrapEvaluator::try_from_bootstrapper(ordinary.into_bootstrapper())
             .unwrap();
-    evaluator.one_hot_to(&input, &mut nlev, &mut ngsw);
+    evaluator.one_hot_to(input.as_view(), &mut nlev, &mut ngsw);
 }
 
 // Compare every streamed sample with the scalar return oracle, then check that
@@ -381,7 +386,7 @@ fn check_return_batches<Table: FftTable>(
                 indices[i % indices.len()],
             );
             if i == 0 {
-                evaluator.one_hot_ngsw_to(input, ngsw);
+                evaluator.one_hot_ngsw_to(input.as_view(), ngsw);
             }
         }
     });
@@ -400,7 +405,7 @@ fn check_return_batches<Table: FftTable>(
 
     // A pending stream owns the return buffers. Scalar/shared-input return
     // cannot reuse them, but independently retained PBS may run safely.
-    assert_rejected(|| lwe_return.return_at_to(choices[0].as_view(), 0, &mut returned[0]));
+    assert_rejected(|| lwe_return.return_at_to(choices[0].as_view(), 0, returned[0].as_mut_view()));
     assert_rejected(|| lwe_return.return_prefix_to(choices[0].as_view(), &mut returned[..2]));
     assert_eq!(returned, untouched);
     let identity = context
@@ -415,14 +420,14 @@ fn check_return_batches<Table: FftTable>(
         .unwrap();
     let (_, allocation) = allocations::measure(|| {
         evaluator.bootstrapper_mut().unwrap().apply_lookup_table_to(
-            input,
+            input.as_view(),
             &identity,
-            &mut returned[0],
+            returned[0].as_mut_view(),
         );
         evaluator
             .bootstrapper_mut()
             .unwrap()
-            .apply_interleaved_lookup_table_to(input, &many, &mut returned[..2]);
+            .apply_interleaved_lookup_table_to(input.as_view(), &many, &mut returned[..2]);
     });
     assert_eq!(allocation.count, 0);
     let (_, allocation) = allocations::measure(|| lwe_return.return_batch_to(&mut returned));
@@ -449,7 +454,7 @@ fn check_return_batches<Table: FftTable>(
     lwe_return.append_at(choices[0].as_view(), 0);
     lwe_return.discard_batch();
     let (_, allocation) = allocations::measure(|| {
-        lwe_return.return_at_to(choices[0].as_view(), indices[0], &mut returned[0]);
+        lwe_return.return_at_to(choices[0].as_view(), indices[0], returned[0].as_mut_view());
         lwe_return.return_prefix_to(choices[0].as_view(), &mut returned[..2]);
     });
     assert_eq!(allocation.count, 0);

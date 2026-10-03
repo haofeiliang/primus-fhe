@@ -7,7 +7,7 @@ use primus_lwe::LweCiphertext;
 use primus_poly::{FourierPolynomial, FourierPolynomialIter, PolynomialIter, PolynomialOwned};
 use primus_tfhe::FactorizedLookupTable;
 
-use crate::{Evaluator, LookupTableError, ServerKey, TfheContext, TfheEvaluationError};
+use crate::{Evaluator, LookupTableError, Lwe, ServerKey, TfheContext, TfheEvaluationError};
 
 /// Native even-scale MVB program prepared for one borrowed Fourier context.
 ///
@@ -159,7 +159,7 @@ impl<'a, T: TorusFftValue, Table: FftTable> FactorizedEvaluator<'a, T, Table> {
     #[must_use]
     pub fn apply_lookup_table(
         &mut self,
-        input: &LweCiphertext<T>,
+        input: Lwe<&[T]>,
         lookup_table: &FourierFactorizedLookupTable<'_, T, Table>,
     ) -> Vec<LweCiphertext<T>> {
         let context = self.evaluator.engine.context;
@@ -192,7 +192,7 @@ impl<'a, T: TorusFftValue, Table: FftTable> FactorizedEvaluator<'a, T, Table> {
     /// output slice length equals the program's output count.
     pub fn apply_lookup_table_to(
         &mut self,
-        input: &LweCiphertext<T>,
+        input: Lwe<&[T]>,
         lookup_table: &FourierFactorizedLookupTable<'_, T, Table>,
         outputs: &mut [LweCiphertext<T>],
     ) {
@@ -240,7 +240,7 @@ impl<'a, T: TorusFftValue, Table: FftTable> FactorizedEvaluator<'a, T, Table> {
                     .fft
                     .backward_as_torus(self.product.as_ref(), destination);
             }
-            evaluator.return_accumulator_to(core::slice::from_mut(output));
+            evaluator.return_accumulator_to(core::iter::once(output.as_mut_view()));
         }
     }
 }

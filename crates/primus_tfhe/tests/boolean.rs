@@ -5,7 +5,7 @@ use primus_lattice::LweDimension;
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_poly::PolyLength;
 use primus_tfhe::{
-    BooleanEvaluator, BooleanGate, LookupTable, LweCiphertext, ProgrammableBootstrap,
+    BooleanEvaluator, BooleanGate, LookupTable, Lwe, LweCiphertext, ProgrammableBootstrap,
     TfheEvaluationError,
 };
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -13,12 +13,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 struct UnusedBootstrap;
 
 impl ProgrammableBootstrap<u32> for UnusedBootstrap {
-    fn apply_lookup_table_to(
-        &mut self,
-        _: &LweCiphertext<u32>,
-        _: &LookupTable<u32>,
-        _: &mut LweCiphertext<u32>,
-    ) {
+    fn apply_lookup_table_to(&mut self, _: Lwe<&[u32]>, _: &LookupTable<u32>, _: Lwe<&mut [u32]>) {
         panic!("constructor must not invoke PBS");
     }
 }
@@ -54,9 +49,9 @@ struct RecordingBootstrap {
 impl ProgrammableBootstrap<u32> for RecordingBootstrap {
     fn apply_lookup_table_to(
         &mut self,
-        _: &LweCiphertext<u32>,
+        _: Lwe<&[u32]>,
         _: &LookupTable<u32>,
-        output: &mut LweCiphertext<u32>,
+        mut output: Lwe<&mut [u32]>,
     ) {
         self.calls += 1;
         output.as_mut().fill(0);
@@ -97,10 +92,20 @@ fn boolean_dimension_checks_preserve_output_at_each_stage() {
         // Binary inputs and MUX's condition/then inputs are checked before PBS.
         for (lhs, rhs) in [(&wrong, &input), (&input, &wrong)] {
             rejects_without_writing(&input, |output| {
-                evaluator.evaluate_binary_to(BooleanGate::And, lhs, rhs, output);
+                evaluator.evaluate_binary_to(
+                    BooleanGate::And,
+                    lhs.as_view(),
+                    rhs.as_view(),
+                    output.as_mut_view(),
+                );
             });
             rejects_without_writing(&input, |output| {
-                evaluator.mux_to(lhs, rhs, &input, output);
+                evaluator.mux_to(
+                    lhs.as_view(),
+                    rhs.as_view(),
+                    input.as_view(),
+                    output.as_mut_view(),
+                );
             });
         }
         assert_eq!(evaluator.bootstrapper().calls, 0);
@@ -108,7 +113,12 @@ fn boolean_dimension_checks_preserve_output_at_each_stage() {
         // MUX may have computed its first branch in scratch when it rejects else.
         // Allow an earlier check too; the public output must remain untouched.
         rejects_without_writing(&input, |output| {
-            evaluator.mux_to(&input, &input, &wrong, output);
+            evaluator.mux_to(
+                input.as_view(),
+                input.as_view(),
+                wrong.as_view(),
+                output.as_mut_view(),
+            );
         });
         let calls = evaluator.bootstrapper().calls;
         assert!(
@@ -118,7 +128,9 @@ fn boolean_dimension_checks_preserve_output_at_each_stage() {
 
         // NOT has its own input/output checks and never invokes PBS.
         for (input, initial_output) in [(&wrong, &input), (&input, &wrong)] {
-            rejects_without_writing(initial_output, |output| evaluator.not_to(input, output));
+            rejects_without_writing(initial_output, |output| {
+                evaluator.not_to(input.as_view(), output.as_mut_view())
+            });
         }
         assert_eq!(evaluator.bootstrapper().calls, calls);
     }

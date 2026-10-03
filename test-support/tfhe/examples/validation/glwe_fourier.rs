@@ -130,8 +130,8 @@ where
         let input = encryptor.encrypt_padded(T::as_from(m), &mut rng).unwrap();
 
         // Server: evaluate both programs using only the input ciphertext.
-        evaluator.apply_lookup_table_to(&input, &lut, &mut output);
-        evaluator.apply_interleaved_lookup_table_to(&input, &many, &mut outputs);
+        evaluator.apply_lookup_table_to(input.as_view(), &lut, output.as_mut_view());
+        evaluator.apply_interleaved_lookup_table_to(input.as_view(), &many, &mut outputs);
 
         // Server -> client: return the outputs for decryption and error checks.
         assert_eq!(
@@ -219,7 +219,7 @@ where
         let input = encryptor.encrypt_padded(T::as_from(m), &mut rng).unwrap();
 
         // Server: produce all 17 encrypted results.
-        evaluator.apply_lookup_table_to(&input, &program, &mut outputs);
+        evaluator.apply_lookup_table_to(input.as_view(), &program, &mut outputs);
 
         // Server -> client: decode the binary outputs and check their margins.
         for (i, output) in outputs.iter().enumerate() {
@@ -303,7 +303,7 @@ where
         let input = encryptor.encrypt_padded(T::as_from(bit), &mut rng).unwrap();
 
         // Server: derive the control and select without seeing bit or messages.
-        evaluator.circuit_bootstrap_to(&input, &mut control);
+        evaluator.circuit_bootstrap_to(input.as_view(), &mut control);
         evaluator.cmux_to(&control, &choices[0], &choices[1], &mut selected);
 
         // Server -> client: return the selected ciphertext for decryption.

@@ -788,8 +788,9 @@ fn bivariate_packing_and_lut_match_integer_oracles() {
                     // Known errors e_x=-2 and e_y=1 exercise amplification and modular wrap.
                     *lhs.b_mut() = ((dot(&lhs) + ex + q - 2) % q) as u32;
                     *rhs.b_mut() = ((dot(&rhs) + ey + 1) % q) as u32;
-                    let (_, allocation) =
-                        allocations::measure(|| lut.pack_to(&lhs, &rhs, &mut packed));
+                    let (_, allocation) = allocations::measure(|| {
+                        lut.pack_to(lhs.as_view(), rhs.as_view(), packed.as_mut_view())
+                    });
                     assert_eq!(allocation.count, 0);
                     for ((&a, &b), &actual) in
                         lhs.as_ref().iter().zip(rhs.as_ref()).zip(packed.as_ref())
@@ -916,7 +917,14 @@ fn bivariate_boundaries_reject_before_callbacks_or_output_writes() {
         (&empty, &empty, &empty),
     ] {
         let mut output = initial.clone();
-        assert!(catch_unwind(AssertUnwindSafe(|| lut.pack_to(lhs, rhs, &mut output))).is_err());
+        assert!(
+            catch_unwind(AssertUnwindSafe(|| lut.pack_to(
+                lhs.as_view(),
+                rhs.as_view(),
+                output.as_mut_view()
+            )))
+            .is_err()
+        );
         assert_eq!(&output, initial);
     }
 }

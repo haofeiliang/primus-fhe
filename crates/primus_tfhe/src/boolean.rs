@@ -1,6 +1,6 @@
 //! Shared Boolean gate preprocessing, LUTs and reusable evaluation workspace.
 
-use crate::{LookupTable, LweCiphertext, ProgrammableBootstrap, TfheEvaluationError};
+use crate::{LookupTable, Lwe, LweCiphertext, ProgrammableBootstrap, TfheEvaluationError};
 use primus_encoding::{PlaintextEmbedding, RoundedCodec};
 use primus_integer::FheUint;
 use primus_lattice::LweDimension;
@@ -161,11 +161,11 @@ where
     pub fn evaluate_binary(
         &mut self,
         gate: BooleanGate,
-        lhs: &LweCiphertext<T>,
-        rhs: &LweCiphertext<T>,
+        lhs: Lwe<&[T]>,
+        rhs: Lwe<&[T]>,
     ) -> LweCiphertext<T> {
         let mut output = LweCiphertext::zero(self.external_lwe_dimension.get());
-        self.evaluate_binary_to(gate, lhs, rhs, &mut output);
+        self.evaluate_binary_to(gate, lhs, rhs, output.as_mut_view());
         output
     }
 
@@ -173,20 +173,23 @@ where
     pub fn evaluate_binary_to(
         &mut self,
         gate: BooleanGate,
-        lhs: &LweCiphertext<T>,
-        rhs: &LweCiphertext<T>,
-        output: &mut LweCiphertext<T>,
+        lhs: Lwe<&[T]>,
+        rhs: Lwe<&[T]>,
+        mut output: Lwe<&mut [T]>,
     ) {
         prepare_binary_gate(
             gate,
             lhs,
             rhs,
-            &mut self.gate_input,
+            self.gate_input.as_mut_view(),
             self.ciphertext_modulus,
         );
         let lookup_table = &self.gate_lookup_tables[gate.lookup_table_index()];
-        self.bootstrapper
-            .apply_lookup_table_to(&self.gate_input, lookup_table, output);
+        self.bootstrapper.apply_lookup_table_to(
+            self.gate_input.as_view(),
+            lookup_table,
+            output.as_mut_view(),
+        );
         self.ciphertext_modulus
             .reduce_add_assign(output.b_mut(), self.output_shift);
     }
@@ -194,42 +197,42 @@ where
     /// Evaluates an AND gate.
     #[must_use]
     #[inline]
-    pub fn and(&mut self, lhs: &LweCiphertext<T>, rhs: &LweCiphertext<T>) -> LweCiphertext<T> {
+    pub fn and(&mut self, lhs: Lwe<&[T]>, rhs: Lwe<&[T]>) -> LweCiphertext<T> {
         self.evaluate_binary(BooleanGate::And, lhs, rhs)
     }
 
     /// Evaluates a NAND gate.
     #[must_use]
     #[inline]
-    pub fn nand(&mut self, lhs: &LweCiphertext<T>, rhs: &LweCiphertext<T>) -> LweCiphertext<T> {
+    pub fn nand(&mut self, lhs: Lwe<&[T]>, rhs: Lwe<&[T]>) -> LweCiphertext<T> {
         self.evaluate_binary(BooleanGate::Nand, lhs, rhs)
     }
 
     /// Evaluates an OR gate.
     #[must_use]
     #[inline]
-    pub fn or(&mut self, lhs: &LweCiphertext<T>, rhs: &LweCiphertext<T>) -> LweCiphertext<T> {
+    pub fn or(&mut self, lhs: Lwe<&[T]>, rhs: Lwe<&[T]>) -> LweCiphertext<T> {
         self.evaluate_binary(BooleanGate::Or, lhs, rhs)
     }
 
     /// Evaluates a NOR gate.
     #[must_use]
     #[inline]
-    pub fn nor(&mut self, lhs: &LweCiphertext<T>, rhs: &LweCiphertext<T>) -> LweCiphertext<T> {
+    pub fn nor(&mut self, lhs: Lwe<&[T]>, rhs: Lwe<&[T]>) -> LweCiphertext<T> {
         self.evaluate_binary(BooleanGate::Nor, lhs, rhs)
     }
 
     /// Evaluates an XOR gate.
     #[must_use]
     #[inline]
-    pub fn xor(&mut self, lhs: &LweCiphertext<T>, rhs: &LweCiphertext<T>) -> LweCiphertext<T> {
+    pub fn xor(&mut self, lhs: Lwe<&[T]>, rhs: Lwe<&[T]>) -> LweCiphertext<T> {
         self.evaluate_binary(BooleanGate::Xor, lhs, rhs)
     }
 
     /// Evaluates an XNOR gate.
     #[must_use]
     #[inline]
-    pub fn xnor(&mut self, lhs: &LweCiphertext<T>, rhs: &LweCiphertext<T>) -> LweCiphertext<T> {
+    pub fn xnor(&mut self, lhs: Lwe<&[T]>, rhs: Lwe<&[T]>) -> LweCiphertext<T> {
         self.evaluate_binary(BooleanGate::Xnor, lhs, rhs)
     }
 
@@ -240,47 +243,47 @@ where
     #[must_use]
     pub fn mux(
         &mut self,
-        condition: &LweCiphertext<T>,
-        then_value: &LweCiphertext<T>,
-        else_value: &LweCiphertext<T>,
+        condition: Lwe<&[T]>,
+        then_value: Lwe<&[T]>,
+        else_value: Lwe<&[T]>,
     ) -> LweCiphertext<T> {
         let mut output = LweCiphertext::zero(self.external_lwe_dimension.get());
-        self.mux_to(condition, then_value, else_value, &mut output);
+        self.mux_to(condition, then_value, else_value, output.as_mut_view());
         output
     }
 
     /// Evaluates a multiplexer into an existing output allocation.
     pub fn mux_to(
         &mut self,
-        condition: &LweCiphertext<T>,
-        then_value: &LweCiphertext<T>,
-        else_value: &LweCiphertext<T>,
-        output: &mut LweCiphertext<T>,
+        condition: Lwe<&[T]>,
+        then_value: Lwe<&[T]>,
+        else_value: Lwe<&[T]>,
+        mut output: Lwe<&mut [T]>,
     ) {
         prepare_binary_gate(
             BooleanGate::And,
-            condition,
+            condition.as_view(),
             then_value,
-            &mut self.gate_input,
+            self.gate_input.as_mut_view(),
             self.ciphertext_modulus,
         );
         self.bootstrapper.apply_lookup_table_to(
-            &self.gate_input,
+            self.gate_input.as_view(),
             &self.gate_lookup_tables[BooleanGate::And.lookup_table_index()],
-            &mut self.mux_branch,
+            self.mux_branch.as_mut_view(),
         );
         let modulus = self.ciphertext_modulus;
         modulus.reduce_add_assign(self.mux_branch.b_mut(), self.output_shift);
 
-        assert_dimension(else_value, self.external_lwe_dimension.get());
-        self.gate_input.0.copy_from_slice(else_value.0.as_slice());
-        self.gate_input.sub_assign(condition, modulus);
+        assert_dimension(else_value.as_view(), self.external_lwe_dimension.get());
+        self.gate_input.0.copy_from_slice(else_value.as_ref());
+        self.gate_input.sub_assign(&condition, modulus);
         modulus.reduce_add_assign(self.gate_input.b_mut(), self.encoded_one);
 
         self.bootstrapper.apply_lookup_table_to(
-            &self.gate_input,
+            self.gate_input.as_view(),
             &self.gate_lookup_tables[BooleanGate::And.lookup_table_index()],
-            output,
+            output.as_mut_view(),
         );
         modulus.reduce_add_assign(output.b_mut(), self.output_shift);
         output.add_assign(&self.mux_branch, modulus);
@@ -288,22 +291,22 @@ where
 
     /// Negates a Boolean ciphertext without programmable bootstrapping.
     #[must_use]
-    pub fn not(&self, input: &LweCiphertext<T>) -> LweCiphertext<T> {
-        assert_dimension(input, self.external_lwe_dimension.get());
-        let mut output = input.clone();
-        self.not_assign(&mut output);
+    pub fn not(&self, input: Lwe<&[T]>) -> LweCiphertext<T> {
+        assert_dimension(input.as_view(), self.external_lwe_dimension.get());
+        let mut output = LweCiphertext::new(input.as_ref().to_vec());
+        self.not_assign(output.as_mut_view());
         output
     }
 
     /// Negates a Boolean ciphertext into an existing allocation without PBS.
-    pub fn not_to(&self, input: &LweCiphertext<T>, output: &mut LweCiphertext<T>) {
-        assert_dimension(input, self.external_lwe_dimension.get());
-        assert_dimension(output, self.external_lwe_dimension.get());
-        output.0.copy_from_slice(input.0.as_slice());
+    pub fn not_to(&self, input: Lwe<&[T]>, output: Lwe<&mut [T]>) {
+        assert_dimension(input.as_view(), self.external_lwe_dimension.get());
+        assert_dimension(output.as_view(), self.external_lwe_dimension.get());
+        output.0.copy_from_slice(input.as_ref());
         self.not_assign(output);
     }
 
-    fn not_assign(&self, ciphertext: &mut LweCiphertext<T>) {
+    fn not_assign(&self, mut ciphertext: Lwe<&mut [T]>) {
         let modulus = self.ciphertext_modulus;
         ciphertext.neg_assign(modulus);
         ciphertext.add_plaintext_assign(self.encoded_one, modulus);
@@ -333,29 +336,29 @@ where
 
 fn prepare_binary_gate<T, M>(
     gate: BooleanGate,
-    lhs: &LweCiphertext<T>,
-    rhs: &LweCiphertext<T>,
-    output: &mut LweCiphertext<T>,
+    lhs: Lwe<&[T]>,
+    rhs: Lwe<&[T]>,
+    mut output: Lwe<&mut [T]>,
     modulus: M,
 ) where
     T: FheUint,
     M: RingContext<T>,
 {
-    assert_dimension(lhs, output.dimension());
-    assert_dimension(rhs, output.dimension());
+    assert_dimension(lhs.as_view(), output.dimension());
+    assert_dimension(rhs.as_view(), output.dimension());
 
     match gate {
         BooleanGate::And | BooleanGate::Nand | BooleanGate::Or | BooleanGate::Nor => {
-            lhs.add_to(rhs, output, modulus);
+            lhs.add_to(&rhs, &mut output, modulus);
         }
         BooleanGate::Xor | BooleanGate::Xnor => {
-            lhs.sub_to(rhs, output, modulus);
+            lhs.sub_to(&rhs, &mut output, modulus);
             output.mul_scalar_assign(T::TWO, modulus);
         }
     }
 }
 
-fn assert_dimension<T: FheUint>(ciphertext: &LweCiphertext<T>, expected: usize) {
+fn assert_dimension<T: FheUint>(ciphertext: Lwe<&[T]>, expected: usize) {
     assert_eq!(
         ciphertext.dimension(),
         expected,

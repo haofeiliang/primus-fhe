@@ -109,7 +109,7 @@ fn main() {
             .unwrap();
 
         // Server -> client: return message, carry and parity, reusing the evaluator.
-        evaluator.apply_interleaved_lookup_table_to(&input, &lut, &mut outputs);
+        evaluator.apply_interleaved_lookup_table_to(input.as_view(), &lut, &mut outputs);
 
         // Client: decode with the output codec, not the input's t=16 codec.
         for (output, expected) in outputs.iter().zip([message % 4, message / 4, message % 2]) {

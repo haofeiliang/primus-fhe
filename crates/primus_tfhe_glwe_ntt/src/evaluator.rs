@@ -7,7 +7,7 @@ use primus_tfhe::{
 use primus_tfhe_glwe::PbsOrder;
 
 use crate::{
-    ServerKey, TfheContext,
+    Lwe, ServerKey, TfheContext,
     bootstrap::{BlindRotationEngine, KeySwitchingWorkspace},
     error::TfheEvaluationError,
 };
@@ -36,9 +36,9 @@ where
     #[inline]
     fn apply_lookup_table_to(
         &mut self,
-        input: &LweCiphertext<T>,
+        input: Lwe<&[T]>,
         lookup_table: &LookupTable<T>,
-        output: &mut LweCiphertext<T>,
+        output: Lwe<&mut [T]>,
     ) {
         Evaluator::apply_lookup_table_to(self, input, lookup_table, output)
     }
@@ -52,7 +52,7 @@ where
     #[inline]
     fn apply_interleaved_lookup_table_to(
         &mut self,
-        input: &LweCiphertext<T>,
+        input: Lwe<&[T]>,
         lookup_table: &InterleavedLookupTable<T>,
         outputs: &mut [LweCiphertext<T>],
     ) {
@@ -107,12 +107,12 @@ where
     #[must_use]
     pub fn apply_lookup_table(
         &mut self,
-        input: &LweCiphertext<T>,
+        input: Lwe<&[T]>,
         lookup_table: &LookupTable<T>,
     ) -> LweCiphertext<T> {
         let dimension = self.engine.context.parameters().external_lwe_dimension();
         let mut output = LweCiphertext::zero(dimension.get());
-        self.apply_lookup_table_to(input, lookup_table, &mut output);
+        self.apply_lookup_table_to(input, lookup_table, output.as_mut_view());
         output
     }
 
@@ -127,9 +127,9 @@ where
     /// or ciphertext dimensions.
     pub fn apply_lookup_table_to(
         &mut self,
-        input: &LweCiphertext<T>,
+        input: Lwe<&[T]>,
         lookup_table: &LookupTable<T>,
-        output: &mut LweCiphertext<T>,
+        output: Lwe<&mut [T]>,
     ) {
         let parameters = self.engine.context.parameters();
         assert!(
@@ -155,7 +155,7 @@ where
 
         self.engine
             .blind_rotate(input, lookup_table.polynomial(), 1);
-        self.return_accumulator_to(core::slice::from_mut(output));
+        self.return_accumulator_to(core::iter::once(output));
     }
 
     /// Applies all interleaved tables and allocates one ciphertext per output.
@@ -171,7 +171,7 @@ where
     #[must_use]
     pub fn apply_interleaved_lookup_table(
         &mut self,
-        input: &LweCiphertext<T>,
+        input: Lwe<&[T]>,
         lookup_table: &InterleavedLookupTable<T>,
     ) -> Vec<LweCiphertext<T>> {
         let dimension = self.engine.context.parameters().external_lwe_dimension();
@@ -195,7 +195,7 @@ where
     /// or ciphertext dimensions. A wrong output count is also rejected.
     pub fn apply_interleaved_lookup_table_to(
         &mut self,
-        input: &LweCiphertext<T>,
+        input: Lwe<&[T]>,
         lookup_table: &InterleavedLookupTable<T>,
         outputs: &mut [LweCiphertext<T>],
     ) {
@@ -232,13 +232,18 @@ where
             lookup_table.polynomial(),
             lookup_table.padded_output_count(),
         );
-        self.return_accumulator_to(outputs);
+        self.return_accumulator_to(outputs.iter_mut().map(Lwe::as_mut_view));
     }
 
     /// Return a validated phase prefix. BR→KS switches the ring once before compact
     /// extraction; KS→BR directly extracts under the accumulator LWE secret.
+    /// Iterating views lets the single-output path share extraction without an
+    /// owned ciphertext wrapper or an allocated batch of view descriptors.
     #[inline]
-    pub(crate) fn return_accumulator_to(&mut self, outputs: &mut [LweCiphertext<T>]) {
+    pub(crate) fn return_accumulator_to<'out>(
+        &mut self,
+        outputs: impl Iterator<Item = Lwe<&'out mut [T]>>,
+    ) {
         let engine = &mut self.engine;
         let glwe = engine.context.parameters().accumulator_glwe();
         match &mut self.lwe_return {
@@ -250,20 +255,20 @@ where
                     engine.context.table(),
                     &mut ks.scratch,
                 );
-                for (index, output) in outputs.iter_mut().enumerate() {
+                for (index, mut output) in outputs.enumerate() {
                     ks.switched.extract_compact_lwe_at_to(
                         index,
-                        output,
+                        &mut output,
                         glwe.poly_length().get(),
                         glwe.cipher_modulus(),
                     );
                 }
             }
             LweReturn::Extract => {
-                for (index, output) in outputs.iter_mut().enumerate() {
+                for (index, mut output) in outputs.enumerate() {
                     engine.accumulator.extract_lwe_at_to(
                         index,
-                        output,
+                        &mut output,
                         glwe.poly_length().get(),
                         glwe.cipher_modulus(),
                     );

@@ -184,7 +184,7 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
     let mut output = context
         .evaluator(&server)
         .unwrap()
-        .apply_lookup_table(&input, &identity);
+        .apply_lookup_table(input.as_view(), &identity);
     assert_eq!(
         context
             .decryptor(&client)
@@ -203,7 +203,7 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
             let mut selected = context.allocate_accumulator_ciphertext();
             let mut decoded = vec![0; POLY_LENGTH];
             let (_, online) = allocations::measure(|| {
-                standalone.circuit_bootstrap_to(&input, &mut control);
+                standalone.circuit_bootstrap_to(input.as_view(), &mut control);
                 standalone.cmux_to(&control, &choices[0], &choices[1], &mut selected);
             });
             assert_eq!(online.count, 0, "standalone BK CBS/CMUX must not allocate");
@@ -246,13 +246,13 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
     for bit in [1u64, 0] {
         let input = encryptor.encrypt_padded(bit, &mut rng).unwrap();
         let (_, allocation) = allocations::measure(|| {
-            evaluator.circuit_bootstrap_to(&input, &mut control);
+            evaluator.circuit_bootstrap_to(input.as_view(), &mut control);
             evaluator.cmux_to(&control, &choices[0], &choices[1], &mut selected);
             evaluator.external_product_to(&control, &choices[1], &mut product);
             evaluator.bootstrapper_mut().unwrap().apply_lookup_table_to(
-                &input,
+                input.as_view(),
                 &identity,
-                &mut output,
+                output.as_mut_view(),
             );
             accumulator_client.decrypt_to(&selected, &mut decoded);
             accumulator_client.decrypt_to(&product, &mut decoded_product);
@@ -432,7 +432,7 @@ fn evaluator_rejects_resource_mismatches_and_checks_shapes_before_writes() {
         let mut output = FourierGgsw::new(vec![marker; length]);
         assert!(
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(
-                || evaluator.circuit_bootstrap_to(&input, &mut output)
+                || evaluator.circuit_bootstrap_to(input.as_view(), &mut output)
             ))
             .is_err()
         );

@@ -7,7 +7,7 @@ use primus_tfhe_glwe::PbsOrder;
 
 use crate::{
     BootstrappingKey, Evaluator, FourierGlweBlindRotationWorkspace, FourierGlweBootstrappingKey,
-    ServerKey, SparseGlweBlindRotationWorkspace, SparseGlweBootstrappingKey, TfheContext,
+    Lwe, ServerKey, SparseGlweBlindRotationWorkspace, SparseGlweBootstrappingKey, TfheContext,
 };
 
 /// Reusable ring key-switch scratch shared by input preparation and result return.
@@ -133,7 +133,7 @@ where
     #[inline]
     pub(crate) fn blind_rotate(
         &mut self,
-        input: &LweCiphertext<T>,
+        input: Lwe<&[T]>,
         lookup_table: &Polynomial<Vec<T>>,
         rotation_step: usize,
     ) -> (&GlweCiphertext<Vec<T>>, &mut FftEngine<'a, Table>) {
@@ -161,13 +161,13 @@ where
                     glwe.poly_length().get(),
                     glwe.cipher_modulus(),
                 );
-                small_lwe
+                small_lwe.as_view()
             }
         };
         match &mut self.blind_rotation {
             BlindRotation::Classic { key, scratch } => key
                 .fourier_blind_rotate_interleaved_lookup_table_kernel_to(
-                    small_lwe.as_view(),
+                    small_lwe,
                     lookup_table.as_view(),
                     rotation_step,
                     self.accumulator.as_mut_view(),
@@ -176,7 +176,7 @@ where
                 ),
             BlindRotation::Sparse { key, scratch } => key
                 .fourier_blind_rotate_interleaved_lookup_table_kernel_to(
-                    small_lwe.as_view(),
+                    small_lwe,
                     lookup_table.as_view(),
                     rotation_step,
                     self.accumulator.as_mut_view(),

@@ -86,7 +86,7 @@ fn main() {
             .unwrap();
 
         // Server -> client: return the result, reusing the LUT and buffers.
-        evaluator.apply_lookup_table_to(&input, &lut, &mut output);
+        evaluator.apply_lookup_table_to(input.as_view(), &lut, output.as_mut_view());
 
         // Client: decrypt with the original external LWE secret.
         let result = decryptor.decrypt(output.as_view()).unwrap();

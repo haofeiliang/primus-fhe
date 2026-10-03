@@ -116,9 +116,9 @@ fn sparse_pbs_preserves_external_secret_and_interleaved_outputs_in_both_orders()
                 let (_, allocation) = allocations::measure(|| {
                     ProgrammableBootstrap::apply_lookup_table_to(
                         evaluator,
-                        &input,
+                        input.as_view(),
                         &single,
-                        &mut outputs[0],
+                        outputs[0].as_mut_view(),
                     );
                 });
                 assert_eq!(allocation.count, 0);
@@ -126,7 +126,7 @@ fn sparse_pbs_preserves_external_secret_and_interleaved_outputs_in_both_orders()
                 let (_, allocation) = allocations::measure(|| {
                     ProgrammableBootstrapInterleaved::apply_interleaved_lookup_table_to(
                         evaluator,
-                        &input,
+                        input.as_view(),
                         &many,
                         &mut outputs,
                     );
@@ -135,7 +135,7 @@ fn sparse_pbs_preserves_external_secret_and_interleaved_outputs_in_both_orders()
                 for (i, output) in outputs.iter().enumerate() {
                     check(output, functions(message as usize, i));
                 }
-                evaluator.apply_lookup_table_to(&input, &single, &mut outputs[0]);
+                evaluator.apply_lookup_table_to(input.as_view(), &single, outputs[0].as_mut_view());
                 check(&outputs[0], function(message as usize));
             }
         }
@@ -144,12 +144,12 @@ fn sparse_pbs_preserves_external_secret_and_interleaved_outputs_in_both_orders()
         let before = outputs.clone();
         assert!(
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                sparse.apply_interleaved_lookup_table_to(&input, &many, &mut outputs[..2]);
+                sparse.apply_interleaved_lookup_table_to(input.as_view(), &many, &mut outputs[..2]);
             }))
             .is_err()
         );
         assert_eq!(outputs, before);
-        sparse.apply_lookup_table_to(&input, &single, &mut outputs[0]);
+        sparse.apply_lookup_table_to(input.as_view(), &single, outputs[0].as_mut_view());
         check(&outputs[0], function(1));
         // A matching layout alone does not bind the sparse weight or gadget basis.
         for incompatible in [self::context(order, 8, 5, 7), self::context(order, 8, 4, 8)] {
@@ -281,8 +281,12 @@ fn sparse_bivariate_and_odd_full_domain_respect_input_margins_in_both_orders() {
             let rounding_error = i64::from(encode_input(x)) + 3 * i64::from(encode_input(y))
                 - i64::from(packed_center);
             let (_, allocation) = allocations::measure(|| {
-                bivariate.pack_to(&lhs, &rhs, &mut packed);
-                evaluator.apply_lookup_table_to(&packed, bivariate.lookup_table(), &mut output);
+                bivariate.pack_to(lhs.as_view(), rhs.as_view(), packed.as_mut_view());
+                evaluator.apply_lookup_table_to(
+                    packed.as_view(),
+                    bivariate.lookup_table(),
+                    output.as_mut_view(),
+                );
             });
             assert_eq!(allocation.count, 0, "packing and PBS must reuse storage");
             assert_eq!(
@@ -300,7 +304,7 @@ fn sparse_bivariate_and_odd_full_domain_respect_input_margins_in_both_orders() {
                 .unwrap();
             add_phase_error(&mut packed, sign * i64::from(Q / (8 * 15)));
             let (_, allocation) = allocations::measure(|| {
-                evaluator.apply_lookup_table_to(&packed, &full, &mut output);
+                evaluator.apply_lookup_table_to(packed.as_view(), &full, output.as_mut_view());
             });
             assert_eq!(allocation.count, 0, "full-domain PBS must reuse storage");
             check_output(&output, full_value(message as usize));

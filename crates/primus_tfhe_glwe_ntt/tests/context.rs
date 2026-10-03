@@ -169,7 +169,7 @@ fn split_keys_support_both_pbs_orders() {
                 secret_encryptor.encrypt_padded(message, &mut rng).unwrap(),
                 public_encryptor.encrypt_padded(message, &mut rng).unwrap(),
             ] {
-                let output = evaluator.apply_lookup_table(&input, &lookup_table);
+                let output = evaluator.apply_lookup_table(input.as_view(), &lookup_table);
                 assert_eq!(decryptor.decrypt(output.as_view()).unwrap(), 1 - message);
             }
         }
@@ -180,7 +180,11 @@ fn split_keys_support_both_pbs_orders() {
         let rhs = boolean_encryptor.encrypt(false, &mut rng).unwrap();
         assert!(
             boolean_decryptor
-                .decrypt(boolean_evaluator.xor(&lhs, &rhs).as_view())
+                .decrypt(
+                    boolean_evaluator
+                        .xor(lhs.as_view(), rhs.as_view())
+                        .as_view()
+                )
                 .unwrap()
         );
     }

@@ -4,7 +4,7 @@ use primus_poly::PolyLength;
 use primus_reduce::{Modulus, ReduceAdd, RingContext};
 
 use super::LookupTable;
-use crate::{LookupTableError, LweCiphertext};
+use crate::{LookupTableError, Lwe};
 
 /// A bounded two-input function evaluated by packing `z = x + B*y` before PBS.
 ///
@@ -120,12 +120,7 @@ impl<T: FheUint, M: RingContext<T>> BivariateLookupTable<T, M> {
     ///
     /// Panics before writing if any ciphertext is missing its body or if the
     /// three coefficient lengths differ.
-    pub fn pack_to(
-        &self,
-        lhs: &LweCiphertext<T>,
-        rhs: &LweCiphertext<T>,
-        output: &mut LweCiphertext<T>,
-    ) {
+    pub fn pack_to(&self, lhs: Lwe<&[T]>, rhs: Lwe<&[T]>, mut output: Lwe<&mut [T]>) {
         let length = lhs.lwe_len();
         assert!(length != 0, "LWE ciphertext must include a body");
         assert_eq!(length, rhs.lwe_len(), "bivariate input dimensions differ");

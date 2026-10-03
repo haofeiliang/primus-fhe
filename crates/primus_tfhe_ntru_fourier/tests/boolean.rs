@@ -71,9 +71,9 @@ fn check_context<Table: FftTable>(distr: SecretKeyDistr) {
         catch_unwind(AssertUnwindSafe(|| {
             evaluator.evaluate_binary_to(
                 BooleanGate::And,
-                &inputs[0],
-                &inputs[1],
-                &mut wrong_output,
+                inputs[0].as_view(),
+                inputs[1].as_view(),
+                wrong_output.as_mut_view(),
             );
         }))
         .is_err()
@@ -86,7 +86,12 @@ fn check_context<Table: FftTable>(distr: SecretKeyDistr) {
             public_encryptor
                 .encrypt_to(bit, rhs.as_mut_view(), &mut rng)
                 .unwrap();
-            evaluator.evaluate_binary_to(BooleanGate::Nand, &inputs[1], &rhs, &mut output);
+            evaluator.evaluate_binary_to(
+                BooleanGate::Nand,
+                inputs[1].as_view(),
+                rhs.as_view(),
+                output.as_mut_view(),
+            );
             assert_eq!(decryptor.decrypt(output.as_view()).unwrap(), !bit);
         });
         assert_eq!(allocation.count, 0, "Boolean operations must reuse storage");

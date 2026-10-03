@@ -5,7 +5,7 @@ use primus_tfhe::{
     ProgrammableBootstrapInterleaved, TfheEvaluationError,
 };
 
-use crate::{LweReturnEvaluator, ServerKey, TfheContext, bootstrap::BlindRotationEngine};
+use crate::{Lwe, LweReturnEvaluator, ServerKey, TfheContext, bootstrap::BlindRotationEngine};
 
 /// Allocation-free online evaluator for exact NTT NTRU programmable bootstrapping.
 pub struct Evaluator<'a, T, Table, LM = primus_modulus::BarrettModulus<T>>
@@ -59,12 +59,12 @@ where
     #[must_use]
     pub fn apply_lookup_table(
         &mut self,
-        input: &LweCiphertext<T>,
+        input: Lwe<&[T]>,
         lookup_table: &LookupTable<T>,
     ) -> LweCiphertext<T> {
         let dimension = self.engine.context.parameters().external_lwe_dimension();
         let mut output = LweCiphertext::zero(dimension.get());
-        self.apply_lookup_table_to(input, lookup_table, &mut output);
+        self.apply_lookup_table_to(input, lookup_table, output.as_mut_view());
         output
     }
 
@@ -79,9 +79,9 @@ where
     /// or ciphertext dimensions.
     pub fn apply_lookup_table_to(
         &mut self,
-        input: &LweCiphertext<T>,
+        input: Lwe<&[T]>,
         lookup_table: &LookupTable<T>,
-        output: &mut LweCiphertext<T>,
+        output: Lwe<&mut [T]>,
     ) {
         assert!(
             !self.lwe_return.is_batch_active(),
@@ -127,7 +127,7 @@ where
     #[must_use]
     pub fn apply_interleaved_lookup_table(
         &mut self,
-        input: &LweCiphertext<T>,
+        input: Lwe<&[T]>,
         lookup_table: &InterleavedLookupTable<T>,
     ) -> Vec<LweCiphertext<T>> {
         let dimension = self.engine.context.parameters().external_lwe_dimension();
@@ -151,7 +151,7 @@ where
     /// or ciphertext dimensions. A wrong output count is also rejected.
     pub fn apply_interleaved_lookup_table_to(
         &mut self,
-        input: &LweCiphertext<T>,
+        input: Lwe<&[T]>,
         lookup_table: &InterleavedLookupTable<T>,
         outputs: &mut [LweCiphertext<T>],
     ) {
@@ -196,7 +196,7 @@ where
     }
 
     /// CBS consumes `current` directly; ordinary PBS returns its phase coefficient.
-    pub(crate) fn return_accumulator_at_to(&mut self, index: usize, output: &mut LweCiphertext<T>) {
+    pub(crate) fn return_accumulator_at_to(&mut self, index: usize, output: Lwe<&mut [T]>) {
         self.lwe_return
             .return_at_to(self.engine.workspace.current.as_view(), index, output);
     }
@@ -217,9 +217,9 @@ where
     #[inline]
     fn apply_lookup_table_to(
         &mut self,
-        input: &LweCiphertext<T>,
+        input: Lwe<&[T]>,
         lookup_table: &LookupTable<T>,
-        output: &mut LweCiphertext<T>,
+        output: Lwe<&mut [T]>,
     ) {
         Self::apply_lookup_table_to(self, input, lookup_table, output);
     }
@@ -234,7 +234,7 @@ where
     #[inline]
     fn apply_interleaved_lookup_table_to(
         &mut self,
-        input: &LweCiphertext<T>,
+        input: Lwe<&[T]>,
         lookup_table: &InterleavedLookupTable<T>,
         outputs: &mut [LweCiphertext<T>],
     ) {

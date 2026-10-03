@@ -62,7 +62,7 @@ engine。两个后端均重新导出它。选择配对密钥与外部 q 后，�
 `LweReturnEvaluator::new(server.key_switching_key(), q_modulus)` 构造。输入必须为
 该返回密钥的环秘密下、Q 域的系数形式 NTRU，系数规范且满足返回噪声预算。
 
-`return_at_to(input.as_view(), index, output)` 转换并提取一个相位系数。
+`return_at_to(input.as_view(), index, output.as_mut_view())` 转换并提取一个相位系数。
 `return_prefix_to(input.as_view(), outputs)` 返回连续系数，多个输出共用一次 Q→q 转换。
 不同来源使用 `begin_batch` → `append_at(input.as_view(), index)` → `return_batch_to(outputs)`；
 每次追加只保留提取后的 LWE，随后可覆盖来源及 one-hot/FFT 缓冲。

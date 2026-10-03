@@ -5,7 +5,6 @@ use primus_data::{Data, DataMut};
 use primus_glwe::{GlevCiphertext, GlweCiphertext, NttGlweTraceWorkspace};
 use primus_integer::FheUint;
 use primus_lattice::ggsw::NttGgsw;
-use primus_lwe::LweCiphertext;
 use primus_ntt::MonomialNttTable;
 use primus_reduce::ReduceMul;
 use primus_tfhe::{InterleavedLookupTable, LookupTableError};
@@ -13,7 +12,7 @@ use primus_tfhe::{InterleavedLookupTable, LookupTableError};
 use super::key::CircuitBootstrapBinding;
 
 use crate::{
-    CircuitBootstrapKey, CircuitBootstrapParameters, Evaluator, ServerKey, TfheContext,
+    CircuitBootstrapKey, CircuitBootstrapParameters, Evaluator, Lwe, ServerKey, TfheContext,
     TfheEvaluationError, bootstrap::CircuitBootstrapResources,
 };
 
@@ -289,7 +288,7 @@ where
     /// Panics if the input dimension differs from the configured external LWE
     /// dimension. The output is allocated with the configured GGSW length.
     #[must_use]
-    pub fn circuit_bootstrap(&mut self, input: &LweCiphertext<T>) -> NttGgsw<Vec<T>> {
+    pub fn circuit_bootstrap(&mut self, input: Lwe<&[T]>) -> NttGgsw<Vec<T>> {
         let mut output = self.allocate_output();
         self.circuit_bootstrap_to(input, &mut output);
         output
@@ -317,7 +316,7 @@ where
     /// Panics before output writes if the input dimension differs from the
     /// configured external LWE dimension or the output length differs from the
     /// configured GGSW length. LUT parameters are fixed during construction.
-    pub fn circuit_bootstrap_to<S>(&mut self, input: &LweCiphertext<T>, output: &mut NttGgsw<S>)
+    pub fn circuit_bootstrap_to<S>(&mut self, input: Lwe<&[T]>, output: &mut NttGgsw<S>)
     where
         S: DataMut<Elem = T>,
     {

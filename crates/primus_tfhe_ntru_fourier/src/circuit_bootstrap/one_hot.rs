@@ -2,13 +2,12 @@
 
 use primus_fft::{Complex64, FftTable, TorusFftValue};
 use primus_ntru::{FourierNgswCiphertext, NlevCiphertext};
-use primus_tfhe::LweCiphertext;
 pub use primus_tfhe_ntru::{OneHotBootstrapError, OneHotLookupTable};
 
 use super::key::CircuitBootstrapBinding;
 
 use crate::{
-    CircuitBootstrapParameters, Evaluator, ServerKey, TfheContext,
+    CircuitBootstrapParameters, Evaluator, Lwe, ServerKey, TfheContext,
     bootstrap::{BlindRotationEngine, CircuitBootstrapResources},
 };
 
@@ -189,13 +188,13 @@ where
 
     /// Writes coefficient NLEV selectors only, without scheme switching.
     /// Inherits [`Self::one_hot_to`]'s input, layout, noise and prewrite checks.
-    pub fn one_hot_nlev_to(&mut self, input: &LweCiphertext<T>, output: &mut [T]) {
+    pub fn one_hot_nlev_to(&mut self, input: Lwe<&[T]>, output: &mut [T]) {
         self.evaluate(input, 0, Some(output), None);
     }
 
     /// Writes transformed NGSW selectors only; retains no full NLEV output batch.
     /// Inherits [`Self::one_hot_to`]'s input, layout, noise and prewrite checks.
-    pub fn one_hot_ngsw_to(&mut self, input: &LweCiphertext<T>, output: &mut [Complex64]) {
+    pub fn one_hot_ngsw_to(&mut self, input: Lwe<&[T]>, output: &mut [Complex64]) {
         self.evaluate(input, 0, None, Some(output));
     }
 
@@ -210,7 +209,7 @@ where
     ///
     /// # Panics
     /// Rejects input dimension and exact output length before BR or output writes.
-    pub fn one_hot_nonzero_ngsw_to(&mut self, input: &LweCiphertext<T>, output: &mut [Complex64]) {
+    pub fn one_hot_nonzero_ngsw_to(&mut self, input: Lwe<&[T]>, output: &mut [Complex64]) {
         self.evaluate(input, 1, None, Some(output));
     }
 
@@ -234,7 +233,7 @@ where
     /// Output buffers contain no padding and need no prior reset.
     pub fn one_hot_to(
         &mut self,
-        input: &LweCiphertext<T>,
+        input: Lwe<&[T]>,
         nlev_output: &mut [T],
         ngsw_output: &mut [Complex64],
     ) {
@@ -251,7 +250,7 @@ where
     /// Rejects input dimension and exact output lengths before any writes.
     pub fn one_hot_nlev_and_nonzero_ngsw_to(
         &mut self,
-        input: &LweCiphertext<T>,
+        input: Lwe<&[T]>,
         nlev_output: &mut [T],
         ngsw_output: &mut [Complex64],
     ) {
@@ -263,7 +262,7 @@ where
     /// once and retain no extra full NLEV batch for NGSW-only calls.
     fn evaluate(
         &mut self,
-        input: &LweCiphertext<T>,
+        input: Lwe<&[T]>,
         first_ngsw_selector: usize,
         mut nlev_output: Option<&mut [T]>,
         mut ngsw_output: Option<&mut [Complex64]>,

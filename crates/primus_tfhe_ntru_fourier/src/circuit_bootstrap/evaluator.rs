@@ -5,12 +5,12 @@ use primus_fft::{Complex64, FftTable, TorusFftValue};
 use primus_ntru::NtruCiphertext;
 use primus_ntru::{FourierNgswCiphertext, NlevCiphertext};
 use primus_reduce::ReduceMul;
-use primus_tfhe::{InterleavedLookupTable, LookupTableError, LweCiphertext};
+use primus_tfhe::{InterleavedLookupTable, LookupTableError};
 
 use super::key::CircuitBootstrapBinding;
 
 use crate::{
-    CircuitBootstrapKey, Evaluator, ServerKey, TfheContext, TfheEvaluationError,
+    CircuitBootstrapKey, Evaluator, Lwe, ServerKey, TfheContext, TfheEvaluationError,
     bootstrap::{BlindRotationEngine, CircuitBootstrapResources},
 };
 
@@ -250,10 +250,7 @@ where
 
     /// Allocates the output NGSW. Inherits [`Self::circuit_bootstrap_to`]'s contracts.
     #[must_use]
-    pub fn circuit_bootstrap(
-        &mut self,
-        input: &LweCiphertext<T>,
-    ) -> FourierNgswCiphertext<Vec<Complex64>> {
+    pub fn circuit_bootstrap(&mut self, input: Lwe<&[T]>) -> FourierNgswCiphertext<Vec<Complex64>> {
         let mut output = self.allocate_output();
         self.circuit_bootstrap_to(input, &mut output);
         output
@@ -276,7 +273,7 @@ where
     /// wrong. Fixed LUT/resource compatibility was checked during construction.
     pub fn circuit_bootstrap_to<S: DataMut<Elem = Complex64>>(
         &mut self,
-        input: &LweCiphertext<T>,
+        input: Lwe<&[T]>,
         output: &mut FourierNgswCiphertext<S>,
     ) {
         let engine = self.resources.engine_mut();
