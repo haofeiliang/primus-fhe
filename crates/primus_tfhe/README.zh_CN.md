@@ -51,7 +51,7 @@ Sparse 模式需显式选择生成入口，暂不支持 sparse ternary。NTRU �
 
 分配型加密方法返回 `LweCiphertext<T>`。客户端写入接口按值接收 `Lwe<&mut [T]>`，读取接口按值接收 `Lwe<&[T]>`：使用 `encryptor.encrypt_padded_to(message, output.as_mut_view(), rng)` 和 `decryptor.decrypt(output.as_view())`。视图只借用系数，不复制或分配；已有切片可通过 `primus_tfhe::Lwe::new` 包装，因此同一接口也支持 boxed、对齐及栈存储。Boolean 客户端遵循同样的借用方式。
 
-求值端的单项 LWE 参数使用相同视图：`evaluator.apply_lookup_table_to(input.as_view(), &lut, output.as_mut_view())`。Boolean 门和双输入打包借用各自的操作数；CBS、one-hot 和 MVB 借用其 LWE 输入。分配型方法仍返回拥有型密文。ManyLUT/MVB 输出批次以及高精度输入/输出批次使用 `LweCiphertext<T>` 的切片，无需临时收集视图。
+求值端的单项 LWE 参数使用相同视图：`evaluator.apply_lookup_table_to(input.as_view(), &lut, output.as_mut_view())`。Boolean 门和双输入打包借用各自的操作数；CBS、one-hot 和 MVB 借用其 LWE 输入。分配型方法仍返回拥有型密文。ManyLUT/MVB 输出批次以及高精度输入/输出批次借用预先分配的 `LweCiphertext<T>` 切片。每个有效输出对应一个完整 LWE，LUT padding 不需要额外密文。每个 LWE 保留自己的系数缓冲，直接传入已有切片即可，无需打包系数或收集视图。写入输出前会检查数量和每个密文的维数。
 
 客户端生成配套密钥，保留 `ClientKey` 和加解密器，将 `ServerKey` 提供给服务端。 服务端只需公开 context、求值密钥、LUT/程序和输入密文；计算后将密文结果返回客户端。 示例在同一进程展示这些阶段，参数构造单独放置。输入和输出编码是双方约定的公开信息。
 

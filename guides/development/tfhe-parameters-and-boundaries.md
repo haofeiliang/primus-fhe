@@ -42,6 +42,22 @@
 
 PBS trait、四后端、Boolean 门、双输入打包、CBS、one-hot 与 MVB 的单项 LWE 输入也接收 `Lwe<&[T]>`；普通 PBS、Boolean 和 NTRU `return_at_to` 的单项 LWE 输出接收 `Lwe<&mut [T]>`。分配型求值仍返回拥有型密文。GLWE 返回内核迭代借用输出，单项使用 `once(output)`，批量从已有密文切片逐项借用，保持一次环密钥切换后提取多个系数。ManyLUT/MVB、高精 LUT 和 NTRU 批量返回仍使用现有密文切片；组合消费者在单项调用处借用，不复制系数或收集视图。维数、LUT 兼容性及 NTRU 活跃返回批次检查保留在原有边界；Boolean MUX 仍可能在检查 else 输入前更新内部第一分支，但不写调用方输出。
 
+## 批量布局与借用边界
+
+批量入口按实际访问方式保留容器。顶层 LWE 批次借用 `LweCiphertext<T>` 切片，既不取得所有权，也不调整各密文的系数缓冲；外层可来自 Vec、数组或其他已有切片。当前调用方均复用这些拥有型 LWE，不需要临时 `Vec<View>`。连续 gadget 和内部 key-switch tile 则沿用已有语义迭代器。
+
+| 消费者 | 保留的表示与访问方式 | 完整批次边界 |
+| --- | --- | --- |
+| 四后端 ManyLUT | 单项 LWE 输入视图、输出密文切片；GLWE 逐项借用提取，NTRU 共享输入转换后分 tile 返回 | 有效输出数及全部维数先检查；LUT padding 不产生输出槽 |
+| 四后端 factorized MVB | 输出密文切片与 factor 语义迭代器按序配对；NTRU 按返回容量分块 | 检查程序/context 身份、输出数量和全部维数后再做 BR；最后一个 tile 可以较短 |
+| NTRU `return_prefix_to` / `return_batch_to` | 密文切片提供长度、单项分派和完整 tile；下层 `primus_ntru` 已支持 `[Lwe<B>]` 的 `DataMut` 存储 | prefix 检查提取范围；stream 要求输出数等于本批有效前缀；失败保留前缀供重试，成功失效 |
+| 高精度 LUT | 输入/输出密文切片；分割低/高 chunks、按索引写出、读取先前完成的等价输出；Fourier 按连续求值区间返回 | 求值前检查整个请求，包括被剪枝的输入和复用结果的输出；不由选择图遍历次数推断请求合法 |
+| One-hot CBS、gadget 和内部 LWE tile | 已有平坦系数/变换数组与 NLEV、NGSW、LWE 语义迭代器 | owning 入口核对精确元素数；内部迭代器省略尾块的行为不构成布局验证 |
+
+保留切片使预检查、分块和历史输出访问无需引入可重放 iterator 或随机访问 batch trait。仅接受 `&mut [Lwe<&mut [T]>]` 会要求现有拥有型调用方另行拼装描述符；传播存储泛型会扩大长算法的特化范围。当前没有需要这两种代价的消费者，因此不增加第二套批量入口。若今后出现独立的 packed LWE 调用方，再按实际布局补边界，并保留完整请求的检查契约。
+
+区分两种“尾部”：`outputs.chunks_mut(capacity)` 的短 tile 仍由完整密文组成，应当执行；平坦数组不足一个多项式/密文的残余元素属于非法布局，应在公开或构造边界拒绝。批量返回不会把短 tile 补成旧 scratch 槽位。
+
 ## Ordinary PBS 的三个返回链路
 
 | 家族 / order | 外部域及完整路径 | 参数和检查入口 |

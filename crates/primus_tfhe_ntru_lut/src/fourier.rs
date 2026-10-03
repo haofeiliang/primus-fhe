@@ -204,6 +204,9 @@ where
     /// Evaluates all output chunks, overwriting caller-owned ciphertexts without allocation.
     /// Both slices are least-significant-chunk first. Inputs use `encrypt_padded`
     /// encoding; outputs are decoded with the same context's ordinary decryptor.
+    /// Each output keeps its existing coefficient buffer. All chunks are checked,
+    /// including inputs skipped by the compiled plan and outputs copied from an
+    /// earlier result.
     ///
     /// # Correctness
     /// Inherits one-hot CBS's key, canonical-input and quantized-phase guard

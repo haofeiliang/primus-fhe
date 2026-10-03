@@ -53,6 +53,8 @@ pub trait ProgrammableBootstrapInterleaved<T: FheUint> {
     ///
     /// `outputs.len()` must equal [`InterleavedLookupTable::output_count`]. Padding
     /// slots in the table do not produce additional output ciphertexts.
+    /// Slice order is LUT-output order. Each ciphertext's existing coefficient
+    /// buffer is overwritten in place; the buffers need not be contiguous.
     ///
     /// # Correctness
     ///

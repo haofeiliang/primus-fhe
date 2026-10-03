@@ -14,6 +14,9 @@ use primus_tfhe::{Lwe, LweCiphertext};
 /// evaluator. Single returns, shared-input prefixes and independent input streams
 /// keep their different conversion schedules. All online methods allocate nothing.
 /// Source secret identity, coefficient representation and noise are caller contracts.
+/// Batch methods borrow a slice of preallocated LWEs and validate every output
+/// before writing. A short final tile contains fewer complete LWEs, not a partial
+/// ciphertext; outputs beyond the supplied slice are not touched.
 pub struct LweReturnEvaluator<'a, T: FheUint, LM: RingContext<T>> {
     key: &'a NtruLweKeySwitchingKey<T>,
     modulus: LM,
