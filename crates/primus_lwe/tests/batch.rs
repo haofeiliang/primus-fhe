@@ -29,6 +29,7 @@ fn public_batch_matches_independent_matrix_arithmetic() {
         let secret = LweSecretKey::new(
             signed.iter().map(|s| s.rem_euclid(q) as u32).collect(),
             SecretKeyDistr::gaussian(2.0),
+            modulus,
         );
         let mut rng = StdRng::seed_from_u64(0x1_ee26);
         let public = LwePublicKey::generate(secret.as_view(), params.inner(), &mut rng);
@@ -185,7 +186,7 @@ fn batches_decrypt_across_moduli_embeddings_and_tail_sizes() {
 fn raw_secret_batch_accepts_zero_dimension() {
     use rand::distr::Distribution;
     let modulus = BarrettModulus::new(97u32);
-    let key = LweSecretKey::new(vec![], SecretKeyDistr::UniformTernary);
+    let key = LweSecretKey::new(vec![], SecretKeyDistr::UniformTernary, modulus);
     // Message-level parameters disallow dimension zero; raw APIs permit it.
     let params = LweParameters::new(
         LweDimension::new(1),

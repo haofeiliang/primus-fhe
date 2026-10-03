@@ -37,7 +37,10 @@ fn parameters_with_plaintext(t: u32) -> TfheParameters<u32, NativeModulus<u32>> 
     .unwrap()
 }
 
-fn imported_key(client: [i32; LWE_DIMENSION]) -> ClientKey<u32> {
+fn imported_key(
+    client: [i32; LWE_DIMENSION],
+    modulus: impl primus_reduce::Modulus<ValueT = u32>,
+) -> ClientKey<u32> {
     // General NTRU secrets and the accumulator retain nonbinary coefficients.
     let mut accumulator = vec![0; N];
     accumulator[..2].copy_from_slice(&[2, 1]);
@@ -49,6 +52,7 @@ fn imported_key(client: [i32; LWE_DIMENSION]) -> ClientKey<u32> {
                 .map(|&s| primus_integer::SignedInteger::cast_to_unsigned(s))
                 .collect(),
             SecretKeyDistr::UniformBinary,
+            modulus,
         ),
         accumulator,
     )
@@ -58,7 +62,7 @@ fn imported_key(client: [i32; LWE_DIMENSION]) -> ClientKey<u32> {
 fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
     use rand::{SeedableRng, rngs::StdRng};
     let mut rng = StdRng::seed_from_u64(0x5041_4444_4544);
-    let key = imported_key([1, 0, 1, 1]);
+    let key = imported_key([1, 0, 1, 1], NativeModulus::new());
     for t in [3u32, 4, 5] {
         let parameters = parameters_with_plaintext(t);
         let input_codec = RoundedCodec::new(t, NativeModulus::new());
@@ -127,7 +131,7 @@ fn codec_binding_checks_input_q_and_default_output_encoding() {
         key_switching_noise_standard_deviation: 0.7,
     })
     .unwrap();
-    let key = imported_key([1, 0, 1, 1]);
+    let key = imported_key([1, 0, 1, 1], parameters.external_lwe().cipher_modulus());
     let foreign = RoundedCodec::new(4, BarrettModulus::new(129));
     assert!(matches!(
         parameters.encryptor(&key, &foreign),

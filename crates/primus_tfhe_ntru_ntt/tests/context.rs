@@ -168,6 +168,7 @@ fn construction_errors_preserve_transform_sources() {
                 })
                 .collect(),
             SecretKeyDistr::UniformBinary,
+            context.parameters().external_lwe().cipher_modulus(),
         ),
         NtruSecretKey::new(vec![0; POLY_LENGTH], SecretKeyDistr::SparseTernary),
     );

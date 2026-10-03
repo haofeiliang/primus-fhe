@@ -62,6 +62,7 @@ fn check_packed_samples<T: FheUint, M: RingContext<T>>(modulus: M) {
     let key = LweSecretKey::new(
         (0..dimension).map(|i| pattern[i % pattern.len()]).collect(),
         SecretKeyDistr::UniformTernary,
+        modulus,
     );
     let mut rng = StdRng::seed_from_u64(0x1_ee04);
     let messages: Vec<T> = (0..dimension).map(|i| T::as_from(i % 4)).collect();

@@ -73,8 +73,11 @@ fn functional_bootstrapping_key_blind_rotates() {
     );
     let ggsw_params =
         GlevParameters::with_glwe_params(&glwe_params, DecompositionBaseLog::new(8), None);
-    let input_secret_key =
-        LweSecretKey::new(vec![1u32, 0, u32::MAX, 1], SecretKeyDistr::UniformTernary);
+    let input_secret_key = LweSecretKey::new(
+        vec![1u32, 0, u32::MAX, 1],
+        SecretKeyDistr::UniformTernary,
+        lwe_params.cipher_modulus(),
+    );
     let coeff_output_secret_key = GlweSecretKey::generate(
         glwe_params.size(),
         glwe_params.secret_key_sampler(),
@@ -82,6 +85,33 @@ fn functional_bootstrapping_key_blind_rotates() {
     );
     let output_secret_key = NttGlweSecretKey::from_coeff_secret_key(&coeff_output_secret_key, &ntt);
     let mut gadget_workspace = NttGlweGadgetEncryptWorkspace::new(ggsw_params.size());
+    // This public generation boundary still has the owner: reject a foreign
+    // modulus even when the dimension and every ternary coefficient are valid.
+    let foreign = LweSecretKey::new(
+        vec![1; LWE_DIMENSION],
+        SecretKeyDistr::UniformTernary,
+        primus_modulus::BarrettModulus::new(97u32),
+    );
+    let mut invalid_rng = StdRng::seed_from_u64(71);
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            NttGlweBootstrappingKey::generate_ntt(
+                &foreign,
+                lwe_params.inner(),
+                &output_secret_key,
+                &ggsw_params,
+                &ntt,
+                &mut invalid_rng,
+                &mut gadget_workspace,
+            );
+        }))
+        .is_err()
+    );
+    assert_eq!(
+        rand::Rng::next_u64(&mut invalid_rng),
+        rand::Rng::next_u64(&mut StdRng::seed_from_u64(71)),
+    );
+
     let key = NttGlweBootstrappingKey::generate_ntt(
         &input_secret_key,
         lwe_params.inner(),

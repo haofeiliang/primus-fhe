@@ -90,8 +90,8 @@ impl<T: TorusFftValue, LM: Modulus<ValueT = T>> FourierGlweBootstrappingKey<T, L
     ///
     /// Panics if input key/parameter distributions are unsupported or unequal,
     /// secret coefficients are outside their declared support, or their
-    /// dimensions differ, or if the output key, FFT or workspace layout is
-    /// incompatible. Key-length overflow or a rotation domain `2N` not representable
+    /// dimensions or recorded moduli differ, or if the output key, FFT or workspace
+    /// layout is incompatible. Key-length overflow or a rotation domain `2N` not representable
     /// by the input coefficient type also panics. Checks precede sampling.
     pub fn generate_fourier<Table, R>(
         input_secret_key: &LweSecretKey<T>,
@@ -107,6 +107,11 @@ impl<T: TorusFftValue, LM: Modulus<ValueT = T>> FourierGlweBootstrappingKey<T, L
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
     {
+        assert_eq!(
+            input_secret_key.cipher_modulus_minus_one(),
+            input_parameters.cipher_modulus_minus_one(),
+            "input LWE secret-key ciphertext modulus mismatch"
+        );
         let input_distribution = input_secret_key.distr();
         assert!(
             input_distribution.is_binary() || input_distribution.is_ternary(),

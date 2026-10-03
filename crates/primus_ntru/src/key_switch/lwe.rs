@@ -49,8 +49,9 @@ impl<T: FheUint> NtruLweKeySwitchingKey<T> {
     ///
     /// # Panics
     /// Panics before sampling if an explicit Q is below two, a coefficient of f
-    /// has magnitude at least an explicit q, or the dimensions/basis violate
-    /// [`LweKeySwitchingKey::generate`]'s checks. Key storage overflow also panics.
+    /// has magnitude at least an explicit q, or the output key domain, dimensions or
+    /// basis violate [`LweKeySwitchingKey::generate`]'s checks. Key storage overflow
+    /// also panics.
     ///
     /// # Correctness
     /// Output secret coefficients inherit [`LweKeySwitchingKey::generate`]'s

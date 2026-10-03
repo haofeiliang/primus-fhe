@@ -29,6 +29,9 @@ pub enum TfheParameterError {
 /// An incompatibility between NTRU client keys and TFHE parameters.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum TfheKeyError {
+    /// The encoded LWE secret was generated or imported under another modulus.
+    #[error("LWE secret-key ciphertext modulus mismatch")]
+    LweSecretKeyModulusMismatch,
     /// At least one NTRU secret has the wrong polynomial length.
     #[error("NTRU client-key polynomial length mismatch")]
     PolynomialLengthMismatch,

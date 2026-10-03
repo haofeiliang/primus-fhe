@@ -45,8 +45,8 @@ impl<T: FheUint> LweSecretKey<T> {
     ///
     /// # Panics
     ///
-    /// Panics if the message count exceeds `n`, the storage length overflows,
-    /// or a message lies outside `[0,t)`.
+    /// Panics if the recorded key modulus differs from `params`, the message count
+    /// exceeds `n`, the storage length overflows, or a message lies outside `[0,t)`.
     #[inline]
     pub fn encrypt_multi_messages_with_embedding<R, M>(
         &self,
@@ -59,6 +59,7 @@ impl<T: FheUint> LweSecretKey<T> {
         R: rand::Rng + rand::CryptoRng,
         M: RingContext<T>,
     {
+        self.check_modulus(params.cipher_modulus());
         debug_assert_eq!(self.dimension(), params.dimension().get());
         let mut output = allocate_packed(params.dimension().get(), messages.len());
         let (_, bodies) = output.a_b_mut(params.dimension().get());
@@ -77,8 +78,8 @@ impl<T: FheUint> LweSecretKey<T> {
     ///
     /// # Panics
     ///
-    /// Panics if `zero_count` exceeds `params.dimension().get()` or the storage length
-    /// overflows.
+    /// Panics if the recorded key modulus differs from `params`, `zero_count`
+    /// exceeds `params.dimension().get()`, or the storage length overflows.
     #[inline]
     pub fn encrypt_multi_zeros<R, Modulus>(
         &self,
@@ -90,6 +91,7 @@ impl<T: FheUint> LweSecretKey<T> {
         R: rand::Rng + rand::CryptoRng,
         Modulus: RingContext<T>,
     {
+        self.check_modulus(params.cipher_modulus());
         debug_assert_eq!(self.dimension(), params.dimension().get());
         let mut output = allocate_packed(params.dimension().get(), zero_count);
         self.encrypt_packed_bodies_assign(&mut output, params, rng);
@@ -143,8 +145,9 @@ impl<T: FheUint> LweSecretKey<T> {
     ///
     /// # Panics
     ///
-    /// Panics if storage is shorter than `params.dimension().get()`, the body count
-    /// exceeds that dimension, or a nonempty ciphertext has a mask/key length mismatch.
+    /// Panics if the recorded key modulus differs from `params`, storage is shorter
+    /// than `params.dimension().get()`, the body count exceeds that dimension, or a
+    /// nonempty ciphertext has a mask/key length mismatch.
     #[inline]
     pub fn decrypt_multi_messages<M>(
         &self,
@@ -157,6 +160,7 @@ impl<T: FheUint> LweSecretKey<T> {
         let modulus = params.cipher_modulus();
         let dimension = params.dimension().get();
 
+        self.check_modulus(modulus);
         debug_assert_eq!(self.dimension(), dimension);
 
         let (a, b) = cipher_text.a_b(dimension);

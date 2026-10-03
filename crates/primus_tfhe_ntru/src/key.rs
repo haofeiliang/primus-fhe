@@ -77,7 +77,8 @@ impl<T: FheUint> ClientKey<T> {
         ))
     }
 
-    /// Checks shapes, distribution labels and canonical binary/ternary external residues.
+    /// Checks shapes, the recorded LWE modulus, distribution labels and canonical
+    /// binary/ternary external residues before borrowing raw key views.
     /// Accumulator coefficients must have magnitude below an explicit external q.
     /// Accumulator invertibility is checked by the backend when preparing its secret.
     pub fn check_compatible<M: RingContext<T>, LM: RingContext<T>>(
@@ -88,6 +89,11 @@ impl<T: FheUint> ClientKey<T> {
             return Err(TfheKeyError::PolynomialLengthMismatch);
         }
         let external = parameters.external_lwe();
+        if self.external_lwe_secret_key.cipher_modulus_minus_one()
+            != external.cipher_modulus_minus_one()
+        {
+            return Err(TfheKeyError::LweSecretKeyModulusMismatch);
+        }
         if self.external_lwe_secret_key.distr() != external.secret_key_distr() {
             return Err(TfheKeyError::ClientSecretKeyDistributionMismatch);
         }

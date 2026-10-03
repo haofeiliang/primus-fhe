@@ -17,6 +17,7 @@ use super::{ClientError, LweClientParameters};
 /// must satisfy [`LwePublicKey`]'s requirements and the PBS/ManyLUT input budget.
 pub trait EncryptionKey<T: FheUint, M: RingContext<T>> {
     /// Checks the LWE dimension and, for public keys, the ciphertext modulus.
+    /// Raw secret views cannot check a modulus; bind their owning key first.
     fn check_compatible(
         &self,
         parameters: &LweClientParameters<'_, T, M>,

@@ -36,12 +36,14 @@ impl<T: FheUint> LweKeySwitchingKey<T> {
     /// explicit modulus `q`; every signed value is valid for the native modulus.
     /// These coefficient ranges are not checked in release builds. The input
     /// ciphertexts must use the same modulus; this operation does not switch moduli.
+    /// The input view carries no modulus metadata: callers borrowing an owning
+    /// encoded input key must check its modulus before creating the view.
     ///
     /// # Panics
     ///
     /// Panics if the input key is empty, the output key dimension differs from
-    /// the nonzero output parameter dimension, the basis modulus differs from
-    /// the output modulus, or the key storage length overflows.
+    /// the nonzero output parameter dimension, the output key or basis uses another
+    /// modulus, or the key storage length overflows.
     pub fn generate<R, M>(
         input_secret_key: LweSecretKeyRef<'_, T>,
         output_secret_key: &LweSecretKey<T>,
@@ -53,6 +55,7 @@ impl<T: FheUint> LweKeySwitchingKey<T> {
         R: rand::Rng + rand::CryptoRng,
         M: RingContext<T>,
     {
+        output_secret_key.check_modulus(output_parameters.cipher_modulus());
         let input_dimension = LweDimension::new(input_secret_key.dimension());
         let output_dimension = output_secret_key.dimension();
         assert_eq!(

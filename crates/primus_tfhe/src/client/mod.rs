@@ -32,6 +32,9 @@ impl<'a, T: FheUint, M: RingContext<T>, Key: EncryptionKey<T, M>> Encryptor<'a, 
     ///
     /// The sampler and secret-range contracts of [`LweClientParameters`] apply.
     /// Public-key identity and combined noise follow [`EncryptionKey`].
+    /// Raw secret views carry no modulus metadata. Use the family client factory
+    /// to check the owning key first, or establish its modulus compatibility
+    /// before passing a view here.
     pub fn try_new(
         parameters: LweClientParameters<'a, T, M>,
         key: Key,
@@ -207,6 +210,8 @@ impl<'a, T: FheUint, M: RingContext<T>> Decryptor<'a, T, M> {
     ///
     /// The key's signed or encoded coefficients must satisfy
     /// [`LweSecretKeyRef::decrypt_phase`]'s range contract for the codec's modulus.
+    /// This raw-view constructor cannot check the owning key's recorded modulus;
+    /// use the family factory or establish that compatibility before borrowing.
     #[must_use]
     pub fn new(codec: &'a RoundedCodec<T, M>, key: LweSecretKeyRef<'a, T>) -> Self {
         Self { codec, key }

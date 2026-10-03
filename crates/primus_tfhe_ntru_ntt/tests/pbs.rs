@@ -550,6 +550,7 @@ fn check_first_controls<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
                     })
                     .collect(),
                 distr,
+                context.parameters().external_lwe().cipher_modulus(),
             ),
             generated.accumulator_ntru_secret_key().clone(),
         );

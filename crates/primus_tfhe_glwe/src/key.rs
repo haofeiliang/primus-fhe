@@ -195,6 +195,7 @@ impl<T: FheUint> ClientKey<T> {
     }
 
     /// Checks key shapes, distribution labels and the small-LWE coefficient domain.
+    /// The owning small-LWE modulus is checked before creating any raw key view.
     ///
     /// Imported small-LWE coefficients must be `0/1`, or also `q-1` for ternary
     /// distributions. This does not validate fixed weights or the accumulator's
@@ -214,6 +215,11 @@ impl<T: FheUint> ClientKey<T> {
                 expected: parameters.small_lwe().dimension().get(),
                 actual: self.small_lwe_secret_key.dimension(),
             });
+        }
+        if self.small_lwe_secret_key.cipher_modulus_minus_one()
+            != parameters.small_lwe().cipher_modulus_minus_one()
+        {
+            return Err(TfheKeyError::LweSecretKeyModulusMismatch);
         }
         if self.small_lwe_secret_key.distr() != parameters.small_lwe().secret_key_distr() {
             return Err(TfheKeyError::LweSecretKeyDistributionMismatch);

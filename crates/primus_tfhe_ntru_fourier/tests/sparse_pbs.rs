@@ -93,6 +93,7 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(weight: usize) {
             primus_lwe::LweSecretKey::new(
                 coefficients,
                 context.parameters().external_lwe().secret_key_distr(),
+                context.parameters().external_lwe().cipher_modulus(),
             ),
             client.accumulator_ntru_secret_key().clone(),
         );
@@ -301,7 +302,11 @@ fn sparse_generation_boundaries_and_unsupported_combinations() {
         let mut acc = vec![0; N];
         acc[0] = 1;
         let client = ClientKey::new(
-            primus_lwe::LweSecretKey::new(secret[..DIM].to_vec(), distr),
+            primus_lwe::LweSecretKey::new(
+                secret[..DIM].to_vec(),
+                distr,
+                context.parameters().external_lwe().cipher_modulus(),
+            ),
             NtruSecretKey::new(acc, SecretKeyDistr::SparseTernary),
         );
         rng = StdRng::seed_from_u64(0xBAD);

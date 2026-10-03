@@ -81,7 +81,7 @@ impl<T: FheUint> LweSecretKey<T> {
     ///
     /// # Panics
     ///
-    /// Parameter dimension or output length mismatches, and length overflow,
+    /// Parameter dimension/modulus or output length mismatches, and length overflow,
     /// panic before writing or sampling.
     /// Message range or RNG failures may leave partial output
     /// and may have consumed randomness for earlier messages.
@@ -96,6 +96,7 @@ impl<T: FheUint> LweSecretKey<T> {
         M: RingContext<T>,
         R: rand::Rng + rand::CryptoRng,
     {
+        self.check_modulus(params.cipher_modulus());
         assert_eq!(
             params.dimension().get(),
             self.dimension(),
@@ -103,11 +104,19 @@ impl<T: FheUint> LweSecretKey<T> {
         );
         let lwe_len = check_batch(output, self.dimension(), messages.len());
 
-        LweIterMut::new(output, lwe_len)
-            .zip(messages)
-            .for_each(|(mut ciphertext, &message)| {
-                self.encrypt_with_embedding_to(message, &mut ciphertext, params, rng, embedding);
-            });
+        // Validate the owning domain once; each entry uses the same raw key view.
+        let key = self.as_view();
+        for (mut ciphertext, &message) in LweIterMut::new(output, lwe_len).zip(messages) {
+            let plaintext = params.plaintext_codec().encode_value(message, embedding);
+            key.encrypt_encoded_to(
+                plaintext,
+                &mut ciphertext,
+                params.cipher_modulus(),
+                params.cipher_modulus_uniform_distr(),
+                params.noise_distribution(),
+                rng,
+            );
+        }
     }
 
     /// Encrypts canonical encoded residues into one newly allocated batch.
@@ -145,7 +154,8 @@ impl<T: FheUint> LweSecretKey<T> {
     ///
     /// # Panics
     ///
-    /// Output length mismatches or length overflow panic before writing or sampling.
+    /// Modulus or output length mismatches, or length overflow, panic before writing
+    /// or sampling.
     /// A panicking RNG can leave partial output.
     pub fn encrypt_encoded_batch_to<M, R>(
         &self,
@@ -159,6 +169,7 @@ impl<T: FheUint> LweSecretKey<T> {
         M: RingContext<T>,
         R: rand::Rng + rand::CryptoRng,
     {
+        self.check_modulus(modulus);
         let lwe_len = check_batch(output, self.dimension(), plaintexts.len());
 
         let key = self.as_view();
@@ -173,10 +184,12 @@ impl<T: FheUint> LweSecretKey<T> {
     ///
     /// # Panics
     ///
-    /// Panics if the input length is not a multiple of `self.dimension() + 1`.
+    /// Panics if the recorded key modulus differs from `modulus`, or the input
+    /// length is not a multiple of `self.dimension() + 1`.
     /// Empty input returns an empty vector.
     #[must_use]
     pub fn decrypt_phase_batch<M: RingContext<T>>(&self, input: &[T], modulus: M) -> Vec<T> {
+        self.check_modulus(modulus);
         let key = self.as_ref();
         batch_iter(input, key.len())
             .map(|ciphertext| {
@@ -197,14 +210,16 @@ impl<T: FheUint> LweSecretKey<T> {
     ///
     /// # Panics
     ///
-    /// Panics before writing unless `input.len() == output.len() *
-    /// (self.dimension() + 1)`, or if that length overflows.
+    /// Panics before writing if the recorded key modulus differs from `modulus`,
+    /// if `input.len() != output.len() * (self.dimension() + 1)`, or if that length
+    /// overflows.
     pub fn decrypt_phase_batch_to<M: RingContext<T>>(
         &self,
         input: &[T],
         output: &mut [T],
         modulus: M,
     ) {
+        self.check_modulus(modulus);
         let lwe_len = check_batch(input, self.dimension(), output.len());
         let key = self.as_ref();
         for (ciphertext, phase) in LweIter::new(input, lwe_len).zip(output) {
@@ -220,13 +235,14 @@ impl<T: FheUint> LweSecretKey<T> {
     ///
     /// # Panics
     ///
-    /// Panics if the parameter dimension differs from the key or
+    /// Panics if the parameter dimension or modulus differs from the key or
     /// input contains an incomplete ciphertext. Empty input returns an empty vector.
     #[must_use]
     pub fn decrypt_batch<M>(&self, input: &[T], params: &LweParameters<T, M>) -> Vec<T>
     where
         M: RingContext<T>,
     {
+        self.check_modulus(params.cipher_modulus());
         assert_eq!(
             params.dimension().get(),
             self.dimension(),
@@ -256,12 +272,13 @@ impl<T: FheUint> LweSecretKey<T> {
     ///
     /// # Panics
     ///
-    /// Parameter dimension or input/output length mismatches, and length overflow,
+    /// Parameter dimension/modulus or input/output length mismatches, and length overflow,
     /// panic before writing.
     pub fn decrypt_batch_to<M>(&self, input: &[T], output: &mut [T], params: &LweParameters<T, M>)
     where
         M: RingContext<T>,
     {
+        self.check_modulus(params.cipher_modulus());
         assert_eq!(
             params.dimension().get(),
             self.dimension(),

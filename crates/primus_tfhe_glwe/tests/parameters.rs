@@ -236,7 +236,7 @@ fn check_ternary_padding<M: primus_reduce::RingContext<u32>>(modulus: M) {
         coefficients[..4].copy_from_slice(&[0, 1, modulus.minus_one(), modulus.minus_one()]);
         coefficients[32] = 1;
         let client = ClientKey::new(
-            LweSecretKey::new(coefficients, distribution),
+            LweSecretKey::new(coefficients, distribution, modulus),
             GlweSecretKey::<u32>::new(
                 vec![0; glwe.size().mask_len()],
                 glwe.size(),

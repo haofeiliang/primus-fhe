@@ -53,7 +53,7 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
     let mut accumulator = vec![0; ring.poly_length().get()];
     accumulator[0] = 1;
     let client = ClientKey::new(
-        primus_lwe::LweSecretKey::new(vec![1, 0, 1, 1], SecretKeyDistr::UniformBinary),
+        primus_lwe::LweSecretKey::new(vec![1, 0, 1, 1], SecretKeyDistr::UniformBinary, modulus),
         NtruSecretKey::new(accumulator, SecretKeyDistr::UniformBinary),
     );
     let mut rng = StdRng::seed_from_u64(0x4e54_5255_504b);
@@ -113,6 +113,37 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
     );
     check_boolean_client(&params, &client, &input_codec);
 
+    // Binary coefficients fit both moduli; binding must use the owning metadata.
+    let wrong_domain = ClientKey::new(
+        LweSecretKey::new(
+            vec![1, 0, 1, 1],
+            SecretKeyDistr::UniformBinary,
+            BarrettModulus::new(65_537u32),
+        ),
+        client.accumulator_ntru_secret_key().clone(),
+    );
+    let error = primus_tfhe_ntru::TfheClientError::IncompatibleKey(
+        TfheKeyError::LweSecretKeyModulusMismatch,
+    );
+    assert_eq!(
+        params.encryptor(&wrong_domain, &input_codec).err(),
+        Some(error.clone())
+    );
+    assert_eq!(
+        params.decryptor(&wrong_domain, &input_codec).err(),
+        Some(error)
+    );
+    let seed = rng.next_u64();
+    let mut rng = StdRng::seed_from_u64(seed);
+    let mut untouched = StdRng::seed_from_u64(seed);
+    assert_eq!(
+        wrong_domain
+            .try_generate_public_key(&params, &mut rng)
+            .err(),
+        Some(TfheKeyError::LweSecretKeyModulusMismatch),
+    );
+    assert_eq!(rng.next_u64(), untouched.next_u64());
+
     let foreign_params = LweParameters::new(
         LweDimension::new(4),
         4,
@@ -150,6 +181,7 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
                 .map(|&s| primus_integer::SignedInteger::cast_to_unsigned(s))
                 .collect(),
             SecretKeyDistr::UniformBinary,
+            modulus,
         ),
         NtruSecretKey::new(
             vec![1, 0, 0, 0, 0, 0, 0, 0]

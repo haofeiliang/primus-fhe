@@ -98,7 +98,9 @@ fn main() {
 
 消息接口接受类型 `T`、位于 `[0,t)` 内的规范剩余类，批量及 packed 加密接受 `&[T]`。 `encrypt` 使用 unsigned embedding；`encrypt_with_embedding` 通过 `primus_encoding` 中的 `PlaintextEmbedding::Unsigned` 或 `PlaintextEmbedding::Centered` 选择编码。Centered embedding 仍接受无符号剩余类， 其中 `t - 1` 表示 `-1`。两种编码都使用 `decrypt` 解密，结果使用密文系数类型 `T`， 位于 `[0,t)`。批量和 packed 解密同样返回 `Vec<T>` 或写入 `[T]`；应用在加密前、 解密后按需转换整数类型或有明确语义的消息类型。
 
-对密文 `[a, b]`，私钥加密计算 `b = <a,s> + e + Encode(message) mod q`。 只有相位噪声处于 codec 的解码余量内时，才能恢复原消息。私钥、密文和参数的维度及模数 必须一致，Encoded 系数必须是规范剩余类。私钥不保存模数，调用方需要维护这些约定， 不能依赖每种不匹配都会被检查。
+对密文 `[a, b]`，私钥加密计算 `b = <a,s> + e + Encode(message) mod q`。 只有相位噪声处于 codec 的解码余量内时，才能恢复原消息。私钥、密文和参数的维度及模数 必须一致，Encoded 系数必须是规范剩余类。拥有型私钥操作在采样或写入前检查记录的模数；raw view 依赖调用方事先建立模数兼容性。
+
+`LweSecretKey::generate` 记录参数模数；`LweSecretKey::new(coefficients, distribution, modulus)` 导入时记录显式传入的模数，不扫描系数。导入数据须已是符合声明分布的规范剩余类。`cipher_modulus_minus_one()` 返回 `q - 1`（Native 为 `T::MAX`），用于区分剩余类域，不证明秘密身份或导入来源。`as_view()` 不携带这些元数据：调用 raw 接口前，应先检查拥有型密钥。显式 `zeroize()` 清空系数，保留公开的模数/分布元数据；擦除后应丢弃密钥。
 
 单条私钥 raw 操作通过 `secret.as_view()` 调用：`encrypt_encoded` / `encrypt_encoded_to` 接受已编码的剩余类、模数、均匀采样器、噪声采样器和 RNG； `decrypt_phase` 返回 `b - <a,s>`，不进行解码。向 raw 加密传入零会得到随机化的零密文。 `LweSecretKeyRef::Signed` 直接借用有符号系数，不分配 Encoded 副本。点积调用模数后端的 `ReduceDotProductSigned` 实现，将表示转换与乘法融合。 显式模数下要求 `-q < s_i < q`；Native 模数下允许所有有符号值。 Raw 采样器必须使用相同模数。这些范围及采样器约定是调用方前提。
 
@@ -106,7 +108,7 @@ fn main() {
 
 ## 公钥加密
 
-`LwePublicKey::generate` 接收 `LweSecretKeyRef`：owned LWE 私钥传入 `secret.as_view()`，GLWE/NTRU 系数可直接使用 `LweSecretKeyRef::Signed`， 生成过程中无需复制秘密。借用视图仍须满足对应模数下的系数范围契约。
+`LwePublicKey::generate` 是 raw 入口，不能检查拥有型私钥的模数元数据，须先检查再借用。它接收 `LweSecretKeyRef`：owned LWE 私钥传入 `secret.as_view()`，GLWE/NTRU 系数可直接使用 `LweSecretKeyRef::Signed`， 生成过程中无需复制秘密。借用视图仍须满足对应模数下的系数范围契约。
 
 公钥存储 `n` 行 `[A_i, b_i]`，其中 `A` 为方阵，`b = A s + e`， 总计 `n * (n + 1)` 个系数。加密采样稀疏三元向量 `r`，分布为 `Pr[0] = 1/2`、`Pr[-1] = Pr[1] = 1/4`，再采样独立的新高斯噪声 `e1, e2`：
 

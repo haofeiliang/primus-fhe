@@ -147,7 +147,11 @@ fn sparse_key_errors_do_not_consume_randomness() {
 
     let client = ClientKey::generate(context.parameters(), &mut StdRng::seed_from_u64(42));
     let malformed = ClientKey::new(
-        LweSecretKey::new(vec![2; 16], distribution),
+        LweSecretKey::new(
+            vec![2; 16],
+            distribution,
+            context.parameters().small_lwe().cipher_modulus(),
+        ),
         client.glwe_secret_key().clone(),
         client.pbs_order(),
     );

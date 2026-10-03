@@ -74,10 +74,38 @@ fn functional_bootstrapping_key_blind_rotates() {
     let input_secret_key = LweSecretKey::new(
         vec![1u32, 0, (1u32 << 31) - 1, 1],
         SecretKeyDistr::UniformTernary,
+        lwe_params.cipher_modulus(),
     );
     let (_, output_secret_key) =
         FourierGlweSecretKey::generate_pair(&glwe_params, &mut fft, &mut rng);
     let mut gadget_workspace = FourierGlweGadgetEncryptWorkspace::new(ggsw_params.size());
+    // This public generation boundary still has the owner: reject a foreign
+    // modulus even when the dimension and every ternary coefficient are valid.
+    let foreign = LweSecretKey::new(
+        vec![1; LWE_DIMENSION],
+        SecretKeyDistr::UniformTernary,
+        primus_modulus::BarrettModulus::new(97u32),
+    );
+    let mut invalid_rng = StdRng::seed_from_u64(71);
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            FourierGlweBootstrappingKey::generate_fourier(
+                &foreign,
+                lwe_params.inner(),
+                &output_secret_key,
+                &ggsw_params,
+                &mut fft,
+                &mut invalid_rng,
+                &mut gadget_workspace,
+            );
+        }))
+        .is_err()
+    );
+    assert_eq!(
+        rand::Rng::next_u64(&mut invalid_rng),
+        rand::Rng::next_u64(&mut StdRng::seed_from_u64(71)),
+    );
+
     let key = FourierGlweBootstrappingKey::generate_fourier(
         &input_secret_key,
         lwe_params.inner(),

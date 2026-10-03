@@ -66,7 +66,7 @@ fn imported_external_residues_must_match_the_control_domain() {
             let mut accumulator_secret = vec![0; accumulator.poly_length().get()];
             accumulator_secret[..2].copy_from_slice(&[2, 1]);
             let key = ClientKey::new(
-                LweSecretKey::new(coefficients, distr),
+                LweSecretKey::new(coefficients, distr, modulus),
                 NtruSecretKey::new(accumulator_secret, SecretKeyDistr::gaussian(3.2)),
             );
             assert_eq!(key.check_compatible(&parameters).err(), error);
@@ -117,7 +117,11 @@ fn return_key_rejects_accumulator_magnitudes_outside_external_modulus() {
         let mut accumulator_secret = vec![0; accumulator.poly_length().get()];
         accumulator_secret[..2].copy_from_slice(&[coefficient, 1]);
         let key = ClientKey::new(
-            LweSecretKey::new(vec![1], SecretKeyDistr::UniformBinary),
+            LweSecretKey::new(
+                vec![1],
+                SecretKeyDistr::UniformBinary,
+                parameters.external_lwe().cipher_modulus(),
+            ),
             NtruSecretKey::new(accumulator_secret, distr),
         );
         assert_eq!(key.check_compatible(&parameters).err(), expected);

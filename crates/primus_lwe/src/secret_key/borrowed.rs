@@ -11,7 +11,9 @@ use crate::LweCiphertext;
 ///
 /// Obtain an encoded view with [`LweSecretKey::as_view`](super::LweSecretKey::as_view),
 /// or borrow signed ring-secret coefficients directly with [`Self::Signed`].
-/// This view performs raw arithmetic; it owns neither the key nor a plaintext codec.
+/// This view performs raw arithmetic; it owns neither the key nor a plaintext codec
+/// and carries no modulus metadata. It is not a validated key binding: when
+/// borrowing an owning encoded key, check its recorded modulus before conversion.
 ///
 /// # Correctness
 ///

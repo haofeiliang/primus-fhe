@@ -330,6 +330,7 @@ fn check_modulus_pair<T: FheUint, Q: Modulus<ValueT = T>, M: RingContext<T>>(sou
             .map(|&v| T::as_from(v.rem_euclid(q as i128)))
             .collect(),
         SecretKeyDistr::UniformTernary,
+        target,
     );
     let parameters = LweParameters::new(
         LweDimension::new(S.len()),
@@ -551,7 +552,11 @@ fn check_generation_errors(params: &LweParameters<u32, BarrettModulus<u32>>) {
         let mut rng = StdRng::seed_from_u64(11);
         let mut untouched = StdRng::seed_from_u64(11);
         let secret = NtruSecretKey::new(vec![f; N], SecretKeyDistr::UniformTernary);
-        let output_key = LweSecretKey::new(vec![1; dimension], SecretKeyDistr::UniformBinary);
+        let output_key = LweSecretKey::new(
+            vec![1; dimension],
+            SecretKeyDistr::UniformBinary,
+            params.cipher_modulus(),
+        );
         assert!(
             catch_unwind(AssertUnwindSafe(|| {
                 NtruLweKeySwitchingKey::generate(
@@ -595,7 +600,11 @@ fn validation_precedes_output_writes_and_key_sampling() {
         F.iter().map(|&value| value as i32).collect(),
         SecretKeyDistr::UniformTernary,
     );
-    let target = LweSecretKey::new(vec![1u32, 0, 1], SecretKeyDistr::UniformBinary);
+    let target = LweSecretKey::new(
+        vec![1u32, 0, 1],
+        SecretKeyDistr::UniformBinary,
+        params.cipher_modulus(),
+    );
     let basis = ApproxSignedBasis::new(Some(65537), DecompositionBaseLog::new(4), None);
     let mut rng = StdRng::seed_from_u64(10);
     let key = NtruLweKeySwitchingKey::generate(

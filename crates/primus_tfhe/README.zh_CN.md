@@ -49,6 +49,8 @@ Sparse 模式需显式选择生成入口，暂不支持 sparse ternary。NTRU �
 
 公共层接收 `LweSecretKeyRef` 或 `&LwePublicKey`；唯一的客户端 trait `EncryptionKey<T, M>` 只分派加密实现，不关联家族参数或错误类型。普通操作返回 `ClientError`，Boolean 操作返回 `BooleanError`。
 
+家族入口在借用 raw view 前检查拥有型 LWE 私钥记录的模数，不匹配返回 `TfheKeyError::LweSecretKeyModulusMismatch`。直接调用公共层接收 `LweSecretKeyRef` 的构造器时，调用方须事先建立秘密的模数兼容性；raw view 无法执行该检查。绑定后的客户端保留视图，不在每条消息上重复检查拥有型密钥。
+
 分配型加密方法返回 `LweCiphertext<T>`。客户端写入接口按值接收 `Lwe<&mut [T]>`，读取接口按值接收 `Lwe<&[T]>`：使用 `encryptor.encrypt_padded_to(message, output.as_mut_view(), rng)` 和 `decryptor.decrypt(output.as_view())`。视图只借用系数，不复制或分配；已有切片可通过 `primus_tfhe::Lwe::new` 包装，因此同一接口也支持 boxed、对齐及栈存储。Boolean 客户端遵循同样的借用方式。
 
 求值端的单项 LWE 参数使用相同视图：`evaluator.apply_lookup_table_to(input.as_view(), &lut, output.as_mut_view())`。Boolean 门和双输入打包借用各自的操作数；CBS、one-hot 和 MVB 借用其 LWE 输入。分配型方法仍返回拥有型密文。ManyLUT/MVB 输出批次以及高精度输入/输出批次借用预先分配的 `LweCiphertext<T>` 切片。每个有效输出对应一个完整 LWE，LUT padding 不需要额外密文。每个 LWE 保留自己的系数缓冲，直接传入已有切片即可，无需打包系数或收集视图。写入输出前会检查数量和每个密文的维数。

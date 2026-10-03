@@ -51,6 +51,9 @@ pub enum TfheParameterError {
 /// An incompatibility between secret keys and TFHE parameters.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum TfheKeyError {
+    /// The encoded LWE secret was generated or imported under another modulus.
+    #[error("LWE secret-key ciphertext modulus mismatch")]
+    LweSecretKeyModulusMismatch,
     /// The client key was created for a different PBS order.
     #[error("PBS order mismatch: expected {expected:?}, got {actual:?}")]
     PbsOrderMismatch {

@@ -1,5 +1,5 @@
 use primus_integer::{FheUint, Size};
-use primus_reduce::RingContext;
+use primus_reduce::{Modulus, RingContext};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::{LweParametersInner, SecretKeyDistr};
@@ -15,18 +15,22 @@ use super::LweSecretKeyRef;
 /// require this owned key, ensuring that reused single-ciphertext operations
 /// always receive encoded coefficients.
 /// Construction guarantees that the ciphertext length `dimension() + 1` fits
-/// in `usize`.
+/// in `usize` and records the coefficient modulus as `q - 1`, including the
+/// native modulus. This metadata does not establish secret-key identity.
+/// Explicit [`Zeroize::zeroize`] erases and clears the coefficient vector;
+/// public modulus/distribution metadata remains, but the key must be discarded.
 ///
 /// # Correctness
 ///
 /// Operations require the key and parameters to have the same dimension and
 /// ciphertext modulus. Coefficients must be canonical residues under that
-/// modulus, satisfying [`primus_reduce::ReduceDotProduct`]. The modulus is not
-/// stored in the key; callers must preserve it when supplying parameters.
+/// modulus, satisfying [`primus_reduce::ReduceDotProduct`]. Owning operations
+/// check the recorded modulus; raw views cannot perform that check.
 #[derive(Clone)]
 pub struct LweSecretKey<T: FheUint> {
     data: Vec<T>,
     distr: SecretKeyDistr,
+    modulus_minus_one: T,
 }
 
 impl<T: FheUint> Zeroize for LweSecretKey<T> {
@@ -63,19 +67,28 @@ impl<T: FheUint> LweSecretKey<T> {
     ///
     /// # Correctness
     ///
-    /// `key` must contain canonical residues for the modulus used in subsequent
-    /// operations and satisfy `distr`. Neither condition is checked here.
+    /// `key` must contain canonical residues under `modulus` and satisfy `distr`.
+    /// Neither condition is checked here. The supplied modulus is recorded, not
+    /// inferred from coefficients (binary coefficients alone cannot identify it).
     ///
     /// # Panics
     ///
     /// Panics if `key.len() + 1` overflows `usize`.
+    #[must_use]
     #[inline]
-    pub fn new(key: Vec<T>, distr: SecretKeyDistr) -> Self {
+    pub fn new(key: Vec<T>, distr: SecretKeyDistr, modulus: impl Modulus<ValueT = T>) -> Self {
         key.len().checked_add(1).expect("LWE length overflow");
-        Self { data: key, distr }
+        Self {
+            data: key,
+            distr,
+            modulus_minus_one: modulus.minus_one(),
+        }
     }
 
     /// Borrows the canonical secret coefficients for raw LWE operations.
+    ///
+    /// The view carries no modulus metadata. Bind/check the owning key's modulus
+    /// before creating this view when the consuming operation accepts parameters.
     #[must_use]
     #[inline]
     pub fn as_view(&self) -> LweSecretKeyRef<'_, T> {
@@ -94,6 +107,26 @@ impl<T: FheUint> LweSecretKey<T> {
         self.distr
     }
 
+    /// Returns `q - 1` for the modulus recorded at generation or import.
+    ///
+    /// The native modulus is represented by `T::MAX`; an explicit modulus `q`
+    /// uses `q - 1`. This identifies the residue domain, not the secret itself.
+    #[must_use]
+    #[inline]
+    pub fn cipher_modulus_minus_one(&self) -> T {
+        self.modulus_minus_one
+    }
+
+    /// Checks the owning boundary before discarding domain metadata in a raw view.
+    #[inline]
+    pub(crate) fn check_modulus(&self, modulus: impl Modulus<ValueT = T>) {
+        assert_eq!(
+            self.modulus_minus_one,
+            modulus.minus_one(),
+            "LWE secret-key ciphertext modulus mismatch"
+        );
+    }
+
     /// Generates a new [`LweSecretKey<T>`] with random values.
     #[inline]
     pub fn generate<R, M>(params: &LweParametersInner<T, M>, rng: &mut R) -> Self
@@ -107,6 +140,10 @@ impl<T: FheUint> LweSecretKey<T> {
             params.cipher_modulus_minus_one(),
             rng,
         );
-        Self { data: key, distr }
+        Self {
+            data: key,
+            distr,
+            modulus_minus_one: params.cipher_modulus_minus_one(),
+        }
     }
 }

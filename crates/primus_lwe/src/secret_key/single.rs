@@ -35,7 +35,8 @@ impl<T: FheUint> LweSecretKey<T> {
     ///
     /// # Panics
     ///
-    /// Panics before allocating or sampling if `message` lies outside `[0,t)`.
+    /// Panics before allocating or sampling if the recorded key modulus differs
+    /// from `params`, or `message` lies outside `[0,t)`.
     #[inline]
     pub fn encrypt_with_embedding<R, M>(
         &self,
@@ -48,6 +49,7 @@ impl<T: FheUint> LweSecretKey<T> {
         R: rand::Rng + rand::CryptoRng,
         M: RingContext<T>,
     {
+        self.check_modulus(params.cipher_modulus());
         debug_assert_eq!(self.dimension(), params.dimension().get());
 
         let plaintext = params.plaintext_codec().encode_value(message, embedding);
@@ -86,7 +88,8 @@ impl<T: FheUint> LweSecretKey<T> {
     ///
     /// # Panics
     ///
-    /// Panics before writing if `message` is outside `[0,t)` or the output length
+    /// Panics before writing or sampling if the recorded key modulus differs from
+    /// `params`, `message` is outside `[0,t)`, or the output length
     /// is not `self.dimension() + 1`. A panicking RNG can leave partial output.
     #[inline]
     pub fn encrypt_with_embedding_to<R, M>(
@@ -100,6 +103,7 @@ impl<T: FheUint> LweSecretKey<T> {
         R: rand::Rng + rand::CryptoRng,
         M: RingContext<T>,
     {
+        self.check_modulus(params.cipher_modulus());
         debug_assert_eq!(self.dimension(), params.dimension().get());
         let plaintext = params.plaintext_codec().encode_value(message, embedding);
         self.as_view().encrypt_encoded_to(
@@ -125,7 +129,8 @@ impl<T: FheUint> LweSecretKey<T> {
     ///
     /// # Panics
     ///
-    /// Panics if the ciphertext has no body or its mask length differs from the key length.
+    /// Panics if the recorded key modulus differs from `params`, the ciphertext
+    /// has no body, or its mask length differs from the key length.
     #[inline]
     pub fn decrypt<M>(
         &self,
@@ -137,6 +142,7 @@ impl<T: FheUint> LweSecretKey<T> {
     {
         let modulus = params.cipher_modulus();
 
+        self.check_modulus(modulus);
         debug_assert_eq!(self.dimension(), params.dimension().get());
         let plaintext = self.as_view().decrypt_phase(cipher_text, modulus);
 
@@ -163,6 +169,7 @@ impl<T: FheUint> LweSecretKey<T> {
     {
         let modulus = params.cipher_modulus();
 
+        self.check_modulus(modulus);
         debug_assert_eq!(self.dimension(), params.dimension().get());
         let plaintext = self.as_view().decrypt_phase(cipher_text, modulus);
 

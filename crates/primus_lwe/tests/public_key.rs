@@ -265,7 +265,11 @@ fn public_key_boundaries_reject_before_writing_or_sampling() {
         assert_eq!(rng.next_u64(), expected_rng.next_u64());
     }
     for dimension in [0, 2, 4] {
-        let wrong_secret = LweSecretKey::new(vec![1u32; dimension], SecretKeyDistr::UniformBinary);
+        let wrong_secret = LweSecretKey::new(
+            vec![1u32; dimension],
+            SecretKeyDistr::UniformBinary,
+            params.cipher_modulus(),
+        );
         let seed = rng.next_u64();
         let mut rng = StdRng::seed_from_u64(seed);
         let mut expected_rng = StdRng::seed_from_u64(seed);
@@ -294,6 +298,7 @@ fn public_key_generation_matches_encoded_and_signed_secrets() {
         let encoded = LweSecretKey::new(
             vec![1, modulus.minus_one(), 0, modulus.minus_one()],
             SecretKeyDistr::UniformTernary,
+            modulus,
         );
         let mut signed_rng = StdRng::seed_from_u64(0x5055_424c_4943);
         let mut encoded_rng = StdRng::seed_from_u64(0x5055_424c_4943);

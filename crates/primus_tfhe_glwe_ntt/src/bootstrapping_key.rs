@@ -90,7 +90,7 @@ impl<T: FheUint, LM: Modulus<ValueT = T>> NttGlweBootstrappingKey<T, LM> {
     /// # Panics
     ///
     /// Panics on unsupported distributions or invalid secret coefficients, incompatible key/parameter
-    /// layouts, NTT length/modulus or gadget workspace, key storage overflow,
+    /// layouts or input moduli, NTT length/modulus or gadget workspace, key storage overflow,
     /// or a rotation domain `2N` not representable by the input coefficient type.
     pub fn generate_ntt<M, Table, R>(
         input_secret_key: &LweSecretKey<T>,
@@ -107,6 +107,11 @@ impl<T: FheUint, LM: Modulus<ValueT = T>> NttGlweBootstrappingKey<T, LM> {
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
     {
+        assert_eq!(
+            input_secret_key.cipher_modulus_minus_one(),
+            input_parameters.cipher_modulus_minus_one(),
+            "input LWE secret-key ciphertext modulus mismatch"
+        );
         let input_distribution = input_secret_key.distr();
         assert!(
             input_distribution.is_binary() || input_distribution.is_ternary(),

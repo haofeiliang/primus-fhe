@@ -26,7 +26,7 @@ Dimension choices use `LweDimension` and, for GLWE, `GlweDimension`; decompositi
 
 Both orders return to their external secret. Backend `context.allocate_lwe_ciphertext()` uses `external_lwe_dimension()` to allocate outputs; `client_key.external_lwe_secret_key()` borrows that secret. `blind_rotation_ggsw()` describes the accumulator ring domain and GGSW controls, and `glwe_key_switching()` describes the ring key switch. Basis/layout compatibility does not prove actual secret identity.
 
-`ClientKey::new` imports coefficient secrets. Parameter binding checks the small-LWE binary/ternary coefficient domain and returns `TfheKeyError::InvalidLweSecretKeyCoefficient` on invalid values. Gaussian accumulator secrets remain supported; backend magnitude requirements still apply.
+`ClientKey::new` imports coefficient secrets. Binding checks the owning LWE secret’s recorded modulus first; a different modulus returns `TfheKeyError::LweSecretKeyModulusMismatch`, even for identical binary coefficients. Parameter binding checks the small-LWE binary/ternary coefficient domain and returns `TfheKeyError::InvalidLweSecretKeyCoefficient` on invalid values. Gaussian accumulator secrets remain supported; backend magnitude requirements still apply.
 
 ## Clients and LUTs
 

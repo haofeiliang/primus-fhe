@@ -67,7 +67,8 @@ impl<T: FheUint> LwePublicKey<T> {
     /// # Correctness
     ///
     /// The secret must satisfy [`LweSecretKeyRef`]'s coefficient-range contract
-    /// under `params`' modulus.
+    /// under `params`' modulus. The raw view has no recorded modulus; when
+    /// borrowing an owning key, check its modulus before calling `as_view()`.
     /// The [type's security and noise requirements](Self#correctness) apply.
     ///
     /// # Panics

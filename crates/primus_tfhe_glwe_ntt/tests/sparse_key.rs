@@ -226,7 +226,11 @@ fn sparse_key_rejects_invalid_parameters_and_actual_secret_before_sampling() {
             Error::InvalidSecretCoefficients.into()
         };
         let malformed = ClientKey::new(
-            LweSecretKey::new(vec![coefficient; 16], distribution),
+            LweSecretKey::new(
+                vec![coefficient; 16],
+                distribution,
+                context.parameters().small_lwe().cipher_modulus(),
+            ),
             client.glwe_secret_key().clone(),
             client.pbs_order(),
         );

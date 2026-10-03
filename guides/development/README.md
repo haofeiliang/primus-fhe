@@ -52,6 +52,8 @@ Use the existing [size descriptors](../../crates/primus_lattice/src/size.rs) for
 
 Descriptors check composed lengths and flattened-length overflow. They do not inspect storage or validate basis, tables or noise. Establish each resource's layout at its owning construction or binding boundary; numerical kernels rely on caller geometry and representation. For NTRU, one Ntru occupies N values and one Nlev/Ngsw occupies L*N; use the operation's parameters/basis and establish batch lengths where storage is prepared. Nlev and Ngsw have the same flat shape but different encrypted phases and valid products.
 
+Owning LWE secrets record the coefficient domain as `q - 1`, including Native. Import with `LweSecretKey::new(coefficients, distribution, modulus)`; coefficient canonicality and the declared distribution remain import preconditions. Validate an owner's domain before converting it with `as_view()`: raw encoded/signed views have no modulus metadata. TFHE family binding, LWE key-switch output-key generation and GLWE bootstrapping input-key generation perform this check before sampling. Metadata does not identify a particular secret. Explicitly zeroized keys must be discarded even though their public metadata remains.
+
 LWE key generation takes `LweParametersInner`, which owns dimension, modulus and prepared samplers without encoding. Ordinary `LweParameters` adds a Rounded codec and exposes `inner()` / `into_inner()`. GLWE TFHE builds from the core and GGSW parameters, then binds codecs at clients/program compilers; see the [parameter ownership map](tfhe-parameters-and-boundaries.md).
 
 ## Traverse mathematical objects

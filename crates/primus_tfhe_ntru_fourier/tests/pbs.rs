@@ -554,6 +554,7 @@ fn check_first_controls<T: TorusFftValue, Table: FftTable>(context: TfheContext<
                     .map(|&s| primus_integer::SignedInteger::cast_to_unsigned(s))
                     .collect(),
                 distr,
+                context.parameters().external_lwe().cipher_modulus(),
             ),
             generated.accumulator_ntru_secret_key().clone(),
         );

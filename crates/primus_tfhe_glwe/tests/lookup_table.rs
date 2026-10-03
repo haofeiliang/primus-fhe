@@ -44,7 +44,7 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
         )
         .unwrap();
         let key = ClientKey::new(
-            LweSecretKey::new(vec![1, 0, 1, 1], SecretKeyDistr::UniformBinary),
+            LweSecretKey::new(vec![1, 0, 1, 1], SecretKeyDistr::UniformBinary, modulus),
             GlweSecretKey::new(
                 vec![1; 32],
                 GlweSize::new(GlweDimension::new(1), PolyLength::new(32)),

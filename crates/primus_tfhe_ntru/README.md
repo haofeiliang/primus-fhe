@@ -17,7 +17,7 @@ The direct composition entry is `TfheParameters::try_new(external_lwe, blind_rot
 
 `accumulator_ntru()` borrows the ring/sampling state owned by the blind-rotation gadget at Q. Key parameters contain no message codec. Trace and scheme-switch configurations construct codec-free NLev parameters with independent noise.
 
-`ClientKey` holds independent LWE secret s and NTRU ring secret f. Generate paired material with `context.try_generate_keys(cbs_config, rng)`, or import it with `ClientKey::new(s, f)`. Only f requires invertibility checks and, for Fourier, inverse stability. External secrets require neither padding, invertibility nor odd weight. `external_lwe_secret_key()` returns the LWE secret at q.
+`ClientKey` holds independent LWE secret s and NTRU ring secret f. Generate paired material with `context.try_generate_keys(cbs_config, rng)`, or import it with `ClientKey::new(s, f)`. Only f requires invertibility checks and, for Fourier, inverse stability. External secrets require neither padding, invertibility nor odd weight. `external_lwe_secret_key()` returns the LWE secret at q. Binding checks its recorded modulus before borrowing a raw view; a different q returns `TfheKeyError::LweSecretKeyModulusMismatch`, even for identical binary coefficients.
 
 Ordinary PBS returns through: blind rotation under f,Q → coefficient-wise nearest rounding Q→q → phase-coefficient extraction → LWE key switching at q to s. ManyLUT shares blind rotation but returns each output separately. `context.allocate_lwe_ciphertext()` uses the external dimension.
 

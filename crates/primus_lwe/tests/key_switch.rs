@@ -42,6 +42,7 @@ fn check_signed_generation<M: RingContext<u32>>(modulus: M) {
             .map(|&value: &i32| i64::from(value).rem_euclid(q) as u32)
             .collect(),
         SecretKeyDistr::UniformTernary,
+        modulus,
     );
     let signed_output_key = [1, -1, 0, 1, -1];
     let output_secret_key = LweSecretKey::new(
@@ -50,6 +51,7 @@ fn check_signed_generation<M: RingContext<u32>>(modulus: M) {
             .map(|&value: &i32| i64::from(value).rem_euclid(q) as u32)
             .collect(),
         SecretKeyDistr::UniformTernary,
+        modulus,
     );
     let mut encoded_rng = StdRng::seed_from_u64(0x1_ee08);
     let key_switching_key = LweKeySwitchingKey::generate(
@@ -102,7 +104,11 @@ fn key_switch_validates_before_writing() {
         0.7,
     );
     let basis = ApproxSignedBasis::new(Some(97), DecompositionBaseLog::new(2), None);
-    let output_key = LweSecretKey::new(vec![1, 0], SecretKeyDistr::UniformBinary);
+    let output_key = LweSecretKey::new(
+        vec![1, 0],
+        SecretKeyDistr::UniformBinary,
+        output_parameters.cipher_modulus(),
+    );
     let mut rng = StdRng::seed_from_u64(0x1_ee09);
     let key = LweKeySwitchingKey::generate(
         LweSecretKeyRef::Encoded(&[1, 0, 1]),
@@ -161,15 +167,20 @@ fn generation_validates_before_sampling() {
         SecretKeyDistr::UniformBinary,
         0.7,
     );
-    for (input_key, output_dimension, basis_modulus) in [
-        (LweSecretKeyRef::Encoded(&[]), 2, 97),
-        (LweSecretKeyRef::Signed(&[]), 2, 97),
-        (LweSecretKeyRef::Encoded(&[1]), 0, 97),
-        (LweSecretKeyRef::Encoded(&[1]), 3, 97),
-        (LweSecretKeyRef::Encoded(&[1]), 2, 101),
+    for (input_key, output_dimension, basis_modulus, key_modulus) in [
+        (LweSecretKeyRef::Encoded(&[]), 2, 97, 97),
+        (LweSecretKeyRef::Signed(&[]), 2, 97, 97),
+        (LweSecretKeyRef::Encoded(&[1]), 0, 97, 97),
+        (LweSecretKeyRef::Encoded(&[1]), 3, 97, 97),
+        (LweSecretKeyRef::Encoded(&[1]), 2, 101, 97),
+        // Same shape and binary residues; only the owning domain differs.
+        (LweSecretKeyRef::Encoded(&[1]), 2, 97, 101),
     ] {
-        let output_key =
-            LweSecretKey::new(vec![1; output_dimension], SecretKeyDistr::UniformBinary);
+        let output_key = LweSecretKey::new(
+            vec![1; output_dimension],
+            SecretKeyDistr::UniformBinary,
+            BarrettModulus::new(key_modulus),
+        );
         let basis = ApproxSignedBasis::new(Some(basis_modulus), DecompositionBaseLog::new(2), None);
         let mut rng = StdRng::seed_from_u64(0x1_ee0a);
         let mut expected_rng = StdRng::seed_from_u64(0x1_ee0a);

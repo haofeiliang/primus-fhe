@@ -56,7 +56,11 @@ fn noise_is_distance_to_the_decoded_message_embedding() {
         SecretKeyDistr::UniformBinary,
         0.7,
     );
-    let key = LweSecretKey::new(vec![1u32], SecretKeyDistr::UniformBinary);
+    let key = LweSecretKey::new(
+        vec![1u32],
+        SecretKeyDistr::UniformBinary,
+        params.cipher_modulus(),
+    );
 
     // For m=2, q=97, t=4, ties away from zero give unsigned E(m)=49
     // and centered E(m)=-49 mod 97=48. Use an independent, known phase.
@@ -72,4 +76,73 @@ fn noise_is_distance_to_the_decoded_message_embedding() {
             assert_eq!(result, (2, noise.unsigned_abs()));
         }
     }
+}
+
+#[test]
+fn owning_domain_is_preserved_and_rejected_before_sampling_or_writing() {
+    use primus_integer::FheUint;
+    use primus_modulus::{NativeModulus, PowOf2Modulus};
+    use primus_reduce::{Modulus, RingContext};
+    use rand::Rng;
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+
+    fn check<T: FheUint, M: RingContext<T>, Other: Modulus<ValueT = T>>(modulus: M, other: Other) {
+        let params = LweParameters::new(
+            LweDimension::new(4),
+            T::TWO,
+            modulus,
+            SecretKeyDistr::UniformBinary,
+            0.7,
+        );
+        let mut rng = StdRng::seed_from_u64(0x4c57_4544);
+        let generated = LweSecretKey::generate(params.inner(), &mut rng);
+        assert_eq!(generated.cipher_modulus_minus_one(), modulus.minus_one());
+
+        // Both imports contain the same valid binary secret, so residue scans
+        // cannot distinguish their domains. No secret copying is needed to bind.
+        let matching = LweSecretKey::new(vec![T::ONE; 4], SecretKeyDistr::UniformBinary, modulus);
+        let foreign = LweSecretKey::new(vec![T::ONE; 4], SecretKeyDistr::UniformBinary, other);
+        assert_eq!(foreign.cipher_modulus_minus_one(), other.minus_one());
+        let mut output = matching.encrypt(T::ONE, &params, &mut rng);
+        assert_eq!(matching.decrypt(&output, &params), T::ONE);
+        let original = output.clone();
+        let seed = rng.next_u64();
+        let mut rng = StdRng::seed_from_u64(seed);
+        let mut untouched = StdRng::seed_from_u64(seed);
+        assert!(
+            catch_unwind(AssertUnwindSafe(|| {
+                foreign.encrypt_to(T::ONE, &mut output, &params, &mut rng);
+            }))
+            .is_err()
+        );
+        assert_eq!(output, original);
+        assert_eq!(rng.next_u64(), untouched.next_u64());
+        assert!(catch_unwind(AssertUnwindSafe(|| foreign.decrypt(&output, &params))).is_err());
+
+        // Batch checks precede the first entry, including empty batches.
+        let mut batch = vec![T::ONE; 10];
+        let seed = rng.next_u64();
+        let mut rng = StdRng::seed_from_u64(seed);
+        let mut untouched = StdRng::seed_from_u64(seed);
+        assert!(
+            catch_unwind(AssertUnwindSafe(|| {
+                foreign.encrypt_batch_to(&[T::ZERO, T::ONE], &mut batch, &params, &mut rng);
+            }))
+            .is_err()
+        );
+        assert_eq!(batch, vec![T::ONE; 10]);
+        assert_eq!(rng.next_u64(), untouched.next_u64());
+        assert!(
+            catch_unwind(AssertUnwindSafe(|| {
+                foreign.decrypt_phase_batch_to(&[], &mut [], modulus);
+            }))
+            .is_err()
+        );
+    }
+
+    check(NativeModulus::<u32>::new(), PowOf2Modulus::new(1 << 31));
+    check(PowOf2Modulus::<u32>::new(1 << 31), NativeModulus::new());
+    check(BarrettModulus::<u32>::new(97), BarrettModulus::new(101));
+    check(NativeModulus::<u64>::new(), PowOf2Modulus::new(1 << 63));
+    check(BarrettModulus::<u64>::new(97), BarrettModulus::new(101));
 }

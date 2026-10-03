@@ -49,7 +49,7 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
         )
         .unwrap();
         let client = ClientKey::new(
-            LweSecretKey::new(vec![1, 0, 1, 1], SecretKeyDistr::UniformBinary),
+            LweSecretKey::new(vec![1, 0, 1, 1], SecretKeyDistr::UniformBinary, modulus),
             GlweSecretKey::new(
                 vec![1, -1, 0, 1, 0, -1, 0, 1, 1, 0, -1, 0, 1, 0, 0, -1].repeat(4),
                 GlweSize::new(GlweDimension::new(2), PolyLength::new(32)),
@@ -123,7 +123,36 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
             params.encryptor(&client, &codec).unwrap(),
         );
 
-        // Public-key binding must reject same-word-size foreign moduli, not just dimensions.
+        // Binary coefficients fit both moduli; binding must use the owning metadata.
+        let wrong_domain = ClientKey::new(
+            LweSecretKey::new(
+                vec![1, 0, 1, 1],
+                SecretKeyDistr::UniformBinary,
+                BarrettModulus::new(65_537u32),
+            ),
+            client.glwe_secret_key().clone(),
+            order,
+        );
+        let error = primus_tfhe_glwe::TfheClientError::IncompatibleKey(
+            TfheKeyError::LweSecretKeyModulusMismatch,
+        );
+        assert_eq!(
+            params.encryptor(&wrong_domain, &codec).err(),
+            Some(error.clone())
+        );
+        assert_eq!(params.decryptor(&wrong_domain, &codec).err(), Some(error));
+        let seed = rng.next_u64();
+        let mut rng = StdRng::seed_from_u64(seed);
+        let mut untouched = StdRng::seed_from_u64(seed);
+        assert_eq!(
+            wrong_domain
+                .try_generate_public_key(&params, &mut rng)
+                .err(),
+            Some(TfheKeyError::LweSecretKeyModulusMismatch),
+        );
+        assert_eq!(rng.next_u64(), untouched.next_u64());
+
+        // Public-key binding also rejects a foreign modulus with the same dimension.
         let foreign_params = LweParameters::new(
             public.dimension(),
             4,
@@ -269,7 +298,7 @@ fn binding_checks_small_secret_coefficients_without_restricting_gaussian_accumul
             let minus_one = modulus.minus_one();
             for coefficient in [0, 1, minus_one, 2, minus_one - 1] {
                 let client = ClientKey::new(
-                    LweSecretKey::new(vec![0, 1, 0, coefficient], distr),
+                    LweSecretKey::new(vec![0, 1, 0, coefficient], distr, modulus),
                     GlweSecretKey::new(
                         vec![2; 32],
                         GlweSize::new(GlweDimension::new(1), PolyLength::new(32)),
