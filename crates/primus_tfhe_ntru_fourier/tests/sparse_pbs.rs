@@ -184,7 +184,7 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(weight: usize) {
         let mut sparse = context.evaluator(&server).unwrap();
         for (message, zero_mask) in [(0, true), (3, false), (7, false), (1, true)] {
             let mut input = context
-                .encryptor(&client, &input_codec)
+                .encryptor(client.external_lwe_secret_key(), &input_codec)
                 .unwrap()
                 .encrypt_padded(T::as_from(message), &mut rng)
                 .unwrap();

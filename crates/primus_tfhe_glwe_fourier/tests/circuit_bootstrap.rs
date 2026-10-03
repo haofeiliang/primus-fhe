@@ -152,7 +152,7 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
     });
     let mut accumulator_client = context
         .accumulator_client(
-            &client,
+            client.glwe_secret_key(),
             primus_encoding::ScaledCodec::new(
                 input_codec.plaintext_modulus(),
                 input_codec.ciphertext_modulus(),
@@ -170,7 +170,9 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
         output
     });
 
-    let encryptor = context.encryptor(&client, &input_codec).unwrap();
+    let encryptor = context
+        .encryptor(client.external_lwe_secret_key(), &input_codec)
+        .unwrap();
     // The same CBS-enabled server key also supports ordinary PBS.
     let identity = context
         .parameters()
@@ -185,7 +187,7 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
         .apply_lookup_table(input.as_view(), &identity);
     assert_eq!(
         context
-            .decryptor(&client, &input_codec)
+            .decryptor(client.external_lwe_secret_key(), &input_codec)
             .unwrap()
             .decrypt(output.as_view())
             .unwrap(),
@@ -198,7 +200,7 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
         let other_codec =
             primus_encoding::RoundedCodec::new(8, context.parameters().cipher_modulus());
         let input = context
-            .encryptor(&client, &other_codec)
+            .encryptor(client.external_lwe_secret_key(), &other_codec)
             .unwrap()
             .encrypt_padded(1, &mut rng)
             .unwrap();
@@ -290,7 +292,7 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
         });
         assert_eq!(
             context
-                .decryptor(&client, &input_codec)
+                .decryptor(client.external_lwe_secret_key(), &input_codec)
                 .unwrap()
                 .decrypt(output.as_view())
                 .unwrap(),

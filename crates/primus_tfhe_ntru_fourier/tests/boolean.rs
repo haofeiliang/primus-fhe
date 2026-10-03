@@ -46,14 +46,19 @@ fn check_context<Table: FftTable>(distr: SecretKeyDistr) {
     let input_codec = RoundedCodec::new(4, context.parameters().external_lwe().cipher_modulus());
     let mut rng = StdRng::seed_from_u64(0xB201);
     let (client, server) = context.try_generate_keys(None, &mut rng).unwrap();
-    let public = client
-        .try_generate_public_key(context.parameters(), &mut rng)
+    let public = context
+        .parameters()
+        .try_generate_public_key(client.external_lwe_secret_key(), &mut rng)
         .unwrap();
-    let encryptor = context.boolean_encryptor(&client, &input_codec).unwrap();
+    let encryptor = context
+        .boolean_encryptor(client.external_lwe_secret_key(), &input_codec)
+        .unwrap();
     let public_encryptor = context
         .boolean_public_encryptor(&public, &input_codec)
         .unwrap();
-    let decryptor = context.boolean_decryptor(&client, &input_codec).unwrap();
+    let decryptor = context
+        .boolean_decryptor(client.external_lwe_secret_key(), &input_codec)
+        .unwrap();
     let mut evaluator = context.boolean_evaluator(&server, &input_codec).unwrap();
     let inputs = [
         encryptor.encrypt(false, &mut rng).unwrap(),

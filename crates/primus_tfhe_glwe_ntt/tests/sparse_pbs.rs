@@ -93,8 +93,12 @@ fn sparse_pbs_preserves_external_secret_and_interleaved_outputs_in_both_orders()
                 N
             }
         );
-        let encryptor = context.encryptor(&client, &input_codec).unwrap();
-        let decryptor = context.decryptor(&client, &input_codec).unwrap();
+        let encryptor = context
+            .encryptor(client.external_lwe_secret_key(), &input_codec)
+            .unwrap();
+        let decryptor = context
+            .decryptor(client.external_lwe_secret_key(), &input_codec)
+            .unwrap();
         // A distinct output scale exercises P2.1 through both dispatch branches.
         let codec = RoundedCodec::new(16, BarrettModulus::new(Q));
         let compiler = context
@@ -193,9 +197,15 @@ fn sparse_boolean_gates_chain_in_both_orders_without_allocating() {
         let server = KeyGenerator::new(&context)
             .try_generate_sparse_server_key(&client, 3, 8, None, &mut rng)
             .unwrap();
-        let encryptor = context.boolean_encryptor(&client, &input_codec).unwrap();
-        let decryptor = context.boolean_decryptor(&client, &input_codec).unwrap();
-        let phase_decryptor = context.decryptor(&client, &input_codec).unwrap();
+        let encryptor = context
+            .boolean_encryptor(client.external_lwe_secret_key(), &input_codec)
+            .unwrap();
+        let decryptor = context
+            .boolean_decryptor(client.external_lwe_secret_key(), &input_codec)
+            .unwrap();
+        let phase_decryptor = context
+            .decryptor(client.external_lwe_secret_key(), &input_codec)
+            .unwrap();
         let mut evaluator = context.boolean_evaluator(&server, &input_codec).unwrap();
         let mut inputs = [
             encryptor.encrypt(false, &mut rng).unwrap(),
@@ -241,8 +251,12 @@ fn sparse_bivariate_and_odd_full_domain_respect_input_margins_in_both_orders() {
         let server = KeyGenerator::new(&context)
             .try_generate_sparse_server_key(&client, 3, 8, None, &mut rng)
             .unwrap();
-        let encryptor = context.encryptor(&client, &input_codec).unwrap();
-        let decryptor = context.decryptor(&client, &input_codec).unwrap();
+        let encryptor = context
+            .encryptor(client.external_lwe_secret_key(), &input_codec)
+            .unwrap();
+        let decryptor = context
+            .decryptor(client.external_lwe_secret_key(), &input_codec)
+            .unwrap();
         let mut evaluator = context.evaluator(&server).unwrap();
 
         let output_codec = RoundedCodec::new(8, BarrettModulus::new(Q));

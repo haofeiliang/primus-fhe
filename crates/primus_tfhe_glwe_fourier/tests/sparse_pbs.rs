@@ -89,8 +89,12 @@ fn check_pbs<Table: FftTable>() {
             }))
             .get()
         );
-        let encryptor = context.encryptor(&client, &input_codec).unwrap();
-        let decryptor = context.decryptor(&client, &input_codec).unwrap();
+        let encryptor = context
+            .encryptor(client.external_lwe_secret_key(), &input_codec)
+            .unwrap();
+        let decryptor = context
+            .decryptor(client.external_lwe_secret_key(), &input_codec)
+            .unwrap();
         // Non-power-of-two input centers and a different output scale exercise
         // the exact prepared rotation modulus switch through both complete PBS orders.
         let codec = RoundedCodec::new(16, NativeModulus::new());

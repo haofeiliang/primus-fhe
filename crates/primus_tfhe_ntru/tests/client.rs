@@ -57,7 +57,9 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
         NtruSecretKey::new(accumulator, SecretKeyDistr::UniformBinary),
     );
     let mut rng = StdRng::seed_from_u64(0x4e54_5255_504b);
-    let public = client.try_generate_public_key(&params, &mut rng).unwrap();
+    let public = params
+        .try_generate_public_key(client.external_lwe_secret_key(), &mut rng)
+        .unwrap();
     assert_eq!(public.dimension(), LweDimension::new(4)); // Independent external LWE dimension.
     // External LWE encryption uses its own noise sampler.
     let lwe = params.external_lwe();
@@ -74,7 +76,7 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
     );
     assert_eq!(
         params
-            .encryptor(&client, &input_codec)
+            .encryptor(client.external_lwe_secret_key(), &input_codec)
             .unwrap()
             .encrypt(1, &mut rng)
             .unwrap(),
@@ -109,7 +111,9 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
         &params,
         &client,
         &input_codec,
-        params.encryptor(&client, &input_codec).unwrap(),
+        params
+            .encryptor(client.external_lwe_secret_key(), &input_codec)
+            .unwrap(),
     );
     check_boolean_client(&params, &client, &input_codec);
 
@@ -126,19 +130,23 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
         TfheKeyError::LweSecretKeyModulusMismatch,
     );
     assert_eq!(
-        params.encryptor(&wrong_domain, &input_codec).err(),
+        params
+            .encryptor(wrong_domain.external_lwe_secret_key(), &input_codec)
+            .err(),
         Some(error.clone())
     );
     assert_eq!(
-        params.decryptor(&wrong_domain, &input_codec).err(),
+        params
+            .decryptor(wrong_domain.external_lwe_secret_key(), &input_codec)
+            .err(),
         Some(error)
     );
     let seed = rng.next_u64();
     let mut rng = StdRng::seed_from_u64(seed);
     let mut untouched = StdRng::seed_from_u64(seed);
     assert_eq!(
-        wrong_domain
-            .try_generate_public_key(&params, &mut rng)
+        params
+            .try_generate_public_key(wrong_domain.external_lwe_secret_key(), &mut rng)
             .err(),
         Some(TfheKeyError::LweSecretKeyModulusMismatch),
     );
@@ -196,7 +204,9 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
     let mut rng = StdRng::seed_from_u64(seed);
     let mut expected_rng = StdRng::seed_from_u64(seed);
     assert_eq!(
-        bad_client.try_generate_public_key(&params, &mut rng).err(),
+        params
+            .try_generate_public_key(bad_client.external_lwe_secret_key(), &mut rng)
+            .err(),
         Some(TfheKeyError::InvalidClientSecretKeyCoefficient)
     );
     assert_eq!(rng.next_u64(), expected_rng.next_u64());
@@ -209,20 +219,40 @@ fn check_boolean_client<M: RingContext<u32>>(
 ) {
     if input_codec.plaintext_modulus() != 4 {
         assert_eq!(
-            BooleanEncryptor::try_new(parameters.encryptor(client, input_codec).unwrap()).err(),
+            BooleanEncryptor::try_new(
+                parameters
+                    .encryptor(client.external_lwe_secret_key(), input_codec)
+                    .unwrap()
+            )
+            .err(),
             Some(BooleanError::PlaintextModulusMustBeFour)
         );
         assert_eq!(
-            BooleanDecryptor::try_new(parameters.decryptor(client, input_codec).unwrap()).err(),
+            BooleanDecryptor::try_new(
+                parameters
+                    .decryptor(client.external_lwe_secret_key(), input_codec)
+                    .unwrap()
+            )
+            .err(),
             Some(BooleanError::PlaintextModulusMustBeFour)
         );
         return;
     }
-    let encryptor =
-        BooleanEncryptor::try_new(parameters.encryptor(client, input_codec).unwrap()).unwrap();
-    let decryptor =
-        BooleanDecryptor::try_new(parameters.decryptor(client, input_codec).unwrap()).unwrap();
-    let raw_encryptor = parameters.encryptor(client, input_codec).unwrap();
+    let encryptor = BooleanEncryptor::try_new(
+        parameters
+            .encryptor(client.external_lwe_secret_key(), input_codec)
+            .unwrap(),
+    )
+    .unwrap();
+    let decryptor = BooleanDecryptor::try_new(
+        parameters
+            .decryptor(client.external_lwe_secret_key(), input_codec)
+            .unwrap(),
+    )
+    .unwrap();
+    let raw_encryptor = parameters
+        .encryptor(client.external_lwe_secret_key(), input_codec)
+        .unwrap();
     let mut rng = StdRng::seed_from_u64(0xB202);
     // Reuse a stack-backed view; only its mask/body may be overwritten.
     // The fixture's external LWE dimension is four, independent of ring N.
@@ -291,7 +321,9 @@ fn check_reused_output<M, Key>(
     M: RingContext<u32>,
     Key: EncryptionKey<u32, M>,
 {
-    let decryptor = parameters.decryptor(client, input_codec).unwrap();
+    let decryptor = parameters
+        .decryptor(client.external_lwe_secret_key(), input_codec)
+        .unwrap();
     let dimension = parameters.external_lwe_dimension().get();
     let t = input_codec.plaintext_modulus();
     let mut rng = StdRng::seed_from_u64(0x434c_4945_4e54);

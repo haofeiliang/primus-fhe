@@ -3,22 +3,23 @@
 //! # Role in the backend workflow
 //!
 //! [`TfheConfig`] names mathematical choices; [`TfheParameters`] validates them and
-//! provides a [`LookupTableCompiler`] for Rounded LUTs. [`ClientKey`], [`Encryptor`]
-//! and [`Decryptor`] bind client secrets and encoding. Choose the NTT/Fourier
+//! provides a [`LookupTableCompiler`] for Rounded LUTs. [`ClientKey`] owns the
+//! complete setup secrets; [`Encryptor`] and [`Decryptor`] borrow only the external
+//! message secret and bind its codec. Choose the NTT/Fourier
 //! backend for transform tables, server material and evaluators.
 //! [`KeyGenerationError`] and [`TfheClientError`] report key generation and family
 //! client construction; operations return shared [`ClientError`] or [`BooleanError`].
 //!
 //! # Public-key clients
 //!
-//! [`ClientKey::try_generate_public_key`] returns an [`LwePublicKey`] under
+//! [`TfheParameters::try_generate_public_key`] returns an [`LwePublicKey`] under
 //! the independent binary or ternary external secret. Pass it to
 //! [`TfheParameters::public_encryptor`] or a backend context's `public_encryptor`; keep the paired
-//! client key for decryption.
+//! external secret for decryption.
 //!
 //! Public-key identity and combined-noise requirements are documented on
 //! [`EncryptionKey`]; generation parameters and storage size are documented
-//! on [`ClientKey::try_generate_public_key`].
+//! on [`TfheParameters::try_generate_public_key`].
 //!
 //! # Reusing client ciphertext storage
 //!

@@ -64,8 +64,12 @@ fn check_complete(distr: SecretKeyDistr) {
     let codec = ScaledCodec::new(8, modulus);
     let mut rng = StdRng::seed_from_u64(0xB301);
     let (client, server) = context.try_generate_keys(None, &mut rng).unwrap();
-    let encryptor = context.encryptor(&client, &input_codec).unwrap();
-    let decryptor = context.decryptor(&client, &input_codec).unwrap();
+    let encryptor = context
+        .encryptor(client.external_lwe_secret_key(), &input_codec)
+        .unwrap();
+    let decryptor = context
+        .decryptor(client.external_lwe_secret_key(), &input_codec)
+        .unwrap();
     let mut evaluator = primus_tfhe_ntru_ntt::FactorizedEvaluator::try_from_bootstrapper(
         context.evaluator(&server).unwrap(),
     )

@@ -113,7 +113,9 @@ fn one_hot<T: TorusFftValue, Table: FftTable>(
     let modulus = context.parameters().accumulator_ntru().cipher_modulus();
 
     // Client: prepare encryption and secret-dependent phase diagnostics.
-    let encryptor = context.encryptor(client_key, &input_codec).unwrap();
+    let encryptor = context
+        .encryptor(client_key.external_lwe_secret_key(), &input_codec)
+        .unwrap();
     let format_name = format!("{name}/one_hot");
     let mut phase = primus_poly::Polynomial::<Vec<T>>::zero(N);
     let mut fft = context.new_fft_engine();
@@ -225,8 +227,12 @@ fn lookup<T: TorusFftValue, Table: FftTable>(
         |x: usize, i: usize| T::as_from(((x * x + 3 * x + x / 17 + x / 257 + 7) >> (2 * i)) & 3);
 
     // Client: keep encryption, decryption and the error budget local.
-    let encryptor = context.encryptor(client_key, &input_codec).unwrap();
-    let decryptor = context.decryptor(client_key, &input_codec).unwrap();
+    let encryptor = context
+        .encryptor(client_key.external_lwe_secret_key(), &input_codec)
+        .unwrap();
+    let decryptor = context
+        .decryptor(client_key.external_lwe_secret_key(), &input_codec)
+        .unwrap();
     // This profile uses q=2^24 and padded t=8, so Delta=q/8. The accepted
     // error is Delta/4, half the decoding radius, in external LWE units.
     const LWE_MODULUS: u64 = 1 << 24;
@@ -322,8 +328,12 @@ fn pbs<T: TorusFftValue, Table: FftTable>(
     }
     .unwrap();
 
-    let encryptor = context.encryptor(&client_key, &input_codec).unwrap();
-    let decryptor = context.decryptor(&client_key, &input_codec).unwrap();
+    let encryptor = context
+        .encryptor(client_key.external_lwe_secret_key(), &input_codec)
+        .unwrap();
+    let decryptor = context
+        .decryptor(client_key.external_lwe_secret_key(), &input_codec)
+        .unwrap();
     let codec = RoundedCodec::new(t, modulus);
     let mut margin = ErrorMargin::new(name, seed);
 
@@ -389,10 +399,10 @@ fn pbs<T: TorusFftValue, Table: FftTable>(
     if domain == 2 {
         // Client: prepare encrypted Boolean inputs and keep decryption local.
         let encryptor = context
-            .boolean_encryptor(&client_key, &input_codec)
+            .boolean_encryptor(client_key.external_lwe_secret_key(), &input_codec)
             .unwrap();
         let decryptor = context
-            .boolean_decryptor(&client_key, &input_codec)
+            .boolean_decryptor(client_key.external_lwe_secret_key(), &input_codec)
             .unwrap();
         let inputs = [false, true].map(|bit| encryptor.encrypt(bit, &mut rng).unwrap());
 
@@ -435,8 +445,12 @@ fn thresholds<T: TorusFftValue, Table: FftTable>(
     let mut rng = StdRng::seed_from_u64(seed);
     let (client_key, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
 
-    let encryptor = context.encryptor(&client_key, &input_codec).unwrap();
-    let decryptor = context.decryptor(&client_key, &input_codec).unwrap();
+    let encryptor = context
+        .encryptor(client_key.external_lwe_secret_key(), &input_codec)
+        .unwrap();
+    let decryptor = context
+        .decryptor(client_key.external_lwe_secret_key(), &input_codec)
+        .unwrap();
     let output_codec = ScaledCodec::new(T::as_from(2u32), modulus);
     let mut margin = ErrorMargin::new(name, seed);
 
@@ -504,10 +518,12 @@ fn circuit<T: TorusFftValue, Table: FftTable>(
     let cbs_parameters = server_key.circuit_bootstrap_key().unwrap().parameters();
 
     // Client: encrypt both candidate messages; only choices go to the server.
-    let encryptor = context.encryptor(&client_key, &input_codec).unwrap();
+    let encryptor = context
+        .encryptor(client_key.external_lwe_secret_key(), &input_codec)
+        .unwrap();
     let mut accumulator = context
         .accumulator_client(
-            &client_key,
+            client_key.accumulator_ntru_secret_key(),
             ScaledCodec::new(
                 T::as_from(4u32),
                 context.parameters().accumulator_ntru().cipher_modulus(),

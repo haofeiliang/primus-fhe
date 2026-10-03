@@ -30,6 +30,8 @@ Examples separate client encryption, server evaluation and client decryption; se
 
 ManyLUT interleaves outputs within one blind rotation, shares one Q→q conversion across multiple outputs, and batches their LWE key switches; factorized MVB uses public factors and a different evaluation interface. NTRU sparse supports ordinary/interleaved PBS, but not CBS, one-hot or factorized MVB.
 
+Client factories take only the relevant secret: pass `client_key.external_lwe_secret_key()` to `encryptor` / `decryptor` and the Boolean variants, or `client_key.accumulator_ntru_secret_key()` to `accumulator_client`. Complete `ClientKey` bundles are used for server-key generation; no secret buffers are copied to select a role.
+
 ## Parameters and representation
 
 The Fourier ring supports only `NativeModulus`; `PowOf2Modulus` rings are unsupported. NTRU may independently use `PowOf2Modulus` for external LWE modulus q.

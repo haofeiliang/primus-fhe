@@ -85,7 +85,7 @@ pub use primus_tfhe::{
     FactorizedLookupTable, InterleavedLookupTable, LookupTable, LookupTableCompiler, Lwe,
     LweCiphertext, LweSecretKeyRef,
 };
-pub use primus_tfhe_glwe::{ClientKey, EncryptionKey, PbsOrder};
+pub use primus_tfhe_glwe::{ClientKey, EncryptionKey, ExternalLweSecretKey, PbsOrder};
 #[doc(no_inline)]
 pub use sparse::{SparseGlweBlindRotationWorkspace, SparseGlweBootstrappingKey};
 

@@ -5,12 +5,12 @@ use primus_encoding::ScaledCodec;
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
 use primus_glwe::{
     FourierGlweCiphertext, FourierGlweDecryptWorkspace, FourierGlweEncryptWorkspace,
-    FourierGlweSecretKey, GlweCiphertext, GlweParameters,
+    FourierGlweSecretKey, GlweCiphertext, GlweParameters, GlweSecretKey,
 };
 use primus_modulus::NativeModulus;
 use primus_poly::Polynomial;
 
-use crate::{ClientKey, TfheClientError, TfheContext};
+use crate::{TfheClientError, TfheContext};
 
 /// Prepared private-key client for the accumulator GLWE domain.
 ///
@@ -38,20 +38,21 @@ where
     T: TorusFftValue,
     Table: FftTable,
 {
-    /// Binds the client key and a Scaled message codec to the accumulator domain.
+    /// Binds only the accumulator secret and a Scaled message codec to the accumulator domain.
     /// Rejects an incompatible key or codec modulus before preparing the secret.
     pub fn try_new(
         context: &'a TfheContext<T, Table>,
-        client_key: &ClientKey<T>,
+        secret_key: &GlweSecretKey<T>,
         codec: ScaledCodec<T, NativeModulus<T>>,
     ) -> Result<Self, TfheClientError> {
-        client_key.check_compatible(context.parameters())?;
+        context
+            .parameters()
+            .check_accumulator_secret_key(secret_key)?;
         let parameters =
             GlweParameters::try_from_glev(context.parameters().blind_rotation_ggsw(), codec)
                 .map_err(|_| crate::ClientError::CodecModulusMismatch)?;
         let mut fft = context.new_fft_engine();
-        let secret =
-            FourierGlweSecretKey::from_coeff_secret_key(client_key.glwe_secret_key(), &mut fft);
+        let secret = FourierGlweSecretKey::from_coeff_secret_key(secret_key, &mut fft);
         Ok(Self {
             context,
             secret,
@@ -155,9 +156,9 @@ where
     /// Inherits [`crate::AccumulatorClient::try_new`]'s contracts and errors.
     pub fn accumulator_client(
         &self,
-        client_key: &ClientKey<T>,
+        secret_key: &GlweSecretKey<T>,
         codec: ScaledCodec<T, NativeModulus<T>>,
     ) -> Result<crate::AccumulatorClient<'_, T, Table>, crate::TfheClientError> {
-        crate::AccumulatorClient::try_new(self, client_key, codec)
+        crate::AccumulatorClient::try_new(self, secret_key, codec)
     }
 }

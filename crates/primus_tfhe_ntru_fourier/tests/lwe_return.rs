@@ -88,11 +88,14 @@ fn check<T: TorusFftValue, Table: FftTable>() {
             .unwrap()
             .compile_fn(|m| T::as_from(1 - m))
             .unwrap();
-        let public = client
-            .try_generate_public_key(context.parameters(), &mut rng)
+        let public = context
+            .parameters()
+            .try_generate_public_key(client.external_lwe_secret_key(), &mut rng)
             .unwrap();
         let encryptor = context.public_encryptor(&public, &input_codec).unwrap();
-        let decryptor = context.decryptor(&client, &input_codec).unwrap();
+        let decryptor = context
+            .decryptor(client.external_lwe_secret_key(), &input_codec)
+            .unwrap();
         let mut evaluator = context.evaluator(&server).unwrap();
         let mut output = context.allocate_lwe_ciphertext();
         let mut outputs = vec![output.clone(); 3];
@@ -122,8 +125,12 @@ fn check<T: TorusFftValue, Table: FftTable>() {
         }
         // Boolean correction is at q even though its internal LUT is encoded at Q.
         let mut boolean = context.boolean_evaluator(&server, &input_codec).unwrap();
-        let bool_encrypt = context.boolean_encryptor(&client, &input_codec).unwrap();
-        let bool_decrypt = context.boolean_decryptor(&client, &input_codec).unwrap();
+        let bool_encrypt = context
+            .boolean_encryptor(client.external_lwe_secret_key(), &input_codec)
+            .unwrap();
+        let bool_decrypt = context
+            .boolean_decryptor(client.external_lwe_secret_key(), &input_codec)
+            .unwrap();
         for a in [false, true] {
             for b in [false, true] {
                 let a_ct = bool_encrypt.encrypt(a, &mut rng).unwrap();

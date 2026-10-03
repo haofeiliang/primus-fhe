@@ -55,7 +55,7 @@ Sparse 模式需显式选择生成入口，暂不支持 sparse ternary。NTRU �
 
 求值端的单项 LWE 参数使用相同视图：`evaluator.apply_lookup_table_to(input.as_view(), &lut, output.as_mut_view())`。Boolean 门和双输入打包借用各自的操作数；CBS、one-hot 和 MVB 借用其 LWE 输入。分配型方法仍返回拥有型密文。ManyLUT/MVB 输出批次以及高精度输入/输出批次借用预先分配的 `LweCiphertext<T>` 切片。每个有效输出对应一个完整 LWE，LUT padding 不需要额外密文。每个 LWE 保留自己的系数缓冲，直接传入已有切片即可，无需打包系数或收集视图。写入输出前会检查数量和每个密文的维数。
 
-客户端生成配套密钥，保留 `ClientKey` 和加解密器，将 `ServerKey` 提供给服务端。 服务端只需公开 context、求值密钥、LUT/程序和输入密文；计算后将密文结果返回客户端。 示例在同一进程展示这些阶段，参数构造单独放置。输入和输出编码是双方约定的公开信息。
+客户端生成配套密钥，保留 setup 组合 `ClientKey`（也可通过 `into_parts()` 分开持有秘密）和加解密器，将 `ServerKey` 提供给服务端。 服务端只需公开 context、求值密钥、LUT/程序和输入密文；计算后将密文结果返回客户端。 示例在同一进程展示这些阶段，参数构造单独放置。输入和输出编码是双方约定的公开信息。
 
 普通缓冲分配不依赖私钥：四个后端的 `context.allocate_lwe_ciphertext()` 按外部 LWE 维度分配 mask/body；`context.allocate_accumulator_ciphertext()` 按累加器布局分配系数域 GLWE/NTRU。两者只分配零存储，不执行加密。CBS 控制的布局还依赖输出分解和变换表示， 因此使用 `cbs.allocate_output()`。工作区和结果缓冲在各自一端创建一次并复用。
 
@@ -69,8 +69,9 @@ Boolean 客户端要求 `t=4`。四个 context 工厂均显式接收 Rounded cod
 
 ```rust,ignore
 let codec = primus_encoding::RoundedCodec::new(4, context.parameters().cipher_modulus());
-let encryptor = context.boolean_encryptor(&client, &codec)?;
-let decryptor = context.boolean_decryptor(&client, &codec)?;
+let external_secret = client.external_lwe_secret_key();
+let encryptor = context.boolean_encryptor(external_secret, &codec)?;
+let decryptor = context.boolean_decryptor(external_secret, &codec)?;
 let mut gates = context.boolean_evaluator(&server, &codec)?;
 let lhs = encryptor.encrypt(true, &mut rng)?;
 let rhs = encryptor.encrypt(false, &mut rng)?;
@@ -89,13 +90,13 @@ assert!(!decryptor.decrypt(output.as_view())?);
 
 ## CBS 输出与消费
 
-四后端都在同一个 CBS evaluator 中绑定输出布局与消费参数。下例为 GLWE，独立选择 Rounded 输入 codec 和 Scaled accumulator codec。NTRU 工厂接收相同的 codec 参数，输入 codec 使用外部 q，环 codec 使用累加 Q：
+四后端都在同一个 CBS evaluator 中绑定输出布局与消费参数。下例为 GLWE，独立选择 Rounded 输入 codec 和 Scaled accumulator codec。NTRU 使用 `client_key.accumulator_ntru_secret_key()` 取代 GLWE 访问器，接收相同的 codec 参数，输入 codec 使用外部 q，环 codec 使用累加 Q：
 
 ```rust,ignore
 // 客户端：加密两条候选消息。
 let input_codec = primus_encoding::RoundedCodec::new(4, context.parameters().cipher_modulus());
 let ring_codec = primus_encoding::ScaledCodec::new(8, context.parameters().cipher_modulus());
-let mut ring_client = context.accumulator_client(&client_key, ring_codec)?;
+let mut ring_client = context.accumulator_client(client_key.glwe_secret_key(), ring_codec)?;
 let lhs = ring_client.encrypt(&lhs_message, &mut rng);
 let rhs = ring_client.encrypt(&rhs_message, &mut rng);
 let mut decoded = vec![0; lhs_message.len()];

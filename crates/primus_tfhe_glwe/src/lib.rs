@@ -7,25 +7,26 @@
 //! # Role in the backend workflow
 //!
 //! [`TfheConfig`] names mathematical choices; [`TfheParameters`] validates them and
-//! provides a [`LookupTableCompiler`] for Rounded LUTs. [`ClientKey`], [`Encryptor`]
-//! and [`Decryptor`] bind client secrets and encoding. Choose the NTT/Fourier
+//! provides a [`LookupTableCompiler`] for Rounded LUTs. [`ClientKey`] owns the
+//! complete setup secrets; [`Encryptor`] and [`Decryptor`] borrow only the external
+//! message secret and bind its codec. Choose the NTT/Fourier
 //! backend for transform tables, server material and evaluators.
 //! [`KeyGenerationError`] and [`TfheClientError`] report key generation and family
 //! client construction; operations return shared [`ClientError`] or [`BooleanError`].
 //!
 //! # Public-key clients
 //!
-//! [`ClientKey::try_generate_public_key`] returns an [`LwePublicKey`] under
+//! [`TfheParameters::try_generate_public_key`] returns an [`LwePublicKey`] under
 //! the external client secret: small LWE for bootstrap-then-key-switch, or the
 //! signed GLWE coefficient vector for key-switch-then-bootstrap. Pass the public
-//! key to [`TfheParameters::public_encryptor`]; keep the client key for decryption.
+//! key to [`TfheParameters::public_encryptor`]; keep the external secret for decryption.
 //! NTT/Fourier contexts provide `public_encryptor` and `boolean_public_encryptor`.
 //! The `Key` parameter selects secret/public encryption at compile time, sharing
 //! message checks and encoding APIs. It does not change the PBS output domain.
 //!
 //! Public-key identity and combined-noise requirements are documented on
 //! [`EncryptionKey`]; generation parameters and storage size are documented
-//! on [`ClientKey::try_generate_public_key`].
+//! on [`TfheParameters::try_generate_public_key`].
 //!
 //! # Reusing client ciphertext storage
 //!
@@ -53,7 +54,7 @@ pub use error::{
     CircuitBootstrapParameterError, KeyGenerationError, SparseBootstrappingKeyError,
     TfheClientError, TfheKeyError, TfheParameterError,
 };
-pub use key::ClientKey;
+pub use key::{ClientKey, ExternalLweSecretKey};
 pub use parameters::{PbsOrder, TfheConfig, TfheParameters};
 
 pub use primus_tfhe::{

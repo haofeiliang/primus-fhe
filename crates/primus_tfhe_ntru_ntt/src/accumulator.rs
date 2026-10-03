@@ -3,12 +3,13 @@
 use primus_data::{Data, DataMut};
 use primus_encoding::ScaledCodec;
 use primus_integer::FheUint;
-use primus_ntru::NtruParameters;
-use primus_ntru::{NtruCiphertext, NttNtruCiphertext, NttNtruSecretKey};
+use primus_ntru::{
+    NtruCiphertext, NtruParameters, NtruSecretKey, NttNtruCiphertext, NttNtruSecretKey,
+};
 use primus_ntt::MonomialNttTable;
 use primus_poly::Polynomial;
 
-use crate::{ClientKey, TfheClientError, TfheContext};
+use crate::{TfheClientError, TfheContext};
 
 /// Prepared private-key client for the accumulator NTRU domain.
 ///
@@ -36,23 +37,26 @@ where
     LM: primus_reduce::RingContext<T>,
 {
     /// Validates the key and Scaled codec modulus Q, then prepares the accumulator secret.
-    /// The message codec is independent of external LWE encoding.
+    /// Requires only the accumulator secret; its message codec is independent
+    /// of external LWE encoding.
     /// Returns NTRU conversion failures, including a noninvertible secret.
     ///
     /// # Correctness
-    /// Imported accumulator coefficients must have unsigned magnitude below q;
+    /// Imported accumulator coefficients must have unsigned magnitude below Q;
     /// see [`NttNtruSecretKey::try_from_coeff_secret_key`]. Layout checks do not establish this bound.
     pub fn try_new(
         context: &'a TfheContext<T, Table, LM>,
-        client_key: &ClientKey<T>,
+        secret_key: &NtruSecretKey<T>,
         codec: ScaledCodec<T, primus_modulus::BarrettModulus<T>>,
     ) -> Result<Self, TfheClientError> {
-        client_key.check_compatible(context.parameters())?;
+        context
+            .parameters()
+            .check_accumulator_secret_key(secret_key)?;
         let parameters =
             NtruParameters::try_from_nlev(context.parameters().blind_rotation(), codec)
                 .map_err(|_| crate::ClientError::CodecModulusMismatch)?;
         let secret = NttNtruSecretKey::try_from_coeff_secret_key(
-            client_key.accumulator_ntru_secret_key(),
+            secret_key,
             parameters.cipher_modulus(),
             context.table(),
         )?;
@@ -159,9 +163,9 @@ where
     /// Inherits [`crate::AccumulatorClient::try_new`]'s contracts and errors.
     pub fn accumulator_client(
         &self,
-        client_key: &ClientKey<T>,
+        secret_key: &NtruSecretKey<T>,
         codec: ScaledCodec<T, primus_modulus::BarrettModulus<T>>,
     ) -> Result<crate::AccumulatorClient<'_, T, Table, LM>, TfheClientError> {
-        crate::AccumulatorClient::try_new(self, client_key, codec)
+        crate::AccumulatorClient::try_new(self, secret_key, codec)
     }
 }

@@ -45,13 +45,13 @@ fn ordinary<T: FheUint, Table: MonomialNttTable<ValueT = T>>(c: &mut Criterion, 
                 .try_generate_keys(Some(ntru::cbs::<T>()), &mut rng)
                 .unwrap();
             let input = context
-                .encryptor(&client, &input_codec)
+                .encryptor(client.external_lwe_secret_key(), &input_codec)
                 .unwrap()
                 .encrypt_padded(T::ONE, &mut rng)
                 .unwrap();
             let mut ring = context
                 .accumulator_client(
-                    &client,
+                    client.accumulator_ntru_secret_key(),
                     ScaledCodec::new(
                         input_codec.plaintext_modulus(),
                         context.parameters().accumulator_ntru().cipher_modulus(),
@@ -72,7 +72,7 @@ fn ordinary<T: FheUint, Table: MonomialNttTable<ValueT = T>>(c: &mut Criterion, 
             let mut decoded = vec![T::ZERO; N];
             context
                 .accumulator_client(
-                    client,
+                    client.accumulator_ntru_secret_key(),
                     ScaledCodec::new(
                         input_codec.plaintext_modulus(),
                         context.parameters().accumulator_ntru().cipher_modulus(),
@@ -110,13 +110,13 @@ fn one_hot<T: FheUint, Table: MonomialNttTable<ValueT = T>>(c: &mut Criterion, b
                     .try_generate_keys(Some(ntru::cbs::<T>()), &mut rng)
                     .unwrap();
                 let input = context
-                    .encryptor(&client, &input_codec)
+                    .encryptor(client.external_lwe_secret_key(), &input_codec)
                     .unwrap()
                     .encrypt_padded(T::TWO, &mut rng)
                     .unwrap();
                 let mut ring = context
                     .accumulator_client(
-                        &client,
+                        client.accumulator_ntru_secret_key(),
                         ScaledCodec::new(
                             input_codec.plaintext_modulus(),
                             context.parameters().accumulator_ntru().cipher_modulus(),
@@ -145,7 +145,7 @@ fn one_hot<T: FheUint, Table: MonomialNttTable<ValueT = T>>(c: &mut Criterion, b
                 let mut decoded = vec![T::ZERO; N];
                 let mut ring = context
                     .accumulator_client(
-                        client,
+                        client.accumulator_ntru_secret_key(),
                         ScaledCodec::new(
                             input_codec.plaintext_modulus(),
                             context.parameters().accumulator_ntru().cipher_modulus(),

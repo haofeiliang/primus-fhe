@@ -6,20 +6,23 @@ use primus_fft::TorusFftValue;
 use primus_lwe::LwePublicKey;
 use primus_modulus::NativeModulus;
 
-use crate::{ClientError, ClientKey, Decryptor, Encryptor, TfheClientError, TfheContext};
+use crate::{
+    ClientError, Decryptor, Encryptor, ExternalLweSecretKey, TfheClientError, TfheContext,
+};
 
 impl<T, Table> TfheContext<T, Table>
 where
     T: TorusFftValue,
     Table: FftTable,
 {
-    /// Creates an encryptor after checking the family client key.
+    /// Creates an encryptor after checking only the external secret.
+    /// Inherits [`primus_tfhe_glwe::TfheParameters::encryptor`]'s signed-range contract.
     pub fn encryptor<'a>(
         &'a self,
-        client_key: &'a ClientKey<T>,
+        secret_key: ExternalLweSecretKey<'a, T>,
         codec: &'a RoundedCodec<T, NativeModulus<T>>,
     ) -> Result<Encryptor<'a, T>, TfheClientError> {
-        self.parameters().encryptor(client_key, codec)
+        self.parameters().encryptor(secret_key, codec)
     }
 
     /// Checks an external LWE public key and creates its encryptor.
@@ -32,12 +35,13 @@ where
         self.parameters().public_encryptor(public_key, codec)
     }
 
-    /// Creates a decryptor after checking the family client key.
+    /// Creates a decryptor after checking only the external secret.
+    /// Inherits [`primus_tfhe_glwe::TfheParameters::decryptor`]'s signed-range contract.
     pub fn decryptor<'a>(
         &'a self,
-        client_key: &'a ClientKey<T>,
+        secret_key: ExternalLweSecretKey<'a, T>,
         codec: &'a RoundedCodec<T, NativeModulus<T>>,
     ) -> Result<Decryptor<'a, T>, TfheClientError> {
-        self.parameters().decryptor(client_key, codec)
+        self.parameters().decryptor(secret_key, codec)
     }
 }

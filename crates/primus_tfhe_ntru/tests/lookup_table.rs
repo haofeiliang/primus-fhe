@@ -66,8 +66,12 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
     for t in [3u32, 4, 5] {
         let parameters = parameters_with_plaintext(t);
         let input_codec = RoundedCodec::new(t, NativeModulus::new());
-        let encryptor = parameters.encryptor(&key, &input_codec).unwrap();
-        let decryptor = parameters.decryptor(&key, &input_codec).unwrap();
+        let encryptor = parameters
+            .encryptor(key.external_lwe_secret_key(), &input_codec)
+            .unwrap();
+        let decryptor = parameters
+            .decryptor(key.external_lwe_secret_key(), &input_codec)
+            .unwrap();
         let domain_len = t.div_ceil(2);
         let default = parameters
             .lookup_table_compiler(&input_codec)
@@ -134,11 +138,11 @@ fn codec_binding_checks_input_q_and_default_output_encoding() {
     let key = imported_key([1, 0, 1, 1], parameters.external_lwe().cipher_modulus());
     let foreign = RoundedCodec::new(4, BarrettModulus::new(129));
     assert!(matches!(
-        parameters.encryptor(&key, &foreign),
+        parameters.encryptor(key.external_lwe_secret_key(), &foreign),
         Err(TfheClientError::Client(ClientError::CodecModulusMismatch))
     ));
     assert!(matches!(
-        parameters.decryptor(&key, &foreign),
+        parameters.decryptor(key.external_lwe_secret_key(), &foreign),
         Err(TfheClientError::Client(ClientError::CodecModulusMismatch))
     ));
     assert!(matches!(

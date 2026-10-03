@@ -68,6 +68,18 @@ TFHE 显式拥有普通 accumulator 参数以及共享其 inner 的 BR 参数。
 | `KeyGenerator` / `AccumulatorClient` | 绑定 context，准备密钥生成或环客户端所需的表示和 scratch |
 | `Evaluator` | 绑定 context、服务端密钥和对应算法工作区，执行在线同态运算 |
 
+`ClientKey` 是生成服务端材料的拥有型 setup 组合，`check_compatible` 校验整套秘密。普通加解密、Boolean 客户端和 LWE 公钥生成改为接收外部秘密；`AccumulatorClient` 只接收系数域累加秘密。工厂绑定之后仍借用 raw view 执行，不复制秘密、不逐消息检查，也不扫描无关秘密。
+
+| 客户端角色 | 最小秘密输入 | 绑定与生成的检查 |
+| --- | --- | --- |
+| GLWE BR→KS 外部消息 | `ExternalLweSecretKey::SmallLwe(&LweSecretKey)` | order、n、q、分布与 binary/ternary 系数 |
+| GLWE KS→BR 外部消息 | `ExternalLweSecretKey::ExtractedGlwe(&GlweSecretKey)` | order、k/N 与分布；借用 signed kN 系数，幅度界继承 raw LWE 契约 |
+| NTRU 外部消息 | `&LweSecretKey` | n、外部 q、分布与 binary/ternary 系数；不依赖 f 或 Q |
+| GLWE/NTRU 环消息 | `&GlweSecretKey` / `&NtruSecretKey` | 累加布局、分布、Scaled codec 的 Q；按后端转换秘密并准备私有 scratch |
+| 服务端密钥生成 | 完整 `&ClientKey` | 保留整套 setup 检查；NTRU 还检查 f 在返回 q 下的幅度界及变换可逆性 |
+
+`ClientKey::external_lwe_secret_key()` 提供便捷借用；GLWE 的借用枚举保留 owner 元数据到绑定，不是新的身份系统。独立持有的秘密可直接传入工厂；`into_parts()` 只移动 buffer。LWE 公钥生成位于 `parameters.try_generate_public_key(external_secret, rng)`。Accumulator client 不要求外部 LWE 的返回界；NTT 输入系数的幅度、NTT roots/order 和实际秘密身份继续由调用方承担。
+
 四个后端的 `TfheContext` 工厂仍可从同一入口调用，其 inherent impl 按职责放在 client、accumulator、key、sparse/key、CBS、factorized 或 boolean 模块。`context.rs` 保留参数/表绑定、访问器及公共布局分配，避免混入各功能的实现依赖。NTT/Fourier 和 GLWE/NTRU 的数值契约仍各自独立。
 
 [共享客户端参数](../../crates/primus_tfhe/src/client/parameters.rs)从已验证的 `LweParameters` 构造，字段私有，mask 采样器从 codec 的密文模数派生。GLWE KS→BR 显式选取 `kN` 维数及 accumulator fresh-noise，并在客户端构造时核对噪声模数。没有在逐次加密或逐系数操作中重复核对采样器；预算与秘密身份仍由调用方负责。

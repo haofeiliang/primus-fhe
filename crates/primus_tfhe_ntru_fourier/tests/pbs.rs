@@ -96,12 +96,17 @@ where
         .try_generate_server_key(&client_key, None, &mut rng)
         .unwrap();
     assert!(context.evaluator(&imported).is_ok());
-    let public = client_key
-        .try_generate_public_key(context.parameters(), &mut rng)
+    let public = context
+        .parameters()
+        .try_generate_public_key(client_key.external_lwe_secret_key(), &mut rng)
         .unwrap();
     let public_encryptor = context.public_encryptor(&public, &input_codec).unwrap();
-    let encryptor = context.encryptor(&client_key, &input_codec).unwrap();
-    let decryptor = context.decryptor(&client_key, &input_codec).unwrap();
+    let encryptor = context
+        .encryptor(client_key.external_lwe_secret_key(), &input_codec)
+        .unwrap();
+    let decryptor = context
+        .decryptor(client_key.external_lwe_secret_key(), &input_codec)
+        .unwrap();
     let mut evaluator = context.evaluator(&server_key).unwrap();
     // Input centers use t_in=15; output values use the independent t_out=8 scale.
     let output_codec = RoundedCodec::new(
@@ -247,7 +252,7 @@ where
             .compile_interleaved_fn(2, |m, _| T::as_from(m))
             .unwrap();
         let input = context
-            .encryptor(&client_key, &codec)
+            .encryptor(client_key.external_lwe_secret_key(), &codec)
             .unwrap()
             .encrypt_padded(T::ONE, &mut rng)
             .unwrap();
@@ -255,7 +260,7 @@ where
         evaluator.apply_lookup_table_to(input.as_view(), &single, outputs[0].as_mut_view());
         assert_eq!(
             context
-                .decryptor(&client_key, &codec)
+                .decryptor(client_key.external_lwe_secret_key(), &codec)
                 .unwrap()
                 .decrypt(outputs[0].as_view())
                 .unwrap(),
@@ -265,7 +270,7 @@ where
         for output in outputs {
             assert_eq!(
                 context
-                    .decryptor(&client_key, &codec)
+                    .decryptor(client_key.external_lwe_secret_key(), &codec)
                     .unwrap()
                     .decrypt(output.as_view())
                     .unwrap(),
@@ -562,7 +567,9 @@ fn check_first_controls<T: TorusFftValue, Table: FftTable>(context: TfheContext<
             .try_generate_server_key(&client, None, &mut rng)
             .unwrap();
         let mut evaluator = context.evaluator(&server).unwrap();
-        let decryptor = context.decryptor(&client, &input_codec).unwrap();
+        let decryptor = context
+            .decryptor(client.external_lwe_secret_key(), &input_codec)
+            .unwrap();
         let lut = parameters
             .lookup_table_compiler(&input_codec)
             .unwrap()

@@ -29,6 +29,8 @@ cargo run -p primus_tfhe_glwe_fourier --release --example fourier_basic
 
 ManyLUT 通过交错共享一次盲旋转；分解式 MVB 通过公共因子生成多输出，是不同的求值接口。
 
+客户端工厂只接收所需秘密：普通及 Boolean 加解密传入 `client_key.external_lwe_secret_key()`，`accumulator_client` 传入 `client_key.glwe_secret_key()`。完整 `ClientKey` 组合用于生成服务端密钥；选择角色不会复制秘密缓冲区。
+
 ## 参数与表示
 
 Fourier 环只支持 `NativeModulus`；`PowOf2Modulus` 环不受支持。

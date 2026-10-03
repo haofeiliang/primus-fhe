@@ -4,21 +4,23 @@ use primus_lwe::LwePublicKey;
 use primus_reduce::RingContext;
 use primus_tfhe::{ClientError, Decryptor, Encryptor, LweClientParameters};
 
-use crate::{ClientKey, TfheClientError, TfheParameters};
+use crate::{ExternalLweSecretKey, TfheClientError, TfheKeyError, TfheParameters};
 
 impl<T: FheUint, M: RingContext<T>> TfheParameters<T, M> {
     /// Binds the active external secret to a message codec at the same ciphertext modulus.
+    /// Only this external secret is checked; no other setup secret is required.
     /// A new codec reuses the same key; noise and programmable capacity remain caller requirements.
+    ///
+    /// # Correctness
+    /// Signed GLWE coefficients inherit [`primus_lwe::LweSecretKeyRef`]'s range
+    /// contract; binding checks layout and distribution, not coefficient magnitudes.
     pub fn encryptor<'a>(
         &'a self,
-        key: &'a ClientKey<T>,
+        key: ExternalLweSecretKey<'a, T>,
         codec: &'a RoundedCodec<T, M>,
     ) -> Result<Encryptor<'a, T, M>, TfheClientError> {
-        key.check_compatible(self)?;
-        Ok(Encryptor::try_new(
-            self.client_parameters(codec)?,
-            key.external_lwe_secret_key(),
-        )?)
+        let key = key.bind(self)?;
+        Ok(Encryptor::try_new(self.client_parameters(codec)?, key)?)
     }
 
     /// Checks an external public key and its message codec's ciphertext modulus.
@@ -33,14 +35,53 @@ impl<T: FheUint, M: RingContext<T>> TfheParameters<T, M> {
 
     /// Binds the active external secret and a decoder at the key's ciphertext modulus.
     /// The selected message encoding must match the input ciphertext, including LUT outputs.
+    /// Inherits [`Self::encryptor`]'s signed-secret range contract.
     pub fn decryptor<'a>(
         &self,
-        key: &'a ClientKey<T>,
+        key: ExternalLweSecretKey<'a, T>,
         codec: &'a RoundedCodec<T, M>,
     ) -> Result<Decryptor<'a, T, M>, TfheClientError> {
-        key.check_compatible(self)?;
+        let key = key.bind(self)?;
         self.check_codec(codec)?;
-        Ok(Decryptor::new(codec, key.external_lwe_secret_key()))
+        Ok(Decryptor::new(codec, key))
+    }
+
+    /// Generates an LWE public key using only the selected external secret.
+    /// Uses small-LWE noise for BR→KS, or accumulator fresh noise for KS→BR.
+    /// The signed kN secret is borrowed without a coefficient copy.
+    ///
+    /// # Correctness
+    /// The secret inherits [`primus_lwe::LweSecretKeyRef`]'s range contract.
+    /// Public-key usage and security follow [`crate::LwePublicKey`] and
+    /// [`crate::EncryptionKey`]; shape/domain checks do not prove secret identity.
+    ///
+    /// # Errors
+    /// Rejects an incompatible external role, layout, distribution or LWE modulus,
+    /// and small-LWE coefficients outside the binary/ternary domain.
+    ///
+    /// # Panics
+    /// Panics if public-key storage `d * (d + 1)` overflows for external dimension d.
+    pub fn try_generate_public_key<R: rand::Rng + rand::CryptoRng>(
+        &self,
+        key: ExternalLweSecretKey<'_, T>,
+        rng: &mut R,
+    ) -> Result<LwePublicKey<T>, TfheKeyError> {
+        let key = key.bind(self)?;
+        Ok(match self.pbs_order() {
+            crate::PbsOrder::BootstrapKeyswitch => {
+                LwePublicKey::generate(key, self.small_lwe(), rng)
+            }
+            crate::PbsOrder::KeyswitchBootstrap => {
+                let glwe = self.blind_rotation_ggsw();
+                let lwe = primus_lwe::LweParametersInner::new(
+                    self.external_lwe_dimension(),
+                    self.cipher_modulus(),
+                    glwe.secret_key_distr(),
+                    glwe.noise_distribution().standard_deviation(),
+                );
+                LwePublicKey::generate(key, &lwe, rng)
+            }
+        })
     }
 
     fn check_codec(&self, codec: &RoundedCodec<T, M>) -> Result<(), ClientError> {

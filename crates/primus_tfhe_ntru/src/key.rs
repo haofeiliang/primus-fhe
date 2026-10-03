@@ -4,7 +4,10 @@ use primus_reduce::RingContext;
 
 use crate::{TfheKeyError, TfheParameters};
 
-/// Coefficient-domain client and accumulator secrets for NTRU TFHE.
+/// Independent external LWE and accumulator NTRU secrets for TFHE setup.
+/// Ordinary clients need only [`Self::external_lwe_secret_key`]; ring clients
+/// need only [`Self::accumulator_ntru_secret_key`]. [`Self::into_parts`] separates
+/// the owners without copying secret buffers.
 #[derive(Clone)]
 pub struct ClientKey<T: FheUint> {
     external_lwe_secret_key: primus_lwe::LweSecretKey<T>,
@@ -13,7 +16,8 @@ pub struct ClientKey<T: FheUint> {
 
 impl<T: FheUint> ClientKey<T> {
     /// Imports independent external LWE and accumulator NTRU secrets.
-    /// Binding to parameters validates dimensions, distribution labels and external residues.
+    /// [`Self::check_compatible`] validates the full setup before evaluation-key
+    /// generation. Ordinary client binding checks only the selected secret.
     #[must_use]
     pub fn new(
         external_lwe_secret_key: primus_lwe::LweSecretKey<T>,
@@ -45,39 +49,8 @@ impl<T: FheUint> ClientKey<T> {
         self.external_lwe_secret_key.dimension()
     }
 
-    /// Generates an LWE public key under the external secret.
-    ///
-    /// Borrows only the external LWE secret and uses `external_lwe`'s
-    /// noise sampler for public-key generation. Public-key storage contains
-    /// `n * (n + 1)` coefficients.
-    ///
-    /// # Correctness
-    ///
-    /// Public-key usage follows [`crate::EncryptionKey`]'s noise and key-identity
-    /// contracts and [`crate::LwePublicKey`]'s security requirements.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the public-key storage length overflows `usize`.
-    pub fn try_generate_public_key<M, LM, R>(
-        &self,
-        parameters: &TfheParameters<T, M, LM>,
-        rng: &mut R,
-    ) -> Result<crate::LwePublicKey<T>, TfheKeyError>
-    where
-        M: RingContext<T>,
-        LM: RingContext<T>,
-        R: rand::Rng + rand::CryptoRng,
-    {
-        self.check_compatible(parameters)?;
-        Ok(crate::LwePublicKey::generate(
-            self.external_lwe_secret_key().as_view(),
-            parameters.external_lwe(),
-            rng,
-        ))
-    }
-
-    /// Checks shapes, the recorded LWE modulus, distribution labels and canonical
+    /// Checks the full setup bundle before evaluation-key generation.
+    /// Validates shapes, the recorded LWE modulus, distribution labels and canonical
     /// binary/ternary external residues before borrowing raw key views.
     /// Accumulator coefficients must have magnitude below an explicit external q.
     /// Accumulator invertibility is checked by the backend when preparing its secret.
@@ -85,40 +58,9 @@ impl<T: FheUint> ClientKey<T> {
         &self,
         parameters: &TfheParameters<T, M, LM>,
     ) -> Result<(), TfheKeyError> {
-        if self.accumulator_ntru_secret_key.poly_length() != parameters.poly_length().get() {
-            return Err(TfheKeyError::PolynomialLengthMismatch);
-        }
-        let external = parameters.external_lwe();
-        if self.external_lwe_secret_key.cipher_modulus_minus_one()
-            != external.cipher_modulus_minus_one()
-        {
-            return Err(TfheKeyError::LweSecretKeyModulusMismatch);
-        }
-        if self.external_lwe_secret_key.distr() != external.secret_key_distr() {
-            return Err(TfheKeyError::ClientSecretKeyDistributionMismatch);
-        }
-        if self.external_lwe_dimension() != external.dimension().get() {
-            return Err(TfheKeyError::ExternalLweDimensionMismatch);
-        }
-        let ternary = external.secret_key_distr().is_ternary();
-        let minus_one = external.cipher_modulus_minus_one();
-        // Visit all coefficients; do not stop at the first invalid secret value.
-        let invalid = self
-            .external_lwe_secret_key
-            .as_ref()
-            .iter()
-            .fold(false, |invalid, &x| {
-                invalid | !((x == T::ZERO) | (x == T::ONE) | (ternary & (x == minus_one)))
-            });
-        if invalid {
-            return Err(TfheKeyError::InvalidClientSecretKeyCoefficient);
-        }
-        if self.accumulator_ntru_secret_key.distr()
-            != parameters.accumulator_ntru().secret_key_distr()
-        {
-            return Err(TfheKeyError::AccumulatorSecretKeyDistributionMismatch);
-        }
-        if let Some(q) = external.cipher_modulus_value() {
+        parameters.check_external_secret_key(&self.external_lwe_secret_key)?;
+        parameters.check_accumulator_secret_key(&self.accumulator_ntru_secret_key)?;
+        if let Some(q) = parameters.external_lwe().cipher_modulus_value() {
             let too_large = self
                 .accumulator_ntru_secret_key
                 .as_slice()
@@ -138,5 +80,48 @@ impl<T: FheUint> ClientKey<T> {
             self.external_lwe_secret_key,
             self.accumulator_ntru_secret_key,
         )
+    }
+}
+
+impl<T: FheUint, M: RingContext<T>, LM: RingContext<T>> TfheParameters<T, M, LM> {
+    /// Checks only the external LWE owner before borrowing its encoded view.
+    pub(crate) fn check_external_secret_key(
+        &self,
+        key: &primus_lwe::LweSecretKey<T>,
+    ) -> Result<(), TfheKeyError> {
+        let external = self.external_lwe();
+        if key.cipher_modulus_minus_one() != external.cipher_modulus_minus_one() {
+            return Err(TfheKeyError::LweSecretKeyModulusMismatch);
+        }
+        if key.distr() != external.secret_key_distr() {
+            return Err(TfheKeyError::ClientSecretKeyDistributionMismatch);
+        }
+        if key.dimension() != external.dimension().get() {
+            return Err(TfheKeyError::ExternalLweDimensionMismatch);
+        }
+        let ternary = external.secret_key_distr().is_ternary();
+        let minus_one = external.cipher_modulus_minus_one();
+        // Visit all coefficients; do not stop at the first invalid secret value.
+        let invalid = key.as_ref().iter().fold(false, |invalid, &x| {
+            invalid | !((x == T::ZERO) | (x == T::ONE) | (ternary & (x == minus_one)))
+        });
+        if invalid {
+            return Err(TfheKeyError::InvalidClientSecretKeyCoefficient);
+        }
+        Ok(())
+    }
+
+    /// Checks only the accumulator secret's ring length and distribution label.
+    /// Backend conversion establishes invertibility; signed coefficient magnitudes
+    /// remain its caller precondition. Return-key compatibility with external q
+    /// belongs to full setup and is not needed by an accumulator client.
+    pub fn check_accumulator_secret_key(&self, key: &NtruSecretKey<T>) -> Result<(), TfheKeyError> {
+        if key.poly_length() != self.poly_length().get() {
+            return Err(TfheKeyError::PolynomialLengthMismatch);
+        }
+        if key.distr() != self.accumulator_ntru().secret_key_distr() {
+            return Err(TfheKeyError::AccumulatorSecretKeyDistributionMismatch);
+        }
+        Ok(())
     }
 }

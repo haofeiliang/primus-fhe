@@ -111,8 +111,12 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(order: PbsOrder, ternary: b
         let mut evaluator = primus_tfhe_glwe_fourier::FactorizedEvaluator::from_bootstrapper(
             context.evaluator(server).unwrap(),
         );
-        let encryptor = context.encryptor(&client, &input_codec).unwrap();
-        let decryptor = context.decryptor(&client, &input_codec).unwrap();
+        let encryptor = context
+            .encryptor(client.external_lwe_secret_key(), &input_codec)
+            .unwrap();
+        let decryptor = context
+            .decryptor(client.external_lwe_secret_key(), &input_codec)
+            .unwrap();
         let dimension = context.parameters().external_lwe_dimension().get();
         assert_eq!(
             dimension,
@@ -210,7 +214,7 @@ fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
     let other = self::context::<u32, RustFftTable>(PbsOrder::BootstrapKeyswitch, false);
     let foreign = FourierFactorizedLookupTable::new(&other, compile());
     let input = context
-        .encryptor(&client, &input_codec)
+        .encryptor(client.external_lwe_secret_key(), &input_codec)
         .unwrap()
         .encrypt_padded(3, &mut rng)
         .unwrap();
@@ -236,7 +240,9 @@ fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
         );
         assert_eq!(outputs, before);
     }
-    let decryptor = context.decryptor(&client, &input_codec).unwrap();
+    let decryptor = context
+        .decryptor(client.external_lwe_secret_key(), &input_codec)
+        .unwrap();
     let outputs = evaluator.apply_lookup_table(input.as_view(), &lut);
     assert_eq!(
         outputs

@@ -105,12 +105,16 @@ fn main() {
     let (client_key, server_key) = context
         .try_generate_keys(Some(circuit_config()), &mut rng)
         .unwrap();
-    let encryptor = context.encryptor(&client_key, &input_codec).unwrap();
+    // Ordinary messages borrow only the external secret from the setup bundle.
+    let external_secret = client_key.external_lwe_secret_key();
+    let encryptor = context.encryptor(external_secret, &input_codec).unwrap();
     let ring_codec = ScaledCodec::new(
         input_codec.plaintext_modulus(),
         context.parameters().accumulator_ntru().cipher_modulus(),
     );
-    let mut ring_client = context.accumulator_client(&client_key, ring_codec).unwrap();
+    let mut ring_client = context
+        .accumulator_client(client_key.accumulator_ntru_secret_key(), ring_codec)
+        .unwrap();
     // Encrypt both candidates with the accumulator secret used by the CBS output.
     let lhs_message = vec![1 as Word; N];
     let rhs_message = vec![3 as Word; N];

@@ -1,15 +1,19 @@
 use num_traits::{ConstOne, ConstZero};
 use primus_integer::FheUint;
-use primus_lattice::GlweSize;
-use primus_lattice::{GlweDimension, LweDimension};
+use primus_lattice::{GlweDimension, GlweSize};
 use primus_reduce::RingContext;
-use primus_tfhe::LweSecretKeyRef;
 
 use crate::{GlweSecretKey, LweSecretKey, PbsOrder, TfheKeyError, TfheParameters};
 
-/// The complete client-side secret material for GLWE-based TFHE.
+mod external;
+
+pub use external::ExternalLweSecretKey;
+
+/// The complete secret bundle for GLWE TFHE setup and evaluation-key generation.
+/// Ordinary clients borrow only [`Self::external_lwe_secret_key`]; ring clients
+/// borrow [`Self::glwe_secret_key`]. Use [`Self::into_parts`] to retain roles separately.
 ///
-/// The GLWE key is kept in coefficient-domain canonical form. Fourier and NTT
+/// The GLWE key is kept in signed coefficient form. Fourier and NTT
 /// representations are derived temporarily while generating evaluation keys.
 #[derive(Clone)]
 pub struct ClientKey<T: FheUint> {
@@ -54,65 +58,19 @@ impl<T: FheUint> ClientKey<T> {
     /// Returns the secret key used by external LWE ciphertexts.
     ///
     /// Bootstrap-then-key-switch uses the small-LWE key. Key-switch-then-
-    /// bootstrap uses the coefficient expansion of the GLWE key.
+    /// bootstrap uses the coefficient expansion of the GLWE key. The returned
+    /// role retains the owner metadata and is validated when binding a client.
     #[must_use]
     #[inline]
-    pub fn external_lwe_secret_key(&self) -> LweSecretKeyRef<'_, T> {
+    pub fn external_lwe_secret_key(&self) -> ExternalLweSecretKey<'_, T> {
         match self.pbs_order {
             PbsOrder::BootstrapKeyswitch => {
-                LweSecretKeyRef::Encoded(self.small_lwe_secret_key.as_ref())
+                ExternalLweSecretKey::SmallLwe(&self.small_lwe_secret_key)
             }
             PbsOrder::KeyswitchBootstrap => {
-                LweSecretKeyRef::Signed(self.glwe_secret_key.as_slice())
+                ExternalLweSecretKey::ExtractedGlwe(&self.glwe_secret_key)
             }
         }
-    }
-
-    /// Generates an LWE public key for this client's external secret.
-    ///
-    /// Uses the small-LWE noise sampler for bootstrap-then-key-switch, or the
-    /// accumulator GLWE noise sampler for key-switch-then-bootstrap. The latter
-    /// borrows the signed `kN` coefficients without copying the secret.
-    /// Public-key storage contains `d * (d + 1)` coefficients for external
-    /// dimension `d` (`n` or `kN`).
-    ///
-    /// # Correctness
-    ///
-    /// The secret must satisfy [`LweSecretKeyRef`]'s range contract. Public-key
-    /// usage follows [`crate::EncryptionKey`]'s noise and key-identity contracts
-    /// and [`crate::LwePublicKey`]'s security requirements.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the public-key storage length overflows `usize`.
-    pub fn try_generate_public_key<M, R>(
-        &self,
-        parameters: &TfheParameters<T, M>,
-        rng: &mut R,
-    ) -> Result<crate::LwePublicKey<T>, TfheKeyError>
-    where
-        M: RingContext<T>,
-        R: rand::Rng + rand::CryptoRng,
-    {
-        self.check_compatible(parameters)?;
-        let public = match parameters.pbs_order() {
-            PbsOrder::BootstrapKeyswitch => crate::LwePublicKey::generate(
-                self.external_lwe_secret_key(),
-                parameters.small_lwe(),
-                rng,
-            ),
-            PbsOrder::KeyswitchBootstrap => {
-                let glwe = parameters.blind_rotation_ggsw();
-                let lwe = primus_lwe::LweParametersInner::new(
-                    LweDimension::from(glwe.glwe_size()),
-                    parameters.small_lwe().cipher_modulus(),
-                    glwe.secret_key_distr(),
-                    glwe.noise_distribution().standard_deviation(),
-                );
-                crate::LwePublicKey::generate(self.external_lwe_secret_key(), &lwe, rng)
-            }
-        };
-        Ok(public)
     }
 
     /// Returns the small-LWE secret key used by the bootstrapping key.
@@ -194,7 +152,8 @@ impl<T: FheUint> ClientKey<T> {
         self.pbs_order
     }
 
-    /// Checks key shapes, distribution labels and the small-LWE coefficient domain.
+    /// Checks the full setup bundle before evaluation-key generation.
+    /// Validates key shapes, distribution labels and the small-LWE coefficient domain.
     /// The owning small-LWE modulus is checked before creating any raw key view.
     ///
     /// Imported small-LWE coefficients must be `0/1`, or also `q-1` for ternary
@@ -210,51 +169,8 @@ impl<T: FheUint> ClientKey<T> {
                 actual: self.pbs_order,
             });
         }
-        if self.small_lwe_secret_key.dimension() != parameters.small_lwe().dimension().get() {
-            return Err(TfheKeyError::LweDimensionMismatch {
-                expected: parameters.small_lwe().dimension().get(),
-                actual: self.small_lwe_secret_key.dimension(),
-            });
-        }
-        if self.small_lwe_secret_key.cipher_modulus_minus_one()
-            != parameters.small_lwe().cipher_modulus_minus_one()
-        {
-            return Err(TfheKeyError::LweSecretKeyModulusMismatch);
-        }
-        if self.small_lwe_secret_key.distr() != parameters.small_lwe().secret_key_distr() {
-            return Err(TfheKeyError::LweSecretKeyDistributionMismatch);
-        }
-        if self.glwe_secret_key.dimension() != parameters.blind_rotation_ggsw().dimension() {
-            return Err(TfheKeyError::GlweDimensionMismatch {
-                expected: parameters.blind_rotation_ggsw().dimension().get(),
-                actual: self.glwe_secret_key.dimension().get(),
-            });
-        }
-        if self.glwe_secret_key.poly_length()
-            != parameters.blind_rotation_ggsw().poly_length().get()
-        {
-            return Err(TfheKeyError::PolynomialLengthMismatch {
-                expected: parameters.blind_rotation_ggsw().poly_length().get(),
-                actual: self.glwe_secret_key.poly_length(),
-            });
-        }
-        if self.glwe_secret_key.distr() != parameters.blind_rotation_ggsw().secret_key_distr() {
-            return Err(TfheKeyError::GlweSecretKeyDistributionMismatch);
-        }
-        let ternary = self.small_lwe_secret_key.distr().is_ternary();
-        let minus_one = parameters.small_lwe().cipher_modulus().minus_one();
-        // Inspect the complete secret instead of stopping at the first bad coefficient.
-        let invalid =
-            self.small_lwe_secret_key
-                .as_ref()
-                .iter()
-                .fold(false, |invalid, &coefficient| {
-                    invalid | ((coefficient > T::ONE) & !(ternary & (coefficient == minus_one)))
-                });
-        if invalid {
-            return Err(TfheKeyError::InvalidLweSecretKeyCoefficient);
-        }
-        Ok(())
+        parameters.check_small_lwe_secret_key(&self.small_lwe_secret_key)?;
+        parameters.check_accumulator_secret_key(&self.glwe_secret_key)
     }
 
     /// Decomposes this client key into its two secret keys.
@@ -266,5 +182,58 @@ impl<T: FheUint> ClientKey<T> {
             self.glwe_secret_key,
             self.pbs_order,
         )
+    }
+}
+
+impl<T: FheUint, M: RingContext<T>> TfheParameters<T, M> {
+    /// Checks the small secret at setup or external-client binding, before raw views.
+    pub(crate) fn check_small_lwe_secret_key(
+        &self,
+        key: &LweSecretKey<T>,
+    ) -> Result<(), TfheKeyError> {
+        if key.dimension() != self.small_lwe().dimension().get() {
+            return Err(TfheKeyError::LweDimensionMismatch {
+                expected: self.small_lwe().dimension().get(),
+                actual: key.dimension(),
+            });
+        }
+        if key.cipher_modulus_minus_one() != self.small_lwe().cipher_modulus_minus_one() {
+            return Err(TfheKeyError::LweSecretKeyModulusMismatch);
+        }
+        if key.distr() != self.small_lwe().secret_key_distr() {
+            return Err(TfheKeyError::LweSecretKeyDistributionMismatch);
+        }
+        let ternary = key.distr().is_ternary();
+        let minus_one = self.small_lwe().cipher_modulus().minus_one();
+        // Inspect the complete secret instead of stopping at the first bad coefficient.
+        let invalid = key.as_ref().iter().fold(false, |invalid, &coefficient| {
+            invalid | ((coefficient > T::ONE) & !(ternary & (coefficient == minus_one)))
+        });
+        if invalid {
+            return Err(TfheKeyError::InvalidLweSecretKeyCoefficient);
+        }
+        Ok(())
+    }
+
+    /// Checks only the accumulator secret's shape and distribution label.
+    /// This does not inspect the small-LWE secret, prove key identity, or validate
+    /// signed coefficient magnitudes required by the selected transform backend.
+    pub fn check_accumulator_secret_key(&self, key: &GlweSecretKey<T>) -> Result<(), TfheKeyError> {
+        if key.dimension() != self.blind_rotation_ggsw().dimension() {
+            return Err(TfheKeyError::GlweDimensionMismatch {
+                expected: self.blind_rotation_ggsw().dimension().get(),
+                actual: key.dimension().get(),
+            });
+        }
+        if key.poly_length() != self.blind_rotation_ggsw().poly_length().get() {
+            return Err(TfheKeyError::PolynomialLengthMismatch {
+                expected: self.blind_rotation_ggsw().poly_length().get(),
+                actual: key.poly_length(),
+            });
+        }
+        if key.distr() != self.blind_rotation_ggsw().secret_key_distr() {
+            return Err(TfheKeyError::GlweSecretKeyDistributionMismatch);
+        }
+        Ok(())
     }
 }

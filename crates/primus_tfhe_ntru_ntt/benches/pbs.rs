@@ -59,7 +59,7 @@ fn backend<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
             let mut rng = StdRng::seed_from_u64(42);
             let (client, server) = context.try_generate_keys(None, &mut rng).unwrap();
             let input = context
-                .encryptor(&client, &input_codec)
+                .encryptor(client.external_lwe_secret_key(), &input_codec)
                 .unwrap()
                 .encrypt_padded(T::ONE, &mut rng)
                 .unwrap();
@@ -78,7 +78,7 @@ fn backend<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
             evaluator.apply_lookup_table_to(input.as_view(), lut, output.as_mut_view());
             assert_eq!(
                 context
-                    .decryptor(client, &input_codec)
+                    .decryptor(client.external_lwe_secret_key(), &input_codec)
                     .unwrap()
                     .decrypt(output.as_view())
                     .unwrap(),

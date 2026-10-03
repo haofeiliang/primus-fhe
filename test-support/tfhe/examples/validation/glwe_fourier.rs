@@ -109,8 +109,12 @@ fn pbs<T, Table>(
     }
     .unwrap();
 
-    let encryptor = context.encryptor(&client_key, &input_codec).unwrap();
-    let decryptor = context.decryptor(&client_key, &input_codec).unwrap();
+    let encryptor = context
+        .encryptor(client_key.external_lwe_secret_key(), &input_codec)
+        .unwrap();
+    let decryptor = context
+        .decryptor(client_key.external_lwe_secret_key(), &input_codec)
+        .unwrap();
     let codec = RoundedCodec::new(t, modulus);
     let mut margin = ErrorMargin::new(name, seed);
 
@@ -176,10 +180,10 @@ fn pbs<T, Table>(
     if domain == 2 {
         // Client: prepare encrypted Boolean inputs and keep decryption local.
         let encryptor = context
-            .boolean_encryptor(&client_key, &input_codec)
+            .boolean_encryptor(client_key.external_lwe_secret_key(), &input_codec)
             .unwrap();
         let decryptor = context
-            .boolean_decryptor(&client_key, &input_codec)
+            .boolean_decryptor(client_key.external_lwe_secret_key(), &input_codec)
             .unwrap();
         let inputs = [false, true].map(|bit| encryptor.encrypt(bit, &mut rng).unwrap());
 
@@ -220,8 +224,12 @@ where
     let mut rng = StdRng::seed_from_u64(seed);
     let (client_key, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
 
-    let encryptor = context.encryptor(&client_key, &input_codec).unwrap();
-    let decryptor = context.decryptor(&client_key, &input_codec).unwrap();
+    let encryptor = context
+        .encryptor(client_key.external_lwe_secret_key(), &input_codec)
+        .unwrap();
+    let decryptor = context
+        .decryptor(client_key.external_lwe_secret_key(), &input_codec)
+        .unwrap();
     let output_codec = ScaledCodec::new(T::as_from(2u32), modulus);
     let mut margin = ErrorMargin::new(name, seed);
 
@@ -290,10 +298,12 @@ where
     let size = cbs.output_size();
 
     // Client: encrypt both candidate messages; only choices go to the server.
-    let encryptor = context.encryptor(&client_key, &input_codec).unwrap();
+    let encryptor = context
+        .encryptor(client_key.external_lwe_secret_key(), &input_codec)
+        .unwrap();
     let mut accumulator = context
         .accumulator_client(
-            &client_key,
+            client_key.glwe_secret_key(),
             ScaledCodec::new(T::as_from(4u32), context.parameters().cipher_modulus()),
         )
         .unwrap();

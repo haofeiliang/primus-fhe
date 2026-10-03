@@ -3,10 +3,9 @@
 use primus_encoding::RoundedCodec;
 use primus_fft::FftTable;
 use primus_fft::TorusFftValue;
+use primus_lwe::LweSecretKey;
 
-use crate::{
-    ClientError, ClientKey, Decryptor, Encryptor, LwePublicKey, TfheClientError, TfheContext,
-};
+use crate::{ClientError, Decryptor, Encryptor, LwePublicKey, TfheClientError, TfheContext};
 
 impl<T, Table, LM> TfheContext<T, Table, LM>
 where
@@ -14,13 +13,13 @@ where
     Table: FftTable,
     LM: primus_reduce::RingContext<T>,
 {
-    /// Creates an encryptor after checking the family client key.
+    /// Creates an encryptor after checking only the external secret.
     pub fn encryptor<'a>(
         &'a self,
-        client_key: &'a ClientKey<T>,
+        secret_key: &'a LweSecretKey<T>,
         codec: &'a RoundedCodec<T, LM>,
     ) -> Result<Encryptor<'a, T, crate::LweSecretKeyRef<'a, T>, LM>, TfheClientError> {
-        self.parameters().encryptor(client_key, codec)
+        self.parameters().encryptor(secret_key, codec)
     }
 
     /// Checks an external LWE public key and creates its encryptor.
@@ -33,12 +32,12 @@ where
         self.parameters().public_encryptor(public_key, codec)
     }
 
-    /// Creates a decryptor after checking the family client key.
+    /// Creates a decryptor after checking only the external secret.
     pub fn decryptor<'a>(
         &'a self,
-        client_key: &'a ClientKey<T>,
+        secret_key: &'a LweSecretKey<T>,
         codec: &'a RoundedCodec<T, LM>,
     ) -> Result<Decryptor<'a, T, LM>, TfheClientError> {
-        self.parameters().decryptor(client_key, codec)
+        self.parameters().decryptor(secret_key, codec)
     }
 }

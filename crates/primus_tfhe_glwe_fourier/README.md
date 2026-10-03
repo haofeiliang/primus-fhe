@@ -29,6 +29,8 @@ Examples separate client encryption, server evaluation and client decryption; se
 
 ManyLUT interleaves outputs within one blind rotation; factorized MVB uses public factors and a different evaluation interface.
 
+Client factories take only the relevant secret: pass `client_key.external_lwe_secret_key()` to `encryptor` / `decryptor` and the Boolean variants, or `client_key.glwe_secret_key()` to `accumulator_client`. Complete `ClientKey` bundles are used for server-key generation; no secret buffers are copied to select a role.
+
 ## Parameters and representation
 
 The Fourier ring supports only `NativeModulus`; `PowOf2Modulus` rings are unsupported.

@@ -96,7 +96,9 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr) {
     )
     .unwrap();
     let mut decrypt = primus_ntru::FourierNtruDecryptWorkspace::new(PolyLength::new(N));
-    let encryptor = context.encryptor(&client, &input_codec).unwrap();
+    let encryptor = context
+        .encryptor(client.external_lwe_secret_key(), &input_codec)
+        .unwrap();
     // The same CBS-enabled server key also supports ordinary PBS.
     let identity = context
         .parameters()
@@ -111,7 +113,7 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr) {
         .apply_lookup_table(input.as_view(), &identity);
     assert_eq!(
         context
-            .decryptor(&client, &input_codec)
+            .decryptor(client.external_lwe_secret_key(), &input_codec)
             .unwrap()
             .decrypt(output.as_view())
             .unwrap(),
@@ -120,7 +122,7 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr) {
 
     let mut accumulator_client = context
         .accumulator_client(
-            &client,
+            client.accumulator_ntru_secret_key(),
             ScaledCodec::new(
                 input_codec.plaintext_modulus(),
                 context.parameters().accumulator_ntru().cipher_modulus(),
@@ -162,7 +164,9 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr) {
     for (t, bit) in [(4u64, 1u64), (8, 1), (8, 0)] {
         let input_codec =
             RoundedCodec::new(t, context.parameters().external_lwe().cipher_modulus());
-        let encryptor = context.encryptor(&client, &input_codec).unwrap();
+        let encryptor = context
+            .encryptor(client.external_lwe_secret_key(), &input_codec)
+            .unwrap();
         let identity = context
             .parameters()
             .lookup_table_compiler(&input_codec)
@@ -189,7 +193,7 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr) {
         });
         assert_eq!(
             context
-                .decryptor(&client, &input_codec)
+                .decryptor(client.external_lwe_secret_key(), &input_codec)
                 .unwrap()
                 .decrypt(output.as_view())
                 .unwrap(),

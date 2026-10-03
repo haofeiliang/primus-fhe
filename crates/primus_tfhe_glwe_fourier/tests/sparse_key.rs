@@ -53,7 +53,7 @@ fn check_selectors<Table: FftTable>() {
     let glwe = context.parameters().blind_rotation_ggsw();
     let mut accumulator_client = context
         .accumulator_client(
-            &client,
+            client.glwe_secret_key(),
             primus_encoding::ScaledCodec::new(
                 input_codec.plaintext_modulus(),
                 input_codec.ciphertext_modulus(),

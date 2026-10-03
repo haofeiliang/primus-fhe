@@ -175,7 +175,7 @@ fn construction_errors_preserve_transform_sources() {
     assert_eq!(
         context
             .accumulator_client(
-                &client,
+                client.accumulator_ntru_secret_key(),
                 ScaledCodec::new(
                     input_codec.plaintext_modulus(),
                     context.parameters().accumulator_ntru().cipher_modulus()

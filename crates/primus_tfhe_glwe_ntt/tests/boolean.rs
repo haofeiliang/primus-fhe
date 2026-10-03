@@ -66,10 +66,10 @@ fn boolean_factories_support_truth_tables_and_reused_output_in_both_orders() {
         let mut rng = StdRng::seed_from_u64(42);
         let (client_key, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
         let encryptor = context
-            .boolean_encryptor(&client_key, &input_codec)
+            .boolean_encryptor(client_key.external_lwe_secret_key(), &input_codec)
             .unwrap();
         let decryptor = context
-            .boolean_decryptor(&client_key, &input_codec)
+            .boolean_decryptor(client_key.external_lwe_secret_key(), &input_codec)
             .unwrap();
         let mut evaluator = context
             .boolean_evaluator(&server_key, &input_codec)
@@ -89,7 +89,7 @@ fn boolean_factories_support_truth_tables_and_reused_output_in_both_orders() {
         );
 
         let invalid = context
-            .encryptor(&client_key, &input_codec)
+            .encryptor(client_key.external_lwe_secret_key(), &input_codec)
             .unwrap()
             .encrypt(2, &mut rng)
             .unwrap();

@@ -52,8 +52,12 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
             ),
             PbsOrder::BootstrapKeyswitch,
         );
-        let encryptor = parameters.encryptor(&key, &codec).unwrap();
-        let decryptor = parameters.decryptor(&key, &codec).unwrap();
+        let encryptor = parameters
+            .encryptor(key.external_lwe_secret_key(), &codec)
+            .unwrap();
+        let decryptor = parameters
+            .decryptor(key.external_lwe_secret_key(), &codec)
+            .unwrap();
         let domain_len = t.div_ceil(2);
         let default = parameters
             .lookup_table_compiler(&codec)

@@ -126,7 +126,9 @@ fn selectors(distr: SecretKeyDistr) {
     let mut selected = NtruCiphertext::<Vec<u64>>::zero(N);
     let mut ep = NttNtruExternalProductWorkspace::new(PolyLength::new(N));
 
-    let encryptor = context.encryptor(&client, &input_codec).unwrap();
+    let encryptor = context
+        .encryptor(client.external_lwe_secret_key(), &input_codec)
+        .unwrap();
     let identity = context
         .parameters()
         .lookup_table_compiler(&input_codec)
@@ -136,7 +138,7 @@ fn selectors(distr: SecretKeyDistr) {
     let mut lwe_output = primus_tfhe::LweCiphertext::zero(4);
     let mut accumulator = context
         .accumulator_client(
-            &client,
+            client.accumulator_ntru_secret_key(),
             ScaledCodec::new(
                 input_codec.plaintext_modulus(),
                 context.parameters().accumulator_ntru().cipher_modulus(),
@@ -193,7 +195,7 @@ fn selectors(distr: SecretKeyDistr) {
         assert_eq!(joint_nonzero_ngsw, nonzero_ngsw);
         assert_eq!(
             context
-                .decryptor(&client, &input_codec)
+                .decryptor(client.external_lwe_secret_key(), &input_codec)
                 .unwrap()
                 .decrypt(lwe_output.as_view())
                 .unwrap(),

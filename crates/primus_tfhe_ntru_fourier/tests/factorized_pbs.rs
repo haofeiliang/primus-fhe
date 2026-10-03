@@ -88,8 +88,12 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(distr: SecretKeyDistr) {
         context.evaluator(&server).unwrap(),
     )
     .unwrap();
-    let encryptor = context.encryptor(&client, &input_codec).unwrap();
-    let decryptor = context.decryptor(&client, &input_codec).unwrap();
+    let encryptor = context
+        .encryptor(client.external_lwe_secret_key(), &input_codec)
+        .unwrap();
+    let decryptor = context
+        .decryptor(client.external_lwe_secret_key(), &input_codec)
+        .unwrap();
     let dimension = context.parameters().external_lwe_dimension().get();
     assert_eq!(dimension, (LweDimension::new(DIM)).get());
     let mut outputs = vec![LweCiphertext::zero(dimension); output_count];
@@ -180,7 +184,7 @@ fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
         self::context::<u32, RustFftTable>(SecretKeyDistr::fixed_hamming_weight_binary(DIM, 3));
     let foreign = FourierFactorizedLookupTable::new(&other, compile());
     let input = context
-        .encryptor(&client, &input_codec)
+        .encryptor(client.external_lwe_secret_key(), &input_codec)
         .unwrap()
         .encrypt_padded(3, &mut rng)
         .unwrap();
@@ -206,7 +210,9 @@ fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
         );
         assert_eq!(outputs, before);
     }
-    let decryptor = context.decryptor(&client, &input_codec).unwrap();
+    let decryptor = context
+        .decryptor(client.external_lwe_secret_key(), &input_codec)
+        .unwrap();
     let outputs = evaluator.apply_lookup_table(input.as_view(), &lut);
     assert_eq!(
         outputs

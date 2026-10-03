@@ -130,7 +130,7 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
         let glwe = context.parameters().blind_rotation_ggsw();
         let mut accumulator_client = context
             .accumulator_client(
-                &client_key,
+                client_key.glwe_secret_key(),
                 primus_encoding::ScaledCodec::new(
                     input_codec.plaintext_modulus(),
                     input_codec.ciphertext_modulus(),
@@ -154,7 +154,9 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
             output
         });
 
-        let encryptor = context.encryptor(&client_key, &input_codec).unwrap();
+        let encryptor = context
+            .encryptor(client_key.external_lwe_secret_key(), &input_codec)
+            .unwrap();
         // The same CBS-enabled server key also supports ordinary PBS.
         let identity = context
             .parameters()
@@ -169,7 +171,7 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
             .apply_lookup_table(input.as_view(), &identity);
         assert_eq!(
             context
-                .decryptor(&client_key, &input_codec)
+                .decryptor(client_key.external_lwe_secret_key(), &input_codec)
                 .unwrap()
                 .decrypt(output.as_view())
                 .unwrap(),
@@ -182,7 +184,7 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
             let other_codec =
                 primus_encoding::RoundedCodec::new(8, context.parameters().cipher_modulus());
             let input = context
-                .encryptor(&client_key, &other_codec)
+                .encryptor(client_key.external_lwe_secret_key(), &other_codec)
                 .unwrap()
                 .encrypt_padded(1, &mut rng)
                 .unwrap();
@@ -332,7 +334,7 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
             });
             assert_eq!(
                 context
-                    .decryptor(&client_key, &input_codec)
+                    .decryptor(client_key.external_lwe_secret_key(), &input_codec)
                     .unwrap()
                     .decrypt(output.as_view())
                     .unwrap(),

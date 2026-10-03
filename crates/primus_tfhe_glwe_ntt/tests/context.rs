@@ -161,12 +161,17 @@ fn split_keys_support_both_pbs_orders() {
             .unwrap()
             .compile_slice(&[1u32, 0])
             .unwrap();
-        let public = client
-            .try_generate_public_key(context.parameters(), &mut rng)
+        let public = context
+            .parameters()
+            .try_generate_public_key(client.external_lwe_secret_key(), &mut rng)
             .unwrap();
-        let secret_encryptor = context.encryptor(&client, &input_codec).unwrap();
+        let secret_encryptor = context
+            .encryptor(client.external_lwe_secret_key(), &input_codec)
+            .unwrap();
         let public_encryptor = context.public_encryptor(&public, &input_codec).unwrap();
-        let decryptor = context.decryptor(&client, &input_codec).unwrap();
+        let decryptor = context
+            .decryptor(client.external_lwe_secret_key(), &input_codec)
+            .unwrap();
         let mut evaluator = context.evaluator(&server).unwrap();
         for message in 0..2u32 {
             for input in [
@@ -180,7 +185,9 @@ fn split_keys_support_both_pbs_orders() {
         let boolean_encryptor = context
             .boolean_public_encryptor(&public, &input_codec)
             .unwrap();
-        let boolean_decryptor = context.boolean_decryptor(&client, &input_codec).unwrap();
+        let boolean_decryptor = context
+            .boolean_decryptor(client.external_lwe_secret_key(), &input_codec)
+            .unwrap();
         let mut boolean_evaluator = context.boolean_evaluator(&server, &input_codec).unwrap();
         let lhs = boolean_encryptor.encrypt(true, &mut rng).unwrap();
         let rhs = boolean_encryptor.encrypt(false, &mut rng).unwrap();

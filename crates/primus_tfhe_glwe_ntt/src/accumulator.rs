@@ -2,14 +2,14 @@
 
 use primus_data::{Data, DataMut};
 use primus_encoding::ScaledCodec;
-use primus_glwe::{GlweCiphertext, GlweParameters, NttGlweSecretKey};
+use primus_glwe::{GlweCiphertext, GlweParameters, GlweSecretKey, NttGlweSecretKey};
 use primus_integer::FheUint;
 use primus_modulus::BarrettModulus;
 use primus_ntt::MonomialNttTable;
 use primus_poly::Polynomial;
 use zeroize::Zeroizing;
 
-use crate::{ClientKey, TfheClientError, TfheContext};
+use crate::{TfheClientError, TfheContext};
 
 /// Prepared private-key client for the accumulator GLWE domain.
 ///
@@ -34,7 +34,7 @@ where
     T: FheUint,
     Table: MonomialNttTable<ValueT = T>,
 {
-    /// Binds the client key and a Scaled message codec to the accumulator domain.
+    /// Binds only the accumulator secret and a Scaled message codec to the accumulator domain.
     /// Rejects an incompatible key or codec modulus before preparing the secret.
     ///
     /// # Correctness
@@ -42,15 +42,16 @@ where
     /// see [`NttGlweSecretKey::from_coeff_secret_key`]. Layout checks do not establish this bound.
     pub fn try_new(
         context: &'a TfheContext<T, Table>,
-        client_key: &ClientKey<T>,
+        secret_key: &GlweSecretKey<T>,
         codec: ScaledCodec<T, BarrettModulus<T>>,
     ) -> Result<Self, TfheClientError> {
-        client_key.check_compatible(context.parameters())?;
+        context
+            .parameters()
+            .check_accumulator_secret_key(secret_key)?;
         let parameters =
             GlweParameters::try_from_glev(context.parameters().blind_rotation_ggsw(), codec)
                 .map_err(|_| crate::ClientError::CodecModulusMismatch)?;
-        let secret =
-            NttGlweSecretKey::from_coeff_secret_key(client_key.glwe_secret_key(), context.table());
+        let secret = NttGlweSecretKey::from_coeff_secret_key(secret_key, context.table());
         Ok(Self {
             context,
             secret,
@@ -139,9 +140,9 @@ where
     /// Inherits [`crate::AccumulatorClient::try_new`]'s contracts and errors.
     pub fn accumulator_client(
         &self,
-        client_key: &ClientKey<T>,
+        secret_key: &GlweSecretKey<T>,
         codec: ScaledCodec<T, BarrettModulus<T>>,
     ) -> Result<crate::AccumulatorClient<'_, T, Table>, crate::TfheClientError> {
-        crate::AccumulatorClient::try_new(self, client_key, codec)
+        crate::AccumulatorClient::try_new(self, secret_key, codec)
     }
 }

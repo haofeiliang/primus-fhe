@@ -88,8 +88,10 @@ fn main() {
         generator.try_generate_server_key(&client_key, None, &mut rng)
     }
     .unwrap();
-    let encryptor = context.encryptor(&client_key, &input_codec).unwrap();
-    let decryptor = context.decryptor(&client_key, &input_codec).unwrap();
+    // Ordinary messages borrow only the external secret from the setup bundle.
+    let external_secret = client_key.external_lwe_secret_key();
+    let encryptor = context.encryptor(external_secret, &input_codec).unwrap();
+    let decryptor = context.decryptor(external_secret, &input_codec).unwrap();
     let mut input = context.allocate_lwe_ciphertext();
     let mut flags = vec![0; OUTPUTS];
 

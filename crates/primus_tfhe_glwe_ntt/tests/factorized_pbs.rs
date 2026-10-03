@@ -90,8 +90,12 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
             }))
             .get()
         );
-        let encryptor = context.encryptor(&client, &input_codec).unwrap();
-        let decryptor = context.decryptor(&client, &input_codec).unwrap();
+        let encryptor = context
+            .encryptor(client.external_lwe_secret_key(), &input_codec)
+            .unwrap();
+        let decryptor = context
+            .decryptor(client.external_lwe_secret_key(), &input_codec)
+            .unwrap();
         let check = |outputs: &[LweCiphertext<u32>], message: usize| {
             for (i, output) in outputs.iter().enumerate() {
                 assert_eq!(output.dimension(), dimension);
@@ -285,8 +289,12 @@ fn factorized_pbs_accepts_ternary_controls_without_online_allocation() {
         let lut = context
             .compile_factorized_lookup_table_fn(&input_codec, &codec, DOMAIN, 3, value)
             .unwrap();
-        let encryptor = context.encryptor(&client, &input_codec).unwrap();
-        let decryptor = context.decryptor(&client, &input_codec).unwrap();
+        let encryptor = context
+            .encryptor(client.external_lwe_secret_key(), &input_codec)
+            .unwrap();
+        let decryptor = context
+            .decryptor(client.external_lwe_secret_key(), &input_codec)
+            .unwrap();
         let mut evaluator = context.factorized_evaluator(&server).unwrap();
         let mut outputs =
             vec![LweCiphertext::zero(context.parameters().external_lwe_dimension().get()); 3];

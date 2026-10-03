@@ -79,8 +79,12 @@ where
         context.parameters().cipher_modulus(),
     );
     let (client_key, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
-    let encryptor = context.encryptor(&client_key, &input_codec).unwrap();
-    let decryptor = context.decryptor(&client_key, &input_codec).unwrap();
+    let encryptor = context
+        .encryptor(client_key.external_lwe_secret_key(), &input_codec)
+        .unwrap();
+    let decryptor = context
+        .decryptor(client_key.external_lwe_secret_key(), &input_codec)
+        .unwrap();
     let mut evaluator = context.evaluator(&server_key).unwrap();
     // Input centers use t_in=15; output values use the independent t_out=8 scale.
     let output_codec = RoundedCodec::new(
@@ -162,7 +166,7 @@ where
     // keys and evaluator with a different t; ciphertexts carry no codec metadata.
     let other_codec = RoundedCodec::new(T::as_from(4u32), context.parameters().cipher_modulus());
     let other_input = context
-        .encryptor(&client_key, &other_codec)
+        .encryptor(client_key.external_lwe_secret_key(), &other_codec)
         .unwrap()
         .encrypt_padded(T::ONE, &mut rng)
         .unwrap();
@@ -175,7 +179,7 @@ where
     let other_output = evaluator.apply_lookup_table(other_input.as_view(), &other_lut);
     assert_eq!(
         context
-            .decryptor(&client_key, &other_codec)
+            .decryptor(client_key.external_lwe_secret_key(), &other_codec)
             .unwrap()
             .decrypt(other_output.as_view())
             .unwrap(),

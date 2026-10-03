@@ -55,7 +55,7 @@ Allocating encryption methods return `LweCiphertext<T>`. Client writes take `Lwe
 
 Evaluation uses the same views for single LWE operands: `evaluator.apply_lookup_table_to(input.as_view(), &lut, output.as_mut_view())`. Boolean gates and bivariate packing borrow their operands; CBS, one-hot and MVB borrow their LWE input. Allocating methods still return owned ciphertexts. ManyLUT/MVB output batches and high-precision input/output batches borrow slices of preallocated `LweCiphertext<T>` values. Allocate one complete LWE per effective output; LUT padding does not require extra ciphertexts. Each LWE keeps its own coefficient buffer, so pass the existing slice directly without packing coefficients or collecting views. Counts and every ciphertext dimension are checked before output writes.
 
-The client generates paired keys, keeps `ClientKey` and encryption/decryption helpers, and gives `ServerKey` to the server. The server needs only public context, evaluation keys, LUTs/programs and input ciphertexts; it returns encrypted results to the client. Examples show these stages in one process, with parameter construction kept separate. Input and output encodings are public agreements between the two sides.
+The client generates paired keys, keeps the setup bundle `ClientKey` (or separates its owners with `into_parts()`) and encryption/decryption helpers, and gives `ServerKey` to the server. The server needs only public context, evaluation keys, LUTs/programs and input ciphertexts; it returns encrypted results to the client. Examples show these stages in one process, with parameter construction kept separate. Input and output encodings are public agreements between the two sides.
 
 Ordinary buffer allocation needs no secret: all four backends provide `context.allocate_lwe_ciphertext()` for the external LWE mask/body and `context.allocate_accumulator_ciphertext()` for coefficient-domain GLWE/NTRU storage. Both allocate zeros without encrypting. CBS controls also depend on output decomposition and transform representation, so use `cbs.allocate_output()`. Each side prepares and reuses its own workspace and result buffers.
 
@@ -69,8 +69,9 @@ Boolean clients require `t=4`. All context factories take an explicit Rounded co
 
 ```rust,ignore
 let codec = primus_encoding::RoundedCodec::new(4, context.parameters().cipher_modulus());
-let encryptor = context.boolean_encryptor(&client, &codec)?;
-let decryptor = context.boolean_decryptor(&client, &codec)?;
+let external_secret = client.external_lwe_secret_key();
+let encryptor = context.boolean_encryptor(external_secret, &codec)?;
+let decryptor = context.boolean_decryptor(external_secret, &codec)?;
 let mut gates = context.boolean_evaluator(&server, &codec)?;
 let lhs = encryptor.encrypt(true, &mut rng)?;
 let rhs = encryptor.encrypt(false, &mut rng)?;
@@ -89,13 +90,13 @@ assert!(!decryptor.decrypt(output.as_view())?);
 
 ## CBS output and consumption
 
-All four backends bind CBS output layout and consumption to the same evaluator. This GLWE example selects a Rounded input codec and an independent Scaled accumulator codec. NTRU factories take the same codec arguments, with the input codec at external q and the ring codec at accumulator Q:
+All four backends bind CBS output layout and consumption to the same evaluator. This GLWE example selects a Rounded input codec and an independent Scaled accumulator codec. NTRU uses `client_key.accumulator_ntru_secret_key()` instead of the GLWE accessor and takes the same codec arguments, with the input codec at external q and the ring codec at accumulator Q:
 
 ```rust,ignore
 // Client: encrypt the two candidate messages.
 let input_codec = primus_encoding::RoundedCodec::new(4, context.parameters().cipher_modulus());
 let ring_codec = primus_encoding::ScaledCodec::new(8, context.parameters().cipher_modulus());
-let mut ring_client = context.accumulator_client(&client_key, ring_codec)?;
+let mut ring_client = context.accumulator_client(client_key.glwe_secret_key(), ring_codec)?;
 let lhs = ring_client.encrypt(&lhs_message, &mut rng);
 let rhs = ring_client.encrypt(&rhs_message, &mut rng);
 let mut decoded = vec![0; lhs_message.len()];

@@ -1,23 +1,24 @@
 use primus_encoding::RoundedCodec;
 use primus_integer::FheUint;
-use primus_lwe::LwePublicKey;
+use primus_lwe::{LwePublicKey, LweSecretKey};
 use primus_reduce::RingContext;
 use primus_tfhe::{ClientError, Decryptor, Encryptor, LweClientParameters};
 
-use crate::{ClientKey, TfheClientError, TfheParameters};
+use crate::{TfheClientError, TfheKeyError, TfheParameters};
 
 impl<T: FheUint, M: RingContext<T>, LM: RingContext<T>> TfheParameters<T, M, LM> {
     /// Binds the active external secret to a message codec at the same ciphertext modulus.
+    /// Only this external secret is checked; no other setup secret is required.
     /// A new codec reuses the same key; noise and programmable capacity remain caller requirements.
     pub fn encryptor<'a>(
         &'a self,
-        key: &'a ClientKey<T>,
+        key: &'a LweSecretKey<T>,
         codec: &'a RoundedCodec<T, LM>,
     ) -> Result<Encryptor<'a, T, LM>, TfheClientError> {
-        key.check_compatible(self)?;
+        self.check_external_secret_key(key)?;
         Ok(Encryptor::try_new(
             self.client_parameters(codec)?,
-            key.external_lwe_secret_key().as_view(),
+            key.as_view(),
         )?)
     }
 
@@ -35,14 +36,36 @@ impl<T: FheUint, M: RingContext<T>, LM: RingContext<T>> TfheParameters<T, M, LM>
     /// The selected message encoding must match the input ciphertext, including LUT outputs.
     pub fn decryptor<'a>(
         &self,
-        key: &'a ClientKey<T>,
+        key: &'a LweSecretKey<T>,
         codec: &'a RoundedCodec<T, LM>,
     ) -> Result<Decryptor<'a, T, LM>, TfheClientError> {
-        key.check_compatible(self)?;
+        self.check_external_secret_key(key)?;
         self.check_codec(codec)?;
-        Ok(Decryptor::new(
-            codec,
-            key.external_lwe_secret_key().as_view(),
+        Ok(Decryptor::new(codec, key.as_view()))
+    }
+
+    /// Generates an LWE public key using only the external secret and its fresh noise.
+    /// No accumulator secret, transform table or return-key material is required.
+    ///
+    /// # Correctness
+    /// Public-key usage and security follow [`crate::LwePublicKey`] and
+    /// [`crate::EncryptionKey`]; shape/domain checks do not prove secret identity.
+    ///
+    /// # Errors
+    /// Rejects incompatible external dimensions, distributions, residues or modulus.
+    ///
+    /// # Panics
+    /// Panics if public-key storage `n * (n + 1)` overflows for external dimension n.
+    pub fn try_generate_public_key<R: rand::Rng + rand::CryptoRng>(
+        &self,
+        key: &LweSecretKey<T>,
+        rng: &mut R,
+    ) -> Result<LwePublicKey<T>, TfheKeyError> {
+        self.check_external_secret_key(key)?;
+        Ok(LwePublicKey::generate(
+            key.as_view(),
+            self.external_lwe(),
+            rng,
         ))
     }
 

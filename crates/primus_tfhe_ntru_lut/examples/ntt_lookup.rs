@@ -128,8 +128,10 @@ fn main() {
     let (client_key, server_key) = context
         .try_generate_keys(Some(circuit_config()), &mut rng)
         .unwrap();
-    let encryptor = context.encryptor(&client_key, &input_codec).unwrap();
-    let decryptor = context.decryptor(&client_key, &input_codec).unwrap();
+    // Ordinary messages borrow only the external secret from the setup bundle.
+    let external_secret = client_key.external_lwe_secret_key();
+    let encryptor = context.encryptor(external_secret, &input_codec).unwrap();
+    let decryptor = context.decryptor(external_secret, &input_codec).unwrap();
     let mut input: Vec<_> = (0..CONFIG.input_chunk_count)
         .map(|_| context.allocate_lwe_ciphertext())
         .collect();

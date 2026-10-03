@@ -66,7 +66,9 @@ fn benchmark_workload<T: TorusFftValue, Table: FftTable>(
             });
             heap(&format!("{name}/public_lut"), storage);
             check_repetition(&table, workload);
-            let encryptor = context.encryptor(&client, &input_codec).unwrap();
+            let encryptor = context
+                .encryptor(client.external_lwe_secret_key(), &input_codec)
+                .unwrap();
             let input: Vec<_> = (0..CONFIG.input_chunk_count)
                 .map(|i| {
                     encryptor
@@ -87,7 +89,9 @@ fn benchmark_workload<T: TorusFftValue, Table: FftTable>(
             let (_, online) = measure(|| evaluator.evaluate_to(input, &mut output));
             assert_eq!(online.count, 0);
             eprintln!("online_allocations,{name},{}", online.count);
-            let decryptor = context.decryptor(client, &input_codec).unwrap();
+            let decryptor = context
+                .decryptor(client.external_lwe_secret_key(), &input_codec)
+                .unwrap();
             for (i, chunk) in output.iter().enumerate() {
                 assert_eq!(
                     decryptor.decrypt(chunk.as_view()).unwrap(),

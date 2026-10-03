@@ -54,12 +54,12 @@ pub enum TfheKeyError {
     /// The encoded LWE secret was generated or imported under another modulus.
     #[error("LWE secret-key ciphertext modulus mismatch")]
     LweSecretKeyModulusMismatch,
-    /// The client key was created for a different PBS order.
+    /// The setup bundle or selected external secret uses a different PBS order.
     #[error("PBS order mismatch: expected {expected:?}, got {actual:?}")]
     PbsOrderMismatch {
         /// PBS order required by the parameters.
         expected: PbsOrder,
-        /// PBS order associated with the client key.
+        /// PBS order associated with the setup bundle or external secret.
         actual: PbsOrder,
     },
 

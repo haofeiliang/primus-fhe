@@ -68,7 +68,7 @@ fn backend<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) 
                                 .unwrap()
                         };
                         let input = context
-                            .encryptor(&client, &input_codec)
+                            .encryptor(client.external_lwe_secret_key(), &input_codec)
                             .unwrap()
                             .encrypt_padded(T::as_from(domain / 2), &mut rng)
                             .unwrap();
@@ -97,7 +97,9 @@ fn backend<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) 
                     // Branch once during setup; the measured closure has no path dispatch.
                     let mut check = |outputs: &[LweCiphertext<T>]| {
                         if !verified {
-                            let decryptor = context.decryptor(client, &input_codec).unwrap();
+                            let decryptor = context
+                                .decryptor(client.external_lwe_secret_key(), &input_codec)
+                                .unwrap();
                             for (i, output) in outputs.iter().enumerate() {
                                 assert_eq!(
                                     output_codec.decode_value(

@@ -3,11 +3,11 @@
 use primus_encoding::RoundedCodec;
 use primus_fft::FftTable;
 use primus_fft::TorusFftValue;
+use primus_lwe::LweSecretKey;
 use primus_modulus::NativeModulus;
 
 use crate::{
-    ClientKey, Evaluator, LwePublicKey, ServerKey, TfheClientError, TfheContext,
-    TfheEvaluationError,
+    Evaluator, LwePublicKey, ServerKey, TfheClientError, TfheContext, TfheEvaluationError,
 };
 
 pub use crate::error::BooleanError;
@@ -37,11 +37,11 @@ where
     /// Creates a secret-key Boolean encryptor, requiring `t = 4`.
     pub fn boolean_encryptor<'a>(
         &'a self,
-        client_key: &'a ClientKey<T>,
+        secret_key: &'a LweSecretKey<T>,
         codec: &'a RoundedCodec<T, LM>,
     ) -> Result<BooleanEncryptor<'a, T, crate::LweSecretKeyRef<'a, T>, LM>, TfheClientError> {
         Ok(BooleanEncryptor::try_new(
-            self.encryptor(client_key, codec)?,
+            self.encryptor(secret_key, codec)?,
         )?)
     }
 
@@ -55,14 +55,14 @@ where
         BooleanEncryptor::try_new(self.public_encryptor(public_key, codec)?)
     }
 
-    /// Creates a Boolean decryptor after checking the client key and `t = 4`.
+    /// Creates a Boolean decryptor after checking the external secret and `t = 4`.
     pub fn boolean_decryptor<'a>(
         &'a self,
-        client_key: &'a ClientKey<T>,
+        secret_key: &'a LweSecretKey<T>,
         codec: &'a RoundedCodec<T, LM>,
     ) -> Result<BooleanDecryptor<'a, T, LM>, TfheClientError> {
         Ok(BooleanDecryptor::try_new(
-            self.decryptor(client_key, codec)?,
+            self.decryptor(secret_key, codec)?,
         )?)
     }
 
