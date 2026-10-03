@@ -28,6 +28,12 @@ pub struct LweReturnEvaluator<'a, T: FheUint, LM: RingContext<T>> {
 }
 
 impl<'a, T: FheUint, LM: RingContext<T>> LweReturnEvaluator<'a, T, LM> {
+    /// Borrows the return material bound to this workspace.
+    #[must_use]
+    pub fn key(&self) -> &'a NtruLweKeySwitchingKey<T> {
+        self.key
+    }
+
     /// Binds a return key to q and allocates one scalar buffer and bounded LWE tiles.
     ///
     /// # Panics

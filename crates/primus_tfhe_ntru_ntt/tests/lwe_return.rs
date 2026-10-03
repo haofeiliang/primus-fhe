@@ -190,7 +190,7 @@ fn check<T: FheUint, Table: MonomialNttTable<ValueT = T>>(ring_q: T) {
         .unwrap();
         assert_eq!(
             wrong.evaluator(&server).err(),
-            Some(TfheEvaluationError::IncompatibleServerKey)
+            Some(TfheEvaluationError::IncompatibleLweReturnKey)
         );
     }
 }

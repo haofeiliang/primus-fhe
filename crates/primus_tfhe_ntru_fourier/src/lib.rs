@@ -24,15 +24,20 @@
 //! - [`sparse`]: fixed-weight binary bucket material; select it explicitly at key generation.
 //!
 //! [`FactorizedEvaluator::bootstrapper_mut`] and [`CircuitBootstrapEvaluator::bootstrapper_mut`]
-//! borrow ordinary PBS operations; `into_bootstrapper` recovers the underlying evaluator.
-//! Standalone CBS/one-hot has no LWE-return buffers: its PBS borrow is `None`,
-//! and recovery allocates them. Conversion from complete PBS retains all resources.
+//! borrow ordinary PBS operations. MVB uses `into_bootstrapper`; CBS/one-hot uses
+//! `try_into_bootstrapper(return_key)`. Standalone CBS/one-hot has no return buffers:
+//! its PBS borrow is `None`, and recovery allocates them. Conversion from complete
+//! PBS retains those buffers when recovering with the same return-key object.
 //! [`LweReturnEvaluator`] supports independent coefficient-domain returns.
 //!
 //! # Composition and representation
 //!
 //! [`key`] contains evaluation material and component generation. Common workflow types
 //! are re-exported at this root; lower-level material is documented in its own module.
+//! [`BlindRotationKey`], [`primus_ntru::NtruLweKeySwitchingKey`] and
+//! [`CircuitBootstrapKey`] can be independently generated and borrowed through
+//! `try_from_parts`. [`ServerKey::into_parts`] moves out the bundle's components.
+//! CBS/one-hot needs only BR and CBS material; high-precision LUT also needs return.
 //! Classic binary/ternary keys support PBS/MVB/CBS; sparse keys support ordinary/interleaved PBS.
 //! Only accumulator secrets undergo NTRU invertibility screening; external LWE secrets are independent.
 //! Keys and values must use the same FFT table instance; equal lengths do not prove identity.
@@ -71,7 +76,7 @@ pub use evaluator::Evaluator;
 #[doc(inline)]
 pub use factorized::{FactorizedEvaluator, FourierFactorizedLookupTable};
 #[doc(inline)]
-pub use key::{ClassicControls, KeyGenerator, ServerKey};
+pub use key::{BlindRotationKey, ClassicControls, KeyGenerator, ServerKey};
 #[doc(no_inline)]
 pub use sparse::SparseNtruBootstrappingKey;
 

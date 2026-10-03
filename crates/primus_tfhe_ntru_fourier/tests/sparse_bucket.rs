@@ -206,7 +206,10 @@ fn check<T: TorusFftValue, Table: FftTable>(level_count: Option<usize>) {
         let server = KeyGenerator::new(&context)
             .try_generate_sparse_server_key(&imported, copies, buckets, &mut rng)
             .unwrap();
-        let sparse = server.sparse_bootstrapping_key().unwrap();
+        let sparse = server
+            .blind_rotation_key()
+            .sparse_bootstrapping_key()
+            .unwrap();
         let mut selected_counts = [0; DIM];
         for j in 0..sparse.bucket_count() {
             let (indices, data): (_, Vec<_>) = if j == 0 {

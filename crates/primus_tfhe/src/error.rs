@@ -12,6 +12,12 @@ pub enum TfheEvaluationError {
     /// The server key was generated for a different parameter layout.
     #[error("TFHE server key is incompatible with the evaluation context")]
     IncompatibleServerKey,
+    /// Blind-rotation material has another layout, distribution or basis/modulus.
+    #[error("blind-rotation key is incompatible with the evaluation context")]
+    IncompatibleBlindRotationKey,
+    /// NTRU return material has another ring, target dimension or Q→q decomposition.
+    #[error("LWE return key is incompatible with the evaluation context")]
+    IncompatibleLweReturnKey,
     /// The server key was generated without CBS material.
     #[error("server key has no circuit-bootstrap material")]
     MissingCircuitBootstrapKey,

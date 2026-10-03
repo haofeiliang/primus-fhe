@@ -1,13 +1,15 @@
 //! Server evaluation material and paired or component key generation.
 
+mod blind_rotation;
 mod classic;
+pub use blind_rotation::BlindRotationKey;
+pub(crate) use blind_rotation::BootstrappingControls;
+use blind_rotation::Controls;
 pub use classic::ClassicControls;
 
 use num_traits::{ConstOne, ConstZero};
-use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
 use primus_lattice::nlev::FourierNlev;
-use primus_ntru::SecretKeyDistr;
 use primus_ntru::{
     FourierNtruGadgetEncryptWorkspace, FourierNtruSecretKey, NtruLweKeySwitchingKey,
 };
@@ -15,135 +17,67 @@ use zeroize::Zeroizing;
 
 use crate::{
     CircuitBootstrapConfig, CircuitBootstrapKey, CircuitBootstrapParameters, ClientKey,
-    KeyGenerationError, TfheContext, TfheParameters,
+    KeyGenerationError, TfheContext,
 };
 
-/// Fourier evaluation keys for NTRU TFHE.
-/// The classic initializer and controls share the stored blind-rotation basis.
-/// Classic coordinate zero holds NLEV bit controls for fused lifting; later
-/// coordinates hold NGSW controls (positive/negative pairs for ternary).
-/// Sparse keys instead lift with their first bucket and carry no initializer.
+/// Owning PBS bundle: blind rotation, LWE return, and optional CBS material.
+/// Components can be generated independently and moved in or out without copying
+/// ciphertext buffers. Evaluator binding validates the required components only.
 pub struct ServerKey<T: TorusFftValue> {
-    circuit_bootstrap: Option<Box<CircuitBootstrapKey<T>>>,
-    blind_rotation_basis: ApproxSignedBasis<T>,
-    controls: Controls<T>,
-    input_distribution: SecretKeyDistr,
+    blind_rotation: BlindRotationKey<T>,
     key_switching_key: NtruLweKeySwitchingKey<T>,
-}
-
-enum Controls<T: TorusFftValue> {
-    // First coordinate: NLEV bit(s); remaining coordinates: NGSW bit(s).
-    Classic {
-        initializer: FourierNlev<Vec<Complex64>>,
-        data: Vec<Complex64>,
-    },
-    Sparse(crate::SparseNtruBootstrappingKey<T>),
-}
-
-// Select a borrowed algorithm once, together with the material it requires.
-pub(crate) enum BootstrappingControls<'a, T: TorusFftValue> {
-    Classic(ClassicControls<'a>),
-    Sparse(&'a crate::SparseNtruBootstrappingKey<T>),
+    circuit_bootstrap: Option<Box<CircuitBootstrapKey<T>>>,
 }
 
 impl<T: TorusFftValue> ServerKey<T> {
-    /// Returns coefficient-domain bucket selections when this is a sparse server key.
+    /// Combines independently owned components without copying or checking them.
+    /// Bind an evaluator to check layouts/moduli; shared secret and transform
+    /// identity remain caller requirements.
     #[must_use]
-    pub fn sparse_bootstrapping_key(&self) -> Option<&crate::SparseNtruBootstrappingKey<T>> {
-        match &self.controls {
-            Controls::Classic { .. } => None,
-            Controls::Sparse(key) => Some(key),
-        }
-    }
-
-    /// Borrows the classic initializer and binary/ternary control layout.
-    /// Returns `None` for sparse keys, whose first bucket performs lifting.
-    #[must_use]
-    pub fn classic_controls(&self) -> Option<ClassicControls<'_>> {
-        match self.bootstrapping_controls() {
-            BootstrappingControls::Classic(controls) => Some(controls),
-            BootstrappingControls::Sparse(_) => None,
-        }
-    }
-
-    /// Pairs the chosen BR algorithm with its complete borrowed material.
-    pub(crate) fn bootstrapping_controls(&self) -> BootstrappingControls<'_, T> {
-        match &self.controls {
-            Controls::Classic { initializer, data } => BootstrappingControls::Classic(
-                ClassicControls::new(initializer, data, self.input_distribution.is_binary()),
-            ),
-            Controls::Sparse(key) => BootstrappingControls::Sparse(key),
-        }
-    }
-
-    pub(crate) fn from_sparse<LM: primus_reduce::RingContext<T>>(
-        parameters: &TfheParameters<T, LM>,
-        controls: crate::SparseNtruBootstrappingKey<T>,
+    pub fn new(
+        blind_rotation: BlindRotationKey<T>,
         key_switching_key: NtruLweKeySwitchingKey<T>,
+        circuit_bootstrap: Option<CircuitBootstrapKey<T>>,
     ) -> Self {
         Self {
-            circuit_bootstrap: None,
-            blind_rotation_basis: parameters.blind_rotation().basis().clone(),
-            controls: Controls::Sparse(controls),
-            input_distribution: parameters.external_lwe().secret_key_distr(),
+            blind_rotation,
             key_switching_key,
+            circuit_bootstrap: circuit_bootstrap.map(Box::new),
         }
     }
 
-    /// Returns the declared client secret distribution.
+    /// Borrows the independently owned blind-rotation material.
     #[must_use]
-    pub fn input_distribution(&self) -> SecretKeyDistr {
-        self.input_distribution
+    pub fn blind_rotation_key(&self) -> &BlindRotationKey<T> {
+        &self.blind_rotation
     }
 
-    /// Returns the bound CBS parameters and keys, if requested during generation.
+    /// Borrows the Q→q, f→s return key.
+    #[must_use]
+    pub fn key_switching_key(&self) -> &NtruLweKeySwitchingKey<T> {
+        &self.key_switching_key
+    }
+
+    /// Borrows the optional trace and scheme-switch material.
     #[must_use]
     pub fn circuit_bootstrap_key(&self) -> Option<&CircuitBootstrapKey<T>> {
         self.circuit_bootstrap.as_deref()
     }
 
-    /// Returns the common initializer/control decomposition basis.
-    pub(crate) fn blind_rotation_basis(&self) -> &ApproxSignedBasis<T> {
-        &self.blind_rotation_basis
-    }
-
-    /// Returns the post-bootstrap `f -> s` key-switching key.
-    /// It rescales accumulator Q to external q before switching the secret.
+    /// Moves out BR, return and optional CBS material without copying buffers.
     #[must_use]
-    #[inline]
-    pub fn key_switching_key(&self) -> &NtruLweKeySwitchingKey<T> {
-        &self.key_switching_key
-    }
-
-    /// Checks the generated ring and decomposition parameters before evaluation.
-    pub(crate) fn is_compatible<LM: primus_reduce::RingContext<T>>(
-        &self,
-        parameters: &TfheParameters<T, LM>,
-    ) -> bool {
-        self.input_distribution == parameters.external_lwe().secret_key_distr()
-            && &self.blind_rotation_basis == parameters.blind_rotation().basis()
-            && self.key_switching_key.poly_length() == parameters.poly_length().get()
-            && self.key_switching_key.input_modulus()
-                == parameters.accumulator_ntru().cipher_modulus_value()
-            && self.key_switching_key.output_dimension() == parameters.external_lwe_dimension()
-            && self.key_switching_key.basis() == parameters.key_switching_basis()
-            && match &self.controls {
-                Controls::Classic { initializer, data } => {
-                    initializer.as_ref().len() == parameters.blind_rotation().fourier_nlev_len()
-                        && data.len()
-                            == parameters.external_lwe_dimension().get()
-                                * if self.input_distribution.is_binary() {
-                                    1
-                                } else {
-                                    2
-                                }
-                                * initializer.as_ref().len()
-                }
-                Controls::Sparse(key) => {
-                    key.input_dimension() == (parameters.external_lwe_dimension())
-                        && key.control_len == parameters.blind_rotation().nlev_len()
-                }
-            }
+    pub fn into_parts(
+        self,
+    ) -> (
+        BlindRotationKey<T>,
+        NtruLweKeySwitchingKey<T>,
+        Option<CircuitBootstrapKey<T>>,
+    ) {
+        (
+            self.blind_rotation,
+            self.key_switching_key,
+            self.circuit_bootstrap.map(|key| *key),
+        )
     }
 }
 
@@ -178,6 +112,7 @@ where
     /// Generates coefficient-domain client and accumulator secrets accepted by this backend.
     ///
     /// Only the accumulator undergoes native-ring invertibility and Fourier stability rejection.
+    /// Return-key magnitude bounds are checked only when generating return material.
     /// The transformed secrets are discarded; use [`Self::try_generate`] when
     /// generating a paired server key so those representations can be reused.
     /// Returns a key-generation error when the bounded search is exhausted.
@@ -195,7 +130,7 @@ where
         let (accumulator, _) =
             FourierNtruSecretKey::generate_pair(parameters.accumulator_ntru(), &mut self.fft, rng)?;
         let client_key = ClientKey::new(client, accumulator);
-        client_key.check_compatible(parameters)?;
+        client_key.check_blind_rotation_compatible(parameters)?;
         Ok(client_key)
     }
 
@@ -242,8 +177,8 @@ where
         R: rand::Rng + rand::CryptoRng,
     {
         let parameters = self.context.parameters();
-        let initializer = self.generate_initializer(accumulator_fourier, rng);
-        let controls = self.generate_controls(client_key, accumulator_fourier, rng);
+        let blind_rotation =
+            self.generate_blind_rotation_key_from_transformed(client_key, accumulator_fourier, rng);
         let key_switching_key = NtruLweKeySwitchingKey::generate(
             client_key.accumulator_ntru_secret_key(),
             parameters.accumulator_ntru().cipher_modulus(),
@@ -253,22 +188,52 @@ where
             rng,
         );
         let circuit_bootstrap = circuit_parameters.map(|parameters| {
-            Box::new(self.generate_circuit_bootstrap_key_with_main(
-                client_key,
+            self.generate_circuit_bootstrap_key_with_main(
+                client_key.accumulator_ntru_secret_key(),
                 accumulator_fourier,
                 parameters,
                 rng,
-            ))
+            )
         });
-        ServerKey {
-            circuit_bootstrap,
-            blind_rotation_basis: parameters.blind_rotation().basis().clone(),
-            controls: Controls::Classic {
-                initializer,
-                data: controls,
-            },
-            input_distribution: parameters.external_lwe().secret_key_distr(),
-            key_switching_key,
+        ServerKey::new(blind_rotation, key_switching_key, circuit_bootstrap)
+    }
+
+    /// Generates classic BR material without constructing a return or CBS key.
+    /// Checks both secret roles but does not require f to fit external q.
+    ///
+    /// # Correctness
+    /// The accumulator inherits [`FourierNtruSecretKey::try_from_coeff_secret_key`]'s representation
+    /// and magnitude requirements. Independently generated components must share
+    /// the same actual secrets and transform representation.
+    ///
+    /// # Errors
+    /// Rejects incompatible secrets and propagates backend conversion failures.
+    pub fn try_generate_blind_rotation_key<R: rand::Rng + rand::CryptoRng>(
+        &mut self,
+        client_key: &ClientKey<T>,
+        rng: &mut R,
+    ) -> Result<BlindRotationKey<T>, KeyGenerationError> {
+        client_key.check_blind_rotation_compatible(self.context.parameters())?;
+        let transformed = FourierNtruSecretKey::try_from_coeff_secret_key(
+            client_key.accumulator_ntru_secret_key(),
+            &mut self.fft,
+        )?;
+        Ok(self.generate_blind_rotation_key_from_transformed(client_key, &transformed, rng))
+    }
+
+    /// Reuses the checked accumulator transform in paired generation.
+    fn generate_blind_rotation_key_from_transformed<R: rand::Rng + rand::CryptoRng>(
+        &mut self,
+        client_key: &ClientKey<T>,
+        transformed: &FourierNtruSecretKey,
+        rng: &mut R,
+    ) -> BlindRotationKey<T> {
+        let initializer = self.generate_initializer(transformed, rng);
+        let data = self.generate_controls(client_key, transformed, rng);
+        BlindRotationKey {
+            blind_rotation_basis: self.context.parameters().blind_rotation().basis().clone(),
+            input_distribution: self.context.parameters().external_lwe().secret_key_distr(),
+            controls: Controls::Classic { initializer, data },
         }
     }
 

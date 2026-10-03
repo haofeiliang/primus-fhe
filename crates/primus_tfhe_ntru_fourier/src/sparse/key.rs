@@ -146,9 +146,48 @@ where
     where
         R: rand::Rng + rand::CryptoRng,
     {
+        client_key.check_compatible(self.context.parameters())?;
+        let blind_rotation =
+            self.generate_sparse_blind_rotation_key(client_key, copy_count, bucket_count, rng)?;
+        let parameters = self.context.parameters();
+        let return_key = NtruLweKeySwitchingKey::generate(
+            client_key.accumulator_ntru_secret_key(),
+            parameters.accumulator_ntru().cipher_modulus(),
+            client_key.external_lwe_secret_key(),
+            parameters.key_switching_lwe(),
+            parameters.key_switching_basis().clone(),
+            rng,
+        );
+        Ok(ServerKey::new(blind_rotation, return_key, None))
+    }
+
+    /// Generates only sparse BR controls, retaining the fixed input secret.
+    /// Inherits [`Self::try_generate_sparse_server_key`]'s matching, noise and
+    /// transform requirements, without requiring a return key or f's bound at q.
+    pub fn try_generate_sparse_blind_rotation_key<R>(
+        &mut self,
+        client_key: &ClientKey<T>,
+        copy_count: usize,
+        bucket_count: usize,
+        rng: &mut R,
+    ) -> Result<crate::BlindRotationKey<T>, KeyGenerationError>
+    where
+        R: rand::Rng + rand::CryptoRng,
+    {
+        client_key.check_blind_rotation_compatible(self.context.parameters())?;
+        self.generate_sparse_blind_rotation_key(client_key, copy_count, bucket_count, rng)
+    }
+
+    /// Shares sparse matching/encryption after either public entry checked its secret roles.
+    fn generate_sparse_blind_rotation_key<R: rand::Rng + rand::CryptoRng>(
+        &mut self,
+        client_key: &ClientKey<T>,
+        copy_count: usize,
+        bucket_count: usize,
+        rng: &mut R,
+    ) -> Result<crate::BlindRotationKey<T>, KeyGenerationError> {
         use SparseBootstrappingKeyError as Error;
         let parameters = self.context.parameters();
-        client_key.check_compatible(parameters)?;
         let SecretKeyDistr::FixedHammingWeightBinary { hamming_weight } =
             parameters.external_lwe().secret_key_distr()
         else {
@@ -241,19 +280,7 @@ where
             copy_count,
             control_len,
         };
-        let key_switching_key = NtruLweKeySwitchingKey::generate(
-            client_key.accumulator_ntru_secret_key(),
-            parameters.accumulator_ntru().cipher_modulus(),
-            client_key.external_lwe_secret_key(),
-            parameters.key_switching_lwe(),
-            parameters.key_switching_basis().clone(),
-            rng,
-        );
-        Ok(ServerKey::from_sparse(
-            parameters,
-            controls,
-            key_switching_key,
-        ))
+        Ok(crate::BlindRotationKey::from_sparse(parameters, controls))
     }
 }
 

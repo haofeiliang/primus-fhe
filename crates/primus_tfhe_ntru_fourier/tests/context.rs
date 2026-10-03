@@ -90,15 +90,20 @@ fn rejects_server_keys_with_same_layout_but_different_bases() {
         );
         let table = RustFftTable::new(PolyLength::new(POLY_LENGTH));
         let incompatible = TfheContext::try_new(candidate, table).unwrap();
+        let expected = if key_switching_log_basis != 8 {
+            TfheEvaluationError::IncompatibleLweReturnKey
+        } else {
+            TfheEvaluationError::IncompatibleBlindRotationKey
+        };
         assert_eq!(
             incompatible.evaluator(&server_key).err(),
-            Some(TfheEvaluationError::IncompatibleServerKey)
+            Some(expected.clone())
         );
         assert_eq!(
             incompatible
                 .boolean_evaluator(&server_key, &input_codec)
                 .err(),
-            Some(TfheEvaluationError::IncompatibleServerKey)
+            Some(expected.clone())
         );
     }
 }

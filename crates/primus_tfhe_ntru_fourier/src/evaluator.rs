@@ -4,7 +4,10 @@ use primus_tfhe::{
     ProgrammableBootstrapInterleaved, TfheEvaluationError,
 };
 
-use crate::{Lwe, LweReturnEvaluator, ServerKey, TfheContext, bootstrap::BlindRotationEngine};
+use crate::{
+    BlindRotationKey, Lwe, LweReturnEvaluator, ServerKey, TfheContext,
+    bootstrap::BlindRotationEngine,
+};
 
 /// Allocation-free online evaluator for Fourier NTRU programmable bootstrapping.
 pub struct Evaluator<'a, T, Table, LM = primus_modulus::NativeModulus<T>>
@@ -33,16 +36,34 @@ where
         context: &'a TfheContext<T, Table, LM>,
         server_key: &'a ServerKey<T>,
     ) -> Result<Self, TfheEvaluationError> {
-        Ok(Self::from_engine(BlindRotationEngine::try_new(
-            context, server_key,
-        )?))
+        Self::try_from_parts(
+            context,
+            server_key.blind_rotation_key(),
+            server_key.key_switching_key(),
+        )
     }
 
-    /// Adds the client-return buffers to an already bound BR engine.
+    /// Binds independent BR and Q→q, f→s return material before allocating scratch.
+    /// The keys must share actual secrets and this context's transform representation;
+    /// layout, distribution, basis and modulus checks do not establish identity.
+    pub fn try_from_parts(
+        context: &'a TfheContext<T, Table, LM>,
+        blind_rotation_key: &'a BlindRotationKey<T>,
+        return_key: &'a primus_ntru::NtruLweKeySwitchingKey<T>,
+    ) -> Result<Self, TfheEvaluationError> {
+        context.parameters().check_lwe_return_key(return_key)?;
+        let engine = BlindRotationEngine::try_new(context, blind_rotation_key)?;
+        Ok(Self::from_engine(engine, return_key))
+    }
+
+    /// Adds client-return buffers after the owning boundary checked return compatibility.
     #[must_use]
-    pub(crate) fn from_engine(engine: BlindRotationEngine<'a, T, Table, LM>) -> Self {
+    pub(crate) fn from_engine(
+        engine: BlindRotationEngine<'a, T, Table, LM>,
+        return_key: &'a primus_ntru::NtruLweKeySwitchingKey<T>,
+    ) -> Self {
         let lwe_return = LweReturnEvaluator::new(
-            engine.server_key.key_switching_key(),
+            return_key,
             engine.context.parameters().external_lwe().cipher_modulus(),
         );
         Self { engine, lwe_return }

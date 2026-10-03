@@ -8,7 +8,7 @@ use primus_poly::Polynomial;
 use primus_tfhe::rotation::RotationModulusSwitch;
 
 use crate::{
-    ClassicControls, ServerKey, SparseNtruBootstrappingKey, TfheParameters,
+    BlindRotationKey, ClassicControls, SparseNtruBootstrappingKey, TfheParameters,
     sparse::{SparseWorkspace, rotate_buckets},
 };
 
@@ -25,13 +25,13 @@ impl<'a, T: FheUint> BlindRotationWorkspace<'a, T> {
     /// Allocates all NTT blind-rotation storage once.
     pub(crate) fn new<LM: primus_reduce::RingContext<T>>(
         parameters: &TfheParameters<T, LM>,
-        server_key: &'a ServerKey<T>,
+        blind_rotation_key: &'a BlindRotationKey<T>,
     ) -> Self {
         let poly_length = parameters.poly_length();
         Self {
             current: Ntru::zero(poly_length.get()),
             scratch: Ntru::zero(poly_length.get()),
-            rotation: match server_key.bootstrapping_controls() {
+            rotation: match blind_rotation_key.bootstrapping_controls() {
                 BootstrappingControls::Sparse(key) => RotationState::Sparse {
                     key,
                     scratch: SparseWorkspace::new(parameters),
@@ -93,7 +93,7 @@ impl<'a, T: FheUint> RotationState<'a, T> {
 /// established input/LUT compatibility; `rotation_step` is the LUT's padded
 /// output count (one for ordinary PBS).
 pub(crate) fn blind_rotate_lookup_table_to<T, Table, LM: primus_reduce::RingContext<T>>(
-    server_key: &ServerKey<T>,
+    blind_rotation_key: &BlindRotationKey<T>,
     input: Lwe<&[T]>,
     lookup_table: Polynomial<&[T]>,
     rotation_step: usize,
@@ -124,7 +124,7 @@ pub(crate) fn blind_rotate_lookup_table_to<T, Table, LM: primus_reduce::RingCont
         modulus,
     );
 
-    let basis = server_key.blind_rotation_basis();
+    let basis = blind_rotation_key.blind_rotation_basis();
 
     // One public layout dispatch per BR; the coordinate loop stays specialized.
     match &mut workspace.rotation {

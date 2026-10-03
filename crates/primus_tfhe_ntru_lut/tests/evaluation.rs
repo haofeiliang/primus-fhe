@@ -358,8 +358,18 @@ fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T) {
                     |x, o| T::as_from(mapping.digit(x, o, radix)),
                 )
                 .unwrap();
-                let mut evaluator =
-                    NttLookupTableEvaluator::try_new(&context, &server, &table).unwrap();
+                let mut evaluator = if radix == 2 {
+                    NttLookupTableEvaluator::try_from_parts(
+                        &context,
+                        server.blind_rotation_key(),
+                        server.key_switching_key(),
+                        server.circuit_bootstrap_key().unwrap(),
+                        &table,
+                    )
+                    .unwrap()
+                } else {
+                    NttLookupTableEvaluator::try_new(&context, &server, &table).unwrap()
+                };
                 let case = format!(
                     "{}/{}, {distr:?}",
                     std::any::type_name::<Table>(),
@@ -389,7 +399,9 @@ fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T) {
             .unwrap();
             assert!(matches!(
                 NttLookupTableEvaluator::try_new(&other, &server, &table),
-                Err(LookupTableError::OneHot(_))
+                Err(LookupTableError::Evaluation(
+                    primus_tfhe::TfheEvaluationError::IncompatibleLweReturnKey
+                ))
             ));
             let table = HighPrecisionLookupTable::try_new(
                 &parameters(NativeModulus::new(), distr, 2),
@@ -439,8 +451,18 @@ fn fourier<T: TorusFftValue, Table: FftTable>() {
                     |x, o| T::as_from(mapping.digit(x, o, radix)),
                 )
                 .unwrap();
-                let mut evaluator =
-                    FourierLookupTableEvaluator::try_new(&context, &server, &table).unwrap();
+                let mut evaluator = if radix == 2 {
+                    FourierLookupTableEvaluator::try_from_parts(
+                        &context,
+                        server.blind_rotation_key(),
+                        server.key_switching_key(),
+                        server.circuit_bootstrap_key().unwrap(),
+                        &table,
+                    )
+                    .unwrap()
+                } else {
+                    FourierLookupTableEvaluator::try_new(&context, &server, &table).unwrap()
+                };
                 let case = format!(
                     "{}/{}, {distr:?}",
                     std::any::type_name::<Table>(),
@@ -469,7 +491,9 @@ fn fourier<T: TorusFftValue, Table: FftTable>() {
             .unwrap();
             assert!(matches!(
                 FourierLookupTableEvaluator::try_new(&other, &server, &table),
-                Err(LookupTableError::OneHot(_))
+                Err(LookupTableError::Evaluation(
+                    primus_tfhe::TfheEvaluationError::IncompatibleLweReturnKey
+                ))
             ));
             let table = HighPrecisionLookupTable::try_new(
                 &parameters(BarrettModulus::new(T::as_from(998_244_353u32)), distr, 2),

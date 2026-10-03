@@ -188,7 +188,7 @@ fn check<T: TorusFftValue, Table: FftTable>() {
         );
         assert_eq!(
             wrong.evaluator(&server).err(),
-            Some(TfheEvaluationError::IncompatibleServerKey)
+            Some(TfheEvaluationError::IncompatibleLweReturnKey)
         );
     }
 }

@@ -179,7 +179,10 @@ fn check_bucket<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, level_cou
         let server = KeyGenerator::new(&context)
             .try_generate_sparse_server_key(&imported, copies, buckets, &mut rng)
             .unwrap();
-        let key = server.sparse_bootstrapping_key().unwrap();
+        let key = server
+            .blind_rotation_key()
+            .sparse_bootstrapping_key()
+            .unwrap();
         let data = key.as_slice();
         assert_eq!(data.len(), (copies * DIM + buckets) * gadget.nlev_len());
         // Independently recover every row phase, including encrypted zeros.

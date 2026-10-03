@@ -49,7 +49,7 @@ impl<T: FheUint> ClientKey<T> {
         self.external_lwe_secret_key.dimension()
     }
 
-    /// Checks the full setup bundle before evaluation-key generation.
+    /// Checks the full setup bundle before generating PBS or return material.
     /// Validates shapes, the recorded LWE modulus, distribution labels and canonical
     /// binary/ternary external residues before borrowing raw key views.
     /// Accumulator coefficients must have magnitude below an explicit external q.
@@ -58,8 +58,7 @@ impl<T: FheUint> ClientKey<T> {
         &self,
         parameters: &TfheParameters<T, M, LM>,
     ) -> Result<(), TfheKeyError> {
-        parameters.check_external_secret_key(&self.external_lwe_secret_key)?;
-        parameters.check_accumulator_secret_key(&self.accumulator_ntru_secret_key)?;
+        self.check_blind_rotation_compatible(parameters)?;
         if let Some(q) = parameters.external_lwe().cipher_modulus_value() {
             let too_large = self
                 .accumulator_ntru_secret_key
@@ -73,6 +72,17 @@ impl<T: FheUint> ClientKey<T> {
         Ok(())
     }
 
+    /// Checks the two secret roles used by blind-rotation generation.
+    /// Unlike full PBS setup, this does not require f to fit the return modulus q.
+    /// Backend conversion still owns the accumulator's representation requirements.
+    pub fn check_blind_rotation_compatible<M: RingContext<T>, LM: RingContext<T>>(
+        &self,
+        parameters: &TfheParameters<T, M, LM>,
+    ) -> Result<(), TfheKeyError> {
+        parameters.check_external_secret_key(&self.external_lwe_secret_key)?;
+        parameters.check_accumulator_secret_key(&self.accumulator_ntru_secret_key)
+    }
+
     /// Decomposes the key into independent external LWE and accumulator NTRU secrets.
     #[must_use]
     pub fn into_parts(self) -> (primus_lwe::LweSecretKey<T>, NtruSecretKey<T>) {
@@ -84,6 +94,43 @@ impl<T: FheUint> ClientKey<T> {
 }
 
 impl<T: FheUint, M: RingContext<T>, LM: RingContext<T>> TfheParameters<T, M, LM> {
+    /// Generates only the Q→q, f→s return material, with no transform workspace.
+    /// Checks the full secret pair including the magnitude of f at external q.
+    /// Independent BR/CBS material must use the same actual secrets; layout and
+    /// modulus checks cannot establish identity or an adequate noise budget.
+    pub fn try_generate_lwe_return_key<R: rand::Rng + rand::CryptoRng>(
+        &self,
+        client_key: &ClientKey<T>,
+        rng: &mut R,
+    ) -> Result<primus_ntru::NtruLweKeySwitchingKey<T>, TfheKeyError> {
+        client_key.check_compatible(self)?;
+        Ok(primus_ntru::NtruLweKeySwitchingKey::generate(
+            client_key.accumulator_ntru_secret_key(),
+            self.accumulator_ntru().cipher_modulus(),
+            client_key.external_lwe_secret_key(),
+            self.key_switching_lwe(),
+            self.key_switching_basis().clone(),
+            rng,
+        ))
+    }
+
+    /// Checks return geometry, source Q and the complete target-q decomposition.
+    /// This does not prove source/target secret identity. Call once when composing
+    /// an evaluator with independently generated return material.
+    pub fn check_lwe_return_key(
+        &self,
+        key: &primus_ntru::NtruLweKeySwitchingKey<T>,
+    ) -> Result<(), primus_tfhe::TfheEvaluationError> {
+        if key.poly_length() != self.poly_length().get()
+            || key.input_modulus() != self.accumulator_ntru().cipher_modulus_value()
+            || key.output_dimension() != self.external_lwe_dimension()
+            || key.basis() != self.key_switching_basis()
+        {
+            return Err(primus_tfhe::TfheEvaluationError::IncompatibleLweReturnKey);
+        }
+        Ok(())
+    }
+
     /// Checks only the external LWE owner before borrowing its encoded view.
     pub(crate) fn check_external_secret_key(
         &self,

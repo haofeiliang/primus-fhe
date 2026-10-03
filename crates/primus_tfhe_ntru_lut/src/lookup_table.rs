@@ -58,6 +58,9 @@ pub enum LookupTableError {
     /// The context/server material cannot provide the required one-hot CBS.
     #[error(transparent)]
     OneHot(#[from] OneHotBootstrapError),
+    /// Independent return material is incompatible with the TFHE context.
+    #[error(transparent)]
+    Evaluation(#[from] primus_tfhe::TfheEvaluationError),
 }
 
 /// Stable index of one full polynomial in this table's append-only pool.

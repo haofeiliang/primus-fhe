@@ -100,8 +100,12 @@ fn selectors<Table: FftTable>(distr: SecretKeyDistr) {
             &mut rng,
         )
         .unwrap();
+    let ((br, return_key, circuit), allocation) = allocations::measure(|| server.into_parts());
+    assert_eq!(allocation.count, 0);
+    let circuit = circuit.unwrap();
     let mut evaluator =
-        OneHotCircuitBootstrapEvaluator::try_new(&context, &server, &input_codec).unwrap();
+        OneHotCircuitBootstrapEvaluator::try_from_parts(&context, &br, &circuit, &input_codec)
+            .unwrap();
     assert!(evaluator.bootstrapper_mut().is_none());
     assert_eq!(evaluator.lookup_table().selector_count(), M);
     assert_eq!(evaluator.lookup_table().rotation_step(), 4);
@@ -163,10 +167,12 @@ fn selectors<Table: FftTable>(distr: SecretKeyDistr) {
                 evaluator.one_hot_to(input.as_view(), &mut nlev, &mut ngsw);
             });
             assert_eq!(allocation.count, 0);
-            let (pbs, allocation) = allocations::measure(|| evaluator.into_bootstrapper());
+            let (pbs, allocation) =
+                allocations::measure(|| evaluator.try_into_bootstrapper(&return_key).unwrap());
             assert!(allocation.count > 0);
             evaluator =
-                OneHotCircuitBootstrapEvaluator::try_from_bootstrapper(pbs, &input_codec).unwrap();
+                OneHotCircuitBootstrapEvaluator::try_from_bootstrapper(pbs, &circuit, &input_codec)
+                    .unwrap();
         }
         let (_, allocation) = allocations::measure(|| {
             evaluator.one_hot_to(input.as_view(), &mut nlev, &mut ngsw);
@@ -325,16 +331,18 @@ fn selectors<Table: FftTable>(distr: SecretKeyDistr) {
     check_return_batches(
         &mut evaluator,
         &context,
-        &server,
+        &return_key,
         &choices,
         &input,
         &mut ngsw,
     );
 
     // Recovery and rebinding preserve the PBS/ordinary-CBS workflow.
-    let (pbs, allocation) = allocations::measure(|| evaluator.into_bootstrapper());
+    let (pbs, allocation) =
+        allocations::measure(|| evaluator.try_into_bootstrapper(&return_key).unwrap());
     assert_eq!(allocation.count, 0);
-    let mut ordinary = CircuitBootstrapEvaluator::try_from_bootstrapper(pbs, &input_codec).unwrap();
+    let mut ordinary =
+        CircuitBootstrapEvaluator::try_from_bootstrapper(pbs, &circuit, &input_codec).unwrap();
     ordinary.bootstrapper_mut().unwrap().apply_lookup_table_to(
         input.as_view(),
         &identity,
@@ -346,7 +354,8 @@ fn selectors<Table: FftTable>(distr: SecretKeyDistr) {
     accumulator.decrypt_to(&selected, &mut decoded);
     assert_eq!(decoded, vec![3; N]);
     let mut evaluator = OneHotCircuitBootstrapEvaluator::try_from_bootstrapper(
-        ordinary.into_bootstrapper(),
+        ordinary.try_into_bootstrapper(&return_key).unwrap(),
+        &circuit,
         &input_codec,
     )
     .unwrap();
@@ -358,7 +367,7 @@ fn selectors<Table: FftTable>(distr: SecretKeyDistr) {
 fn check_return_batches<Table: FftTable>(
     evaluator: &mut OneHotCircuitBootstrapEvaluator<'_, u64, Table, PowOf2Modulus<u64>>,
     context: &TfheContext<u64, Table, PowOf2Modulus<u64>>,
-    server: &primus_tfhe_ntru_fourier::ServerKey<u64>,
+    return_key: &primus_ntru::NtruLweKeySwitchingKey<u64>,
     choices: &[NtruCiphertext<Vec<u64>>],
     input: &primus_tfhe::LweCiphertext<u64>,
     ngsw: &mut [Complex64],
@@ -366,10 +375,10 @@ fn check_return_batches<Table: FftTable>(
     let input_codec = RoundedCodec::new(8, context.parameters().external_lwe().cipher_modulus());
     // The return evaluator owns the q binding; a different valid modulus is rejected.
     assert_rejected(|| {
-        let _ = LweReturnEvaluator::new(server.key_switching_key(), PowOf2Modulus::new(1u64 << 23));
+        let _ = LweReturnEvaluator::new(return_key, PowOf2Modulus::new(1u64 << 23));
     });
     let mut lwe_return = LweReturnEvaluator::new(
-        server.key_switching_key(),
+        return_key,
         context.parameters().external_lwe().cipher_modulus(),
     );
     let capacity = lwe_return.batch_capacity();
@@ -379,7 +388,7 @@ fn check_return_batches<Table: FftTable>(
         .collect::<Vec<_>>();
     let mut scalar_return = primus_ntru::NtruLweKeySwitchingWorkspace::new(PolyLength::new(N));
     for (i, output) in expected.iter_mut().enumerate() {
-        server.key_switching_key().key_switch_at_to(
+        return_key.key_switch_at_to(
             &choices[i % choices.len()],
             indices[i % indices.len()],
             output,
@@ -487,7 +496,7 @@ fn check_return_batches<Table: FftTable>(
     assert_eq!(allocation.count, 0);
     for (index, output) in returned[..2].iter().enumerate() {
         let mut expected = context.allocate_lwe_ciphertext();
-        server.key_switching_key().key_switch_at_to(
+        return_key.key_switch_at_to(
             &choices[0],
             index,
             &mut expected,

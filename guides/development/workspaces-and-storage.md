@@ -177,7 +177,16 @@ operations, preventing replacement of the key-bound evaluator.
 | Standalone GLWE BR→KS | `None` | Allocate output KS |
 | Standalone GLWE KS→BR | `Some` | None |
 | Standalone NTRU CBS/one-hot | `None` | Allocate scalar/batch returns |
-| Any CBS/one-hot from complete PBS | `Some` | None |
+| GLWE CBS from complete PBS | `Some` | None |
+| NTRU CBS/one-hot from complete PBS | `Some` | None when recovering with the same return-key object |
+
+NTRU BR, return and CBS material have independent owners. Standalone CBS/one-hot
+borrows only BR and CBS keys; its resources retain no return-key dependency.
+`try_from_bootstrapper(pbs, circuit_key, input_codec)` keeps a complete PBS for
+alternation. `try_into_bootstrapper(return_key)` checks the supplied return
+material, reuses retained buffers for that same key object, and otherwise
+prepares new return buffers while retaining BR/FFT storage. All allocation is
+explicit at construction or conversion; online operations do not allocate.
 
 Existing size/domain boundaries and semantic polynomial/ciphertext iterators describe batches. Table groups contain M polynomials; ciphertext iterators traverse one complete object at a time. Candidate compaction remains indexed because a group must be consumed before its result overwrites the prefix. No additional generic batch abstraction is needed.
 

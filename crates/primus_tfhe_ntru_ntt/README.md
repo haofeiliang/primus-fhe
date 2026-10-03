@@ -38,11 +38,17 @@ Client factories take only the relevant secret: pass `client_key.external_lwe_se
 
 NTT tables must implement `MonomialNttTable`; built-in tables support it. Context construction checks length and modulus. The accumulator's `NttNtruSecretKey` records Q, and ordinary/gadget encryption checks it against the parameters/table before sampling. All transformed keys/values must follow the supplied table's roots and evaluation order; matching Q/N cannot prove representation or secret identity.
 
-`server_key.classic_controls()` returns a borrowed `ClassicControls` view, or `None` for sparse material. Its `initializer()` lifts public polynomials; coordinate zero uses NLEV bits and later coordinates use NGSW bits, with positive/negative pairs for ternary secrets. CBS, one-hot and MVB check their required capabilities at construction. The optional `circuit_bootstrap_key()` remains available for inspecting or composing CBS material.
+## Evaluation material
+
+`ServerKey` bundles independently owned `BlindRotationKey`, `NtruLweKeySwitchingKey` and optional `CircuitBootstrapKey`. `into_parts()` moves them out without copying ciphertext buffers; `ServerKey::new(br, return_key, cbs)` combines owners. For independent generation, use `KeyGenerator::try_generate_blind_rotation_key(&client, rng)`, `parameters.try_generate_lwe_return_key(&client, rng)` and `generator.try_generate_circuit_bootstrap_key(client.accumulator_ntru_secret_key(), cbs_parameters, rng)`. Sparse BR has its own `try_generate_sparse_blind_rotation_key` entry. Component generation may repeat accumulator conversion; paired generation reuses the transform.
+
+`Evaluator::try_from_parts(context, br, return_key)` binds ordinary PBS. Both CBS and one-hot provide `try_from_parts(context, br, circuit_key, &input_codec)` and need no return key. The CBS example demonstrates this workflow. BR and return incompatibility are reported separately; independent material must use the same actual secrets and transform representation. Shape and modulus checks do not prove identity.
+
+`server_key.blind_rotation_key().classic_controls()` returns a borrowed `ClassicControls` view, or `None` for sparse material. Its `initializer()` lifts public polynomials; coordinate zero uses NLEV bits and later coordinates use NGSW bits, with positive/negative pairs for ternary secrets. CBS, one-hot and MVB check their required capabilities at construction. The optional `circuit_bootstrap_key()` remains available for inspecting or composing CBS material.
 
 ## Reusing evaluators
 
-Ordinary/interleaved `Evaluator` `_to` calls reuse workspace and caller outputs. See the [resource reuse guide](../primus_tfhe/README.md#reusing-evaluators) for PBS/MVB/CBS ownership conversions. Standalone CBS/one-hot omits ordinary LWE-return buffers: `bootstrapper_mut()` returns `None`, and `into_bootstrapper()` allocates the missing return buffers. Construct with `try_from_bootstrapper(pbs, &input_codec)` to retain a complete PBS and recover it without allocation; its PBS borrow returns `Some`.
+Ordinary/interleaved `Evaluator` `_to` calls reuse workspace and caller outputs. See the [resource reuse guide](../primus_tfhe/README.md#reusing-evaluators) for PBS/MVB/CBS ownership conversions. Standalone CBS/one-hot omits ordinary LWE-return buffers: `bootstrapper_mut()` returns `None`, and `try_into_bootstrapper(return_key)` allocates the missing return buffers. Construct with `try_from_bootstrapper(pbs, circuit_key, &input_codec)` to retain a complete PBS and recover it without allocation when passing the same return-key object; its PBS borrow returns `Some`. A different compatible return key prepares new return buffers.
 
 ## Fixed-scale factorized MVB
 
@@ -65,13 +71,13 @@ let server = generator.try_generate_sparse_server_key(&client, 3, 2 * h, &mut rn
 let mut evaluator = context.evaluator(&server)?;
 ```
 
-Ordinary/interleaved PBS use the same evaluator. CBS/MVB reject sparse keys, including CBS binding with standalone material. `server.sparse_bootstrapping_key()` exposes selectors.
+Ordinary/interleaved PBS use the same evaluator. CBS/MVB reject sparse keys, including CBS binding with standalone material. `server.blind_rotation_key().sparse_bootstrapping_key()` exposes selectors.
 
 ## Optional circuit bootstrapping
 
 Generate paired material with `context.try_generate_keys(Some(cbs_config), &mut rng)`; `ServerKey` owns the additional parameters and trace/scheme-switch keys. Create `context.circuit_bootstrap_evaluator(&server, &input_codec)` or consume ordinary workspace as above. With a classic key generated using `None`, binding CBS returns `MissingCircuitBootstrapKey`. Use `allocate_output`, `circuit_bootstrap_to` and `cmux_to`; the [CBS → CMUX example](examples/ntru_ntt_circuit_bootstrap.rs) shows their complete consumption chain.
 
-The output is `NttNgswCiphertext` under `f_acc`. The circuit key binds the complete output basis; `try_from_parts(context, server, circuit_key, &input_codec)` obtains parameters from that key. NTT trace normalization requires odd Q below `2^(T::BITS-1)`.
+The output is `NttNgswCiphertext` under `f_acc`. The circuit key binds the complete output basis; `try_from_parts(context, blind_rotation_key, circuit_key, &input_codec)` obtains parameters from that key. NTT trace normalization requires odd Q below `2^(T::BITS-1)`.
 
 Standalone component generation must use paired secrets and the same transform representation; shape checks cannot prove identity. See [CBS input/output and consumption](../primus_tfhe/README.md#cbs-output-and-consumption) and the [family CBS contract](../primus_tfhe_ntru/README.md#cbs-and-examples).
 
@@ -85,7 +91,7 @@ See the [family one-hot contract](../primus_tfhe_ntru/README.md#one-hot-cbs) for
 
 ## High-precision lookup
 
-[primus_tfhe_ntru_lut](../primus_tfhe_ntru_lut/README.md) composes one-hot CBS with table selection, aggregated negative rotations and the independent LWE return. It supports uniform input/output chunk widths and independently chosen counts. For lower-level composition, `server_key.classic_controls().unwrap().initializer()` exposes the classic NLEV[1] under the context's BR basis; `key_switching_key()` exposes the Q→q, f→s return key.
+[primus_tfhe_ntru_lut](../primus_tfhe_ntru_lut/README.md) composes one-hot CBS with table selection, aggregated negative rotations and the independent LWE return. It supports uniform input/output chunk widths and independently chosen counts. For lower-level composition, `server_key.blind_rotation_key().classic_controls().unwrap().initializer()` exposes the classic NLEV[1] under the context's BR basis; `key_switching_key()` exposes the Q→q, f→s return key.
 
 A complete chunk-encryption and lookup workflow is in [ntt_lookup.rs](../primus_tfhe_ntru_lut/examples/ntt_lookup.rs).
 

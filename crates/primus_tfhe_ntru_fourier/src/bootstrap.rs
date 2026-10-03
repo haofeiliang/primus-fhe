@@ -3,7 +3,7 @@ use primus_poly::Polynomial;
 use primus_tfhe::TfheEvaluationError;
 
 use crate::{
-    Evaluator, Lwe, ServerKey, TfheContext,
+    BlindRotationKey, Evaluator, Lwe, TfheContext,
     blind_rotation::{BlindRotationWorkspace, blind_rotate_lookup_table_to},
 };
 
@@ -16,7 +16,7 @@ where
     LM: primus_reduce::RingContext<T>,
 {
     pub(crate) context: &'a TfheContext<T, Table, LM>,
-    pub(crate) server_key: &'a ServerKey<T>,
+    pub(crate) blind_rotation_key: &'a BlindRotationKey<T>,
     pub(crate) workspace: BlindRotationWorkspace<'a, T>,
     pub(crate) fft: FftEngine<'a, Table>,
 }
@@ -29,15 +29,15 @@ where
 {
     pub(crate) fn try_new(
         context: &'a TfheContext<T, Table, LM>,
-        server_key: &'a ServerKey<T>,
+        blind_rotation_key: &'a BlindRotationKey<T>,
     ) -> Result<Self, TfheEvaluationError> {
-        if !server_key.is_compatible(context.parameters()) {
-            return Err(TfheEvaluationError::IncompatibleServerKey);
+        if !blind_rotation_key.is_compatible(context.parameters()) {
+            return Err(TfheEvaluationError::IncompatibleBlindRotationKey);
         }
         Ok(Self {
             context,
-            server_key,
-            workspace: BlindRotationWorkspace::new(context.parameters(), server_key),
+            blind_rotation_key,
+            workspace: BlindRotationWorkspace::new(context.parameters(), blind_rotation_key),
             fft: context.new_fft_engine(),
         })
     }
@@ -53,7 +53,7 @@ where
     ) {
         let parameters = self.context.parameters();
         blind_rotate_lookup_table_to(
-            self.server_key,
+            self.blind_rotation_key,
             input,
             lookup_table.as_view(),
             rotation_step,
@@ -106,12 +106,20 @@ where
         }
     }
 
-    /// Complete only the standalone state; a retained PBS is moved unchanged.
-    #[must_use]
-    pub(crate) fn into_bootstrapper(self) -> Evaluator<'a, T, Table, LM> {
-        match self {
-            Self::Standalone(engine) => Evaluator::from_engine(engine),
-            Self::Bootstrapper(pbs) => pbs,
-        }
+    /// Binds the requested return material. Recovering a retained PBS under the
+    /// same key reuses its buffers; standalone CBS or another key prepares return buffers.
+    pub(crate) fn try_into_bootstrapper(
+        self,
+        return_key: &'a primus_ntru::NtruLweKeySwitchingKey<T>,
+    ) -> Result<Evaluator<'a, T, Table, LM>, TfheEvaluationError> {
+        self.engine()
+            .context
+            .parameters()
+            .check_lwe_return_key(return_key)?;
+        Ok(match self {
+            Self::Standalone(engine) => Evaluator::from_engine(engine, return_key),
+            Self::Bootstrapper(pbs) if std::ptr::eq(pbs.lwe_return.key(), return_key) => pbs,
+            Self::Bootstrapper(pbs) => Evaluator::from_engine(pbs.engine, return_key),
+        })
     }
 }

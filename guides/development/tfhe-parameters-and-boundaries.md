@@ -153,7 +153,18 @@ PBS trait、四后端、Boolean 门、双输入打包、CBS、one-hot 与 MVB �
 
 ## Classic 与 CBS 能力绑定
 
-NTRU 服务端密钥保持 classic/sparse 的所有权枚举；`ServerKey::classic_controls()` 返回借用的 `ClassicControls`，sparse 返回 `None`。视图集中 NLEV initializer、首坐标 NLEV 的正/可选负 bit，以及后续 NGSW bit 的语义迭代器。BR 构造时选择 binary/ternary/sparse 及其 scratch，在线提升不再重新分派服务端密钥或调用可能在 sparse 下 panic 的 initializer。
+NTRU `BlindRotationKey` 持有 classic/sparse 材料、BR basis 与输入分布；`ServerKey` 再组合该 owner、返回密钥与可选 CBS 密钥。`BlindRotationKey::classic_controls()` 返回借用的 `ClassicControls`，sparse 返回 `None`。视图集中 NLEV initializer、首坐标 NLEV 的正/可选负 bit，以及后续 NGSW bit 的语义迭代器。BR 构造时选择 binary/ternary/sparse 及其 scratch，在线提升不再重新分派服务端密钥或调用可能在 sparse 下 panic 的 initializer。
+
+NTRU 三类材料可分别生成和持有：`KeyGenerator::try_generate_blind_rotation_key` / `try_generate_sparse_blind_rotation_key` 需要两个秘密角色，`TfheParameters::try_generate_lwe_return_key` 需要完整返回配对，`try_generate_circuit_bootstrap_key` 只接收累加秘密。`ServerKey::new` / `into_parts` 移动各组件而不复制密文数组；独立生成可能重复转换累加秘密，完整成对生成仍复用已转换表示。
+
+| NTRU 求值入口 | 借用材料 | 绑定检查 |
+| --- | --- | --- |
+| `Evaluator::try_from_parts` | BR + return | BR layout/distribution/basis、返回 N/Q/q/n/basis |
+| CBS / one-hot `try_from_parts` | BR + CBS | classic 能力、累加 N/Q、CBS 完整 basis 及输入 codec/容量；无返回约束 |
+| 高精 LUT `try_from_parts` | BR + return + CBS | 上述材料及编译表的 N/Q/q/编码 |
+| Factorized MVB `try_from_bootstrapper` | 已绑定 PBS | classic 能力与既有 MVB 程序约束 |
+
+BR 不依赖返回 basis；位控制也不绑定外部 q。外部模数由输入程序和返回材料绑定。独立 BR/CBS 生成不检查 f 在返回 q 下的幅度界，完整 PBS 及返回密钥生成保留该要求。各入口检查一次，在线不再解包可选材料或扫描秘密。相同布局/模数不能证明独立材料的实际秘密身份。
 
 CBS 的可选材料仍使用 `Option` 表示。私有绑定集中可用材料与所选 output parameters；NTRU CBS/one-hot 要求 classic，并始终使用 circuit key 的完整 output basis。GLWE CBS 支持 classic 与 sparse，独立 `try_from_parts` 验证调用方提供的参数、trace basis 和 scheme-switch layout，可复用兼容的独立 output basis。构造后保存借用的绑定，在线操作不再取得可选材料。布局及 basis 一致仍不证明秘密或变换表示身份。
 
@@ -169,7 +180,7 @@ CBS 的可选材料仍使用 `Option` 表示。私有绑定集中可用材料与
 
 具体后端的私有 `BlindRotationEngine` 绑定 input 准备、所选 BR key/scratch、系数 accumulator 与 Fourier FFT engine。GLWE KS→BR 保留输入 KS，BR→KS 直接使用外部 input。普通 `Evaluator` 组合完整返回阶段：GLWE BR→KS 的输出 KS、KS→BR 的直接提取，或 NTRU 返回对象；必需资源不再是可能缺失的 `Option`。
 
-CBS 私有小枚举只区分独立 BR/input 与完整 PBS 两种实际所有权。独立 GLWE BR→KS 和 NTRU CBS/one-hot 的 PBS 借用返回 `None`，恢复时显式分配缺失返回缓冲；独立 GLWE KS→BR 已有输入 KS，直接提取不需额外返回工作区，因此可提供 `Some` 且恢复无分配。从完整 PBS 转入的状态始终保留并复用原资源。公开借用仅暴露 PBS 操作，不能替换已绑定 evaluator。详见[资源组合表](workspaces-and-storage.md#input-blind-rotation-and-return-ownership)。
+CBS 私有小枚举只区分独立 BR/input 与完整 PBS 两种实际所有权。独立 GLWE BR→KS 和 NTRU CBS/one-hot 的 PBS 借用返回 `None`，恢复时显式分配缺失返回缓冲；独立 GLWE KS→BR 已有输入 KS，直接提取不需额外返回工作区，因此可提供 `Some` 且恢复无分配。NTRU 转入 CBS/one-hot 时显式提供 circuit key，`try_into_bootstrapper(return_key)` 显式绑定返回材料：传回原 key 对象时复用完整 PBS，独立状态或另一把兼容 key 则准备返回缓冲。公开借用仅暴露 PBS 操作，不能替换已绑定 evaluator。详见[资源组合表](workspaces-and-storage.md#input-blind-rotation-and-return-ownership)。
 
 ## CBS、CMux、MVB 与高精度查表
 

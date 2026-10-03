@@ -41,6 +41,8 @@ Pass an explicit t=4 `RoundedCodec` to `boolean_encryptor`, `boolean_public_encr
 
 ## CBS and examples
 
+The backends expose independent `BlindRotationKey`, return and `CircuitBootstrapKey` owners, with `ServerKey::new` / `into_parts` for moving them into or out of a complete bundle. `parameters.try_generate_lwe_return_key(&client, rng)` generates return material without a transform workspace; `parameters.check_lwe_return_key(&key)` checks N/Q/q/dimension/basis at composition. CBS-only generation and binding do not require a return key or f's magnitude bound at external q. The accumulator's backend conversion requirements still apply.
+
 `context.try_generate_keys(Some(cbs_config), rng)` includes trace/scheme-switch material; bind it through `context.circuit_bootstrap_evaluator(&server, &input_codec)`. CBS skips the ordinary PBS return path and produces NGSW under f. An input bit 0/1 produces a CMux control; candidate ring ciphertexts must share f, Q and encoding. Backend examples show the complete consumption chain.
 
 `CircuitBootstrapParameters` chooses independent output, trace and scheme-switch bases. Output retains the requested level count and the scheme-switch key binds the complete output basis. Matching lengths do not establish basis or actual secret identity. BR decomposition must resolve the LUT and smallest output gadget scale. CBS input encoding and ManyLUT capacity are checked when binding the evaluator; the same key material can serve several t values. `accumulator_client(client.accumulator_ntru_secret_key(), scaled_codec)` independently binds ordinary ring messages at Q, sharing the gadget’s sampling state; its message modulus may differ from the input LWE modulus.

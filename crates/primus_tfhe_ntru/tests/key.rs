@@ -10,7 +10,7 @@ use primus_ntru::{NtruParameters, NtruSecretKey, SecretKeyDistr};
 use primus_tfhe_ntru::{
     ClientKey, DecompositionConfig, TfheClientError, TfheKeyError, TfheParameters,
 };
-use rand::SeedableRng;
+use rand::{RngExt, SeedableRng};
 
 #[test]
 fn imported_external_residues_must_match_the_control_domain() {
@@ -130,6 +130,16 @@ fn return_key_rejects_accumulator_magnitudes_outside_external_modulus() {
             NtruSecretKey::new(accumulator_secret, distr),
         );
         assert_eq!(key.check_compatible(&parameters).err(), expected);
+        key.check_blind_rotation_compatible(&parameters).unwrap();
+        let mut rng = rand::rngs::StdRng::seed_from_u64(47);
+        let mut untouched = rand::rngs::StdRng::seed_from_u64(47);
+        assert_eq!(
+            parameters.try_generate_lwe_return_key(&key, &mut rng).err(),
+            expected
+        );
+        if expected.is_some() {
+            assert_eq!(rng.random::<u64>(), untouched.random::<u64>());
+        }
         // Return-key bounds concern setup, not ordinary external or ring clients.
         parameters
             .check_accumulator_secret_key(key.accumulator_ntru_secret_key())

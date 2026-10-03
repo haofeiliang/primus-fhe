@@ -78,6 +78,8 @@ For fixed N, M and c, start with `d=min(c, floor(log2(N)/tau))`, making M^d as c
 
 ## Evaluation and workspace
 
+Both evaluators accept a complete `ServerKey` through `try_new`, or borrow independent material with `try_from_parts(context, blind_rotation_key, return_key, circuit_key, lookup_table)`. Components can come from `ServerKey::into_parts()` without copying ciphertext buffers. Unlike standalone CBS/one-hot, this workflow always requires the Q→q, f→s return key for its LWE outputs. All three components are checked when binding; actual shared secrets and transform identity remain caller contracts.
+
 Each call performs one-hot CBS for the low chunks and only for high chunks used by the compiled selection plan. Equal branches omit a choice, and repeated subtrees are computed once. A public choice uses full NLEV selectors and lifts the polynomial; an encrypted choice uses nonzero NGSW selectors. A chunk requiring both representations shares its BR and projections. An output independent of all high chunks uses the initializer's BR-basis lift. Each distinct root still requires low-chunk rotations and return; repeated roots copy the earlier completed output because these subsequent operations are identical in one bound evaluator.
 
 Shared nodes reuse the same ciphertext and error across consumers; output errors are correlated, and identical roots reuse the complete output ciphertext when subsequent operations match. Pruning preserves the cleartext mapping but changes the error path. Full selection, rotation and return formulas are in the [implementation notes](IMPLEMENTATION.md#stage-and-buffer-layout).

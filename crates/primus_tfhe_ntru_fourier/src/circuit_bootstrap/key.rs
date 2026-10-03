@@ -3,9 +3,9 @@
 use primus_fft::{FftTable, TorusFftValue};
 use primus_ntru::{FourierNtruSchemeSwitchKey, FourierNtruSecretKey, FourierNtruTraceKey};
 
-use crate::{CircuitBootstrapParameters, ClientKey, KeyGenerationError, KeyGenerator, TfheContext};
+use crate::{CircuitBootstrapParameters, KeyGenerationError, KeyGenerator, TfheContext};
 
-/// Additional keys for NTRU CBS; ordinary BR material remains in [`crate::ServerKey`].
+/// Additional keys for NTRU CBS; ordinary BR material is owned by [`crate::BlindRotationKey`].
 /// Both keys use the accumulator secret, not the post-PBS client secret.
 /// Publishing the scheme-switch material requires the secret-dependent-message
 /// security assumption documented on [`FourierNtruSchemeSwitchKey`].
@@ -72,15 +72,15 @@ where
     Table: FftTable,
     LM: primus_reduce::RingContext<T>,
 {
-    /// Generates the optional trace and scheme-switch keys for a compatible client.
+    /// Generates the optional trace and scheme-switch keys from only the accumulator secret.
     ///
-    /// Checks parameter and client-key compatibility before sampling. The caller
+    /// Checks parameters and the accumulator layout/distribution before sampling. The caller
     /// selects the independent noise/decomposition/security budgets described on
     /// [`CircuitBootstrapParameters`]. Actual secret identity must be shared with
     /// the server key later used by the evaluator, as must the FFT table instance.
     pub fn try_generate_circuit_bootstrap_key<R>(
         &mut self,
-        client_key: &ClientKey<T>,
+        secret: &primus_ntru::NtruSecretKey<T>,
         parameters: CircuitBootstrapParameters<T>,
         rng: &mut R,
     ) -> Result<CircuitBootstrapKey<T>, KeyGenerationError>
@@ -90,23 +90,17 @@ where
         if !parameters.is_compatible(self.context.parameters()) {
             return Err(KeyGenerationError::IncompatibleCircuitBootstrapParameters);
         }
-        client_key.check_compatible(self.context.parameters())?;
-        let secret = client_key.accumulator_ntru_secret_key();
+        self.context
+            .parameters()
+            .check_accumulator_secret_key(secret)?;
         let transformed = FourierNtruSecretKey::try_from_coeff_secret_key(secret, &mut self.fft)?;
-        Ok(
-            self.generate_circuit_bootstrap_key_with_main(
-                client_key,
-                &transformed,
-                parameters,
-                rng,
-            ),
-        )
+        Ok(self.generate_circuit_bootstrap_key_with_main(secret, &transformed, parameters, rng))
     }
 
     /// Uses the accumulator transform already prepared for ordinary PBS key generation.
     pub(crate) fn generate_circuit_bootstrap_key_with_main<R>(
         &mut self,
-        client_key: &ClientKey<T>,
+        secret: &primus_ntru::NtruSecretKey<T>,
         transformed: &FourierNtruSecretKey,
         parameters: CircuitBootstrapParameters<T>,
         rng: &mut R,
@@ -114,7 +108,6 @@ where
     where
         R: rand::Rng + rand::CryptoRng,
     {
-        let secret = client_key.accumulator_ntru_secret_key();
         let trace = FourierNtruTraceKey::generate(
             secret,
             transformed,
@@ -150,10 +143,10 @@ where
     /// Inherits [`KeyGenerator::try_generate_circuit_bootstrap_key`]'s contracts.
     pub fn try_generate_circuit_bootstrap_key<R: rand::Rng + rand::CryptoRng>(
         &self,
-        client_key: &ClientKey<T>,
+        secret: &primus_ntru::NtruSecretKey<T>,
         parameters: crate::CircuitBootstrapParameters<T>,
         rng: &mut R,
     ) -> Result<crate::CircuitBootstrapKey<T>, crate::KeyGenerationError> {
-        KeyGenerator::new(self).try_generate_circuit_bootstrap_key(client_key, parameters, rng)
+        KeyGenerator::new(self).try_generate_circuit_bootstrap_key(secret, parameters, rng)
     }
 }

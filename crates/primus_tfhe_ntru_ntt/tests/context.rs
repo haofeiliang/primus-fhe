@@ -117,19 +117,24 @@ fn rejects_server_keys_with_same_layout_but_different_bases_or_modulus() {
         let incompatible = TfheContext::try_new(candidate, table).unwrap();
         let input_codec =
             RoundedCodec::new(4, incompatible.parameters().external_lwe().cipher_modulus());
+        let expected = if cipher_modulus != CIPHER_MODULUS || key_switching_log_basis != 9 {
+            TfheEvaluationError::IncompatibleLweReturnKey
+        } else {
+            TfheEvaluationError::IncompatibleBlindRotationKey
+        };
         assert_eq!(
             incompatible.evaluator(&server_key).err(),
-            Some(TfheEvaluationError::IncompatibleServerKey)
+            Some(expected.clone())
         );
         assert_eq!(
             incompatible
                 .boolean_evaluator(&server_key, &input_codec)
                 .err(),
-            Some(TfheEvaluationError::IncompatibleServerKey)
+            Some(expected.clone())
         );
         assert_eq!(
             incompatible.factorized_evaluator(&server_key).err(),
-            Some(TfheEvaluationError::IncompatibleServerKey)
+            Some(expected.clone())
         );
     }
 }

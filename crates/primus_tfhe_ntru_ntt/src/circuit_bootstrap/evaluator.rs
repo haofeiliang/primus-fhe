@@ -11,7 +11,8 @@ use primus_tfhe::{InterleavedLookupTable, LookupTableError};
 use super::key::CircuitBootstrapBinding;
 
 use crate::{
-    CircuitBootstrapKey, Evaluator, Lwe, ServerKey, TfheContext, TfheEvaluationError,
+    BlindRotationKey, CircuitBootstrapKey, Evaluator, Lwe, ServerKey, TfheContext,
+    TfheEvaluationError,
     bootstrap::{BlindRotationEngine, CircuitBootstrapResources},
 };
 
@@ -52,7 +53,8 @@ where
     ) -> Result<Self, TfheEvaluationError> {
         Self::from_resources_and_key(
             CircuitBootstrapResources::Standalone(BlindRotationEngine::try_new(
-                context, server_key,
+                context,
+                server_key.blind_rotation_key(),
             )?),
             server_key.circuit_bootstrap_key(),
             input_codec,
@@ -61,20 +63,21 @@ where
 
     /// Binds resources and compiles gadget-scaled identity outputs once.
     /// Uses the circuit key's complete output basis and key parameters.
-    /// Rejects sparse server keys, mismatched input q or insufficient ManyLUT capacity.
+    /// Requires no return material. Rejects sparse BR, mismatched input q or insufficient ManyLUT capacity.
     ///
     /// # Correctness
-    /// The server and circuit keys were generated from the same accumulator
+    /// The BR and circuit keys were generated from the same accumulator
     /// secret and NTT representation. Layout/basis checks do not prove identity.
     pub fn try_from_parts(
         context: &'a TfheContext<T, Table, LM>,
-        server_key: &'a ServerKey<T>,
+        blind_rotation_key: &'a BlindRotationKey<T>,
         circuit_key: &'a CircuitBootstrapKey<T>,
         input_codec: &RoundedCodec<T, LM>,
     ) -> Result<Self, TfheEvaluationError> {
         Self::from_resources_and_key(
             CircuitBootstrapResources::Standalone(BlindRotationEngine::try_new(
-                context, server_key,
+                context,
+                blind_rotation_key,
             )?),
             Some(circuit_key),
             input_codec,
@@ -82,16 +85,16 @@ where
     }
 
     /// Consumes ordinary PBS workspace and allocates only the additional CBS buffers.
-    /// Rejects sparse keys, absent CBS material, an input codec at another q,
-    /// or an input domain/output count that exceeds ManyLUT capacity.
+    /// The circuit key must share the PBS accumulator secret and transform representation.
+    /// Rejects sparse keys, incompatible CBS material, codec q or ManyLUT capacity.
     pub fn try_from_bootstrapper(
         pbs: Evaluator<'a, T, Table, LM>,
+        circuit_key: &'a CircuitBootstrapKey<T>,
         input_codec: &RoundedCodec<T, LM>,
     ) -> Result<Self, TfheEvaluationError> {
-        let key = pbs.engine.server_key.circuit_bootstrap_key();
         Self::from_resources_and_key(
             CircuitBootstrapResources::Bootstrapper(pbs),
-            key,
+            Some(circuit_key),
             input_codec,
         )
     }
@@ -110,11 +113,18 @@ where
         self.resources.bootstrapper_mut()
     }
 
-    /// Recovers ordinary PBS, allocating return buffers only for standalone CBS.
-    /// A retained complete bootstrapper is recovered without allocation.
-    #[must_use]
-    pub fn into_bootstrapper(self) -> Evaluator<'a, T, Table, LM> {
-        self.resources.into_bootstrapper()
+    /// Recovers ordinary PBS under the supplied return key.
+    /// Reuses a retained PBS without allocation when `return_key` is the same key object.
+    /// A different compatible key prepares new return buffers. Rejects incompatible return material.
+    ///
+    /// # Correctness
+    /// The return key must use the BR accumulator secret and the intended external
+    /// secret. Layout/modulus checks do not establish this identity.
+    pub fn try_into_bootstrapper(
+        self,
+        return_key: &'a primus_ntru::NtruLweKeySwitchingKey<T>,
+    ) -> Result<Evaluator<'a, T, Table, LM>, TfheEvaluationError> {
+        self.resources.try_into_bootstrapper(return_key)
     }
 
     /// Bind the circuit key once and compile the gadget-scaled identity LUT.

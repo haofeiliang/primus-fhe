@@ -41,6 +41,8 @@ Classic PBS、ManyLUT、CBS、Boolean 和 MVB 支持 binary/ternary 外部秘密
 
 ## CBS 与示例
 
+两后端提供独立的 `BlindRotationKey`、返回密钥与 `CircuitBootstrapKey` owner，通过 `ServerKey::new` / `into_parts` 移入或移出完整组合。`parameters.try_generate_lwe_return_key(&client, rng)` 无需变换工作区即可生成返回密钥；`parameters.check_lwe_return_key(&key)` 在组合时核对 N/Q/q、维数与 basis。CBS-only 生成和绑定无需返回密钥，也无需 f 满足外部 q 的幅度界；累加秘密仍须满足各后端的转换要求。
+
 `context.try_generate_keys(Some(cbs_config), rng)` 添加 trace/scheme-switch 材料；绑定 `context.circuit_bootstrap_evaluator(&server, &input_codec)`。CBS 跳过普通 PBS 返回路径，生成 f 下的 NGSW。输入 0/1 时它可控制 CMux，候选环密文须使用同一 f、Q 和编码；完整消费过程见后端示例。
 
 `CircuitBootstrapParameters` 独立选择 output、trace、scheme-switch basis。输出保留请求的层数，scheme-switch key 绑定完整 output basis；相同长度不能证明 basis 或实际秘密相同。BR 分解必须能解析 LUT 和最小输出 gadget 尺度。CBS 的输入编码和 ManyLUT 容量在 evaluator 绑定时检查；同一密钥材料可服务多个 t。`accumulator_client(client.accumulator_ntru_secret_key(), scaled_codec)` 独立绑定 Q 下的普通环消息，复用 gadget 的采样状态；其明文模数可与输入 LWE 不同。

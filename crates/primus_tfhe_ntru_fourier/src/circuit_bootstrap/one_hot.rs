@@ -8,7 +8,8 @@ pub use primus_tfhe_ntru::{OneHotBootstrapError, OneHotLookupTable};
 use super::key::CircuitBootstrapBinding;
 
 use crate::{
-    CircuitBootstrapParameters, Evaluator, Lwe, ServerKey, TfheContext,
+    BlindRotationKey, CircuitBootstrapKey, CircuitBootstrapParameters, Evaluator, Lwe, ServerKey,
+    TfheContext,
     bootstrap::{BlindRotationEngine, CircuitBootstrapResources},
 };
 
@@ -58,31 +59,59 @@ where
     ) -> Result<Self, OneHotBootstrapError> {
         Self::from_resources(
             CircuitBootstrapResources::Standalone(BlindRotationEngine::try_new(
-                context, server_key,
+                context,
+                server_key.blind_rotation_key(),
             )?),
+            server_key.circuit_bootstrap_key(),
+            input_codec,
+        )
+    }
+
+    /// Binds independently owned BR and CBS material, without a return key.
+    /// The keys must share the context's secrets and transform representation.
+    /// Rejects sparse BR and incompatible CBS parameters before online evaluation.
+    pub fn try_from_parts(
+        context: &'a TfheContext<T, Table, LM>,
+        blind_rotation_key: &'a BlindRotationKey<T>,
+        circuit_key: &'a CircuitBootstrapKey<T>,
+        input_codec: &RoundedCodec<T, LM>,
+    ) -> Result<Self, OneHotBootstrapError> {
+        Self::from_resources(
+            CircuitBootstrapResources::Standalone(BlindRotationEngine::try_new(
+                context,
+                blind_rotation_key,
+            )?),
+            Some(circuit_key),
             input_codec,
         )
     }
 
     /// Consumes existing PBS workspace; allocates only the packed LUT and trace buffers.
-    /// Inherits [`Self::try_new`]'s compatibility and error contracts.
+    /// Inherits [`Self::try_new`]'s compatibility and error contracts. The supplied
+    /// circuit key must share the PBS accumulator secret and transform representation.
     pub fn try_from_bootstrapper(
         pbs: Evaluator<'a, T, Table, LM>,
+        circuit_key: &'a CircuitBootstrapKey<T>,
         input_codec: &RoundedCodec<T, LM>,
     ) -> Result<Self, OneHotBootstrapError> {
-        Self::from_resources(CircuitBootstrapResources::Bootstrapper(pbs), input_codec)
+        Self::from_resources(
+            CircuitBootstrapResources::Bootstrapper(pbs),
+            Some(circuit_key),
+            input_codec,
+        )
     }
 
     /// Binds CBS geometry once and allocates only its projection buffers.
     fn from_resources(
         resources: CircuitBootstrapResources<'a, T, Table, LM>,
+        circuit_key: Option<&'a CircuitBootstrapKey<T>>,
         input_codec: &RoundedCodec<T, LM>,
     ) -> Result<Self, OneHotBootstrapError> {
         let engine = resources.engine();
         let circuit = CircuitBootstrapBinding::try_new(
             engine.context.parameters(),
             engine.workspace.rotation.classic_controls(),
-            engine.server_key.circuit_bootstrap_key(),
+            circuit_key,
         )?;
         let lookup_table = OneHotLookupTable::try_new(
             engine.context.parameters(),
@@ -190,11 +219,18 @@ where
         self.resources.bootstrapper_mut()
     }
 
-    /// Recovers ordinary PBS, allocating return buffers only for standalone CBS.
-    /// A retained complete bootstrapper is recovered without allocation.
-    #[must_use]
-    pub fn into_bootstrapper(self) -> Evaluator<'a, T, Table, LM> {
-        self.resources.into_bootstrapper()
+    /// Recovers ordinary PBS under the supplied return key.
+    /// Reuses a retained PBS without allocation when `return_key` is the same key object.
+    /// A different compatible key prepares new return buffers. Rejects incompatible return material.
+    ///
+    /// # Correctness
+    /// The return key must use the BR accumulator secret and the intended external
+    /// secret. Layout/modulus checks do not establish this identity.
+    pub fn try_into_bootstrapper(
+        self,
+        return_key: &'a primus_ntru::NtruLweKeySwitchingKey<T>,
+    ) -> Result<Evaluator<'a, T, Table, LM>, crate::TfheEvaluationError> {
+        self.resources.try_into_bootstrapper(return_key)
     }
 
     /// Writes coefficient NLEV selectors only, without scheme switching.

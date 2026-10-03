@@ -74,14 +74,37 @@ fn circuit_bootstrap(distr: SecretKeyDistr) {
         },
         scheme_switch_noise_standard_deviation: 0.7,
     };
-    let (client, server) = context
-        .try_generate_keys(Some(cbs_config), &mut rng)
+    // CBS-only material can be generated and bound before any return key exists.
+    let mut generator = primus_tfhe_ntru_ntt::KeyGenerator::new(&context);
+    let client = generator.try_generate_client_key(&mut rng).unwrap();
+    let br = generator
+        .try_generate_blind_rotation_key(&client, &mut rng)
         .unwrap();
+    let circuit = generator
+        .try_generate_circuit_bootstrap_key(
+            client.accumulator_ntru_secret_key(),
+            primus_tfhe_ntru_ntt::CircuitBootstrapParameters::try_from_config(
+                context.parameters(),
+                cbs_config,
+            )
+            .unwrap(),
+            &mut rng,
+        )
+        .unwrap();
+    let mut standalone =
+        CircuitBootstrapEvaluator::try_from_parts(&context, &br, &circuit, &input_codec).unwrap();
+    assert!(standalone.bootstrapper_mut().is_none());
+    drop(standalone);
+    let return_key = context
+        .parameters()
+        .try_generate_lwe_return_key(&client, &mut rng)
+        .unwrap();
+    let server = primus_tfhe_ntru_ntt::ServerKey::new(br, return_key, Some(circuit));
     let circuit_key = server.circuit_bootstrap_key().unwrap();
     let parameters = circuit_key.parameters();
     // Public capability layout: the first coordinate is separate from the
     // remaining NGSW bits; ternary coordinates have positive/negative pairs.
-    let controls = server.classic_controls().unwrap();
+    let controls = server.blind_rotation_key().classic_controls().unwrap();
     assert_eq!(controls.is_binary(), distr.is_binary());
     assert_eq!(controls.first_controls().1.is_none(), distr.is_binary());
     assert_eq!(
@@ -151,10 +174,18 @@ fn circuit_bootstrap(distr: SecretKeyDistr) {
         standalone.circuit_bootstrap_to(input.as_view(), &mut standalone_control);
     });
     assert_eq!(allocation.count, 0);
-    let (pbs, allocation) = allocations::measure(|| standalone.into_bootstrapper());
+    let (pbs, allocation) = allocations::measure(|| {
+        standalone
+            .try_into_bootstrapper(server.key_switching_key())
+            .unwrap()
+    });
     assert!(allocation.count > 0);
-    let mut evaluator =
-        CircuitBootstrapEvaluator::try_from_bootstrapper(pbs, &input_codec).unwrap();
+    let mut evaluator = CircuitBootstrapEvaluator::try_from_bootstrapper(
+        pbs,
+        server.circuit_bootstrap_key().unwrap(),
+        &input_codec,
+    )
+    .unwrap();
     let mut control = evaluator.allocate_output();
     let mut selected = context.allocate_accumulator_ciphertext();
     let mut product = context.allocate_accumulator_ciphertext();
@@ -202,7 +233,10 @@ fn circuit_bootstrap(distr: SecretKeyDistr) {
             .compile_fn(|m| m as u64)
             .unwrap();
         evaluator = CircuitBootstrapEvaluator::try_from_bootstrapper(
-            evaluator.into_bootstrapper(),
+            evaluator
+                .try_into_bootstrapper(server.key_switching_key())
+                .unwrap(),
+            server.circuit_bootstrap_key().unwrap(),
             &input_codec,
         )
         .unwrap();
@@ -279,7 +313,11 @@ fn circuit_bootstrap(distr: SecretKeyDistr) {
     );
     assert!(control.as_ref().iter().all(|&value| value == 7));
 
-    let (_, recovery) = allocations::measure(|| evaluator.into_bootstrapper());
+    let (_, recovery) = allocations::measure(|| {
+        evaluator
+            .try_into_bootstrapper(server.key_switching_key())
+            .unwrap()
+    });
     assert_eq!(
         recovery.count, 0,
         "converted CBS retains ordinary workspace"
@@ -294,4 +332,90 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
     ] {
         circuit_bootstrap(distr);
     }
+}
+
+// A valid accumulator at Q can exceed external q. Only return generation needs
+// the latter bound; CBS-only key generation and binding must stay independent.
+#[test]
+fn independent_cbs_material_does_not_require_a_return_key() {
+    use primus_tfhe_ntru_ntt::{
+        CircuitBootstrapParameters, ClientKey, KeyGenerator, OneHotCircuitBootstrapEvaluator,
+        TfheKeyError,
+    };
+    let full = DecompositionConfig {
+        log_basis: DecompositionBaseLog::new(4),
+        level_count: None,
+    };
+    let parameters = TfheParameters::try_from_config(primus_tfhe_ntru_ntt::TfheConfig {
+        external_lwe: primus_lwe::LweParametersInner::new(
+            LweDimension::new(2),
+            primus_modulus::PowOf2Modulus::new(16u32),
+            SecretKeyDistr::UniformBinary,
+            0.7,
+        ),
+        accumulator_modulus: primus_modulus::BarrettModulus::new(65_537u32),
+        poly_length: 32,
+        accumulator_secret_key_distr: SecretKeyDistr::gaussian(3.2),
+        accumulator_noise_standard_deviation: 0.7,
+        blind_rotation: full,
+        key_switching: DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(2),
+            level_count: None,
+        },
+        key_switching_noise_standard_deviation: 0.7,
+    })
+    .unwrap();
+    let context =
+        TfheContext::<_, primus_ntt::U32NttTable, _>::try_from_parameters(parameters).unwrap();
+    let input_codec = RoundedCodec::new(4, context.parameters().external_lwe().cipher_modulus());
+    let mut f = vec![0; 32];
+    f[0] = 17; // Invertible at Q, but not representable as a signed magnitude below q=16.
+    let client = ClientKey::new(
+        primus_lwe::LweSecretKey::new(
+            vec![0, 1],
+            SecretKeyDistr::UniformBinary,
+            input_codec.ciphertext_modulus(),
+        ),
+        primus_ntru::NtruSecretKey::new(f, SecretKeyDistr::gaussian(3.2)),
+    );
+    let mut rng = StdRng::seed_from_u64(0x4342535f4f4e4c59);
+    let mut untouched = StdRng::seed_from_u64(0x4342535f4f4e4c59);
+    assert_eq!(
+        context
+            .parameters()
+            .try_generate_lwe_return_key(&client, &mut rng)
+            .err(),
+        Some(TfheKeyError::AccumulatorSecretOutsideLweModulus)
+    );
+    assert_eq!(rng.random::<u64>(), untouched.random::<u64>());
+    let mut generator = KeyGenerator::new(&context);
+    let br = generator
+        .try_generate_blind_rotation_key(&client, &mut rng)
+        .unwrap();
+    let cbs_parameters = CircuitBootstrapParameters::try_from_config(
+        context.parameters(),
+        CircuitBootstrapConfig {
+            output: DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(4),
+                level_count: Some(DecompositionLevelCount::new(1)),
+            },
+            trace: full,
+            trace_noise_standard_deviation: 0.7,
+            scheme_switch: full,
+            scheme_switch_noise_standard_deviation: 0.7,
+        },
+    )
+    .unwrap();
+    let (_, accumulator) = client.into_parts();
+    let circuit = generator
+        .try_generate_circuit_bootstrap_key(&accumulator, cbs_parameters, &mut rng)
+        .unwrap();
+    let mut cbs =
+        CircuitBootstrapEvaluator::try_from_parts(&context, &br, &circuit, &input_codec).unwrap();
+    let mut one_hot =
+        OneHotCircuitBootstrapEvaluator::try_from_parts(&context, &br, &circuit, &input_codec)
+            .unwrap();
+    assert!(cbs.bootstrapper_mut().is_none());
+    assert!(one_hot.bootstrapper_mut().is_none());
+    // This fixture tests key domains/binding, not a usable noise budget at tiny q.
 }

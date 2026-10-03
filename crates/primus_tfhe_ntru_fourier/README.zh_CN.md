@@ -42,11 +42,17 @@ Fourier 环只支持 `NativeModulus`；`PowOf2Modulus` 环不受支持。 NTRU �
 
 `RustFftTable` 和 `TfheFftTable` 均支持 u32/u64。变换域密钥、数据和 evaluator 必须使用同一个 FFT 表实例，长度相同不能证明表示一致。
 
-`server_key.classic_controls()` 返回借用的 `ClassicControls` 视图，稀疏材料返回 `None`。视图的 `initializer()` 用于提升公开多项式；首坐标使用 NLEV bit，后续坐标使用 NGSW bit，ternary 秘密按正/负 bit 配对。CBS、one-hot 和 MVB 在构造时检查所需能力。可选的 `circuit_bootstrap_key()` 仍可用于查看或组合 CBS 材料。
+## 求值材料
+
+`ServerKey` 组合独立拥有的 `BlindRotationKey`、`NtruLweKeySwitchingKey` 和可选 `CircuitBootstrapKey`。`into_parts()` 移出组件，不复制密文缓冲；`ServerKey::new(br, return_key, cbs)` 组合各 owner。独立生成分别使用 `KeyGenerator::try_generate_blind_rotation_key(&client, rng)`、`parameters.try_generate_lwe_return_key(&client, rng)` 和 `generator.try_generate_circuit_bootstrap_key(client.accumulator_ntru_secret_key(), cbs_parameters, rng)`。稀疏 BR 使用 `try_generate_sparse_blind_rotation_key`。独立生成可能重复转换累加秘密；成对生成复用同一次变换。
+
+`Evaluator::try_from_parts(context, br, return_key)` 绑定普通 PBS。CBS 与 one-hot 均提供 `try_from_parts(context, br, circuit_key, &input_codec)`，无需返回密钥；CBS 示例展示这一流程。BR 与返回材料不兼容会分别报告。独立生成的材料必须采用相同实际秘密与变换表示，形状和模数检查不能证明身份。
+
+`server_key.blind_rotation_key().classic_controls()` 返回借用的 `ClassicControls` 视图，稀疏材料返回 `None`。视图的 `initializer()` 用于提升公开多项式；首坐标使用 NLEV bit，后续坐标使用 NGSW bit，ternary 秘密按正/负 bit 配对。CBS、one-hot 和 MVB 在构造时检查所需能力。可选的 `circuit_bootstrap_key()` 仍可用于查看或组合 CBS 材料。
 
 ## 复用 evaluator
 
-普通/interleaved `Evaluator` 的 `_to` 调用复用工作区和调用方输出。PBS/MVB/CBS 的所有权转换见[资源复用指南](../primus_tfhe/README.zh_CN.md#复用-evaluator)。独立 CBS/one-hot 省略普通 LWE 返回缓冲：`bootstrapper_mut()` 返回 `None`，`into_bootstrapper()` 显式分配缺失的返回缓冲。需要交替调用时使用 `try_from_bootstrapper(pbs, &input_codec)`，保留完整 PBS，其借用返回 `Some`，恢复无分配。
+普通/interleaved `Evaluator` 的 `_to` 调用复用工作区和调用方输出。PBS/MVB/CBS 的所有权转换见[资源复用指南](../primus_tfhe/README.zh_CN.md#复用-evaluator)。独立 CBS/one-hot 省略普通 LWE 返回缓冲：`bootstrapper_mut()` 返回 `None`，`try_into_bootstrapper(return_key)` 显式分配缺失的返回缓冲。需要交替调用时使用 `try_from_bootstrapper(pbs, circuit_key, &input_codec)`，保留完整 PBS，其借用返回 `Some`；传入同一返回密钥对象时恢复无分配，换用另一把兼容返回密钥则重新准备返回缓冲。
 
 ## 固定尺度分解式 MVB
 
@@ -69,7 +75,7 @@ let server = generator.try_generate_sparse_server_key(&client, 3, 2 * h, &mut rn
 let mut evaluator = context.evaluator(&server)?;
 ```
 
-普通/交错 PBS 复用原 evaluator。CBS/MVB 拒绝 sparse 密钥，包括另传 CBS 材料的构造方式。 `server.sparse_bootstrapping_key()` 提供选择密文。
+普通/交错 PBS 复用原 evaluator。CBS/MVB 拒绝 sparse 密钥，包括另传 CBS 材料的构造方式。 `server.blind_rotation_key().sparse_bootstrapping_key()` 提供选择密文。
 
 外部秘密允许偶数重量。只有环秘密需要可逆且 Fourier 逆稳定；系数恢复和聚合 FFT 另引入数值误差。
 
@@ -77,7 +83,7 @@ let mut evaluator = context.evaluator(&server)?;
 
 `context.try_generate_keys(Some(cbs_config), &mut rng)` 生成配对材料， `ServerKey` 持有附加参数及 trace/scheme-switch 密钥。 调用 `context.circuit_bootstrap_evaluator(&server, &input_codec)` 或消费普通 evaluator。 经典密钥若使用 `None` 生成，CBS 绑定返回 `MissingCircuitBootstrapKey`。 使用 `allocate_output`、`circuit_bootstrap_to` 和 `cmux_to`； [CBS → CMUX 示例](examples/ntru_fourier_circuit_bootstrap.rs)展示完整消费链。
 
-输出为 `f_acc` 下的 `FourierNgswCiphertext`。Circuit key 绑定完整输出 basis； `try_from_parts(context, server, circuit_key, &input_codec)` 从该密钥取得参数。 须对最小输出 gadget 尺度预算 Native trace halving 和 FFT 误差。
+输出为 `f_acc` 下的 `FourierNgswCiphertext`。Circuit key 绑定完整输出 basis； `try_from_parts(context, blind_rotation_key, circuit_key, &input_codec)` 从该密钥取得参数。 须对最小输出 gadget 尺度预算 Native trace halving 和 FFT 误差。
 
 独立生成组件时须配对秘密并使用同一变换表示，形状检查不能证明身份。 输入/输出与消费要求见[共享 CBS 契约](../primus_tfhe/README.zh_CN.md#cbs-输出与消费)及 [家族 CBS 说明](../primus_tfhe_ntru/README.zh_CN.md#cbs-与示例)。
 
@@ -91,7 +97,7 @@ let mut evaluator = context.evaluator(&server)?;
 
 ## 高精度查表
 
-[primus_tfhe_ntru_lut](../primus_tfhe_ntru_lut/README.zh_CN.md) 组合 one-hot CBS、表选择、聚合负向旋转和独立 LWE 返回，支持统一输入/输出 chunk 位宽及独立数量。底层组合可通过 `server_key.classic_controls().unwrap().initializer()` 取得 context 的 BR basis 下的 classic NLEV[1]，通过 `key_switching_key()` 取得 Q→q、f→s 返回密钥。
+[primus_tfhe_ntru_lut](../primus_tfhe_ntru_lut/README.zh_CN.md) 组合 one-hot CBS、表选择、聚合负向旋转和独立 LWE 返回，支持统一输入/输出 chunk 位宽及独立数量。底层组合可通过 `server_key.blind_rotation_key().classic_controls().unwrap().initializer()` 取得 context 的 BR basis 下的 classic NLEV[1]，通过 `key_switching_key()` 取得 Q→q、f→s 返回密钥。
 
 完整 chunk 加密与查表工作流见 [fourier_lookup.rs](../primus_tfhe_ntru_lut/examples/fourier_lookup.rs)。
 

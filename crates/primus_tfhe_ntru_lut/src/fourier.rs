@@ -11,7 +11,9 @@ use primus_poly::{FourierPolynomialIter, FourierPolynomialIterMut, Polynomial};
 use primus_reduce::RingContext;
 use primus_tfhe::LweCiphertext;
 use primus_tfhe_ntru::LweReturnEvaluator;
-use primus_tfhe_ntru_fourier::{OneHotCircuitBootstrapEvaluator, ServerKey, TfheContext};
+use primus_tfhe_ntru_fourier::{
+    BlindRotationKey, CircuitBootstrapKey, OneHotCircuitBootstrapEvaluator, ServerKey, TfheContext,
+};
 
 use crate::{
     HighPrecisionLookupTable, LookupTableError,
@@ -82,6 +84,31 @@ where
         server_key: &'a ServerKey<T>,
         lookup_table: &'a HighPrecisionLookupTable<T>,
     ) -> Result<Self, LookupTableError> {
+        let circuit_key = server_key.circuit_bootstrap_key().ok_or(
+            primus_tfhe_ntru::OneHotBootstrapError::Evaluation(
+                primus_tfhe::TfheEvaluationError::MissingCircuitBootstrapKey,
+            ),
+        )?;
+        Self::try_from_parts(
+            context,
+            server_key.blind_rotation_key(),
+            server_key.key_switching_key(),
+            circuit_key,
+            lookup_table,
+        )
+    }
+
+    /// Binds independent BR, LWE return and CBS material to this table.
+    /// All keys must share the actual source/target secrets and this context's
+    /// transform representation; compatibility checks do not establish identity.
+    pub fn try_from_parts(
+        context: &'a TfheContext<T, Table, LM>,
+        blind_rotation_key: &'a BlindRotationKey<T>,
+        return_key: &'a primus_ntru::NtruLweKeySwitchingKey<T>,
+        circuit_key: &'a CircuitBootstrapKey<T>,
+        lookup_table: &'a HighPrecisionLookupTable<T>,
+    ) -> Result<Self, LookupTableError> {
+        context.parameters().check_lwe_return_key(return_key)?;
         if !lookup_table.is_compatible(context.parameters()) {
             return Err(LookupTableError::IncompatibleParameters);
         }
@@ -90,7 +117,12 @@ where
             lookup_table.plaintext_modulus(),
             context.parameters().external_lwe().cipher_modulus(),
         );
-        let one_hot = OneHotCircuitBootstrapEvaluator::try_new(context, server_key, &input_codec)?;
+        let one_hot = OneHotCircuitBootstrapEvaluator::try_from_parts(
+            context,
+            blind_rotation_key,
+            circuit_key,
+            &input_codec,
+        )?;
         let layout = lookup_table.layout;
         let n = layout.polynomial_length;
         let coefficient_chunk_count = layout.config.coefficient_chunk_count;
@@ -133,7 +165,7 @@ where
             lookup_table,
             one_hot,
             lwe_return: LweReturnEvaluator::new(
-                server_key.key_switching_key(),
+                return_key,
                 context.parameters().external_lwe().cipher_modulus(),
             ),
             public_table_selectors: vec![Complex64::default(); public_table_selectors_len]

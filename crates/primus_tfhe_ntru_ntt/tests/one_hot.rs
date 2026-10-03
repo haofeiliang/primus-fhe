@@ -100,8 +100,12 @@ fn selectors(distr: SecretKeyDistr) {
             &mut rng,
         )
         .unwrap();
+    let ((br, return_key, circuit), allocation) = allocations::measure(|| server.into_parts());
+    assert_eq!(allocation.count, 0);
+    let circuit = circuit.unwrap();
     let mut evaluator =
-        OneHotCircuitBootstrapEvaluator::try_new(&context, &server, &input_codec).unwrap();
+        OneHotCircuitBootstrapEvaluator::try_from_parts(&context, &br, &circuit, &input_codec)
+            .unwrap();
     assert!(evaluator.bootstrapper_mut().is_none());
     assert_eq!(evaluator.lookup_table().selector_count(), M);
     assert_eq!(evaluator.lookup_table().rotation_step(), 4);
@@ -163,10 +167,12 @@ fn selectors(distr: SecretKeyDistr) {
                 evaluator.one_hot_to(input.as_view(), &mut nlev, &mut ngsw);
             });
             assert_eq!(allocation.count, 0);
-            let (pbs, allocation) = allocations::measure(|| evaluator.into_bootstrapper());
+            let (pbs, allocation) =
+                allocations::measure(|| evaluator.try_into_bootstrapper(&return_key).unwrap());
             assert!(allocation.count > 0);
             evaluator =
-                OneHotCircuitBootstrapEvaluator::try_from_bootstrapper(pbs, &input_codec).unwrap();
+                OneHotCircuitBootstrapEvaluator::try_from_bootstrapper(pbs, &circuit, &input_codec)
+                    .unwrap();
         }
         let (_, allocation) = allocations::measure(|| {
             evaluator.one_hot_to(input.as_view(), &mut nlev, &mut ngsw);
@@ -318,16 +324,19 @@ fn selectors(distr: SecretKeyDistr) {
         assert!(ngsw.iter().all(|&v| v == 7));
     }
     // Recovery and rebinding preserve the PBS/ordinary-CBS workflow.
-    let (pbs, allocation) = allocations::measure(|| evaluator.into_bootstrapper());
+    let (pbs, allocation) =
+        allocations::measure(|| evaluator.try_into_bootstrapper(&return_key).unwrap());
     assert_eq!(allocation.count, 0);
-    let mut ordinary = CircuitBootstrapEvaluator::try_from_bootstrapper(pbs, &input_codec).unwrap();
+    let mut ordinary =
+        CircuitBootstrapEvaluator::try_from_bootstrapper(pbs, &circuit, &input_codec).unwrap();
     let mut control = ordinary.allocate_output();
     ordinary.circuit_bootstrap_to(input.as_view(), &mut control);
     ordinary.cmux_to(&control, &choices[0], &choices[1], &mut selected);
     accumulator.decrypt_to(&selected, &mut decoded);
     assert_eq!(decoded, vec![3; N]);
     let mut evaluator = OneHotCircuitBootstrapEvaluator::try_from_bootstrapper(
-        ordinary.into_bootstrapper(),
+        ordinary.try_into_bootstrapper(&return_key).unwrap(),
+        &circuit,
         &input_codec,
     )
     .unwrap();

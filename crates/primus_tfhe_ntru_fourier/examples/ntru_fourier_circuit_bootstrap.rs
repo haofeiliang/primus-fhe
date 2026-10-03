@@ -13,7 +13,8 @@ use primus_lwe::LweParametersInner;
 use primus_modulus::{NativeModulus, PowOf2Modulus};
 use primus_ntru::SecretKeyDistr;
 use primus_tfhe_ntru_fourier::{
-    CircuitBootstrapConfig, DecompositionConfig, TfheConfig, TfheContext, TfheParameters,
+    CircuitBootstrapConfig, CircuitBootstrapEvaluator, CircuitBootstrapParameters,
+    DecompositionConfig, KeyGenerator, TfheConfig, TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -94,10 +95,22 @@ fn main() {
     // Public message encoding at external q, chosen independently of key generation.
     let input_codec = RoundedCodec::new(4, context.parameters().external_lwe().cipher_modulus());
 
-    // Client: generate CBS material with the paired keys; send server_key only.
+    // Client: generate BR and CBS material; this ring-output workflow needs no return key.
     let mut rng = StdRng::seed_from_u64(42);
-    let (client_key, server_key) = context
-        .try_generate_keys(Some(circuit_config()), &mut rng)
+    let mut generator = KeyGenerator::new(&context);
+    let client_key = generator.try_generate_client_key(&mut rng).unwrap();
+    let blind_rotation_key = generator
+        .try_generate_blind_rotation_key(&client_key, &mut rng)
+        .unwrap();
+    let circuit_parameters =
+        CircuitBootstrapParameters::try_from_config(context.parameters(), circuit_config())
+            .unwrap();
+    let circuit_key = generator
+        .try_generate_circuit_bootstrap_key(
+            client_key.accumulator_ntru_secret_key(),
+            circuit_parameters,
+            &mut rng,
+        )
         .unwrap();
     // Ordinary messages borrow only the external secret from the setup bundle.
     let external_secret = client_key.external_lwe_secret_key();
@@ -118,9 +131,13 @@ fn main() {
     let mut decoded = vec![0; N];
 
     // Server: receive the encrypted candidates; allocate the control and result.
-    let mut cbs = context
-        .circuit_bootstrap_evaluator(&server_key, &input_codec)
-        .unwrap();
+    let mut cbs = CircuitBootstrapEvaluator::try_from_parts(
+        &context,
+        &blind_rotation_key,
+        &circuit_key,
+        &input_codec,
+    )
+    .unwrap();
     let mut control = cbs.allocate_output();
     let mut selected = context.allocate_accumulator_ciphertext();
 

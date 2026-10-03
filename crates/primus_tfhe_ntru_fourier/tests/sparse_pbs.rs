@@ -135,7 +135,7 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(weight: usize) {
         let server = generator
             .try_generate_sparse_server_key(&client, copies, buckets, &mut key_rng)
             .unwrap();
-        assert!(server.classic_controls().is_none());
+        assert!(server.blind_rotation_key().classic_controls().is_none());
         assert_eq!(
             context.factorized_evaluator(&server).err(),
             Some(TfheEvaluationError::UnsupportedSparseBootstrapping)
@@ -157,17 +157,10 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(weight: usize) {
                 TfheEvaluationError::UnsupportedSparseBootstrapping
             ))
         );
-        assert_eq!(
-            primus_tfhe_ntru_fourier::OneHotCircuitBootstrapEvaluator::try_from_bootstrapper(
-                context.evaluator(&server).unwrap(),
-                &input_codec
-            )
-            .err(),
-            Some(primus_tfhe_ntru_fourier::OneHotBootstrapError::Evaluation(
-                TfheEvaluationError::UnsupportedSparseBootstrapping
-            ))
-        );
-        let key = server.sparse_bootstrapping_key().unwrap();
+        let key = server
+            .blind_rotation_key()
+            .sparse_bootstrapping_key()
+            .unwrap();
         if weight == 1 {
             let (indices, controls) = key.first_bucket();
             assert_eq!(controls.count(), indices.len() + 1);
@@ -381,13 +374,28 @@ fn sparse_generation_boundaries_and_unsupported_combinations() {
     )
     .unwrap();
     let circuit = generator
-        .try_generate_circuit_bootstrap_key(&client, parameters, &mut rng)
+        .try_generate_circuit_bootstrap_key(
+            client.accumulator_ntru_secret_key(),
+            parameters,
+            &mut rng,
+        )
         .unwrap();
-    let server = generator
-        .try_generate_sparse_server_key(&client, 3, 8, &mut rng)
+    let br = generator
+        .try_generate_sparse_blind_rotation_key(&client, 3, 8, &mut rng)
         .unwrap();
     assert_eq!(
-        CircuitBootstrapEvaluator::try_from_parts(&context, &server, &circuit, &input_codec).err(),
+        CircuitBootstrapEvaluator::try_from_parts(&context, &br, &circuit, &input_codec).err(),
         Some(TfheEvaluationError::UnsupportedSparseBootstrapping)
     );
+    assert!(matches!(
+        primus_tfhe_ntru_fourier::OneHotCircuitBootstrapEvaluator::try_from_parts(
+            &context,
+            &br,
+            &circuit,
+            &input_codec
+        ),
+        Err(primus_tfhe_ntru_fourier::OneHotBootstrapError::Evaluation(
+            TfheEvaluationError::UnsupportedSparseBootstrapping
+        ))
+    ));
 }

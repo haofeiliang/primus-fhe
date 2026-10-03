@@ -125,9 +125,9 @@ A context owns immutable parameters/tables; the server key owns evaluation mater
 When alternating PBS and MVB/CBS, consume an existing evaluator to retain one PBS workspace:
 
 - GLWE MVB: `FactorizedEvaluator::from_bootstrapper(pbs)`; NTRU MVB uses fallible `try_from_bootstrapper`.
-- CBS: both families use `CircuitBootstrapEvaluator::try_from_bootstrapper(pbs, &input_codec)`. Both get CBS material from the bound server key.
+- GLWE CBS: `CircuitBootstrapEvaluator::try_from_bootstrapper(pbs, &input_codec)` obtains CBS material from the server key. NTRU CBS/one-hot takes it explicitly: `try_from_bootstrapper(pbs, circuit_key, &input_codec)`.
 - `bootstrapper_mut()` borrows PBS operations. Import `ProgrammableBootstrap` / `ProgrammableBootstrapInterleaved` to call their `_to` methods; the borrow cannot replace the bound evaluator.
-- `into_bootstrapper()` releases dedicated buffers and recovers ordinary workspace. Recovery allocates nothing when MVB/CBS was constructed from an ordinary evaluator.
+- `into_bootstrapper()` recovers MVB/GLWE CBS workspace. NTRU CBS/one-hot uses `try_into_bootstrapper(return_key)`; recovery from retained PBS allocates nothing when given the same return-key object. Standalone CBS, or a different compatible return key, prepares return buffers.
 
 For one capability alone, use `context.factorized_evaluator` or `context.circuit_bootstrap_evaluator`. Standalone GLWE BR→KS CBS and NTRU CBS/one-hot omit ordinary return buffers: their PBS borrow is `None`, and recovery explicitly allocates those buffers. GLWE KS→BR CBS retains the required input KS and can return `Some` without additional return storage. CBS/one-hot created from complete PBS always returns `Some`; MVB provides a direct borrow. Consume ordinary PBS when frequently alternating. Construction may allocate; online evaluation and borrowing never allocate implicitly. Boolean accepts PBS ownership through `try_new` and recovers it through `into_bootstrapper`.
 

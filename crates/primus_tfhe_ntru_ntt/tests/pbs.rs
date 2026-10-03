@@ -83,11 +83,15 @@ where
     let mut rng = StdRng::seed_from_u64(0x4d41_4e59_5042_5301);
     let (client_key, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
     assert_eq!(
-        server_key.input_distribution(),
+        server_key.blind_rotation_key().input_distribution(),
         context.parameters().external_lwe().secret_key_distr()
     );
     assert_eq!(client_key.external_lwe_dimension(), 4);
-    let other_distribution = if server_key.input_distribution().is_binary() {
+    let other_distribution = if server_key
+        .blind_rotation_key()
+        .input_distribution()
+        .is_binary()
+    {
         SecretKeyDistr::UniformTernary
     } else {
         SecretKeyDistr::UniformBinary
@@ -96,7 +100,7 @@ where
         TfheContext::<_, TABLE>::try_from_parameters(parameters(q, other_distribution, 4)).unwrap();
     assert_eq!(
         incompatible.evaluator(&server_key).err(),
-        Some(primus_tfhe::TfheEvaluationError::IncompatibleServerKey)
+        Some(primus_tfhe::TfheEvaluationError::IncompatibleBlindRotationKey)
     );
     // Re-import the generated coefficient secrets through the validation path.
     let imported = primus_tfhe_ntru_ntt::KeyGenerator::new(&context)
