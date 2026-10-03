@@ -10,7 +10,7 @@ use primus_poly::{NttPolynomialIter, PolynomialIterMut, PolynomialOwned};
 use primus_reduce::Modulus;
 use primus_tfhe::FactorizedLookupTable;
 
-use crate::{Evaluator, LookupTableError, Lwe, ServerKey, TfheContext, TfheEvaluationError};
+use crate::{Evaluator, LookupTableError, Lwe, TfheContext};
 
 /// A factorized MVB program prepared for one borrowed NTT context.
 ///
@@ -94,12 +94,13 @@ where
 /// External secrets and dimensions are the same as for [`Evaluator`].
 /// Only one extra full GLWE in NTT form is allocated beyond the ordinary
 /// evaluator's workspace, independently of the number of outputs.
+/// The caller retains PBS ownership and lends it only during each request.
 pub struct FactorizedEvaluator<'a, T, Table>
 where
     T: FheUint,
     Table: MonomialNttTable<ValueT = T>,
 {
-    evaluator: Evaluator<'a, T, Table>,
+    context: &'a TfheContext<T, Table>,
     shared_rotation: NttGlweCiphertext<Vec<T>>,
 }
 
@@ -108,49 +109,18 @@ where
     T: FheUint,
     Table: MonomialNttTable<ValueT = T>,
 {
-    /// Creates the workspace after validating the server key's parameters.
-    ///
-    /// # Correctness
-    ///
-    /// The server key must use this context's NTT representation and the paired
-    /// client secrets. Layout checks do not establish transform or secret identity.
-    pub fn try_new(
-        context: &'a TfheContext<T, Table>,
-        server_key: &'a ServerKey<T>,
-    ) -> Result<Self, TfheEvaluationError> {
-        Ok(Self::from_bootstrapper(Evaluator::try_new(
-            context, server_key,
-        )?))
-    }
-
-    /// Consumes ordinary PBS workspace and allocates only the additional MVB buffers.
-    /// The underlying key, context and existing allocations are preserved.
+    /// Allocates one NTT GLWE for the shared rotation. Common input/BR and return
+    /// resources stay in PBS and are borrowed per request. Supports classic/sparse
+    /// keys and both orders; inherits [`Evaluator::try_new`]'s material requirements.
     #[must_use]
-    pub fn from_bootstrapper(evaluator: Evaluator<'a, T, Table>) -> Self {
-        let context = evaluator.engine.context;
+    pub fn new(evaluator: &Evaluator<'a, T, Table>) -> Self {
+        let context = evaluator.resources.context;
         Self {
-            evaluator,
+            context,
             shared_rotation: NttGlweCiphertext::zero(
                 context.parameters().blind_rotation_ggsw().glwe_len(),
             ),
         }
-    }
-
-    /// Borrows ordinary single-output and interleaved PBS operations without allocation.
-    /// The opaque borrow prevents replacing the bound evaluator and invalidating MVB scratch.
-    #[must_use]
-    pub fn bootstrapper_mut(
-        &mut self,
-    ) -> impl primus_tfhe::ProgrammableBootstrap<T>
-    + primus_tfhe::ProgrammableBootstrapInterleaved<T>
-    + use<'_, 'a, T, Table> {
-        &mut self.evaluator
-    }
-
-    /// Releases the extra MVB buffers and recovers the original PBS workspace without allocation.
-    #[must_use]
-    pub fn into_bootstrapper(self) -> Evaluator<'a, T, Table> {
-        self.evaluator
     }
 
     /// Evaluates the program, allocating one LWE per output.
@@ -162,13 +132,14 @@ where
         &mut self,
         input: Lwe<&[T]>,
         lookup_table: &NttFactorizedLookupTable<'_, T, Table>,
+        evaluator: &mut Evaluator<'a, T, Table>,
     ) -> Vec<LweCiphertext<T>> {
-        let context = self.evaluator.engine.context;
+        let context = self.context;
         let dimension = context.parameters().external_lwe_dimension();
         let mut outputs = (0..lookup_table.output_count())
             .map(|_| LweCiphertext::zero(dimension.get()))
             .collect::<Vec<_>>();
-        self.apply_lookup_table_to(input, lookup_table, &mut outputs);
+        self.apply_lookup_table_to(input, lookup_table, &mut outputs, evaluator);
         outputs
     }
 
@@ -191,18 +162,20 @@ where
     /// Panics before any output write unless the program was prepared by the
     /// same context instance, input and all outputs have the external LWE
     /// dimension, and the output slice has exactly the program's output count.
+    /// The borrowed evaluator must use the context selected at construction.
     pub fn apply_lookup_table_to(
         &mut self,
         input: Lwe<&[T]>,
         lookup_table: &NttFactorizedLookupTable<'_, T, Table>,
         outputs: &mut [LweCiphertext<T>],
+        evaluator: &mut Evaluator<'a, T, Table>,
     ) {
-        let evaluator = &mut self.evaluator;
+        evaluator.resources.check_context(self.context);
         assert!(
-            core::ptr::eq(evaluator.engine.context, lookup_table.context),
+            core::ptr::eq(evaluator.resources.context, lookup_table.context),
             "MVB program was prepared by a different context"
         );
-        let parameters = evaluator.engine.context.parameters();
+        let parameters = evaluator.resources.context.parameters();
         let dimension = parameters.external_lwe_dimension();
         assert_eq!(
             input.dimension(),
@@ -222,10 +195,10 @@ where
         );
 
         let glwe = parameters.blind_rotation_ggsw();
-        let table = evaluator.engine.context.table();
-        let engine = &mut evaluator.engine;
-        engine.blind_rotate(input, &lookup_table.common_polynomial, 1);
-        engine
+        let table = evaluator.resources.context.table();
+        let resources = &mut evaluator.resources;
+        resources.blind_rotate(input, &lookup_table.common_polynomial, 1);
+        resources
             .accumulator
             .write_ntt_form(&mut self.shared_rotation, table);
         let factors = NttPolynomialIter::new(&lookup_table.factors, glwe.poly_length().get());
@@ -233,8 +206,8 @@ where
             // Borrow the accumulator in NTT form, then restore its
             // coefficient representation before KS/extraction. The shared BR
             // result remains intact for the next output.
-            let engine = &mut evaluator.engine;
-            let mut product = NttGlweCiphertext::new(engine.accumulator.as_mut());
+            let resources = &mut evaluator.resources;
+            let mut product = NttGlweCiphertext::new(resources.accumulator.as_mut());
             self.shared_rotation.mul_ntt_polynomial_to(
                 &factor,
                 &mut product,
@@ -251,15 +224,6 @@ where
     T: FheUint,
     Table: MonomialNttTable<ValueT = T>,
 {
-    /// Creates reusable MVB workspace. See [`FactorizedEvaluator::try_new`] for
-    /// the server-key secret and NTT representation requirements.
-    pub fn factorized_evaluator<'a>(
-        &'a self,
-        server_key: &'a ServerKey<T>,
-    ) -> Result<FactorizedEvaluator<'a, T, Table>, TfheEvaluationError> {
-        FactorizedEvaluator::try_new(self, server_key)
-    }
-
     /// Compiles and NTT-prepares a fixed-scale MVB program for this context.
     ///
     /// Both codecs must use the context ciphertext modulus.

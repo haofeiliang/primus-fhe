@@ -90,7 +90,7 @@ assert!(!decryptor.decrypt(output.as_view())?);
 
 ## CBS output and consumption
 
-All four backends bind CBS output layout and consumption to the same evaluator. This GLWE example selects a Rounded input codec and an independent Scaled accumulator codec. NTRU uses `client_key.accumulator_ntru_secret_key()` instead of the GLWE accessor and takes the same codec arguments, with the input codec at external q and the ring codec at accumulator Q:
+All four backends bind CBS output layout and consumption to the same evaluator. This GLWE NTT example selects a Rounded input codec and an independent Scaled accumulator codec. NTRU uses `client_key.accumulator_ntru_secret_key()` instead of the GLWE accessor and takes the same codec arguments, with the input codec at external q and the ring codec at accumulator Q:
 
 ```rust,ignore
 // Client: encrypt the two candidate messages.
@@ -102,19 +102,23 @@ let rhs = ring_client.encrypt(&rhs_message, &mut rng);
 let mut decoded = vec![0; lhs_message.len()];
 
 // Server: receive the encrypted input bit and candidates, then return selected.
-let mut cbs = context.circuit_bootstrap_evaluator(&server_key, &input_codec)?;
+let mut pbs = context.evaluator(&server_key)?;
+let key = server_key.circuit_bootstrap_key().unwrap();
+let mut cbs = CircuitBootstrapEvaluator::try_new(
+    pbs.bootstrap_resources(), key.parameters(), key, &input_codec,
+)?;
 let mut control = cbs.allocate_output();
 let mut selected = context.allocate_accumulator_ciphertext();
-cbs.circuit_bootstrap_to(input_bit.as_view(), &mut control);
-cbs.cmux_to(&control, &lhs, &rhs, &mut selected);
+cbs.circuit_bootstrap_to(input_bit.as_view(), &mut control, pbs.bootstrap_resources_mut());
+cbs.cmux_to(&control, &lhs, &rhs, &mut selected, pbs.bootstrap_resources_mut());
 
 // Client: decrypt the response.
 ring_client.decrypt_to(&selected, &mut decoded);
 ```
 
-Both NTRU backends' CBS/CMux calls also take `&mut BootstrapResources` as their final argument; see resource reuse below.
+Both NTRU backends also borrow common resources, but their CBS constructor takes the output parameters from the circuit key. GLWE Fourier retains its owning CBS constructor and calls without a resource argument; see resource reuse below.
 
-`allocate_output` returns the backend's raw GGSW/NGSW, and ring ciphertexts remain coefficient-domain GLWE/NTRU values. `cmux_to` selects `lhs` for zero and `rhs` for one; `external_product_to(control, input, output)` also accepts non-bit gadget controls. Controls must use this evaluator's output basis, accumulator secret and transform representation. Candidates must use that secret/modulus and a common encoding. These identities and the noise margin remain caller contracts; every ciphertext length is checked before output writes.
+`allocate_output` returns the backend's raw GGSW/NGSW, and ring ciphertexts remain coefficient-domain GLWE/NTRU values. `cmux_to` selects `lhs` for zero and `rhs` for one; `external_product_to` also accepts non-bit gadget controls. Controls must use this evaluator's output basis, accumulator secret and transform representation. Candidates must use that secret/modulus and a common encoding. These identities and the noise margin remain caller contracts; every ciphertext length is checked before output writes.
 
 `AccumulatorClient` owns the prepared accumulator secret and reusable conversion buffers, borrowing its context. It encrypts/decrypts N unsigned coefficients using the accumulator codec; this ring domain is separate from external LWE clients. Invalid shapes panic before writes or RNG consumption; invalid plaintext values may consume randomness. Preparation returns `TfheClientError`: both families check keys and the supplied Scaled codec modulus; NTRU also checks secret conversion.
 
@@ -126,13 +130,15 @@ A context owns immutable parameters/tables; the server key owns evaluation mater
 
 Both NTRU backends compose short borrows: ordinary PBS owns common BR/EP (including FFT for Fourier) and return buffers, while CBS/one-hot prepares only LUT/projection state. Construct with `try_new(pbs.bootstrap_resources(), circuit_key, &input_codec)` and pass `pbs.bootstrap_resources_mut()` as the final execution argument. Construct factorized MVB with `FactorizedEvaluator::try_new(&pbs)` and pass `&mut pbs` for execution. CBS-only callers can prepare common resources independently with `context.bootstrap_resources(br)`. See [NTT resource reuse](../primus_tfhe_ntru_ntt/README.md#reusing-evaluators) and [Fourier resource reuse](../primus_tfhe_ntru_fourier/README.md#reusing-evaluators).
 
-GLWE retains these ownership interfaces:
+GLWE NTT uses short borrows too. Its CBS constructor additionally takes the chosen output parameters; MVB uses infallible `FactorizedEvaluator::new(&pbs)`, supporting classic and sparse keys. Common resources keep input KS for KS→BR; standalone BR→KS omits output KS. See [GLWE NTT resource reuse](../primus_tfhe_glwe_ntt/README.md#reusing-evaluators).
+
+GLWE Fourier retains these ownership interfaces:
 
 - MVB consumes PBS with `FactorizedEvaluator::from_bootstrapper(pbs)`.
 - CBS uses `try_from_bootstrapper(pbs, circuit_key, &input_codec)`; `bootstrapper_mut()` borrows ordinary PBS operations. MVB recovers ownership with `into_bootstrapper()`.
 - CBS recovers with `try_into_bootstrapper(glwe_ks_key)`, reusing existing return buffers. Standalone BR→KS CBS allocates missing return buffers here; KS→BR already owns input KS and returns by direct extraction.
 
-For a single capability in these backends, use `context.factorized_evaluator` or `context.circuit_bootstrap_evaluator`. All backends prepare storage at construction; online evaluation never allocates implicitly. Boolean accepts PBS ownership through `try_new` and recovers it with `into_bootstrapper`.
+For a single capability in GLWE Fourier, use `context.factorized_evaluator` or `context.circuit_bootstrap_evaluator`. All backends prepare storage at construction; online evaluation never allocates implicitly. Boolean accepts PBS ownership through `try_new` and recovers it with `into_bootstrapper`.
 
 ## LUTs and resource lifetime
 

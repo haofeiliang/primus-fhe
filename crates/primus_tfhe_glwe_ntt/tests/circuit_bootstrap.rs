@@ -11,7 +11,6 @@ use primus_modulus::BarrettModulus;
 use primus_ntt::U64NttTable;
 use primus_poly::Polynomial;
 use primus_test_allocations as allocations;
-use primus_tfhe::ProgrammableBootstrap as _;
 use primus_tfhe_glwe_ntt::{
     CircuitBootstrapConfig, CircuitBootstrapEvaluator, CircuitBootstrapParameters,
     DecompositionConfig, KeyGenerator, PbsOrder, TfheConfig, TfheContext, TfheEvaluationError,
@@ -115,16 +114,17 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
                 .unwrap()
         });
         let server_key = sparse_server_key.as_ref().unwrap_or(&classic_server_key);
-        if sparse && order == PbsOrder::KeyswitchBootstrap {
-            assert!(matches!(
-                context.circuit_bootstrap_evaluator(server_key, &input_codec),
-                Err(TfheEvaluationError::MissingCircuitBootstrapKey)
-            ));
-        }
         let circuit_key = server_key
             .circuit_bootstrap_key()
             .unwrap_or_else(|| classic_server_key.circuit_bootstrap_key().unwrap());
         let circuit_parameters = circuit_key.parameters();
+        let mut resources = context
+            .bootstrap_resources(
+                server_key.bootstrapping_key(),
+                (order == PbsOrder::KeyswitchBootstrap)
+                    .then_some(server_key.glwe_key_switching_key()),
+            )
+            .unwrap();
         let main_secret =
             NttGlweSecretKey::from_coeff_secret_key(client_key.glwe_secret_key(), context.table());
         let glwe = context.parameters().blind_rotation_ggsw();
@@ -188,18 +188,22 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
                 .unwrap()
                 .encrypt_padded(1, &mut rng)
                 .unwrap();
-            let mut other = CircuitBootstrapEvaluator::try_from_parts(
-                &context,
-                server_key.bootstrapping_key(),
-                Some(server_key.glwe_key_switching_key()),
+            let mut other = CircuitBootstrapEvaluator::try_new(
+                &resources,
                 circuit_parameters,
                 circuit_key,
                 &other_codec,
             )
             .unwrap();
-            let control = other.circuit_bootstrap(input.as_view());
+            let control = other.circuit_bootstrap(input.as_view(), &mut resources);
             let mut selected = context.allocate_accumulator_ciphertext();
-            other.cmux_to(&control, &choices[0], &choices[1], &mut selected);
+            other.cmux_to(
+                &control,
+                &choices[0],
+                &choices[1],
+                &mut selected,
+                &mut resources,
+            );
             assert_eq!(accumulator_client.decrypt(&selected), messages[1]);
         }
 
@@ -209,13 +213,9 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
         ))
         .unwrap();
         assert!(matches!(
-            CircuitBootstrapEvaluator::try_from_parts(
-                &other_context,
+            other_context.bootstrap_resources(
                 server_key.bootstrapping_key(),
                 Some(server_key.glwe_key_switching_key()),
-                circuit_parameters,
-                circuit_key,
-                &input_codec
             ),
             Err(TfheEvaluationError::IncompatibleBlindRotationKey)
         ));
@@ -236,10 +236,8 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
         )
         .unwrap();
         assert!(matches!(
-            CircuitBootstrapEvaluator::try_from_parts(
-                &context,
-                server_key.bootstrapping_key(),
-                Some(server_key.glwe_key_switching_key()),
+            CircuitBootstrapEvaluator::try_new(
+                &resources,
                 &incompatible_parameters,
                 circuit_key,
                 &input_codec
@@ -262,14 +260,7 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
         // Missing input KS must fail at binding, for classic and sparse alike.
         if order == PbsOrder::KeyswitchBootstrap {
             let (result, allocation) = allocations::measure(|| {
-                CircuitBootstrapEvaluator::try_from_parts(
-                    &context,
-                    server_key.bootstrapping_key(),
-                    None,
-                    circuit_parameters,
-                    circuit_key,
-                    &input_codec,
-                )
+                context.bootstrap_resources(server_key.bootstrapping_key(), None)
             });
             assert!(matches!(
                 result,
@@ -278,60 +269,73 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
             assert_eq!(allocation.count, 0);
         }
 
-        let (circuit_parameters, mut evaluator) = match order {
-            PbsOrder::BootstrapKeyswitch => (circuit_parameters, {
-                let mut standalone = CircuitBootstrapEvaluator::try_from_parts(
-                    &context,
-                    server_key.bootstrapping_key(),
-                    None,
-                    circuit_parameters,
-                    circuit_key,
-                    &input_codec,
-                )
-                .unwrap();
-                assert!(standalone.bootstrapper_mut().is_none());
-                // Exercise the missing-KS form before recovery fills that workspace.
-                let mut control = standalone.allocate_output();
-                let mut selected = context.allocate_accumulator_ciphertext();
-                let mut decoded = vec![0; POLY_LENGTH];
-                let (_, online) = allocations::measure(|| {
-                    standalone.circuit_bootstrap_to(input.as_view(), &mut control);
-                    standalone.cmux_to(&control, &choices[0], &choices[1], &mut selected);
-                });
-                assert_eq!(online.count, 0, "standalone BK CBS/CMUX must not allocate");
-                accumulator_client.decrypt_to(&selected, &mut decoded);
-                assert_eq!(decoded, messages[1]);
-                let (pbs, allocation) = allocations::measure(|| {
-                    standalone
-                        .try_into_bootstrapper(server_key.glwe_key_switching_key())
-                        .unwrap()
-                });
-                assert!(
-                    allocation.count > 0,
-                    "standalone BK recovery explicitly creates return-KS scratch"
-                );
-                CircuitBootstrapEvaluator::try_from_bootstrapper(pbs, circuit_key, &input_codec)
-                    .unwrap()
-            }),
-            PbsOrder::KeyswitchBootstrap => (
-                &alternate,
-                CircuitBootstrapEvaluator::try_from_parts(
-                    &context,
-                    server_key.bootstrapping_key(),
-                    Some(server_key.glwe_key_switching_key()),
-                    &alternate,
-                    circuit_key,
-                    &input_codec,
-                )
-                .unwrap(),
-            ),
+        let circuit_parameters = if order == PbsOrder::KeyswitchBootstrap {
+            &alternate
+        } else {
+            circuit_parameters
         };
+        let mut evaluator = CircuitBootstrapEvaluator::try_new(
+            &resources,
+            circuit_parameters,
+            circuit_key,
+            &input_codec,
+        )
+        .unwrap();
+        // Standalone CBS has exactly the input resources required by its order.
+        let mut control = evaluator.allocate_output();
+        let mut selected = context.allocate_accumulator_ciphertext();
+        let (_, online) = allocations::measure(|| {
+            evaluator.circuit_bootstrap_to(input.as_view(), &mut control, &mut resources);
+            evaluator.cmux_to(
+                &control,
+                &choices[0],
+                &choices[1],
+                &mut selected,
+                &mut resources,
+            );
+        });
+        assert_eq!(online.count, 0);
+        assert_eq!(accumulator_client.decrypt(&selected), messages[1]);
+        // Moving common resources preserves the prepared CBS. Only BR→KS needs
+        // to allocate a missing return stage; KS→BR already owns the input KS.
+        let (mut pbs, assembly) = allocations::measure(|| {
+            primus_tfhe_glwe_ntt::Evaluator::try_from_resources(
+                resources,
+                server_key.glwe_key_switching_key(),
+            )
+            .unwrap()
+        });
+        assert_eq!(assembly.count == 0, order == PbsOrder::KeyswitchBootstrap);
         assert_eq!(
             circuit_parameters.lookup_table_padded_output_count(),
             levels.next_power_of_two()
         );
         let mut control = evaluator.allocate_output();
         let mut selected = context.allocate_accumulator_ciphertext();
+        // Equal parameters do not identify a transform context. Reject a foreign
+        // resource owner before touching the caller's output.
+        let foreign_context =
+            TfheContext::<_, U64NttTable>::try_from_parameters(context.parameters().clone())
+                .unwrap();
+        let mut foreign_resources = foreign_context
+            .bootstrap_resources(
+                server_key.bootstrapping_key(),
+                (order == PbsOrder::KeyswitchBootstrap)
+                    .then_some(server_key.glwe_key_switching_key()),
+            )
+            .unwrap();
+        control.as_mut().fill(7);
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                evaluator.circuit_bootstrap_to(
+                    input.as_view(),
+                    &mut control,
+                    &mut foreign_resources,
+                );
+            }))
+            .is_err()
+        );
+        assert!(control.as_ref().iter().all(|&coefficient| coefficient == 7));
         let mut product = context.allocate_accumulator_ciphertext();
         let mut decoded = vec![0; POLY_LENGTH];
         let mut decoded_product = vec![0; POLY_LENGTH];
@@ -347,7 +351,11 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
                     let mut bad_output = NttGgsw::new(vec![7; length]);
                     assert!(
                         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                            evaluator.circuit_bootstrap_to(bad_input.as_view(), &mut bad_output);
+                            evaluator.circuit_bootstrap_to(
+                                bad_input.as_view(),
+                                &mut bad_output,
+                                pbs.bootstrap_resources_mut(),
+                            );
                         }))
                         .is_err()
                     );
@@ -355,14 +363,25 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
                 }
             }
             let (_, allocation) = allocations::measure(|| {
-                evaluator.circuit_bootstrap_to(input.as_view(), &mut control);
-                evaluator.cmux_to(&control, &choices[0], &choices[1], &mut selected);
-                evaluator.external_product_to(&control, &choices[1], &mut product);
-                evaluator.bootstrapper_mut().unwrap().apply_lookup_table_to(
+                evaluator.circuit_bootstrap_to(
                     input.as_view(),
-                    &identity,
-                    output.as_mut_view(),
+                    &mut control,
+                    pbs.bootstrap_resources_mut(),
                 );
+                evaluator.cmux_to(
+                    &control,
+                    &choices[0],
+                    &choices[1],
+                    &mut selected,
+                    pbs.bootstrap_resources_mut(),
+                );
+                evaluator.external_product_to(
+                    &control,
+                    &choices[1],
+                    &mut product,
+                    pbs.bootstrap_resources_mut(),
+                );
+                pbs.apply_lookup_table_to(input.as_view(), &identity, output.as_mut_view());
                 accumulator_client.decrypt_to(&selected, &mut decoded);
                 accumulator_client.decrypt_to(&product, &mut decoded_product);
             });
@@ -415,13 +434,13 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
         let replacement = KeyGenerator::new(&context)
             .try_generate_glwe_key_switching_key(&client_key, &mut rng)
             .unwrap();
-        let (mut recovered, recovery) =
-            allocations::measure(|| evaluator.try_into_bootstrapper(&replacement).unwrap());
+        let (_, rebind) =
+            allocations::measure(|| pbs.try_rebind_key_switching_key(&replacement).unwrap());
         assert_eq!(
-            recovery.count, 0,
-            "converted CBS retains ordinary workspace"
+            rebind.count, 0,
+            "compatible KS rebind retains ordinary workspace"
         );
-        recovered.apply_lookup_table_to(input.as_view(), &identity, output.as_mut_view());
+        pbs.apply_lookup_table_to(input.as_view(), &identity, output.as_mut_view());
         assert_eq!(
             context
                 .decryptor(client_key.external_lwe_secret_key(), &input_codec)

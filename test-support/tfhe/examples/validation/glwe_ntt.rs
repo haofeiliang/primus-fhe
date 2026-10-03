@@ -240,7 +240,8 @@ fn thresholds<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     let program = context
         .compile_factorized_lookup_table_fn(&input_codec, &ring_codec, 64, 17, value)
         .unwrap();
-    let mut evaluator = context.factorized_evaluator(&server_key).unwrap();
+    let mut pbs = context.evaluator(&server_key).unwrap();
+    let mut evaluator = primus_tfhe_glwe_ntt::FactorizedEvaluator::new(&pbs);
     let mut outputs = vec![context.allocate_lwe_ciphertext(); 17];
 
     for m in [0usize, 1, 2, 3, 31, 32, 63, 0] {
@@ -248,7 +249,7 @@ fn thresholds<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
         let input = encryptor.encrypt_padded(T::as_from(m), &mut rng).unwrap();
 
         // Server: produce all 17 encrypted results.
-        evaluator.apply_lookup_table_to(input.as_view(), &program, &mut outputs);
+        evaluator.apply_lookup_table_to(input.as_view(), &program, &mut outputs, &mut pbs);
 
         // Server -> client: decode the binary outputs and check their margins.
         for (i, output) in outputs.iter().enumerate() {
@@ -331,9 +332,21 @@ fn circuit<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     let mut margin = ErrorMargin::new(name, seed);
 
     // Server: bind the evaluation key and allocate CBS/CMux outputs locally.
-    let mut evaluator = context
-        .circuit_bootstrap_evaluator(&server_key, &input_codec)
+    let mut resources = context
+        .bootstrap_resources(
+            server_key.bootstrapping_key(),
+            (context.parameters().pbs_order() == PbsOrder::KeyswitchBootstrap)
+                .then_some(server_key.glwe_key_switching_key()),
+        )
         .unwrap();
+    let circuit_key = server_key.circuit_bootstrap_key().unwrap();
+    let mut evaluator = primus_tfhe_glwe_ntt::CircuitBootstrapEvaluator::try_new(
+        &resources,
+        circuit_key.parameters(),
+        circuit_key,
+        &input_codec,
+    )
+    .unwrap();
     let mut control = evaluator.allocate_output();
     let mut selected = context.allocate_accumulator_ciphertext();
 
@@ -342,8 +355,14 @@ fn circuit<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
         let input = encryptor.encrypt_padded(T::as_from(bit), &mut rng).unwrap();
 
         // Server: derive the control and select without seeing bit or messages.
-        evaluator.circuit_bootstrap_to(input.as_view(), &mut control);
-        evaluator.cmux_to(&control, &choices[0], &choices[1], &mut selected);
+        evaluator.circuit_bootstrap_to(input.as_view(), &mut control, &mut resources);
+        evaluator.cmux_to(
+            &control,
+            &choices[0],
+            &choices[1],
+            &mut selected,
+            &mut resources,
+        );
 
         // Server -> client: return the selected ciphertext for decryption.
         accumulator.decrypt_to(&selected, &mut decoded);

@@ -11,7 +11,7 @@ use crate::{CircuitBootstrapParameters, KeyGenerationError, KeyGenerator, TfheCo
 /// The ordinary PBS bootstrapping key remains in [`crate::ServerKey`]. This
 /// object contains only the additional, optional circuit-bootstrapping
 /// material. Both keys must use the same accumulator secret and the evaluator's
-/// NTT representation; see [`crate::CircuitBootstrapEvaluator::try_from_parts`].
+/// NTT representation; see [`crate::CircuitBootstrapEvaluator::try_new`].
 pub struct CircuitBootstrapKey<T: FheUint> {
     parameters: CircuitBootstrapParameters<T>,
     trace: NttGlweTraceKey<T>,
@@ -89,7 +89,7 @@ where
     /// representation for generation and evaluation. The returned key uses
     /// `accumulator_secret`. Parameter/layout checks cannot
     /// establish that another server key uses that secret; see
-    /// [`crate::CircuitBootstrapEvaluator::try_from_parts`].
+    /// [`crate::CircuitBootstrapEvaluator::try_new`].
     /// Imported accumulator coefficients must also satisfy
     /// [`NttGlweSecretKey::from_coeff_secret_key`]'s unsigned-magnitude bound.
     pub fn try_generate_circuit_bootstrap_key<R>(

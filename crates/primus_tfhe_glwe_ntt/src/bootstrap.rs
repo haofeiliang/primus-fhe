@@ -8,7 +8,7 @@ use primus_tfhe::TfheEvaluationError;
 use primus_tfhe_glwe::PbsOrder;
 
 use crate::{
-    BootstrappingKey, Evaluator, Lwe, NttGlweBlindRotationWorkspace, NttGlweBootstrappingKey,
+    BootstrappingKey, Lwe, NttGlweBlindRotationWorkspace, NttGlweBootstrappingKey,
     SparseGlweBlindRotationWorkspace, SparseGlweBootstrappingKey, TfheContext,
 };
 
@@ -57,9 +57,12 @@ enum InputPreparation<'a, T: FheUint> {
     },
 }
 
-/// Owns the input preparation, selected BR algorithm, accumulator and transform scratch.
-/// Independent CBS does not require the ordinary PBS output stage.
-pub(crate) struct BlindRotationEngine<'a, T, Table>
+/// Common input preparation, blind-rotation and external-product resources.
+///
+/// KS→BR includes input KS and a compact small LWE. BR→KS consumes input directly
+/// and includes no output KS. Ordinary [`crate::Evaluator`] owns these resources;
+/// standalone CBS can prepare and borrow them without the ordinary return stage.
+pub struct BootstrapResources<'a, T, Table>
 where
     T: FheUint,
     Table: MonomialNttTable<ValueT = T>,
@@ -71,24 +74,31 @@ where
     pub(crate) accumulator: GlweCiphertext<Vec<T>>,
 }
 
-impl<'a, T, Table> BlindRotationEngine<'a, T, Table>
+impl<'a, T, Table> BootstrapResources<'a, T, Table>
 where
     T: FheUint,
     Table: MonomialNttTable<ValueT = T>,
 {
-    pub(crate) fn try_new(
+    /// Checks BR and supplied input KS material before allocating reusable storage.
+    /// `input_key_switching_key` is required for KS→BR. BR→KS accepts `None`;
+    /// a supplied key is checked but not retained, and no output KS is allocated.
+    ///
+    /// # Correctness
+    /// Keys must use the same paired secrets and this context's NTT representation.
+    /// Layout, basis and modulus checks do not establish these identities.
+    pub fn try_new(
         context: &'a TfheContext<T, Table>,
         bootstrapping_key: &'a BootstrappingKey<T>,
-        key_switching_key: Option<&'a NttGlweKeySwitchingKey<T>>,
+        input_key_switching_key: Option<&'a NttGlweKeySwitchingKey<T>>,
     ) -> Result<Self, TfheEvaluationError> {
         let parameters = context.parameters();
         if !bootstrapping_key.is_compatible(parameters) {
             return Err(TfheEvaluationError::IncompatibleBlindRotationKey);
         }
 
-        // Validate supplied material even when BR→KS does not use it in this engine.
+        // Validate supplied material even when BR→KS does not use it for input preparation.
         // KS→BR must reject missing material before allocating any scratch.
-        if let Some(key) = key_switching_key {
+        if let Some(key) = input_key_switching_key {
             crate::key::check_glwe_key_switching_key(parameters, key)?;
         } else if parameters.pbs_order() == PbsOrder::KeyswitchBootstrap {
             return Err(TfheEvaluationError::MissingGlweKeySwitchingKey);
@@ -111,7 +121,7 @@ where
                 PbsOrder::KeyswitchBootstrap => InputPreparation::Keyswitch {
                     workspace: KeySwitchingWorkspace::new(
                         parameters,
-                        key_switching_key.expect("KS→BR material was checked above"),
+                        input_key_switching_key.expect("KS→BR material was checked above"),
                     ),
                     small_lwe: LweCiphertext::zero(parameters.small_lwe().dimension().get()),
                 },
@@ -120,16 +130,33 @@ where
         })
     }
 
+    /// Borrows the context that fixes the order, geometry and transform representation.
+    #[must_use]
+    pub fn context(&self) -> &'a TfheContext<T, Table> {
+        self.context
+    }
+
+    /// Operations retain geometry/transform state, not BR controls. Any resource
+    /// instance from the same context is allowed; actual paired secrets remain
+    /// the caller's responsibility, including when replacing compatible KS material.
+    pub(crate) fn check_context(&self, context: &TfheContext<T, Table>) {
+        assert!(
+            core::ptr::eq(self.context, context),
+            "bootstrap resources use a different context"
+        );
+    }
+
     /// Rebind a checked compatible KS key without replacing input scratch.
-    /// Used only when converting CBS back to PBS with explicitly supplied material.
+    /// The owning composition/rebinding boundary validates the replacement first.
     pub(crate) fn rebind_input_key_switching_key(&mut self, key: &'a NttGlweKeySwitchingKey<T>) {
         if let InputPreparation::Keyswitch { workspace, .. } = &mut self.input {
             workspace.key = key;
         }
     }
 
-    /// Bind product scratch to the requested basis without allocating; CBS and
-    /// BR may use different compatible bases, so each operation establishes it.
+    /// Temporarily bind product scratch to the requested decomposition layout.
+    /// CBS and BR can use different level counts; restore the BR layout on return
+    /// or unwind, retaining the same GLWE geometry and allocations.
     pub(crate) fn with_external_product<R>(
         &mut self,
         size: primus_lattice::GadgetSize,
@@ -205,74 +232,18 @@ where
     }
 }
 
-/// Standalone BR→KS CBS omits only output KS; KS→BR already has all PBS resources.
-/// A CBS constructed from PBS retains that complete evaluator for reuse/recovery.
-pub(crate) enum CircuitBootstrapResources<'a, T, Table>
+impl<T, Table> TfheContext<T, Table>
 where
     T: FheUint,
     Table: MonomialNttTable<ValueT = T>,
 {
-    Standalone(BlindRotationEngine<'a, T, Table>),
-    Bootstrapper(Evaluator<'a, T, Table>),
-}
-
-impl<'a, T, Table> CircuitBootstrapResources<'a, T, Table>
-where
-    T: FheUint,
-    Table: MonomialNttTable<ValueT = T>,
-{
-    pub(crate) fn try_new(
-        context: &'a TfheContext<T, Table>,
+    /// Prepares BR/EP resources and the input KS required by KS→BR.
+    /// Inherits [`BootstrapResources::try_new`]'s material requirements.
+    pub fn bootstrap_resources<'a>(
+        &'a self,
         bootstrapping_key: &'a BootstrappingKey<T>,
-        key_switching_key: Option<&'a NttGlweKeySwitchingKey<T>>,
-    ) -> Result<Self, TfheEvaluationError> {
-        let engine = BlindRotationEngine::try_new(context, bootstrapping_key, key_switching_key)?;
-        Ok(match context.parameters().pbs_order() {
-            PbsOrder::BootstrapKeyswitch => Self::Standalone(engine),
-            PbsOrder::KeyswitchBootstrap => Self::Bootstrapper(Evaluator::from_engine(
-                engine,
-                key_switching_key.expect("KS→BR engine requires KS material"),
-            )),
-        })
-    }
-
-    #[must_use]
-    pub(crate) fn engine(&self) -> &BlindRotationEngine<'a, T, Table> {
-        match self {
-            Self::Standalone(engine) => engine,
-            Self::Bootstrapper(pbs) => &pbs.engine,
-        }
-    }
-
-    #[must_use]
-    pub(crate) fn engine_mut(&mut self) -> &mut BlindRotationEngine<'a, T, Table> {
-        match self {
-            Self::Standalone(engine) => engine,
-            Self::Bootstrapper(pbs) => &mut pbs.engine,
-        }
-    }
-
-    #[must_use]
-    pub(crate) fn bootstrapper_mut(&mut self) -> Option<&mut Evaluator<'a, T, Table>> {
-        match self {
-            Self::Standalone(_) => None,
-            Self::Bootstrapper(pbs) => Some(pbs),
-        }
-    }
-
-    /// Check the explicit KS material, retaining existing PBS buffers when present.
-    /// Only standalone BR→KS allocates its missing output KS workspace.
-    pub(crate) fn try_into_bootstrapper(
-        self,
-        key: &'a NttGlweKeySwitchingKey<T>,
-    ) -> Result<Evaluator<'a, T, Table>, TfheEvaluationError> {
-        crate::key::check_glwe_key_switching_key(self.engine().context.parameters(), key)?;
-        Ok(match self {
-            Self::Standalone(engine) => Evaluator::from_engine(engine, key),
-            Self::Bootstrapper(mut pbs) => {
-                pbs.rebind_key_switching_key(key);
-                pbs
-            }
-        })
+        input_key_switching_key: Option<&'a NttGlweKeySwitchingKey<T>>,
+    ) -> Result<BootstrapResources<'a, T, Table>, TfheEvaluationError> {
+        BootstrapResources::try_new(self, bootstrapping_key, input_key_switching_key)
     }
 }

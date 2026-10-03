@@ -1,8 +1,6 @@
 use primus_decompose::DecompositionBaseLog;
 use primus_lattice::{GlweDimension, LweDimension};
 use primus_poly::PolyLength;
-use primus_tfhe::ProgrammableBootstrap as _;
-use primus_tfhe::ProgrammableBootstrapInterleaved as _;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use primus_decompose::primitive::ApproxSignedBasis;
@@ -107,9 +105,8 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
         };
 
         for key in [&classic, &sparse] {
-            let mut evaluator = primus_tfhe_glwe_ntt::FactorizedEvaluator::from_bootstrapper(
-                context.evaluator(key).unwrap(),
-            );
+            let mut pbs = context.evaluator(key).unwrap();
+            let mut evaluator = primus_tfhe_glwe_ntt::FactorizedEvaluator::new(&pbs);
             for count in [1, 3, 17] {
                 let (lut, allocation) = allocations::measure(|| {
                     context
@@ -138,12 +135,20 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
                 for message in [0, 3, 7] {
                     let input = encryptor.encrypt_padded(message as u32, &mut rng).unwrap();
                     let (_, allocation) = allocations::measure(|| {
-                        evaluator.apply_lookup_table_to(input.as_view(), &lut, &mut outputs)
+                        evaluator.apply_lookup_table_to(
+                            input.as_view(),
+                            &lut,
+                            &mut outputs,
+                            &mut pbs,
+                        )
                     });
                     assert_eq!(allocation.count, 0, "MVB must reuse its workspace");
                     check(&outputs, message);
                     if count == 3 && message == 3 {
-                        assert_eq!(outputs, evaluator.apply_lookup_table(input.as_view(), &lut));
+                        assert_eq!(
+                            outputs,
+                            evaluator.apply_lookup_table(input.as_view(), &lut, &mut pbs)
+                        );
                         // Same functions AND Scaled centers in both existing baselines.
                         let interleaved =
                             InterleavedLookupTable::try_new(
@@ -159,13 +164,11 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
                                 },
                             )
                             .unwrap();
-                        evaluator
-                            .bootstrapper_mut()
-                            .apply_interleaved_lookup_table_to(
-                                input.as_view(),
-                                &interleaved,
-                                &mut outputs,
-                            );
+                        pbs.apply_interleaved_lookup_table_to(
+                            input.as_view(),
+                            &interleaved,
+                            &mut outputs,
+                        );
                         check(&outputs, message);
                         for (i, output) in outputs.iter_mut().enumerate() {
                             let single = LookupTable::try_new(
@@ -180,7 +183,7 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
                                 },
                             )
                             .unwrap();
-                            evaluator.bootstrapper_mut().apply_lookup_table_to(
+                            pbs.apply_lookup_table_to(
                                 input.as_view(),
                                 &single,
                                 output.as_mut_view(),
@@ -190,9 +193,6 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
                     }
                 }
             }
-
-            let (_, recovered) = allocations::measure(|| evaluator.into_bootstrapper());
-            assert_eq!(recovered.count, 0, "recovery must retain PBS allocations");
         }
         // 17 outputs require 32 interleaved slots: N/32=4 < D=8. MVB above works.
         assert!(matches!(
@@ -216,10 +216,12 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
         let foreign = other_context
             .compile_factorized_lookup_table_fn(&input_codec, &codec, DOMAIN, 3, value)
             .unwrap();
-        let mut evaluator = context.factorized_evaluator(&classic).unwrap();
+        let mut pbs = context.evaluator(&classic).unwrap();
+        let mut evaluator = primus_tfhe_glwe_ntt::FactorizedEvaluator::new(&pbs);
         let input = encryptor.encrypt_padded(3, &mut rng).unwrap();
         let wrong = LweCiphertext::zero(dimension - 1);
-        for case in 0..4 {
+        let mut foreign_pbs = other_context.evaluator(&classic).unwrap();
+        for case in 0..5 {
             let mut outputs = vec![input.clone(); if case == 0 { 2 } else { 3 }];
             if case == 1 {
                 outputs[2] = wrong.clone();
@@ -234,12 +236,20 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
                     },
                     if case == 3 { &foreign } else { &lut },
                     &mut outputs,
+                    if case == 4 {
+                        &mut foreign_pbs
+                    } else {
+                        &mut pbs
+                    }
                 )))
                 .is_err()
             );
             assert_eq!(outputs, before);
         }
-        check(&evaluator.apply_lookup_table(input.as_view(), &lut), 3);
+        check(
+            &evaluator.apply_lookup_table(input.as_view(), &lut, &mut pbs),
+            3,
+        );
 
         // Preparing raw coefficient programs rejects each incompatible metadata field.
         for (n, t, input_q, output_q) in [(N / 2, 15, Q, Q), (N, 15, 97, Q), (N, 15, Q, 97)] {
@@ -295,13 +305,14 @@ fn factorized_pbs_accepts_ternary_controls_without_online_allocation() {
         let decryptor = context
             .decryptor(client.external_lwe_secret_key(), &input_codec)
             .unwrap();
-        let mut evaluator = context.factorized_evaluator(&server).unwrap();
+        let mut pbs = context.evaluator(&server).unwrap();
+        let mut evaluator = primus_tfhe_glwe_ntt::FactorizedEvaluator::new(&pbs);
         let mut outputs =
             vec![LweCiphertext::zero(context.parameters().external_lwe_dimension().get()); 3];
         for message in [0, 3, 7] {
             let input = encryptor.encrypt_padded(message, &mut rng).unwrap();
             let (_, allocation) = allocations::measure(|| {
-                evaluator.apply_lookup_table_to(input.as_view(), &lut, &mut outputs)
+                evaluator.apply_lookup_table_to(input.as_view(), &lut, &mut outputs, &mut pbs)
             });
             assert_eq!(allocation.count, 0);
             for (i, output) in outputs.iter().enumerate() {

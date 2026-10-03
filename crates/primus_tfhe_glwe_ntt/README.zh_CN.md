@@ -41,11 +41,13 @@ NTT 表需要实现 `MonomialNttTable`，内置表均支持。Context 检查长�
 
 ## 复用 evaluator
 
-`Evaluator` 的普通/交错 `_to` 调用复用工作区和已有输出。PBS、MVB 与 CBS 之间的所有权转换及 GLWE 独立 CBS 的返回缓冲限制，统一见[资源复用指南](../primus_tfhe/README.zh_CN.md#复用-evaluator)。
+普通/交错 `Evaluator` 拥有公共 `BootstrapResources` 与返回阶段。CBS 只保存 LUT/投影状态，执行时最后一个参数传 `pbs.bootstrap_resources_mut()`。MVB 用 `FactorizedEvaluator::new(&pbs)` 构造，每次执行传入 `&mut pbs`。借用结束即可继续普通 PBS，无需转换或恢复 evaluator。
 
 `ServerKey` 仍是完整 PBS 的便捷组合。高级工作流可分别持有 `BootstrappingKey`、环 KS key 和 `CircuitBootstrapKey`，通过 `ServerKey::new` / `into_parts` 移动组合，不复制密文数组。`KeyGenerator::try_generate_bootstrapping_key` 与已有 sparse 入口只生成 BR；`try_generate_glwe_key_switching_key` 独立生成环 KS；`try_generate_circuit_bootstrap_key(accumulator_secret, parameters, rng)` 只需要累加器秘密。独立生成可能重复转换秘密；成对生成继续复用已准备的表示。
 
-`Evaluator::try_from_parts(context, br, ks)` 支持普通 PBS/ManyLUT，之后可转入 MVB。独立 CBS 使用 `CircuitBootstrapEvaluator::try_from_parts(context, br, input_ks, parameters, circuit_key, input_codec)`：BR→KS 可传 `None`，KS→BR 必须提供 `Some(ks)`。两种方式均支持 classic/sparse。布局、basis 和模数在绑定时检查；仍需由调用方确保秘密及变换表示一致。
+`Evaluator::try_from_parts(context, br, ks)` 绑定完整 PBS/ManyLUT。独立 CBS 先准备 `context.bootstrap_resources(br, input_ks)`，再用 `CircuitBootstrapEvaluator::try_new(&resources, parameters, circuit_key, &input_codec)`；默认输出 basis 传 `circuit_key.parameters()`。BR→KS 的 input KS 可为 `None`，不分配输出 KS；KS→BR 必须提供 `Some(ks)`，并保留输入阶段。两种方式均支持 classic/sparse。布局、basis 和模数检查不证明实际秘密或变换身份。
+
+`Evaluator::try_from_resources(resources, ks)` 组合普通 PBS，只有 BR→KS 需要分配缺少的输出阶段。`try_rebind_key_switching_key(ks)` 用兼容材料复用活跃 KS 阶段的缓冲，失败保留旧绑定。CBS/MVB 接受同一 context 创建的任意资源实例，在写入前检查；调用方仍须配对秘密，可变资源借用必须保留所属 PBS 的绑定。
 
 ## 固定尺度分解式 MVB
 
@@ -72,11 +74,13 @@ let mut evaluator = context.evaluator(&server)?;
 
 ## 电路自举
 
-`context.try_generate_keys(Some(cbs_config), &mut rng)` 生成配对材料， `ServerKey` 持有附加参数及 trace/scheme-switch 密钥。 调用 `context.circuit_bootstrap_evaluator(&server, &input_codec)` 或消费普通 evaluator。 经典密钥若使用 `None` 生成，CBS 绑定返回 `MissingCircuitBootstrapKey`。 使用 `allocate_output`、`circuit_bootstrap_to` 和 `cmux_to`； [CBS → CMUX 示例](examples/ntt_circuit_bootstrap.rs)展示独立生成 BR/CBS 材料及完整消费链。
+`context.try_generate_keys(Some(cbs_config), &mut rng)` 生成配对材料，`ServerKey` 持有附加参数及 trace/scheme-switch 密钥。取得 `server.circuit_bootstrap_key()` 后，显式传给上述 CBS 构造器。使用 `allocate_output`、`circuit_bootstrap_to` 和 `cmux_to`，每次操作借用公共资源；[CBS → CMUX 示例](examples/ntt_circuit_bootstrap.rs)展示独立生成 BR/CBS 材料及完整消费链。
 
 [稀疏 CBS 示例](examples/ntt_sparse_circuit_bootstrap.rs)直接展示固定重量秘密、稀疏密钥生成与 CBS 参数。两种 PBS 顺序都支持；后面的 CBS 与 CMux 调用方式相同。
 
-输出为 accumulator 秘密下的 `NttGgsw`。密钥绑定输出布局及 trace/scheme-switch basis； 高级 `try_from_parts` 可以传入层数相同的另一输出 basis。
+输入编码与交错容量在 evaluator 绑定时检查，兼容程序可以用同一套密钥选择另一明文模数。
+
+输出为 accumulator 秘密下的 `NttGgsw`。密钥绑定输出布局及 trace/scheme-switch basis； `try_new` 可以传入层数相同的另一输出 basis。
 
 独立生成组件时须配对秘密并使用同一变换表示，形状检查不能证明身份。 输入/输出与消费要求见[共享 CBS 契约](../primus_tfhe/README.zh_CN.md#cbs-输出与消费)及 [家族 CBS 说明](../primus_tfhe_glwe/README.zh_CN.md#boolean-与-cbs)。
 

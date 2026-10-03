@@ -12,8 +12,8 @@ use primus_lwe::LweParametersInner;
 use primus_modulus::BarrettModulus;
 use primus_ntt::U32NttTable as Table;
 use primus_tfhe_glwe_ntt::{
-    CircuitBootstrapConfig, ClientKey, DecompositionConfig, KeyGenerator, PbsOrder, TfheConfig,
-    TfheContext, TfheParameters,
+    CircuitBootstrapConfig, CircuitBootstrapEvaluator, ClientKey, DecompositionConfig,
+    KeyGenerator, PbsOrder, TfheConfig, TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -128,9 +128,21 @@ fn main() {
     let mut decoded = vec![0; N];
 
     // Server: receive the encrypted candidates; allocate the control and result.
-    let mut cbs = context
-        .circuit_bootstrap_evaluator(&server_key, &input_codec)
+    let mut resources = context
+        .bootstrap_resources(
+            server_key.bootstrapping_key(),
+            (context.parameters().pbs_order() == PbsOrder::KeyswitchBootstrap)
+                .then_some(server_key.glwe_key_switching_key()),
+        )
         .unwrap();
+    let circuit_key = server_key.circuit_bootstrap_key().unwrap();
+    let mut cbs = CircuitBootstrapEvaluator::try_new(
+        &resources,
+        circuit_key.parameters(),
+        circuit_key,
+        &input_codec,
+    )
+    .unwrap();
     let mut control = cbs.allocate_output();
     let mut selected = context.allocate_accumulator_ciphertext();
 
@@ -141,8 +153,8 @@ fn main() {
             .unwrap();
 
         // Server: CBS produces a gadget control; CMux selects rhs for 1, lhs for 0.
-        cbs.circuit_bootstrap_to(input.as_view(), &mut control);
-        cbs.cmux_to(&control, &lhs, &rhs, &mut selected);
+        cbs.circuit_bootstrap_to(input.as_view(), &mut control, &mut resources);
+        cbs.cmux_to(&control, &lhs, &rhs, &mut selected, &mut resources);
 
         // Client: decrypt the returned ring ciphertext, reusing the decoding buffer.
         ring_client.decrypt_to(&selected, &mut decoded);

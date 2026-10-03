@@ -23,10 +23,10 @@
 //!   [`CircuitBootstrapEvaluator`], producing accumulator-secret gadget controls for CMUX.
 //! - [`sparse`]: fixed-weight binary bucket material; select it explicitly at key generation.
 //!
-//! [`FactorizedEvaluator::bootstrapper_mut`] and [`CircuitBootstrapEvaluator::bootstrapper_mut`]
-//! borrow ordinary PBS operations. MVB uses `into_bootstrapper`; CBS uses
-//! [`CircuitBootstrapEvaluator::try_into_bootstrapper`] with an explicit ring KS key.
-//! The specialized constructors document their allocation and recovery contracts.
+//! [`Evaluator`] owns common [`BootstrapResources`] and the ordinary return stage.
+//! CBS borrows common resources per operation; MVB borrows the complete evaluator.
+//! Standalone resources include input KS for KS→BR, but no output KS for BR→KS.
+//! The specialized constructors document their allocation and borrowing contracts.
 //!
 //! # Composition and representation
 //!
@@ -67,6 +67,8 @@ pub use error::{
 pub use accumulator::AccumulatorClient;
 #[doc(no_inline)]
 pub use blind_rotation::NttGlweBlindRotationWorkspace;
+#[doc(inline)]
+pub use bootstrap::BootstrapResources;
 #[doc(no_inline)]
 pub use bootstrapping_key::NttGlweBootstrappingKey;
 #[doc(no_inline)]

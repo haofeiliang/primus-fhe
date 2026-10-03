@@ -161,8 +161,8 @@ are unchanged; no new latency claim is made.
 
 ## Input, blind rotation and return ownership
 
-The two NTRU backends' public `BootstrapResources`, and GLWE's private
-`BlindRotationEngine`, bind the context, key,
+The NTRU backends' and GLWE NTT's public `BootstrapResources`, and GLWE Fourier's
+private `BlindRotationEngine`, bind the context, key,
 selected BR scratch and coefficient accumulator; Fourier also owns its FFT
 engine there. GLWE input preparation is direct for BR→KS, or owns the required
 input KS and compact small LWE for KS→BR. The latter cannot be omitted by CBS.
@@ -170,21 +170,21 @@ Ordinary `Evaluator` adds its complete return stage: output KS for GLWE BR→KS,
 direct extraction for GLWE KS→BR, or the NTRU return evaluator. It has no optional
 missing essential workspace. GLWE BR→KS no longer allocates an unused input LWE.
 
-For GLWE, a private two-state CBS resource enum contains either standalone BR/input
-resources or the full retained PBS. Standalone GLWE KS→BR already has a complete
+For GLWE Fourier, a private two-state CBS resource enum contains either standalone BR/input
+resources or the full retained PBS. Standalone Fourier KS→BR already has a complete
 PBS, since its return is direct extraction. `bootstrapper_mut` exposes only PBS
 operations, preventing replacement of the key-bound evaluator.
 
 | CBS construction | Ordinary PBS borrow | Recovery allocation |
 | --- | --- | --- |
-| Standalone GLWE BR→KS | `None` | Allocate output KS |
-| Standalone GLWE KS→BR | `Some` | None |
-| GLWE CBS from complete PBS | `Some` | None |
+| Standalone GLWE Fourier BR→KS | `None` | Allocate output KS |
+| Standalone GLWE Fourier KS→BR | `Some` | None |
+| GLWE Fourier CBS from complete PBS | `Some` | None |
 
-GLWE engines borrow the selected BR key directly. Each active KS stage binds
+Both GLWE backends borrow the selected BR key directly. Each active KS stage binds
 its own ring KS key alongside the existing scratch. Independent BR→KS CBS can
 omit the KS owner entirely; KS→BR requires it at construction, with a structured
-error for missing material. `try_from_bootstrapper(pbs, circuit_key, input_codec)`
+error for missing material. Fourier `try_from_bootstrapper(pbs, circuit_key, input_codec)`
 retains complete PBS. `try_into_bootstrapper(glwe_ks_key)` validates the explicit
 KS key and reuses an existing stage's buffers, including for another compatible
 key from the same paired secrets/transform. Only standalone BR→KS allocates
@@ -217,6 +217,39 @@ resource assembly; online operations do not allocate.
 Existing size/domain boundaries and semantic polynomial/ciphertext iterators describe batches. Table groups contain M polynomials; ciphertext iterators traverse one complete object at a time. Candidate compaction remains indexed because a group must be consumed before its result overwrites the prefix. No additional generic batch abstraction is needed.
 
 Partial reverse trace with r>1 retains r equally spaced coefficients; CBS needs separate constant projections of gadget entries. It cannot replace those projections. The real serial consumer already uses `project_prefix_coefficients_with_scratch_to`. Standalone partial-trace callers have their own trace workspace, so an additional partial-trace scratch API currently has no independent consumer.
+
+## GLWE NTT resource ownership
+
+CBS retains its programmed LUT, trace scratch and projected GLev; MVB retains
+one extra NTT GLWE for the shared rotation. They borrow common resources or
+complete PBS per call, without a nested evaluator or recovery protocol.
+
+| Resource | BR→KS | KS→BR | Serial reuse |
+| --- | --- | --- | --- |
+| Input KS scratch and switched GLWE | Absent | `BootstrapResources::input` | Overwritten before BR on every request |
+| Compact small LWE | Absent | Same input stage | Extracted from the switched GLWE before BR |
+| Selected classic/sparse BR scratch and EP buffers | `BootstrapResources` | `BootstrapResources` | BR, CBS scheme switch and CMux; only the selected algorithm is allocated |
+| Coefficient accumulator | `BootstrapResources` | `BootstrapResources` | BR result, CBS projection source and MVB product; KS→BR first uses it for inverse extraction |
+| Output KS scratch and switched GLWE | Ordinary `Evaluator` | Absent | One KS for ordinary/ManyLUT, one per factorized output |
+| Output extraction | Compact small LWE after KS | Direct accumulator LWE | Writes caller buffers, no owned intermediate LWE |
+| Trace scratch and projected GLev | CBS state | CBS state | Overwritten for each gadget result |
+| Shared NTT rotation | MVB state | MVB state | Preserved until every factor output has returned |
+
+`context.bootstrap_resources(br, input_ks)` checks material before allocation;
+only KS→BR requires `Some(ks)`. `Evaluator::try_from_resources(resources, ks)`
+adds output KS for BR→KS or rebinds the existing input KS for KS→BR.
+`try_rebind_key_switching_key` validates and reuses either active stage's buffers;
+failure preserves its prior binding. PBS resource borrows must preserve the
+context and paired-secret binding needed by the retained return stage.
+
+GLWE CBS/MVB state does not cache BR controls. Its public borrowing boundary
+checks the same context, allowing independently prepared classic/sparse resources
+with that context; key generation and callers must still pair actual secrets.
+There is no extra identity token or general backend trait. CBS accepts independent
+compatible output parameters because its scheme-switch key binds output layout.
+EP buffers use existing `with_rebound` to change decomposition levels while
+preserving GLWE geometry, then restore their layout on return or unwind. No
+allocation, extra transform or coefficient-loop validation was added.
 
 ## NTRU resource ownership
 
@@ -453,6 +486,103 @@ executable with `taskset -c 4`, `--bench`, `--sample-size 20`,
 `lookup/(rustfft|tfhe_fft)/u(32|64)/n800_N1024/c8_d5_o8/evaluate`.
 Default and nightly SIMD tests cover both FFT engines, operation alternation,
 short return tiles and zero online allocation. SIMD latency was not measured.
+
+## GLWE NTT borrowed-resource measurement
+
+Compared with `d566a73a` on 2026-10-03, AMD Ryzen 9 9955HX3D, x86_64 Linux,
+rustc 1.98.1 (48a229cea, LLVM 22.1.8), default features and the repository's
+`target-cpu=native`. Saved executables ran sequentially without concurrent builds.
+These are functional profiles, not security recommendations.
+
+A temporary constructor probe used u64, N1024, `ntt_circuit_modulus`, seed 42,
+`glwe::cbs` and t=4. Classic used the n800 binary `glwe::circuit` profile;
+sparse used `glwe::diagnostic`, n728/h32, three copies and 64 buckets.
+Each iteration constructed and dropped the entire PBS, standalone CBS, or
+PBS+MVB resource set. Separate counting-allocator measurements retained the
+returned values. Moving common resources out of CBS/MVB was not counted as a
+heap saving. Timings below used CPU 4, 0.5 s warmup, 2 s measurement and 20 samples.
+
+| Order / key / set | Allocations, unchanged | Retained heap bytes, unchanged | Inline bytes before → after | Construction + drop, µs before → after |
+| --- | --- | --- | --- | --- |
+| BR→KS / classic / PBS | 11 | 116736 | 544 → 544 | 0.762 → 0.777 |
+| BR→KS / classic / CBS | 16 | 182272 | 832 → 712 | 1.334 → 1.327 |
+| BR→KS / classic / PBS+MVB | 12 | 133120 | 568 → 576 | 0.880 → 0.882 |
+| BR→KS / sparse / PBS | 13 | 319168 | 544 → 544 | 1.571 → 1.572 |
+| BR→KS / sparse / CBS | 18 | 384704 | 832 → 712 | 2.101 → 2.100 |
+| BR→KS / sparse / PBS+MVB | 14 | 335552 | 568 → 576 | 1.667 → 1.659 |
+| KS→BR / classic / PBS | 12 | 123144 | 544 → 544 | 0.892 → 0.888 |
+| KS→BR / classic / CBS | 22 | 238856 | 832 → 712 | 1.800 → 1.738 |
+| KS→BR / classic / PBS+MVB | 13 | 139528 | 568 → 576 | 0.990 → 0.981 |
+| KS→BR / sparse / PBS | 14 | 325000 | 544 → 544 | 1.599 → 1.612 |
+| KS→BR / sparse / CBS | 24 | 440712 | 832 → 712 | 2.489 → 2.470 |
+| KS→BR / sparse / PBS+MVB | 15 | 341384 | 568 → 576 | 1.704 → 1.707 |
+
+The CBS ownership enum removal saves 120 inline bytes in the combined resource
+set; MVB adds one 8-byte context reference. Heap and allocation counts are
+unchanged, excluding allocator metadata. Constructor timing includes allocator
+reuse and does not establish a speedup. The temporary probe was removed.
+Existing tests keep online allocation at zero across PBS, CBS/CMux and MVB;
+assembling standalone resources into PBS allocates output KS only for BR→KS,
+and rebinding compatible KS material does not allocate.
+
+Each iteration evaluates one complete request with keys, input, LUT, outputs and
+workspaces prepared outside timing. MVB includes all three output ciphertexts.
+Initial CPU 4 point estimates in milliseconds, using the same sampling settings:
+
+| u64 request | BR→KS before → after | KS→BR before → after |
+| --- | --- | --- |
+| Binary PBS, n800/N1024 | 3.121 → 3.114 | 3.200 → 3.198 |
+| Fixed-weight classic PBS, n728/h32/N1024 | 12.831 → 12.819 | 12.595 → 12.606 |
+| Sparse PBS, same fixed-weight profile | 16.533 → 16.463 | 16.647 → 16.442 |
+| Classic interleaved MVB, D8/k3 | 12.501 → 12.582 | 12.662 → 12.829 |
+| Classic factorized MVB, D8/k3 | 12.500 → 12.897 | 12.693 → 12.625 |
+| Sparse interleaved MVB, D8/k3 | 17.094 → 16.523 | 16.638 → 16.544 |
+| Sparse factorized MVB, D8/k3 | 16.801 → 16.769 | 17.026 → 16.732 |
+| Classic CBS, n800/N1024 | 15.096 → 14.664 | 14.775 → 14.142 |
+| Sparse CBS, n728/h32/N1024 | 16.683 → 17.428 | 16.718 → 17.372 |
+
+Alternating runs checked the MVB and sparse CBS increases. With 0.5 s warmup,
+3 s measurement and 20 samples, classic factorized MVB on CPU 4 measured
+12.692/12.689 ms before versus 12.661/12.870 ms after for BR→KS, and
+12.733/12.757 versus 12.732/12.700 ms for KS→BR. Its initial increase did not
+persist consistently. Sparse CBS did remain slower in that recheck:
+
+| CPU 4 sparse CBS | Before, two runs (ms) | After, two runs (ms) |
+| --- | --- | --- |
+| BR→KS | 16.640 / 16.730 | 17.037 / 17.316 |
+| KS→BR | 16.682 / 16.733 | 17.255 / 17.328 |
+
+Disassembly showed changed inlining/register allocation despite unchanged
+arithmetic, but this does not establish the cause of the slowdown. An experiment
+removed the common BR stage's `#[inline]` hint: the benchmark's u64 CBS entry
+shrank from 2736 to 513 machine-code bytes (baseline: 942). Sparse CBS on CPU 8
+then approached baseline, while classic BR→KS CBS became about 2% slower in
+alternating runs. This did not establish a general benefit, so the experiment
+was reverted. No forced inlining, alignment or numerical specialization remains.
+
+The retained implementation, with the original hint, was also compared on CPU 8.
+Both revisions used that same CPU, with after/before/before/after run order,
+0.5 s warmup, 2 s measurement and 20 samples:
+
+| CPU 8 CBS | Before, two runs (ms) | After, two runs (ms) |
+| --- | --- | --- |
+| Classic BR→KS | 14.301 / 14.277 | 14.423 / 14.146 |
+| Sparse BR→KS | 17.208 / 17.242 | 17.224 / 17.196 |
+| Classic KS→BR | 14.446 / 15.832 | 15.553 / 14.559 |
+| Sparse KS→BR | 17.266 / 17.157 | 17.200 / 17.163 |
+
+CPU 8 does not reproduce the sparse CBS increase; it does not invalidate the
+CPU 4 result. Other CPU 2/4 runs varied substantially for both revisions.
+Zero extra allocation and unchanged retained heap are established, but the
+CPU-dependent sparse CBS latency difference remains unresolved. Do not claim
+an online speedup or unconditional performance parity from these measurements.
+
+Reproduce with `pbs`, `sparse_pbs`, `mvb`, and `circuit_bootstrap` in
+`primus_tfhe_glwe_ntt`, selecting the parameter IDs above. Build each revision
+separately, then run saved executables with `taskset -c 4` (or 8), `--bench`,
+`--warm-up-time 0.5 --measurement-time 2 --sample-size 20 --noplot`.
+The MVB filter is `u64/mvb/.*/D8_k3/(interleaved|factorized)`; CBS uses `u64/cbs/`.
+SIMD and u32 are validated functionally, not timed.
 
 ## Historical fixed-workspace comparison
 

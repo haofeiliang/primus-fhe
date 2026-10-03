@@ -83,13 +83,26 @@ fn ordinary<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
             let rhs = ring.encrypt(&[T::ONE; N], &mut rng);
             (context, client, server, input, lhs, rhs)
         });
-        let mut evaluator =
-            CircuitBootstrapEvaluator::try_new(context, server, &input_codec).unwrap();
+        let mut resources = context
+            .bootstrap_resources(
+                server.bootstrapping_key(),
+                (context.parameters().pbs_order() == PbsOrder::KeyswitchBootstrap)
+                    .then_some(server.glwe_key_switching_key()),
+            )
+            .unwrap();
+        let circuit_key = server.circuit_bootstrap_key().unwrap();
+        let mut evaluator = CircuitBootstrapEvaluator::try_new(
+            &resources,
+            circuit_key.parameters(),
+            circuit_key,
+            &input_codec,
+        )
+        .unwrap();
         let mut output = evaluator.allocate_output();
         if !verified {
-            evaluator.circuit_bootstrap_to(input.as_view(), &mut output);
+            evaluator.circuit_bootstrap_to(input.as_view(), &mut output, &mut resources);
             let mut selected = context.allocate_accumulator_ciphertext();
-            evaluator.cmux_to(&output, lhs, rhs, &mut selected);
+            evaluator.cmux_to(&output, lhs, rhs, &mut selected, &mut resources);
             let mut decoded = vec![T::ZERO; N];
             context
                 .accumulator_client(
@@ -105,7 +118,11 @@ fn ordinary<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
             verified = true;
         }
         b.iter(|| {
-            evaluator.circuit_bootstrap_to(black_box(input.as_view()), black_box(&mut output))
+            evaluator.circuit_bootstrap_to(
+                black_box(input.as_view()),
+                black_box(&mut output),
+                &mut resources,
+            )
         });
     });
 }
