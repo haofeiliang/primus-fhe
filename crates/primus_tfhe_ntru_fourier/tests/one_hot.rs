@@ -13,7 +13,6 @@ use primus_ntru::{
 };
 use primus_poly::PolyLength;
 use primus_test_allocations as allocations;
-use primus_tfhe::{ProgrammableBootstrap as _, ProgrammableBootstrapInterleaved as _};
 use primus_tfhe_ntru_fourier::{
     CircuitBootstrapConfig, CircuitBootstrapEvaluator, DecompositionConfig, LweReturnEvaluator,
     OneHotCircuitBootstrapEvaluator, TfheContext, TfheParameters,
@@ -103,10 +102,13 @@ fn selectors<Table: FftTable>(distr: SecretKeyDistr) {
     let ((br, return_key, circuit), allocation) = allocations::measure(|| server.into_parts());
     assert_eq!(allocation.count, 0);
     let circuit = circuit.unwrap();
+    let resources = context.bootstrap_resources(&br).unwrap();
     let mut evaluator =
-        OneHotCircuitBootstrapEvaluator::try_from_parts(&context, &br, &circuit, &input_codec)
-            .unwrap();
-    assert!(evaluator.bootstrapper_mut().is_none());
+        OneHotCircuitBootstrapEvaluator::try_new(&resources, &circuit, &input_codec).unwrap();
+    let (mut pbs, allocation) = allocations::measure(|| {
+        primus_tfhe_ntru_fourier::Evaluator::try_from_resources(resources, &return_key).unwrap()
+    });
+    assert!(allocation.count > 0);
     assert_eq!(evaluator.lookup_table().selector_count(), M);
     assert_eq!(evaluator.lookup_table().rotation_step(), 4);
     let scalars: Vec<_> = evaluator
@@ -160,34 +162,34 @@ fn selectors<Table: FftTable>(distr: SecretKeyDistr) {
     // Descending inputs force every selector to overwrite previous nonzero rows.
     for message in (0..M).rev() {
         let input = encryptor.encrypt_padded(message as u64, &mut rng).unwrap();
-        if message == M - 1 {
-            // Standalone one-hot uses no return storage; recovering ordinary PBS
-            // allocates it explicitly. Subsequent alternation retains that PBS.
-            let (_, allocation) = allocations::measure(|| {
-                evaluator.one_hot_to(input.as_view(), &mut nlev, &mut ngsw);
-            });
-            assert_eq!(allocation.count, 0);
-            let (pbs, allocation) =
-                allocations::measure(|| evaluator.try_into_bootstrapper(&return_key).unwrap());
-            assert!(allocation.count > 0);
-            evaluator =
-                OneHotCircuitBootstrapEvaluator::try_from_bootstrapper(pbs, &circuit, &input_codec)
-                    .unwrap();
-        }
         let (_, allocation) = allocations::measure(|| {
-            evaluator.one_hot_to(input.as_view(), &mut nlev, &mut ngsw);
-            evaluator.bootstrapper_mut().unwrap().apply_lookup_table_to(
+            evaluator.one_hot_to(
                 input.as_view(),
-                &identity,
-                lwe_output.as_mut_view(),
+                &mut nlev,
+                &mut ngsw,
+                pbs.bootstrap_resources_mut(),
             );
-            evaluator.one_hot_nlev_to(input.as_view(), &mut nlev_only);
-            evaluator.one_hot_ngsw_to(input.as_view(), &mut ngsw_only);
-            evaluator.one_hot_nonzero_ngsw_to(input.as_view(), &mut nonzero_ngsw);
+            pbs.apply_lookup_table_to(input.as_view(), &identity, lwe_output.as_mut_view());
+            evaluator.one_hot_nlev_to(
+                input.as_view(),
+                &mut nlev_only,
+                pbs.bootstrap_resources_mut(),
+            );
+            evaluator.one_hot_ngsw_to(
+                input.as_view(),
+                &mut ngsw_only,
+                pbs.bootstrap_resources_mut(),
+            );
+            evaluator.one_hot_nonzero_ngsw_to(
+                input.as_view(),
+                &mut nonzero_ngsw,
+                pbs.bootstrap_resources_mut(),
+            );
             evaluator.one_hot_nlev_and_nonzero_ngsw_to(
                 input.as_view(),
                 &mut joint_nlev,
                 &mut joint_nonzero_ngsw,
+                pbs.bootstrap_resources_mut(),
             );
         });
         assert_eq!(allocation.count, 0);
@@ -299,9 +301,15 @@ fn selectors<Table: FftTable>(distr: SecretKeyDistr) {
                             input.as_view(),
                             nlev_output,
                             ngsw_output,
+                            pbs.bootstrap_resources_mut(),
                         );
                     } else {
-                        evaluator.one_hot_to(input.as_view(), nlev_output, ngsw_output);
+                        evaluator.one_hot_to(
+                            input.as_view(),
+                            nlev_output,
+                            ngsw_output,
+                            pbs.bootstrap_resources_mut(),
+                        );
                     }
                 }))
                 .is_err()
@@ -321,7 +329,11 @@ fn selectors<Table: FftTable>(distr: SecretKeyDistr) {
         ngsw.fill(Complex64::new(7.0, 0.0));
         assert!(
             catch_unwind(AssertUnwindSafe(|| {
-                evaluator.one_hot_nonzero_ngsw_to(input.as_view(), &mut ngsw[..output_len]);
+                evaluator.one_hot_nonzero_ngsw_to(
+                    input.as_view(),
+                    &mut ngsw[..output_len],
+                    pbs.bootstrap_resources_mut(),
+                );
             }))
             .is_err()
         );
@@ -330,48 +342,51 @@ fn selectors<Table: FftTable>(distr: SecretKeyDistr) {
 
     check_return_batches(
         &mut evaluator,
-        &context,
         &return_key,
         &choices,
         &input,
         &mut ngsw,
+        &mut pbs,
     );
 
-    // Recovery and rebinding preserve the PBS/ordinary-CBS workflow.
-    let (pbs, allocation) =
-        allocations::measure(|| evaluator.try_into_bootstrapper(&return_key).unwrap());
-    assert_eq!(allocation.count, 0);
+    // Ordinary CBS, one-hot and PBS borrow the same common FFT/EP owner.
     let mut ordinary =
-        CircuitBootstrapEvaluator::try_from_bootstrapper(pbs, &circuit, &input_codec).unwrap();
-    ordinary.bootstrapper_mut().unwrap().apply_lookup_table_to(
-        input.as_view(),
-        &identity,
-        lwe_output.as_mut_view(),
-    );
+        CircuitBootstrapEvaluator::try_new(pbs.bootstrap_resources(), &circuit, &input_codec)
+            .unwrap();
     let mut control = ordinary.allocate_output();
-    ordinary.circuit_bootstrap_to(input.as_view(), &mut control);
-    ordinary.cmux_to(&control, &choices[0], &choices[1], &mut selected);
+    let (_, allocation) = allocations::measure(|| {
+        pbs.apply_lookup_table_to(input.as_view(), &identity, lwe_output.as_mut_view());
+        ordinary.circuit_bootstrap_to(input.as_view(), &mut control, pbs.bootstrap_resources_mut());
+        ordinary.cmux_to(
+            &control,
+            &choices[0],
+            &choices[1],
+            &mut selected,
+            pbs.bootstrap_resources_mut(),
+        );
+        evaluator.one_hot_to(
+            input.as_view(),
+            &mut nlev,
+            &mut ngsw,
+            pbs.bootstrap_resources_mut(),
+        );
+    });
+    assert_eq!(allocation.count, 0);
     accumulator.decrypt_to(&selected, &mut decoded);
     assert_eq!(decoded, vec![3; N]);
-    let mut evaluator = OneHotCircuitBootstrapEvaluator::try_from_bootstrapper(
-        ordinary.try_into_bootstrapper(&return_key).unwrap(),
-        &circuit,
-        &input_codec,
-    )
-    .unwrap();
-    evaluator.one_hot_to(input.as_view(), &mut nlev, &mut ngsw);
 }
 
 // Compare every streamed sample with the scalar return oracle, then check that
 // the independent return buffers stay live while one-hot and ordinary PBS run.
-fn check_return_batches<Table: FftTable>(
-    evaluator: &mut OneHotCircuitBootstrapEvaluator<'_, u64, Table, PowOf2Modulus<u64>>,
-    context: &TfheContext<u64, Table, PowOf2Modulus<u64>>,
+fn check_return_batches<'a, Table: FftTable>(
+    evaluator: &mut OneHotCircuitBootstrapEvaluator<'a, u64, Table, PowOf2Modulus<u64>>,
     return_key: &primus_ntru::NtruLweKeySwitchingKey<u64>,
     choices: &[NtruCiphertext<Vec<u64>>],
     input: &primus_tfhe::LweCiphertext<u64>,
     ngsw: &mut [Complex64],
+    pbs: &mut primus_tfhe_ntru_fourier::Evaluator<'a, u64, Table, PowOf2Modulus<u64>>,
 ) {
+    let context = pbs.bootstrap_resources().context();
     let input_codec = RoundedCodec::new(8, context.parameters().external_lwe().cipher_modulus());
     // The allocation-free binding rejects a different target q before workspace setup.
     assert_rejected(|| {
@@ -426,7 +441,7 @@ fn check_return_batches<Table: FftTable>(
                 &mut batch_workspace,
             );
             if i == 0 {
-                evaluator.one_hot_ngsw_to(input.as_view(), ngsw);
+                evaluator.one_hot_ngsw_to(input.as_view(), ngsw, pbs.bootstrap_resources_mut());
             }
         }
     });
@@ -479,15 +494,8 @@ fn check_return_batches<Table: FftTable>(
         .compile_interleaved_fn(2, |m, _| m as u64)
         .unwrap();
     let (_, allocation) = allocations::measure(|| {
-        evaluator.bootstrapper_mut().unwrap().apply_lookup_table_to(
-            input.as_view(),
-            &identity,
-            returned[0].as_mut_view(),
-        );
-        evaluator
-            .bootstrapper_mut()
-            .unwrap()
-            .apply_interleaved_lookup_table_to(input.as_view(), &many, &mut returned[..2]);
+        pbs.apply_lookup_table_to(input.as_view(), &identity, returned[0].as_mut_view());
+        pbs.apply_interleaved_lookup_table_to(input.as_view(), &many, &mut returned[..2]);
     });
     assert_eq!(allocation.count, 0);
     let (_, allocation) =

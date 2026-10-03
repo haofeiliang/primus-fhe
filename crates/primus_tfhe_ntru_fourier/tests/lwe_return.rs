@@ -150,9 +150,10 @@ fn check<T: TorusFftValue, Table: FftTable>() {
                 T::as_from(m + i)
             })
             .unwrap();
-        let mut factorized = context.factorized_evaluator(&server).unwrap();
+        let mut pbs = context.evaluator(&server).unwrap();
+        let mut factorized = primus_tfhe_ntru_fourier::FactorizedEvaluator::try_new(&pbs).unwrap();
         let input = encryptor.encrypt_padded(T::ONE, &mut rng).unwrap();
-        factorized.apply_lookup_table_to(input.as_view(), &program, &mut outputs[..2]);
+        factorized.apply_lookup_table_to(input.as_view(), &program, &mut outputs[..2], &mut pbs);
         for (i, output) in outputs[..2].iter().enumerate() {
             assert_eq!(
                 scaled_q.decode_value(decryptor.decrypt_phase(output.as_view()).unwrap()),

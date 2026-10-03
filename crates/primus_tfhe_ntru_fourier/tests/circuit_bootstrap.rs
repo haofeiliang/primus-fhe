@@ -13,7 +13,6 @@ use primus_ntru::NlevParameters;
 use primus_ntru::{FourierNgswCiphertext, FourierNtruSecretKey, NtruParameters, SecretKeyDistr};
 use primus_poly::{PolyLength, Polynomial};
 use primus_test_allocations as allocations;
-use primus_tfhe::ProgrammableBootstrap as _;
 use primus_tfhe_ntru_fourier::{
     CircuitBootstrapConfig, CircuitBootstrapEvaluator, DecompositionConfig, TfheContext,
     TfheParameters,
@@ -90,10 +89,10 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr) {
             &mut rng,
         )
         .unwrap();
-    let mut standalone =
-        CircuitBootstrapEvaluator::try_from_parts(&context, &br, &circuit, &input_codec).unwrap();
-    assert!(standalone.bootstrapper_mut().is_none());
-    drop(standalone);
+    {
+        let resources = context.bootstrap_resources(&br).unwrap();
+        let _cbs = CircuitBootstrapEvaluator::try_new(&resources, &circuit, &input_codec).unwrap();
+    }
     let return_key = context
         .parameters()
         .try_generate_lwe_return_key(&client, &mut rng)
@@ -164,28 +163,26 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr) {
         output
     });
 
-    // Independent CBS omits ordinary return buffers. Its online path still
-    // allocates nothing; completion explicitly allocates those missing buffers.
-    let mut standalone =
-        CircuitBootstrapEvaluator::try_new(&context, &server, &input_codec).unwrap();
-    assert!(standalone.bootstrapper_mut().is_none());
-    let mut standalone_control = standalone.allocate_output();
+    // Standalone CBS has no return buffers. Adding PBS retains the FFT/BR owner
+    // and allocates only the missing return storage; operation state remains usable.
+    let mut resources = context
+        .bootstrap_resources(server.blind_rotation_key())
+        .unwrap();
+    let mut evaluator =
+        CircuitBootstrapEvaluator::try_new(&resources, circuit_key, &input_codec).unwrap();
+    let mut standalone_control = evaluator.allocate_output();
     let (_, allocation) = allocations::measure(|| {
-        standalone.circuit_bootstrap_to(input.as_view(), &mut standalone_control);
+        evaluator.circuit_bootstrap_to(input.as_view(), &mut standalone_control, &mut resources);
     });
     assert_eq!(allocation.count, 0);
-    let (pbs, allocation) = allocations::measure(|| {
-        standalone
-            .try_into_bootstrapper(server.key_switching_key())
-            .unwrap()
+    let (mut pbs, allocation) = allocations::measure(|| {
+        primus_tfhe_ntru_fourier::Evaluator::try_from_resources(
+            resources,
+            server.key_switching_key(),
+        )
+        .unwrap()
     });
     assert!(allocation.count > 0);
-    let mut evaluator = CircuitBootstrapEvaluator::try_from_bootstrapper(
-        pbs,
-        server.circuit_bootstrap_key().unwrap(),
-        &input_codec,
-    )
-    .unwrap();
     let mut control = evaluator.allocate_output();
     let mut selected = context.allocate_accumulator_ciphertext();
     let mut product = context.allocate_accumulator_ciphertext();
@@ -204,24 +201,33 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr) {
             .unwrap()
             .compile_fn(|m| m as u64)
             .unwrap();
-        evaluator = CircuitBootstrapEvaluator::try_from_bootstrapper(
-            evaluator
-                .try_into_bootstrapper(server.key_switching_key())
-                .unwrap(),
-            server.circuit_bootstrap_key().unwrap(),
+        evaluator = CircuitBootstrapEvaluator::try_new(
+            pbs.bootstrap_resources(),
+            circuit_key,
             &input_codec,
         )
         .unwrap();
         let input = encryptor.encrypt_padded(bit, &mut rng).unwrap();
         let (_, allocation) = allocations::measure(|| {
-            evaluator.circuit_bootstrap_to(input.as_view(), &mut control);
-            evaluator.cmux_to(&control, &choices[0], &choices[1], &mut selected);
-            evaluator.external_product_to(&control, &choices[1], &mut product);
-            evaluator.bootstrapper_mut().unwrap().apply_lookup_table_to(
+            evaluator.circuit_bootstrap_to(
                 input.as_view(),
-                &identity,
-                output.as_mut_view(),
+                &mut control,
+                pbs.bootstrap_resources_mut(),
             );
+            evaluator.cmux_to(
+                &control,
+                &choices[0],
+                &choices[1],
+                &mut selected,
+                pbs.bootstrap_resources_mut(),
+            );
+            evaluator.external_product_to(
+                &control,
+                &choices[1],
+                &mut product,
+                pbs.bootstrap_resources_mut(),
+            );
+            pbs.apply_lookup_table_to(input.as_view(), &identity, output.as_mut_view());
             accumulator_client.decrypt_to(&selected, &mut decoded);
             accumulator_client.decrypt_to(&product, &mut decoded_product);
         });
@@ -264,9 +270,12 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr) {
     control.as_mut().fill(Complex64::new(7.0, 0.0));
     let invalid = primus_tfhe::LweCiphertext::zero(15);
     assert!(
-        std::panic::catch_unwind(std::panic::AssertUnwindSafe(
-            || evaluator.circuit_bootstrap_to(invalid.as_view(), &mut control)
-        ))
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| evaluator
+            .circuit_bootstrap_to(
+                invalid.as_view(),
+                &mut control,
+                pbs.bootstrap_resources_mut()
+            )))
         .is_err()
     );
     assert!(
@@ -281,8 +290,28 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr) {
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| evaluator
             .circuit_bootstrap_to(
                 input.as_view(),
-                &mut FourierNgswCiphertext::new(&mut control.as_mut()[..short_len])
+                &mut FourierNgswCiphertext::new(&mut control.as_mut()[..short_len]),
+                pbs.bootstrap_resources_mut()
             )))
+        .is_err()
+    );
+    assert!(
+        control
+            .as_ref()
+            .iter()
+            .all(|&value| value == Complex64::new(7.0, 0.0))
+    );
+
+    // A new FFT table with equal parameters is still a different resource binding.
+    // Rejection precedes writes, and leaves the original resources usable below.
+    let other_context = TfheContext::<_, Table, _>::from_parameters(context.parameters().clone());
+    let mut other_resources = other_context
+        .bootstrap_resources(server.blind_rotation_key())
+        .unwrap();
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            evaluator.circuit_bootstrap_to(input.as_view(), &mut control, &mut other_resources);
+        }))
         .is_err()
     );
     assert!(
@@ -294,12 +323,8 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr) {
 
     // A different compatible key object changes only the binding, not scratch.
     let return_key = server.key_switching_key().clone();
-    let (mut recovered, recovery) =
-        allocations::measure(|| evaluator.try_into_bootstrapper(&return_key).unwrap());
-    assert_eq!(
-        recovery.count, 0,
-        "converted CBS retains ordinary workspace"
-    );
+    let (_, allocation) = allocations::measure(|| pbs.try_rebind_return_key(&return_key).unwrap());
+    assert_eq!(allocation.count, 0, "return rebinding must retain scratch");
     let identity = context
         .parameters()
         .lookup_table_compiler(&input_codec)
@@ -308,7 +333,7 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr) {
         .unwrap();
     let mut output = context.allocate_lwe_ciphertext();
     let (_, allocation) = allocations::measure(|| {
-        recovered.apply_lookup_table_to(input.as_view(), &identity, output.as_mut_view());
+        pbs.apply_lookup_table_to(input.as_view(), &identity, output.as_mut_view());
     });
     assert_eq!(allocation.count, 0);
     assert_eq!(
@@ -407,12 +432,9 @@ fn independent_cbs_material_does_not_require_a_return_key() {
     let circuit = generator
         .try_generate_circuit_bootstrap_key(&accumulator, cbs_parameters, &mut rng)
         .unwrap();
-    let mut cbs =
-        CircuitBootstrapEvaluator::try_from_parts(&context, &br, &circuit, &input_codec).unwrap();
-    let mut one_hot =
-        OneHotCircuitBootstrapEvaluator::try_from_parts(&context, &br, &circuit, &input_codec)
-            .unwrap();
-    assert!(cbs.bootstrapper_mut().is_none());
-    assert!(one_hot.bootstrapper_mut().is_none());
+    let resources = context.bootstrap_resources(&br).unwrap();
+    let _cbs = CircuitBootstrapEvaluator::try_new(&resources, &circuit, &input_codec).unwrap();
+    let _one_hot =
+        OneHotCircuitBootstrapEvaluator::try_new(&resources, &circuit, &input_codec).unwrap();
     // This fixture tests key domains/binding, not a usable noise budget at tiny q.
 }

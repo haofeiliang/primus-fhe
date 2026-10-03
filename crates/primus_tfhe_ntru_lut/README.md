@@ -78,7 +78,7 @@ For fixed N, M and c, start with `d=min(c, floor(log2(N)/tau))`, making M^d as c
 
 ## Evaluation and workspace
 
-The NTT evaluator owns common `BootstrapResources` separately from one-hot operation state; selection, rotation and CBS borrow the same external-product workspace in sequence. Fourier currently keeps common BR/FFT resources inside one-hot. Both keep the return binding independent of one-hot: NTT allocates only scalar return scratch, Fourier only batch return scratch.
+Each evaluator owns its backend's common `BootstrapResources` separately from one-hot operation state. Selection, rotation and CBS borrow the same external-product workspace in sequence; Fourier also reuses the same FFT engine inside those resources. The return binding is independent of one-hot: NTT allocates only scalar return scratch, Fourier only batch return scratch.
 
 Both evaluators accept a complete `ServerKey` through `try_new`, or borrow independent material with `try_from_parts(context, blind_rotation_key, return_key, circuit_key, lookup_table)`. Components can come from `ServerKey::into_parts()` without copying ciphertext buffers. Unlike standalone CBS/one-hot, this workflow always requires the Q→q, f→s return key for its LWE outputs. All three components are checked when binding; actual shared secrets and transform identity remain caller contracts.
 

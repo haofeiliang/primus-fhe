@@ -57,20 +57,6 @@ fn rejects_server_keys_with_same_layout_but_different_bases() {
     let mut rng = StdRng::seed_from_u64(0x464f_5552_4241_5349);
     let (_, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
     assert!(server_key.circuit_bootstrap_key().is_none());
-    assert!(matches!(
-        primus_tfhe_ntru_fourier::OneHotCircuitBootstrapEvaluator::try_new(
-            &context,
-            &server_key,
-            &input_codec
-        ),
-        Err(primus_tfhe_ntru_fourier::OneHotBootstrapError::Evaluation(
-            primus_tfhe_ntru_fourier::TfheEvaluationError::MissingCircuitBootstrapKey
-        ))
-    ));
-    assert!(matches!(
-        context.circuit_bootstrap_evaluator(&server_key, &input_codec),
-        Err(primus_tfhe_ntru_fourier::TfheEvaluationError::MissingCircuitBootstrapKey)
-    ));
     assert!(context.evaluator(&server_key).is_ok());
 
     // Changing either basis preserves all four levels and their storage size.

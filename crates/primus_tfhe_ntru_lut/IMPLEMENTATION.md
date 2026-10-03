@@ -139,10 +139,11 @@ noise bound. Fourier transform-domain summation can differ in rounding from
 separately converted products; NTT summation is exact.
 
 Both evaluators explicitly compose one-hot CBS and a coefficient-domain
-`LweReturnEvaluator` binding. NTT separately owns `BootstrapResources`; its one-hot
-operation state borrows that owner for each CBS call, and table products borrow
-its external-product workspace between calls. Fourier still owns BR/FFT resources
-inside one-hot. NTT allocates only scalar return scratch. Fourier allocates
+`LweReturnEvaluator` binding. Each separately owns its backend's
+`BootstrapResources`; one-hot operation state borrows that owner per CBS call,
+and table products borrow its external-product scratch between calls. Fourier
+also reuses that owner's single FFT engine for integer factors, torus gadget
+rows, BR, projection and products. NTT allocates only scalar return scratch. Fourier allocates
 only `LweReturnBatchWorkspace` and groups
 selection, rotation and extraction in `prepare_output_returns`, then key-switches
 consecutive newly evaluated outputs up to its fixed tile capacity (eight LWEs),

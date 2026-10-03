@@ -60,13 +60,20 @@ fn ordinary<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str)
             let rhs = ring.encrypt(&[T::ONE; N], &mut rng);
             (context, client, server, input, lhs, rhs)
         });
-        let mut evaluator =
-            CircuitBootstrapEvaluator::try_new(context, server, &input_codec).unwrap();
+        let mut resources = context
+            .bootstrap_resources(server.blind_rotation_key())
+            .unwrap();
+        let mut evaluator = CircuitBootstrapEvaluator::try_new(
+            &resources,
+            server.circuit_bootstrap_key().unwrap(),
+            &input_codec,
+        )
+        .unwrap();
         let mut output = evaluator.allocate_output();
         if !verified {
-            evaluator.circuit_bootstrap_to(input.as_view(), &mut output);
+            evaluator.circuit_bootstrap_to(input.as_view(), &mut output, &mut resources);
             let mut selected = context.allocate_accumulator_ciphertext();
-            evaluator.cmux_to(&output, lhs, rhs, &mut selected);
+            evaluator.cmux_to(&output, lhs, rhs, &mut selected, &mut resources);
             let mut decoded = vec![T::ZERO; N];
             context
                 .accumulator_client(
@@ -82,7 +89,11 @@ fn ordinary<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str)
             verified = true;
         }
         b.iter(|| {
-            evaluator.circuit_bootstrap_to(black_box(input.as_view()), black_box(&mut output))
+            evaluator.circuit_bootstrap_to(
+                black_box(input.as_view()),
+                black_box(&mut output),
+                &mut resources,
+            )
         });
     });
 }
@@ -124,8 +135,15 @@ fn one_hot<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) 
                 let rhs = ring.encrypt(&[T::ONE; N], &mut rng);
                 (context, client, server, input, lhs, rhs)
             });
-            let mut evaluator =
-                OneHotCircuitBootstrapEvaluator::try_new(context, server, &input_codec).unwrap();
+            let mut resources = context
+                .bootstrap_resources(server.blind_rotation_key())
+                .unwrap();
+            let mut evaluator = OneHotCircuitBootstrapEvaluator::try_new(
+                &resources,
+                server.circuit_bootstrap_key().unwrap(),
+                &input_codec,
+            )
+            .unwrap();
             let mut output = if compact {
                 evaluator.allocate_nonzero_ngsw_output()
             } else {
@@ -133,9 +151,9 @@ fn one_hot<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) 
             };
             if !verified {
                 if compact {
-                    evaluator.one_hot_nonzero_ngsw_to(input.as_view(), &mut output);
+                    evaluator.one_hot_nonzero_ngsw_to(input.as_view(), &mut output, &mut resources);
                 } else {
-                    evaluator.one_hot_ngsw_to(input.as_view(), &mut output);
+                    evaluator.one_hot_ngsw_to(input.as_view(), &mut output, &mut resources);
                 }
                 let parameters = evaluator.parameters();
                 let mut selected = context.allocate_accumulator_ciphertext();
@@ -154,7 +172,7 @@ fn one_hot<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) 
                 for (index, control) in
                     FourierNgswIter::new(&output, evaluator.ngsw_selector_len()).enumerate()
                 {
-                    let (fft, product) = evaluator.external_product_workspaces();
+                    let (fft, product) = resources.external_product_workspaces();
                     control.cmux_to(
                         lhs,
                         rhs,
@@ -175,12 +193,19 @@ fn one_hot<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) 
             }
             if compact {
                 b.iter(|| {
-                    evaluator
-                        .one_hot_nonzero_ngsw_to(black_box(input.as_view()), black_box(&mut output))
+                    evaluator.one_hot_nonzero_ngsw_to(
+                        black_box(input.as_view()),
+                        black_box(&mut output),
+                        &mut resources,
+                    )
                 });
             } else {
                 b.iter(|| {
-                    evaluator.one_hot_ngsw_to(black_box(input.as_view()), black_box(&mut output))
+                    evaluator.one_hot_ngsw_to(
+                        black_box(input.as_view()),
+                        black_box(&mut output),
+                        &mut resources,
+                    )
                 });
             }
         });

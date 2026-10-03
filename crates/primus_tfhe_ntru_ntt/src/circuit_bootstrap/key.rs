@@ -25,8 +25,8 @@ pub(super) struct CircuitBootstrapBinding<'a, T: FheUint> {
 }
 
 impl<'a, T: FheUint> CircuitBootstrapBinding<'a, T> {
-    // Reject missing capabilities here, before specialized online operations can
-    // assume classic controls or CBS material. Compatibility does not prove key identity.
+    // Reject sparse controls and incompatible CBS parameters before online use.
+    // Receiving material and checking its geometry do not prove actual key identity.
     pub(super) fn try_new<LM: primus_reduce::RingContext<T>>(
         tfhe: &crate::TfheParameters<T, LM>,
         controls: Option<crate::ClassicControls<'a, T>>,

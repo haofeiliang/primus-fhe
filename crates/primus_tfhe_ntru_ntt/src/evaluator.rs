@@ -94,6 +94,10 @@ where
 
     /// Lends common resources for CBS/one-hot or table products. Return buffers
     /// remain owned here, so ordinary PBS can resume after the short borrow ends.
+    ///
+    /// # Correctness
+    /// Preserve the context and BR key binding: the retained return material and
+    /// scratch were prepared for it. This borrow is not an evaluator-rebinding API.
     #[must_use]
     pub fn bootstrap_resources_mut(&mut self) -> &mut BootstrapResources<'a, T, Table, LM> {
         &mut self.resources

@@ -112,7 +112,7 @@ cbs.cmux_to(&control, &lhs, &rhs, &mut selected);
 ring_client.decrypt_to(&selected, &mut decoded);
 ```
 
-NTRU NTT 的 CBS/CMux 调用还需在最后传入 `&mut BootstrapResources`，见下文资源复用。
+NTRU 两后端的 CBS/CMux 调用还需在最后传入 `&mut BootstrapResources`，见下文资源复用。
 
 `allocate_output` 返回后端原有的 GGSW/NGSW，环密文仍是系数域 GLWE/NTRU。 `cmux_to` 在控制位为 0/1 时选择 lhs/rhs；`external_product_to(control, input, output)` 也允许非 bit 的 gadget 控制。控制必须使用此 evaluator 的输出 basis、accumulator 私钥和变换表示， 候选使用该私钥/模数与相同编码。身份及噪声余量由调用方保证；所有密文长度在写输出前检查。
 
@@ -124,13 +124,13 @@ NTRU NTT 的 CBS/CMux 调用还需在最后传入 `&mut BootstrapResources`，�
 
 Context 保存不可变参数和变换表，ServerKey 保存求值材料；Evaluator 持有可变工作区。 编译后的 LUT/程序可以长期保留，多次调用 `_to` 写入预分配输出。
 
-NTRU NTT 使用短借用组合：普通 PBS 拥有公共 BR/EP 和返回缓冲，CBS/one-hot 只准备 LUT/投影状态。构造用 `try_new(pbs.bootstrap_resources(), circuit_key, &input_codec)`，执行时最后一个参数传 `pbs.bootstrap_resources_mut()`。Factorized MVB 用 `FactorizedEvaluator::try_new(&pbs)` 构造，执行时传 `&mut pbs`。仅需 CBS 时可用 `context.bootstrap_resources(br)` 独立准备公共资源。完整用法见 [NTT 资源复用](../primus_tfhe_ntru_ntt/README.zh_CN.md#复用-evaluator)。
+NTRU 两后端使用短借用组合：普通 PBS 拥有公共 BR/EP（Fourier 含 FFT）和返回缓冲，CBS/one-hot 只准备 LUT/投影状态。构造用 `try_new(pbs.bootstrap_resources(), circuit_key, &input_codec)`，执行时最后一个参数传 `pbs.bootstrap_resources_mut()`。Factorized MVB 用 `FactorizedEvaluator::try_new(&pbs)` 构造，执行时传 `&mut pbs`。仅需 CBS 时可用 `context.bootstrap_resources(br)` 独立准备公共资源。完整用法见 [NTT 资源复用](../primus_tfhe_ntru_ntt/README.zh_CN.md#复用-evaluator)与 [Fourier 资源复用](../primus_tfhe_ntru_fourier/README.zh_CN.md#复用-evaluator)。
 
-GLWE 与 NTRU Fourier 保留以下所有权接口：
+GLWE 保留以下所有权接口：
 
-- MVB 消费 PBS：GLWE 使用 `FactorizedEvaluator::from_bootstrapper(pbs)`，NTRU Fourier 使用 `try_from_bootstrapper`。
-- CBS/one-hot 使用 `try_from_bootstrapper(pbs, circuit_key, &input_codec)`；`bootstrapper_mut()` 借用普通 PBS 操作，MVB 用 `into_bootstrapper()` 回收。
-- CBS 恢复显式传返回材料：GLWE 用 `try_into_bootstrapper(glwe_ks_key)`，NTRU Fourier 用 `try_into_bootstrapper(return_key)`。已有工作区可复用；独立 GLWE BR→KS 与 NTRU Fourier CBS/one-hot 缺少返回缓冲，恢复时才分配。GLWE KS→BR 已有输入 KS，返回直接提取。
+- MVB 用 `FactorizedEvaluator::from_bootstrapper(pbs)` 消费 PBS。
+- CBS 使用 `try_from_bootstrapper(pbs, circuit_key, &input_codec)`；`bootstrapper_mut()` 借用普通 PBS 操作，MVB 用 `into_bootstrapper()` 回收。
+- CBS 用 `try_into_bootstrapper(glwe_ks_key)` 恢复，复用已有返回缓冲；独立 BR→KS CBS 在此分配缺失返回缓冲，KS→BR 已有输入 KS，返回直接提取。
 
 这些后端只需单一能力时可用 `context.factorized_evaluator` 或 `context.circuit_bootstrap_evaluator`。所有后端均在构造时准备存储，在线求值不隐式分配。Boolean 的 `try_new` 接受 PBS 所有权，`into_bootstrapper` 可回收。
 

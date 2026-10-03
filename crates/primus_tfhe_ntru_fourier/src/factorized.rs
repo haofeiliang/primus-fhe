@@ -7,7 +7,7 @@ use primus_modulus::NativeModulus;
 use primus_poly::{FourierPolynomial, FourierPolynomialIter, PolynomialIter, PolynomialOwned};
 use primus_tfhe::{FactorizedLookupTable, LweCiphertext};
 
-use crate::{Evaluator, LookupTableError, Lwe, ServerKey, TfheContext, TfheEvaluationError};
+use crate::{Evaluator, LookupTableError, Lwe, TfheContext, TfheEvaluationError};
 
 /// Native even-scale MVB program prepared for one borrowed Fourier context.
 ///
@@ -106,13 +106,14 @@ impl<'a, T: TorusFftValue, Table: FftTable, LM: primus_reduce::RingContext<T>>
 /// Extra workspace consists of two Fourier NTRU polynomials
 /// (N complex values), independent of output count. Coefficient products and
 /// key switching reuse the ordinary evaluator's buffers and key material.
+/// The caller retains PBS ownership and lends it only for the request.
 pub struct FactorizedEvaluator<
     'a,
     T: TorusFftValue,
     Table: FftTable,
     LM: primus_reduce::RingContext<T> = NativeModulus<T>,
 > {
-    evaluator: Evaluator<'a, T, Table, LM>,
+    binding: crate::bootstrap::BootstrapBinding<'a, T, Table, LM>,
     shared_rotation: FourierNtru<Vec<Complex64>>,
     product: FourierNtru<Vec<Complex64>>,
 }
@@ -120,56 +121,24 @@ pub struct FactorizedEvaluator<
 impl<'a, T: TorusFftValue, Table: FftTable, LM: primus_reduce::RingContext<T>>
     FactorizedEvaluator<'a, T, Table, LM>
 {
-    /// Creates workspace after checking the server key.
-    /// Rejects sparse keys; sparse MVB needs a separate numerical/noise validation.
-    ///
-    /// # Correctness
-    /// Inherits [`Evaluator::try_new`]'s Fourier table requirements.
-    pub fn try_new(
-        context: &'a TfheContext<T, Table, LM>,
-        server_key: &'a ServerKey<T>,
-    ) -> Result<Self, TfheEvaluationError> {
-        Self::try_from_bootstrapper(Evaluator::try_new(context, server_key)?)
-    }
-
-    /// Consumes ordinary PBS workspace and allocates only the additional MVB buffers.
-    /// The underlying key, context and existing allocations are preserved.
-    pub fn try_from_bootstrapper(
-        evaluator: Evaluator<'a, T, Table, LM>,
-    ) -> Result<Self, TfheEvaluationError> {
+    /// Prepares two Fourier polynomials for MVB. Common BR/FFT and return resources
+    /// stay in `evaluator` and are borrowed only while executing. Rejects sparse keys;
+    /// inherits [`Evaluator::try_new`]'s actual secret and FFT table requirements.
+    pub fn try_new(evaluator: &Evaluator<'a, T, Table, LM>) -> Result<Self, TfheEvaluationError> {
         evaluator
-            .engine
+            .resources
             .workspace
             .rotation
             .classic_controls()
             .ok_or(TfheEvaluationError::UnsupportedSparseBootstrapping)?;
-        let context = evaluator.engine.context;
+        let context = evaluator.resources.context;
         Ok(Self {
-            evaluator,
+            binding: evaluator.resources.binding(),
             shared_rotation: FourierNtru::zero(
                 context.parameters().poly_length().fourier_poly_len(),
             ),
             product: FourierNtru::zero(context.parameters().poly_length().fourier_poly_len()),
         })
-    }
-
-    /// Borrows ordinary single-output and interleaved PBS operations without allocation.
-    /// The opaque borrow prevents replacing the bound evaluator and invalidating MVB scratch.
-    #[must_use]
-    pub fn bootstrapper_mut(
-        &mut self,
-    ) -> impl primus_tfhe::ProgrammableBootstrap<T>
-    + primus_tfhe::ProgrammableBootstrapInterleaved<T>
-    + use<'_, 'a, T, Table, LM> {
-        &mut self.evaluator
-    }
-
-    /// Releases the extra MVB buffers and recovers the original PBS workspace without allocation.
-    /// Discards any unfinished return tile left by an interrupted evaluation.
-    #[must_use]
-    pub fn into_bootstrapper(mut self) -> Evaluator<'a, T, Table, LM> {
-        self.evaluator.batch_return.discard_batch();
-        self.evaluator
     }
 
     /// Evaluates the program, allocating one LWE ciphertext per output.
@@ -179,11 +148,12 @@ impl<'a, T: TorusFftValue, Table: FftTable, LM: primus_reduce::RingContext<T>>
         &mut self,
         input: Lwe<&[T]>,
         lookup_table: &FourierFactorizedLookupTable<'_, T, Table, LM>,
+        evaluator: &mut Evaluator<'a, T, Table, LM>,
     ) -> Vec<LweCiphertext<T>> {
-        let context = self.evaluator.engine.context;
+        let context = self.binding.context;
         let dimension = context.parameters().external_lwe_dimension();
         let mut outputs = vec![LweCiphertext::zero(dimension.get()); lookup_table.output_count()];
-        self.apply_lookup_table_to(input, lookup_table, &mut outputs);
+        self.apply_lookup_table_to(input, lookup_table, &mut outputs, evaluator);
         outputs
     }
 
@@ -208,33 +178,31 @@ impl<'a, T: TorusFftValue, Table: FftTable, LM: primus_reduce::RingContext<T>>
     ///
     /// Panics before output writes unless the program was prepared by this exact
     /// context, input and every output have the external LWE dimension, and the
-    /// output slice length equals the program's output count.
+    /// output slice length equals the program's output count. The evaluator must
+    /// use the context and BR key references selected at construction. A new
+    /// valid request supersedes pending samples from an interrupted MVB request.
     pub fn apply_lookup_table_to(
         &mut self,
         input: Lwe<&[T]>,
         lookup_table: &FourierFactorizedLookupTable<'_, T, Table, LM>,
         outputs: &mut [LweCiphertext<T>],
+        evaluator: &mut Evaluator<'a, T, Table, LM>,
     ) {
+        self.binding.check(&evaluator.resources);
         self.check_io(input.as_view(), lookup_table, outputs);
-        self.prepare_shared_rotation(input, &lookup_table.common_polynomial);
+        self.prepare_shared_rotation(input, &lookup_table.common_polynomial, evaluator);
 
-        let n = self
-            .evaluator
-            .engine
-            .context
-            .parameters()
-            .poly_length()
-            .get();
-        let batch_size = self.evaluator.batch_return.batch_capacity();
+        let n = self.binding.context.parameters().poly_length().get();
+        let batch_size = evaluator.batch_return.batch_capacity();
         let mut factors = FourierPolynomialIter::new(&lookup_table.factors, n / 2);
         for outputs in outputs.chunks_mut(batch_size) {
-            self.evaluator.batch_return.begin_batch();
+            evaluator.batch_return.begin_batch();
             for factor in factors.by_ref().take(outputs.len()) {
-                self.prepare_factor_return(factor);
+                self.prepare_factor_return(factor, evaluator);
             }
-            self.evaluator
+            evaluator
                 .lwe_return
-                .return_batch_to(outputs, &mut self.evaluator.batch_return);
+                .return_batch_to(outputs, &mut evaluator.batch_return);
         }
     }
 
@@ -246,12 +214,11 @@ impl<'a, T: TorusFftValue, Table: FftTable, LM: primus_reduce::RingContext<T>>
         lookup_table: &FourierFactorizedLookupTable<'_, T, Table, LM>,
         outputs: &[LweCiphertext<T>],
     ) {
-        let evaluator = &self.evaluator;
         assert!(
-            core::ptr::eq(evaluator.engine.context, lookup_table.context),
+            core::ptr::eq(self.binding.context, lookup_table.context),
             "MVB program was prepared by a different context"
         );
-        let parameters = evaluator.engine.context.parameters();
+        let parameters = self.binding.context.parameters();
         let dimension = parameters.external_lwe_dimension();
         assert_eq!(
             input.dimension(),
@@ -271,26 +238,34 @@ impl<'a, T: TorusFftValue, Table: FftTable, LM: primus_reduce::RingContext<T>>
 
     /// Preserve the common blind rotation in transform form for all factors.
     /// Individual products can then overwrite the coefficient accumulator.
-    fn prepare_shared_rotation(&mut self, input: Lwe<&[T]>, common: &PolynomialOwned<T>) {
-        let engine = &mut self.evaluator.engine;
-        engine.blind_rotate(input, common, 1);
-        engine
+    fn prepare_shared_rotation(
+        &mut self,
+        input: Lwe<&[T]>,
+        common: &PolynomialOwned<T>,
+        evaluator: &mut Evaluator<'a, T, Table, LM>,
+    ) {
+        let resources = &mut evaluator.resources;
+        resources.blind_rotate(input, common, 1);
+        resources
             .workspace
             .current
-            .write_fourier_form(&mut self.shared_rotation, &mut engine.fft);
+            .write_fourier_form(&mut self.shared_rotation, &mut resources.fft);
     }
 
     /// Multiply one factor and extract its independently rounded q-domain sample.
     /// Only the LWE slot survives; the next factor may overwrite the product buffers.
-    fn prepare_factor_return(&mut self, factor: FourierPolynomial<&[Complex64]>) {
-        let evaluator = &mut self.evaluator;
-        let engine = &mut evaluator.engine;
+    fn prepare_factor_return(
+        &mut self,
+        factor: FourierPolynomial<&[Complex64]>,
+        evaluator: &mut Evaluator<'a, T, Table, LM>,
+    ) {
+        let resources = &mut evaluator.resources;
         self.shared_rotation
             .mul_fourier_polynomial_to(&factor, &mut self.product);
         self.product
-            .write_torus_form(&mut engine.workspace.current, &mut engine.fft);
+            .write_torus_form(&mut resources.workspace.current, &mut resources.fft);
         evaluator.lwe_return.append_at(
-            engine.workspace.current.as_view(),
+            resources.workspace.current.as_view(),
             0,
             &mut evaluator.batch_return,
         );
@@ -303,15 +278,6 @@ where
     Table: FftTable,
     LM: primus_reduce::RingContext<T>,
 {
-    /// Creates NTRU MVB workspace. Inherits
-    /// [`FactorizedEvaluator::try_new`]'s key and Fourier table requirements.
-    pub fn factorized_evaluator<'a>(
-        &'a self,
-        server_key: &'a ServerKey<T>,
-    ) -> Result<FactorizedEvaluator<'a, T, Table, LM>, TfheEvaluationError> {
-        FactorizedEvaluator::try_new(self, server_key)
-    }
-
     /// Compiles and Fourier-prepares a Native even-scale MVB program.
     ///
     /// `input_domain_len` selects a nonempty prefix of the parameter codec's

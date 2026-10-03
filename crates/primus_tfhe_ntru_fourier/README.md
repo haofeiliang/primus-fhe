@@ -44,13 +44,15 @@ Both `RustFftTable` and `TfheFftTable` support u32/u64. Keys, values and evaluat
 
 `ServerKey` bundles independently owned `BlindRotationKey`, `NtruLweKeySwitchingKey` and optional `CircuitBootstrapKey`. `into_parts()` moves them out without copying ciphertext buffers; `ServerKey::new(br, return_key, cbs)` combines owners. For independent generation, use `KeyGenerator::try_generate_blind_rotation_key(&client, rng)`, `parameters.try_generate_lwe_return_key(&client, rng)` and `generator.try_generate_circuit_bootstrap_key(client.accumulator_ntru_secret_key(), cbs_parameters, rng)`. Sparse BR has its own `try_generate_sparse_blind_rotation_key` entry. Component generation may repeat accumulator conversion; paired generation reuses the transform.
 
-`Evaluator::try_from_parts(context, br, return_key)` binds ordinary PBS. Both CBS and one-hot provide `try_from_parts(context, br, circuit_key, &input_codec)` and need no return key. The CBS example demonstrates this workflow. BR and return incompatibility are reported separately; independent material must use the same actual secrets and transform representation. Shape and modulus checks do not prove identity.
+`Evaluator::try_from_parts(context, br, return_key)` binds ordinary PBS. Standalone CBS/one-hot first prepares common BR/external-product resources with `context.bootstrap_resources(br)?`, then operation state with `try_new(&resources, circuit_key, &input_codec)`. No return key is needed; the CBS example demonstrates this workflow. Independent material must use the same actual secrets and FFT table instance. Shape and modulus checks do not prove identity.
 
 `server_key.blind_rotation_key().classic_controls()` returns a borrowed `ClassicControls` view, or `None` for sparse material. Its `initializer()` lifts public polynomials; coordinate zero uses NLEV bits and later coordinates use NGSW bits, with positive/negative pairs for ternary secrets. CBS, one-hot and MVB check their required capabilities at construction. The optional `circuit_bootstrap_key()` remains available for inspecting or composing CBS material.
 
 ## Reusing evaluators
 
-Ordinary/interleaved `Evaluator` `_to` calls reuse workspace and caller outputs. See the [resource reuse guide](../primus_tfhe/README.md#reusing-evaluators) for PBS/MVB/CBS ownership conversions. Standalone CBS/one-hot omits ordinary LWE-return buffers: `bootstrapper_mut()` returns `None`, and `try_into_bootstrapper(return_key)` allocates the missing return buffers. Construct with `try_from_bootstrapper(pbs, circuit_key, &input_codec)` to retain a complete PBS and recover it without allocation with any compatible return key; its PBS borrow returns `Some`. Recovery discards pending samples from the previous return binding.
+Ordinary/interleaved `Evaluator` owns common `BootstrapResources` and scalar/batch return buffers. CBS/one-hot retain only their LUT and projection buffers; pass `pbs.bootstrap_resources_mut()` as the final execution argument. Construct factorized MVB with `FactorizedEvaluator::try_new(&pbs)` and pass `&mut pbs` as its final execution argument. Ordinary PBS resumes as soon as the borrow ends, without converting or recovering evaluators. Online `_to` calls reuse all buffers. Operation state requires resources made from the same context and BR key references used at construction; this is checked before writes.
+
+For CBS/one-hot alone, keep standalone `BootstrapResources` without return buffers. To add PBS later, `Evaluator::try_from_resources(resources, return_key)` takes common resources and allocates return buffers. `try_rebind_return_key` changes compatible return material without reallocation; success discards pending samples, while failure preserves the old binding. Resource ownership does not establish actual secret identity.
 
 ## Fixed-scale factorized MVB
 
@@ -77,15 +79,15 @@ Ordinary/interleaved PBS use the same evaluator. CBS/MVB reject sparse keys, inc
 
 ## Optional circuit bootstrapping
 
-Generate paired material with `context.try_generate_keys(Some(cbs_config), &mut rng)`; `ServerKey` owns the additional parameters and trace/scheme-switch keys. Create `context.circuit_bootstrap_evaluator(&server, &input_codec)` or consume ordinary workspace as above. With a classic key generated using `None`, binding CBS returns `MissingCircuitBootstrapKey`. Use `allocate_output`, `circuit_bootstrap_to` and `cmux_to`; the [CBS → CMUX example](examples/ntru_fourier_circuit_bootstrap.rs) shows their complete consumption chain.
+Generate paired material with `context.try_generate_keys(Some(cbs_config), &mut rng)`; `ServerKey` owns the additional parameters and trace/scheme-switch keys. Obtain `server.circuit_bootstrap_key()` and pass it with common resources to `CircuitBootstrapEvaluator::try_new`, which explicitly requires CBS material. Use `allocate_output`, `circuit_bootstrap_to` and `cmux_to`; the [CBS → CMUX example](examples/ntru_fourier_circuit_bootstrap.rs) shows their complete consumption chain.
 
-The output is `FourierNgswCiphertext` under `f_acc`. The circuit key binds the complete output basis; `try_from_parts(context, blind_rotation_key, circuit_key, &input_codec)` obtains parameters from that key. Budget native trace halving and FFT error against the smallest output gadget scale.
+The output is `FourierNgswCiphertext` under `f_acc`. The circuit key binds the complete output basis; `try_new(&resources, circuit_key, &input_codec)` obtains parameters from that key. Budget native trace halving and FFT error against the smallest output gadget scale.
 
 Standalone component generation must use paired secrets and the same transform representation; shape checks cannot prove identity. See [CBS input/output and consumption](../primus_tfhe/README.md#cbs-output-and-consumption) and the [family CBS contract](../primus_tfhe_ntru/README.md#cbs-and-examples).
 
 ## One-hot CBS
 
-The [one-hot example](examples/ntru_fourier_one_hot.rs) generates four selectors and uses δ₂, selected by `TARGET=2`, in a CMux. Change `TARGET` for another branch. Bind `OneHotCircuitBootstrapEvaluator::try_new(&context, &server, &input_codec)`, allocate once and reuse `_to` calls.
+The [one-hot example](examples/ntru_fourier_one_hot.rs) generates four selectors and uses δ₂, selected by `TARGET=2`, in a CMux. Change `TARGET` for another branch. Bind `OneHotCircuitBootstrapEvaluator::try_new(&resources, circuit_key, &input_codec)`, allocate once and reuse `_to` calls.
 
 See the [family one-hot contract](../primus_tfhe_ntru/README.md#one-hot-cbs) for full/nonzero output APIs, layout and input guards. NLEV output contains coefficients at Q; use `write_fourier_form` before a public-polynomial external product. NGSW is already in Fourier representation. Inputs, keys and candidates must satisfy this page's transform contract.
 

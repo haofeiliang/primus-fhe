@@ -136,9 +136,12 @@ fn one_hot<T: TorusFftValue, Table: FftTable>(
         .collect();
 
     // Server: allocate the one-hot evaluator and encrypted selector storage.
+    let mut resources = context
+        .bootstrap_resources(server_key.blind_rotation_key())
+        .unwrap();
     let mut one_hot = primus_tfhe_ntru_fourier::OneHotCircuitBootstrapEvaluator::try_new(
-        context,
-        server_key,
+        &resources,
+        server_key.circuit_bootstrap_key().unwrap(),
         &input_codec,
     )
     .unwrap();
@@ -165,7 +168,7 @@ fn one_hot<T: TorusFftValue, Table: FftTable>(
         );
 
         // Client -> server: send input; the server derives all encrypted selectors.
-        one_hot.one_hot_ngsw_to(input.as_view(), &mut selectors);
+        one_hot.one_hot_ngsw_to(input.as_view(), &mut selectors, &mut resources);
 
         // Test-only server -> client: expose selectors for private phase checks.
         // Lookup evaluation normally consumes them entirely on the server.
@@ -463,7 +466,8 @@ fn thresholds<T: TorusFftValue, Table: FftTable>(
     let program = context
         .compile_factorized_lookup_table_fn(&input_codec, &ring_codec, 64, 17, value)
         .unwrap();
-    let mut evaluator = context.factorized_evaluator(&server_key).unwrap();
+    let mut pbs = context.evaluator(&server_key).unwrap();
+    let mut evaluator = primus_tfhe_ntru_fourier::FactorizedEvaluator::try_new(&pbs).unwrap();
     let mut outputs = vec![context.allocate_lwe_ciphertext(); 17];
 
     for m in [0usize, 1, 2, 3, 31, 32, 63, 0] {
@@ -471,7 +475,7 @@ fn thresholds<T: TorusFftValue, Table: FftTable>(
         let input = encryptor.encrypt_padded(T::as_from(m), &mut rng).unwrap();
 
         // Server: produce all 17 encrypted results.
-        evaluator.apply_lookup_table_to(input.as_view(), &program, &mut outputs);
+        evaluator.apply_lookup_table_to(input.as_view(), &program, &mut outputs, &mut pbs);
 
         // Server -> client: decode the binary outputs and check their margins.
         for (i, output) in outputs.iter().enumerate() {
@@ -553,9 +557,15 @@ fn circuit<T: TorusFftValue, Table: FftTable>(
     let mut decrypt = primus_ntru::FourierNtruDecryptWorkspace::new(PolyLength::new(N));
 
     // Server: bind the evaluation key and allocate CBS/CMux outputs locally.
-    let mut cbs = context
-        .circuit_bootstrap_evaluator(&server_key, &input_codec)
+    let mut resources = context
+        .bootstrap_resources(server_key.blind_rotation_key())
         .unwrap();
+    let mut cbs = primus_tfhe_ntru_fourier::CircuitBootstrapEvaluator::try_new(
+        &resources,
+        server_key.circuit_bootstrap_key().unwrap(),
+        &input_codec,
+    )
+    .unwrap();
     let mut control = cbs.allocate_output();
     let mut selected = context.allocate_accumulator_ciphertext();
 
@@ -564,8 +574,14 @@ fn circuit<T: TorusFftValue, Table: FftTable>(
         let input = encryptor.encrypt_padded(T::as_from(bit), &mut rng).unwrap();
 
         // Server: derive the control and select without seeing bit or messages.
-        cbs.circuit_bootstrap_to(input.as_view(), &mut control);
-        cbs.cmux_to(&control, &choices[0], &choices[1], &mut selected);
+        cbs.circuit_bootstrap_to(input.as_view(), &mut control, &mut resources);
+        cbs.cmux_to(
+            &control,
+            &choices[0],
+            &choices[1],
+            &mut selected,
+            &mut resources,
+        );
 
         // Server -> client: return the selected ciphertext for decryption.
         accumulator.decrypt_to(&selected, &mut decoded);

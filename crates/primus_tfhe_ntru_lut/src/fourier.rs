@@ -45,6 +45,7 @@ where
 {
     context: &'a TfheContext<T, Table, LM>,
     lookup_table: &'a HighPrecisionLookupTable<T>,
+    resources: primus_tfhe_ntru_fourier::BootstrapResources<'a, T, Table, LM>,
     one_hot: OneHotCircuitBootstrapEvaluator<'a, T, Table, LM>,
     lwe_return: LweReturnEvaluator<'a, T, LM>,
     batch_return: LweReturnBatchWorkspace<T>,
@@ -118,12 +119,9 @@ where
             lookup_table.plaintext_modulus(),
             context.parameters().external_lwe().cipher_modulus(),
         );
-        let one_hot = OneHotCircuitBootstrapEvaluator::try_from_parts(
-            context,
-            blind_rotation_key,
-            circuit_key,
-            &input_codec,
-        )?;
+        let resources = context.bootstrap_resources(blind_rotation_key)?;
+        let one_hot =
+            OneHotCircuitBootstrapEvaluator::try_new(&resources, circuit_key, &input_codec)?;
         let layout = lookup_table.layout;
         let n = layout.polynomial_length;
         let coefficient_chunk_count = layout.config.coefficient_chunk_count;
@@ -169,6 +167,7 @@ where
             context,
             lookup_table,
             one_hot,
+            resources,
             batch_return: lwe_return.new_batch_workspace(),
             lwe_return,
             public_table_selectors: vec![Complex64::default(); public_table_selectors_len]
@@ -212,7 +211,7 @@ where
                 coefficients.fill(T::ZERO);
                 coefficients[0] = T::MAX;
                 coefficients[n - exponent] = T::MAX;
-                self.one_hot
+                self.resources
                     .external_product_workspaces()
                     .0
                     .forward_as_integer(&coefficients, factor.as_mut_slice());
@@ -227,7 +226,7 @@ where
             .zip(self.one_hot.parameters().output_basis().scalar_iter())
         {
             coefficients[0] = scalar;
-            self.one_hot
+            self.resources
                 .external_product_workspaces()
                 .0
                 .forward_as_torus(&coefficients, row.as_mut());
@@ -327,8 +326,11 @@ where
             ))
             .zip(self.rotation_factors.chunks_exact(factors_chunk_len))
         {
-            self.one_hot
-                .one_hot_nonzero_ngsw_to(input.as_view(), &mut self.nonzero_selectors);
+            self.one_hot.one_hot_nonzero_ngsw_to(
+                input.as_view(),
+                &mut self.nonzero_selectors,
+                &mut self.resources,
+            );
             // Save this chunk's aggregated rotation control.
             // The next chunk overwrites `nonzero_selectors` with its own M-1 selectors.
             aggregate_rotation_control_to(
@@ -353,11 +355,15 @@ where
                     self.one_hot.one_hot_nonzero_ngsw_to(
                         input.as_view(),
                         &mut self.encrypted_table_selectors[batches.ngsw_range(nonzero_len)],
+                        &mut self.resources,
                     );
                 }
                 SelectorBatches::Nlev(_) => {
-                    self.one_hot
-                        .one_hot_nlev_to(input.as_view(), &mut self.public_selector_coefficients);
+                    self.one_hot.one_hot_nlev_to(
+                        input.as_view(),
+                        &mut self.public_selector_coefficients,
+                        &mut self.resources,
+                    );
                     self.transform_public_selectors(batches);
                 }
                 SelectorBatches::Both { .. } => {
@@ -365,6 +371,7 @@ where
                         input.as_view(),
                         &mut self.public_selector_coefficients,
                         &mut self.encrypted_table_selectors[batches.ngsw_range(nonzero_len)],
+                        &mut self.resources,
                     );
                     self.transform_public_selectors(batches);
                 }
@@ -387,7 +394,7 @@ where
         )) {
             coefficients.write_fourier_form(
                 &mut transformed,
-                self.one_hot.external_product_workspaces().0,
+                self.resources.external_product_workspaces().0,
             );
         }
     }
@@ -400,7 +407,7 @@ where
         for control in
             FourierNgswIter::new(&self.rotation_controls, self.one_hot.ngsw_selector_len())
         {
-            let (fft, external_product) = self.one_hot.external_product_workspaces();
+            let (fft, external_product) = self.resources.external_product_workspaces();
             control.external_product_to(
                 &self.current,
                 &mut self.product,
@@ -448,7 +455,7 @@ where
     /// Selection-tree products instead use the one-hot CBS output basis.
     fn lift_public_polynomial(&mut self, polynomial: &Polynomial<&[T]>) {
         let initializer = self.one_hot.classic_controls().initializer();
-        let (fft, external_product) = self.one_hot.external_product_workspaces();
+        let (fft, external_product) = self.resources.external_product_workspaces();
         initializer.external_product_to(
             polynomial,
             &mut self.current,
@@ -467,7 +474,7 @@ where
             [selector_batches.nlev_range(self.one_hot.ngsw_batch_len())];
         let basis = self.one_hot.parameters().output_basis();
         let selector_len = self.one_hot.ngsw_selector_len();
-        let (fft, external_product) = self.one_hot.external_product_workspaces();
+        let (fft, external_product) = self.resources.external_product_workspaces();
         FourierNlev::external_product_sum_to(
             FourierNlevIter::new(selectors, selector_len),
             table.polynomials(polynomial_ids),
@@ -492,7 +499,7 @@ where
         let ciphertext =
             |node_id| selected_ciphertext(plan.node(node_id), &self.selected_tables, n);
         let basis = self.one_hot.parameters().output_basis();
-        let (fft, external_product) = self.one_hot.external_product_workspaces();
+        let (fft, external_product) = self.resources.external_product_workspaces();
         FourierNgswCiphertext::cmux_k_to(
             FourierNgswIter::new(selectors, selector_len),
             ciphertext(children[0]),
