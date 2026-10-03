@@ -1,6 +1,7 @@
 //! Public encryption boundaries reject incompatible domains and storage before writes.
 
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_encoding::ScaledCodec;
 use primus_lattice::GlweDimension;
 use primus_poly::PolyLength;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -108,6 +109,48 @@ fn fallible_parameters_check_layout_codec_and_samplers() {
         Err(Error::Encoding(
             primus_encoding::CodecError::InsufficientScaleRecovery
         ))
+    ));
+}
+
+#[test]
+fn independent_parameter_parts_check_secret_weight_and_codec_domain() {
+    use primus_decompose::primitive::ApproxSignedBasis;
+    use primus_glwe::{GlevParameterError, GlweParameterError, GlweParametersInner, GlweSize};
+    use std::sync::Arc;
+
+    let modulus = BarrettModulus::new(257u32);
+    let inner = Arc::new(GlweParametersInner::new(
+        modulus,
+        SecretKeyDistr::FixedHammingWeightBinary { hamming_weight: 33 },
+        0.7,
+    ));
+    let basis = ApproxSignedBasis::new(Some(257), DecompositionBaseLog::new(3), None);
+    let codec = ScaledCodec::new(4, modulus);
+    // The sampler alone has no layout: both compositions must check total kN.
+    for k in [1, 2] {
+        let size = GlweSize::new(GlweDimension::new(k), PolyLength::new(32));
+        let gadget = GlevParameters::try_from_parts(size, Arc::clone(&inner), basis.clone());
+        let ordinary = GlweParameters::try_from_parts(size, Arc::clone(&inner), codec);
+        if k == 1 {
+            assert!(matches!(gadget, Err(GlevParameterError::SecretKey(_))));
+            assert!(matches!(ordinary, Err(GlweParameterError::SecretKey(_))));
+        } else {
+            let gadget = gadget.unwrap();
+            let ordinary = ordinary.unwrap();
+            // Binding and cloning outer parameters retain the prepared samplers.
+            assert!(std::ptr::eq(gadget.clone().inner(), inner.as_ref()));
+            assert!(std::ptr::eq(ordinary.clone().inner(), inner.as_ref()));
+            assert_eq!(gadget.basis(), &basis);
+            assert_eq!(ordinary.plain_modulus_value(), 4);
+        }
+    }
+    assert!(matches!(
+        GlweParameters::try_from_parts(
+            GlweSize::new(GlweDimension::new(2), PolyLength::new(32)),
+            inner,
+            ScaledCodec::new(4, BarrettModulus::new(769)),
+        ),
+        Err(GlweParameterError::CodecModulusMismatch)
     ));
 }
 

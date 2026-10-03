@@ -1,9 +1,10 @@
 //! Backend-independent parameters for GLWE circuit bootstrapping.
 
 use primus_decompose::primitive::ApproxSignedBasis;
-use primus_glwe::{GadgetSize, GgswParameters, GlevParameters};
+use primus_glwe::{GadgetSize, GgswParameters, GlevParameters, GlweParametersInner};
 use primus_integer::FheUint;
 use primus_reduce::RingContext;
+use std::sync::Arc;
 
 use crate::{CircuitBootstrapConfig, CircuitBootstrapParameterError, TfheParameters};
 
@@ -45,10 +46,9 @@ impl<T: FheUint, M: RingContext<T>> CircuitBootstrapParameters<T, M> {
             .output
             .try_build(accumulator.cipher_modulus_value())?;
         let key_parameters = |role, decomposition: crate::DecompositionConfig, noise| {
-            let ring = primus_glwe::GlweParameters::try_new(
-                accumulator.dimension(),
-                accumulator.poly_length().get(),
-                accumulator.plain_modulus_value(),
+            // Trace and scheme-switch rows have independent noise roles. Reuse
+            // the accumulator layout, without constructing a message codec.
+            let inner = GlweParametersInner::try_new(
                 accumulator.cipher_modulus(),
                 accumulator.secret_key_distr(),
                 noise,
@@ -56,12 +56,14 @@ impl<T: FheUint, M: RingContext<T>> CircuitBootstrapParameters<T, M> {
             .map_err(|source| {
                 CircuitBootstrapParameterError::EncryptionParameters { role, source }
             })?;
-            GlevParameters::try_with_glwe_params(
-                &ring,
-                decomposition.log_basis,
-                decomposition.level_count,
-            )
-            .map_err(|source| CircuitBootstrapParameterError::GadgetParameters { role, source })
+            let basis = decomposition
+                .try_build(accumulator.cipher_modulus_value())
+                .map_err(|source| CircuitBootstrapParameterError::GadgetParameters {
+                    role,
+                    source: source.into(),
+                })?;
+            GlevParameters::try_from_parts(accumulator.size(), Arc::new(inner), basis)
+                .map_err(|source| CircuitBootstrapParameterError::GadgetParameters { role, source })
         };
         let trace = key_parameters("trace", config.trace, config.trace_noise_standard_deviation)?;
         let scheme_switch = key_parameters(

@@ -13,7 +13,7 @@
 
 `TfheParameters<T, M>` 和客户端使用同一个密文模数类型 `M`；两后端的类型别名固定各自的模数实现。
 
-推荐使用 `TfheParameters::try_from_config(TfheConfig { .. })`：只在 `small_lwe` 中指定一次 `t/q`，具名字段选择 accumulator 的维数、长度、秘密分布和噪声，以及 blind rotation、key switching 的 `DecompositionConfig { log_basis, level_count }` 和 PBS order。`level_count: None` 选择支持的最大层数，仍可能丢弃低位（见[分解精度](../primus_decompose/README.zh_CN.md)）；各 basis 自动绑定同一模数。 GLWE evaluation key 沿用 accumulator 噪声。已持有环参数或预计算 basis 时，使用下述直接入口。
+推荐使用 `TfheParameters::try_from_config(TfheConfig { .. })`：只在 `small_lwe` 中指定一次 `t/q`，具名字段选择 accumulator 的维数、长度、秘密分布和噪声，以及 blind rotation、key switching 的 `DecompositionConfig { log_basis, level_count }` 和 PBS order。`level_count: None` 选择支持的最大层数，仍可能丢弃低位（见[分解精度](../primus_decompose/README.zh_CN.md)）；各 basis 自动绑定同一模数。 普通 BR/KS 密钥沿用 accumulator 噪声。补零的 KS 目标直接由 GLWE 布局、采样状态和 basis 构造，无需消息 codec；CBS trace 和 scheme-switch 密钥沿用这一独立构造方式，分别使用各自配置的噪声。已持有环参数或预计算 basis 时，使用下述直接入口。
 
 维数选择使用 `LweDimension`，GLWE 另用 `GlweDimension`；分解选择使用 `DecompositionBaseLog` 和 `Option<DecompositionLevelCount>`。这些单位只构造一次，参数访问器返回的值直接传给工作区。在原始存储或内核边界用 `.get()` 提取整数；组合长度和 basis/模数兼容性仍由构造器检查。
 

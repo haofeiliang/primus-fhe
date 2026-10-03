@@ -1,11 +1,12 @@
 //! Encrypted GLev/GGSW rows and their external-product semantics.
 
-use primus_decompose::DecompositionBaseLog;
+use primus_decompose::{DecompositionBaseLog, primitive::ApproxSignedBasis};
+use primus_encoding::ScaledCodec;
 use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_glwe::{
     FourierGlweDecryptWorkspace, FourierGlweEncryptWorkspace, FourierGlweGadgetEncryptWorkspace,
-    FourierGlweSecretKey, GlevParameters, GlweParameters, NttGlweGadgetEncryptWorkspace,
-    NttGlweSecretKey, SecretKeyDistr,
+    FourierGlweSecretKey, GlevParameters, GlweParameters, GlweParametersInner, GlweSecretKey,
+    GlweSize, NttGlweGadgetEncryptWorkspace, NttGlweSecretKey, SecretKeyDistr,
 };
 use primus_lattice::GlweDimension;
 use primus_lattice::{
@@ -18,6 +19,7 @@ use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntt::{NttTable, UintNttTable};
 use primus_poly::{PolyLength, Polynomial, PolynomialOwned};
 use rand::{SeedableRng, rngs::StdRng};
+use std::sync::Arc;
 
 const DIMENSION: usize = 2;
 // Functional ring size; keep the original word widths, moduli and decomposition.
@@ -60,17 +62,18 @@ fn fourier_gadget_phases_and_external_product() {
     let table = RustFftTable::new(PolyLength::new(POLY_LENGTH));
     let mut fft = FftEngine::new(&table);
     let mut rng = StdRng::seed_from_u64(42);
-    let glwe_params = GlweParameters::new(
-        GlweDimension::new(DIMENSION),
-        POLY_LENGTH,
-        16u32,
+    // Gadget encryption and key generation need no ordinary message codec.
+    let size = GlweSize::new(GlweDimension::new(DIMENSION), PolyLength::new(POLY_LENGTH));
+    let inner = Arc::new(GlweParametersInner::new(
         NativeModulus::new(),
         SecretKeyDistr::UniformBinary,
         0.7,
-    );
-    let params = GlevParameters::with_glwe_params(&glwe_params, DecompositionBaseLog::new(8), None);
-    let (coeff_secret_key, secret_key) =
-        FourierGlweSecretKey::generate_pair(&glwe_params, &mut fft, &mut rng);
+    ));
+    let basis = ApproxSignedBasis::new(None, DecompositionBaseLog::new(8), None);
+    let params = GlevParameters::try_from_parts(size, Arc::clone(&inner), basis).unwrap();
+    let coeff_secret_key =
+        GlweSecretKey::<u32>::generate(size, inner.secret_key_sampler(), &mut rng);
+    let secret_key = FourierGlweSecretKey::from_coeff_secret_key(&coeff_secret_key, &mut fft);
     let mut gadget_workspace = FourierGlweGadgetEncryptWorkspace::new(params.size());
     let mut decrypt_workspace = FourierGlweDecryptWorkspace::new(PolyLength::new(POLY_LENGTH));
 
@@ -156,6 +159,10 @@ fn fourier_gadget_phases_and_external_product() {
 
     let mut input_fourier = FourierGlweOwned::zero(params.fourier_glwe_len());
     let mut glwe_workspace = FourierGlweEncryptWorkspace::new(PolyLength::new(POLY_LENGTH));
+    // Only the ordinary ciphertext in the external product needs t = 16.
+    let glwe_params =
+        GlweParameters::try_from_parts(size, inner, ScaledCodec::new(16u32, NativeModulus::new()))
+            .unwrap();
     secret_key.encrypt_to(
         &plaintext,
         &mut input_fourier,
@@ -202,17 +209,18 @@ fn ntt_gadget_phases_and_external_product() {
     let modulus = BarrettModulus::new(MODULUS);
     let ntt = UintNttTable::new(PolyLength::new(POLY_LENGTH), modulus).unwrap();
     let mut rng = StdRng::seed_from_u64(42);
-    let glwe_params = GlweParameters::new(
-        GlweDimension::new(DIMENSION),
-        POLY_LENGTH,
-        16u32,
+    // Gadget encryption and key generation need no ordinary message codec.
+    let size = GlweSize::new(GlweDimension::new(DIMENSION), PolyLength::new(POLY_LENGTH));
+    let inner = Arc::new(GlweParametersInner::new(
         modulus,
         SecretKeyDistr::SparseTernary,
         0.7,
-    );
-    let params = GlevParameters::with_glwe_params(&glwe_params, DecompositionBaseLog::new(8), None);
-    let (coeff_secret_key, secret_key) =
-        NttGlweSecretKey::generate_pair(&glwe_params, &ntt, &mut rng);
+    ));
+    let basis = ApproxSignedBasis::new(Some(MODULUS), DecompositionBaseLog::new(8), None);
+    let params = GlevParameters::try_from_parts(size, Arc::clone(&inner), basis).unwrap();
+    let coeff_secret_key =
+        GlweSecretKey::<u32>::generate(size, inner.secret_key_sampler(), &mut rng);
+    let secret_key = NttGlweSecretKey::from_coeff_secret_key(&coeff_secret_key, &ntt);
     let mut workspace = NttGlweGadgetEncryptWorkspace::new(params.size());
 
     let mut raw_message = vec![0u32; POLY_LENGTH];
@@ -298,6 +306,9 @@ fn ntt_gadget_phases_and_external_product() {
     );
 
     let mut input_ntt: NttGlwe<Vec<u32>> = NttGlwe::zero(params.glwe_len());
+    // Only the ordinary ciphertext in the external product needs t = 16.
+    let glwe_params =
+        GlweParameters::try_from_parts(size, inner, ScaledCodec::new(16u32, modulus)).unwrap();
     secret_key.encrypt_to(&plaintext, &mut input_ntt, &glwe_params, &ntt, &mut rng);
     let input = input_ntt.into_coeff_form(&ntt);
     let mut output: Glwe<Vec<u32>> = Glwe::zero(params.glwe_len());

@@ -61,9 +61,22 @@ For coefficient ciphertexts, `NttGlweSecretKey` provides `encrypt_coeff_to`, `ph
 
 `encrypt_glev_to` and `encrypt_ggsw_to` apply the gadget basis to a coefficient-domain ring polynomial without plaintext scaling. A GGSW control bit is therefore the constant polynomial `0` or `1`. Both use a gadget workspace constructed from `GadgetSize`: GLev requires a matching polynomial length; GGSW also requires a matching level count.
 
-Use `GlevParameters::try_with_basis(&glwe_params, basis)` to reuse an existing decomposition basis. It takes ownership without rebuilding the basis and checks the modulus and gadget layout. `try_with_glwe_params` constructs a basis from its logarithm and level count instead; both return `GlevParameterError`.
+Use `GlevParameters::try_from_parts(size, inner, basis)` for gadget-only parameters: `size` is a checked `GlweSize`, `inner` is an `Arc<GlweParametersInner<T, M>>`, and `basis` is a prepared `ApproxSignedBasis<T>`. No plaintext modulus or codec is required. The constructor checks the basis modulus, fixed secret weight against the complete `kN` length, and gadget layout. It returns `GlevParameterError` and takes ownership without copying sampler tables or rebuilding the basis.
 
-Derived gadget parameters and parameter clones share immutable modulus/sampling precomputation with the source GLWE parameters. `inner()` continues to return a borrowed `GlweParametersInner`; layouts, plaintext encoding and gadget bases retain their separate ownership.
+```rust,ignore
+// Prepare the ring sampling state and gadget basis, without ordinary encoding.
+let inner = std::sync::Arc::new(GlweParametersInner::try_new(modulus, secret_distr, sigma)?);
+let basis = ApproxSignedBasis::try_new(inner.cipher_modulus_value(), log_basis, levels)?;
+let gadget = GlevParameters::try_from_parts(size, inner.clone(), basis)?;
+
+// Bind a codec only when ordinary message encryption is also needed.
+let codec = primus_encoding::ScaledCodec::try_new(plain_modulus, modulus)?;
+let ordinary = GlweParameters::try_from_parts(size, inner, codec)?;
+```
+
+The ordinary constructor checks codec/ciphertext modulus agreement and the secret weight; the supplied parts already validate layout, sampling and fixed-scale recovery. `GlweParameters::try_new` remains the direct ordinary-encryption convenience constructor. Mask/noise samplers serve both ordinary ciphertext and evaluation-key row encryption; the secret sampler serves key generation. Separate noise roles need separate prepared states.
+
+When ordinary parameters already exist, `GlevParameters::try_with_basis(&glwe_params, basis)` shares their prepared state. `try_with_glwe_params` also constructs the basis from its logarithm and level count. Both use the same gadget binding checks; neither needs to inspect the ordinary codec. Parameter clones share immutable modulus/sampling precomputation. `inner()` returns a borrowed `GlweParametersInner`; layouts, plaintext encoding and gadget bases retain their separate ownership.
 
 `encrypt_ggsw_constant_batch_to` encrypts a slice of ring constants into consecutive GGSWs, with one batch validation and no temporary allocation. NTT takes canonical residues, prepares each constant level by direct broadcast, and writes `input.len() * params.ggsw_len()` values; Fourier takes native-ring values and writes `input.len() * params.fourier_ggsw_len()` complex values. Fourier preserves native-ring scaling followed by the FFT for each level; adjacent equal constants reuse those transforms within the batch. Preparation time therefore depends on the input sequence. Empty batches still validate shared resources and consume no randomness.
 

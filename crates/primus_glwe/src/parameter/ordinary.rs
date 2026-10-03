@@ -11,7 +11,7 @@ use std::sync::Arc;
 use super::{GlweParameterError, GlweParametersInner};
 use crate::{ScaledCodec, SecretKeyDistr};
 
-/// GLWE parameters including ciphertext sizes and plaintext encoding.
+/// Ordinary GLWE layout, shared encryption state and plaintext encoding.
 /// Clones and derived gadget parameters share immutable modulus and sampling state.
 #[derive(Clone)]
 pub struct GlweParameters<T, M>
@@ -75,13 +75,33 @@ where
             secret_key_distr,
             noise_standard_deviation,
         )?;
+        Self::try_from_parts(size, Arc::new(inner), plaintext_codec)
+    }
+
+    /// Binds a GLWE layout and prepared sampling state to ordinary message encoding.
+    ///
+    /// The shared state can also be used by [`super::GlevParameters::try_from_parts`]
+    /// without a codec. No sampler tables are copied or rebuilt here.
+    ///
+    /// # Errors
+    ///
+    /// Rejects a codec with a different ciphertext modulus or a fixed secret weight
+    /// exceeding the complete `kN` key length. Layout, sampler support/noise and
+    /// fixed-scale recovery were checked by the supplied parts' constructors.
+    pub fn try_from_parts(
+        size: GlweSize,
+        inner: Arc<GlweParametersInner<T, M>>,
+        plaintext_codec: ScaledCodec<T, M>,
+    ) -> Result<Self, GlweParameterError> {
+        if plaintext_codec.ciphertext_modulus() != inner.cipher_modulus() {
+            return Err(GlweParameterError::CodecModulusMismatch);
+        }
         inner
             .secret_key_sampler()
             .validate_length(size.mask_len())?;
-
         Ok(Self {
             size,
-            inner: Arc::new(inner),
+            inner,
             plaintext_codec,
         })
     }

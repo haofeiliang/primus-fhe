@@ -61,9 +61,22 @@ NTT 域私钥运算无需 workspace。Fourier 运算使用 `FourierGlweEncryptWo
 
 `encrypt_glev_to` 和 `encrypt_ggsw_to` 对系数域环多项式应用 gadget 基，不做明文缩放。因此 GGSW 控制位使用常数多项式 `0` 或 `1`。两者使用由 `GadgetSize` 构造的 gadget workspace：GLev 要求多项式长度匹配；GGSW 还要求 level 数量匹配。
 
-已有分解基时，使用 `GlevParameters::try_with_basis(&glwe_params, basis)` 直接转移其所有权，复用预计算，并检查模数和 gadget 布局。`try_with_glwe_params` 则根据基的对数和 level 数构造分解基；两个入口均返回 `GlevParameterError`。
+仅需 gadget 参数时，使用 `GlevParameters::try_from_parts(size, inner, basis)`：`size` 是经过验证的 `GlweSize`，`inner` 是 `Arc<GlweParametersInner<T, M>>`，`basis` 是预计算的 `ApproxSignedBasis<T>`。无需明文模数或 codec。构造器检查 basis 模数、固定秘密重量是否适合完整 `kN` 长度，以及 gadget 布局，返回 `GlevParameterError`；接收所有权时不复制采样表或重建 basis。
 
-派生的 gadget 参数及参数 clone 与源 GLWE 参数共享不可变的模数/采样预计算。`inner()` 仍返回借用的 `GlweParametersInner`；布局、明文编码和 gadget basis 继续分别拥有。
+```rust,ignore
+// 准备环采样状态和 gadget basis，无需普通消息编码。
+let inner = std::sync::Arc::new(GlweParametersInner::try_new(modulus, secret_distr, sigma)?);
+let basis = ApproxSignedBasis::try_new(inner.cipher_modulus_value(), log_basis, levels)?;
+let gadget = GlevParameters::try_from_parts(size, inner.clone(), basis)?;
+
+// 同时需要普通消息加密时，再绑定 codec。
+let codec = primus_encoding::ScaledCodec::try_new(plain_modulus, modulus)?;
+let ordinary = GlweParameters::try_from_parts(size, inner, codec)?;
+```
+
+普通参数组合入口检查 codec 与密文模数的一致性及固定秘密重量；布局、采样和固定尺度恢复条件由传入部件的构造器验证。`GlweParameters::try_new` 保留为直接构造普通加密参数的便捷入口。Mask/noise 采样器用于普通密文和求值密钥行的加密，secret sampler 用于秘密生成；不同噪声角色使用各自的预计算状态。
+
+已有普通参数时，`GlevParameters::try_with_basis(&glwe_params, basis)` 共享其预计算状态，`try_with_glwe_params` 还会根据基的对数和 level 数构造 basis。两者沿用相同的 gadget 绑定检查，均不读取普通 codec。参数 clone 共享不可变的模数/采样预计算。`inner()` 返回借用的 `GlweParametersInner`；布局、明文编码和 gadget basis 继续分别拥有。
 
 `encrypt_ggsw_constant_batch_to` 将环常数切片加密为连续的 GGSW，仅做一次批量检查，不分配临时缓冲区。NTT 接收规范剩余类，直接填充各层常数，输出长度为 `input.len() * params.ggsw_len()`；Fourier 接收原生环值，输出包含 `input.len() * params.fourier_ggsw_len()` 个复数。Fourier 保留逐 level 原生环缩放后再 FFT 的数值路径；批内相邻相同常数复用这些变换，因此准备耗时依赖输入序列。空批次仍检查共享资源，但不消耗随机数。
 

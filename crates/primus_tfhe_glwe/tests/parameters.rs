@@ -25,7 +25,7 @@ fn components() -> Components {
         PLAIN_MODULUS,
         NativeModulus::new(),
         SecretKeyDistr::UniformBinary,
-        3.2,
+        0.7,
     );
     let glwe = GlweParameters::new(
         GlweDimension::new(GLWE_DIMENSION),
@@ -80,7 +80,10 @@ fn derives_bootstrapping_and_key_switching_for_both_orders() {
             parameters.blind_rotation_ggsw().basis(),
             &expected_blind_rotation_basis
         );
-        assert!(parameters.blind_rotation_ggsw().inner() == parameters.accumulator_glwe().inner());
+        assert!(std::ptr::eq(
+            parameters.blind_rotation_ggsw().inner(),
+            parameters.accumulator_glwe().inner(),
+        ));
         assert_eq!(
             parameters.blind_rotation_ggsw().glwe_size(),
             parameters.accumulator_glwe().size()

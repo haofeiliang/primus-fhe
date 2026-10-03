@@ -11,9 +11,12 @@ use crate::SecretKeyDistr;
 /// GLWE encryption parameters shared by ordinary and gadget ciphertexts.
 ///
 /// Ciphertext sizes and plaintext encoding intentionally live in their
-/// respective outer parameter types. Ordinary and derived gadget parameters
-/// share this immutable state through [`std::sync::Arc`]; cloning the inner
-/// directly still copies its sampler tables.
+/// respective outer parameter types. Ordinary and gadget parameters can be
+/// constructed independently from this state through [`std::sync::Arc`]; cloning
+/// the inner directly still copies its sampler tables.
+/// Mask and noise samplers serve both ordinary encryption and evaluation-key
+/// row encryption; the secret sampler serves key generation. Separate noise
+/// roles use separate prepared states, even when layout and modulus agree.
 #[derive(Clone)]
 pub struct GlweParametersInner<T, M>
 where

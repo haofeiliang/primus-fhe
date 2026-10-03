@@ -3,9 +3,11 @@
 use crate::TfheParameterError;
 use primus_decompose::{DecompositionConfig, primitive::ApproxSignedBasis};
 use primus_encoding::RoundedCodec;
+use primus_glwe::{GlweParametersInner, GlweSize};
 use primus_integer::FheUint;
 use primus_lattice::{GlweDimension, LweDimension};
 use primus_reduce::RingContext;
+use std::sync::Arc;
 
 use crate::{
     GgswParameters, GlevParameters, GlweKeySwitchingParameters, GlweParameters, LweParameters,
@@ -25,8 +27,8 @@ pub enum PbsOrder {
 
 /// GLWE-TFHE choices with one shared plaintext/ciphertext modulus domain.
 ///
-/// The accumulator and padded key-switch target inherit `t` and `q` from
-/// `small_lwe`. Blind rotation and key switching use the accumulator noise,
+/// The accumulator inherits `t` and `q` from `small_lwe`; the padded key-switch
+/// target needs only `q`. Blind rotation and key switching use the accumulator noise,
 /// as in [`TfheParameters::try_new`].
 #[derive(Clone)]
 pub struct TfheConfig<T: FheUint, M: RingContext<T>> {
@@ -167,7 +169,8 @@ where
 
     /// Pads the already validated small secret to whole ring components.
     /// Since n <= kN, the derived layout fits within the accumulator; its
-    /// encoding/noise are inherited, while the KS basis remains independent.
+    /// modulus/noise are inherited, while the KS basis remains independent.
+    /// The target encrypts gadget rows and needs no ordinary plaintext codec.
     fn derive_glwe_key_switching(
         small_lwe_dimension: LweDimension,
         small_lwe_distr: SecretKeyDistr,
@@ -177,15 +180,18 @@ where
         let output_dimension = small_lwe_dimension
             .get()
             .div_ceil(accumulator_glwe.poly_length().get());
-        let output_glwe = GlweParameters::new(
+        let output_size = GlweSize::new(
             GlweDimension::new(output_dimension),
-            accumulator_glwe.poly_length().get(),
-            accumulator_glwe.plain_modulus_value(),
+            accumulator_glwe.poly_length(),
+        );
+        // These samplers were validated in the source parameters at the same q;
+        // combine the small-secret distribution with the accumulator's KS noise.
+        let inner = Arc::new(GlweParametersInner::new(
             accumulator_glwe.cipher_modulus(),
             small_lwe_distr,
             accumulator_glwe.noise_distribution().standard_deviation(),
-        );
-        let output = GlevParameters::try_with_basis(&output_glwe, basis)
+        ));
+        let output = GlevParameters::try_from_parts(output_size, inner, basis)
             .map_err(TfheParameterError::KeySwitchingParameters)?;
         GlweKeySwitchingParameters::try_new(accumulator_glwe.dimension(), output)
             .map_err(|error| TfheParameterError::KeySwitchingParameters(error.into()))

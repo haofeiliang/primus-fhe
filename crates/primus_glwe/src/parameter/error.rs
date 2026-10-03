@@ -12,6 +12,9 @@ pub enum GlweParameterError {
     /// Invalid message/ciphertext domain or fixed-scale recovery bound.
     #[error(transparent)]
     Encoding(#[from] primus_encoding::CodecError),
+    /// The ordinary message codec belongs to another ciphertext modulus.
+    #[error("GLWE plaintext codec must match the encryption ciphertext modulus")]
+    CodecModulusMismatch,
     /// Invalid secret sampling configuration, weight or output modulus.
     #[error(transparent)]
     SecretKey(#[from] primus_distr::SecretKeySamplerError),
@@ -20,8 +23,8 @@ pub enum GlweParameterError {
     Noise(#[from] primus_distr::GaussianError),
 }
 
-/// Invalid GLev/GGSW decomposition parameters or layout.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+/// Invalid GLev/GGSW decomposition, secret weight or layout.
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum GlevParameterError {
     /// The decomposition basis could not be constructed.
     #[error(transparent)]
@@ -32,4 +35,7 @@ pub enum GlevParameterError {
     /// The gadget layout cannot be represented by `usize` lengths.
     #[error(transparent)]
     InvalidSize(#[from] GlweSizeError),
+    /// The prepared secret sampler's fixed weight does not fit the GLWE layout.
+    #[error(transparent)]
+    SecretKey(#[from] primus_distr::SecretKeySamplerError),
 }

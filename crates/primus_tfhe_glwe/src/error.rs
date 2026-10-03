@@ -122,7 +122,7 @@ pub enum CircuitBootstrapParameterError {
     EncryptionParameters {
         /// Key role: trace or scheme-switch.
         role: &'static str,
-        /// Invalid ring encoding or sampler configuration.
+        /// Invalid secret or encryption-noise sampler configuration.
         #[source]
         source: primus_glwe::GlweParameterError,
     },

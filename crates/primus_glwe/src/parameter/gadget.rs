@@ -14,8 +14,9 @@ use super::{GlevParameterError, GlweParameters, GlweParametersInner};
 use crate::SecretKeyDistr;
 
 /// GLWE parameters and decomposition basis shared by GLev and GGSW operations.
-/// Shares immutable modulus and sampling state with the source GLWE parameters;
-/// the gadget layout and decomposition basis remain owned by this type.
+/// Owns the gadget layout and decomposition basis, and shares immutable modulus
+/// and sampling state through `Arc`. No plaintext codec is needed. Ordinary and
+/// gadget parameters may share that state when their encryption roles agree.
 #[derive(Clone)]
 pub struct GlevParameters<T, M>
 where
@@ -33,6 +34,35 @@ where
     T: FheUint,
     M: RingContext<T>,
 {
+    /// Binds a GLWE layout and prepared sampling state to a gadget basis.
+    ///
+    /// Takes ownership of the shared state and basis without rebuilding sampler
+    /// tables or basis precomputation. The noise in `inner` encrypts each gadget
+    /// row; callers choose it for the intended evaluation-key role.
+    ///
+    /// # Errors
+    ///
+    /// Rejects a fixed secret weight exceeding the complete `kN` key length,
+    /// a basis modulus mismatch (including native versus explicit), or gadget
+    /// layout overflow. Modulus support and noise were checked by `inner`.
+    pub fn try_from_parts(
+        glwe_size: GlweSize,
+        inner: Arc<GlweParametersInner<T, M>>,
+        basis: ApproxSignedBasis<T>,
+    ) -> Result<Self, GlevParameterError> {
+        if basis.modulus() != inner.cipher_modulus_value() {
+            return Err(GlevParameterError::BasisModulusMismatch);
+        }
+        inner
+            .secret_key_sampler()
+            .validate_length(glwe_size.mask_len())?;
+        Ok(Self {
+            size: GadgetSize::try_new(glwe_size, basis.decompose_length())?,
+            inner,
+            basis,
+        })
+    }
+
     /// Reuses a precomputed decomposition basis with matching GLWE parameters.
     ///
     /// Takes ownership of the basis, preserving its levels and precomputation,
@@ -46,14 +76,7 @@ where
         glwe_params: &GlweParameters<T, M>,
         basis: ApproxSignedBasis<T>,
     ) -> Result<Self, GlevParameterError> {
-        if basis.modulus() != glwe_params.cipher_modulus_value() {
-            return Err(GlevParameterError::BasisModulusMismatch);
-        }
-        Ok(Self {
-            size: GadgetSize::try_new(glwe_params.size(), basis.decompose_length())?,
-            inner: Arc::clone(&glwe_params.inner),
-            basis,
-        })
+        Self::try_from_parts(glwe_params.size(), Arc::clone(&glwe_params.inner), basis)
     }
 
     /// Creates GLev/GGSW parameters from matching GLWE parameters.
