@@ -108,6 +108,8 @@ A cache-aligned base pointer does not align every subview. Polynomial strides in
 
 `NtruParameters` and `NlevParameters` share an `Arc<NtruParametersInner>` containing N, q and prepared secret/noise samplers. The ordinary codec and each gadget basis remain independently owned. Separate key-noise roles construct separate inner states. This shares distribution tables, never secret coefficients, RNG state or mutable workspace buffers; online operations borrow the inner state without cloning an Arc.
 
+The constructor calls below describe the measured revision. Current composition APIs and TFHE codec ownership are documented in the [parameter guide](tfhe-parameters-and-boundaries.md#ntru-普通与-gadget-参数组合).
+
 Measured on 2026-10-03 against `d8eedf4f`, on AMD Ryzen 9 9955HX3D, x86_64 Linux, rustc 1.98.1 (48a229cea, LLVM 22.1.8), default features and the repository's `target-cpu=native`. Construction and retained-memory measurements used the existing `primus_test_allocations::CountingAllocator`, not timing or RSS. The three measured stages retained all returned values: create `NtruParameters::new(1024, 16u64, NativeModulus::new(), distr, 3.2)`, derive `NlevParameters::with_ntru_params(&ordinary, base_log=8, levels=Some(3))`, then clone that NLev. Run `measure` separately for each stage; all three parameter objects remain alive until after the measurements.
 
 | Secret distribution | Stage | Allocation count before → after | Allocated bytes before → after | Released bytes before → after |

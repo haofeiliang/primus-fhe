@@ -45,7 +45,9 @@ TFHE 的 BSK 共享 accumulator 的布局和采样状态。KS 目标直接组合
 
 `NlevParameters::try_from_parts(Arc<NtruParametersInner>, basis)` 检查 basis/Q 和 N*L；`NtruParameters::try_from_parts(shared_inner, codec)` 检查 codec/Q，固定尺度恢复条件由 codec 自身保证。两者 `inner()` 均借用同一状态。密钥生成、encoded/zero 加密只需 inner；普通加解密仍使用含 codec 的参数。`try_with_basis` / `try_with_ntru_params` 是从普通参数派生 gadget 的便捷入口，只复制 Arc，不复制采样表。NLev 克隆仍复制其独立 basis；没有把秘密系数或 RNG 放入共享状态。
 
-TFHE 显式拥有普通 accumulator 参数以及共享其 inner 的 BR 参数。直接组合入口接收 `external_lwe, accumulator_ntru, blind_rotation_basis, key_switching, key_switching_noise_standard_deviation`，继续检查共同 t 和 2N 可表示性。CBS trace/scheme-switch 直接构造无 codec 的 NLev，每个噪声角色独立准备 inner。构造分配、保留内存与在线加密的对比见[采样状态共享测量](workspaces-and-storage.md#ntru-parameter-sharing)。
+TFHE 的 `TfheParameters::try_new(external_lwe, blind_rotation, key_switching, key_switching_noise_standard_deviation)` 接收外部 `LweParametersInner`、BR `NlevParameters` 和返回 KS 的分解配置与噪声。`accumulator_ntru()` 借用 BR 内的 `NtruParametersInner`，TFHE 不另存普通 accumulator 参数或 codec。构造时检查外部 binary/ternary 控制秘密、2N 可表示性，并在外部 q 下构造返回 KS basis 和采样状态。
+
+消息 t 和 codec 在 client、LUT/CBS 程序绑定时确定，密钥参数构造不检查共同 t；具体归属见[NTRU TFHE 的密钥域与消息程序](#ntru-tfhe-的密钥域与消息程序)。CBS trace/scheme-switch 直接构造无 codec 的 NLev，每个噪声角色独立准备 inner。构造分配、保留内存与在线加密的历史对比见[采样状态共享测量](workspaces-and-storage.md#ntru-parameter-sharing)。
 
 ## RNS 普通与 gadget 参数组合
 
