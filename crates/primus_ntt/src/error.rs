@@ -14,25 +14,27 @@ pub enum NttError<T> {
     /// Error that occurs when the given modulus has no primitive root with the given degree.
     #[error("no primitive root of degree {degree:?} exists modulo {modulus:?}")]
     NoPrimitiveRoot {
-        /// The degree for the primitive root
+        /// The requested root order (`2N` for an NTT table of length `N`).
         degree: T,
         /// The modulus.
         modulus: T,
     },
-    /// The requested degree does not fit the table's coefficient type.
-    #[error("degree {degree} is not representable by the coefficient type for modulus {modulus:?}")]
+    /// The required root order `2N` does not fit the table's coefficient type.
+    #[error(
+        "root degree {degree} is not representable by the coefficient type for modulus {modulus:?}"
+    )]
     DegreeNotRepresentable {
-        /// degree
+        /// The required root order `2N`, not the polynomial length `N`.
         degree: usize,
-        /// modulus
+        /// The modulus.
         modulus: T,
     },
-    /// Error that occurs when the degree is too large.
-    #[error("degree must be less than modulus: {degree} >= {modulus:?}")]
+    /// The generic table's polynomial length `N` is not less than the modulus.
+    #[error("polynomial length must be less than modulus: {degree} >= {modulus:?}")]
     DegreeTooLarge {
-        /// degree
+        /// The polynomial length `N`, not the root order `2N`.
         degree: usize,
-        /// modulus
+        /// The modulus.
         modulus: T,
     },
     /// Error that occurs when the modulus is too large for lazy NTT arithmetic.

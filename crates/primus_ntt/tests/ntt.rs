@@ -4,7 +4,7 @@ use primus_poly::PolyLength;
 use num_traits::{ConstOne, ConstZero};
 use primus_integer::{AsFrom, FheUint};
 use primus_modulus::BarrettModulus;
-use primus_ntt::{MonomialNttTable, NttTable, U32NttTable, U64NttTable, UintNttTable};
+use primus_ntt::{MonomialNttTable, NttError, NttTable, U32NttTable, U64NttTable, UintNttTable};
 use primus_reduce::FieldContext;
 
 const N: usize = 64;
@@ -53,10 +53,64 @@ fn constructors_and_small_transforms_match_polynomial_evaluation() {
             );
         }
     }
+    check::<UintNttTable<u16>>(BarrettModulus::new(257u16));
     check::<U32NttTable>(BarrettModulus::new(257u32));
     check::<UintNttTable<u32>>(BarrettModulus::new(257u32));
     check::<U64NttTable>(BarrettModulus::new(257u64));
     check::<UintNttTable<u64>>(BarrettModulus::new(257u64));
+}
+
+#[test]
+fn generic_constructor_rejects_unsupported_degrees() {
+    let modulus = BarrettModulus::new(12289u16);
+    // N fits u16, but the required root order 2N does not. Reject this before
+    // PrimitiveRoot's word-width assertion or any root-table allocation.
+    assert!(matches!(
+        UintNttTable::<u16>::new(PolyLength::new(32768), modulus),
+        Err(NttError::DegreeNotRepresentable {
+            degree: 65536,
+            modulus: 12289,
+        })
+    ));
+    // With representable 2N, distinguish N >= q from a missing 2N-th root.
+    assert!(matches!(
+        UintNttTable::<u16>::new(PolyLength::new(16384), modulus),
+        Err(NttError::DegreeTooLarge {
+            degree: 16384,
+            modulus: 12289,
+        })
+    ));
+    assert!(matches!(
+        UintNttTable::<u16>::new(PolyLength::new(8192), modulus),
+        Err(NttError::NoPrimitiveRoot {
+            degree: 16384,
+            modulus: 12289,
+        })
+    ));
+}
+
+#[test]
+fn constructors_check_modulus_headroom_before_root_search() {
+    fn check<Table: NttTable>(max_bits: u32)
+    where
+        BarrettModulus<Table::ValueT>: FieldContext<Table::ValueT>,
+    {
+        let q = Table::ValueT::ONE << max_bits;
+        // Deliberately invalid raw context: normal Barrett construction rejects
+        // q already. The table must reject headroom before using arithmetic or
+        // reporting a missing root; no reciprocal is needed on this path.
+        let modulus = BarrettModulus::from_parts(q, [Table::ValueT::ZERO; 2]);
+        assert!(matches!(
+            Table::new(PolyLength::new(32), modulus),
+            Err(NttError::ModulusTooLarge { modulus, max_bits: actual })
+                if modulus == q && actual == max_bits
+        ));
+    }
+    check::<UintNttTable<u16>>(14);
+    check::<UintNttTable<u32>>(30);
+    check::<U32NttTable>(30);
+    check::<UintNttTable<u64>>(62);
+    check::<U64NttTable>(62);
 }
 
 // Nonconstant coefficients expose root/permutation errors; callers also insert q-1.

@@ -128,6 +128,7 @@ impl<T: FheUint> NttTable for UintNttTable<T> {
         M: FieldContext<Self::ValueT>,
     {
         let log_n = poly_length.log_n();
+        let n = poly_length.get();
         let modulus_value = modulus.value();
         let max_bits = T::BITS - crate::NTT_LAZY_REDUCTION_HEADROOM_BITS;
         if modulus_value >= T::ONE << max_bits {
@@ -137,10 +138,23 @@ impl<T: FheUint> NttTable for UintNttTable<T> {
             });
         }
 
+        // Root search needs 2N in T, not just N. Check before its word-width
+        // assertion or any table allocation. PolyLength guarantees 2N fits usize.
+        let root_degree = T::try_from(2 * n).map_err(|_| NttError::DegreeNotRepresentable {
+            degree: 2 * n,
+            modulus: modulus_value,
+        })?;
+        let n_cast = root_degree >> 1u32;
+        if n_cast >= modulus_value {
+            return Err(NttError::DegreeTooLarge {
+                degree: n,
+                modulus: modulus_value,
+            });
+        }
+
         let root = <T as PrimitiveRoot>::try_minimal_primitive_root(log_n + 1, modulus)?;
         let modulus = modulus_value;
 
-        let n = poly_length.get();
         let to_root_type = |x| -> ShoupFactor<T> { <ShoupFactor<T>>::new(x, modulus) };
 
         let root_factor = to_root_type(root);
@@ -171,13 +185,6 @@ impl<T: FheUint> NttTable for UintNttTable<T> {
             .iter()
             .map(|&root| ShoupFactor::quotient_for(root, modulus))
             .collect::<Vec<_>>();
-
-        let n_cast =
-            T::try_from(n).map_err(|_| NttError::DegreeNotRepresentable { degree: n, modulus })?;
-
-        if n_cast >= modulus {
-            return Err(NttError::DegreeTooLarge { degree: n, modulus });
-        }
 
         let inv_n = to_root_type(compact::reduce_inv(modulus, n_cast));
 

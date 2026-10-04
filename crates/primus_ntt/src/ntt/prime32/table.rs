@@ -178,8 +178,6 @@ impl NttTable for U32NttTable {
     where
         M: FieldContext<Self::ValueT>,
     {
-        let log_n = poly_length.log_n();
-        let root = <u32 as PrimitiveRoot>::try_minimal_primitive_root(log_n + 1, modulus)?;
         let q = modulus.value();
 
         // Reject unsupported moduli: q < 2^30 required for lazy [0, 4q) range.
@@ -190,6 +188,8 @@ impl NttTable for U32NttTable {
             });
         }
 
+        let log_n = poly_length.log_n();
+        let root = <u32 as PrimitiveRoot>::try_minimal_primitive_root(log_n + 1, modulus)?;
         let n = poly_length.get();
         let two_q = q << 1;
 

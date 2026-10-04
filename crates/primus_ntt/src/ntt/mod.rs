@@ -28,9 +28,16 @@ pub trait NttTable: Sized + Send + Sync {
 
     /// Creates a new [`NttTable`].
     ///
-    /// The checked length establishes power-of-two geometry. Construction
-    /// errors report unsupported modulus ranges, degrees or failure to find a
-    /// primitive root.
+    /// The checked length establishes power-of-two geometry.
+    ///
+    /// # Errors
+    ///
+    /// Built-in tables reject insufficient lazy-arithmetic headroom with
+    /// [`NttError::ModulusTooLarge`] before root search or table allocation.
+    /// The generic table then checks that the root order `2N` fits the
+    /// coefficient type ([`NttError::DegreeNotRepresentable`]) and that
+    /// `N < modulus` ([`NttError::DegreeTooLarge`]). Root-search failure is
+    /// reported as [`NttError::NoPrimitiveRoot`] with degree `2N`.
     ///
     /// # Correctness
     ///
@@ -39,11 +46,6 @@ pub trait NttTable: Sized + Send + Sync {
     /// not establish primality; root search does not validate it either. Transform values from
     /// different tables are interchangeable only when their roots, ordering and
     /// normalization agree, not merely their lengths and moduli.
-    ///
-    /// # Panics
-    ///
-    /// Built-in constructors inherit [`PrimitiveRoot::try_primitive_root`]'s
-    /// degree limits for `log_degree = poly_length.log_n() + 1`.
     fn new<M>(poly_length: PolyLength, modulus: M) -> Result<Self, NttError<Self::ValueT>>
     where
         M: FieldContext<Self::ValueT>;

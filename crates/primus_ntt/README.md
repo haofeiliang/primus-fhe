@@ -63,12 +63,12 @@ The consuming `transform_inplace` and `inverse_transform_inplace` methods use th
 
 ## Construction constraints
 
-`PolyLengthError` reports invalid ring geometry; `NttError` reports composite-length overflow, modulus headroom and missing roots. `DegreeNotRepresentable` reports a degree that cannot fit the table coefficient type.
+`PolyLengthError` reports invalid ring geometry; `NttError` reports combined-length overflow, modulus headroom and root errors. `DegreeNotRepresentable` and `NoPrimitiveRoot` refer to the root order `2N`; `DegreeTooLarge` refers to the polynomial length `N`.
 
 - Constructors take `primus_poly::PolyLength`, which centrally checks the shared FHE power-of-two range `32..=2^17`; `poly_length()` returns the same type.
 - The modulus must be prime and admit a primitive `2N`-th root of unity, requiring `2N` to divide `q - 1`. Primality is a caller precondition, not a runtime check.
-- `U32NttTable` and `UintNttTable<u32>` require `q < 2^30`; `U64NttTable` and `UintNttTable<u64>` require `q < 2^62`. The two spare high bits make every lazy value below `4q` representable.
-- The generic table additionally requires `N < q` and reports a construction error if `N` cannot be represented by its coefficient type.
+- `UintNttTable<T>` requires `1 < q < 2^(T::BITS - 2)`, including `q < 2^14` for `u16`. `U32NttTable` requires `q < 2^30`; `U64NttTable` requires `q < 2^62`. The two spare high bits make every lazy value below `4q` representable.
+- Before root search or table allocation, all built-in tables check modulus headroom. The generic table then checks that `2N` fits its coefficient type and that `N < q`. For example, `N = 32768` with `UintNttTable<u16>` returns `DegreeNotRepresentable { degree: 65536, .. }` instead of entering root search with an unrepresentable degree.
 
 `NttTable::new` searches for a primitive root and precomputes its powers, preconditioners, and selected backend layout. A modulus context satisfying `FieldContext` supplies arithmetic operations but does not itself prove that the modulus is prime or that the required root exists.
 

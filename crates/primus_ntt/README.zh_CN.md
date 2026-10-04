@@ -63,14 +63,14 @@ Lazy 值表示模 `q` 的剩余类，但其更宽的整数范围属于调用契�
 
 ## 构造约束
 
-`NttError` 区分几何、模数余量和单位根错误；`DegreeNotRepresentable` 表示所需 degree 无法由 table 的系数类型表示。
+`PolyLengthError` 表示非法环尺寸；`NttError` 区分组合长度溢出、模数余量和单位根错误。`DegreeNotRepresentable` 和 `NoPrimitiveRoot` 中的 degree 指根的阶 `2N`；`DegreeTooLarge` 中则指多项式长度 `N`。
 
 - 构造器接收 `primus_poly::PolyLength`，它集中检查 FHE 共用的 `32..=2^17` 二次幂范围；`poly_length()` 返回同一类型。
 - 模数必须是素数且存在本原 `2N` 次单位根，即要求 `2N` 整除 `q - 1`。素性是调用方前提，不进行运行时检查。
-- `U32NttTable` 和 `UintNttTable<u32>` 要求 `q < 2^30`；`U64NttTable` 和 `UintNttTable<u64>` 要求 `q < 2^62`。预留的两个高位保证所有小于 `4q` 的 lazy 值均可表示。
-- 通用 table 还要求 `N < q`；如果 `N` 无法由其系数类型表示，也会返回构造错误。
+- `UintNttTable<T>` 要求 `1 < q < 2^(T::BITS - 2)`，其中 `u16` 要求 `q < 2^14`。`U32NttTable` 要求 `q < 2^30`；`U64NttTable` 要求 `q < 2^62`。预留的两个高位保证所有小于 `4q` 的 lazy 值均可表示。
+- 搜根或分配 table 前，所有内置 table 先检查模数余量；通用 table 再检查 `2N` 能否由系数类型表示，以及 `N < q`。例如，`N = 32768` 配合 `UintNttTable<u16>` 会返回 `DegreeNotRepresentable { degree: 65536, .. }`，避免以不可表示的 degree 进入搜根。
 
-`NttTable::new` 会搜索本原根，并预计算 root power、预处理因子和所选 backend 布局。满足 `FieldContext` 的模数 context 提供算术操作，但其本身不能证明模数为 素数，也不能保证所需的 root 存在。
+`NttTable::new` 会搜索本原根，并预计算 root power、预处理因子和所选 backend 布局。满足 `FieldContext` 的模数 context 提供算术操作，但其本身不能证明模数为素数，也不能保证所需的 root 存在。
 
 ## Monomial 变换
 
