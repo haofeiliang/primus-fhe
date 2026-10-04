@@ -51,6 +51,25 @@ Feature 边界使用少量 `--lib` 编译命令，不重复运行数值测试矩
 
 小参数数值契约继续由默认/全 feature 普通测试负责。大参数诊断、示例配置切换和基准 fixture 验证按下面的维护入口显式执行。
 
+### 独立消费者复查
+
+修改依赖或 feature 边界后，使用 workspace 外的临时 Cargo 包复查实际入口。复制所需的完整 example 或 README 工作流，只声明它直接使用的普通依赖，在具体后端或 LUT 上启用所选 feature；不引用 test-support，也不复制仓库包的 dev-dependencies。临时 manifest 使用独立的 `[workspace]`，避免父 workspace 合并 feature。
+
+```sh
+cargo run --manifest-path /tmp/primus-consumer/Cargo.toml
+cargo tree --manifest-path /tmp/primus-consumer/Cargo.toml -e normal,features
+```
+
+数值断言和依赖树各有职责：程序运行验证入口与结果，依赖树验证未选中的表示/引擎没有被引入。代表配置如下；按本次变更选择，不作为新的 CI 全排列任务。
+
+| 消费者 | 正常依赖中应保留 / 排除的能力 |
+| --- | --- |
+| 纯 LWE、公共高精 LUT 编译 | 无 NTT、FFT 或具体 TFHE 后端；LUT 编译保留 family 参数层 |
+| GLWE/NTRU NTT PBS、NTT 高精 LUT、RNS GLWE | 有 NTT，无 FFT |
+| GLWE/NTRU Fourier PBS、Fourier 高精 LUT | 无 NTT，只有显式选定的 RustFFT 或 TFHE-FFT |
+
+复查 SIMD 时，仅通过消费者的 feature 转发所选顶层库的 `simd`，用 nightly 单独运行相同程序并核对依赖树。`simd` 不应激活原本关闭的表示或 FFT 引擎。临时消费者在核验后删除；保留的 example、README 和数值测试仍是维护入口，不再复制一套常驻测试。
+
 ## 测试参数与 CI 成本
 
 代表性大尺寸配置见 [TFHE 参数矩阵](tfhe-parameters.md)。使用 `cargo run --release -p primus_tfhe_test_support --example validate_parameters --features rustfft,tfhe-fft` 手动验证；加 `-- ntru/ntt/u32` 可在密钥生成前筛选后端和字宽。Nightly SIMD 使用 `cargo +nightly run --release -p primus_tfhe_test_support --example validate_parameters --features simd,rustfft,tfhe-fft`。这是参数与误差余量诊断，不加入普通 nextest，也不是性能采样；配置构造器与各后端诊断分开维护。
@@ -153,7 +172,7 @@ cargo nextest run -p primus_fft --lib --tests --features rustfft,tfhe-fft
 | --- | --- |
 | 存储绑定、整数和 GCD | [Data](../../crates/primus_data/tests/integration.rs) 在存储绑定测试中直接使用所有权构造器并验证读写，不重复验证标准库迭代器或 aligned-vec 自身对齐；[整数测试](../../crates/primus_integer/tests) 保留跨 limb 进借位、移位和独立整数 oracle；[GCD](../../crates/primus_gcd/tests/xgcd.rs) 保留小字宽穷举和宽字整数 oracle |
 | 各模数的切片加减 | [slice_add_sub.rs](../../crates/primus_modulus/tests/slice_add_sub.rs) 集中 u32/u64 的 Native、PowOf2、Compact、Barrett、Uint 覆盖，使用 u128 oracle、偏移切片和边界哨兵；各 modulus 文件保留不同的构造、标量、乘法、求逆及一元操作契约 |
-| 原生与派生 Barrett | [原生内核](../../crates/primus_modulus/src/barrett/native.rs) 直接比较可用的 AVX-512 实现，避免通常分派遮住另一个实现；[派生消费者](../../crates/primus_modulus/tests/derives.rs) 编译并验证生成代码。保留模数位宽、IFMA 上界、32 元素分派点、vector 尾部及累加器复用；无独立执行路径的千元素重复不进入普通测试 |
+| 原生与派生 Barrett | [原生内核](../../crates/primus_modulus/src/barrett/native.rs) 直接比较可用的 AVX-512 实现，避免通常分派遮住另一个实现；[派生消费者](../../crates/primus_modulus/tests/derives.rs) 编译并验证生成代码。保留模数位宽、IFMA 上界、32 元素分派点、vector 尾部及累加器复用；无独立执行路径的千元素重复不进入普通测试。[点积边界](../../crates/primus_modulus/tests/barrett_modulus.rs) 用 u128 oracle 验证运行时/派生 Barrett 的跨模数输入界，以及 16 项和 SIMD 完整块/尾部 |
 | 模数切换 | [modulus_switch.rs](../../crates/primus_modulus/tests/modulus_switch.rs) 按比值、二次幂、窄/宽中间值及 native 输出选择案例，再验证各模数类型的接入。精确整数舍入 oracle 和小字宽 reciprocal 修正穷举保留，不展开类型与模数的完整笛卡尔积 |
 | 预计算乘法 | [MultiplyFactor](../../crates/primus_factor/tests/multiply_factor.rs) 用固定边界及固定 seed 验证 32/52/64 位商精度、最大合法模数和 lazy range；[ShoupFactor](../../crates/primus_factor/tests/shoup_factor.rs) 保留 reset、逐 lane 因子、全字宽乘数、融合操作及标量尾部，不再单独重复随机标量乘法 |
 | trait 与宏边界 | `primus_reduce` 经 modulus/factor 等真实消费者验证；derive 的成功展开由上述消费者负责，[解析/校验测试](../../crates/primus_barrett_derive/src/lib.rs) 直接验证结构形状、类型、字面量溢出及模数边界，无需为每个拒绝案例重启 rustc |
@@ -183,7 +202,7 @@ cargo +nightly nextest run "${packages[@]}" --lib --tests --all-features
 | 两个 FFT 后端 | [负循环卷积](../../crates/primus_fft/tests/negacyclic.rs) 用有符号整数 O(N²) oracle 验证 packing 和乘积归一化；短环验证 offset 切片与并发独立 workspace；[擦除](../../crates/primus_fft/tests/zeroize.rs) 保留短缓冲区和 N=1024 的后端工作存储；TFHE-FFT 私有测试强制不同 plan base size，避免依赖自动 planner 恰好选中某种谱排列 |
 | torus 转换 | [roundtrip.rs](../../crates/primus_fft/tests/roundtrip.rs) 对 u32/u64 使用浮点 round、饱和有符号转换和 unsigned wrapping 作为独立 oracle；保留所有浮点指数、代表性尾数和正负舍入/饱和边界，不再追加十万次随机比特扫描 |
 | 分解 | [primitive oracle](../../crates/primus_decompose/tests/primitive_approx_signed_basis_oracle.rs) 保留小模数穷举、native 半步舍入、digit 范围及层序；[多 limb 分解](../../crates/primus_decompose/tests/big_uint.rs) 保留跨 limb、drop/carry 边界、固定 stride 1/2/4 和 fallback 3 的批次差分，边界之外仅少量固定 seed 输入 |
-| RNS | [base.rs](../../crates/primus_rns/tests/base.rs) 从 u128 同时构造 modulus-major 和 value-major 预期值，覆盖跨 u64 limb 边界；[converter](../../crates/primus_rns/tests/converter.rs) 保留 fast 与 exact 不同 lift、scratch 复用；[hybrid](../../crates/primus_rns/tests/hybrid.rs) 保留裁剪基后的固定分区、mod-up 流式输出和多 P mod-down。65 元素的 scaled batch 保留 native 分派及尾部 |
+| RNS | [base.rs](../../crates/primus_rns/tests/base.rs) 从 u128 同时构造 modulus-major 和 value-major 预期值，覆盖跨 u64 limb 边界；[converter](../../crates/primus_rns/tests/converter.rs) 用独立小整数 CRT 求和核对单项/批量/paired fast 入口，保留 exact 居中 lift、源模数大于目标模数及 scratch 复用；[hybrid](../../crates/primus_rns/tests/hybrid.rs) 保留裁剪基后的固定分区、mod-up 流式输出和多 P mod-down。65 元素的 scaled batch 保留 native 分派及尾部 |
 | 编码 | [plaintext_codec.rs](../../crates/primus_encoding/tests/plaintext_codec.rs) 按 q/t 策略选择案例，保留 u16/u32/u64、奇偶模数、窄/宽中间值、Rounded/Scaled 和 centered/unsigned 区别；仅小域穷举，大域取中心两侧和端点；[BFV RNS](../../crates/primus_encoding/tests/bfv_rns.rs) 单独验证 floor scale、噪声恢复及输出前检查。LUT 的 padding 属于 TFHE 消费者，不在此层重复验证 |
 
 六包独立运行命令如下；`primus_fft` 自身没有 `simd` feature，两个后端都会参与。`primus_ntt` 的 x86 intrinsic 分派由 CPU 决定，不要求 Cargo `simd`。本机通过只说明本机选中的 kernel；不能据此声称 AVX2、DQ32 或其他架构都执行过。
