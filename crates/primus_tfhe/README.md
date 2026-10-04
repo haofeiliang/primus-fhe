@@ -39,7 +39,7 @@ All four backends provide secret-key and LWE public-key clients. Fourier support
 | GLWE classic binary/ternary | Both PBS orders | Yes | Yes | Not provided |
 | GLWE sparse fixed-weight binary | Both PBS orders | Yes | Yes | Not provided |
 | NTRU classic binary/ternary | Yes | Yes | Yes | Yes |
-| NTRU sparse fixed-weight binary | Yes | Yes | Yes | One-hot supported; full lookup pending validation |
+| NTRU sparse fixed-weight binary | Yes | Yes | Yes | Supported |
 
 Sparse mode requires explicit key generation; sparse ternary is unsupported. NTRU's external LWE secret is independent of its ring secret. Only the ring secret undergoes invertibility and Fourier inverse-stability screening; external fixed weights may be even.
 

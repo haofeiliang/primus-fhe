@@ -1,8 +1,9 @@
-//! Public high-precision lookup: 8 two-bit input/output chunks, d=5, n800/N1024.
+//! Public high-precision lookup: 8 two-bit input/output chunks, d=5, n800/h32/N1024.
 //! `create_lut_and_drop` measures public LUT allocation, filling and destruction.
 //! `evaluate` measures one homomorphic lookup producing all output chunks;
 //! keys, public LUT creation, encryption and reusable buffers are untimed.
-//! Original IDs use the polynomial example; `dense_seed42` adds a fixed dense
+//! Classic/sparse pairs use the same fixed-weight client and independently seeded inputs.
+//! IDs without a workload suffix use the polynomial example; `dense_seed42` adds a fixed dense
 //! mapping to distinguish general evaluation costs from repeated-subtable gains.
 //! No production-source copies or private-stage hooks are used.
 //! Run: cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features ntt,rustfft,tfhe-fft

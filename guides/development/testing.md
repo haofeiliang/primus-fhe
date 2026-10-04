@@ -292,7 +292,7 @@ Release 验证公开拒绝和擦除失效不依赖 debug assertions；doctest �
 
 显式二幂外部 LWE 模数使用 `PowOf2Modulus`；Fourier accumulator 仍使用 `NativeModulus`。u32 NTT 的高精度流程使用适合 CBS 的 prime 998244353，三层输出分解采用 log basis=4；u64 保留其独立模数与精度，不能直接缩窄常量。
 
-支持与拒绝各有用例：GLWE CBS 覆盖 classic binary/ternary 及 sparse、两种 order；NTRU 普通 PBS 和 MVB 支持 classic/sparse；`sparse_pbs.rs` 覆盖 MVB 公开因子的相位放大、17 输出分块和零分配，`lwe_return.rs` 覆盖其独立 LWE 秘密和 Q→q 返回。NTRU CBS/one-hot 同样覆盖 sparse：各层 gadget 相位、CMux/外积消费、完整与非零 selectors、guard 端点、classic 准备状态借用 sparse 资源及在线零分配。完整 sparse 高精度流程仍待独立验证。缺失 CBS 材料、错误输出形状、参数/表不匹配和无效容量继续由实际边界验证。
+支持与拒绝各有用例：GLWE CBS 覆盖 classic binary/ternary 及 sparse、两种 order；NTRU 普通 PBS 和 MVB 支持 classic/sparse；`sparse_pbs.rs` 覆盖 MVB 公开因子的相位放大、17 输出分块和零分配，`lwe_return.rs` 覆盖其独立 LWE 秘密和 Q→q 返回。NTRU CBS/one-hot 同样覆盖 sparse：各层 gadget 相位、CMux/外积消费、完整与非零 selectors、guard 端点、classic 准备状态借用 sparse 资源及在线零分配。高精度查表覆盖 classic/sparse、有/无独立 Lift、c=d、d=0、全剪枝、公密混合选择及不同输入/输出 chunk 数，并验证返回相位和在线零分配。缺失 CBS 材料、错误输出形状、参数/表不匹配和无效容量继续由实际边界验证。
 
 默认与 nightly 全 feature 复用同一套测试，不给普通测试加 SIMD gate。TFHE 快捷入口只组合 Clippy 和普通测试；示例和 benchmark smoke 独立运行：
 

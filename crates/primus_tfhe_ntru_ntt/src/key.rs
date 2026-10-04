@@ -232,6 +232,47 @@ where
         Ok(self.generate_blind_rotation_key_from_transformed(client_key, &transformed, rng))
     }
 
+    /// Generates independent `NLEV_f[1]` for public polynomial lifting.
+    /// Call only when the compiled lookup table needs a public lift. The supplied
+    /// parameters select this material's own decomposition basis and row noise;
+    /// no BR, CBS or return material is generated or modified.
+    ///
+    /// # Errors
+    /// Rejects another accumulator ring or an incompatible secret before sampling,
+    /// and propagates secret conversion failures.
+    ///
+    /// # Correctness
+    /// The secret must be the actual accumulator secret used by the other keys.
+    /// Inherits [`NttNtruSecretKey::try_from_coeff_secret_key`]'s numerical
+    /// requirements. Budget decomposition and encryption error for the public
+    /// polynomial products; compatible parameters do not prove a decoding margin.
+    pub fn try_generate_public_lift_key<R: rand::Rng + rand::CryptoRng>(
+        &mut self,
+        secret: &primus_ntru::NtruSecretKey<T>,
+        parameters: &primus_ntru::NlevParameters<T, primus_modulus::BarrettModulus<T>>,
+        rng: &mut R,
+    ) -> Result<NttNlev<Vec<T>>, KeyGenerationError> {
+        if parameters.poly_length() != self.context.parameters().poly_length()
+            || parameters.inner().cipher_modulus_value()
+                != self
+                    .context
+                    .parameters()
+                    .accumulator_ntru()
+                    .cipher_modulus_value()
+        {
+            return Err(KeyGenerationError::IncompatiblePublicLiftParameters);
+        }
+        self.context
+            .parameters()
+            .check_accumulator_secret_key(secret)?;
+        let transformed = NttNtruSecretKey::try_from_coeff_secret_key(
+            secret,
+            parameters.inner().cipher_modulus(),
+            self.context.table(),
+        )?;
+        Ok(self.generate_public_lift_from_transformed(&transformed, parameters, rng))
+    }
+
     /// Reuses the checked accumulator transform in paired generation.
     fn generate_blind_rotation_key_from_transformed<R: rand::Rng + rand::CryptoRng>(
         &mut self,
@@ -239,7 +280,11 @@ where
         transformed: &NttNtruSecretKey<T>,
         rng: &mut R,
     ) -> BlindRotationKey<T> {
-        let initializer = self.generate_initializer(transformed, rng);
+        let initializer = self.generate_public_lift_from_transformed(
+            transformed,
+            self.context.parameters().blind_rotation(),
+            rng,
+        );
         let data = self.generate_controls(client_key, transformed, rng);
         BlindRotationKey {
             blind_rotation_basis: self.context.parameters().blind_rotation().basis().clone(),
@@ -248,21 +293,21 @@ where
         }
     }
 
-    /// Generates `NLEV_f_acc[1]` directly for accumulator initialization.
-    fn generate_initializer<R>(
+    /// Shares direct encryption of one with classic initialization, reusing its transform.
+    fn generate_public_lift_from_transformed<R>(
         &mut self,
         accumulator_ntt: &NttNtruSecretKey<T>,
+        parameters: &primus_ntru::NlevParameters<T, primus_modulus::BarrettModulus<T>>,
         rng: &mut R,
     ) -> NttNlev<Vec<T>>
     where
         R: rand::Rng + rand::CryptoRng,
     {
-        let parameters = self.context.parameters();
-        let mut initializer = NttNlev::zero(parameters.blind_rotation().nlev_len());
+        let mut initializer = NttNlev::zero(parameters.nlev_len());
         accumulator_ntt.encrypt_nlev_constant_to(
             T::ONE,
             &mut initializer,
-            parameters.blind_rotation(),
+            parameters,
             self.context.table(),
             rng,
             &mut self.gadget,

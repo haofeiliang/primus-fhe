@@ -13,12 +13,16 @@ use primus_modulus::{NativeModulus, PowOf2Modulus};
 use primus_ntru::SecretKeyDistr;
 use primus_tfhe::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_tfhe_ntru_fourier::{
-    CircuitBootstrapConfig, DecompositionConfig, TfheConfig, TfheContext, TfheParameters,
+    CircuitBootstrapConfig, DecompositionConfig, KeyGenerator, TfheConfig, TfheContext,
+    TfheParameters,
 };
 use primus_tfhe_ntru_lut::{
     FourierLookupTableEvaluator, HighPrecisionLookupTable, LookupTableConfig,
 };
 use rand::{SeedableRng, rngs::StdRng};
+
+// Set true to use fixed-weight binary sparse BR throughout the lookup.
+const SPARSE: bool = false;
 
 // The explicit parameters below select bases and moduli for this coefficient word.
 type Word = u32;
@@ -63,7 +67,11 @@ fn parameters() -> TfheParameters<Word, PowOf2Modulus<Word>> {
         external_lwe: LweParametersInner::new(
             LweDimension::new(800),
             PowOf2Modulus::new(lwe_modulus),
-            SecretKeyDistr::UniformBinary,
+            if SPARSE {
+                SecretKeyDistr::fixed_hamming_weight_binary(800, 32)
+            } else {
+                SecretKeyDistr::UniformBinary
+            },
             lwe_modulus as f64 * 2.046151696979124e-6,
         ),
         accumulator_modulus: modulus, // Ring Q; distinct from the external LWE q.
@@ -122,9 +130,20 @@ fn main() {
 
     // Client: generate independent LWE/NTRU secrets plus CBS-enabled server material.
     let mut rng = StdRng::seed_from_u64(42);
-    let (client_key, server_key) = context
-        .try_generate_keys(Some(circuit_config()), &mut rng)
-        .unwrap();
+    let mut generator = KeyGenerator::new(&context);
+    let client_key = generator.try_generate_client_key(&mut rng).unwrap();
+    let server_key = if SPARSE {
+        generator.try_generate_sparse_server_key(
+            &client_key,
+            3,
+            64,
+            Some(circuit_config()),
+            &mut rng,
+        )
+    } else {
+        generator.try_generate_server_key(&client_key, Some(circuit_config()), &mut rng)
+    }
+    .unwrap();
     // Ordinary messages borrow only the external secret from the setup bundle.
     let external_secret = client_key.external_lwe_secret_key();
     let encryptor = context.encryptor(external_secret, &input_codec).unwrap();
@@ -133,7 +152,7 @@ fn main() {
         .map(|_| context.allocate_lwe_ciphertext())
         .collect();
 
-    // Server: the public callback returns one output digit for a complete input x.
+    // Public preprocessing: the callback returns one output digit for a complete input x.
     let table = HighPrecisionLookupTable::try_new(
         context.parameters(),
         &input_codec,
@@ -141,8 +160,32 @@ fn main() {
         |x, output| ((function(x) >> (CHUNK_BITS * output)) & 3) as Word,
     )
     .unwrap();
-    let mut evaluator =
-        FourierLookupTableEvaluator::try_new(&context, &server_key, &table).unwrap();
+    // Client: generate NLEV[1] only for sparse plans with public lifts. Here its
+    // basis/noise match BR (above, sigma=0.7); the ciphertext uses fresh randomness.
+    // A separate NlevParameters value can select another lift basis or noise.
+    let lift_parameters = context.parameters().blind_rotation();
+    let lift = if SPARSE && table.needs_public_lift() {
+        Some(
+            generator
+                .try_generate_public_lift_key(
+                    client_key.accumulator_ntru_secret_key(),
+                    lift_parameters,
+                    &mut rng,
+                )
+                .unwrap(),
+        )
+    } else {
+        None // Classic reuses its initializer; no-Lift plans need neither.
+    };
+
+    // Server: bind public material once and reuse all online buffers.
+    let mut evaluator = FourierLookupTableEvaluator::try_new(
+        &context,
+        &server_key,
+        lift.as_ref().map(|key| (key.as_view(), lift_parameters)),
+        &table,
+    )
+    .unwrap();
     let mut output = evaluator.allocate_output();
 
     // Eight two-bit chunks, written most-significant first.

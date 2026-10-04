@@ -128,6 +128,9 @@ pub enum KeyGenerationError {
     /// Prepared CBS parameters belong to another accumulator or input domain.
     #[error("circuit-bootstrap parameters do not match this TFHE context")]
     IncompatibleCircuitBootstrapParameters,
+    /// Public-lift parameters use another accumulator ring.
+    #[error("public-lift parameters do not match this TFHE context")]
+    IncompatiblePublicLiftParameters,
     /// NTRU rejection sampling or transform conversion failed.
     #[error("NTRU key generation or conversion failed")]
     Ntru(#[from] primus_ntru::NtruError),

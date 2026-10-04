@@ -372,3 +372,95 @@ After removing instrumentation, formatting, both changed GLWE targets'
 all-targets check and strict clippy passed, as did all 24 normal CBS benchmark
 smoke cases (8 NTT, 16 Fourier). No ordinary numerical tests were rerun and no
 CI matrix was expanded for this benchmark-only change.
+
+
+## NTRU high-precision lookup
+
+Measured on 2026-10-04 with the 4-D implementation accompanying this section
+(parent `254e2190`). Both NTRU backends now compose sparse one-hot CBS with the
+existing table selection, low-chunk rotations and Q→q/extraction/KS return.
+An independent NLEV[1] is generated only for explicit public lifts; its basis
+and row noise are caller-selected. No online numerical kernel changed.
+
+The [pipeline fixture](../../crates/primus_tfhe_ntru_lut/IMPLEMENTATION.md#benchmark-fixture)
+pairs classic/sparse at **n800/h32/N1024**, q24/t8, c8/d5/o8, the public function
+`(x*x+3*x+7) mod 65536`, and input 43981. Client seed 42 and input seed 43 produce
+the same client coefficients and encrypted input in each pair; server material
+consumes different randomness. Sparse uses r3/B64. This deliberately retains the
+circuit profile's external sigma (`2^24 * 2.046151696979124e-6`, about 34.3287),
+not the n728 diagnostic profile's larger external sigma. BR/trace/scheme-switch
+and independently sampled lift use sigma 0.7; return KS uses 3.2. The explicit
+lift reuses BR's basis (Q50 logB8/L6 or Native64 logB8/L8). These are arithmetic
+fixtures, not security presets or equal-security comparisons.
+
+Conditions: the same Ryzen 9 9955HX3D, stable rustc 1.98.1 / LLVM 22.1.8,
+repository `target-cpu=native`, release profile, `ntt,rustfft,tfhe-fft` without
+the workspace `simd` feature. The benchmark was built first; six requests then
+ran sequentially on CPU 4 without concurrent compilation/tests. Each ID uses
+15 samples, 0.3 s warmup, 1 s measurement target and flat sampling (30 measured
+requests). Setup/keygen/LUT creation/encryption/workspace allocation and probes
+are untimed. Frequency and other system activity were not controlled. This is
+one representative baseline, not a repeated before/after optimization experiment.
+
+| Backend / u64 | Classic mean ms (95% CI) | Sparse mean ms (95% CI) |
+| --- | ---: | ---: |
+| NTT | 48.997 (48.852–49.167) | 49.989 (49.405–50.702) |
+| RustFFT | 56.082 (55.860–56.358) | 66.694 (66.061–67.443) |
+| TFHE-FFT | 45.401 (45.247–45.565) | 60.551 (59.951–61.319) |
+
+Sparse was not faster in this sample. In particular, enabling the full lookup
+composition does not imply a performance improvement. The Fourier gap and near
+NTT result remain observations of these parameters and this machine; no cache
+or scratch-address cause was established.
+
+Retained requested heap **bytes**, excluding context/tables, allocator metadata,
+stack and transient peak allocation:
+
+| Backend / u64 | Client + server, classic / sparse | Separate sparse lift | Evaluator, classic / sparse |
+| --- | ---: | ---: | ---: |
+| NTT | 92505304 / 174264800 | 49152 | 787464 / 793864 |
+| RustFFT | 105850408 / 214856496 | 65536 | 1059968 / 1131904 |
+| TFHE-FFT | 105850408 / 214856496 | 65536 | 1059968 / 1131904 |
+
+The public polynomial LUT retains 731880 bytes and eight output buffers 51456
+bytes for each u64 case. The classic initializer is included in its BR material;
+only sparse adds the separately reported lift. The dense and shared-subtable
+workloads have no explicit Lift and retain zero separate lift bytes. Their
+public LUT and workspace sizes differ, so they are not substituted into the
+latency table above.
+
+Each of 36 evaluation smoke IDs (three workloads × classic/sparse × u32/u64 ×
+three transforms) checked all decoded digits and zero online allocations.
+Twelve public-creation IDs also passed. The untimed phase probe measures circular
+error at external q=2^24 against the exact digit scale q/t=2^21. The decoding
+half-gap is 1048576. Sparse maxima across the eight output chunks:
+
+| Backend / word | Polynomial | Dense | Shared |
+| --- | ---: | ---: | ---: |
+| NTT / u32 | 219059 | 304261 | 64899 |
+| NTT / u64 | 1032 | 1023 | 342 |
+| RustFFT / u32 | 44710 | 70708 | 22435 |
+| RustFFT / u64 | 1296 | 805 | 207 |
+| TFHE-FFT / u32 | 45561 | 71307 | 22341 |
+| TFHE-FFT / u64 | 1301 | 822 | 207 |
+
+The u64 polynomial classic maxima were 1160/1190/1190 for NTT/RustFFT/TFHE-FFT.
+These are complete returned-LWE residuals, including CBS, products, rotations,
+modulus switch and KS; they do not isolate FFT error or certify a failure rate.
+NTT exact arithmetic and Fourier rounding retain their separate contracts.
+Small-parameter tests additionally cover all pruning/lift layouts, independent
+lift bases, binding errors and alternating inputs without allocation. No large
+parameter or statistical tests were added to ordinary CI.
+
+Reproduce the selected baseline after building, with no concurrent test/build:
+
+```sh
+cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features ntt,rustfft,tfhe-fft --no-run
+taskset -c 4 cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features ntt,rustfft,tfhe-fft -- \
+  '/u64/(classic|sparse)/n800_h32_N1024/c8_d5_o8/evaluate$' \
+  --sample-size 15 --warm-up-time 0.3 --measurement-time 1 --noplot
+```
+
+The former n800 uniform-binary IDs use different secrets and encrypted input.
+Their historical timings cannot be treated as an implementation before/after
+comparison with this fixed-weight fixture.

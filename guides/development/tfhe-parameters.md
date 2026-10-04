@@ -89,6 +89,8 @@ BR, trace and scheme-switch use full-length base 2^2 for u32 and base 2^8 for u6
 | u64 Q50 | (8,6;2) | (8,3;26) | 2^26 |
 | u64 native | (8,8;0) | (8,3;40) | 2^40 |
 
+The lookup pipeline benchmark also pairs classic/sparse at n800/h32 with this circuit profile, c8/d5/o8 and independently seeded input. A sparse table with public lifts uses independent NLEV[1], selecting BR's basis and sigma 0.7 in that fixture; tables without lifts generate none. Complete-request timings, retained material and returned phase residuals are in the [sparse report](sparse-bootstrap-measurements.md#ntru-high-precision-lookup).
+
 The standalone parameter diagnostic uses M=4, c=7 input chunks, d=5 coefficient chunks, o=3 output chunks. Thus M^d=N=1024 and the 14-bit input selects among 16 public polynomials per output. This exercises public lifting, a further encrypted CMux layer, five aggregate rotations, and Q→q24 return. Output width is independent of input width. The evaluator has no new algorithmic restrictions; these are the dimensions that were numerically validated.
 
 For one-hot, L=4 (u32) or 3 (u64), so W=4 and A=N/(2MW)=32. With R_W the prepared rotation modulus switch, validation computes

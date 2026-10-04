@@ -87,10 +87,10 @@ where
     LM: RingContext<T>,
 {
     /// Checks table encoding, one-hot geometry and server resources, then allocates scratch.
-    /// Borrows the classic initializer only if the compiled plan needs a public lift.
-    /// Requires CBS material. Sparse keys require an explicitly supplied lift key
-    /// via `try_from_parts` when the plan contains a public lift; the complete
-    /// sparse lookup pipeline has not yet been numerically validated.
+    /// Requires CBS material for either classic or sparse BR. When the plan needs
+    /// a public lift, uses `public_lift` if supplied, otherwise borrows the classic
+    /// initializer. Sparse BR must supply an independent lift for those plans.
+    /// Unused lift material is ignored. See [`Self::try_from_parts`] for its contract.
     ///
     /// # Correctness
     /// The server key must belong to this context's secrets and exact FFT table instance,
@@ -98,6 +98,7 @@ where
     pub fn try_new(
         context: &'a TfheContext<T, Table, LM>,
         server_key: &'a ServerKey<T>,
+        public_lift: Option<FourierPublicLift<'a, T>>,
         lookup_table: &'a HighPrecisionLookupTable<T>,
     ) -> Result<Self, LookupTableError> {
         let circuit_key = server_key.circuit_bootstrap_key().ok_or(
@@ -106,15 +107,17 @@ where
             ),
         )?;
         let public_lift = if lookup_table.needs_public_lift() {
-            server_key
-                .blind_rotation_key()
-                .classic_controls()
-                .map(|controls| {
-                    (
-                        controls.initializer(),
-                        context.parameters().blind_rotation(),
-                    )
-                })
+            public_lift.or_else(|| {
+                server_key
+                    .blind_rotation_key()
+                    .classic_controls()
+                    .map(|controls| {
+                        (
+                            controls.initializer(),
+                            context.parameters().blind_rotation(),
+                        )
+                    })
+            })
         } else {
             None
         };

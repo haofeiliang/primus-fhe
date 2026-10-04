@@ -247,7 +247,8 @@ fn lookup<T: TorusFftValue, Table: FftTable>(
     let table =
         HighPrecisionLookupTable::try_new(context.parameters(), &input_codec, config, digit)
             .unwrap();
-    let mut evaluator = FourierLookupTableEvaluator::try_new(context, server_key, &table).unwrap();
+    let mut evaluator =
+        FourierLookupTableEvaluator::try_new(context, server_key, None, &table).unwrap();
     let mut output = evaluator.allocate_output();
 
     // N-1/N crosses a table boundary; the maximum input exercises all chunks.

@@ -160,7 +160,7 @@ PBS trait、四后端、Boolean 门、双输入打包、CBS、one-hot 与 MVB �
 
 NTRU `BlindRotationKey` 持有 classic/sparse 材料、BR basis 与输入分布；`ServerKey` 再组合该 owner、返回密钥与可选 CBS 密钥。`BlindRotationKey::classic_controls()` 返回借用的 `ClassicControls`，sparse 返回 `None`。视图集中 NLEV initializer、首坐标 NLEV 的正/可选负 bit，以及后续 NGSW bit 的语义迭代器。BR 构造时选择 binary/ternary/sparse 及其 scratch，在线提升不再重新分派服务端密钥或调用可能在 sparse 下 panic 的 initializer。
 
-NTRU 三类材料可分别生成和持有：`KeyGenerator::try_generate_blind_rotation_key` / `try_generate_sparse_blind_rotation_key` 需要两个秘密角色，`TfheParameters::try_generate_lwe_return_key` 需要完整返回配对，`try_generate_circuit_bootstrap_key` 只接收累加秘密。`ServerKey::new` / `into_parts` 移动各组件而不复制密文数组；独立生成可能重复转换累加秘密，完整成对生成仍复用已转换表示。
+NTRU 的 BR、返回和 CBS 材料可分别生成和持有：`KeyGenerator::try_generate_blind_rotation_key` / `try_generate_sparse_blind_rotation_key` 需要两个秘密角色，`TfheParameters::try_generate_lwe_return_key` 需要完整返回配对，`try_generate_circuit_bootstrap_key` 只接收累加秘密。`ServerKey::new` / `into_parts` 移动各组件而不复制密文数组；独立生成可能重复转换累加秘密，完整成对生成仍复用已转换表示。 高精度公开提升另由 `KeyGenerator::try_generate_public_lift_key(secret, &nlev_parameters, rng)` 按需生成 NLEV[1]，只接收累加秘密和独立 basis/噪声参数，不存入普通 ServerKey。查表 `try_new(context, server_key, public_lift, table)` 显式接收这份材料；传 `None` 时可按需复用 classic initializer。
 
 | NTRU 求值入口 | 借用材料 | 绑定检查 |
 | --- | --- | --- |

@@ -53,11 +53,16 @@ source. Remaining operations have three distinct forms:
 `needs_public_lift()` scans the compiled reachable nodes for `Lift`; public choices
 already lift through their one-hot NLEV selectors. Evaluator binding requires
 NLEV[1] and its `NlevParameters` only when that scan succeeds, validating the
-ring and exact transformed length once. `try_new` borrows the classic initializer
-and BR parameters; `try_from_parts` accepts optional independent lift material.
+ring and exact transformed length once. Both `try_new` and `try_from_parts` accept
+optional independent lift material. If omitted, `try_new` can borrow the classic
+initializer and BR parameters. Sparse plans with a lift require explicit material.
 Online `Lift` reads this binding directly, without querying one-hot BR controls.
-No additional ciphertext owner or online workspace is introduced. A raw view
-cannot prove its secret, encoded one, basis or transform identity.
+The backend `KeyGenerator::try_generate_public_lift_key` encrypts one independently
+under the supplied accumulator secret and `NlevParameters`; no bucket-derived
+noise or BR/CBS/return material is introduced. Call it only after
+`needs_public_lift()` reports a requirement. No additional ciphertext owner or
+online workspace is introduced. A raw view cannot prove its secret, encoded one,
+basis or transform identity.
 
 An operation's identity includes its form, input chunk, ordered polynomial/child
 IDs and the table's ring/encoding contract. Identical operations share a node
@@ -195,17 +200,22 @@ backend types. It neither includes production source files nor exposes scratch.
 | Words / N / external n | u32 and u64 / 1024 / 800 |
 | External q / plaintext t | PowOf2 2^24 / 8; M=4 |
 | Ring Q | NTT Q30=998244353 (u32), Q50=1125899906826241 (u64); Fourier Native32/64 |
-| Secrets | Independent UniformBinary external LWE and SparseTernary ring secret |
+| Secrets | Fixed-weight binary external LWE (h32) and independent SparseTernary ring secret |
+| BR algorithms | Paired classic/sparse; sparse r3/B64 |
 | Bases / noise | Shared [NTRU circuit profile](../../guides/development/tfhe-parameters.md#ntru-pbs-cbs-and-lookup), including independent q-domain return KS |
 | Layout | c8/d5/o8: 65536 inputs, 64 polynomials per output, K=N=1024 |
-| Public function / input / seed | `(x*x+3*x+7) mod 65536` / 43981 / 42 |
+| Public function / input / seeds | `(x*x+3*x+7) mod 65536` / 43981 / client 42, input 43 |
+| Public lift | Sparse generates independent NLEV[1] only when needed, using BR basis and sigma 0.7; classic borrows its initializer |
 
-IDs without a workload suffix retain this polynomial function. IDs containing
+IDs include `/classic/` or `/sparse/` and `n800_h32_N1024` to separate them from
+the former uniform-binary classic fixture. IDs without a workload suffix retain
+this polynomial function. IDs containing
 `/dense_seed42/` use the low 16 bits of a fixed SplitMix64 output mixer applied
 to `x + 42 + 0x9e3779b97f4a7c15` with wrapping u64 arithmetic; the exact mapping
 is in `Workload::digit` in the benchmark support module. It is independent of
-the key-generation RNG and identical across word widths and backends. Both
-workloads retain the same geometry, keys, input and measurement boundaries.
+the key-generation RNG and identical across word widths and backends. All workloads retain the same geometry, keys, input and measurement boundaries.
+Within each classic/sparse pair the client coefficients and encrypted input are
+identical; server-key generation consumes different randomness.
 The polynomial's distinct public-polynomial counts per output are
 `1,1,1,1,1,4,16,64`; the dense mapping has 64 distinct polynomials in each output.
 The polynomial fixture stores 89 unique polynomials instead of 512, reducing
@@ -236,14 +246,18 @@ encryption, correctness checks and reusable workspace allocation are outside tim
 The shape checks inside `evaluate_to` remain timed.
 Throughput counts eight output ciphertexts, not eight independent requests.
 The separate `create_lut_and_drop` IDs include allocation, filling and destruction
-of one deduplicated public high-precision LUT; Fourier registers this once per word width
-because the two FFT engines do not affect coefficient compilation.
+of one deduplicated public high-precision LUT; only classic IDs register creation,
+and Fourier registers it once per word width because neither BR choice nor the
+FFT engine affects coefficient compilation.
 
 The selected evaluation fixture reports retained requested heap for combined
-client/server keys, the public LUT, evaluator workspace and caller outputs.
+client/server keys, independent public-lift material, the public LUT, evaluator
+workspace and caller outputs.
 Context/tables, allocator metadata, stack and peak transient generation storage
 are excluded. An untimed evaluation asserts zero online allocations and checks
-every decoded output digit; counting is disabled during latency sampling.
+every decoded output digit, then reports maximum circular q-domain phase error
+over the output chunks (q=2^24, t=8, decoding half-gap 2^20). Counting and phase
+checks are disabled during latency sampling.
 These are finite functional observations, not a failure-probability estimate.
 
 Ordinary CBS and full/nonzero one-hot costs now belong to their NTRU backend's
@@ -268,6 +282,9 @@ taskset -c 0 cargo +nightly bench -p primus_tfhe_ntru_lut --bench pipeline --fea
 Criterion defaults apply unless the command overrides them. `--list` performs
 no key generation; filters initialize only matching fixtures. Build before
 measurement, fix affinity and avoid concurrent benchmark/compiler work.
-Record exact IDs and compiler/features. The [current baseline](../../guides/development/tfhe-benchmarks.md)
-uses this workload; historical c7/d5/o3, n64, all-sigma0.7 results in Git have
-different table sizes and key work and are not latency comparison baselines.
+Record exact IDs and compiler/features. The [earlier measurements](../../guides/development/tfhe-benchmarks.md) use the
+same public polynomial but uniform-binary classic keys and a different input RNG.
+The fixed-weight classic/sparse measurements are in the
+[sparse report](../../guides/development/sparse-bootstrap-measurements.md#ntru-high-precision-lookup).
+Historical c7/d5/o3, n64, all-sigma0.7 results in Git also have different table
+sizes and key work and are not latency comparison baselines.

@@ -16,7 +16,7 @@ fixtures, not assessed security parameters or equal-security comparisons.
 | Four backends' `sparse_pbs` | One complete classic or bucket-sparse PBS, or one server-key generation, for the same n728/h32/N1024/t8 secret profile |
 | Four backends' `mvb` | Produce k Scaled threshold bits from one input: D8/k3 compares independent PBS, interleaved ManyLUT and factorized MVB; D64/k17 compares independent and factorized because interleaving does not fit |
 | Four backends' `circuit_bootstrap` | One ordinary CBS into a reused gadget ciphertext; all backends pair classic/sparse at n728/h32/N1024/t4; NTRU also pairs full M4 / compact M-1 one-hot batches at t8 |
-| `primus_tfhe_ntru_lut/pipeline` | `create_lut_and_drop`: create/drop one public high-precision LUT; `evaluate`: homomorphically evaluate all eight outputs at c8/d5/o8 (16 input/output bits), n800/N1024, excluding public LUT creation |
+| `primus_tfhe_ntru_lut/pipeline` | `create_lut_and_drop`: create/drop one public high-precision LUT; `evaluate`: homomorphically evaluate all eight outputs at c8/d5/o8 (16 input/output bits), paired classic/sparse n800/h32/N1024, excluding public LUT creation |
 
 CBS and NTRU one-hot fix the client seed and give input encryption its own seed, so both
 BR variants receive identical fixed-weight secrets, input ciphertexts and LUTs.
