@@ -97,6 +97,8 @@ Many shape checks in repeated arithmetic paths are `debug_assert*!` diagnostics.
 
 Direct NTT and DCRT sampling is uniform. To sample a non-uniform coefficient distribution, construct a coefficient-domain `Polynomial` or `CrtPolynomial` and then transform it. CRT uniform-binary, sparse-ternary, and Gaussian sampling draw one logical coefficient and encode that same value under every component modulus. The sparse ternary distribution has `P(0) = 1/2` and `P(1) = P(-1) = 1/4`. Random APIs require an RNG implementing both `rand::Rng` and `rand::CryptoRng`.
 
+`Polynomial::random_gaussian` collects samples directly into the chosen `FromIterator` storage. `random_gaussian_assign` overwrites existing storage through `DiscreteGaussian::sample_to`, selecting the CDT/Ziggurat backend once per batch. `add_random_gaussian_assign` preserves the existing coefficients and adds one sample per coefficient under the supplied modulus; the sampler must encode residues for that same modulus. Both in-place methods allocate no scratch. All three consume samples in coefficient order, with the same RNG consumption as scalar sampling; an empty polynomial consumes none.
+
 ## Monomial arithmetic benchmark
 
 [monomial.rs](benches/monomial.rs) compares two single-term accumulations with one paired accumulation for `acc += first * X^r + second * X^s` modulo `X^N + 1`. All cases use `N=1024/2048`, batches of `1/8` polynomials and the same exponents. The u32/u64 Barrett cases share `q=132120577`; native cases wrap at their respective word widths. Inputs are seeded, buffers are reused, and timing excludes allocation and initialization. Equal coefficient counts do not imply equal byte counts across word widths. These are arithmetic measurements, not PBS/CBS timings.

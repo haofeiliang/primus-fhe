@@ -41,7 +41,10 @@ where
         Self(distribution.sample_iter(rng).take(poly_length).collect())
     }
 
-    /// Generate a random [`Polynomial<S>`] with discrete gaussian distribution.
+    /// Creates a [`Polynomial<S>`] by collecting Gaussian samples directly into `S`.
+    ///
+    /// Samples are residues in the modulus used to construct `gaussian`, drawn
+    /// in coefficient order. An empty polynomial consumes no randomness.
     #[must_use]
     #[inline]
     pub fn random_gaussian<R>(
@@ -129,18 +132,30 @@ where
         primus_distr::sample_sparse_ternary_values_to(self.as_mut(), minus_one, rng)
     }
 
-    /// Generate a random [`Polynomial<S>`] with discrete gaussian distribution..
+    /// Overwrites all coefficients of this [`Polynomial<S>`] with Gaussian residues.
+    ///
+    /// Reuses the backing storage without allocating and selects the sampler
+    /// backend once per call. Samples and RNG consumption follow repeated scalar
+    /// sampling in coefficient order; empty storage consumes no randomness.
+    /// See [`DiscreteGaussian::sample_to`] for the partial-write contract.
     #[inline]
     pub fn random_gaussian_assign<R>(&mut self, gaussian: &DiscreteGaussian<T>, rng: &mut R)
     where
         R: rand::Rng + rand::CryptoRng,
     {
-        self.iter_mut()
-            .zip(gaussian.sample_iter(rng))
-            .for_each(|(a, b)| *a = b);
+        gaussian.sample_to(self.as_mut(), rng);
     }
 
-    /// Generate a random [`Polynomial<S>`] with discrete gaussian distribution..
+    /// Adds Gaussian noise to the existing coefficients of this [`Polynomial<S>`].
+    ///
+    /// Samples in coefficient order and adds each residue modulo `modulus`
+    /// without allocating. Empty storage consumes no randomness; a panicking
+    /// RNG may leave partially updated coefficients.
+    ///
+    /// # Correctness
+    ///
+    /// `gaussian` must encode residues for `modulus`, and existing coefficients
+    /// must satisfy the input range of [`ReduceAddAssign::reduce_add_assign`].
     #[inline]
     pub fn add_random_gaussian_assign<R, M>(
         &mut self,

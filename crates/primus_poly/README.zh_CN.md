@@ -96,6 +96,8 @@ Raw wrapper 使用 `len()` / `is_empty()` 查看完整存储：
 
 直接在 NTT 和 DCRT 表示中进行的采样仅支持 uniform 分布。若要采样非 uniform 的系数分布，应先构造系数域的 `Polynomial` 或 `CrtPolynomial`，再执行变换。CRT uniform-binary、sparse-ternary 和 Gaussian 采样会生成一个逻辑系数，并在每个分量模数下编码同一个值；其中 sparse ternary 分布满足 `P(0) = 1/2`、`P(1) = P(-1) = 1/4`。随机 API 要求 RNG 同时实现 `rand::Rng` 和 `rand::CryptoRng`。
 
+`Polynomial::random_gaussian` 直接将样本收集到所选的 `FromIterator` 存储。`random_gaussian_assign` 通过 `DiscreteGaussian::sample_to` 覆盖已有存储，每批只选择一次 CDT/Ziggurat 后端。`add_random_gaussian_assign` 保留原系数，并在给定模数下为每个系数累加一个样本；采样器必须使用同一模数编码 residue。两个原地方法均不分配临时空间。三个入口都按系数顺序取样，RNG 消耗与逐项标量采样一致；空多项式不消耗随机数。
+
 ## 单项式算术基准
 
 [monomial.rs](benches/monomial.rs) 对比 `acc += first * X^r + second * X^s` 在模 `X^N + 1` 下的两次单项累加与一次配对累加。所有配置统一使用 `N=1024/2048`、每批 `1/8` 个多项式和相同指数。u32/u64 Barrett 组共用 `q=132120577`，native 组按各自字宽 wrapping。输入使用固定 seed，缓冲区复用，分配和初始化不计时。不同字宽的系数数量相同，但字节数不同。这些结果衡量算术操作，不代表 PBS/CBS 耗时。
