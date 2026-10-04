@@ -7,6 +7,7 @@ No production algorithm, workspace layout or public API changed in that baseline
 The later [NTRU pair experiment](#ntru-paired-coefficient-aggregation) records an accepted kernel optimization.
 The [tile experiment](#coefficient-aggregation-tiles) and
 [first-bucket experiment](#glwe-first-bucket-trivial-input) record candidates that were not retained.
+The [streaming experiment](#streaming-control-aggregation-and-external-product) likewise retains the existing pipeline.
 
 ## Conditions and workload pairing
 
@@ -894,3 +895,171 @@ in sparse BR call it only for bucket zero. Build separate uninstrumented
 Select `u64/.*sparse.*complete$`, pin to CPU 4 and use the Criterion settings above.
 Keep stage probes/capture setup outside measured complete requests and retain
 first-bucket material so the key and noise distribution are unchanged.
+
+## Streaming control aggregation and external product
+
+**2026-10-04; baseline `dbf84a66`. Decision: retain the existing GLWE NTT
+pipeline.** A single-level prototype gave a small u64 PBS signal but regressed
+u32. A second prototype kept approximately the original aggregation tile size;
+it removed the obvious u32 regression without producing a consistent gain
+across the complete PBS/CBS workloads. Neither prototype, scratch-access hook
+nor a public streaming API is retained. This is a GLWE NTT result, not a rejection
+of every possible NTRU/Fourier or word-specific streaming implementation.
+
+### Remaining cost and controlled change
+
+The same diagnostic n728/h32/N1024/k1, r3/B64 fixtures, seeds and toolchain were
+used. PBS t8 includes its return; CBS t4 includes its projection/scheme switch.
+NTT u64 uses Q=1125899906826241 and base-log 8/L6; u32 uses base-log 2 with
+Q=132120577/L13 for PBS and Q=998244353/L15 for CBS. The setup and correctness
+checks stay outside timing. No build or numerical test overlapped measurement.
+
+Fresh stage probes on CPU 4 gave these median sums over 28 observations per case,
+in ms. They locate the remaining work and are not acceptance timings:
+
+| u64 request / order | Aggregation | Control NTT | External product |
+| --- | ---: | ---: | ---: |
+| PBS / BK | 14.306 | 1.123 | 0.985 |
+| PBS / KB | 14.206 | 1.127 | 0.987 |
+| CBS / BK | 13.953 | 1.023 | 0.962 |
+| CBS / KB | 14.078 | 1.119 | 0.983 |
+
+The original pipeline completes the whole coefficient GGSW, transforms it in
+place and then consumes it. The first prototype instead initializes the input
+polynomial's decomposition once, completes one GLWE control level from its
+dummy and all rotated selections, transforms that level and immediately adds
+its product with the matching digit to the NTT accumulator. It propagates carries
+across levels, visits mask rows then body, and inverse-transforms only after all
+rows. Pair/single arithmetic, source-key layout and every encrypted entry remain
+unchanged; no first-bucket or public-empty-bucket shortcut is mixed in.
+
+This reschedules work without reducing the number of decompositions or
+transforms. In u64/k1 a level is 16 KiB, matching the existing aggregation tile;
+in u32/k1 it is 8 KiB. The second prototype therefore aggregates consecutive levels
+up to approximately 16 KiB before transforming and consuming them in order.
+A tile contains complete GLWE levels and stops at a GLev row boundary; odd L
+leaves a short final tile. This does not exactly reproduce the original u32 tile
+partition, which can span two rows.
+
+Both prototypes reuse a prefix of the original aggregate allocation. Its owner
+and capacity remain unchanged, separating scheduling from a later buffer-size
+experiment. Temporary access to the existing external-product scratch avoids
+allocating another adjusted polynomial, carry buffer, digit or accumulator.
+This access is experiment scaffolding, not a proposed stable workspace API.
+
+### Complete requests
+
+All acceptance runs used freshly built uninstrumented binaries, verified free of the stage marker.
+The initial runs use 30 samples, 0.5 s warmup and a 2 s measurement target, with
+one complete request per iteration. CPU 4 uses general/candidate/candidate/general;
+CPU 8 reverses that order. The longer confirmation uses 50 samples, 1 s warmup
+and an 8 s target, again in separate fresh processes. CPU/cache groups and the
+uncontrolled frequency/background activity are as above; hardware counters
+remain unavailable (`perf_event_paranoid=4`). No cache/writeback cause is claimed.
+
+All following values are ms. Each pair lists the two run means in chronological
+order within that implementation. Delta compares their averages. A CI envelope
+spans the two individual 95% intervals and is not a pooled confidence interval.
+BK denotes BR→KS; KB denotes KS→BR.
+
+Single-level prototype, u64, CPU 4 (30 samples):
+
+| Word / request / order | General means | Candidate means | Delta | General CI envelope → candidate CI envelope |
+| --- | --- | --- | --- | --- |
+| u64 / CBS / BK | 16.511 / 16.565 | 16.332 / 16.461 | -0.9% | [16.332, 16.822] → [16.162, 16.684] |
+| u64 / CBS / KB | 16.604 / 16.690 | 16.483 / 16.323 | -1.5% | [16.402, 16.947] → [16.174, 16.710] |
+| u64 / PBS / BK | 16.383 / 16.384 | 16.107 / 16.198 | -1.4% | [16.208, 16.602] → [15.956, 16.432] |
+| u64 / PBS / KB | 16.551 / 16.615 | 16.155 / 16.343 | -2.0% | [16.363, 16.854] → [15.964, 16.599] |
+
+Single-level prototype, u64, CPU 8 (30 samples, reversed order):
+
+| Word / request / order | General means | Candidate means | Delta | General CI envelope → candidate CI envelope |
+| --- | --- | --- | --- | --- |
+| u64 / CBS / BK | 17.315 / 17.290 | 17.247 / 17.258 | -0.3% | [17.071, 17.600] → [17.045, 17.515] |
+| u64 / CBS / KB | 17.329 / 17.401 | 17.226 / 17.322 | -0.5% | [17.120, 17.687] → [17.037, 17.604] |
+| u64 / PBS / BK | 17.299 / 17.377 | 17.157 / 17.098 | -1.2% | [17.109, 17.651] → [16.905, 17.387] |
+| u64 / PBS / KB | 17.542 / 17.483 | 17.148 / 17.128 | -2.1% | [17.262, 17.848] → [16.930, 17.377] |
+
+Single-level prototype, u64, CPU 4 (50 samples, reversed order):
+
+| Word / request / order | General means | Candidate means | Delta | General CI envelope → candidate CI envelope |
+| --- | --- | --- | --- | --- |
+| u64 / CBS / BK | 16.514 / 16.482 | 16.281 / 16.354 | -1.1% | [16.374, 16.624] → [16.178, 16.478] |
+| u64 / CBS / KB | 17.116 / 16.512 | 16.437 / 16.835 | -1.1% | [16.416, 17.414] → [16.346, 16.988] |
+| u64 / PBS / BK | 16.426 / 16.420 | 16.135 / 16.135 | -1.8% | [16.323, 16.536] → [16.032, 16.247] |
+| u64 / PBS / KB | 16.612 / 16.552 | 16.399 / 16.210 | -1.7% | [16.441, 16.717] → [16.105, 16.501] |
+
+The u64 PBS improvement is a small repeatable signal in these fixtures,
+roughly 1–2%; CBS varies more and has overlapping intervals. It must not be
+reported as a uniform PBS/CBS improvement. The same single-level prototype
+regresses u32, CPU 4 (30 samples):
+
+| Word / request / order | General means | Candidate means | Delta | General CI envelope → candidate CI envelope |
+| --- | --- | --- | --- | --- |
+| u32 / CBS / BK | 26.978 / 25.539 | 27.044 / 27.443 | +3.8% | [25.250, 27.343] → [26.758, 27.815] |
+| u32 / CBS / KB | 25.575 / 25.605 | 26.899 / 26.960 | +5.2% | [25.246, 25.967] → [26.564, 27.407] |
+| u32 / PBS / BK | 21.733 / 21.985 | 23.222 / 23.940 | +7.9% | [21.511, 22.278] → [22.991, 24.655] |
+| u32 / PBS / KB | 21.866 / 21.814 | 22.772 / 24.961 | +9.3% | [21.555, 22.122] → [22.512, 26.431] |
+
+The approximately 16 KiB, row-bounded prototype, CPU 4 (30 samples):
+
+| Word / request / order | General means | Candidate means | Delta | General CI envelope → candidate CI envelope |
+| --- | --- | --- | --- | --- |
+| u32 / CBS / BK | 25.374 / 25.202 | 25.488 / 25.588 | +1.0% | [24.947, 25.725] → [25.126, 25.940] |
+| u32 / CBS / KB | 26.206 / 25.281 | 25.237 / 25.833 | -0.8% | [25.014, 27.303] → [24.977, 26.132] |
+| u32 / PBS / BK | 21.811 / 21.873 | 21.908 / 21.839 | +0.1% | [21.560, 22.219] → [21.613, 22.196] |
+| u32 / PBS / KB | 21.881 / 21.907 | 21.896 / 21.649 | -0.6% | [21.603, 22.280] → [21.378, 22.150] |
+| u64 / CBS / BK | 16.579 / 18.181 | 16.783 / 16.392 | -4.6% | [16.396, 18.635] → [16.211, 17.002] |
+| u64 / CBS / KB | 16.584 / 16.698 | 17.006 / 16.806 | +1.6% | [16.394, 16.930] → [16.592, 17.236] |
+| u64 / PBS / BK | 16.511 / 16.798 | 16.420 / 16.296 | -1.8% | [16.314, 17.116] → [16.121, 16.661] |
+| u64 / PBS / KB | 16.479 / 16.608 | 16.332 / 16.339 | -1.3% | [16.295, 16.859] → [16.114, 16.579] |
+
+Keeping the larger u32 tile removes the clear single-level regression, but does
+not establish a general speedup: u32 PBS is essentially neutral, u64 PBS retains
+only a small signal and u64 CBS KB regresses in this comparison. The last general
+CBS BK run also drifts substantially; its average reduction is not evidence of
+a reliable CBS improvement. A separate u64-only production dispatch was not
+implemented or accepted, and these measurements do not predict its code generation.
+The evidence does not justify introducing a new streaming interface and replacing
+the current pipeline; the narrow u64 signal is recorded for a future focused design.
+
+### Numerical checks, resources and exit
+
+The temporary small-parameter oracle first scatters every selector coefficient
+into its independently computed negacyclic destination, then compares the
+streamed result with the existing full GGSW external product. It covers u32/u64,
+N32/64, k1/2, full and truncated bases, nonconsecutive input indices, empty/odd/even
+buckets, exponents 0/N−1/N/2N−1, wrap/rounding boundaries, trivial and nontrivial
+inputs, and dirty scratch reused for subsequent products. Each prototype passed
+1,152 exact full-product comparisons with zero allocations; every aggregated
+level was also checked directly. The tiled variant additionally covers two-level
+blocks and an odd final level. Existing raw phase/rotation, PBS, interleaved
+outputs, CBS gadget/CMux and factorized tests passed.
+
+All 96 uninstrumented fixture captures across eight request IDs matched the
+key/public-map/input fingerprint and complete output exactly. Decrypt/CMux
+assertions passed outside timing. Paired runs regenerated identical key material
+from the same seeds; neither the noise parameters nor the arithmetic order changed.
+
+Coefficient key arrays, all constructors and workspace owners are unchanged.
+The aggregate allocations remain 192 KiB (u64), 208 KiB (u32 PBS) and 240 KiB
+(u32 CBS); using only a prefix is not a measured retained-memory reduction.
+There is no source-key byte reduction, new keygen timing, construction live-peak
+measurement or claim about actual memory traffic. Buffer shrinking is untested.
+
+Both prototypes passed the 17 backend tests including the temporary oracle.
+After restoring the sources and removing all probes/oracles, the 16 existing
+backend tests and all-targets check passed. No API, source change, permanent test
+or CI workload is added. NTRU, Fourier and nightly SIMD streaming performance
+were not evaluated; their results cannot be inferred from this experiment.
+
+To reproduce, use the original `sparse_pbs` and `circuit_bootstrap` fixtures;
+build and save a separate binary per implementation with
+`cargo bench -p primus_tfhe_glwe_ntt --bench <target> --no-run`.
+Implement the row/level traversal above using the existing scratch, preserving
+selector, decomposition and summation order. Rebuild restored files with fresh
+timestamps, and verify no stage probe remains in the latency binary. Pin with
+`taskset -c 4` or `8`, select `u64/.*sparse.*complete$` or
+`u(32|64)/.*sparse.*complete$`, and use the stated Criterion settings and separate
+`CRITERION_HOME` directories. Captures and allocation instrumentation belong
+outside timed iterations. All temporary implementations and artifacts were removed.
