@@ -449,6 +449,8 @@ mod dot_product {
 
     use crate::{BarrettModulus, common::compact::slice};
 
+    /// Both entry points accept operands below `2^(T::BITS - 2)`, independently
+    /// of the destination modulus. See [`BarrettModulus`] for the input contract.
     impl<T: FheUint> ReduceDotProduct<T> for BarrettModulus<T> {
         #[inline]
         fn reduce_dot_product(self, a: &[T], b: &[T]) -> T {
@@ -473,6 +475,8 @@ mod dot_product {
 
     use crate::{BarrettModulus, common::compact::slice};
 
+    /// Both entry points accept operands below `2^(T::BITS - 2)`, independently
+    /// of the destination modulus. See [`BarrettModulus`] for the input contract.
     impl<T: FheUint> ReduceDotProduct<T> for BarrettModulus<T> {
         #[inline]
         fn reduce_dot_product(self, a: &[T], b: &[T]) -> T {

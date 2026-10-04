@@ -159,7 +159,9 @@ pub(crate) fn slice_ops(name: &Ident, modulus: &TokenStream, ty: &syn::Path) -> 
             }
         }
 
-        // Ordinary dot product
+        /// Accepts operands below `2^(BITS - 2)` for this unsigned coefficient
+        /// type, even if they exceed the modulus. Both slice and iterator forms
+        /// return canonical residues, using the same bound as runtime Barrett.
         impl ::primus_modulus::reduce::ReduceDotProduct<#ty> for #name {
             #[inline]
             fn reduce_dot_product(self, a: &[#ty], b: &[#ty]) -> #ty {

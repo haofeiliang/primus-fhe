@@ -29,7 +29,7 @@ TFHE 普通 LUT 的输出 `RoundedCodec` 使用 accumulator 模数，明文模�
 
 `RoundedCodec` 要求 `t >= 2` 且 `q > t`。`ScaledCodec` 还检查 `abs(t*round(q/t)-q)*(t-1) < q/2`，这是两种嵌入无噪声恢复的充分条件。 对于选定的整数提升 `m` 和噪声 `e`，恢复条件为 `abs((t*delta-q)*m + t*e) < q/2`。生产方与消费方必须使用一致的编码参数和约定。
 
-`BfvRnsCodec` 使用有序密文模数的乘积 `Q`。除 rustdoc 中记录的模数范围与 互素条件外，构造器检查保守的恢复充分条件：`Q > 4*(Q % t)*(t-1)` 和 `gamma > 4*k`，其中 `k` 为模数数量。对于相位 `delta*m+e`，解码的充分条件为 `abs(t*e-(Q % t)*m)/Q + k/gamma < 1/2`。 当密文基包含多个模数时，目标模数 `t` 和 `gamma` 的实现还必须满足 `BaseConverter::fast_convert` 文档中的额外点积输入要求；`FieldContext` 本身 不保证这一点。
+`BfvRnsCodec` 使用有序密文模数的乘积 `Q`。除 rustdoc 中记录的模数范围与 互素条件外，构造器检查保守的恢复充分条件：`Q > 4*(Q % t)*(t-1)` 和 `gamma > 4*k`，其中 `k` 为模数数量。对于相位 `delta*m+e`，解码的充分条件为 `abs(t*e-(Q % t)*m)/Q + k/gamma < 1/2`。 基转换继承 `BaseConverter::fast_convert` 的跨模数点积契约。这里使用的运行时或派生 Barrett 已建立所需的操作数范围；源 residue 允许超过 `t` 或 `gamma`，不需要额外约简。自定义 context 仍须提供相同的数值保证。
 
 `BfvRnsCodec::try_new` 在模数或恢复条件无效时返回 `BfvRnsCodecError<T>`；`new` 委托它构造，失败时 panic。传入的 `RNSBase` 已验证密文基非空且两两互素。这些检查在构造时完成，不建立加密的噪声或安全预算。
 

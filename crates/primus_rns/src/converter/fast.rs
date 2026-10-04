@@ -30,7 +30,7 @@ impl<T: FheUint, M: FieldContext<T>> FastConversionLimb<'_, T, M> {
     ///
     /// # Correctness
     ///
-    /// A general limb requires the noncanonical dot-product support described
+    /// A general limb requires the cross-modulus dot-product range described
     /// by [`BaseConverter::fast_convert`].
     #[inline]
     pub(crate) fn write_to(self, output: &mut [T]) {
@@ -115,12 +115,13 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
     ///
     /// With multiple input moduli, each destination `p_j` must support dot
     /// products of adjusted source residues `u_i < q_i` and matrix entries
-    /// below `p_j`, even when `u_i >= p_j`. This extra requirement is not
-    /// implied by [`FieldContext`] or the canonical-input contract of
-    /// [`primus_reduce::ReduceDotProduct`]. Current Barrett kernels satisfy
-    /// it for compact bases: both operands are below `2^(T::BITS - 2)`, and
-    /// each block of 16 products fits in two limbs. Other modulus
-    /// implementations must support the actual operand ranges.
+    /// below `p_j`, even when `u_i >= p_j`. Runtime and derived Barrett explicitly
+    /// support both operands below `2^(T::BITS - 2)`. Their modulus construction
+    /// already guarantees this range for `q_i` and `p_j`; canonical source
+    /// residues and the prepared matrix therefore need no additional checks or
+    /// reductions. The scalar accumulator (and each SIMD lane) holds at most
+    /// 16 products before reduction. Custom contexts must support the actual
+    /// operand ranges; [`FieldContext`] alone does not imply them.
     pub fn fast_convert(
         &self,
         residues_in: &Residues<impl Data<Elem = T>>,
@@ -297,7 +298,7 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
     ///
     /// # Correctness
     ///
-    /// A multi-modulus input requires the noncanonical dot-product support
+    /// A multi-modulus input requires the cross-modulus dot-product range
     /// described by [`Self::fast_convert`].
     pub fn fast_convert_array(
         &self,
@@ -340,7 +341,7 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
     ///
     /// # Correctness
     ///
-    /// A multi-modulus input requires the noncanonical dot-product support
+    /// A multi-modulus input requires the cross-modulus dot-product range
     /// described by [`Self::fast_convert`].
     pub fn fast_convert_array_to_pair_iter<'a>(
         &'a self,

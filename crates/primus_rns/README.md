@@ -77,6 +77,8 @@ Centered small-value decomposition interprets values below `ceil(t / 2)` as nonn
 
 `BaseConverter` owns its input and output base handles. `new` shares existing base tables; `from_owned_bases` moves the handles without incrementing their reference counts. Conversion-specific matrices are prepared for each converter and remain independently owned; cloning a converter still copies its matrix.
 
+Conversion uses runtime or derived Barrett contexts. Adjusted residues satisfy `u_i < q_i`, but may exceed a destination modulus `p_j`. Barrett's existing dot product accepts both operands below `2^(T::BITS - 2)`; its modulus construction already establishes this bound for the source residues and destination matrix entries. Conversion needs no repeated range checks or per-coefficient reductions. Custom contexts must meet the same numerical requirements; `FieldContext` alone does not guarantee them.
+
 The two conversion families have different mathematical contracts:
 
 - `fast_convert` and `fast_convert_array` compute a SEAL-style approximate CRT lift. With a multi-modulus input basis, the result represents `x + kQ` for some integer `k`; it is not generally the canonical `x mod p_j`. This is suitable only when the surrounding algorithm cancels or accepts the multiple-of-`Q` term. A single-modulus input uses exact direct reduction.

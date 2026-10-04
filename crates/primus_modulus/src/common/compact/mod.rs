@@ -12,6 +12,6 @@ pub use primitive::*;
 
 /// Number of scalar products accumulated before reducing a dot-product chunk.
 ///
-/// With the module's modulus bound and canonical operands, 16 products sum to
+/// With each operand below `2^(BITS - 2)`, 16 products sum to
 /// less than `2^(2 * BITS)` and therefore fit in two limbs.
 pub(crate) const DOT_PRODUCT_INNER_CHUNK: usize = 16;

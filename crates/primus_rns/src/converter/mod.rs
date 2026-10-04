@@ -28,6 +28,15 @@ enum BaseConversionKernel<T> {
 /// `p_j` are output-base moduli, and `Q` is the input-base product. A
 /// one-modulus source uses a direct-reduction kernel and stores no matrix.
 ///
+/// # Arithmetic context
+///
+/// RNS conversion uses [`primus_modulus::BarrettModulus`] (or derived Barrett).
+/// Its modulus bounds already guarantee the two spare operand bits required by
+/// cross-modulus dot products. No additional range validation is needed here:
+/// source residues are assumed canonical for their own moduli. A custom `M`
+/// must satisfy the numerical requirements of [`Self::fast_convert`];
+/// [`FieldContext`] alone does not establish them.
+///
 /// # Fast conversion semantics
 ///
 /// Let `a_i` be the input residues and define

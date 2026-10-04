@@ -81,7 +81,7 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
     ///
     /// # Correctness
     ///
-    /// A multi-modulus input requires the noncanonical dot-product support
+    /// A multi-modulus input requires the cross-modulus dot-product range
     /// described by [`Self::fast_convert`].
     pub fn exact_convert_array(
         &self,

@@ -142,23 +142,58 @@ fn dot_product() {
     }
 }
 
-/// Maximal u64 operands stress the scalar and, when enabled, per-lane accumulator bound.
+/// Source residues can exceed the destination modulus. Maximal operands stress
+/// the two-limb accumulator, including full SIMD blocks and scalar tails.
 #[test]
 fn dot_product_accumulator_boundary() {
-    let modulus = (1u64 << (u64::BITS - 2)) - 1;
-    let operand = modulus - 1;
-    let check = |len| {
-        let values = vec![operand; len];
-        // Each maximal product is one modulo q, so no implementation is needed as oracle.
-        assert_eq!(
-            BarrettModulus::new(modulus).reduce_dot_product(&values, &values),
-            len as u64
-        );
-    };
-    check(16);
-    // Enabling SIMD alone is insufficient: a full 16-vector block is required for dispatch.
-    #[cfg(feature = "simd")]
-    check(16 * <u64 as primus_modulus::integer::SimdInteger>::LANE_COUNT);
+    macro_rules! check_width {
+        ($ty:ty) => {{
+            fn check(modulus: impl ReduceDotProduct<$ty> + Copy, q: $ty) {
+                let maximum = (1 as $ty << (<$ty>::BITS - 2)) - 1;
+                let lengths = vec![0, 1, 15, 16, 17];
+                // A full block is required to actually dispatch to SIMD.
+                #[cfg(feature = "simd")]
+                let lengths = {
+                    let block = 16 * <$ty as primus_modulus::integer::SimdInteger>::LANE_COUNT;
+                    let mut lengths = lengths;
+                    lengths.extend([block - 1, block, block + 1, 2 * block + 1]);
+                    lengths
+                };
+                for len in lengths {
+                    let lhs: Vec<$ty> = (0..len).map(|i| maximum - (i % 3) as $ty).collect();
+                    let rhs: Vec<$ty> = (0..len).map(|i| maximum - (i % 5) as $ty).collect();
+                    // Reduce each u128 product independently: no block accumulator
+                    // or Barrett operation is reused by this oracle.
+                    let expected = lhs.iter().zip(&rhs).fold(0u128, |sum, (&a, &b)| {
+                        (sum + a as u128 * b as u128) % q as u128
+                    }) as $ty;
+                    assert_eq!(
+                        modulus.reduce_dot_product(&lhs, &rhs),
+                        expected,
+                        "q={q}, len={len}",
+                    );
+                    assert_eq!(
+                        modulus.reduce_dot_product_iter(lhs.iter().copied(), rhs.iter().copied()),
+                        expected,
+                    );
+                }
+            }
+            // A small destination and the largest valid modulus exercise very
+            // different reciprocals while sharing the same operand bound.
+            for q in [17, (1 as $ty << (<$ty>::BITS - 2)) - 1] {
+                check(BarrettModulus::new(q), q);
+            }
+            #[cfg(feature = "derive")]
+            {
+                #[derive(primus_modulus::Barrett)]
+                #[modulus(ty = $ty, value = 17)]
+                struct FixedModulus;
+                check(FixedModulus, 17);
+            }
+        }};
+    }
+    check_width!(u32);
+    check_width!(u64);
 }
 
 /// Compare multiply, scalar-multiply, and fused slice variants with independent wide products.

@@ -50,7 +50,7 @@ pub struct CiphertextModulus;
 展开结果提供：
 
 - 关联函数 `value()` 和 `ratio()`；
-- `primus_reduce` 的标量、切片、惰性约简、逆元、幂运算、融合运算和点积实现；
+- `primus_reduce` 的标量、切片、惰性约简、逆元、幂运算、融合运算和点积实现。点积与运行时 Barrett 使用相同的输入界：每个操作数小于 `2^(BITS - 2)`，允许大于目标模数；
 - `EncodeSigned`，使用与 `UintModulus` 相同的有界系数转换，并传入编译期常量模数；
 - `Copy`、`Clone`、`PartialEq`、`Eq`、`Debug` 和 `Hash` 实现。
 

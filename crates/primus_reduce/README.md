@@ -49,7 +49,7 @@ This crate defines interfaces, not validation boundaries. Each public method doc
 
 - Higher-level constructors and batch APIs should validate dimensions and layouts once.
 - Low-level numerical kernels may diagnose shape mismatches only with `debug_assert*!`; release callers must uphold the documented contracts.
-- Dot products explicitly check equal slice lengths in every build profile.
+- Dot products explicitly check equal slice lengths in every build profile. Canonical operands are always supported; wider input ranges are implementation-specific. Runtime and derived Barrett also accept operands below `2^(T::BITS - 2)`, independently of the destination modulus.
 - Lazy results require a final once-reduction before they are treated as canonical residues.
 - Fallible inverse traits report `ReduceError`; infallible inverse and division traits may panic when the required inverse does not exist.
 

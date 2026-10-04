@@ -193,14 +193,17 @@ impl<T: SimdUnsignedInteger> ReduceMulAddAssign<T::SimdT> for SimdBarrettModulus
 // running lane-wise residue. The final horizontal sum and scalar tail complete
 // the dot product.
 //
-// Accumulator safety: `m < 2^(BITS - 2)` and each input is less than `m`, so
+// Accumulator safety: each operand is below `2^(BITS - 2)`, even if it
+// exceeds the destination modulus, so
 // each product is less than `2^(2 * BITS - 4)`. With `K = 16`, their sum is
 // less than `2^(2 * BITS)` and fits in the two-limb accumulator.
 /// Computes the dot product of `a` and `b` modulo `modulus` using SIMD chunks.
 ///
 /// # Correctness
 ///
-/// Every input element must be less than the modulus.
+/// Every operand is below `2^(T::BITS - 2)`; it may exceed the modulus.
+/// The scalar context and its SIMD conversion must agree and satisfy
+/// `1 < modulus < 2^(T::BITS - 2)`, with canonical two-limb reduction.
 ///
 /// # Panics
 ///

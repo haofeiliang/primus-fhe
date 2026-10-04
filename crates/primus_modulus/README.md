@@ -56,7 +56,7 @@ Stable builds can also select supported x86_64 kernels; disabling `simd` does no
 
 The operation traits, input ranges, output ranges, and slice-length requirements come from `primus_reduce`.
 
-- Canonical operations generally require canonical residues unless their trait documents a wider input domain.
+- Canonical operations generally require canonical residues unless their trait or concrete implementation documents a wider input domain. Barrett dot products accept each operand below `2^(T::BITS - 2)`, including residues from another Barrett modulus larger than the destination. Scalar blocks and each SIMD lane accumulate at most 16 products in two words before reduction; both slice and iterator forms return canonical residues.
 - Lazy operations return representatives in `[0, 2 * modulus)` and require a final once-reduction before canonical use.
 - Low-level slice kernels may use `debug_assert*!` for shape diagnostics; release callers must uphold the documented length contracts.
 - `FieldContext` is a capability marker. It does not prove primality or guarantee that every nonzero value is invertible.

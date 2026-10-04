@@ -12,10 +12,9 @@ fn base(moduli: &[Value]) -> Base {
 }
 
 #[test]
-fn fast_array_conversion_matches_scalar_conversion() {
-    // Scalar conversion is the layout oracle; the singleton case below fixes
-    // the distinct unsigned (fast) and centered (exact) lift conventions.
-    let input_base = base(&[17, 19, 23]);
+fn fast_conversion_matches_independent_crt_sum() {
+    let source_moduli = [17, 19, 23];
+    let input_base = base(&source_moduli);
     // Adjusted source residues can exceed both destination moduli.
     let output_base = base(&[5, 7]);
     let converter = BaseConverter::new(&input_base, &output_base);
@@ -25,7 +24,29 @@ fn fast_array_conversion_matches_scalar_conversion() {
         0, 3, 22, 13, // mod 23
     ];
     let value_count = input.len() / input_base.moduli_count();
-    let mut expected = vec![0; output_base.moduli_count() * value_count];
+    // An independent small-integer CRT sum: Q fits in u64, and inverses are
+    // found by enumeration rather than using the converter's prepared factors.
+    let q: u64 = source_moduli.iter().product();
+    let lifts: Vec<u64> = (0..value_count)
+        .map(|value_index| {
+            source_moduli
+                .iter()
+                .enumerate()
+                .map(|(i, &qi)| {
+                    let punctured = q / qi;
+                    let inverse = (1..qi)
+                        .find(|&candidate| candidate * punctured % qi == 1)
+                        .unwrap();
+                    let adjusted = input[i * value_count + value_index] * inverse % qi;
+                    adjusted * punctured
+                })
+                .sum()
+        })
+        .collect();
+    let expected: Vec<_> = [5, 7]
+        .iter()
+        .flat_map(|&p| lifts.iter().map(move |&lift| lift % p))
+        .collect();
 
     for value_index in 0..value_count {
         let value_residues = [
@@ -41,7 +62,7 @@ fn fast_array_conversion_matches_scalar_conversion() {
             &mut scalar_scratch,
         );
         for (modulus_index, value) in scalar_output.into_iter().enumerate() {
-            expected[modulus_index * value_count + value_index] = value;
+            assert_eq!(value, expected[modulus_index * value_count + value_index]);
         }
     }
 
@@ -50,6 +71,11 @@ fn fast_array_conversion_matches_scalar_conversion() {
     let mut scratch = vec![Value::MAX; required_scratch_len + 3];
     converter.fast_convert_array(&input, &mut output, value_count, &mut scratch);
     assert_eq!(output, expected);
+    let paired: Vec<_> = converter
+        .fast_convert_array_to_pair_iter(&input, value_count, &mut scratch)
+        .collect();
+    let expected_pairs: Vec<_> = lifts.iter().map(|&lift| (lift % 5, lift % 7)).collect();
+    assert_eq!(paired, expected_pairs);
     assert_eq!(&scratch[required_scratch_len..], &[Value::MAX; 3]);
 }
 
@@ -79,10 +105,11 @@ fn single_input_fast_and_exact_conversion_use_distinct_lifts() {
 
 #[test]
 fn exact_array_conversion_uses_centered_values_and_reuses_workspace() {
-    // 7428 = 17*19*23 - 1 represents -1, hence 36 modulo the destination 37.
+    // 7428 = 17*19*23 - 1 represents -1, hence 4 modulo the destination 5.
+    // Each source modulus exceeds the destination in this corrected path too.
     let input_moduli = [17, 19, 23];
     let input_base = base(&input_moduli);
-    let output_base = base(&[37]);
+    let output_base = base(&[5]);
     let converter = BaseConverter::new(&input_base, &output_base);
     let values = [0, 1, 2, 7, 16, 7_428];
     let input: Vec<_> = input_moduli
@@ -93,9 +120,9 @@ fn exact_array_conversion_uses_centered_values_and_reuses_workspace() {
     let mut workspace = converter.exact_conversion_workspace(values.len());
 
     converter.exact_convert_array(&input, &mut output, values.len(), &mut workspace);
-    assert_eq!(output, [0, 1, 2, 7, 16, 36]);
+    assert_eq!(output, [0, 1, 2, 2, 1, 4]);
 
     output.fill(Value::MAX);
     converter.exact_convert_array(&input, &mut output, values.len(), &mut workspace);
-    assert_eq!(output, [0, 1, 2, 7, 16, 36]);
+    assert_eq!(output, [0, 1, 2, 2, 1, 4]);
 }

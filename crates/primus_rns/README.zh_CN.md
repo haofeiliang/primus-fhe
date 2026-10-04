@@ -77,6 +77,8 @@ assert_eq!(base.decompose(value.view()).as_ref(), [2, 4, 6]);
 
 `BaseConverter` 拥有输入基和输出基的句柄。`new` 共享已有基表，`from_owned_bases` 则移动句柄，避免增加引用计数。转换矩阵仍按各转换器独立准备和拥有；克隆转换器仍会复制其矩阵。
 
+转换使用运行时或派生 Barrett。调整后的 residue 满足 `u_i < q_i`，但可能超过目标模数 `p_j`。Barrett 的现有点积接受两侧操作数小于 `2^(T::BITS - 2)`；模数构造已经为源 residue 和目标矩阵元素建立这个界。转换无需重复检查范围或逐系数补充约简。自定义 context 仍须满足相同的数值要求，`FieldContext` 本身不保证这些条件。
+
 两类转换具有不同的数学契约：
 
 - `fast_convert` 和 `fast_convert_array` 执行 SEAL 风格的 approximate CRT lift。输入基包含多个模数时，结果表示某个整数 `x + kQ`，通常不等于规范的 `x mod p_j`。只有外层算法会消去或允许这个 `Q` 倍数项时才能使用。单模数输入 使用精确的直接约简。

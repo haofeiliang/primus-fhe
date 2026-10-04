@@ -50,7 +50,7 @@ For each modulus, the macro computes the two-limb reciprocal `floor(B² / modulu
 The expansion provides:
 
 - associated `value()` and `ratio()` functions;
-- `primus_reduce` scalar, slice, lazy-reduction, inverse, exponentiation, fused-operation, and dot-product implementations;
+- `primus_reduce` scalar, slice, lazy-reduction, inverse, exponentiation, fused-operation, and dot-product implementations. Dot products share runtime Barrett's input bound: each operand is below `2^(BITS - 2)`, even when larger than the destination modulus;
 - `EncodeSigned`, using the same bounded coefficient conversion as `UintModulus` with a compile-time modulus;
 - `Copy`, `Clone`, `PartialEq`, `Eq`, `Debug`, and `Hash` implementations.
 

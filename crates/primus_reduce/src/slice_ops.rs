@@ -270,12 +270,17 @@ pub trait TryReduceInvSlice<T> {
 }
 
 /// Modular dot products of slices or iterators.
+///
+/// Canonical operands are supported by every implementation. An implementation
+/// may document a wider input range; callers using it must establish that
+/// implementation's bounds, rather than assume them from this trait alone.
 pub trait ReduceDotProduct<T> {
     /// Calculates `∑ a[i] * b[i] (mod modulus)`.
     ///
     /// # Correctness
     ///
-    /// - Each `a_i < modulus` and `b_i < modulus`
+    /// Each operand is below `modulus`, or satisfies a wider range explicitly
+    /// documented by the implementation.
     ///
     /// # Panics
     ///
@@ -287,7 +292,8 @@ pub trait ReduceDotProduct<T> {
     ///
     /// # Correctness
     ///
-    /// - Each `a_i < modulus` and `b_i < modulus`
+    /// Each operand is below `modulus`, or satisfies a wider range explicitly
+    /// documented by the implementation.
     ///
     /// # Behavior
     ///

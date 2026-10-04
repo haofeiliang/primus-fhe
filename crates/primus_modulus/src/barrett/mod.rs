@@ -22,6 +22,12 @@ pub use simd::{SimdBarrettModulus, simd_reduce_dot_product, simd_reduce_dot_prod
 /// `µ = floor(B² / modulus)`. The modulus must satisfy
 /// `1 < modulus < 2^(T::BITS - 2)`; the two spare bits allow 16 products to be
 /// accumulated before reduction.
+///
+/// Its [`ReduceDotProduct`](primus_reduce::ReduceDotProduct) implementation accepts
+/// operands below `2^(T::BITS - 2)`, even when they exceed this context's modulus.
+/// This includes canonical residues from any other valid Barrett context of the
+/// same coefficient type, as used by RNS base conversion. Both slice and iterator
+/// forms return a canonical residue; scalar and SIMD paths share this bound.
 #[derive(Debug, Clone, Copy, Eq)]
 pub struct BarrettModulus<T: UnsignedInteger> {
     value: T,

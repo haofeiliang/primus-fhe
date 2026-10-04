@@ -381,6 +381,12 @@ fn multiply_add<T: UnsignedInteger>(c: &mut [T; 2], a: T, b: T) {
 
 /// Computes the dot product of equally sized slices modulo `modulus`.
 ///
+/// # Correctness
+/// Each operand is below `2^(T::BITS - 2)` but may exceed the modulus.
+/// Sixteen products then sum to less than `2^(2*T::BITS)`; the context must
+/// reduce any such two-limb value canonically. Chunk results are added modulo
+/// the context's modulus. No per-operand reduction or range check is performed.
+///
 /// # Panics
 ///
 /// Panics if the slices have different lengths.
@@ -415,7 +421,8 @@ where
 
 /// Computes the dot product of two iterators modulo `modulus`.
 ///
-/// Iteration stops when either iterator ends.
+/// Iteration stops when either iterator ends. Operands and the arithmetic context
+/// must satisfy [`reduce_dot_product`]'s bounded two-limb accumulation contract.
 #[must_use]
 #[inline]
 pub fn reduce_dot_product_iter<T, M>(

@@ -102,10 +102,10 @@ where
     /// modulo its corresponding `q_i`. Residue ranges and basis/domain are not
     /// checked; NTT data must be inverse-transformed before this call.
     ///
-    /// With multiple ciphertext moduli, the destination moduli `t` and `gamma`
-    /// must support the additional dot-product input ranges documented by
-    /// [`primus_rns::BaseConverter::fast_convert`]. [`FieldContext`] alone does
-    /// not guarantee this. A single-modulus basis uses direct reduction.
+    /// Base conversion inherits [`primus_rns::BaseConverter::fast_convert`]'s
+    /// cross-modulus dot-product contract. The Barrett contexts used here already
+    /// guarantee its operand bounds, even when a source residue exceeds `t` or
+    /// `gamma`. A single-modulus basis uses direct reduction.
     ///
     /// For phase `c = delta*m + e (mod Q)`, where `delta = floor(Q/t)` and `m`
     /// is the chosen integer lift, a sufficient recovery condition is
