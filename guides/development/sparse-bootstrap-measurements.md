@@ -1,9 +1,10 @@
-# Sparse PBS and CBS measurement baseline
+# Sparse PBS and CBS measurements
 
-Measured on 2026-10-04. Production source: `def858ef`; the only persistent code
+The original baseline below was measured on 2026-10-04. Production source: `def858ef`; the only persistent code
 change is the paired GLWE CBS benchmark described below. These are functional
 arithmetic profiles, not assessed security parameters or equal-security comparisons.
-No production algorithm, workspace layout or public API changed in this measurement.
+No production algorithm, workspace layout or public API changed in that baseline.
+The later [NTRU pair experiment](#ntru-paired-coefficient-aggregation) records an accepted kernel optimization.
 
 ## Conditions and workload pairing
 
@@ -464,3 +465,145 @@ taskset -c 4 cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features ntt
 The former n800 uniform-binary IDs use different secrets and encrypted input.
 Their historical timings cannot be treated as an implementation before/after
 comparison with this fixed-weight fixture.
+
+## NTRU paired coefficient aggregation
+
+Measured on 2026-10-04 against `573dd919`. **Decision: retain pairs for u32 and
+u64 in both NTRU backends.** Two adjacent selectors now share the initialized
+aggregate traversal through the existing `Nlev` pair method. An odd final
+selector uses the single method. The private helper preserves dummy copying,
+key order, zero exponents, first-bucket NLEV lifting and later NGSW products.
+There is no new backend word-width branch, key layout, scratch allocation,
+transform, floating-point operation or public API. This does not change GLWE.
+
+Conditions match the machine/toolchain above: Ryzen 9 9955HX3D, rustc 1.98.1,
+release profile, repository native CPU flags, no portable-SIMD feature. Fourier
+builds enable both `rustfft,tfhe-fft`. Saved before/after executables run sequentially,
+with builds and tests outside measurement. CPU 4 uses before/after/after/before;
+CPU 8 repeats PBS with after/before/before/after. Each backend/workload-group
+round uses a fresh process, 30 samples, 0.5 s warmup and a 2 s measurement target (Criterion may extend it).
+One iteration is one complete request into existing buffers. Setup, keygen,
+input encryption, LUT preparation, allocation and validation remain outside timing.
+
+The existing paired n728/h32/N1024, r3/B64 fixtures are unchanged. PBS uses t8
+and includes Q-to-q conversion, extraction and LWE key switching. Ordinary CBS
+uses t4; the nonzero one-hot batch uses t8/M4 and produces all three required
+controls. These two consumers exercise the coarser CBS rotation geometry.
+NTT u32 CBS/one-hot use Q=998244353 rather than PBS's Q=132120577; the other
+moduli, bases, role-specific noise and fixed seeds are those documented above.
+These remain arithmetic diagnostics, not assessed security parameters.
+
+### Complete-request latency
+
+All values are milliseconds. Each before/pair cell lists the **two round mean
+estimates**, not two individual requests. Delta compares their averages.
+The CI column gives the envelope of the two per-round mean 95% confidence
+intervals for each version; it is **not** a pooled confidence interval.
+
+#### PBS, including the return to LWE
+
+| CPU / backend / word / request | Before means | Pair means | Delta | Before CI envelope → pair CI envelope |
+| --- | ---: | ---: | ---: | --- |
+| 4 / ntt / u32 / PBS | 5.855 / 5.517 | 5.018 / 5.002 | -11.9% | [5.461, 5.923] → [4.950, 5.079] |
+| 4 / ntt / u64 / PBS | 5.514 / 5.549 | 4.677 / 4.958 | -12.9% | [5.464, 5.618] → [4.639, 5.168] |
+| 4 / rustfft / u32 / PBS | 7.306 / 8.023 | 6.167 / 6.086 | -20.1% | [7.246, 8.394] → [6.035, 6.295] |
+| 4 / rustfft / u64 / PBS | 7.026 / 7.027 | 5.341 / 5.384 | -23.7% | [6.943, 7.129] → [5.286, 5.461] |
+| 4 / tfhe_fft / u32 / PBS | 7.099 / 7.141 | 5.864 / 5.820 | -17.9% | [7.041, 7.242] → [5.778, 5.923] |
+| 4 / tfhe_fft / u64 / PBS | 6.958 / 6.894 | 5.265 / 5.700 | -20.8% | [6.835, 7.054] → [5.215, 5.776] |
+| 8 / ntt / u32 / PBS | 6.098 / 6.096 | 5.706 / 5.626 | -7.1% | [6.024, 6.190] → [5.555, 5.820] |
+| 8 / ntt / u64 / PBS | 6.083 / 6.090 | 5.247 / 5.278 | -13.5% | [6.022, 6.179] → [5.188, 5.406] |
+| 8 / rustfft / u32 / PBS | 8.005 / 7.922 | 6.741 / 6.839 | -14.7% | [7.827, 8.080] → [6.676, 7.090] |
+| 8 / rustfft / u64 / PBS | 7.999 / 7.444 | 5.888 / 5.871 | -23.9% | [7.369, 8.104] → [5.825, 5.949] |
+| 8 / tfhe_fft / u32 / PBS | 8.351 / 7.662 | 6.382 / 6.417 | -20.1% | [7.587, 8.457] → [6.322, 6.510] |
+| 8 / tfhe_fft / u64 / PBS | 7.376 / 7.398 | 5.784 / 5.814 | -21.5% | [7.284, 7.487] → [5.731, 5.914] |
+
+#### CBS and nonzero one-hot consumers (CPU 4)
+
+| CPU / backend / word / request | Before means | Pair means | Delta | Before CI envelope → pair CI envelope |
+| --- | ---: | ---: | ---: | --- |
+| 4 / ntt / u32 / CBS | 5.714 / 5.707 | 5.524 / 5.429 | -4.1% | [5.634, 5.812] → [5.375, 5.658] |
+| 4 / ntt / u32 / one-hot | 6.535 / 6.555 | 6.206 / 6.259 | -4.8% | [6.465, 6.637] → [6.148, 6.327] |
+| 4 / ntt / u64 / CBS | 4.098 / 4.179 | 3.499 / 3.350 | -17.2% | [4.062, 4.245] → [3.315, 3.532] |
+| 4 / ntt / u64 / one-hot | 4.500 / 4.496 | 3.879 / 3.712 | -15.6% | [4.462, 4.543] → [3.686, 3.912] |
+| 4 / rustfft / u32 / CBS | 6.829 / 6.891 | 5.693 / 5.655 | -17.3% | [6.777, 7.000] → [5.618, 5.740] |
+| 4 / rustfft / u32 / one-hot | 7.703 / 7.891 | 6.685 / 6.675 | -14.3% | [7.649, 7.959] → [6.586, 6.838] |
+| 4 / rustfft / u64 / CBS | 5.785 / 5.897 | 4.058 / 4.344 | -28.1% | [5.726, 6.035] → [4.029, 4.456] |
+| 4 / rustfft / u64 / one-hot | 6.524 / 6.305 | 4.625 / 4.815 | -26.4% | [6.242, 6.601] → [4.588, 4.870] |
+| 4 / tfhe_fft / u32 / CBS | 6.471 / 6.373 | 5.214 / 5.388 | -17.5% | [6.293, 6.587] → [5.172, 5.480] |
+| 4 / tfhe_fft / u32 / one-hot | 7.550 / 7.090 | 5.904 / 5.916 | -19.3% | [7.011, 7.623] → [5.865, 5.977] |
+| 4 / tfhe_fft / u64 / CBS | 5.829 / 5.692 | 3.942 / 4.027 | -30.8% | [5.625, 5.915] → [3.909, 4.063] |
+| 4 / tfhe_fft / u64 / one-hot | 6.027 / 6.176 | 4.338 / 4.340 | -28.9% | [5.962, 6.385] → [4.300, 4.388] |
+
+All PBS cases improve on both CPUs; each case's pair CI envelope lies below
+its before envelope. CBS/one-hot improvements also recur across both runs.
+NTT u32 ordinary CBS has the smallest effect: one pair interval slightly overlaps
+a baseline interval, so its approximate 4% change should not be read as a precise
+portable speedup. Other consumer CI envelopes are separated. There is visible
+run-to-run variation, notably in some Fourier cases; clocks and other system
+activity were not controlled. These results do not extrapolate to other CPUs,
+ring lengths, bases, bucket counts or portable-SIMD performance.
+
+### Correctness and memory
+
+A temporary probe outside the timed loop fingerprinted the coefficient control
+key, public bucket indices and input ciphertext, and saved the entire PBS output.
+All 48 PBS captures match by backend/word across versions and CPUs, including
+coefficient-exact Fourier outputs. The existing benchmark's decrypt oracle,
+CBS CMux oracle and one-hot control oracle passed before every selected timing.
+These fixed fixtures are not a statistical noise study.
+
+Each backend adds one small private-kernel regression for direct coefficient
+scatter/addition, independent of the pair kernel's contiguous intervals. It covers
+zero through five selectors, dummy reset on reused output, nonconsecutive mask
+indices, three levels, odd tails, equal exponents, both signs and 0/N-1/N/2N-1.
+Barrett and native wrapping cases use u32/u64. Existing first-NLEV/later-NGSW
+phase tests, complete PBS/MVB/CBS/one-hot/LUT and zero-allocation tests remain the
+consumer checks; no benchmark or large parameter sweep was added to ordinary CI.
+
+A separate temporary allocator probe measured evaluator construction and two
+complete PBS calls, independently of the latency executables. The columns below
+are **identical before and after**. BR bytes count only the coefficient control
+array, excluding map metadata and return/CBS keys. Retained and peak columns are
+requested workspace heap bytes from allocation/free events, excluding immutable
+context/keys, caller output, inline owners and allocator overhead; neither is RSS.
+
+| Backend / word | BR coefficient bytes | Construction allocations | Retained workspace bytes | Construction peak bytes |
+| --- | ---: | ---: | ---: | ---: |
+| ntt / u32 | 119,701,504 | 12 | 144,900 | 144,900 |
+| ntt / u64 | 110,493,696 | 12 | 225,608 | 225,608 |
+| rustfft / u32 | 147,324,928 | 15 | 312,836 | 312,836 |
+| rustfft / u64 | 147,324,928 | 15 | 323,912 | 323,912 |
+| tfhe_fft / u32 | 147,324,928 | 15 | 312,836 | 312,836 |
+| tfhe_fft / u64 | 147,324,928 | 15 | 323,912 | 323,912 |
+
+All 24 first/reused online calls in that probe made zero allocations and had
+zero additional heap peak. No key-generation time or key-construction peak was
+remeasured: key generation and ownership are untouched. Source key bytes and
+workspace geometry are unchanged. Pairing reduces the logical aggregate load/store
+traversals; it does not eliminate selector contributions or source-key reads.
+No hardware-counter measurements were available (`perf_event_paranoid=4`), so this
+report does not attribute the gain to cache writeback or quantify DRAM traffic.
+
+To repeat the latency experiment, build each revision and save the executables
+before rebuilding the other version. Use the existing `sparse_pbs` and
+`circuit_bootstrap` targets, with no extra benchmark target or runtime strategy:
+
+```sh
+cargo bench -p primus_tfhe_ntru_ntt --bench sparse_pbs --bench circuit_bootstrap --no-run
+cargo bench -p primus_tfhe_ntru_fourier --features rustfft,tfhe-fft \
+  --bench sparse_pbs --bench circuit_bootstrap --no-run
+
+# Give each process its own Criterion output directory; repeat in the orders above.
+CRITERION_HOME=/tmp/primus-pair-round taskset -c 4 <saved-sparse_pbs-executable> \
+  '/sparse/complete' --bench --sample-size 30 --warm-up-time 0.5 --measurement-time 2 --noplot
+CRITERION_HOME=/tmp/primus-pair-cbs-round taskset -c 4 <saved-circuit_bootstrap-executable> \
+  '/(cbs/sparse/.*/complete|one_hot/sparse/.*/nonzero)$' \
+  --bench --sample-size 30 --warm-up-time 0.5 --measurement-time 2 --noplot
+```
+
+For the independent memory check, enable thread-local allocation/free counters
+only around `context.evaluator(server)` and then two `apply_lookup_table_to` calls
+with an already allocated output. Reset live/peak counters between those scopes;
+keep the returned evaluator alive when reading retained bytes. Do not include
+this instrumentation in the latency binary. Temporary capture code, allocator
+probe, strategy copies and logs were removed after recording these results.
