@@ -9,7 +9,6 @@ use std::{
 use primus_encoding::{PlaintextEmbedding, RoundedCodec};
 use primus_integer::FheUint;
 use primus_reduce::RingContext;
-use primus_tfhe_ntru::TfheParameters;
 
 use super::selection::{SelectionCompiler, TableNodeId, TableOperation};
 
@@ -21,7 +20,7 @@ impl<T: FheUint> HighPrecisionLookupTable<T> {
     /// Compiles a validated geometry without skipping any callback, even when a
     /// polynomial repeats. Check worst-case sizes before allocating or invoking the callback.
     pub(super) fn compile<M: RingContext<T>, LM: RingContext<T>>(
-        parameters: &TfheParameters<T, M, LM>,
+        ring_modulus: M,
         input_codec: &RoundedCodec<T, LM>,
         layout: Layout,
         mut function: impl FnMut(usize, usize) -> T,
@@ -42,10 +41,7 @@ impl<T: FheUint> HighPrecisionLookupTable<T> {
         ])?;
         checked_allocation_len::<TableNodeId>(&[output_count, layout.polynomials_per_output, 2])?;
 
-        let codec = RoundedCodec::try_new(
-            input_codec.plaintext_modulus(),
-            parameters.accumulator_ntru().cipher_modulus(),
-        )?;
+        let codec = RoundedCodec::try_new(input_codec.plaintext_modulus(), ring_modulus)?;
         let radix = input_codec.plaintext_modulus() >> 1u32;
         let chunk_encodings = precompute_chunk_encodings(&codec, layout);
         // Both paths receive only validated digits from the filling helper.
@@ -80,8 +76,8 @@ impl<T: FheUint> HighPrecisionLookupTable<T> {
             coefficients: pool.coefficients.into_boxed_slice(),
             selection: selection.finish(),
             plaintext_modulus: input_codec.plaintext_modulus(),
-            input_modulus: parameters.external_lwe().cipher_modulus_value(),
-            ring_modulus: parameters.accumulator_ntru().cipher_modulus_value(),
+            input_modulus: input_codec.ciphertext_modulus().explicit_value(),
+            ring_modulus: ring_modulus.explicit_value(),
         })
     }
 }

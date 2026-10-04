@@ -19,7 +19,7 @@ use crate::{
     HighPrecisionLookupTable, LookupTableError,
     evaluation::{check_io, copy_completed_output_to, selected_ciphertext},
     lookup_table::{
-        PolynomialId, checked_allocation_len,
+        PolynomialId,
         selection::{OutputAction, SelectorBatches, TableNodeId, TableOperation},
     },
 };
@@ -141,7 +141,11 @@ where
         lookup_table: &'a HighPrecisionLookupTable<T>,
     ) -> Result<Self, LookupTableError> {
         context.parameters().check_lwe_return_key(return_key)?;
-        if !lookup_table.is_compatible(context.parameters()) {
+        if !lookup_table.is_compatible(
+            context.parameters().poly_length(),
+            context.parameters().accumulator_ntru().cipher_modulus(),
+            context.parameters().external_lwe().cipher_modulus(),
+        ) {
             return Err(LookupTableError::IncompatibleParameters);
         }
         let public_lift = if lookup_table.needs_public_lift() {
@@ -170,26 +174,8 @@ where
             OneHotCircuitBootstrapEvaluator::try_new(&resources, circuit_key, &input_codec)?;
         let layout = lookup_table.layout;
         let n = layout.polynomial_length;
-        let coefficient_chunk_count = layout.config.coefficient_chunk_count;
-        let selection = &lookup_table.selection;
-        // Lengths count T values: one selector has L*N, one-hot has M*L*N.
-        let selector_len = one_hot.ngsw_selector_len();
-        let one_hot_len = one_hot.ngsw_batch_len();
-        let nonzero_one_hot_len = one_hot_len - selector_len;
-        let public_table_selectors_len =
-            checked_allocation_len::<T>(&[selection.nlev_batch_count, one_hot_len])?;
-        let encrypted_table_selectors_len =
-            checked_allocation_len::<T>(&[selection.ngsw_batch_count, nonzero_one_hot_len])?;
-        let selected_tables_len = checked_allocation_len::<T>(&[selection.result_slot_count, n])?;
-        let rotation_controls_len =
-            checked_allocation_len::<T>(&[coefficient_chunk_count, selector_len])?;
-        let rotation_factors_len =
-            checked_allocation_len::<T>(&[coefficient_chunk_count, layout.radix - 1, n])?;
-        let nonzero_selectors_len = if coefficient_chunk_count > 0 {
-            nonzero_one_hot_len
-        } else {
-            0
-        };
+        let lengths = lookup_table
+            .ntt_buffer_lengths(one_hot.parameters().output_basis().decompose_length())?;
         let lwe_return = LweReturnEvaluator::new(
             return_key,
             context.parameters().external_lwe().cipher_modulus(),
@@ -202,13 +188,14 @@ where
             resources,
             scalar_return: lwe_return.new_scalar_workspace(),
             lwe_return,
-            public_table_selectors: vec![T::ZERO; public_table_selectors_len].into_boxed_slice(),
-            encrypted_table_selectors: vec![T::ZERO; encrypted_table_selectors_len]
+            public_table_selectors: vec![T::ZERO; lengths.public_table_selectors]
                 .into_boxed_slice(),
-            rotation_controls: vec![T::ZERO; rotation_controls_len].into_boxed_slice(),
-            nonzero_selectors: vec![T::ZERO; nonzero_selectors_len].into_boxed_slice(),
-            rotation_factors: vec![T::ZERO; rotation_factors_len].into_boxed_slice(),
-            selected_tables: vec![T::ZERO; selected_tables_len].into_boxed_slice(),
+            encrypted_table_selectors: vec![T::ZERO; lengths.encrypted_table_selectors]
+                .into_boxed_slice(),
+            rotation_controls: vec![T::ZERO; lengths.rotation_controls].into_boxed_slice(),
+            nonzero_selectors: vec![T::ZERO; lengths.nonzero_selectors].into_boxed_slice(),
+            rotation_factors: vec![T::ZERO; lengths.rotation_factors].into_boxed_slice(),
+            selected_tables: vec![T::ZERO; lengths.selected_tables].into_boxed_slice(),
             current: NtruCiphertext::zero(n),
             product: NtruCiphertext::zero(n),
         };

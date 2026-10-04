@@ -1,12 +1,13 @@
 use primus_encoding::RoundedCodec;
 use primus_integer::FheUint;
-use primus_poly::Polynomial;
+use primus_poly::{PolyLength, Polynomial};
 use primus_reduce::RingContext;
 #[cfg(any(feature = "ntt", feature = "fourier"))]
 use primus_tfhe_ntru::OneHotBootstrapError;
-use primus_tfhe_ntru::TfheParameters;
 
 mod compile;
+mod statistics;
+pub use statistics::{LookupTableStats, LookupWorkspaceEstimate};
 pub(crate) mod selection;
 
 use selection::SelectionPlan;
@@ -54,7 +55,7 @@ pub enum LookupTableError {
         /// Output chunk index.
         output: usize,
     },
-    /// The table was compiled with another N, Q or q, or input codec bound to another q.
+    /// The table was compiled with another N, Q or external q.
     #[error("lookup table and context have incompatible ring or encoding parameters")]
     IncompatibleParameters,
     /// The compiled selection plan contains a Lift but no `NLEV[1]` was supplied.
@@ -144,6 +145,9 @@ impl Layout {
             return Err(LookupTableError::InsufficientCapacity);
         }
         let polynomials_per_output = input_value_count / entries_per_polynomial;
+        chunk_bits
+            .checked_mul(config.output_chunk_count)
+            .ok_or(LookupTableError::StorageSizeOverflow)?;
         Ok(Self {
             config,
             radix,
@@ -205,13 +209,17 @@ impl<T: FheUint> HighPrecisionLookupTable<T> {
     /// Geometry and host storage overflow are checked before allocation/callbacks;
     /// a bad callback value stops compilation at that pair.
     ///
+    /// Compilation needs no keys, secret distributions, noise samplers or transforms.
+    /// `input_codec` fixes external q and chunk modulus t; `ring_modulus` fixes
+    /// accumulator Q. The evaluator checks these domains against its context.
     /// All chunks use unsigned Rounded encoding with t=2*M from `input_codec`.
     /// The input value count M^c must fit in usize, so tau*c < usize::BITS.
     /// This is a limit of full table enumeration, not of the cryptographic
     /// construction. Storage grows exponentially with input chunk count;
     /// representable sizes do not guarantee available memory.
     pub fn try_new<M, LM, F>(
-        parameters: &TfheParameters<T, M, LM>,
+        poly_length: PolyLength,
+        ring_modulus: M,
         input_codec: &RoundedCodec<T, LM>,
         config: LookupTableConfig,
         function: F,
@@ -221,17 +229,8 @@ impl<T: FheUint> HighPrecisionLookupTable<T> {
         LM: RingContext<T>,
         F: FnMut(usize, usize) -> T,
     {
-        if input_codec.ciphertext_modulus().explicit_value()
-            != parameters.external_lwe().cipher_modulus_value()
-        {
-            return Err(LookupTableError::IncompatibleParameters);
-        }
-        let layout = Layout::try_new(
-            input_codec.plaintext_modulus(),
-            parameters.poly_length().get(),
-            config,
-        )?;
-        Self::compile(parameters, input_codec, layout, function)
+        let layout = Layout::try_new(input_codec.plaintext_modulus(), poly_length.get(), config)?;
+        Self::compile(ring_modulus, input_codec, layout, function)
     }
 
     /// Returns the common input/output chunk plaintext modulus t=2*M.
@@ -344,10 +343,12 @@ impl<T: FheUint> HighPrecisionLookupTable<T> {
     #[must_use]
     pub fn is_compatible<M: RingContext<T>, LM: RingContext<T>>(
         &self,
-        parameters: &TfheParameters<T, M, LM>,
+        poly_length: PolyLength,
+        ring_modulus: M,
+        input_modulus: LM,
     ) -> bool {
-        self.layout.polynomial_length == parameters.poly_length().get()
-            && self.input_modulus == parameters.external_lwe().cipher_modulus_value()
-            && self.ring_modulus == parameters.accumulator_ntru().cipher_modulus_value()
+        self.layout.polynomial_length == poly_length.get()
+            && self.input_modulus == input_modulus.explicit_value()
+            && self.ring_modulus == ring_modulus.explicit_value()
     }
 }

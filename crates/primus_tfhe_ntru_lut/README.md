@@ -11,7 +11,7 @@ High-precision lookup over already encrypted NTRU-TFHE chunks, using one-hot CBS
 
 Both [NTT](../primus_tfhe_ntru_ntt/README.md) and [Fourier](../primus_tfhe_ntru_fourier/README.md) support classic binary/ternary and sparse fixed-weight binary lookup. Generate evaluation material with `generator.try_generate_server_key(&client, blind_rotation, Some(cbs_config), rng)`, choosing `BlindRotationConfig::Classic` or `Sparse { copy_count, bucket_count }`. CBS material is required. Generate and encrypt input chunks on the client with `encrypt_padded`. The examples use a fixed-weight binary secret for either algorithm; change `BLIND_ROTATION` to select sparse without changing that distribution.
 
-`HighPrecisionLookupTable::try_new(parameters, &input_codec, config, function)` compiles the public table. The callback receives `(full_input_index, output_chunk_index)` and returns one digit. Bind `NttLookupTableEvaluator::try_new(context, server_key, None, table)` or `FourierLookupTableEvaluator::try_new(context, server_key, None, table)`, call `allocate_output()` once, then reuse `evaluate_to(input_chunks, output_chunks)`. Decode each result with `context.decryptor(client.external_lwe_secret_key(), &input_codec)`. The table owns its chunk encoding; keys are independent of t. The evaluator borrows its context, server key and table; no client secret is needed for evaluation.
+`HighPrecisionLookupTable::try_new(poly_length, ring_modulus, &input_codec, config, function)` compiles the public table using only N, Q and the codec’s q/t, without TFHE parameters, secrets or transforms. The callback receives `(full_input_index, output_chunk_index)` and returns one digit. Bind `NttLookupTableEvaluator::try_new(context, server_key, None, table)` or `FourierLookupTableEvaluator::try_new(context, server_key, None, table)`, call `allocate_output()` once, then reuse `evaluate_to(input_chunks, output_chunks)`. Decode each result with `context.decryptor(client.external_lwe_secret_key(), &input_codec)`. The table owns its chunk encoding; keys are independent of t. The evaluator borrows its context, server key and table; no client secret is needed for evaluation.
 
 For a u32 context with `t=8` and `N=1024`, eight two-bit chunks represent a 16-bit input. This fragment evaluates `(x*x+3*x+7) mod 65536` and returns eight chunks:
 
@@ -22,7 +22,8 @@ use primus_tfhe_ntru_lut::{
 
 let input_codec = primus_encoding::RoundedCodec::new(8u32, context.parameters().external_lwe().cipher_modulus());
 let table = HighPrecisionLookupTable::try_new(
-    context.parameters(),
+    context.parameters().poly_length(),
+    context.parameters().accumulator_ntru().cipher_modulus(),
     &input_codec,
     LookupTableConfig {
         input_chunk_count: 8,
@@ -74,7 +75,11 @@ The input value count itself must fit in `usize`, requiring `tau*c < usize::BITS
 
 ### Choosing the coefficient chunk count
 
-For fixed N, M and c, start with `d=min(c, floor(log2(N)/tau))`, making M^d as close to N as possible. Increasing d by one divides worst-case public table storage by M and adds one rotation product per output. The best choice still depends on measured time and noise margins; exact operation counts are in the [stage guide](IMPLEMENTATION.md#stage-and-buffer-layout).
+For fixed N, M and c, start with `d=min(c, floor(log2(N)/tau))`, making M^d as close to N as possible. Increasing d by one divides worst-case public table storage by M and adds one rotation product per output. The best choice still depends on measured time and noise margins; the formulas are in the [stage guide](IMPLEMENTATION.md#stage-and-buffer-layout).
+
+After compiling each candidate d, `table.stats()` reports input/output bits, logical/unique polynomials, required one-hot chunks, NLEV/NGSW selector counts, selection nodes, public lifts and live result slots. Counts reflect pruning and sharing across outputs; they do not predict latency or noise. `public_lift_count > 0` is equivalent to `needs_public_lift()`.
+
+`table.estimate_workspace(output_levels)?` takes the proposed CBS output `DecompositionLevelCount` and returns `ntt_bytes` and `fourier_bytes`, using the same buffer lengths as evaluator construction. This **partial** estimate counts only direct LUT buffers: selectors, rotation controls/factors, result slots, current/product and Fourier conversion/gadget-one buffers. It excludes nested BR/CBS/one-hot and LWE-return workspaces, transform engines, keys, the public table/plan, caller inputs/outputs, allocator overhead and temporary construction storage. Comparing d therefore still requires measured total memory and time.
 
 ## Evaluation and workspace
 
@@ -124,7 +129,7 @@ The [parameter guide](../../guides/development/tfhe-parameters.md) records examp
 
 ## Features
 
-Default features are empty: public table compilation, inspection, `LookupTableConfig` and compilation errors need no transform or evaluator. `HighPrecisionLookupTable::try_new` still takes backend-neutral `TfheParameters` and an input codec; no keys, transform table or evaluator are required. Compilation retains the complete immutable selection plan. Features do not change callback order, coefficient encoding or table layout.
+Default features are empty: public table compilation, inspection, `LookupTableConfig` and compilation errors need no transform or evaluator. `HighPrecisionLookupTable::try_new` takes `PolyLength`, accumulator Q, an input codec and chunk configuration; its normal dependencies include no LWE/GLWE/NTRU/TFHE material or transform crate. Statistics and both workspace estimates are available without a backend. Compilation retains the complete immutable selection plan. Features do not change callback order, coefficient encoding or table layout.
 
 | Feature | Enables |
 | --- | --- |

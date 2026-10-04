@@ -5,8 +5,9 @@ User-facing encoding and evaluation contracts are in the [README](README.md). Th
 ## Compilation and evaluator features
 
 The default build retains public compilation and polynomial inspection, including
-the complete backend-neutral selection plan. It has no NTT/FFT or concrete TFHE
-backend dependency. `ntt` / `fourier` enable the corresponding evaluator module,
+the complete backend-neutral selection plan. Compilation accepts `PolyLength`, accumulator Q, a Rounded input codec at q
+and chunk geometry; its normal dependency tree contains no encryption/key or
+TFHE crate and no NTT/FFT implementation. `ntt` / `fourier` enable the corresponding evaluator module,
 its binding errors and the shared ciphertext-access helpers in `evaluation.rs`.
 Concrete FFT engine flags also enable `fourier`; SIMD weakly propagates to selected
 backends. Neither feature selection nor compiler-only use changes graph interning,
@@ -18,6 +19,17 @@ that configuration; execution-only accessors are gated with their consumers.
 Compiler tests still exercise shared-node identity and slot lifetimes without a
 transform implementation. Evaluation tests select individual available backends;
 the comparative `pipeline` benchmark deliberately requires all of them.
+
+The [`statistics` module](src/lookup_table/statistics.rs) reads the immutable
+plan for operation counts. It also owns the direct buffer-length calculations
+shared by both evaluator constructors and `estimate_workspace`. NTT counts T
+entries; Fourier counts N/2 complex pairs per transformed polynomial plus its
+coefficient conversion and gadget-one buffers. This describes storage only and
+does not merge numerical kernels. Nested bootstrap/CBS/one-hot/return resources,
+transform engines, keys, public compilation storage, caller buffers, allocator
+overhead and construction temporaries are excluded. The benchmark's retained-heap
+measurement includes resources beyond this partial estimate; the two numbers
+must not be treated as the same metric.
 
 ## Public table storage and compiled choices
 

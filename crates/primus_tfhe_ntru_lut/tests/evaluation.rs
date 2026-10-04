@@ -409,7 +409,8 @@ fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T) {
                 .unwrap();
             for (config, mapping) in cases(radix) {
                 let table = HighPrecisionLookupTable::try_new(
-                    context.parameters(),
+                    context.parameters().poly_length(),
+                    context.parameters().accumulator_ntru().cipher_modulus(),
                     &input_codec,
                     config,
                     |x, o| T::as_from(mapping.digit(x, o, radix)),
@@ -533,7 +534,8 @@ fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T) {
             )
             .unwrap();
             let table = HighPrecisionLookupTable::try_new(
-                other.parameters(),
+                other.parameters().poly_length(),
+                other.parameters().accumulator_ntru().cipher_modulus(),
                 &input_codec,
                 config,
                 |_, _| T::ZERO,
@@ -546,7 +548,8 @@ fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T) {
                 ))
             ));
             let table = HighPrecisionLookupTable::try_new(
-                &parameters(NativeModulus::new(), distr, dimension),
+                context.parameters().poly_length(),
+                NativeModulus::new(),
                 &input_codec,
                 config,
                 |_, _| T::ZERO,
@@ -609,7 +612,8 @@ fn fourier<T: TorusFftValue, Table: FftTable>() {
                 .unwrap();
             for (config, mapping) in cases(radix) {
                 let table = HighPrecisionLookupTable::try_new(
-                    context.parameters(),
+                    context.parameters().poly_length(),
+                    context.parameters().accumulator_ntru().cipher_modulus(),
                     &input_codec,
                     config,
                     |x, o| T::as_from(mapping.digit(x, o, radix)),
@@ -709,7 +713,8 @@ fn fourier<T: TorusFftValue, Table: FftTable>() {
                 parameters(NativeModulus::new(), distr, dimension + 1),
             );
             let table = HighPrecisionLookupTable::try_new(
-                other.parameters(),
+                other.parameters().poly_length(),
+                other.parameters().accumulator_ntru().cipher_modulus(),
                 &input_codec,
                 config,
                 |_, _| T::ZERO,
@@ -722,11 +727,8 @@ fn fourier<T: TorusFftValue, Table: FftTable>() {
                 ))
             ));
             let table = HighPrecisionLookupTable::try_new(
-                &parameters(
-                    BarrettModulus::new(T::as_from(998_244_353u32)),
-                    distr,
-                    dimension,
-                ),
+                context.parameters().poly_length(),
+                BarrettModulus::new(T::as_from(998_244_353u32)),
                 &input_codec,
                 config,
                 |_, _| T::ZERO,

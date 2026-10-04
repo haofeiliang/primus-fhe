@@ -120,6 +120,11 @@ pub(crate) struct SelectionPlan {
 }
 
 impl SelectionPlan {
+    /// Borrow reachable operations for setup-time cost inspection.
+    pub(super) fn operations(&self) -> impl ExactSizeIterator<Item = &TableOperation> {
+        self.nodes.iter().map(|node| &node.operation)
+    }
+
     /// All compiled nodes are reachable; only explicit lifts need independent `NLEV[1]`.
     pub fn needs_public_lift(&self) -> bool {
         self.nodes

@@ -1,10 +1,10 @@
-use primus_encoding::RoundedCodec;
 // Shared public LUT geometry, cleartext function and creation measurement.
 // Backend modules keep their concrete transform/context/evaluator types.
 
 use std::hint::black_box;
 
 use criterion::Criterion;
+use primus_encoding::RoundedCodec;
 use primus_integer::FheUint;
 use primus_reduce::RingContext;
 use primus_test_allocations::Allocations;
@@ -109,11 +109,14 @@ pub fn benchmark_lut_creation<T: FheUint, M: RingContext<T>, LM: RingContext<T>>
 ) {
     let input_codec =
         RoundedCodec::new(T::as_from(8u32), parameters.external_lwe().cipher_modulus());
+    let poly_length = parameters.poly_length();
+    let ring_modulus = parameters.accumulator_ntru().cipher_modulus();
     c.bench_function(&format!("{name}/create_lut_and_drop"), |b| {
         b.iter(|| {
             black_box(
                 HighPrecisionLookupTable::try_new(
-                    black_box(parameters),
+                    black_box(poly_length),
+                    black_box(ring_modulus),
                     &input_codec,
                     CONFIG,
                     |x, output| workload.digit::<T>(x, output),

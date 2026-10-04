@@ -11,7 +11,7 @@
 
 [NTT](../primus_tfhe_ntru_ntt/README.zh_CN.md) 和 [Fourier](../primus_tfhe_ntru_fourier/README.zh_CN.md) 均支持 classic binary/ternary 和 sparse fixed-weight binary 查表。使用 `generator.try_generate_server_key(&client, blind_rotation, Some(cbs_config), rng)` 生成求值材料，算法选择 `BlindRotationConfig::Classic` 或 `Sparse { copy_count, bucket_count }`；CBS 材料为必需项。客户端生成 chunks，再用 `encrypt_padded` 分别加密。示例对两种算法均使用 fixed-weight binary 秘密，只需修改 `BLIND_ROTATION` 即可切换算法，无需改变秘密分布。
 
-`HighPrecisionLookupTable::try_new(parameters, &input_codec, config, function)` 编译公开表。回调接收 `(完整输入索引, 输出 chunk 索引)`，返回一个 digit。用 `NttLookupTableEvaluator::try_new(context, server_key, None, table)` 或 `FourierLookupTableEvaluator::try_new(context, server_key, None, table)` 绑定资源，调用一次 `allocate_output()`，随后重复调用 `evaluate_to(input_chunks, output_chunks)`。输出逐个使用 `context.decryptor(client.external_lwe_secret_key(), &input_codec)` 解码。表拥有 chunk 编码，密钥不依赖 t。Evaluator 借用 context、服务端密钥和表，求值不需要客户端秘密。
+`HighPrecisionLookupTable::try_new(poly_length, ring_modulus, &input_codec, config, function)` 仅用 N、Q 和 codec 的 q/t 编译公开表，不需要 TFHE 参数、秘密或变换。回调接收 `(完整输入索引, 输出 chunk 索引)`，返回一个 digit。用 `NttLookupTableEvaluator::try_new(context, server_key, None, table)` 或 `FourierLookupTableEvaluator::try_new(context, server_key, None, table)` 绑定资源，调用一次 `allocate_output()`，随后重复调用 `evaluate_to(input_chunks, output_chunks)`。输出逐个使用 `context.decryptor(client.external_lwe_secret_key(), &input_codec)` 解码。表拥有 chunk 编码，密钥不依赖 t。Evaluator 借用 context、服务端密钥和表，求值不需要客户端秘密。
 
 对于 u32、`t=8`、`N=1024` 的 context，八个两位 chunks 表示一个 16 位输入。以下片段计算 `(x*x+3*x+7) mod 65536`，返回八个 chunks：
 
@@ -22,7 +22,8 @@ use primus_tfhe_ntru_lut::{
 
 let input_codec = primus_encoding::RoundedCodec::new(8u32, context.parameters().external_lwe().cipher_modulus());
 let table = HighPrecisionLookupTable::try_new(
-    context.parameters(),
+    context.parameters().poly_length(),
+    context.parameters().accumulator_ntru().cipher_modulus(),
     &input_codec,
     LookupTableConfig {
         input_chunk_count: 8,
@@ -74,7 +75,11 @@ cargo run --release -p primus_tfhe_ntru_lut --example fourier_lookup --features 
 
 ### 选择系数 chunk 数
 
-固定 N、M、c 时，可从 `d=min(c, floor(log2(N)/tau))` 开始，让 M^d 尽量接近 N。d 每增加 1，公开表的最坏存储量缩小 M 倍，每个输出多一次旋转乘积；最佳选择仍取决于实测时间与噪声余量。精确操作数见[阶段说明](IMPLEMENTATION.md#stage-and-buffer-layout)。
+固定 N、M、c 时，可从 `d=min(c, floor(log2(N)/tau))` 开始，让 M^d 尽量接近 N。d 每增加 1，公开表的最坏存储量缩小 M 倍，每个输出多一次旋转乘积；最佳选择仍取决于实测时间与噪声余量，计算公式见[阶段说明](IMPLEMENTATION.md#stage-and-buffer-layout)。
+
+编译各个候选 d 后，`table.stats()` 给出输入/输出位数、逻辑/唯一多项式数、需要 one-hot 的 chunk 数、NLEV/NGSW selector 数、选择节点数、公开提升数和同时存活的结果 slot 数。这些数量反映剪枝及跨输出共享，不预测延迟或噪声；`public_lift_count > 0` 等价于 `needs_public_lift()`。
+
+`table.estimate_workspace(output_levels)?` 接收拟用 CBS 输出的 `DecompositionLevelCount`，返回 `ntt_bytes` 与 `fourier_bytes`，与 evaluator 构造共用缓冲长度计算。它是**部分估算**，只统计 LUT 直接持有的 selectors、旋转 controls/factors、结果 slots、current/product 及 Fourier 转换/gadget-one 缓冲。它不含嵌套 BR/CBS/one-hot 和 LWE 返回工作区、变换引擎、密钥、公开表/计划、调用方输入输出、分配器开销及构造临时空间；比较 d 时仍需实测总内存与时间。
 
 ## 求值与工作区
 
@@ -124,7 +129,7 @@ Evaluator 借用 context、server key 和 table，并在构造时分配全部缓
 
 ## Features
 
-默认 features 为空，只提供 `HighPrecisionLookupTable`、`LookupTableConfig`、编译错误及公开多项式访问。`try_new` 仍接收后端无关的 `TfheParameters` 和输入 codec；无需生成密钥、创建变换表或 evaluator。编译保留完整的不可变选择计划，回调顺序、系数编码和表布局不随 feature 改变。
+默认 features 为空，只提供 `HighPrecisionLookupTable`、`LookupTableConfig`、编译错误及公开多项式访问。`try_new` 接收 `PolyLength`、累加 Q、输入 codec 和 chunk 配置；普通依赖不包含 LWE/GLWE/NTRU/TFHE 材料或变换 crate。统计与两种工作区估算均无需启用后端。编译保留完整的不可变选择计划，回调顺序、系数编码和表布局不随 feature 改变。
 
 | Feature | 启用内容 |
 | --- | --- |

@@ -83,7 +83,8 @@ fn benchmark_workload<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
             heap(&format!("{name}/client_and_server_keys"), keys);
             let (table, storage) = measure(|| {
                 HighPrecisionLookupTable::try_new(
-                    context.parameters(),
+                    context.parameters().poly_length(),
+                    context.parameters().accumulator_ntru().cipher_modulus(),
                     &input_codec,
                     CONFIG,
                     |x, output| workload.digit::<T>(x, output),

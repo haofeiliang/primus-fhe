@@ -19,6 +19,7 @@
 | `NlevParameters` | 共享 NTRU 环/采样状态和该运算的 basis | basis 模数、N*L 布局和层序；无需普通消息 codec |
 | `TfheConfig` → `TfheParameters` | 家族特定的 LWE/环配置、BR/KS 分解、PBS order（GLWE） | 同域检查与派生返回布局；消息编码由程序/client 绑定；NTT/Fourier 表由后端 context 绑定 |
 | `CircuitBootstrapConfig` → `CircuitBootstrapParameters` | output、trace、scheme-switch 三个 basis；后两者各自的噪声 | 环大小/模数继承累加环，输出布局由 output basis 派生；interleaved 容量由程序绑定检查 |
+| `HighPrecisionLookupTable::try_new` | PolyLength N、累加模数 Q、输入 Rounded codec 的 q/t、chunk 配置 | 完整枚举、编码/去重/选择计划，无密钥或 TFHE 参数；evaluator 绑定时核对 N/q/Q 和 CBS；`stats()` 与部分工作区估算用于比较分区 |
 | `LookupTableConfig` | 输入 chunk 数 c、输出 chunk 数 o、低位系数 chunk 数 d | `M=t/2`、每个多项式的有效系数数 `M^d`、每输出多项式数 `M^(c-d)`，以及完整存储长度 |
 
 入口：[LWE](../../crates/primus_lwe/src/parameter.rs)、[GLWE](../../crates/primus_glwe/src/parameter/ordinary.rs)、[NTRU](../../crates/primus_ntru/src/parameter/ordinary.rs)、[分解](../../crates/primus_decompose/src/parameters.rs)、[GLWE TFHE](../../crates/primus_tfhe_glwe/src/parameters.rs)、[NTRU TFHE](../../crates/primus_tfhe_ntru/src/parameters.rs)。
@@ -137,7 +138,7 @@ PBS trait、四后端、Boolean 门、双输入打包、CBS、one-hot 与 MVB �
 | Rounded 输入 t/q、默认或独立输出 t/Q | client/compiler 绑定；输入 q 不符拒绝；默认输出 codec 在 Q 无法构造时返回 `OutputEncoding` |
 | CBS 输入域和 ManyLUT 容量 | CBS LUT 编译/绑定；独立 CBS 参数只拥有 Q，输入 q 由后端绑定检查 |
 | one-hot 的 t=2M、W、stride、非空 guard 与存储长度 | `OneHotLookupTable::try_new(tfhe, cbs, &input_codec)`；后端仍限制 classic binary/ternary |
-| 高精度 chunk 位宽、数量、`M^d≤N`、表枚举和存储长度 | `HighPrecisionLookupTable::try_new(parameters, &input_codec, config, function)`；表保存 t/q/Q，evaluator 按表中 t 绑定 one-hot 并验证容量 |
+| 高精度 chunk 位宽、数量、`M^d≤N`、表枚举和存储长度 | `HighPrecisionLookupTable::try_new(poly_length, ring_modulus, &input_codec, config, function)`；表保存 t/q/Q，evaluator 按表中 t 绑定 one-hot 并验证容量 |
 | 在线输入的实际编码和噪声、返回输出的 q 域 decoder | 调用方契约；表在 Q 编码，Q→q 仍为最近舍入，不重新编码 |
 
 跨家族统一的是 codec 归属和绑定时机，数值契约继续显式区分：GLWE 同域 q、有两种 PBS order；NTRU 保留独立 q/Q 与 f/s，以及系数模切→提取→LWE KS。GLWE 的 CBS output basis 可按其 layout/basis 契约组合；NTRU 仍要求 key 的完整 output basis。NTT reverse trace 使用模逆，native Fourier 使用整数减半及 FFT 舍入。更换 t 不改变这些条件，也不自动保证噪声余量。

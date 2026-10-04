@@ -1,43 +1,17 @@
+use primus_decompose::DecompositionLevelCount;
 use primus_encoding::RoundedCodec;
-use primus_lattice::LweDimension;
-use primus_lwe::LweEncryptionParameters;
 use primus_modulus::{BarrettModulus, NativeModulus, PowOf2Modulus};
-use primus_ntru::SecretKeyDistr;
 use primus_poly::PolyLength;
 use primus_reduce::RingContext;
-use primus_tfhe::DecompositionBaseLog;
-use primus_tfhe_ntru::{DecompositionConfig, TfheParameters};
-use primus_tfhe_ntru_lut::{HighPrecisionLookupTable, LookupTableConfig, LookupTableError};
-
-// Builds a small geometry/encoding fixture without generating keys or ciphertexts.
-fn parameters<M: RingContext<u64>>(modulus: M) -> TfheParameters<u64, M, PowOf2Modulus<u64>> {
-    let basis = DecompositionConfig {
-        log_basis: DecompositionBaseLog::new(8),
-        level_count: None,
-    };
-    TfheParameters::try_from_config(primus_tfhe_ntru::TfheConfig {
-        external_lwe: LweEncryptionParameters::new(
-            LweDimension::new(2),
-            PowOf2Modulus::new(1 << 24),
-            SecretKeyDistr::UniformBinary,
-            0.7,
-        ),
-        accumulator_modulus: modulus,
-        poly_length: PolyLength::new(64),
-        accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
-        accumulator_noise_standard_deviation: 0.7,
-        blind_rotation: basis,
-        key_switching: basis,
-        key_switching_noise_standard_deviation: 0.7,
-    })
-    .unwrap()
-}
+use primus_tfhe_ntru_lut::{
+    HighPrecisionLookupTable, LookupTableConfig, LookupTableError, LookupTableStats,
+    LookupWorkspaceEstimate,
+};
 
 // Verifies logical indexing, encoding and sharing against an integer oracle.
 // The u128 modulus also represents the native u64 modulus 2^64 exactly.
 fn geometry<M: RingContext<u64>>(modulus: M, q: u128) {
-    let parameters = parameters(modulus);
-    let input_codec = RoundedCodec::new(8, parameters.external_lwe().cipher_modulus());
+    let input_codec = RoundedCodec::new(8, PowOf2Modulus::new(1 << 24));
     for coefficient_chunk_count in 0..=3 {
         let config = LookupTableConfig {
             input_chunk_count: 3,
@@ -45,12 +19,17 @@ fn geometry<M: RingContext<u64>>(modulus: M, q: u128) {
             coefficient_chunk_count,
         };
         let mut calls = Vec::new();
-        let lut =
-            HighPrecisionLookupTable::try_new(&parameters, &input_codec, config, |x, output| {
+        let lut = HighPrecisionLookupTable::try_new(
+            PolyLength::new(64),
+            modulus,
+            &input_codec,
+            config,
+            |x, output| {
                 calls.push((x, output));
                 ((x * 3 + x / 4 + 5) >> (2 * output)) as u64 % 4
-            })
-            .unwrap();
+            },
+        )
+        .unwrap();
         assert_eq!(lut.config(), config);
         assert_eq!(lut.chunk_bits(), 2);
         assert_eq!(lut.input_value_count(), 64);
@@ -95,7 +74,18 @@ fn geometry<M: RingContext<u64>>(modulus: M, q: u128) {
         assert!(
             std::panic::catch_unwind(|| lut.polynomial(0, lut.polynomials_per_output())).is_err()
         );
-        assert!(lut.is_compatible(&parameters));
+        assert!(lut.is_compatible(
+            PolyLength::new(64),
+            modulus,
+            input_codec.ciphertext_modulus()
+        ));
+        // Compatibility checks domains at binding, independently of key/noise parameters.
+        assert!(!lut.is_compatible(
+            PolyLength::new(32),
+            modulus,
+            input_codec.ciphertext_modulus()
+        ));
+        assert!(!lut.is_compatible(PolyLength::new(64), modulus, PowOf2Modulus::new(1 << 23)));
     }
 }
 
@@ -103,11 +93,10 @@ fn geometry<M: RingContext<u64>>(modulus: M, q: u128) {
 // and the first radix above the temporary-cache cap. Check the zero tail too.
 fn chunk_encoding_boundaries<M: RingContext<u64>>(modulus: M, q: u128) {
     for (radix, output_chunk_count) in [(4, 1), (256, 2), (512, 2)] {
-        let parameters = parameters(modulus);
-        let input_codec =
-            RoundedCodec::new(2 * radix as u64, parameters.external_lwe().cipher_modulus());
+        let input_codec = RoundedCodec::new(2 * radix as u64, PowOf2Modulus::new(1 << 24));
         let lut = HighPrecisionLookupTable::try_new(
-            &parameters,
+            PolyLength::new(64),
+            modulus,
             &input_codec,
             LookupTableConfig {
                 input_chunk_count: 1,
@@ -132,17 +121,17 @@ fn chunk_encoding_boundaries<M: RingContext<u64>>(modulus: M, q: u128) {
 // Exercises prime and native moduli across every coefficient/table partition.
 #[test]
 fn table_partition_and_chunk_encoding_match_integer_oracle() {
-    geometry(BarrettModulus::new(65_537), 65_537);
+    geometry(BarrettModulus::new(65_537u64), 65_537);
     geometry(NativeModulus::new(), 1u128 << 64);
-    chunk_encoding_boundaries(BarrettModulus::new(65_537), 65_537);
+    chunk_encoding_boundaries(BarrettModulus::new(65_537u64), 65_537);
     chunk_encoding_boundaries(NativeModulus::new(), 1u128 << 64);
 }
 
 // Invalid geometry must fail before callbacks; invalid digits report their exact pair.
 #[test]
 fn compilation_rejects_invalid_domains_before_callbacks() {
-    let parameters = parameters(BarrettModulus::new(65_537));
-    let input_codec = RoundedCodec::new(4, parameters.external_lwe().cipher_modulus());
+    let modulus = BarrettModulus::new(65_537u64);
+    let input_codec = RoundedCodec::new(4, PowOf2Modulus::new(1 << 24));
     for (input_chunk_count, output_chunk_count, coefficient_chunk_count, expected) in [
         (0, 1, 0, LookupTableError::EmptyChunks),
         (1, 0, 0, LookupTableError::EmptyChunks),
@@ -163,7 +152,8 @@ fn compilation_rejects_invalid_domains_before_callbacks() {
         (1, usize::MAX, 0, LookupTableError::StorageSizeOverflow),
     ] {
         let result = HighPrecisionLookupTable::try_new(
-            &parameters,
+            PolyLength::new(64),
+            modulus,
             &input_codec,
             LookupTableConfig {
                 input_chunk_count,
@@ -180,11 +170,16 @@ fn compilation_rejects_invalid_domains_before_callbacks() {
         coefficient_chunk_count: 1,
     };
     let mut calls = Vec::new();
-    let result =
-        HighPrecisionLookupTable::try_new(&parameters, &input_codec, config, |x, output| {
+    let result = HighPrecisionLookupTable::try_new(
+        PolyLength::new(64),
+        modulus,
+        &input_codec,
+        config,
+        |x, output| {
             calls.push((x, output));
             if (x, output) == (1, 1) { u64::MAX } else { 0 }
-        });
+        },
+    );
     assert_eq!(
         result.err(),
         Some(LookupTableError::OutputChunkOutOfRange {
@@ -194,28 +189,35 @@ fn compilation_rejects_invalid_domains_before_callbacks() {
     );
     assert_eq!(calls, [(0, 0), (1, 0), (2, 0), (3, 0), (0, 1), (1, 1)]);
     for t in [2, 6] {
-        let parameters = self::parameters(BarrettModulus::new(65_537));
-        let input_codec = RoundedCodec::new(t, parameters.external_lwe().cipher_modulus());
+        let modulus = BarrettModulus::new(65_537u64);
+        let input_codec = RoundedCodec::new(t, PowOf2Modulus::new(1 << 24));
         assert_eq!(
-            HighPrecisionLookupTable::try_new(&parameters, &input_codec, config, |_, _| panic!())
-                .err(),
+            HighPrecisionLookupTable::try_new(
+                PolyLength::new(64),
+                modulus,
+                &input_codec,
+                config,
+                |_, _| panic!()
+            )
+            .err(),
             Some(LookupTableError::InvalidPlaintextModulus)
         );
     }
-    let foreign = RoundedCodec::new(4, PowOf2Modulus::new(1 << 20));
-    assert!(matches!(
-        HighPrecisionLookupTable::try_new(&parameters, &foreign, config, |_, _| panic!()),
-        Err(LookupTableError::IncompatibleParameters)
-    ));
-    let small_ring = self::parameters(BarrettModulus::new(257));
-    let too_large = RoundedCodec::new(512, small_ring.external_lwe().cipher_modulus());
+    let small_ring = BarrettModulus::new(257u64);
+    let too_large = RoundedCodec::new(512, PowOf2Modulus::new(1 << 24));
     let config = LookupTableConfig {
         input_chunk_count: 1,
         output_chunk_count: 1,
         coefficient_chunk_count: 0,
     };
     assert!(matches!(
-        HighPrecisionLookupTable::try_new(&small_ring, &too_large, config, |_, _| panic!()),
+        HighPrecisionLookupTable::try_new(
+            PolyLength::new(64),
+            small_ring,
+            &too_large,
+            config,
+            |_, _| panic!()
+        ),
         Err(LookupTableError::OutputEncoding(_))
     ));
 }
@@ -223,11 +225,12 @@ fn compilation_rejects_invalid_domains_before_callbacks() {
 // Public choices lift with their selectors; only explicit pruned leaves need NLEV[1].
 #[test]
 fn public_lift_requirement_follows_pruned_choices() {
-    let parameters = parameters(NativeModulus::new());
-    let codec = RoundedCodec::new(4, parameters.external_lwe().cipher_modulus());
+    let modulus = NativeModulus::new();
+    let codec = RoundedCodec::new(4, PowOf2Modulus::new(1 << 24));
     for (d, mapping, needs_lift) in [(1, 0, false), (1, 1, true), (1, 2, true), (3, 0, true)] {
         let table = HighPrecisionLookupTable::try_new(
-            &parameters,
+            PolyLength::new(64),
+            modulus,
             &codec,
             LookupTableConfig {
                 input_chunk_count: 3,
@@ -254,6 +257,83 @@ fn public_lift_requirement_follows_pruned_choices() {
             table.needs_public_lift(),
             needs_lift,
             "d={d}, mapping={mapping}"
+        );
+    }
+}
+
+// Inspect costs without TFHE parameters or a backend. Expected bytes count the
+// actual retained scalar/complex buffers, excluding the documented nested workspaces.
+#[test]
+fn costs_follow_pruning_and_storage_representation() {
+    let poly_length = PolyLength::new(32);
+    let modulus = NativeModulus::<u64>::new();
+    let codec = RoundedCodec::new(4, PowOf2Modulus::new(1 << 24));
+    let levels = DecompositionLevelCount::new(2);
+    for (config, expected, bytes) in [
+        (
+            // Repeated outputs and both high chunks collapse to one public root.
+            LookupTableConfig {
+                input_chunk_count: 3,
+                output_chunk_count: 2,
+                coefficient_chunk_count: 1,
+            },
+            LookupTableStats {
+                input_bits: 3,
+                output_bits: 2,
+                logical_polynomial_count: 8,
+                unique_polynomial_count: 1,
+                one_hot_chunk_count: 1,
+                nlev_selector_count: 0,
+                ngsw_selector_count: 1,
+                selection_node_count: 1,
+                public_lift_count: 1,
+                result_slot_count: 1,
+            },
+            // NTT: 64 controls + 64 selector scratch + 32 factors + 32 slots + 64 work.
+            // FFT: 112 complex (including 32 gadget-one) + 96 coefficient elements.
+            LookupWorkspaceEstimate {
+                ntt_bytes: 256 * 8,
+                fourier_bytes: 112 * 16 + 96 * 8,
+            },
+        ),
+        (
+            // No rotation: one public choice retains both NLEV selectors.
+            LookupTableConfig {
+                input_chunk_count: 1,
+                output_chunk_count: 1,
+                coefficient_chunk_count: 0,
+            },
+            LookupTableStats {
+                input_bits: 1,
+                output_bits: 1,
+                logical_polynomial_count: 2,
+                unique_polynomial_count: 2,
+                one_hot_chunk_count: 1,
+                nlev_selector_count: 2,
+                ngsw_selector_count: 0,
+                selection_node_count: 1,
+                public_lift_count: 0,
+                result_slot_count: 1,
+            },
+            // NTT: 128 selectors + 32 slots + 64 work. FFT additionally needs
+            // 128 coefficient elements for converting the public-selector batch.
+            LookupWorkspaceEstimate {
+                ntt_bytes: 224 * 8,
+                fourier_bytes: 64 * 16 + 224 * 8,
+            },
+        ),
+    ] {
+        let table =
+            HighPrecisionLookupTable::try_new(poly_length, modulus, &codec, config, |x, _| {
+                (x & 1) as u64
+            })
+            .unwrap();
+        assert_eq!(table.stats(), expected);
+        assert_eq!(table.needs_public_lift(), expected.public_lift_count > 0);
+        assert_eq!(table.estimate_workspace(levels).unwrap(), bytes);
+        assert_eq!(
+            table.estimate_workspace(DecompositionLevelCount::new(usize::MAX)),
+            Err(LookupTableError::StorageSizeOverflow),
         );
     }
 }

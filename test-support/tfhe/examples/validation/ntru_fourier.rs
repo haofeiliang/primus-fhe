@@ -245,9 +245,14 @@ fn lookup<T: TorusFftValue, Table: FftTable>(
     let mut max_error = 0u64;
 
     // Server: compile the public function and allocate the evaluator and outputs.
-    let table =
-        HighPrecisionLookupTable::try_new(context.parameters(), &input_codec, config, digit)
-            .unwrap();
+    let table = HighPrecisionLookupTable::try_new(
+        context.parameters().poly_length(),
+        context.parameters().accumulator_ntru().cipher_modulus(),
+        &input_codec,
+        config,
+        digit,
+    )
+    .unwrap();
     let mut evaluator =
         FourierLookupTableEvaluator::try_new(context, server_key, None, &table).unwrap();
     let mut output = evaluator.allocate_output();
