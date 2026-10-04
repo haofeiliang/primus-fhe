@@ -58,7 +58,8 @@ impl FourierGlweSecretKey {
         B: DataMut<Elem = Complex64>,
         T: TorusFftValue,
     {
-        self.assert_encrypt_compatible(output.as_ref().len(), params, fft, workspace);
+        assert_eq!(self.size, params.size(), "GLWE parameter layout mismatch");
+        self.assert_encrypt_compatible(output.as_ref().len(), fft, workspace);
         assert_eq!(
             input.as_ref().len(),
             self.poly_length(),
@@ -96,7 +97,8 @@ impl FourierGlweSecretKey {
         B: DataMut<Elem = Complex64>,
         T: TorusFftValue,
     {
-        self.assert_encrypt_compatible(output.as_ref().len(), params, fft, workspace);
+        assert_eq!(self.size, params.size(), "GLWE parameter layout mismatch");
+        self.assert_encrypt_compatible(output.as_ref().len(), fft, workspace);
         assert_eq!(
             input.as_ref().len(),
             self.poly_length(),
@@ -114,17 +116,18 @@ impl FourierGlweSecretKey {
     }
 
     /// Encrypts a polynomial whose coefficients are already encoded in the
-    /// native torus ciphertext space.
+    /// native torus ciphertext space. No plaintext codec is needed; the key
+    /// supplies the layout. Use [`Self::phase_to`] to recover the noisy coefficients.
     ///
     /// # Panics
     ///
-    /// Panics on incompatible layouts or transform parameters, as described
-    /// by [`Self::encrypt_to`].
+    /// Panics before sampling or writes if the input/output, FFT or workspace
+    /// lengths disagree with the key layout.
     pub fn encrypt_encoded_to<T, Table, R, A, B>(
         &self,
         input: &Polynomial<A>,
         output: &mut FourierGlweCiphertext<B>,
-        params: &GlweParameters<T, NativeModulus<T>>,
+        params: &GlweParametersInner<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
         workspace: &mut FourierGlweEncryptWorkspace<T>,
@@ -135,7 +138,7 @@ impl FourierGlweSecretKey {
         B: DataMut<Elem = Complex64>,
         T: TorusFftValue,
     {
-        self.assert_encrypt_compatible(output.as_ref().len(), params, fft, workspace);
+        self.assert_encrypt_compatible(output.as_ref().len(), fft, workspace);
         assert_eq!(
             input.as_ref().len(),
             self.poly_length(),
@@ -144,7 +147,7 @@ impl FourierGlweSecretKey {
         self.encrypt_encoded_kernel_to(
             input.as_view(),
             output.as_mut_view(),
-            params.inner(),
+            params,
             fft,
             rng,
             workspace,
@@ -155,12 +158,11 @@ impl FourierGlweSecretKey {
     ///
     /// # Panics
     ///
-    /// Panics on incompatible layouts or transform parameters, as described
-    /// by [`Self::encrypt_to`]; zero encryption has no message-length check.
+    /// Inherits the resource checks of [`Self::encrypt_zeros_to`].
     #[must_use]
     pub fn encrypt_zeros<T, Table, R>(
         &self,
-        params: &GlweParameters<T, NativeModulus<T>>,
+        params: &GlweParametersInner<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
         workspace: &mut FourierGlweEncryptWorkspace<T>,
@@ -179,12 +181,12 @@ impl FourierGlweSecretKey {
     ///
     /// # Panics
     ///
-    /// Panics on incompatible layouts or transform parameters, as described
-    /// by [`Self::encrypt_to`]; zero encryption has no message-length check.
+    /// Panics before sampling or writes if the output, FFT or workspace lengths
+    /// disagree with the key layout.
     pub fn encrypt_zeros_to<T, Table, R, B>(
         &self,
         output: &mut FourierGlweCiphertext<B>,
-        params: &GlweParameters<T, NativeModulus<T>>,
+        params: &GlweParametersInner<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
         workspace: &mut FourierGlweEncryptWorkspace<T>,
@@ -194,8 +196,8 @@ impl FourierGlweSecretKey {
         B: DataMut<Elem = Complex64>,
         T: TorusFftValue,
     {
-        self.assert_encrypt_compatible(output.as_ref().len(), params, fft, workspace);
-        self.encrypt_zeros_kernel_to(output.as_mut_view(), params.inner(), fft, rng, workspace);
+        self.assert_encrypt_compatible(output.as_ref().len(), fft, workspace);
+        self.encrypt_zeros_kernel_to(output.as_mut_view(), params, fft, rng, workspace);
     }
 
     /// Builds the plaintext body addition after storage has been normalized to views.
@@ -276,14 +278,12 @@ impl FourierGlweSecretKey {
     fn assert_encrypt_compatible<T, Table>(
         &self,
         output_len: usize,
-        params: &GlweParameters<T, NativeModulus<T>>,
         fft: &FftEngine<'_, Table>,
         workspace: &FourierGlweEncryptWorkspace<T>,
     ) where
         Table: FftTable,
         T: TorusFftValue,
     {
-        assert_eq!(self.size, params.size(), "GLWE parameter layout mismatch");
         assert_eq!(
             fft.poly_length().get(),
             self.poly_length(),

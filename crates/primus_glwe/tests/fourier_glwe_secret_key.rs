@@ -4,24 +4,25 @@ use primus_encoding::PlaintextEmbedding;
 use primus_fft::{FftEngine, FftTable, RustFftTable, TorusFftValue};
 use primus_glwe::{
     FourierGlweDecryptWorkspace, FourierGlweEncryptWorkspace, FourierGlweSecretKey, GlweParameters,
-    SecretKeyDistr,
+    GlweSecretKey, SecretKeyDistr,
 };
 use primus_integer::FheUint;
 use primus_lattice::GlweDimension;
 use primus_modulus::NativeModulus;
 use primus_poly::{PolyLength, Polynomial};
-use rand::{SeedableRng, rngs::StdRng};
+use rand::{Rng, SeedableRng, rngs::StdRng};
 
 const DIMENSION: usize = 2;
 // Functional ring size; keep the original word widths, moduli and decomposition.
 const POLY_LENGTH: usize = 32;
 const PLAIN_MODULUS: usize = 16;
 
-fn assert_roundtrip<T>()
+fn assert_roundtrip<T, Table>()
 where
     T: FheUint + TorusFftValue,
+    Table: FftTable,
 {
-    let table = RustFftTable::new(PolyLength::new(POLY_LENGTH));
+    let table = Table::new(PolyLength::new(POLY_LENGTH));
     let mut fft = FftEngine::new(&table);
     let mut rng = StdRng::seed_from_u64(42);
     let messages: Vec<T> = (0..POLY_LENGTH)
@@ -44,7 +45,20 @@ where
             secret_key_distr,
             0.7,
         );
-        let (_, secret_key) = FourierGlweSecretKey::generate_pair(&params, &mut fft, &mut rng);
+        // Splitting layout from sampling state must preserve all k*N samples
+        // and the RNG stream before transformation.
+        let seed = rng.next_u64();
+        rng = StdRng::seed_from_u64(seed);
+        let mut expected_rng = StdRng::seed_from_u64(seed);
+        let expected_coefficients = GlweSecretKey::generate(
+            params.size(),
+            params.secret_key_sampler(),
+            &mut expected_rng,
+        );
+        let (coefficients, secret_key) =
+            FourierGlweSecretKey::generate_pair(params.size(), params.inner(), &mut fft, &mut rng);
+        assert_eq!(coefficients.as_slice(), expected_coefficients.as_slice());
+        assert_eq!(rng.next_u64(), expected_rng.next_u64());
         let mut encrypt_workspace = FourierGlweEncryptWorkspace::new(PolyLength::new(POLY_LENGTH));
         let mut decrypt_workspace = FourierGlweDecryptWorkspace::new(PolyLength::new(POLY_LENGTH));
 
@@ -79,7 +93,7 @@ where
 
         secret_key.encrypt_zeros_to(
             &mut cipher,
-            &params,
+            params.inner(),
             &mut fft,
             &mut rng,
             &mut encrypt_workspace,
@@ -97,14 +111,28 @@ where
             &messages,
             PlaintextEmbedding::Unsigned,
         );
+        // Raw encoded encryption must equal ordinary encryption with the same
+        // coins; this also checks that the codec is applied exactly once.
+        let seed = rng.next_u64();
+        rng = StdRng::seed_from_u64(seed);
+        let mut expected_rng = StdRng::seed_from_u64(seed);
+        let expected = secret_key.encrypt(
+            &message,
+            &params,
+            &mut fft,
+            &mut expected_rng,
+            &mut encrypt_workspace,
+        );
         secret_key.encrypt_encoded_to(
             &Polynomial::new(encoded),
             &mut cipher,
-            &params,
+            params.inner(),
             &mut fft,
             &mut rng,
             &mut encrypt_workspace,
         );
+        assert_eq!(cipher.as_ref(), expected.as_ref());
+        assert_eq!(rng.next_u64(), expected_rng.next_u64());
         assert_eq!(
             secret_key
                 .decrypt(&cipher, &params, &mut fft, &mut decrypt_workspace)
@@ -116,10 +144,14 @@ where
 
 #[test]
 fn fourier_glwe_secret_key_roundtrip_u32() {
-    assert_roundtrip::<u32>();
+    assert_roundtrip::<u32, RustFftTable>();
+    #[cfg(feature = "tfhe-fft")]
+    assert_roundtrip::<u32, primus_fft::TfheFftTable>();
 }
 
 #[test]
 fn fourier_glwe_secret_key_roundtrip_u64() {
-    assert_roundtrip::<u64>();
+    assert_roundtrip::<u64, RustFftTable>();
+    #[cfg(feature = "tfhe-fft")]
+    assert_roundtrip::<u64, primus_fft::TfheFftTable>();
 }

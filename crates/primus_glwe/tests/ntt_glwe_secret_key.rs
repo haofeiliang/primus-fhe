@@ -1,7 +1,8 @@
 //! Coefficient/NTT encryption equivalence, encoding paths and exact noise diagnostics.
 use primus_encoding::PlaintextEmbedding;
 use primus_glwe::{
-    GlweCiphertext, GlweParameters, NttGlweCiphertext, NttGlweSecretKey, SecretKeyDistr,
+    GlweCiphertext, GlweParameters, GlweSecretKey, NttGlweCiphertext, NttGlweSecretKey,
+    SecretKeyDistr,
 };
 use primus_integer::FheUint;
 use primus_lattice::GlweDimension;
@@ -44,7 +45,20 @@ where
             secret_key_distr,
             0.7,
         );
-        let (_, secret_key) = NttGlweSecretKey::generate_pair(&params, &ntt, &mut rng);
+        // Splitting layout from sampling state must preserve all k*N samples
+        // and the RNG stream before transformation.
+        let seed = rng.next_u64();
+        rng = StdRng::seed_from_u64(seed);
+        let mut expected_rng = StdRng::seed_from_u64(seed);
+        let expected_coefficients = GlweSecretKey::generate(
+            params.size(),
+            params.secret_key_sampler(),
+            &mut expected_rng,
+        );
+        let (coefficients, secret_key) =
+            NttGlweSecretKey::generate_pair(params.size(), params.inner(), &ntt, &mut rng);
+        assert_eq!(coefficients.as_slice(), expected_coefficients.as_slice());
+        assert_eq!(rng.next_u64(), expected_rng.next_u64());
         assert_eq!(secret_key.cipher_modulus(), cipher_modulus);
         let mut cipher = NttGlweCiphertext::<Vec<T>>::zero(params.glwe_len());
         let mut coefficients = GlweCiphertext::<Vec<T>>::zero(params.glwe_len());
@@ -82,7 +96,7 @@ where
             messages
         );
 
-        secret_key.encrypt_zeros_to(&mut cipher, &params, &ntt, &mut rng);
+        secret_key.encrypt_zeros_to(&mut cipher, params.inner(), &ntt, &mut rng);
         assert_eq!(
             secret_key.decrypt(&cipher, &params, &ntt).as_ref(),
             vec![T::ZERO; POLY_LENGTH]
@@ -94,13 +108,21 @@ where
             &messages,
             PlaintextEmbedding::Unsigned,
         );
+        // Raw encoded encryption must equal ordinary encryption with the same
+        // coins; this also checks that the codec is applied exactly once.
+        let seed = rng.next_u64();
+        rng = StdRng::seed_from_u64(seed);
+        let mut expected_rng = StdRng::seed_from_u64(seed);
+        let expected = secret_key.encrypt(&message, &params, &ntt, &mut expected_rng);
         secret_key.encrypt_encoded_to(
             &Polynomial::new(encoded),
             &mut cipher,
-            &params,
+            params.inner(),
             &ntt,
             &mut rng,
         );
+        assert_eq!(cipher.as_ref(), expected.as_ref());
+        assert_eq!(rng.next_u64(), expected_rng.next_u64());
 
         let mut reused_output = PolynomialOwned::new(vec![T::MAX; POLY_LENGTH]);
         secret_key.decrypt_to(&cipher, &mut reused_output, &params, &ntt);
@@ -172,9 +194,11 @@ fn truncated_decryption_returns_only_retained_coefficients() {
     );
     let table = UintNttTable::new(PolyLength::new(POLY_LENGTH), modulus).unwrap();
     let mut rng = StdRng::seed_from_u64(42);
-    let (_, secret_key) = NttGlweSecretKey::generate_pair(&params, &table, &mut rng);
+    let (_, secret_key) =
+        NttGlweSecretKey::generate_pair(params.size(), params.inner(), &table, &mut rng);
     for count in [0, 3, POLY_LENGTH] {
-        let mut ciphertext = secret_key.encrypt_truncated_zeros(count, &params, &table, &mut rng);
+        let mut ciphertext =
+            secret_key.encrypt_truncated_zeros(count, params.inner(), &table, &mut rng);
         let message: Vec<_> = (0..count)
             .map(|i| ((3 * i + 1) % PLAIN_MODULUS) as u64)
             .collect();

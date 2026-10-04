@@ -48,8 +48,12 @@ fn ntt_scheme_switch_produces_an_external_product_control() {
         Some(DecompositionLevelCount::new(3)),
     );
     let mut rng = StdRng::seed_from_u64(0x0043_4253_5052_494d);
-    let (coefficient_secret, secret) =
-        NttGlweSecretKey::generate_pair(&glwe_parameters, &ntt, &mut rng);
+    let (coefficient_secret, secret) = NttGlweSecretKey::generate_pair(
+        glwe_parameters.size(),
+        glwe_parameters.inner(),
+        &ntt,
+        &mut rng,
+    );
     let mut gadget = NttGlweGadgetEncryptWorkspace::new(scheme_parameters.size());
 
     let scheme_key = NttGlweSchemeSwitchKey::generate(

@@ -393,13 +393,12 @@ where
         let parameters = self.context.parameters();
         let small_lwe_secret_key = LweSecretKey::generate(parameters.small_lwe(), rng);
         let accumulator = parameters.blind_rotation_ggsw();
-        let glwe_secret_key = primus_glwe::GlweSecretKey::generate(
+        let (glwe_secret_key, main_glwe_secret_key) = NttGlweSecretKey::generate_pair(
             accumulator.glwe_size(),
-            accumulator.inner().secret_key_sampler(),
+            accumulator.inner(),
+            self.context.table(),
             rng,
         );
-        let main_glwe_secret_key =
-            NttGlweSecretKey::from_coeff_secret_key(&glwe_secret_key, self.context.table());
         let client_key = ClientKey::new(
             small_lwe_secret_key,
             glwe_secret_key,

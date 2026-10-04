@@ -76,8 +76,12 @@ fn functional_bootstrapping_key_blind_rotates() {
         SecretKeyDistr::UniformTernary,
         lwe_params.cipher_modulus(),
     );
-    let (_, output_secret_key) =
-        FourierGlweSecretKey::generate_pair(&glwe_params, &mut fft, &mut rng);
+    let (_, output_secret_key) = FourierGlweSecretKey::generate_pair(
+        glwe_params.size(),
+        glwe_params.inner(),
+        &mut fft,
+        &mut rng,
+    );
     let mut gadget_workspace = FourierGlweGadgetEncryptWorkspace::new(ggsw_params.size());
     // This public generation boundary still has the owner: reject a foreign
     // modulus even when the dimension and every ternary coefficient are valid.

@@ -1,11 +1,11 @@
 //! NTT public-key encryption.
 
 use super::{NttGlwePublicEncryptWorkspace, NttGlwePublicKey};
-use crate::{GlweParameters, NttGlweCiphertext, PlaintextEmbedding};
+use crate::{GlweParameters, GlweParametersInner, NttGlweCiphertext, PlaintextEmbedding};
 use primus_data::{Data, DataMut};
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
-use primus_poly::{NttPolynomial, Polynomial};
+use primus_poly::{NttPolynomial, PolyLength, Polynomial};
 use primus_reduce::FieldContext;
 
 impl<S, T> NttGlwePublicKey<S>
@@ -93,6 +93,8 @@ where
     }
 
     /// Encrypts an already encoded coefficient polynomial without plaintext scaling.
+    /// The table defines N; the public key contains k mask polynomials and a body.
+    /// No plaintext codec or separate parameter layout is needed.
     ///
     /// # Correctness
     ///
@@ -102,12 +104,14 @@ where
     ///
     /// # Panics
     ///
-    /// Panics on the compatibility mismatches described by [`Self::encrypt_to`].
+    /// Panics before sampling or writes if the key is not a sequence of at least
+    /// two complete polynomials, the output length differs from the key, input/workspace lengths
+    /// differ from N, or the parameter and table moduli differ.
     pub fn encrypt_encoded_to<M, Table, R, A, B>(
         &self,
         input: &Polynomial<A>,
         output: &mut NttGlweCiphertext<B>,
-        params: &GlweParameters<T, M>,
+        params: &GlweParametersInner<T, M>,
         ntt: &Table,
         rng: &mut R,
         workspace: &mut NttGlwePublicEncryptWorkspace<T>,
@@ -118,9 +122,10 @@ where
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
+        self.assert_raw_key_layout(ntt.poly_length());
         assert_eq!(
             input.as_ref().len(),
-            params.poly_length().get(),
+            ntt.poly_length().get(),
             "GLWE message length mismatch"
         );
         NttGlwePublicKey::from(self.key.as_view()).encrypt_encoded_kernel_to(
@@ -162,12 +167,12 @@ where
     ///
     /// # Panics
     ///
-    /// Panics on incompatible layouts or transform parameters, as described
-    /// by [`Self::encrypt_to`]; zero encryption has no message-length check.
+    /// Inherits [`Self::encrypt_encoded_to`]'s resource checks, without an input
+    /// polynomial length check.
     pub fn encrypt_zeros_to<M, Table, R, B>(
         &self,
         output: &mut NttGlweCiphertext<B>,
-        params: &GlweParameters<T, M>,
+        params: &GlweParametersInner<T, M>,
         ntt: &Table,
         rng: &mut R,
         workspace: &mut NttGlwePublicEncryptWorkspace<T>,
@@ -177,6 +182,7 @@ where
         R: rand::Rng + rand::CryptoRng,
         B: DataMut<Elem = T>,
     {
+        self.assert_raw_key_layout(ntt.poly_length());
         NttGlwePublicKey::from(self.key.as_view()).encrypt_zeros_kernel_to(
             output.as_mut_view(),
             params,
@@ -190,12 +196,11 @@ where
     ///
     /// # Panics
     ///
-    /// Panics on incompatible layouts or transform parameters, as described
-    /// by [`Self::encrypt_to`]; zero encryption has no message-length check.
+    /// Inherits [`Self::encrypt_zeros_to`]'s resource checks.
     #[must_use]
     pub fn encrypt_zeros<M, Table, R>(
         &self,
-        params: &GlweParameters<T, M>,
+        params: &GlweParametersInner<T, M>,
         ntt: &Table,
         rng: &mut R,
         workspace: &mut NttGlwePublicEncryptWorkspace<T>,
@@ -205,15 +210,28 @@ where
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
     {
-        let mut output = NttGlweCiphertext::zero(params.glwe_len());
+        let mut output = NttGlweCiphertext::zero(self.key.as_ref().len());
         self.encrypt_zeros_to(&mut output, params, ntt, rng, workspace);
         output
+    }
+
+    /// Raw public-key storage has no layout metadata. Establish complete mask/body
+    /// polynomials here; message APIs instead check the supplied ordinary layout.
+    #[inline]
+    fn assert_raw_key_layout(&self, poly_length: PolyLength) {
+        let n = poly_length.get();
+        let len = self.key.as_ref().len();
+        assert!(
+            len >= 2 * n && len & (n - 1) == 0,
+            "GLWE public key must contain complete mask and body polynomials"
+        );
     }
 }
 
 impl<T: FheUint> NttGlwePublicKey<&[T]> {
-    /// Input length was checked at the public entry. The shared kernel checks
-    /// key/output/backend/workspace layouts before sampling; the codec runs afterward.
+    /// Input length was checked at the public entry. Check the ordinary key/table
+    /// layout here; the shared kernel checks output and remaining resources before
+    /// sampling. The codec runs afterward.
     #[expect(
         clippy::too_many_arguments,
         reason = "explicit message embedding and encryption resources"
@@ -232,7 +250,17 @@ impl<T: FheUint> NttGlwePublicKey<&[T]> {
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
     {
-        self.encrypt_kernel_to(output, params, ntt, rng, workspace, |body| {
+        assert_eq!(
+            self.key.as_ref().len(),
+            params.glwe_len(),
+            "GLWE public key layout mismatch"
+        );
+        assert_eq!(
+            ntt.poly_length(),
+            params.poly_length(),
+            "NTT polynomial length mismatch"
+        );
+        self.encrypt_kernel_to(output, params.inner(), ntt, rng, workspace, |body| {
             params
                 .plaintext_codec()
                 .add_encode_slice_assign(body, input.as_ref(), embedding);
@@ -245,7 +273,7 @@ impl<T: FheUint> NttGlwePublicKey<&[T]> {
         &self,
         input: Polynomial<&[T]>,
         output: NttGlweCiphertext<&mut [T]>,
-        params: &GlweParameters<T, M>,
+        params: &GlweParametersInner<T, M>,
         ntt: &Table,
         rng: &mut R,
         workspace: &mut NttGlwePublicEncryptWorkspace<T>,
@@ -262,7 +290,7 @@ impl<T: FheUint> NttGlwePublicKey<&[T]> {
     fn encrypt_zeros_kernel_to<M, Table, R>(
         &self,
         output: NttGlweCiphertext<&mut [T]>,
-        params: &GlweParameters<T, M>,
+        params: &GlweParametersInner<T, M>,
         ntt: &Table,
         rng: &mut R,
         workspace: &mut NttGlwePublicEncryptWorkspace<T>,
@@ -274,13 +302,13 @@ impl<T: FheUint> NttGlwePublicKey<&[T]> {
         self.encrypt_kernel_to(output, params, ntt, rng, workspace, |_| {});
     }
 
-    /// Validates layouts, then encrypts using a statically dispatched body addition.
-    /// The owning boundary must check the input length. `add_message` runs once
-    /// after body noise sampling and before its forward transform.
+    /// Validates output/resources, then encrypts with a statically dispatched body
+    /// addition. The boundary establishes complete key polynomials and input length.
+    /// `add_message` runs once after body noise sampling and before its transform.
     fn encrypt_kernel_to<M, Table, R>(
         &self,
         mut output: NttGlweCiphertext<&mut [T]>,
-        params: &GlweParameters<T, M>,
+        params: &GlweParametersInner<T, M>,
         ntt: &Table,
         rng: &mut R,
         workspace: &mut NttGlwePublicEncryptWorkspace<T>,
@@ -290,22 +318,11 @@ impl<T: FheUint> NttGlwePublicKey<&[T]> {
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
     {
-        let size = params.size();
-        let poly_length = size.poly_length().get();
-        assert_eq!(
-            self.key.as_ref().len(),
-            size.glwe_len(),
-            "GLWE public key layout mismatch"
-        );
+        let poly_length = ntt.poly_length().get();
         assert_eq!(
             output.as_ref().len(),
-            size.glwe_len(),
+            self.key.as_ref().len(),
             "GLWE output layout mismatch"
-        );
-        assert_eq!(
-            ntt.poly_length().get(),
-            poly_length,
-            "NTT polynomial length mismatch"
         );
         assert_eq!(
             workspace.ephemeral.len(),

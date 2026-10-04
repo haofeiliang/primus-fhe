@@ -20,13 +20,15 @@
 | `FourierGlweSecretKey` | 按整数尺度变换的 Fourier 私钥多项式；原生环面 Fourier 加解密 |
 | `NttGlwePublicKey<S>` | 一个 NTT 零加密密文；公钥加密 |
 
-根据所用的 NTT 或 Fourier 后端，通过 `generate_pair` 生成私钥。它只采样一次，返回有符号系数私钥及其对应的变换形式：
+根据所用的 NTT 或 Fourier 后端，通过 `generate_pair` 生成私钥。它接收已检查的 `GlweSize` 和借用的 `GlweParametersInner`，只采样一次，返回有符号系数私钥及其对应的变换形式，无需明文 codec：
 
 ```rust,ignore
-let (coeff_sk, ntt_sk) = NttGlweSecretKey::generate_pair(&ntt_params, &ntt_table, &mut rng);
+let (coeff_sk, ntt_sk) = NttGlweSecretKey::generate_pair(size, &ntt_inner, &ntt_table, &mut rng);
 let (coeff_sk, fourier_sk) =
-    FourierGlweSecretKey::generate_pair(&fourier_params, &mut fft, &mut rng);
+    FourierGlweSecretKey::generate_pair(size, &fourier_inner, &mut fft, &mut rng);
 ```
+
+普通参数提供 `size()` 和 `inner()`；gadget 参数提供 `glwe_size()` 和 `inner()`。固定秘密重量在采样前对传入的完整布局进行检查。
 
 只需要有符号系数私钥时使用 `GlweSecretKey::generate`。转换已有系数私钥时使用 `from_coeff_secret_key`。固定重量分布作用于全部 `k*N` 个系数，而非逐多项式分别采样。私钥缓冲区在析构时擦除，也覆盖生成或系数/NTT/Fourier 导入检查失败时的栈展开路径。
 
@@ -44,6 +46,8 @@ NTT 私钥、Fourier 私钥和 NTT 公钥共享以下普通加密接口：
 | `encrypt_centered_to` | `[0, t)` 中的明文，使用居中嵌入 | 覆盖 |
 | `encrypt_encoded_to` | 已编码的密文环系数 | 覆盖；不做明文缩放 |
 | `encrypt_zeros` / `encrypt_zeros_to` | 零多项式 | 分配 / 覆盖 |
+
+`encrypt_encoded_to`、`encrypt_zeros` / `encrypt_zeros_to` 和 `NttGlwePublicKey::generate` 直接接收 `&GlweParametersInner`。普通消息方法接收同时提供 codec 的 `&GlweParameters`。私钥使用自身布局；raw 公钥由 NTT 表确定 N、完整 mask/body 存储确定 k，输出须与公钥长度一致。长度一致不能证明变换来源兼容。
 
 私钥提供 `decrypt`、`decrypt_to` 和 `phase_to`。Phase 提取返回带噪声的系数域值，不做解码；两种明文嵌入使用同一解码器。解密多项式使用密文系数类型 `T`，输出类型转换由应用处理。
 
@@ -88,7 +92,7 @@ let ordinary = GlweParameters::try_from_parts(size, inner, codec)?;
 
 `FourierGlweSecretKey::encrypt_ggsw_constant_batch_coeff_to` 通过相同加密后逆 FFT，输出系数域 GGSW。它额外接收长度为 `params.fourier_ggsw_len()` 的 scratch 切片，只复用一份变换域 GGSW，保持原 Fourier 路径的舍入与 RNG 消费。
 
-NTT 的 `encrypt_truncated_zeros`、`phase_truncated` 和 `decrypt_truncated` 操作系数域密文，其 mask 完整，body 最多包含 `N` 个系数。Phase 提取和解密只返回保留的系数，内部工作区仍保存完整多项式。
+NTT 的 `encrypt_truncated_zeros` 同样接收 `&GlweParametersInner`。它和 `phase_truncated`、`decrypt_truncated` 操作系数域密文，其 mask 完整，body 最多包含 `N` 个系数。Phase 提取和解密只返回保留的系数，内部工作区仍保存完整多项式。
 
 ## 求值原语
 

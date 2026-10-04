@@ -48,7 +48,8 @@ fn ntt_conversion(c: &mut Criterion) {
             3.2,
         );
         let size = params.size();
-        let (coeff, sk) = NttGlweSecretKey::generate_pair(&params, &table, &mut rng);
+        let (coeff, sk) =
+            NttGlweSecretKey::generate_pair(params.size(), params.inner(), &table, &mut rng);
         let glev = GlevParameters::with_glwe_params(
             &params,
             DecompositionBaseLog::new(10),
@@ -182,7 +183,8 @@ fn fourier_conversion(c: &mut Criterion) {
             3.2,
         );
         let size = params.size();
-        let (coeff, sk) = FourierGlweSecretKey::generate_pair(&params, &mut fft, &mut rng);
+        let (coeff, sk) =
+            FourierGlweSecretKey::generate_pair(params.size(), params.inner(), &mut fft, &mut rng);
         let glev = GlevParameters::with_glwe_params(
             &params,
             DecompositionBaseLog::new(10),

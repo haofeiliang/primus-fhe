@@ -45,7 +45,12 @@ fn fourier_cmux_selects_requested_glwe() {
         0.7,
     );
     let params = GlevParameters::with_glwe_params(&glwe_params, DecompositionBaseLog::new(8), None);
-    let (_, secret_key) = FourierGlweSecretKey::generate_pair(&glwe_params, &mut fft, &mut rng);
+    let (_, secret_key) = FourierGlweSecretKey::generate_pair(
+        glwe_params.size(),
+        glwe_params.inner(),
+        &mut fft,
+        &mut rng,
+    );
     let mut encrypt_workspace = FourierGlweEncryptWorkspace::new(PolyLength::new(POLY_LENGTH));
     let mut decrypt_workspace = FourierGlweDecryptWorkspace::new(PolyLength::new(POLY_LENGTH));
     let mut gadget_workspace = FourierGlweGadgetEncryptWorkspace::new(params.size());
@@ -135,7 +140,8 @@ fn ntt_cmux_selects_requested_glwe() {
         0.7,
     );
     let params = GlevParameters::with_glwe_params(&glwe_params, DecompositionBaseLog::new(8), None);
-    let (_, secret_key) = NttGlweSecretKey::generate_pair(&glwe_params, &ntt, &mut rng);
+    let (_, secret_key) =
+        NttGlweSecretKey::generate_pair(glwe_params.size(), glwe_params.inner(), &ntt, &mut rng);
     let mut gadget_workspace = NttGlweGadgetEncryptWorkspace::new(params.size());
     let mut cmux_workspace = NttGlweExternalProductWorkspace::new(params.size());
 

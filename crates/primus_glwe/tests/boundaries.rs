@@ -11,9 +11,10 @@ use primus_glwe::{
     FourierGgswCiphertext, FourierGlevCiphertext, FourierGlweCiphertext,
     FourierGlweEncryptWorkspace, FourierGlweGadgetEncryptWorkspace, FourierGlweSecretKey,
     GadgetSize, GlevParameters, GlweCiphertext, GlweKeySwitchingParameters, GlweParameters,
-    GlweSizeError, NttGgswCiphertext, NttGlevCiphertext, NttGlweCiphertext,
-    NttGlweGadgetEncryptWorkspace, NttGlweKeySwitchingKey, NttGlweKeySwitchingWorkspace,
-    NttGlwePublicEncryptWorkspace, NttGlwePublicKey, NttGlweSecretKey, SecretKeyDistr,
+    GlweParametersInner, GlweSize, GlweSizeError, NttGgswCiphertext, NttGlevCiphertext,
+    NttGlweCiphertext, NttGlweGadgetEncryptWorkspace, NttGlweKeySwitchingKey,
+    NttGlweKeySwitchingWorkspace, NttGlwePublicEncryptWorkspace, NttGlwePublicKey,
+    NttGlweSecretKey, SecretKeyDistr,
 };
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntt::{NttTable, UintNttTable};
@@ -156,15 +157,9 @@ fn independent_parameter_parts_check_secret_weight_and_codec_domain() {
 
 #[test]
 fn secret_generation_rejects_incompatible_tables_before_sampling() {
+    let size = GlweSize::new(GlweDimension::new(1), PolyLength::new(N));
     let modulus = BarrettModulus::new(257u32);
-    let params = GlweParameters::new(
-        GlweDimension::new(1),
-        N,
-        16,
-        modulus,
-        SecretKeyDistr::UniformBinary,
-        0.7,
-    );
+    let params = GlweParametersInner::new(modulus, SecretKeyDistr::UniformBinary, 0.7);
     for table in [
         UintNttTable::new(PolyLength::new(N), BarrettModulus::new(769u32)).unwrap(),
         UintNttTable::new(PolyLength::new(N * 2), modulus).unwrap(),
@@ -173,18 +168,15 @@ fn secret_generation_rejects_incompatible_tables_before_sampling() {
         let mut expected_rng = StdRng::seed_from_u64(42);
         assert!(
             catch_unwind(AssertUnwindSafe(|| {
-                let _ = NttGlweSecretKey::generate_pair(&params, &table, &mut rng);
+                let _ = NttGlweSecretKey::generate_pair(size, &params, &table, &mut rng);
             }))
             .is_err()
         );
         assert_eq!(rng.next_u64(), expected_rng.next_u64());
     }
 
-    let params = GlweParameters::new(
-        GlweDimension::new(1),
-        N,
-        16u32,
-        NativeModulus::new(),
+    let params = GlweParametersInner::new(
+        NativeModulus::<u32>::new(),
         SecretKeyDistr::UniformBinary,
         0.7,
     );
@@ -194,7 +186,7 @@ fn secret_generation_rejects_incompatible_tables_before_sampling() {
     let mut expected_rng = StdRng::seed_from_u64(42);
     assert!(
         catch_unwind(AssertUnwindSafe(|| {
-            let _ = FourierGlweSecretKey::generate_pair(&params, &mut fft, &mut rng);
+            let _ = FourierGlweSecretKey::generate_pair(size, &params, &mut fft, &mut rng);
         }))
         .is_err()
     );
@@ -231,7 +223,8 @@ fn fourier_encryption_rejects_incomplete_and_excess_masks_before_writes() {
     let table = RustFftTable::new(PolyLength::new(N));
     let mut fft = FftEngine::new(&table);
     let mut rng = StdRng::seed_from_u64(42);
-    let (_, key) = FourierGlweSecretKey::generate_pair(&params, &mut fft, &mut rng);
+    let (_, key) =
+        FourierGlweSecretKey::generate_pair(params.size(), params.inner(), &mut fft, &mut rng);
     let mut workspace = FourierGlweEncryptWorkspace::new(PolyLength::new(N));
     let message = Polynomial::new(vec![3u32; N]);
     let sentinel = Complex64::new(7.0, 9.0);
@@ -273,10 +266,11 @@ fn ntt_operations_reject_incompatible_domains_and_workspace_before_writes() {
     let wrong_length_table = UintNttTable::new(PolyLength::new(N * 2), modulus).unwrap();
     let gadget = GlevParameters::with_glwe_params(&params, DecompositionBaseLog::new(4), None);
     let mut rng = StdRng::seed_from_u64(42);
-    let (coeff_key, key) = NttGlweSecretKey::generate_pair(&params, &table, &mut rng);
+    let (coeff_key, key) =
+        NttGlweSecretKey::generate_pair(params.size(), params.inner(), &table, &mut rng);
     // Equal layouts and matching parameters/table do not establish the secret's domain.
     let foreign_key = NttGlweSecretKey::from_coeff_secret_key(&coeff_key, &wrong_table);
-    let public_key = NttGlwePublicKey::generate(&key, &params, &table, &mut rng);
+    let public_key = NttGlwePublicKey::generate(&key, params.inner(), &table, &mut rng);
     let message = Polynomial::new(vec![3u32; N]);
     let mut workspace = NttGlwePublicEncryptWorkspace::new(PolyLength::new(N));
 
@@ -501,8 +495,14 @@ fn only_ggsw_requires_matching_workspace_levels_in_both_domains() {
     let ntt = UintNttTable::new(PolyLength::new(N), modulus).unwrap();
     let table = RustFftTable::new(PolyLength::new(N));
     let mut fft = FftEngine::new(&table);
-    let (_, ntt_key) = NttGlweSecretKey::generate_pair(&ntt_params, &ntt, &mut rng);
-    let (_, fourier_key) = FourierGlweSecretKey::generate_pair(&fourier_params, &mut fft, &mut rng);
+    let (_, ntt_key) =
+        NttGlweSecretKey::generate_pair(ntt_params.size(), ntt_params.inner(), &ntt, &mut rng);
+    let (_, fourier_key) = FourierGlweSecretKey::generate_pair(
+        fourier_params.size(),
+        fourier_params.inner(),
+        &mut fft,
+        &mut rng,
+    );
     let message = Polynomial::new(vec![1u32; N]);
 
     for levels in [1, 4] {

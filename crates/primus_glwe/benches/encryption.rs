@@ -46,8 +46,9 @@ fn ntt_encryption(c: &mut Criterion) {
             3.2,
         );
         let ntt = UintNttTable::new(PolyLength::new(n), modulus).unwrap();
-        let (_, sk) = NttGlweSecretKey::generate_pair(&params, &ntt, &mut rng);
-        let pk = NttGlwePublicKey::generate(&sk, &params, &ntt, &mut rng);
+        let (_, sk) =
+            NttGlweSecretKey::generate_pair(params.size(), params.inner(), &ntt, &mut rng);
+        let pk = NttGlwePublicKey::generate(&sk, params.inner(), &ntt, &mut rng);
         let mut public_workspace = NttGlwePublicEncryptWorkspace::new(PolyLength::new(n));
         let mut ciphertext = sk.encrypt(&message, &params, &ntt, &mut rng);
         sk.decrypt_to(&ciphertext, &mut plaintext, &params, &ntt);
@@ -211,7 +212,8 @@ fn fourier_encryption(c: &mut Criterion) {
         );
         let table = RustFftTable::new(PolyLength::new(n));
         let mut fft = FftEngine::new(&table);
-        let (_, sk) = FourierGlweSecretKey::generate_pair(&params, &mut fft, &mut rng);
+        let (_, sk) =
+            FourierGlweSecretKey::generate_pair(params.size(), params.inner(), &mut fft, &mut rng);
         let mut encrypt_workspace = FourierGlweEncryptWorkspace::new(PolyLength::new(n));
         let mut decrypt_workspace = FourierGlweDecryptWorkspace::new(PolyLength::new(n));
         let mut ciphertext = sk.encrypt(

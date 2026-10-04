@@ -8,7 +8,7 @@ use primus_modulus::NativeModulus;
 use primus_poly::FourierPolynomialIter;
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
-use crate::{GlweParameters, SecretKeyDistr};
+use crate::{GlweParametersInner, SecretKeyDistr};
 
 use super::GlweSecretKey;
 
@@ -154,17 +154,19 @@ impl FourierGlweSecretKey {
     }
 
     /// Samples one signed coefficient key and returns it with its Fourier form.
+    /// The layout comes from `size`; no plaintext codec is needed.
     /// Fixed weights apply to the complete `k * N` coefficient key. Both
     /// representations and conversion scratch are erased on drop, including
     /// unwinding during generation. Keep using the same FFT table instance.
     ///
     /// # Panics
     ///
-    /// Panics before sampling if the FFT length differs from `params`.
+    /// Panics before sampling if the FFT length differs from `size`.
     /// Inherits [`GlweSecretKey::generate`]'s sampling conditions.
     #[must_use]
     pub fn generate_pair<T, R, Table>(
-        params: &GlweParameters<T, NativeModulus<T>>,
+        size: GlweSize,
+        params: &GlweParametersInner<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
     ) -> (GlweSecretKey<T>, Self)
@@ -175,10 +177,10 @@ impl FourierGlweSecretKey {
     {
         assert_eq!(
             fft.poly_length().get(),
-            params.poly_length().get(),
+            size.poly_length().get(),
             "FFT polynomial length mismatch"
         );
-        let coefficients = GlweSecretKey::generate(params.size(), params.secret_key_sampler(), rng);
+        let coefficients = GlweSecretKey::generate(size, params.secret_key_sampler(), rng);
         let key = Self::from_coeff_secret_key(&coefficients, fft);
         (coefficients, key)
     }

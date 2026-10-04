@@ -1,7 +1,7 @@
 //! Coefficient-domain GLWE ciphertexts with a truncated body.
 
 use super::NttGlweSecretKey;
-use crate::{GlweParameters, TruncatedGlweCiphertext};
+use crate::{GlweParameters, GlweParametersInner, TruncatedGlweCiphertext};
 use primus_data::Data;
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
@@ -14,16 +14,17 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     ///
     /// This is useful when only the first few coefficient extractions are
     /// needed. `message_count` must not exceed the polynomial length.
+    /// The key supplies the layout; no plaintext codec is needed.
     ///
     /// # Panics
     ///
-    /// Panics before sampling if the key/parameter/table moduli or layouts differ,
+    /// Panics before sampling if the key/parameter/table moduli or table length differ,
     /// or `message_count` exceeds the polynomial length.
     #[must_use]
     pub fn encrypt_truncated_zeros<M, Table, R>(
         &self,
         message_count: usize,
-        params: &GlweParameters<T, M>,
+        params: &GlweParametersInner<T, M>,
         ntt_table: &Table,
         rng: &mut R,
     ) -> TruncatedGlweCiphertext<Vec<T>>
@@ -32,9 +33,8 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
     {
-        let size = params.size();
+        let size = self.size;
         let poly_length = size.poly_length().get();
-        assert_eq!(self.size, size, "GLWE parameter layout mismatch");
         self.assert_ntt_compatible(params.cipher_modulus(), ntt_table);
         assert!(
             message_count <= poly_length,

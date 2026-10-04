@@ -9,7 +9,7 @@ use primus_poly::NttPolynomialIter;
 use primus_reduce::{EncodeSigned, ExplicitModulus, FieldContext};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-use crate::{GlweParameters, SecretKeyDistr};
+use crate::{GlweParametersInner, SecretKeyDistr};
 
 use super::GlweSecretKey;
 
@@ -180,16 +180,19 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     }
 
     /// Samples one signed coefficient key and returns it with its NTT form.
+    /// The layout comes from `size`; no plaintext codec is needed.
     /// Fixed weights apply to the complete `k * N` coefficient key. Both
     /// representations are erased on drop, including unwinding during generation.
     ///
     /// # Panics
     ///
     /// Panics before sampling if the table length or modulus differs from
-    /// `params`. Inherits [`GlweSecretKey::generate`]'s sampling conditions.
+    /// `size` or `params`, respectively.
+    /// Inherits [`GlweSecretKey::generate`]'s sampling conditions.
     #[must_use]
     pub fn generate_pair<R, M>(
-        params: &GlweParameters<T, M>,
+        size: GlweSize,
+        params: &GlweParametersInner<T, M>,
         ntt_table: &impl NttTable<ValueT = T>,
         rng: &mut R,
     ) -> (GlweSecretKey<T>, Self)
@@ -199,7 +202,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     {
         assert_eq!(
             ntt_table.poly_length().get(),
-            params.poly_length().get(),
+            size.poly_length().get(),
             "NTT polynomial length mismatch"
         );
         assert_eq!(
@@ -207,7 +210,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
             params.cipher_modulus().value(),
             "NTT ciphertext modulus mismatch"
         );
-        let coefficients = GlweSecretKey::generate(params.size(), params.secret_key_sampler(), rng);
+        let coefficients = GlweSecretKey::generate(size, params.secret_key_sampler(), rng);
         let key = Self::from_coeff_secret_key_kernel(&coefficients, ntt_table);
         (coefficients, key)
     }

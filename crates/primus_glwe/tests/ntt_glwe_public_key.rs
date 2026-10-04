@@ -2,8 +2,8 @@
 
 use primus_encoding::PlaintextEmbedding;
 use primus_glwe::{
-    GlweParameters, NttGlweCiphertext, NttGlwePublicEncryptWorkspace, NttGlwePublicKey,
-    NttGlweSecretKey, SecretKeyDistr,
+    GlweParameters, GlweParametersInner, NttGlweCiphertext, NttGlwePublicEncryptWorkspace,
+    NttGlwePublicKey, NttGlweSecretKey, SecretKeyDistr,
 };
 use primus_lattice::GlweDimension;
 use primus_modulus::BarrettModulus;
@@ -30,8 +30,9 @@ fn public_key_encoding_modes_reuse_workspace() {
     );
     let table = UintNttTable::new(PolyLength::new(POLY_LENGTH), modulus).unwrap();
     let mut rng = StdRng::seed_from_u64(42);
-    let (_, secret_key) = NttGlweSecretKey::generate_pair(&params, &table, &mut rng);
-    let public_key = NttGlwePublicKey::generate(&secret_key, &params, &table, &mut rng);
+    let (_, secret_key) =
+        NttGlweSecretKey::generate_pair(params.size(), params.inner(), &table, &mut rng);
+    let public_key = NttGlwePublicKey::generate(&secret_key, params.inner(), &table, &mut rng);
     let public_key_view = NttGlwePublicKey::from(NttGlweCiphertext::new(public_key.as_ref()));
     // Keep the centered sign boundary and endpoints even when N is smaller than t.
     let message = Polynomial::new(
@@ -89,7 +90,7 @@ fn public_key_encoding_modes_reuse_workspace() {
         public_key_view.encrypt_encoded_to(
             &encoded.as_view(),
             &mut ciphertext.as_mut_view(),
-            &params,
+            params.inner(),
             &table,
             &mut actual_rng,
             &mut workspace,
@@ -102,11 +103,57 @@ fn public_key_encoding_modes_reuse_workspace() {
         );
     }
 
-    let encrypted_zero = public_key.encrypt_zeros(&params, &table, &mut rng, &mut workspace);
+    let encrypted_zero = public_key.encrypt_zeros(params.inner(), &table, &mut rng, &mut workspace);
     assert_eq!(
         secret_key
             .decrypt(&encrypted_zero, &params, &table)
             .as_ref(),
         vec![0; POLY_LENGTH]
     );
+}
+
+// Raw imported public keys have no size metadata. Reject incomplete masks/body
+// and mismatched output before the shared encryption kernel consumes randomness.
+#[test]
+fn raw_public_encryption_checks_complete_key_and_output_layouts() {
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+
+    let n = POLY_LENGTH;
+    let modulus = BarrettModulus::new(CIPHER_MODULUS);
+    let inner = GlweParametersInner::new(modulus, SecretKeyDistr::UniformBinary, 0.7);
+    let table = UintNttTable::new(PolyLength::new(n), modulus).unwrap();
+    let mut workspace = NttGlwePublicEncryptWorkspace::new(PolyLength::new(n));
+    let encoded = Polynomial::new(vec![1; n]);
+    for (key_len, output_len) in [
+        (0, 2 * n),
+        (n, n),
+        (2 * n - 1, 2 * n - 1),
+        (2 * n + 1, 2 * n + 1),
+        (2 * n, 3 * n),
+    ] {
+        let key = NttGlwePublicKey::from(NttGlweCiphertext::new(vec![1; key_len]));
+        for zero in [false, true] {
+            let mut output = NttGlweCiphertext::new(vec![7; output_len]);
+            let mut rng = StdRng::seed_from_u64(43);
+            assert!(
+                catch_unwind(AssertUnwindSafe(|| {
+                    if zero {
+                        key.encrypt_zeros_to(&mut output, &inner, &table, &mut rng, &mut workspace);
+                    } else {
+                        key.encrypt_encoded_to(
+                            &encoded,
+                            &mut output,
+                            &inner,
+                            &table,
+                            &mut rng,
+                            &mut workspace,
+                        );
+                    }
+                }))
+                .is_err()
+            );
+            assert_eq!(output.as_ref(), vec![7; output_len]);
+            assert_eq!(rng.next_u64(), StdRng::seed_from_u64(43).next_u64());
+        }
+    }
 }

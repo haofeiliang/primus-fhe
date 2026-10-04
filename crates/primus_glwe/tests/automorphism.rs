@@ -55,8 +55,12 @@ fn ntt_and_coefficient_inputs_reuse_the_automorphism_key() {
         Some(DecompositionLevelCount::new(3)),
     );
     let mut rng = StdRng::seed_from_u64(0x0043_4253_5052_494d);
-    let (coefficient_secret, secret) =
-        NttGlweSecretKey::generate_pair(&glwe_parameters, &ntt, &mut rng);
+    let (coefficient_secret, secret) = NttGlweSecretKey::generate_pair(
+        glwe_parameters.size(),
+        glwe_parameters.inner(),
+        &ntt,
+        &mut rng,
+    );
     let mut gadget = NttGlweGadgetEncryptWorkspace::new(glev_parameters.size());
 
     let automorphism_key = NttGlweAutomorphismKey::generate(

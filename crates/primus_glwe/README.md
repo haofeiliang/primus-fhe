@@ -20,13 +20,15 @@ Single-modulus GLWE keys and operations, with separate NTT and native-torus Four
 | `FourierGlweSecretKey` | Integer-scaled Fourier secret polynomials; native-torus Fourier encryption and decryption |
 | `NttGlwePublicKey<S>` | One NTT encryption of zero; public-key encryption |
 
-Generate a secret with `generate_pair` for the chosen NTT or Fourier backend. It samples once and returns the signed coefficient key and its matching transform:
+Generate a secret with `generate_pair` for the chosen NTT or Fourier backend. It takes a checked `GlweSize` and borrowed `GlweParametersInner`, samples once, and returns the signed coefficient key and its matching transform. No plaintext codec is needed:
 
 ```rust,ignore
-let (coeff_sk, ntt_sk) = NttGlweSecretKey::generate_pair(&ntt_params, &ntt_table, &mut rng);
+let (coeff_sk, ntt_sk) = NttGlweSecretKey::generate_pair(size, &ntt_inner, &ntt_table, &mut rng);
 let (coeff_sk, fourier_sk) =
-    FourierGlweSecretKey::generate_pair(&fourier_params, &mut fft, &mut rng);
+    FourierGlweSecretKey::generate_pair(size, &fourier_inner, &mut fft, &mut rng);
 ```
+
+Ordinary parameters supply `size()` and `inner()`; gadget parameters supply `glwe_size()` and `inner()`. Fixed secret weights are checked against the supplied layout before sampling.
 
 Use `GlweSecretKey::generate` when only the signed coefficient key is needed. Use `from_coeff_secret_key` to transform an existing coefficient key. Fixed-weight distributions apply to all `k*N` coefficients, not separately to each polynomial. Secret buffers are erased on drop, including unwinding during generation or rejected coefficient/NTT/Fourier imports.
 
@@ -44,6 +46,8 @@ NTT secret, Fourier secret and NTT public keys share these ordinary encryption m
 | `encrypt_centered_to` | Plaintext in `[0, t)`, centered embedding | Overwrite |
 | `encrypt_encoded_to` | Already encoded ciphertext-ring coefficients | Overwrite; no plaintext scaling |
 | `encrypt_zeros` / `encrypt_zeros_to` | Zero polynomial | Allocate / overwrite |
+
+`encrypt_encoded_to`, `encrypt_zeros` / `encrypt_zeros_to`, and `NttGlwePublicKey::generate` take `&GlweParametersInner` directly. Ordinary message methods take `&GlweParameters`, which also supplies the codec. Secret keys supply their own layout. Raw public keys derive N from the NTT table and k from complete mask/body storage; output must have the same length as the key. Matching lengths do not establish transform provenance.
 
 Secret keys provide `decrypt`, `decrypt_to` and `phase_to`. Phase extraction returns noisy coefficient-domain values without decoding; both plaintext embeddings use the same decoder. Decrypted polynomials use the ciphertext coefficient type `T`; applications handle output type conversion.
 
@@ -88,7 +92,7 @@ When ordinary parameters already exist, `GlevParameters::try_with_basis(&glwe_pa
 
 `FourierGlweSecretKey::encrypt_ggsw_constant_batch_coeff_to` writes coefficient GGSWs using the same encryption followed by inverse FFT. It takes an additional `params.fourier_ggsw_len()` scratch slice, reuses one transformed GGSW, and preserves the Fourier path's rounding and RNG consumption.
 
-NTT `encrypt_truncated_zeros`, `phase_truncated` and `decrypt_truncated` operate on coefficient ciphertexts with a full mask and at most `N` body coefficients. Phase extraction and decryption return only the retained coefficients, while their internal scratch still holds full polynomials.
+NTT `encrypt_truncated_zeros` also takes `&GlweParametersInner`. Together with `phase_truncated` and `decrypt_truncated`, it operates on coefficient ciphertexts with a full mask and at most `N` body coefficients. Phase extraction and decryption return only the retained coefficients, while their internal scratch still holds full polynomials.
 
 ## Evaluation primitives
 

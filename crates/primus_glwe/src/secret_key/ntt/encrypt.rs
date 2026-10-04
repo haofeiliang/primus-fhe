@@ -57,7 +57,8 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        self.assert_encrypt_compatible(output.as_ref().len(), params, ntt_table);
+        assert_eq!(self.size, params.size(), "GLWE parameter layout mismatch");
+        self.assert_encrypt_compatible(output.as_ref().len(), params.inner(), ntt_table);
         assert_eq!(
             input.as_ref().len(),
             self.poly_length(),
@@ -93,7 +94,8 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        self.assert_encrypt_compatible(output.as_ref().len(), params, ntt_table);
+        assert_eq!(self.size, params.size(), "GLWE parameter layout mismatch");
+        self.assert_encrypt_compatible(output.as_ref().len(), params.inner(), ntt_table);
         assert_eq!(
             input.as_ref().len(),
             self.poly_length(),
@@ -110,7 +112,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     }
 
     /// Encrypts a polynomial whose coefficients are already encoded in
-    /// `[0, q)`. The plaintext codec and delta scaling are not applied.
+    /// `[0, q)`. No plaintext codec is needed; the key supplies the layout.
     ///
     /// # Correctness
     ///
@@ -119,13 +121,13 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     ///
     /// # Panics
     ///
-    /// Panics on incompatible layouts or transform parameters, as described
-    /// by [`Self::encrypt_to`].
+    /// Panics before sampling or writes if the input/output lengths disagree with
+    /// the key layout, or the key, parameter and table moduli or table length differ.
     pub fn encrypt_encoded_to<M, Table, R, A, B>(
         &self,
         input: &Polynomial<A>,
         output: &mut NttGlweCiphertext<B>,
-        params: &GlweParameters<T, M>,
+        params: &GlweParametersInner<T, M>,
         ntt_table: &Table,
         rng: &mut R,
     ) where
@@ -144,7 +146,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         self.encrypt_encoded_kernel_to(
             input.as_view(),
             output.as_mut_view(),
-            params.inner(),
+            params,
             ntt_table,
             rng,
         );
@@ -154,12 +156,11 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     ///
     /// # Panics
     ///
-    /// Panics on incompatible layouts or transform parameters, as described
-    /// by [`Self::encrypt_to`]; zero encryption has no message-length check.
+    /// Inherits the resource checks of [`Self::encrypt_zeros_to`].
     #[must_use]
     pub fn encrypt_zeros<M, Table, R>(
         &self,
-        params: &GlweParameters<T, M>,
+        params: &GlweParametersInner<T, M>,
         ntt_table: &Table,
         rng: &mut R,
     ) -> NttGlweCiphertext<Vec<T>>
@@ -177,12 +178,12 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     ///
     /// # Panics
     ///
-    /// Panics on incompatible layouts or transform parameters, as described
-    /// by [`Self::encrypt_to`]; zero encryption has no message-length check.
+    /// Panics before sampling or writes if the output length disagrees with the
+    /// key layout, or the key, parameter and table moduli or table length differ.
     pub fn encrypt_zeros_to<M, Table, R, A>(
         &self,
         output: &mut NttGlweCiphertext<A>,
-        params: &GlweParameters<T, M>,
+        params: &GlweParametersInner<T, M>,
         ntt_table: &Table,
         rng: &mut R,
     ) where
@@ -192,7 +193,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         A: DataMut<Elem = T>,
     {
         self.assert_encrypt_compatible(output.as_ref().len(), params, ntt_table);
-        self.encrypt_zeros_kernel_to(output.as_mut_view(), params.inner(), ntt_table, rng);
+        self.encrypt_zeros_kernel_to(output.as_mut_view(), params, ntt_table, rng);
     }
 
     /// Builds the plaintext body addition after storage has been normalized to views.
@@ -266,13 +267,12 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     fn assert_encrypt_compatible<M, Table>(
         &self,
         output_len: usize,
-        params: &GlweParameters<T, M>,
+        params: &GlweParametersInner<T, M>,
         ntt_table: &Table,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
     {
-        assert_eq!(self.size, params.size(), "GLWE parameter layout mismatch");
         self.assert_ntt_compatible(params.cipher_modulus(), ntt_table);
         assert_eq!(
             output_len,
