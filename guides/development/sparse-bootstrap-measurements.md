@@ -5,6 +5,7 @@ change is the paired GLWE CBS benchmark described below. These are functional
 arithmetic profiles, not assessed security parameters or equal-security comparisons.
 No production algorithm, workspace layout or public API changed in that baseline.
 The later [NTRU pair experiment](#ntru-paired-coefficient-aggregation) records an accepted kernel optimization.
+The [tile experiment](#coefficient-aggregation-tiles) records candidates that were not retained.
 
 ## Conditions and workload pairing
 
@@ -607,3 +608,157 @@ with an already allocated output. Reset live/peak counters between those scopes;
 keep the returned evaluator alive when reading retained bytes. Do not include
 this instrumentation in the latency binary. Temporary capture code, allocator
 probe, strategy copies and logs were removed after recording these results.
+
+## Coefficient aggregation tiles
+
+**2026-10-04; baseline `501c90ac`. Decision: retain the existing untiled
+NTRU and GLWE Fourier aggregation.** The NTRU pair optimization above remains
+unchanged. These experiments do not justify a general tile policy or an accepted
+word-specific replacement. GLWE NTT's existing tile policy was not changed.
+
+### Method and remaining cost
+
+Use the same n728/h32/N1024, r3/B64, t8 sparse PBS fixtures and seeds as above.
+The request includes the ordinary output return, including NTRU Q→q/extraction/KS.
+No modulus, basis, key layout, sampling or arithmetic kernel changed. Compare
+complete-polynomial tiles of 8, 16 and 32 KiB with a whole control: copy the dummy
+once, traverse tiles outside the existing selector-pair loop, then transform the
+**completed** aggregate. Each pair reads the corresponding source polynomial
+range; an odd last selector still uses the single-input kernel. No encrypted
+zero or zero exponent is skipped, and no tile owns a new buffer.
+
+The AMD Ryzen 9 9955HX3D, rustc 1.98.1, repository `target-cpu=native` and default
+features plus `rustfft,tfhe-fft` were held fixed. CPU 4 and CPU 8 are on different
+CCD/cache groups. Builds/tests ran separately from latency measurements. Power,
+frequency and unrelated system activity were not controlled. `perf_event_paranoid=4`
+prevented hardware-counter evidence; these timings do not identify cache misses,
+writeback latency or DRAM traffic.
+
+A temporary `Instant` probe around each bucket's aggregation, control transform
+and external product reconfirmed the remaining u64 cost. These are median stage
+sums from up to the last 100 warmed requests, in ms, **not acceptance timings**:
+
+| Backend, u64 | Requests retained | Aggregate | Transform | External product | Aggregate bytes | BR coefficient-array bytes |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| ntru / ntt | 100 | 2.885 | 0.276 | 0.425 | 49,152 | 110,493,696 |
+| ntru / rustfft | 87 | 3.304 | 0.270 | 0.440 | 65,536 | 147,324,928 |
+| glwe / rustfft | 28 | 13.725 | 1.032 | 1.059 | 262,144 | 589,299,712 |
+
+All tables below use freshly rebuilt **uninstrumented** binaries. Early comparisons
+were discarded after detecting a reused instrumented library artifact when saved
+source was restored with an older mtime. Rebuilding with fresh source timestamps,
+checking the build log, and checking both binaries and run logs for probe markers
+preceded the replacement measurements. The discarded timings are not mixed into
+these tables. Key/input capture and correctness assertions execute outside `b.iter`.
+
+### Whole-control versus constant tiles
+
+CPU 4 screening used 15 samples, 0.3 s warmup and a 1 s measurement target.
+Run the whole-control baseline before and after each candidate series. Cells
+contain the point mean and Criterion's 95% confidence interval in ms; the two
+baseline cells are distinct fresh processes. GLWE uses BR→KS in this screen.
+
+| Backend / word | Whole, first | 8 KiB | 16 KiB | 32 KiB | Whole, last |
+| --- | --- | --- | --- | --- | --- |
+| glwe / rustfft / u64 | 16.088 [15.803, 16.436] | 19.577 [19.347, 19.825] | 18.484 [18.260, 18.729] | 18.080 [17.882, 18.317] | 15.932 [15.803, 16.089] |
+| ntru / ntt / u64 | 4.723 [4.676, 4.784] | 5.280 [5.219, 5.355] | 5.065 [4.999, 5.139] | 4.938 [4.891, 4.997] | 4.704 [4.658, 4.764] |
+| ntru / rustfft / u64 | 5.417 [5.264, 5.638] | 5.644 [5.581, 5.721] | 5.362 [5.314, 5.421] | 5.388 [5.324, 5.470] | 5.333 [5.267, 5.414] |
+
+The u64 NTRU NTT and GLWE Fourier candidates regressed; NTRU RustFFT had no
+convincing gain. The u32 screen retained the two larger candidates:
+
+| Backend / word | Whole, first | 16 KiB | 32 KiB | Whole, last |
+| --- | --- | --- | --- | --- |
+| glwe / rustfft / u32 | 20.992 [20.701, 21.354] | 21.798 [21.572, 22.160] | 21.277 [21.065, 21.521] | 20.819 [20.593, 21.177] |
+| glwe / tfhe_fft / u32 | 19.930 [19.701, 20.219] | 21.140 [20.841, 21.514] | 20.531 [20.277, 20.883] | 19.890 [19.667, 20.158] |
+| ntru / ntt / u32 | 5.044 [4.998, 5.097] | 5.517 [5.465, 5.578] | 5.441 [5.401, 5.488] | 5.109 [5.044, 5.181] |
+| ntru / rustfft / u32 | 6.130 [6.071, 6.203] | 5.788 [5.743, 5.841] | 5.730 [5.679, 5.793] | 6.132 [6.027, 6.289] |
+| ntru / tfhe_fft / u32 | 5.786 [5.751, 5.828] | 5.513 [5.429, 5.648] | 5.438 [5.384, 5.519] | 5.779 [5.727, 5.843] |
+
+Only the NTRU Fourier u32 constant-tile prototype showed a useful signal. That
+alone cannot justify tiling u64, or prove that a word-specific implementation
+will preserve the gain.
+
+### Candidate that preserves the u64 whole-control path
+
+The reviewable candidate selected `max(32 KiB / size_of::<T>(), N)` only for u32
+and the full control length otherwise, in the same tile loop. NTRU retained its
+`NlevIter` and borrowed level ranges. GLWE moved its existing pair traversal into
+an inline private bucket helper; tiles used the flat polynomial-batch kernel,
+since a tile need not be a whole GGSW. The numerical order within each polynomial
+remained unchanged.
+
+CPU 4 used before/after/after/before; CPU 8 reversed that order. Each request used
+30 samples, 0.5 s warmup and a 2 s measurement target. Means below are individual
+runs; delta compares their arithmetic averages. CI envelopes are the min/max of
+individual 95% CIs, **not a pooled confidence interval**.
+
+| CPU / backend / word | Whole means | u32-only tile means | Delta | Whole CI envelope → candidate CI envelope |
+| --- | --- | --- | --- | --- |
+| 4 / glwe / rustfft / u32 | 20.883 / 20.970 | 21.582 / 22.290 | +4.8% | [20.749, 21.184] → [21.399, 22.514] |
+| 4 / glwe / tfhe_fft / u32 | 19.836 / 19.910 | 20.173 / 21.146 | +4.0% | [19.668, 20.089] → [20.026, 21.382] |
+| 4 / ntru / rustfft / u32 | 6.126 / 6.098 | 6.284 / 6.267 | +2.7% | [6.060, 6.202] → [6.216, 6.333] |
+| 4 / ntru / tfhe_fft / u32 | 5.842 / 5.820 | 5.994 / 5.991 | +2.8% | [5.781, 5.903] → [5.932, 6.071] |
+| 8 / glwe / rustfft / u32 | 21.466 / 22.561 | 21.256 / 21.280 | -3.4% | [21.286, 22.787] → [21.057, 21.516] |
+| 8 / glwe / tfhe_fft / u32 | 19.589 / 19.602 | 20.048 / 20.251 | +2.8% | [19.430, 19.822] → [19.862, 20.538] |
+| 8 / ntru / rustfft / u32 | 6.701 / 6.714 | 6.950 / 7.026 | +4.2% | [6.657, 6.771] → [6.864, 7.077] |
+| 8 / ntru / tfhe_fft / u32 | 6.432 / 6.403 | 6.590 / 6.902 | +5.1% | [6.352, 6.540] → [6.526, 7.092] |
+
+NTRU's u32 gain did not survive this version; GLWE's result was not consistent
+across CPUs/engines. A final NTRU-only check forced the private bucket helper to
+inline, leaving the same u32/whole-u64 policy. Symbol inspection confirmed the
+out-of-line helper disappeared, but the complete request still did not recover
+the constant-tile gain. CPU 4 used the same 30-sample ABBA settings:
+
+| Backend / word | Whole means | Forced-inline candidate means | Delta | Whole CI envelope → candidate CI envelope |
+| --- | --- | --- | --- | --- |
+| ntru / rustfft / u32 | 6.170 / 6.077 | 6.249 / 6.147 | +1.2% | [6.033, 6.223] → [6.108, 6.294] |
+| ntru / rustfft / u64 | 5.289 / 5.367 | 5.313 / 5.318 | -0.2% | [5.244, 5.446] → [5.268, 5.377] |
+| ntru / tfhe_fft / u32 | 5.822 / 5.851 | 5.977 / 5.884 | +1.6% | [5.752, 5.922] → [5.833, 6.106] |
+| ntru / tfhe_fft / u64 | 5.165 / 5.247 | 5.174 / 5.245 | +0.1% | [5.124, 5.312] → [5.126, 5.301] |
+
+These observations do not prove tiling can never help NTRU u32, nor identify the
+code-generation difference responsible for the prototype/candidate gap. They do
+reject these candidates as a default change. No additional code-generation or
+parameter search was retained just to recover one screening result.
+
+### Correctness, resources and stopping point
+
+- All 83 captures from the uninstrumented comparisons matched the corresponding
+  key/public-map/input fingerprint and the **complete ciphertext output**, across
+  nine request IDs. Every timed fixture also passed its independent decrypt check.
+- Three temporary direct-scatter unit oracles passed for NTT and both Fourier
+  aggregators, in u32/u64. They covered N=32 and N=1024, nonconsecutive indices,
+  empty/odd/even selector lists, mixed signs, exponent 0/N−1/N/2N−1, dummy reset,
+  dirty-buffer reuse and short final tiles. The GLWE case used 27 polynomials
+  (k=2/L=3), crossing row/level boundaries. All 432 measured oracle calls allocated
+  zero times. Those tests were removed with the rejected implementation.
+- BR coefficient-array footprints remained 119,701,504 / 110,493,696 bytes for
+  NTRU NTT u32/u64, 147,324,928 for either NTRU Fourier word, and 589,299,712 for
+  either GLWE Fourier word. Logical coefficient contributions are unchanged;
+  tiling revisits index/exponent arrays more often.
+- Aggregate storage stayed 52/48 KiB for NTRU NTT u32/u64, 64 KiB for NTRU
+  Fourier, and 256 KiB for GLWE Fourier. Existing transformed buffers stayed
+  128/64 KiB for NTRU Fourier and 512/256 KiB for GLWE Fourier. These are relevant
+  buffers, not total workspace/RSS. No owner, constructor, key or allocation layout
+  changed. Constructor/keygen peaks were not remeasured; earlier resource tables
+  must not be presented as new peak measurements.
+
+The ordinary PBS screening exit condition was met, so this experiment did **not**
+expand into new CBS, one-hot, high-precision LUT, GLWE KS→BR or SIMD performance
+matrices. There is no retained execution-path change needing that acceptance
+matrix. After source restoration, all-targets check passed for the three
+experimental backends and 57 existing tests passed for them plus NTRU LUT (features
+`ntt,rustfft,tfhe-fft`, `--lib --tests`). These correctness tests do not substitute
+for performance measurements of those consumers.
+
+For reproduction, build separate baseline/candidate `sparse_pbs` executables with
+`cargo bench -p <backend> --bench sparse_pbs --features rustfft,tfhe-fft --no-run`,
+rebuilding the library after every source restore. Pin each saved binary with
+`taskset -c 4` (or `8`), use separate Criterion output directories and the settings
+above, and select `/sparse/complete$`; GLWE screening additionally selects
+`BootstrapKeyswitch`. Keep setup/capture outside timing and use one complete PBS
+per iteration. Reconstruct the tile traversal described above without changing
+key layout or pair arithmetic, and revalidate the executable rather than relying
+on a previously built artifact. All experimental source, capture hooks and
+executables were removed; no new benchmark or permanent test is retained.
