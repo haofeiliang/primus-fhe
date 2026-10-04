@@ -66,6 +66,12 @@ For NLev sums and NGSW multi-way CMux, pass `output.as_mut_view()` as output, an
 
 `GlweSize` stores this type, and gadget/RNS layouts inherit its size contract through their GLWE size without repeating the upper-bound check. Layout, workspace and NTT/FFT table constructors take `PolyLength`, and `poly_length()` returns it. Extract integers with `.get()` only at raw storage or numerical kernels. Combined storage lengths and transform numerical conditions remain checked at their owning construction boundaries.
 
+## Serialization
+
+Enable `primus_lattice/serde` for `Lwe<S>` and `MultiMsgLwe<S>` serde implementations when `S` supports the corresponding trait. The feature is independent of transforms and `primus_integer/serde`; enable the latter separately if you also serialize `BigUint` values. Neither feature is enabled by default.
+
+Only the raw coefficient storage is serialized. Dimensions, the packed mask/body split, modulus, encoding and key identity remain external. Deserialization does not check ciphertext validity or establish an evaluation domain; it is not a versioned key or parameter format. The same storage requirements apply to serialization of borrowed views and owned wrappers.
+
 ## Operations and ownership
 
 | Operation family | Main interfaces |
@@ -142,6 +148,7 @@ This illustrates layout and arithmetic, not randomized encryption or secure para
 
 Default features are empty: coefficient storage, layouts and basic arithmetic do not pull in NTT/FFT.
 
+- `serde` enables raw `Lwe` and `MultiMsgLwe` serialization.
 - `ntt` enables NTT ciphertexts, conversions, operations and workspaces.
 - `fourier` enables the corresponding generic Fourier APIs without selecting an FFT engine.
 - `rustfft` / `tfhe-fft` enable `fourier` and the corresponding FFT implementation; they can be combined.

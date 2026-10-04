@@ -11,7 +11,7 @@
 
 主要 API 包括：
 
-- `Integer`：汇集泛型内核所需的通用算术、位运算、转换和序列化能力；
+- `Integer`：汇集泛型内核所需的通用算术、位运算和转换能力；
 - `SignedInteger` 和 `UnsignedInteger`：增加与符号相关的运算和相同位宽的伴随类型；
 - 用于 checked、overflowing、wrapping、carrying、widening 和除法运算的细粒度 trait；
 - `BigUint<S>`：基于借用或拥有所有权的小端 limb 存储的定宽无符号整数；
@@ -53,6 +53,18 @@ limb 按小端顺序存储。limb 数量和前导零 limb 都属于表示和相�
 算术仍然是定宽的：各方法会按照文档返回 carry、borrow 或高位 limb，移位操作也会 按照各自契约返回或丢弃移出的位；这些方法不会扩展表示的长度。
 
 `BigUint` 运算不是常量时间实现，不应假定其能够抵抗侧信道攻击。
+
+## Serde feature
+
+默认 feature 集为空。启用 `primus_integer/serde` 后，`BigUint<S>` 在存储 `S` 支持相应 serde trait 时可序列化和反序列化。包括 `Integer` 在内的算术 trait 不要求 serde，启用 feature 后也如此。泛型序列化代码需要自行声明 serde 约束。
+
+序列化保留完整 limb 序列，包括高位的零 limb。反序列化恢复原始存储，不验证 limb 数、模数或算术域；它不是带版本的密钥或参数格式。
+
+可运行以下命令验证可选的表示往返测试：
+
+```sh
+cargo nextest run -p primus_integer --lib --tests --features serde
+```
 
 ## SIMD feature
 

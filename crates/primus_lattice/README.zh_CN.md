@@ -64,6 +64,12 @@ NLev 批量求和与 NGSW 多路 CMux 使用 `output.as_mut_view()` 作为输出
 
 `GlweSize` 保存该类型，gadget/RNS 布局通过内含的 GLWE size 继承尺寸契约，不重复检查上界。布局、工作区和 NTT/FFT 表构造器接收 `PolyLength`，`poly_length()` 返回它；仅在 raw 存储或数值内核处用 `.get()` 提取整数。组合存储长度和变换的数值条件仍在各自构造边界检查。
 
+## 序列化
+
+启用 `primus_lattice/serde` 后，`Lwe<S>` 和 `MultiMsgLwe<S>` 在存储 `S` 支持相应 trait 时提供 serde 实现。该 feature 独立于变换和 `primus_integer/serde`；若还需序列化 `BigUint`，另行启用后者。两者默认均不启用。
+
+序列化仅保存原始系数存储，维数、打包 mask/body 分界、模数、编码和密钥身份仍由外部提供。反序列化不检查密文有效性，也不建立求值域；它不是带版本的密钥或参数格式。借用视图与拥有型 wrapper 的序列化遵循相同的存储要求。
+
 ## 运算与所有权
 
 | 运算族 | 主要接口 |
@@ -140,6 +146,7 @@ assert_eq!(sample.b(), 76);
 
 默认 features 为空，仅保留系数存储、布局和基础运算，不引入 NTT/FFT。
 
+- `serde` 启用原始 `Lwe` 和 `MultiMsgLwe` 存储的序列化。
 - `ntt` 启用 NTT 密文、转换、运算和工作区。
 - `fourier` 启用对应的 Fourier 泛型接口，不选择具体 FFT 引擎。
 - `rustfft` / `tfhe-fft` 同时启用 `fourier` 和对应 FFT 实现，可叠加使用。

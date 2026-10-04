@@ -6,7 +6,6 @@ use core::{
 };
 
 use primus_data::{Data, DataMut, RawData};
-use serde::{Deserialize, Serialize};
 
 use crate::UnsignedInteger;
 
@@ -17,7 +16,12 @@ use crate::UnsignedInteger;
 /// the representation and equality. Operations involving multiple `BigUint`s
 /// require matching limb counts; higher-level callers are responsible for
 /// validating their buffer layouts.
-#[derive(Debug, Serialize, Deserialize)]
+///
+/// With the `serde` feature, serialization delegates to the backing storage
+/// `S` and preserves all limbs, including leading zeros. Deserialization does
+/// not validate the limb count or an arithmetic domain.
+#[derive(Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(transparent)]
 pub struct BigUint<S>(pub S)
 where

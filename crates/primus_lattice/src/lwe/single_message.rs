@@ -1,19 +1,22 @@
 use primus_data::{Data, DataMut, DataOwned, RawData};
 use primus_integer::{FheUint, Size};
 use primus_reduce::prelude::*;
-use serde::{Deserialize, Serialize};
 
 /// An LWE ciphertext with mask `a` followed by one scalar body `b`.
 ///
 /// Storage has length `n + 1`; its phase under a length-`n` secret `s` is
 /// `b - <a, s>`. The body is required even for a zero-dimensional raw sample.
 ///
+/// The optional `serde` feature serializes the backing storage `S` only.
+/// Deserialization does not validate the layout or supply parameter/key metadata.
+///
 /// # Correctness
 ///
 /// The layout above is a caller-maintained contract. Raw construction and
 /// mutable storage access do not validate it; parameter and key metadata
 /// are not stored in this wrapper. See the [crate contracts](crate#correctness).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Lwe<S>(pub S)
 where
     S: RawData,

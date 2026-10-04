@@ -1,7 +1,6 @@
 use primus_data::{Data, DataMut, DataOwned, RawData};
 use primus_integer::{FheUint, Size};
 use primus_reduce::prelude::*;
-use serde::{Deserialize, Serialize};
 
 use super::Lwe;
 
@@ -12,12 +11,16 @@ use super::Lwe;
 /// this mask negacyclically. The original polynomial length and body count are
 /// supplied by the caller; this layout cannot represent multiple GLWE masks.
 ///
+/// The optional `serde` feature serializes the backing storage `S` only.
+/// Deserialization does not validate the layout or supply parameter/key metadata.
+///
 /// # Correctness
 ///
 /// The layout above is a caller-maintained contract. Raw construction and
 /// mutable storage access do not validate it; parameter and key metadata
 /// are not stored in this wrapper. See the [crate contracts](crate#correctness).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MultiMsgLwe<S>(pub S)
 where
     S: RawData,

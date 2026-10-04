@@ -7,6 +7,7 @@ Tests here protect raw ciphertext layouts and low-level operation contracts. The
 
 | File | Contract |
 | --- | --- |
+| `serde.rs` | Optional raw `Lwe`/`MultiMsgLwe` serialization for borrowed and owned storage; mask/body order and full-width coefficients (`serde`) |
 | `layout.rs` | Checked sizes, ABox/offset-slice storage reuse, workspace rebind rejection/unwind restoration, and RNS layout/limb-width compatibility |
 | `arithmetic.rs` | Shared flat arithmetic through borrowed LWE storage, offset-output sentinels, scalar/factor overwrite and accumulation |
 | `rns_arithmetic.rs` | CRT add/sub/neg and DCRT scalar/factor arithmetic across GGSW rows, levels, components and moduli (`rns`) |
@@ -40,6 +41,7 @@ Targets declare their NTT/Fourier capabilities and concrete engines. Mixed compa
 Run from the workspace root:
 
 ```sh
+cargo nextest run -p primus_lattice --lib --tests --features serde
 cargo nextest run -p primus_lattice --lib --tests --features ntt,rustfft,tfhe-fft
 cargo nextest run -p primus_lattice --lib --tests --features rns,rustfft,tfhe-fft
 cargo nextest run -p primus_lattice --lib --tests --release --features rns,rustfft,tfhe-fft

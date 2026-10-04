@@ -39,6 +39,8 @@
 //! # Features
 //!
 //! Default features are empty: coefficient storage and arithmetic need no transform.
+//! - `serde` enables serialization of [`lwe::Lwe`] and [`lwe::MultiMsgLwe`]
+//!   when their backing storage supports it; deserialization does not validate layouts.
 //! - `ntt` enables NTT ciphertexts, conversions, operations and workspaces.
 //! - `fourier` enables the corresponding Fourier APIs without selecting an FFT engine.
 //! - `rustfft` / `tfhe-fft` enable `fourier` and the selected FFT implementation.

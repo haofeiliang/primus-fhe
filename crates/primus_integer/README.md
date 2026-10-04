@@ -11,7 +11,7 @@ English | [简体中文](README.zh_CN.md)
 
 The main APIs are:
 
-- `Integer`, which collects the common arithmetic, bit, conversion, and serialization capabilities required by generic kernels;
+- `Integer`, which collects the common arithmetic, bit, and conversion capabilities required by generic kernels;
 - `SignedInteger` and `UnsignedInteger`, which add sign-specific operations and width-matched companion types;
 - fine-grained traits for checked, overflowing, wrapping, carrying, widening, and division operations;
 - `BigUint<S>`, a fixed-width unsigned integer over borrowed or owned little-endian limb storage;
@@ -53,6 +53,18 @@ Violating these contracts is a caller error and is not guaranteed to be detected
 Arithmetic remains fixed-width: methods report carry, borrow, or a high limb where documented, and shifts return or discard shifted-out bits according to their individual contracts. They do not resize the representation.
 
 `BigUint` operations are not implemented as constant-time operations and must not be assumed to provide side-channel resistance.
+
+## Serde feature
+
+The default feature set is empty. Enable `primus_integer/serde` to serialize and deserialize `BigUint<S>` when `S` supports the corresponding serde trait. Arithmetic traits, including `Integer`, do not require serde, even when the feature is enabled. Generic serialization code must state its own serde bounds.
+
+Serialization preserves the complete stored limb sequence, including leading zeros. Deserialization restores raw storage; it does not validate a limb count, modulus, or arithmetic domain. This is not a versioned format for keys or parameters.
+
+Run the optional representation round-trip test with:
+
+```sh
+cargo nextest run -p primus_integer --lib --tests --features serde
+```
 
 ## SIMD feature
 

@@ -9,7 +9,6 @@ use core::{
 use bytemuck::Pod;
 use num_traits::{ConstOne, ConstZero, FromBytes, MulAdd, MulAddAssign, NumAssign, Pow, ToBytes};
 use rand::distr::uniform::SampleUniform;
-use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
 use crate::integer_traits::*;
@@ -17,7 +16,7 @@ use crate::integer_traits::*;
 /// An abstraction over integer types.
 ///
 /// `Integer` is the core numeric supertrait of this crate, aggregating all the
-/// arithmetic, bitwise, comparison, conversion, and serialization capabilities
+/// arithmetic, bitwise, comparison, and conversion capabilities
 /// that a primitive integer-like type must provide. It is implemented for all
 /// standard Rust integer types (`u8`–`u128`, `i8`–`i128`, `usize`, `isize`).
 ///
@@ -25,6 +24,7 @@ use crate::integer_traits::*;
 /// on `Integer` (or [`UnsignedInteger`](crate::UnsignedInteger)) and rely on the
 /// fine-grained subtraits for specific operations such as checked,
 /// wrapping, overflowing, or widening arithmetic.
+/// Serialization bounds belong on the storage being serialized, not on this trait.
 pub trait Integer:
     Sized
     + Pod
@@ -83,8 +83,6 @@ pub trait Integer:
     + ShrAssign<u32>
     + Pow<u32, Output = Self>
     + Pow<usize, Output = Self>
-    + Serialize
-    + for<'de> Deserialize<'de>
     + Zeroize
 {
 }

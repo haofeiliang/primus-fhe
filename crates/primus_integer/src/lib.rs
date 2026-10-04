@@ -5,6 +5,9 @@
 //! the primus workspace — together with [`BigUint`] for fixed-width,
 //! multi-limb unsigned integers.
 //!
+//! The optional `serde` feature enables serialization of [`BigUint`] when its
+//! backing storage supports it; integer arithmetic traits have no serde bounds.
+//!
 //! When the `simd` feature is enabled (requires nightly), SIMD vector
 //! abstractions (SimdArray, SimdInteger, SimdMaskArray, SimdUnsignedInteger)
 //! are also available.

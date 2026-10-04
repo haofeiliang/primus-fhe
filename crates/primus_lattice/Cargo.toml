@@ -16,7 +16,7 @@ primus_decompose = { path = "../primus_decompose" }
 primus_fft = { path = "../primus_fft", optional = true }
 
 aligned-vec = "0.6.4"
-serde = { workspace = true }
+serde = { workspace = true, optional = true }
 bytemuck = { workspace = true }
 pastey = { workspace = true }
 itertools = { workspace = true }
@@ -25,6 +25,11 @@ thiserror = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }
+serde_json = { workspace = true }
+
+[[test]]
+name = "serde"
+required-features = ["serde"]
 
 [[bench]]
 name = "glwe_fourier"
@@ -91,6 +96,7 @@ required-features = ["rns"]
 
 [features]
 default = []
+serde = ["dep:serde"]
 ntt = ["dep:primus_ntt"]
 fourier = ["dep:primus_fft", "dep:num-complex"]
 rustfft = ["fourier", "primus_fft/rustfft"]
