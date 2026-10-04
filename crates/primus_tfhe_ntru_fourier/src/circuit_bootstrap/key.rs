@@ -15,10 +15,9 @@ pub struct CircuitBootstrapKey<T: TorusFftValue> {
     scheme_switch: FourierNtruSchemeSwitchKey<T>,
 }
 
-// Classic BR material paired with available CBS keys and their complete output
-// basis. NTRU scheme switching cannot substitute a different output basis.
+// Validated CBS material and its complete output basis. BR controls belong to
+// the shared resources; NTRU scheme switching cannot substitute another basis.
 pub(super) struct CircuitBootstrapBinding<'a, T: TorusFftValue> {
-    pub(super) classic_controls: crate::ClassicControls<'a>,
     pub(super) key: &'a CircuitBootstrapKey<T>,
     pub(super) parameters: &'a CircuitBootstrapParameters<T>,
 }
@@ -31,17 +30,12 @@ impl<'a, T: TorusFftValue> CircuitBootstrapBinding<'a, T> {
         controls: Option<crate::ClassicControls<'a>>,
         key: &'a CircuitBootstrapKey<T>,
     ) -> Result<Self, crate::TfheEvaluationError> {
-        let classic_controls =
-            controls.ok_or(crate::TfheEvaluationError::UnsupportedSparseBootstrapping)?;
+        controls.ok_or(crate::TfheEvaluationError::UnsupportedSparseBootstrapping)?;
         let parameters = key.parameters();
         if !parameters.is_compatible(tfhe) {
             return Err(crate::TfheEvaluationError::IncompatibleCircuitBootstrapParameters);
         }
-        Ok(Self {
-            classic_controls,
-            key,
-            parameters,
-        })
+        Ok(Self { key, parameters })
     }
 }
 

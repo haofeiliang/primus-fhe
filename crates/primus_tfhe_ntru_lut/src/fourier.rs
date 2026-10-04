@@ -6,7 +6,7 @@ use primus_lattice::{
     ngsw::{FourierNgswIter, FourierNgswIterMut},
     nlev::{FourierNlev, FourierNlevIter, FourierNlevIterMut, NlevIter},
 };
-use primus_ntru::{FourierNgswCiphertext, NtruCiphertext};
+use primus_ntru::{FourierNgswCiphertext, NlevParameters, NtruCiphertext};
 use primus_poly::{FourierPolynomialIter, FourierPolynomialIterMut, Polynomial};
 use primus_reduce::RingContext;
 use primus_tfhe::LweCiphertext;
@@ -23,6 +23,15 @@ use crate::{
         selection::{OutputAction, SelectorBatches, TableNodeId, TableOperation},
     },
 };
+
+/// Borrowed `NLEV[1]` view and its generation parameters for public polynomial lifting.
+/// This tuple owns no buffers and performs no validation; binding through
+/// [`FourierLookupTableEvaluator::try_from_parts`] checks the ring and storage layout.
+/// The caller guarantees the encoded one, actual secret, basis and transform identity.
+pub type FourierPublicLift<'a, T> = (
+    FourierNlev<&'a [Complex64]>,
+    &'a NlevParameters<T, primus_modulus::NativeModulus<T>>,
+);
 
 /// Native-torus Fourier high-precision lookup bound to one public table and CBS-enabled key.
 ///
@@ -47,6 +56,8 @@ where
     lookup_table: &'a HighPrecisionLookupTable<T>,
     resources: primus_tfhe_ntru_fourier::BootstrapResources<'a, T, Table, LM>,
     one_hot: OneHotCircuitBootstrapEvaluator<'a, T, Table, LM>,
+    // Present only when the compiled plan needs `NLEV[1]`, with its own basis.
+    public_lift: Option<FourierPublicLift<'a, T>>,
     lwe_return: LweReturnEvaluator<'a, T, LM>,
     batch_return: LweReturnBatchWorkspace<T>,
     // [NLEV batch][branch][level][Fourier value]: full selectors for public choices.
@@ -76,6 +87,7 @@ where
     LM: RingContext<T>,
 {
     /// Checks table encoding, one-hot geometry and server resources, then allocates scratch.
+    /// Borrows the classic initializer only if the compiled plan needs a public lift.
     /// Sparse keys and keys without CBS material are rejected.
     ///
     /// # Correctness
@@ -91,29 +103,68 @@ where
                 primus_tfhe::TfheEvaluationError::MissingCircuitBootstrapKey,
             ),
         )?;
+        let public_lift = if lookup_table.needs_public_lift() {
+            server_key
+                .blind_rotation_key()
+                .classic_controls()
+                .map(|controls| {
+                    (
+                        controls.initializer(),
+                        context.parameters().blind_rotation(),
+                    )
+                })
+        } else {
+            None
+        };
         Self::try_from_parts(
             context,
             server_key.blind_rotation_key(),
             server_key.key_switching_key(),
             circuit_key,
+            public_lift,
             lookup_table,
         )
     }
 
-    /// Binds independent BR, LWE return and CBS material to this table.
+    /// Binds BR, LWE return, CBS and optional public-lift material to this table.
+    /// `public_lift` pairs a transformed `NLEV[1]` view with its generation parameters.
+    /// It is required only when [`HighPrecisionLookupTable::needs_public_lift`] is true;
+    /// otherwise it is ignored and not retained. Its basis may differ from BR/CBS.
+    /// Checks the lift's ring, modulus and exact transformed storage length.
+    ///
+    /// # Correctness
     /// All keys must share the actual source/target secrets and this context's
-    /// transform representation; compatibility checks do not establish identity.
+    /// exact FFT table instance; compatibility checks do not establish identity.
+    /// The lift must encode one under the accumulator secret and supplied basis,
+    /// with enough decomposition precision and noise margin for public LUT products.
     pub fn try_from_parts(
         context: &'a TfheContext<T, Table, LM>,
         blind_rotation_key: &'a BlindRotationKey<T>,
         return_key: &'a primus_ntru::NtruLweKeySwitchingKey<T>,
         circuit_key: &'a CircuitBootstrapKey<T>,
+        public_lift: Option<FourierPublicLift<'a, T>>,
         lookup_table: &'a HighPrecisionLookupTable<T>,
     ) -> Result<Self, LookupTableError> {
         context.parameters().check_lwe_return_key(return_key)?;
         if !lookup_table.is_compatible(context.parameters()) {
             return Err(LookupTableError::IncompatibleParameters);
         }
+        let public_lift = if lookup_table.needs_public_lift() {
+            let (key, parameters) = public_lift.ok_or(LookupTableError::MissingPublicLiftKey)?;
+            if parameters.poly_length() != context.parameters().poly_length()
+                || parameters.inner().cipher_modulus_value()
+                    != context
+                        .parameters()
+                        .accumulator_ntru()
+                        .cipher_modulus_value()
+                || key.as_ref().len() != parameters.fourier_nlev_len()
+            {
+                return Err(LookupTableError::IncompatiblePublicLiftKey);
+            }
+            Some((key, parameters))
+        } else {
+            None
+        };
         // The table was compiled with this q; use its own chunk encoding for one-hot CBS.
         let input_codec = RoundedCodec::new(
             lookup_table.plaintext_modulus(),
@@ -166,6 +217,7 @@ where
         let mut evaluator = Self {
             context,
             lookup_table,
+            public_lift,
             one_hot,
             resources,
             batch_return: lwe_return.new_batch_workspace(),
@@ -451,15 +503,16 @@ where
             .copy_from_slice(&self.selected_tables[plan.root_node(output_chunk).result_range(n)]);
     }
 
-    /// Lifts a public polynomial under f using the initializer's BR basis.
+    /// Lifts a public polynomial under f with the bound `NLEV[1]` and its basis.
     /// Selection-tree products instead use the one-hot CBS output basis.
     fn lift_public_polynomial(&mut self, polynomial: &Polynomial<&[T]>) {
-        let initializer = self.one_hot.classic_controls().initializer();
+        // Construction requires this material exactly when the plan contains Lift.
+        let (key, parameters) = self.public_lift.as_ref().expect("bound public lift key");
         let (fft, external_product) = self.resources.external_product_workspaces();
-        initializer.external_product_to(
+        key.external_product_to(
             polynomial,
             &mut self.current,
-            self.context.parameters().blind_rotation().basis(),
+            parameters.basis(),
             fft,
             external_product,
         );

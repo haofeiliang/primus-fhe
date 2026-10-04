@@ -46,9 +46,18 @@ source. Remaining operations have three distinct forms:
 
 | Operation | Operand domain | Control and basis |
 | --- | --- | --- |
-| `Lift` | One public polynomial | Server initializer, BR basis |
+| `Lift` | One public polynomial | Bound NLEV[1], its own generation basis |
 | `SelectPublic` | M public polynomials | Full NLEV one-hot, CBS output basis |
 | `SelectEncrypted` | M coefficient-form NTRUs under f | Nonzero NGSW one-hot, CBS output basis |
+
+`needs_public_lift()` scans the compiled reachable nodes for `Lift`; public choices
+already lift through their one-hot NLEV selectors. Evaluator binding requires
+NLEV[1] and its `NlevParameters` only when that scan succeeds, validating the
+ring and exact transformed length once. `try_new` borrows the classic initializer
+and BR parameters; `try_from_parts` accepts optional independent lift material.
+Online `Lift` reads this binding directly, without querying one-hot BR controls.
+No additional ciphertext owner or online workspace is introduced. A raw view
+cannot prove its secret, encoded one, basis or transform identity.
 
 An operation's identity includes its form, input chunk, ordered polynomial/child
 IDs and the table's ring/encoding contract. Identical operations share a node

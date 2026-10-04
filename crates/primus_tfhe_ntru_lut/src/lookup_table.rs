@@ -57,6 +57,14 @@ pub enum LookupTableError {
     /// The table was compiled with another N, Q or q, or input codec bound to another q.
     #[error("lookup table and context have incompatible ring or encoding parameters")]
     IncompatibleParameters,
+    /// The compiled selection plan contains a Lift but no `NLEV[1]` was supplied.
+    #[cfg(any(feature = "ntt", feature = "fourier"))]
+    #[error("lookup selection requires a public NLEV lift key")]
+    MissingPublicLiftKey,
+    /// The supplied NLEV length or its parameters do not match the accumulator ring.
+    #[cfg(any(feature = "ntt", feature = "fourier"))]
+    #[error("public NLEV lift key has incompatible parameters or storage length")]
+    IncompatiblePublicLiftKey,
     /// The context/server material cannot provide the required one-hot CBS.
     #[cfg(any(feature = "ntt", feature = "fourier"))]
     #[error(transparent)]
@@ -272,6 +280,14 @@ impl<T: FheUint> HighPrecisionLookupTable<T> {
     #[must_use]
     pub fn unique_polynomial_count(&self) -> usize {
         self.coefficients.len() / self.layout.polynomial_length
+    }
+
+    /// Whether the compiled plan needs a separately bound `NLEV[1]` public lift.
+    /// Public choices already lift through their one-hot NLEV selectors. This is
+    /// true for explicit Lift nodes, including fully pruned tables and c=d.
+    #[must_use]
+    pub fn needs_public_lift(&self) -> bool {
+        self.selection.needs_public_lift()
     }
 
     /// Returns the encoded polynomial for one logical output chunk and high-chunk prefix.

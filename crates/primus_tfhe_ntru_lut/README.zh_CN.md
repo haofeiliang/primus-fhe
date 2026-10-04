@@ -80,9 +80,13 @@ cargo run --release -p primus_tfhe_ntru_lut --example fourier_lookup --features 
 
 两个 evaluator 独立持有各自后端的公共 `BootstrapResources` 与 one-hot 操作状态；表选择、旋转与 CBS 依次借用同一外积工作区，Fourier 还复用其中同一个 FFT engine。返回绑定独立于 one-hot：NTT 只分配 scalar 返回缓冲，Fourier 只分配 batch 返回缓冲。
 
-两个 evaluator 均可通过 `try_new` 接收完整 `ServerKey`，或通过 `try_from_parts(context, blind_rotation_key, return_key, circuit_key, lookup_table)` 借用独立材料。可用 `ServerKey::into_parts()` 移出组件而不复制密文缓冲。此流程输出 LWE，始终需要 Q→q、f→s 返回密钥；独立 CBS/one-hot 则无需该密钥。三类材料在绑定时检查，实际秘密和变换身份仍由调用方保证。
+两个 evaluator 均可通过 `try_new` 接收完整 `ServerKey`，或通过 `try_from_parts(context, blind_rotation_key, return_key, circuit_key, public_lift, lookup_table)` 借用独立材料。可用 `ServerKey::into_parts()` 移出组件而不复制密文缓冲。此流程输出 LWE，始终需要 Q→q、f→s 返回密钥；独立 CBS/one-hot 则无需该密钥。各项材料在绑定时检查，实际秘密和变换身份仍由调用方保证。
 
-每次调用对低位 chunks 及编译计划实际使用的高位 chunks 执行 one-hot CBS。全等分支省去选择，重复子树只计算一次。公开选择用完整 NLEV selectors 同时提升多项式，加密选择用非零 NGSW selectors；同一 chunk 需要两种表示时共享 BR 与投影。完全不依赖高位的输出用 initializer 的 BR basis 直接提升。每个不同的根仍需低位旋转与返回；重复根在同一 evaluator 内的后续操作完全相同，直接复制已完成的输出。
+`table.needs_public_lift()` 表示剪枝后的选表计划是否包含显式 `Lift`。需要时，`public_lift` 必须传入 `Some((nlev_view, &nlev_parameters))`，即 NTT/Fourier 的 NLEV[1] 视图及生成它时使用的 `NlevParameters`。`NttPublicLift` / `FourierPublicLift` 是这两个借用元组的类型别名，没有新增 owner 或构造器。Evaluator 检查 N、Q 和变换域存储长度，随后使用该材料自己的 basis，允许其不同于 BR/CBS。材料必须使用相同 accumulator 秘密和变换表示（Fourier 使用同一 table 实例）；所声明的明文、basis 和噪声预算仍由调用方保证。无 `Lift` 时传 `None`；多余材料会被忽略，不予保留。
+
+`try_new` 自动借用已有 classic initializer 与 BR 参数，不额外生成或复制密钥。高级调用方可通过 `server_key.blind_rotation_key().classic_controls().unwrap().initializer()` 借用它，并配对 `context.parameters().blind_rotation()`，也可以提供独立生成的 NLEV[1]。One-hot evaluator 不再暴露 BR controls。此次材料分离尚未开放 sparse CBS 或 sparse 高精度查表。
+
+每次调用对低位 chunks 及编译计划实际使用的高位 chunks 执行 one-hot CBS。全等分支省去选择，重复子树只计算一次。公开选择用完整 NLEV selectors 同时提升多项式，加密选择用非零 NGSW selectors；同一 chunk 需要两种表示时共享 BR 与投影。完全不依赖高位的输出使用绑定的 NLEV[1] 提升，公密混合选择也可能需要它。因此，全剪枝表和 c=d 仍需要该材料。每个不同的根仍需低位旋转与返回；重复根在同一 evaluator 内的后续操作完全相同，直接复制已完成的输出。
 
 共享节点复用同一密文及其误差，输出误差存在相关性；根相同且后续操作相同时，复用完整输出密文。剪枝保持明文映射，但改变误差传播路径。完整选择、旋转及返回公式见[实现说明](IMPLEMENTATION.md#stage-and-buffer-layout)。
 

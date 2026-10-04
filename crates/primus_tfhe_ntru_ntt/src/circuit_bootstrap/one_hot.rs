@@ -78,12 +78,6 @@ where
         })
     }
 
-    /// Borrows the classic BR initializer and controls established at construction.
-    #[must_use]
-    pub fn classic_controls(&self) -> crate::ClassicControls<'a, T> {
-        self.circuit.classic_controls
-    }
-
     /// Returns the packed LUT geometry, including selector count, stride and guard radius.
     #[must_use]
     pub fn lookup_table(&self) -> &OneHotLookupTable<T> {

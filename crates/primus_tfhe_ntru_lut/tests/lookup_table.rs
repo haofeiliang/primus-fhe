@@ -218,3 +218,41 @@ fn compilation_rejects_invalid_domains_before_callbacks() {
         Err(LookupTableError::OutputEncoding(_))
     ));
 }
+
+// Public choices lift with their selectors; only explicit pruned leaves need NLEV[1].
+#[test]
+fn public_lift_requirement_follows_pruned_choices() {
+    let parameters = parameters(NativeModulus::new());
+    let codec = RoundedCodec::new(4, parameters.external_lwe().cipher_modulus());
+    for (d, mapping, needs_lift) in [(1, 0, false), (1, 1, true), (1, 2, true), (3, 0, true)] {
+        let table = HighPrecisionLookupTable::try_new(
+            &parameters,
+            &codec,
+            LookupTableConfig {
+                input_chunk_count: 3,
+                output_chunk_count: 1,
+                coefficient_chunk_count: d,
+            },
+            |x, _| match mapping {
+                // Four different two-coefficient polynomials: every choice survives.
+                0 => ((x / 2) >> (x % 2) & 1) as u64,
+                // One high branch is public zero, the other depends on chunk one.
+                1 => {
+                    if x < 4 {
+                        0
+                    } else {
+                        (x >> 1 & 1) as u64
+                    }
+                }
+                // Both high chunks are pruned; the root remains a public polynomial.
+                _ => (x & 1) as u64,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            table.needs_public_lift(),
+            needs_lift,
+            "d={d}, mapping={mapping}"
+        );
+    }
+}

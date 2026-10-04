@@ -20,7 +20,7 @@ pub(crate) struct TableNodeId(usize);
 /// result is a coefficient-form NTRU under f, with the table's ring/encoding.
 #[derive(Clone, Hash, PartialEq, Eq)]
 pub(crate) enum TableOperation {
-    /// BR-basis initializer lift of a public polynomial.
+    /// `NLEV[1]` lift of a public polynomial, using its separately bound basis.
     Lift(PolynomialId),
     /// Full NLEV selection lifts the M public polynomials under f.
     SelectPublic {
@@ -120,6 +120,13 @@ pub(crate) struct SelectionPlan {
 }
 
 impl SelectionPlan {
+    /// All compiled nodes are reachable; only explicit lifts need independent `NLEV[1]`.
+    pub fn needs_public_lift(&self) -> bool {
+        self.nodes
+            .iter()
+            .any(|node| matches!(node.operation, TableOperation::Lift(_)))
+    }
+
     #[cfg(any(test, feature = "ntt", feature = "fourier"))]
     pub fn output_action(&self, index: usize) -> OutputAction {
         self.outputs[index].action

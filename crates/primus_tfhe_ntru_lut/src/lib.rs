@@ -39,7 +39,7 @@ mod lookup_table;
 mod ntt;
 
 #[cfg(feature = "fourier")]
-pub use fourier::FourierLookupTableEvaluator;
+pub use fourier::{FourierLookupTableEvaluator, FourierPublicLift};
 pub use lookup_table::{HighPrecisionLookupTable, LookupTableConfig, LookupTableError};
 #[cfg(feature = "ntt")]
-pub use ntt::NttLookupTableEvaluator;
+pub use ntt::{NttLookupTableEvaluator, NttPublicLift};
