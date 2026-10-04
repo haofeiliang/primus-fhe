@@ -7,7 +7,7 @@ use primus_modulus::NativeModulus;
 use primus_poly::{FourierPolynomial, FourierPolynomialIter, PolynomialIter, PolynomialOwned};
 use primus_tfhe::{FactorizedLookupTable, LweCiphertext};
 
-use crate::{Evaluator, LookupTableError, Lwe, TfheContext, TfheEvaluationError};
+use crate::{Evaluator, LookupTableError, Lwe, TfheContext};
 
 /// Native even-scale MVB program prepared for one borrowed Fourier context.
 ///
@@ -100,9 +100,10 @@ impl<'a, T: TorusFftValue, Table: FftTable, LM: primus_reduce::RingContext<T>>
 
 /// Reusable workspace for Native even-scale NTRU MVB.
 ///
-/// Initializes V with `NLev[1]`, shares one blind rotation at step one, then
-/// multiplies each factor. Each product is independently converted Q→q and
-/// extracted, then small LWE tiles share key switching to the external secret.
+/// Lifts and blind-rotates V using the selected classic or sparse PBS key at
+/// rotation step one, then multiplies each factor. Each product is independently
+/// converted Q→q and extracted, then small LWE tiles share key switching to the
+/// external secret.
 /// Extra workspace consists of two Fourier NTRU polynomials
 /// (N complex values), independent of output count. Coefficient products and
 /// key switching reuse the ordinary evaluator's buffers and key material.
@@ -122,23 +123,18 @@ impl<'a, T: TorusFftValue, Table: FftTable, LM: primus_reduce::RingContext<T>>
     FactorizedEvaluator<'a, T, Table, LM>
 {
     /// Prepares two Fourier polynomials for MVB. Common BR/FFT and return resources
-    /// stay in `evaluator` and are borrowed only while executing. Rejects sparse keys;
-    /// inherits [`Evaluator::try_new`]'s actual secret and FFT table requirements.
-    pub fn try_new(evaluator: &Evaluator<'a, T, Table, LM>) -> Result<Self, TfheEvaluationError> {
-        evaluator
-            .resources
-            .workspace
-            .rotation
-            .classic_controls()
-            .ok_or(TfheEvaluationError::UnsupportedSparseBootstrapping)?;
+    /// stay in `evaluator` and are borrowed only while executing.
+    /// Both classic and sparse PBS keys use the same factor/return path.
+    #[must_use]
+    pub fn new(evaluator: &Evaluator<'a, T, Table, LM>) -> Self {
         let context = evaluator.resources.context;
-        Ok(Self {
+        Self {
             binding: evaluator.resources.binding(),
             shared_rotation: FourierNtru::zero(
                 context.parameters().poly_length().fourier_poly_len(),
             ),
             product: FourierNtru::zero(context.parameters().poly_length().fourier_poly_len()),
-        })
+        }
     }
 
     /// Evaluates the program, allocating one LWE ciphertext per output.
@@ -164,9 +160,10 @@ impl<'a, T: TorusFftValue, Table: FftTable, LM: primus_reduce::RingContext<T>>
     /// Input must use the server key's external client secret and unsigned Rounded
     /// encoding, with a message in `0..lookup_table.input_domain_len()`. Input
     /// noise and coefficient-wise quantization must keep the rotation in that
-    /// message's LUT interval. Each integer factor W amplifies both NLev
-    /// initialization and BR noise. Public FFT multiplication adds phase error
-    /// `f_acc * delta_c`; each product then incurs modulus conversion and LWE key-switch errors.
+    /// message's LUT interval. Each integer factor W amplifies both public-lift
+    /// and BR noise, including sparse bucket aggregation. Public FFT multiplication
+    /// adds phase error `f_acc * delta_c`; each product then incurs modulus
+    /// conversion and LWE key-switch errors.
     /// Before returning, the Scaled recovery condition is
     /// `abs((t*delta-Q)*y + t*e) < Q/2`, Q=2^BITS. Return conversion rescales
     /// delta by q/Q and adds rounding and key-switch errors. Decode using a

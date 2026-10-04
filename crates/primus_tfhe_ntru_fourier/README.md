@@ -24,11 +24,11 @@ Examples separate client encryption, server evaluation and client decryption; se
 | Classic PBS | [basic](examples/ntru_fourier_basic.rs) |
 | Sparse PBS / interleaved ManyLUT | [sparse](examples/ntru_fourier_sparse.rs); `SPARSE=false` selects classic ManyLUT |
 | Classic CBS → CMux | [circuit_bootstrap](examples/ntru_fourier_circuit_bootstrap.rs) |
-| Factorized MVB | [thresholds](examples/ntru_fourier_mvb_thresholds.rs) |
+| Factorized MVB | [thresholds](examples/ntru_fourier_mvb_thresholds.rs); `SPARSE=true` selects sparse BR |
 | One-hot CBS → CMux | [one_hot](examples/ntru_fourier_one_hot.rs) |
 | High-precision lookup | [lookup](../primus_tfhe_ntru_lut/examples/fourier_lookup.rs) |
 
-ManyLUT interleaves outputs within one blind rotation, shares one Q→q conversion across multiple outputs, and batches their LWE key switches; factorized MVB uses public factors and a different evaluation interface. NTRU sparse supports ordinary/interleaved PBS, but not CBS, one-hot or factorized MVB.
+ManyLUT interleaves outputs within one blind rotation, shares one Q→q conversion across multiple outputs, and batches their LWE key switches; factorized MVB uses public factors and a different evaluation interface. NTRU sparse supports ordinary/interleaved PBS and factorized MVB; CBS and one-hot still require classic keys.
 
 Client factories take only the relevant secret: pass `client_key.external_lwe_secret_key()` to `encryptor` / `decryptor` and the Boolean variants, or `client_key.accumulator_ntru_secret_key()` to `accumulator_client`. Complete `ClientKey` bundles are used for server-key generation; no secret buffers are copied to select a role.
 
@@ -46,11 +46,11 @@ Both `RustFftTable` and `TfheFftTable` support u32/u64. Keys, values and evaluat
 
 `Evaluator::try_from_parts(context, br, return_key)` binds ordinary PBS. Standalone CBS/one-hot first prepares common BR/external-product resources with `context.bootstrap_resources(br)?`, then operation state with `try_new(&resources, circuit_key, &input_codec)`. No return key is needed; the CBS example demonstrates this workflow. Independent material must use the same actual secrets and FFT table instance. Shape and modulus checks do not prove identity.
 
-`server_key.blind_rotation_key().classic_controls()` returns a borrowed `ClassicControls` view, or `None` for sparse material. Its `initializer()` lifts public polynomials; coordinate zero uses NLEV bits and later coordinates use NGSW bits, with positive/negative pairs for ternary secrets. CBS, one-hot and MVB check their required capabilities at construction. The optional `circuit_bootstrap_key()` remains available for inspecting or composing CBS material.
+`server_key.blind_rotation_key().classic_controls()` returns a borrowed `ClassicControls` view, or `None` for sparse material. Its `initializer()` lifts public polynomials; coordinate zero uses NLEV bits and later coordinates use NGSW bits, with positive/negative pairs for ternary secrets. CBS and one-hot still require classic controls at construction. MVB borrows the selected PBS path and needs no additional lifting or CBS material. The optional `circuit_bootstrap_key()` remains available for inspecting or composing CBS material.
 
 ## Reusing evaluators
 
-Ordinary/interleaved `Evaluator` owns common `BootstrapResources` and scalar/batch return buffers. CBS/one-hot retain only their LUT and projection buffers; pass `pbs.bootstrap_resources_mut()` as the final execution argument. Construct factorized MVB with `FactorizedEvaluator::try_new(&pbs)` and pass `&mut pbs` as its final execution argument. Ordinary PBS resumes as soon as the borrow ends, without converting or recovering evaluators. Online `_to` calls reuse all buffers. Operation state requires resources made from the same context and BR key references used at construction; this is checked before writes.
+Ordinary/interleaved `Evaluator` owns common `BootstrapResources` and scalar/batch return buffers. CBS/one-hot retain only their LUT and projection buffers; pass `pbs.bootstrap_resources_mut()` as the final execution argument. Construct factorized MVB with `FactorizedEvaluator::new(&pbs)` and pass `&mut pbs` as its final execution argument. Ordinary PBS resumes as soon as the borrow ends, without converting or recovering evaluators. Online `_to` calls reuse all buffers. Operation state requires resources made from the same context and BR key references used at construction; this is checked before writes.
 
 For CBS/one-hot alone, keep standalone `BootstrapResources` without return buffers. To add PBS later, `Evaluator::try_from_resources(resources, return_key)` takes common resources and allocates return buffers. `try_rebind_return_key` changes compatible return material without reallocation; success discards pending samples, while failure preserves the old binding. Resource ownership does not establish actual secret identity.
 
@@ -60,7 +60,7 @@ Compile through `context.compile_factorized_lookup_table_fn(&input_codec, &outpu
 
 The actual scale `round(2^BITS/t_out)` must be even (`t_out=10` works for u32/u64). Odd scales return `LookupTableError::OddFactorizationScale`. Factors are transformed as signed integers without torus scaling; budget their amplification and FFT error.
 
-Classic binary/ternary keys share encrypted initialization and BR. Each factor product is independently converted from Q to q and extracted; small tiles reuse the PBS workspace for batched LWE key switching. The coefficient polynomial is reused after each extraction, without retaining every product. Factor norms amplify initialization and BR noise; return-KS noise is added afterward.
+Classic binary/ternary and sparse fixed-weight binary keys share the lift and blind rotation across outputs. Each factor product is independently converted from Q to q and extracted; small tiles reuse the PBS workspace for batched LWE key switching. The coefficient polynomial is reused after each extraction, without retaining every product. Factor norms amplify initialization and BR noise; return-KS noise is added afterward.
 
 Run the [17-threshold example](examples/ntru_fourier_mvb_thresholds.rs) with `--example ntru_fourier_mvb_thresholds`. It demonstrates output counts beyond interleaved capacity. See the [shared MVB contract](../primus_tfhe/README.md#fixed-scale-factorized-mvb) for algorithm selection and encoding limits.
 
@@ -75,7 +75,7 @@ let server = generator.try_generate_sparse_server_key(&client, 3, 2 * h, &mut rn
 let mut evaluator = context.evaluator(&server)?;
 ```
 
-Ordinary/interleaved PBS use the same evaluator. CBS/MVB reject sparse keys, including CBS binding with standalone material. `server.blind_rotation_key().sparse_bootstrapping_key()` exposes selectors.
+Ordinary/interleaved PBS use the same evaluator; factorized MVB borrows it per call. CBS and one-hot reject sparse keys, including binding with standalone CBS material. `server.blind_rotation_key().sparse_bootstrapping_key()` exposes selectors.
 
 ## Optional circuit bootstrapping
 

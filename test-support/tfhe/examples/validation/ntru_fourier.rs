@@ -467,7 +467,7 @@ fn thresholds<T: TorusFftValue, Table: FftTable>(
         .compile_factorized_lookup_table_fn(&input_codec, &ring_codec, 64, 17, value)
         .unwrap();
     let mut pbs = context.evaluator(&server_key).unwrap();
-    let mut evaluator = primus_tfhe_ntru_fourier::FactorizedEvaluator::try_new(&pbs).unwrap();
+    let mut evaluator = primus_tfhe_ntru_fourier::FactorizedEvaluator::new(&pbs);
     let mut outputs = vec![context.allocate_lwe_ciphertext(); 17];
 
     for m in [0usize, 1, 2, 3, 31, 32, 63, 0] {

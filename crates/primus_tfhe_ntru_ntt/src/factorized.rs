@@ -7,7 +7,7 @@ use primus_ntt::MonomialNttTable;
 use primus_poly::{NttPolynomial, NttPolynomialIter, PolynomialIterMut, PolynomialOwned};
 use primus_tfhe::{FactorizedLookupTable, LweCiphertext};
 
-use crate::{Evaluator, LookupTableError, Lwe, TfheContext, TfheEvaluationError};
+use crate::{Evaluator, LookupTableError, Lwe, TfheContext};
 
 /// A factorized MVB program prepared for one borrowed NTT context.
 ///
@@ -90,9 +90,10 @@ where
 
 /// Reusable workspace for fixed-scale factorized MVB.
 ///
-/// Initializes V with `NLev[1]`, shares one blind rotation at step one, then
-/// multiplies each public factor. Each product is independently converted Q→q
-/// and extracted, then small LWE tiles share key switching to the external secret.
+/// Lifts and blind-rotates V using the selected classic or sparse PBS key at
+/// rotation step one, then multiplies each public factor. Each product is
+/// independently converted Q→q and extracted, then small LWE tiles share key
+/// switching to the external secret.
 /// Only one extra NTT polynomial is allocated beyond the ordinary evaluator's
 /// workspace, regardless of output count. The ordinary evaluator remains owned
 /// by the caller and is borrowed per request. Outputs use the same external secret
@@ -113,21 +114,16 @@ where
     Table: MonomialNttTable<ValueT = T>,
     LM: primus_reduce::RingContext<T>,
 {
-    /// Prepares the extra NTT polynomial for factorized MVB. Common BR and
-    /// return resources stay in `evaluator` and are borrowed only while executing.
-    /// Rejects sparse keys; input/output secret and transform requirements inherit PBS.
-    pub fn try_new(evaluator: &Evaluator<'a, T, Table, LM>) -> Result<Self, TfheEvaluationError> {
-        evaluator
-            .resources
-            .workspace
-            .rotation
-            .classic_controls()
-            .ok_or(TfheEvaluationError::UnsupportedSparseBootstrapping)?;
+    /// Prepares one extra NTT polynomial for MVB. Common BR and return resources
+    /// stay in `evaluator` and are borrowed only while executing.
+    /// Both classic and sparse PBS keys use the same factor/return path.
+    #[must_use]
+    pub fn new(evaluator: &Evaluator<'a, T, Table, LM>) -> Self {
         let context = evaluator.resources.context;
-        Ok(Self {
+        Self {
             binding: evaluator.resources.binding(),
             shared_rotation: NttNtru::zero(context.parameters().poly_length().get()),
-        })
+        }
     }
 
     /// Evaluates the program, allocating one LWE per output.
@@ -158,9 +154,10 @@ where
     /// its external client secret and unsigned Rounded encoding, with a message
     /// in `0..lookup_table.input_domain_len()`. Input noise and coefficient-wise
     /// quantization error must stay within that message's LUT interval. Each
-    /// difference factor amplifies the shared initialization and BR noise;
-    /// modulus conversion and LWE key-switch errors follow each product. These conditions are not
-    /// checked. The output scale is q/Q times the compilation scale. Decode using a Scaled
+    /// difference factor amplifies the shared public-lift and BR noise, including
+    /// sparse bucket aggregation. Modulus conversion and LWE key-switch errors
+    /// follow each product. These conditions are not checked. The output scale
+    /// is q/Q times the compilation scale. Decode using a Scaled
     /// codec at q with the same plaintext modulus, budgeting the difference
     /// between that rescaled scale and round(q/t_out). See
     /// [`FactorizedLookupTable`] for the factorization and noise bound.

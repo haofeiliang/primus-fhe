@@ -24,11 +24,11 @@ cargo run -p primus_tfhe_ntru_ntt --release --example ntru_ntt_basic
 | Classic PBS | [basic](examples/ntru_ntt_basic.rs) |
 | Sparse PBS / 交错多输出 ManyLUT | [sparse](examples/ntru_ntt_sparse.rs)；`SPARSE=false` 切换 classic ManyLUT |
 | Classic CBS → CMux | [circuit_bootstrap](examples/ntru_ntt_circuit_bootstrap.rs) |
-| 分解式 MVB | [thresholds](examples/ntru_ntt_mvb_thresholds.rs) |
+| 分解式 MVB | [thresholds](examples/ntru_ntt_mvb_thresholds.rs)；`SPARSE=true` 选择 sparse BR |
 | One-hot CBS → CMux | [one_hot](examples/ntru_ntt_one_hot.rs) |
 | 高精度查表 | [lookup](../primus_tfhe_ntru_lut/examples/ntt_lookup.rs) |
 
-ManyLUT 通过交错共享一次盲旋转，多输出返回还共享一次 Q→q 转换并分块进行 LWE key switch；分解式 MVB 通过公共因子生成多输出，是不同的求值接口。 NTRU sparse 当前只支持普通/交错 PBS，不支持 CBS、one-hot 或分解式 MVB。
+ManyLUT 通过交错共享一次盲旋转，多输出返回还共享一次 Q→q 转换并分块进行 LWE key switch；分解式 MVB 通过公共因子生成多输出，是不同的求值接口。 NTRU sparse 支持普通/交错 PBS 和分解式 MVB；CBS、one-hot 仍要求 classic 密钥。
 
 消息 codec 在 `main` 中独立选择，密钥生成不依赖 t。CBS/one-hot 的容量在绑定输入 codec 时检查。
 
@@ -46,11 +46,11 @@ NTT 表需要实现 `MonomialNttTable`，内置表均支持。Context 检查长�
 
 `Evaluator::try_from_parts(context, br, return_key)` 绑定普通 PBS。独立 CBS/one-hot 先用 `context.bootstrap_resources(br)?` 准备公共 BR/外积资源，再用 `try_new(&resources, circuit_key, &input_codec)` 准备操作状态，无需返回密钥；CBS 示例展示这一流程。独立材料必须采用相同实际秘密与变换表示，形状和模数检查不能证明身份。
 
-`server_key.blind_rotation_key().classic_controls()` 返回借用的 `ClassicControls` 视图，稀疏材料返回 `None`。视图的 `initializer()` 用于提升公开多项式；首坐标使用 NLEV bit，后续坐标使用 NGSW bit，ternary 秘密按正/负 bit 配对。CBS、one-hot 和 MVB 在构造时检查所需能力。可选的 `circuit_bootstrap_key()` 仍可用于查看或组合 CBS 材料。
+`server_key.blind_rotation_key().classic_controls()` 返回借用的 `ClassicControls` 视图，稀疏材料返回 `None`。视图的 `initializer()` 用于提升公开多项式；首坐标使用 NLEV bit，后续坐标使用 NGSW bit，ternary 秘密按正/负 bit 配对。CBS、one-hot 在构造时仍要求 classic 控制材料；MVB 借用所选 PBS 路径，不需要额外的提升或 CBS 材料。可选的 `circuit_bootstrap_key()` 仍可用于查看或组合 CBS 材料。
 
 ## 复用 evaluator
 
-普通/interleaved `Evaluator` 拥有公共 `BootstrapResources` 和 scalar/batch 返回缓冲。CBS/one-hot 只保存 LUT 与投影缓冲，调用时最后一个参数传 `pbs.bootstrap_resources_mut()`；factorized MVB 使用 `FactorizedEvaluator::try_new(&pbs)` 构造，调用时最后一个参数传 `&mut pbs`。借用结束即可继续普通 PBS，无需转换或恢复 evaluator；在线 `_to` 复用所有缓冲。操作状态要求资源使用构造时的同一 context 和 BR key 引用，在写入前检查。
+普通/interleaved `Evaluator` 拥有公共 `BootstrapResources` 和 scalar/batch 返回缓冲。CBS/one-hot 只保存 LUT 与投影缓冲，调用时最后一个参数传 `pbs.bootstrap_resources_mut()`；factorized MVB 使用 `FactorizedEvaluator::new(&pbs)` 构造，调用时最后一个参数传 `&mut pbs`。借用结束即可继续普通 PBS，无需转换或恢复 evaluator；在线 `_to` 复用所有缓冲。操作状态要求资源使用构造时的同一 context 和 BR key 引用，在写入前检查。
 
 仅使用 CBS/one-hot 时，单独保留 `BootstrapResources`，不分配返回缓冲。以后需要 PBS，可用 `Evaluator::try_from_resources(resources, return_key)` 接管公共资源并分配返回缓冲。`try_rebind_return_key` 更换兼容返回密钥而不重新分配；成功时丢弃待提交样本，失败保持原绑定。资源所有权变化不验证密钥的实际秘密身份。
 
@@ -60,7 +60,7 @@ NTT 表需要实现 `MonomialNttTable`，内置表均支持。Context 检查长�
 
 系数模数必须为奇数；预处理后的因子保留 NTT 表示。
 
-经典 binary/ternary 共用加密初始化和 BR。每个因子乘积独立完成 Q→q 和提取，再复用 PBS 工作区分块批量执行 LWE KS。提取后即复用系数多项式缓冲，不同时保留所有乘积。 因子同时放大初始化与 BR 噪声，返回 KS 噪声在乘积后加入。
+经典 binary/ternary 和 sparse fixed-weight binary 均在所有输出间共享提升和盲旋转。每个因子乘积独立完成 Q→q 和提取，再复用 PBS 工作区分块批量执行 LWE KS。提取后即复用系数多项式缓冲，不同时保留所有乘积。 因子同时放大初始化与 BR 噪声，返回 KS 噪声在乘积后加入。
 
 运行[17 阈值示例](examples/ntru_ntt_mvb_thresholds.rs)，命令使用 `--example ntru_ntt_mvb_thresholds`。 它展示交错容量之外的多输出；算法选择及编码限制见[共享 MVB 契约](../primus_tfhe/README.zh_CN.md#固定尺度分解式-mvb)。
 
@@ -75,7 +75,7 @@ let server = generator.try_generate_sparse_server_key(&client, 3, 2 * h, &mut rn
 let mut evaluator = context.evaluator(&server)?;
 ```
 
-普通/交错 PBS 复用原 evaluator。CBS/MVB 拒绝 sparse 密钥，包括另传 CBS 材料的构造方式。 `server.blind_rotation_key().sparse_bootstrapping_key()` 提供选择密文。
+普通/交错 PBS 复用原 evaluator，分解式 MVB 每次调用时借用它。CBS 和 one-hot 拒绝 sparse 密钥，包括另传 CBS 材料的构造方式。 `server.blind_rotation_key().sparse_bootstrapping_key()` 提供选择密文。
 
 ## 可选电路自举
 

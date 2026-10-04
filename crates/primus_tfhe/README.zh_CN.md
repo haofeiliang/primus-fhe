@@ -128,7 +128,7 @@ GLWE 两后端均使用上述借用接口。NTRU 两后端同样借用公共资�
 
 Context 保存不可变参数和变换表，ServerKey 保存求值材料；Evaluator 持有可变工作区。 编译后的 LUT/程序可以长期保留，多次调用 `_to` 写入预分配输出。
 
-NTRU 两后端使用短借用组合：普通 PBS 拥有公共 BR/EP（Fourier 含 FFT）和返回缓冲，CBS/one-hot 只准备 LUT/投影状态。构造用 `try_new(pbs.bootstrap_resources(), circuit_key, &input_codec)`，执行时最后一个参数传 `pbs.bootstrap_resources_mut()`。Factorized MVB 用 `FactorizedEvaluator::try_new(&pbs)` 构造，执行时传 `&mut pbs`。仅需 CBS 时可用 `context.bootstrap_resources(br)` 独立准备公共资源。完整用法见 [NTT 资源复用](../primus_tfhe_ntru_ntt/README.zh_CN.md#复用-evaluator)与 [Fourier 资源复用](../primus_tfhe_ntru_fourier/README.zh_CN.md#复用-evaluator)。
+NTRU 两后端使用短借用组合：普通 PBS 拥有公共 BR/EP（Fourier 含 FFT）和返回缓冲，CBS/one-hot 只准备 LUT/投影状态。构造用 `try_new(pbs.bootstrap_resources(), circuit_key, &input_codec)`，执行时最后一个参数传 `pbs.bootstrap_resources_mut()`。Factorized MVB 用 `FactorizedEvaluator::new(&pbs)` 构造，执行时传 `&mut pbs`。仅需 CBS 时可用 `context.bootstrap_resources(br)` 独立准备公共资源。完整用法见 [NTT 资源复用](../primus_tfhe_ntru_ntt/README.zh_CN.md#复用-evaluator)与 [Fourier 资源复用](../primus_tfhe_ntru_fourier/README.zh_CN.md#复用-evaluator)。
 
 GLWE 两后端同样使用短借用。CBS 构造器另传所选输出参数；MVB 用无错误返回的 `FactorizedEvaluator::new(&pbs)`，支持 classic 和 sparse。公共资源在 KS→BR 时保留输入 KS；独立 BR→KS 不分配输出 KS。Fourier 整个流程复用同一 FFT engine。见 [GLWE NTT 资源复用](../primus_tfhe_glwe_ntt/README.zh_CN.md#复用-evaluator)与 [GLWE Fourier 资源复用](../primus_tfhe_glwe_fourier/README.zh_CN.md#复用-evaluator)。
 
@@ -251,7 +251,7 @@ assert_eq!(message, 7);
 
 全部输出共享一次步长为 1 的 BR，再分别乘公开多项式。正输出数不补齐、不降低输入容量； 代价是各输出的因子会放大 BR 噪声，输入几何检查不能代替噪声预算。解密相位须使用保留的 Scaled codec；接入下一次 Rounded 输入 PBS 时须计入编码中心差异。
 
-[GLWE NTT](../primus_tfhe_glwe_ntt/README.zh_CN.md#固定尺度分解式-mvb) 与 [NTRU NTT](../primus_tfhe_ntru_ntt/README.zh_CN.md#固定尺度分解式-mvb) 均支持此程序。 GLWE NTT 支持经典/稀疏密钥和两种 order；NTRU NTT 共享加密初始化和 BR，再逐输出 KS。 [GLWE Fourier](../primus_tfhe_glwe_fourier/README.zh_CN.md#固定尺度分解式-mvb) 支持 u32/u64、Native 偶尺度、经典 binary/ternary、sparse binary 和两种 order；因子按有符号整数变换， 还须预算 FFT 误差。[NTRU Fourier](../primus_tfhe_ntru_fourier/README.zh_CN.md#固定尺度分解式-mvb) 支持相同字宽和 Native 尺度，秘密为 binary/ternary；因子同时放大加密初始化和 BR 噪声，之后逐输出 KS。 `t_out` 不必为二次幂，检查的是实际尺度。 预处理产物借用一个 context，独立 evaluator 复用工作区。 本实现不含奇数全域 MVB 和 CBS 输出；代数与噪声条件见 [MVB 设计](IMPLEMENTATION.md#factorized-mvb)。
+[GLWE NTT](../primus_tfhe_glwe_ntt/README.zh_CN.md#固定尺度分解式-mvb) 与 [NTRU NTT](../primus_tfhe_ntru_ntt/README.zh_CN.md#固定尺度分解式-mvb) 均支持此程序。 GLWE NTT 支持经典/稀疏密钥和两种 order；NTRU NTT 支持 classic binary/ternary 和 sparse binary，共享公开提升和 BR，再逐输出返回。 [GLWE Fourier](../primus_tfhe_glwe_fourier/README.zh_CN.md#固定尺度分解式-mvb) 支持 u32/u64、Native 偶尺度、经典 binary/ternary、sparse binary 和两种 order；因子按有符号整数变换， 还须预算 FFT 误差。[NTRU Fourier](../primus_tfhe_ntru_fourier/README.zh_CN.md#固定尺度分解式-mvb) 支持相同字宽和 Native 尺度，以及 classic binary/ternary 和 sparse binary；因子同时放大加密初始化和 BR 噪声，之后逐输出 KS。 `t_out` 不必为二次幂，检查的是实际尺度。 预处理产物借用一个 context，独立 evaluator 复用工作区。 本实现不含奇数全域 MVB 和 CBS 输出；代数与噪声条件见 [MVB 设计](IMPLEMENTATION.md#factorized-mvb)。
 
 [GLWE](../primus_tfhe_glwe_ntt/examples/mvb_thresholds.rs) 和 [NTRU](../primus_tfhe_ntru_ntt/examples/ntru_ntt_mvb_thresholds.rs) 阈值示例展示一个加密分数 生成交错容量之外的 17 个标志。交错容量和旋转余量足够时优先考虑 ManyLUT； 需要更多输出且差分因子范数较小时考虑 MVB，完整成本须按实际后端和参数测量。
 

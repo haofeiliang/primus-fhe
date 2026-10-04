@@ -9,7 +9,7 @@ use primus_tfhe_ntru_fourier::{
 };
 
 use primus_encoding::RoundedCodec;
-use primus_modulus::BarrettModulus;
+use primus_modulus::PowOf2Modulus;
 use primus_ntru::SecretKeyDistr;
 use primus_test_allocations as allocations;
 use rand::{SeedableRng, rngs::StdRng};
@@ -21,7 +21,7 @@ const DIM: usize = 4;
 
 fn check<T: TorusFftValue, Table: FftTable>() {
     let q = T::as_from(1u32 << 20);
-    let external_modulus = BarrettModulus::new(q);
+    let external_modulus = PowOf2Modulus::new(q);
     for distr in [
         SecretKeyDistr::fixed_hamming_weight_binary(DIM, 2),
         SecretKeyDistr::fixed_composition_ternary(DIM, 1, 1),
@@ -151,7 +151,7 @@ fn check<T: TorusFftValue, Table: FftTable>() {
             })
             .unwrap();
         let mut pbs = context.evaluator(&server).unwrap();
-        let mut factorized = primus_tfhe_ntru_fourier::FactorizedEvaluator::try_new(&pbs).unwrap();
+        let mut factorized = primus_tfhe_ntru_fourier::FactorizedEvaluator::new(&pbs);
         let input = encryptor.encrypt_padded(T::ONE, &mut rng).unwrap();
         factorized.apply_lookup_table_to(input.as_view(), &program, &mut outputs[..2], &mut pbs);
         for (i, output) in outputs[..2].iter().enumerate() {
@@ -165,6 +165,28 @@ fn check<T: TorusFftValue, Table: FftTable>() {
                 .try_generate_sparse_server_key(&client, 3, 8, &mut rng)
                 .unwrap();
             let mut sparse = context.evaluator(&sparse_server).unwrap();
+            // Reuse the same public factors with the sparse key and independent
+            // q-domain secret; each factor product must undergo its own Q→q return.
+            let mut sparse_mvb = primus_tfhe_ntru_fourier::FactorizedEvaluator::new(&sparse);
+            for m in [0usize, 1, 0] {
+                let input = encryptor.encrypt_padded(T::as_from(m), &mut rng).unwrap();
+                let (_, allocation) = allocations::measure(|| {
+                    sparse_mvb.apply_lookup_table_to(
+                        input.as_view(),
+                        &program,
+                        &mut outputs[..2],
+                        &mut sparse,
+                    );
+                });
+                assert_eq!(allocation.count, 0);
+                for (i, output) in outputs[..2].iter().enumerate() {
+                    assert!(output.as_ref().iter().all(|&x| x < q));
+                    assert_eq!(
+                        scaled_q.decode_value(decryptor.decrypt_phase(output.as_view()).unwrap()),
+                        T::as_from(m + i)
+                    );
+                }
+            }
             let (_, allocation) = allocations::measure(|| {
                 sparse.apply_interleaved_lookup_table_to(input.as_view(), &many, &mut outputs)
             });
@@ -180,7 +202,7 @@ fn check<T: TorusFftValue, Table: FftTable>() {
         let mut wrong = config;
         wrong.external_lwe = LweParametersInner::new(
             LweDimension::new(DIM),
-            BarrettModulus::new(q / T::as_from(2u32)),
+            PowOf2Modulus::new(q / T::as_from(2u32)),
             distr,
             0.7,
         );

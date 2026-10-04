@@ -151,7 +151,7 @@ operations, geometry and timing boundaries. The [measurement record](tfhe-benchm
 tracks the current baseline and the effect of removing eager fixture setup.
 
 The ternary targets were merged into dense PBS; duplicate ManyLUT comparisons
-now live in MVB, including sparse NTRU's supported independent/interleaved pair.
+now live in MVB, including sparse NTRU's independent/interleaved/factorized paths.
 Ordinary CBS and NTRU full/compact one-hot share the CBS target. The public LUT
 compiler covers Native, explicit PowOf2 q24, and Barrett primes for both words.
 The lookup benchmark now matches the c8/d5/o8 teaching workload at n800/N1024;
@@ -175,7 +175,7 @@ Examples do not import the test-support factories. Their local configuration fun
 
 All examples are arithmetic demonstrations, not assessed security presets. NTRU consistently uses independent LWE q24 and a separate ring Q; its ordinary return path and MVB scaled-output distinction are visible in the code. The explicit local configurations mirror the validated profiles above; their noise and decomposition choices remain specific to the workflow.
 
-All four backends have classic PBS, sparse/interleaved ManyLUT, ordinary CBS and factorized MVB entries. GLWE MVB examples can switch `SPARSE` to true; GLWE sparse CBS has a separate entry because its secret and parameter choices differ from dense CBS. NTRU sparse supports only ordinary/interleaved PBS; its CBS, one-hot and MVB require classic keys. One-hot and the full high-precision pipeline are NTRU extensions. ManyLUT and factorized MVB are distinct multi-output algorithms.
+All four backends have classic PBS, sparse/interleaved ManyLUT, ordinary CBS and factorized MVB entries. All four MVB examples can switch `SPARSE` to true; GLWE sparse CBS has a separate entry because its secret and parameter choices differ from dense CBS. NTRU sparse supports ordinary/interleaved PBS and factorized MVB; its CBS and one-hot require classic keys. One-hot and the full high-precision pipeline are NTRU extensions. ManyLUT and factorized MVB are distinct multi-output algorithms.
 
 Boolean gates, bivariate LUTs and odd full-domain LUTs are derived encoding/composition APIs, not additional blind-rotation algorithms. They retain their [user guide](../../crates/primus_tfhe/README.md#choosing-an-operation) and test coverage; this list does not claim a standalone example for every public wrapper or secret distribution. Classic binary/ternary validation remains in the numerical diagnostic above.
 

@@ -292,7 +292,8 @@ where
 {
     /// Generates experimental sparse PBS material for a fixed-weight binary client.
     /// Inherits [`KeyGenerator::try_generate_sparse_server_key`]'s sampling, errors
-    /// and noise contracts. Reuses the ordinary evaluator; CBS/MVB are unsupported.
+    /// and noise contracts. Reuses the ordinary evaluator for PBS and factorized MVB;
+    /// CBS and one-hot remain unsupported.
     pub fn try_generate_sparse_server_key<R: rand::Rng + rand::CryptoRng>(
         &self,
         client_key: &ClientKey<T>,

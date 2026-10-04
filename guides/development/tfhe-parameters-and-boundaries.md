@@ -166,8 +166,8 @@ NTRU 三类材料可分别生成和持有：`KeyGenerator::try_generate_blind_ro
 | --- | --- | --- |
 | `Evaluator::try_from_parts` | BR + return | BR layout/distribution/basis、返回 N/Q/q/n/basis |
 | CBS / one-hot `try_new` | 公共资源 + CBS | classic 能力、累加 N/Q、CBS 完整 basis 及输入 codec/容量；无返回约束 |
-| 高精 LUT `try_from_parts` | BR + return + CBS | 上述材料及编译表的 N/Q/q/编码 |
-| Factorized MVB `try_new(&pbs)` | 已绑定 PBS | classic 能力与既有 MVB 程序约束 |
+| 高精 LUT `try_from_parts` | BR + return + CBS + 按需 public lift | 上述材料、编译表的 N/Q/q/编码及独立提升 NLEV 的 N/Q/长度 |
+| Factorized MVB `new(&pbs)` | 已绑定 classic/sparse PBS | 构造仅分配额外变换缓冲；求值前检查 context/BR 绑定与程序、输入输出形状 |
 
 BR 不依赖返回 basis；位控制也不绑定外部 q。外部模数由输入程序和返回材料绑定。独立 BR/CBS 生成不检查 f 在返回 q 下的幅度界，完整 PBS 及返回密钥生成保留该要求。各入口检查一次，在线不再解包可选材料或扫描秘密。相同布局/模数不能证明独立材料的实际秘密身份。
 
@@ -184,7 +184,7 @@ GLWE 复用已有独立 `BootstrappingKey::{Classic,Sparse}` 和底层环 KS own
 
 ServerKey 的可选 CBS 材料仍使用 `Option` 表示；四个后端的 CBS 操作构造器直接要求 circuit key 引用。私有绑定集中可用材料与所选 output parameters；NTRU CBS/one-hot 要求 classic，并始终使用 circuit key 的完整 output basis。GLWE CBS 支持 classic 与 sparse，`try_new` 验证调用方提供的参数、trace basis 和 scheme-switch layout，可复用兼容的独立 output basis。构造后保存借用的绑定，在线操作不再取得可选材料。布局及 basis 一致仍不证明秘密或变换表示身份。
 
-入口：NTRU [NTT 控制视图](../../crates/primus_tfhe_ntru_ntt/src/key/classic.rs) / [Fourier 控制视图](../../crates/primus_tfhe_ntru_fourier/src/key/classic.rs)，各后端 `circuit_bootstrap/key.rs` 的私有绑定与 `circuit_bootstrap/evaluator.rs` 的公开构造器。高精度 LUT 从已绑定 one-hot 取得 initializer；返回密钥与 q 由家族 `LweReturnEvaluator` 绑定，缓冲由消费者独立持有，批次协议位于 `LweReturnBatchWorkspace`，NTT/Fourier evaluator 各自选择返回调度。
+入口：NTRU [NTT 控制视图](../../crates/primus_tfhe_ntru_ntt/src/key/classic.rs) / [Fourier 控制视图](../../crates/primus_tfhe_ntru_fourier/src/key/classic.rs)，各后端 `circuit_bootstrap/key.rs` 的私有绑定与 `circuit_bootstrap/evaluator.rs` 的公开构造器。高精度 LUT 按编译计划直接绑定提升 NLEV 与其参数，无 Lift 时不需要；返回密钥与 q 由家族 `LweReturnEvaluator` 绑定，缓冲由消费者独立持有，批次协议位于 `LweReturnBatchWorkspace`，NTT/Fourier evaluator 各自选择返回调度。
 
 ## NTRU 返回资源与批次
 

@@ -254,7 +254,7 @@ nested PBS. See the [GLWE resource table](#glwe-resource-ownership).
 
 Each NTRU backend's ordinary `Evaluator` owns `BootstrapResources` and both return buffers.
 CBS/one-hot retains a compiled LUT, trace scratch and projected NLEV, then borrows
-common resources for each call. `FactorizedEvaluator::try_new(&pbs)` prepares one
+common resources for each call. `FactorizedEvaluator::new(&pbs)` prepares one
 extra NTT polynomial, or two Fourier polynomials, and borrows `&mut pbs` per request. No evaluator nesting or
 recovery protocol is needed. The short-borrow boundary requires the same context
 and BR key references used at operation construction, before any writes. Multiple

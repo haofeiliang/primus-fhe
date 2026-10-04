@@ -23,8 +23,9 @@ BR variants receive identical fixed-weight secrets, input ciphertexts and LUTs.
 The current [sparse measurement report](../../guides/development/sparse-bootstrap-measurements.md)
 records paired latency, stage costs, setup and memory accounting.
 
-MVB compares classic and sparse GLWE keys. NTRU sparse supports only ordinary
-and interleaved PBS, so it has just the D8/k3 independent/interleaved pair.
+MVB compares classic and sparse keys in all four backends. D8/k3 compares
+independent PBS, interleaved ManyLUT and factorized MVB; D64/k17 compares
+independent PBS and factorized MVB beyond interleaved capacity.
 Throughput for MVB and complete lookup counts **output ciphertexts**; latency
 still measures the whole batch. NTRU output phases are decoded at external q24,
 while their public coefficient tables are encoded at ring Q.

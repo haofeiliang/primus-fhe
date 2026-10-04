@@ -23,7 +23,7 @@ The direct composition entry is `TfheParameters::try_new(external_lwe, blind_rot
 
 Ordinary PBS returns through: blind rotation under f,Q → coefficient-wise nearest rounding Q→q → phase-coefficient extraction → LWE key switching at q to s. ManyLUT shares blind rotation but returns each output separately. `context.allocate_lwe_ciphertext()` uses the external dimension.
 
-Classic PBS, ManyLUT, CBS, Boolean and MVB support binary/ternary external secrets. Sparse requires the explicit fixed-weight binary generation entry, allows even weight, and supports only ordinary/ManyLUT PBS. The `SparseTernary` distribution alone does not select bucket aggregation. First lifting and sparse-bucket derivations live in the [implementation notes](../primus_tfhe/IMPLEMENTATION.md#ternary-and-sparse-rotation).
+Classic PBS, ManyLUT, CBS, Boolean and MVB support binary/ternary external secrets. Sparse requires the explicit fixed-weight binary generation entry, allows even weight, and supports ordinary/ManyLUT PBS and factorized MVB. CBS and one-hot still require classic keys. The `SparseTernary` distribution alone does not select bucket aggregation. First lifting and sparse-bucket derivations live in the [implementation notes](../primus_tfhe/IMPLEMENTATION.md#ternary-and-sparse-rotation).
 
 ## Clients and LUTs
 

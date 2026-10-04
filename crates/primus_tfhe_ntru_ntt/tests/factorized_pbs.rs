@@ -70,7 +70,7 @@ fn check_complete(distr: SecretKeyDistr) {
         .decryptor(client.external_lwe_secret_key(), &input_codec)
         .unwrap();
     let mut pbs = context.evaluator(&server).unwrap();
-    let mut evaluator = primus_tfhe_ntru_ntt::FactorizedEvaluator::try_new(&pbs).unwrap();
+    let mut evaluator = primus_tfhe_ntru_ntt::FactorizedEvaluator::new(&pbs);
     let dimension = context.parameters().external_lwe_dimension().get();
     // The reference uses the same Scaled centers, not Rounded outputs.
     let singles: [_; 3] = std::array::from_fn(|i| {

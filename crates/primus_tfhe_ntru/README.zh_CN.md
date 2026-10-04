@@ -23,7 +23,7 @@ NTRU-TFHE 的参数与 LWE 客户端层；[NTT](../primus_tfhe_ntru_ntt/README.z
 
 普通 PBS 的返回顺序为：f,Q 下盲旋转 → 逐系数 Q→q 最近舍入 → 提取相位系数 → q 下 LWE key switch 到 s。ManyLUT 共享盲旋转，每个输出分别返回；`context.allocate_lwe_ciphertext()` 使用外部维数。
 
-Classic PBS、ManyLUT、CBS、Boolean 和 MVB 支持 binary/ternary 外部秘密。Sparse 须显式选择 fixed-weight binary 生成入口，允许偶数重量，只支持普通/ManyLUT PBS；`SparseTernary` 分布本身不会选择桶聚合。首次提升与稀疏桶的推导见[实现说明](../primus_tfhe/IMPLEMENTATION.md#ternary-and-sparse-rotation)。
+Classic PBS、ManyLUT、CBS、Boolean 和 MVB 支持 binary/ternary 外部秘密。Sparse 须显式选择 fixed-weight binary 生成入口，允许偶数重量，支持普通/ManyLUT PBS 和分解式 MVB；CBS、one-hot 仍要求 classic 密钥。`SparseTernary` 分布本身不会选择桶聚合。首次提升与稀疏桶的推导见[实现说明](../primus_tfhe/IMPLEMENTATION.md#ternary-and-sparse-rotation)。
 
 ## 客户端与 LUT
 

@@ -12,8 +12,13 @@ use primus_lwe::LweParametersInner;
 use primus_modulus::{BarrettModulus, PowOf2Modulus};
 use primus_ntru::SecretKeyDistr;
 use primus_ntt::U32NttTable as Table;
-use primus_tfhe_ntru_ntt::{DecompositionConfig, TfheConfig, TfheContext, TfheParameters};
+use primus_tfhe_ntru_ntt::{
+    DecompositionConfig, KeyGenerator, TfheConfig, TfheContext, TfheParameters,
+};
 use rand::{SeedableRng, rngs::StdRng};
+
+// Set true to evaluate the same factorized MVB program with sparse PBS.
+const SPARSE: bool = false;
 
 // The explicit parameters below select bases and moduli for this coefficient word.
 type Word = u32;
@@ -77,7 +82,17 @@ fn main() {
 
     // Client: keep client_key and the decryptor; give server_key to the server.
     let mut rng = StdRng::seed_from_u64(42);
-    let (client_key, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
+    let mut generator = KeyGenerator::new(&context);
+    let client_key = generator.try_generate_client_key(&mut rng).unwrap();
+    let server_key = if SPARSE {
+        generator
+            .try_generate_sparse_server_key(&client_key, 3, 64, &mut rng)
+            .unwrap()
+    } else {
+        generator
+            .try_generate_server_key(&client_key, None, &mut rng)
+            .unwrap()
+    };
     // Ordinary messages borrow only the external secret from the setup bundle.
     let external_secret = client_key.external_lwe_secret_key();
     let encryptor = context.encryptor(external_secret, &input_codec).unwrap();
@@ -96,7 +111,7 @@ fn main() {
         )
         .unwrap();
     let mut pbs = context.evaluator(&server_key).unwrap();
-    let mut evaluator = primus_tfhe_ntru_ntt::FactorizedEvaluator::try_new(&pbs).unwrap();
+    let mut evaluator = primus_tfhe_ntru_ntt::FactorizedEvaluator::new(&pbs);
     let mut outputs = vec![context.allocate_lwe_ciphertext(); OUTPUTS];
 
     for score in [12 as Word, 45] {

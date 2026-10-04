@@ -1,9 +1,9 @@
-//! Classic/sparse differential PBS and ManyLUT on reused workspaces;
+//! Classic/sparse differential PBS, ManyLUT and factorized MVB on reused workspaces;
 //! bucket layouts and quantization margins are part of the fixture.
 
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
-use primus_encoding::{PlaintextEmbedding, RoundedCodec};
+use primus_encoding::{PlaintextEmbedding, RoundedCodec, ScaledCodec};
 use primus_integer::FheUint;
 use primus_lattice::LweDimension;
 use primus_lwe::{LweCiphertext, LweParameters};
@@ -123,6 +123,16 @@ fn check_complete<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, weight:
     let mut reference = output.clone();
     let mut outputs = vec![output.clone(); 3];
 
+    // Integer differences in the public factors amplify BR noise. Seventeen
+    // outputs also cross two complete return tiles and their singleton tail.
+    let scaled = ScaledCodec::new(T::as_from(8usize), modulus);
+    let factorized_lut = context
+        .compile_factorized_lookup_table_fn(&input_codec, &scaled, 8, 17, value)
+        .unwrap();
+    let mut classic_mvb = primus_tfhe_ntru_ntt::FactorizedEvaluator::new(&classic);
+    let mut factor_outputs = vec![output.clone(); 17];
+    let mut factor_references = factor_outputs.clone();
+
     // Odd/even bucket counts exercise ownership swaps; b>n guarantees public empty buckets.
     let cases: &[(usize, usize, u64)] = if weight == 1 {
         // Seeds 1/0/37 give an empty, nonempty-unoccupied, and occupied first bucket.
@@ -141,11 +151,6 @@ fn check_complete<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, weight:
             .try_generate_sparse_server_key(&client, copies, buckets, &mut key_rng)
             .unwrap();
         assert!(server.blind_rotation_key().classic_controls().is_none());
-        let pbs = context.evaluator(&server).unwrap();
-        assert_eq!(
-            primus_tfhe_ntru_ntt::FactorizedEvaluator::try_new(&pbs).err(),
-            Some(TfheEvaluationError::UnsupportedSparseBootstrapping)
-        );
         let key = server
             .blind_rotation_key()
             .sparse_bootstrapping_key()
@@ -164,6 +169,7 @@ fn check_complete<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, weight:
                 .is_err()
         );
         let mut sparse = context.evaluator(&server).unwrap();
+        let mut sparse_mvb = primus_tfhe_ntru_ntt::FactorizedEvaluator::new(&sparse);
         for (message, zero_mask) in [(0, true), (3, false), (7, false), (1, true)] {
             let mut input = context
                 .encryptor(client.external_lwe_secret_key(), &input_codec)
@@ -175,6 +181,42 @@ fn check_complete<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, weight:
                 *input.b_mut() =
                     input_codec.encode_value(T::as_from(message), PlaintextEmbedding::Unsigned);
             }
+            let (_, allocation) = measure(|| {
+                sparse_mvb.apply_lookup_table_to(
+                    input.as_view(),
+                    &factorized_lut,
+                    &mut factor_outputs,
+                    &mut sparse,
+                );
+            });
+            assert_eq!(
+                allocation.count, 0,
+                "first and reused sparse MVB calls must not allocate"
+            );
+            classic_mvb.apply_lookup_table_to(
+                input.as_view(),
+                &factorized_lut,
+                &mut factor_references,
+                &mut classic,
+            );
+            // Compare both paths against the function's Scaled center, not
+            // against each other: independent BR/KS noise need not be identical.
+            for (i, (sparse_output, classic_output)) in
+                factor_outputs.iter().zip(&factor_references).enumerate()
+            {
+                let expected = value(message, i);
+                let target: i128 = scaled
+                    .encode_value(expected, PlaintextEmbedding::Unsigned)
+                    .as_into();
+                for cipher in [sparse_output, classic_output] {
+                    let actual = phase(cipher, client.external_lwe_secret_key().as_ref(), q_wide);
+                    let difference = (actual - target).rem_euclid(q_wide);
+                    assert!(difference.min(q_wide - difference) < q_wide / 64);
+                    assert_eq!(scaled.decode_value(T::as_from(actual)), expected);
+                }
+            }
+            // Ordinary PBS/ManyLUT must still work after borrowing the shared
+            // accumulator and return buffers for MVB.
             let (_, allocation) = measure(|| {
                 sparse.apply_lookup_table_to(input.as_view(), &single, output.as_mut_view())
             });

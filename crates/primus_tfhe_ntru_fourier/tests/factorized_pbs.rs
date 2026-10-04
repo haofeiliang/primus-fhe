@@ -84,7 +84,7 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(distr: SecretKeyDistr) {
         (DOMAIN, output_count, T::as_from(10usize))
     );
     let mut pbs = context.evaluator(&server).unwrap();
-    let mut evaluator = primus_tfhe_ntru_fourier::FactorizedEvaluator::try_new(&pbs).unwrap();
+    let mut evaluator = primus_tfhe_ntru_fourier::FactorizedEvaluator::new(&pbs);
     let encryptor = context
         .encryptor(client.external_lwe_secret_key(), &input_codec)
         .unwrap();
@@ -180,7 +180,7 @@ fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
         .unwrap();
     let wrong = LweCiphertext::zero(DIM - 1);
     let mut pbs = context.evaluator(&server).unwrap();
-    let mut evaluator = primus_tfhe_ntru_fourier::FactorizedEvaluator::try_new(&pbs).unwrap();
+    let mut evaluator = primus_tfhe_ntru_fourier::FactorizedEvaluator::new(&pbs);
     for case in 0..4 {
         let mut outputs = vec![input.clone(); if case == 0 { 2 } else { 3 }];
         if case == 1 {

@@ -1,7 +1,7 @@
 //! Produce k threshold bits from one encrypted input. D8/k3 compares independent
 //! PBS, interleaved ManyLUT and factorized MVB; D64/k17 exceeds interleaved
 //! capacity. One iteration produces all k outputs, with no setup or allocation.
-//! Sparse NTRU supports independent/interleaved PBS, but not factorized MVB.
+//! Both classic and sparse keys support all three paths.
 //! Parameters: primus_tfhe_test_support::parameters (arithmetic cost profiles).
 //! Fixtures are initialized only for selected IDs, then reused across samples.
 //! Run: cargo bench -p primus_tfhe_ntru_ntt --bench mvb
@@ -27,9 +27,6 @@ use rand::{SeedableRng, rngs::StdRng};
 fn backend<T: FheUint, Table: MonomialNttTable<ValueT = T>>(c: &mut Criterion, backend: &str) {
     for (domain, count) in [(8usize, 3usize), (64, 17)] {
         for sparse in [false, true] {
-            if sparse && domain == 64 {
-                continue;
-            }
             let kind = if sparse { "sparse" } else { "classic" };
             let parameters = ntru::diagnostic(ntt_modulus::<T>());
             let input_codec = RoundedCodec::new(
@@ -45,9 +42,6 @@ fn backend<T: FheUint, Table: MonomialNttTable<ValueT = T>>(c: &mut Criterion, b
             group.throughput(Throughput::Elements(count as u64));
             for path in ["independent", "interleaved", "factorized"] {
                 if path == "interleaved" && domain == 64 {
-                    continue;
-                }
-                if sparse && path == "factorized" {
                     continue;
                 }
                 let mut verified = false;
@@ -189,7 +183,7 @@ fn backend<T: FheUint, Table: MonomialNttTable<ValueT = T>>(c: &mut Criterion, b
                                 .unwrap();
                             let mut pbs = context.evaluator(server).unwrap();
                             let mut evaluator =
-                                primus_tfhe_ntru_ntt::FactorizedEvaluator::try_new(&pbs).unwrap();
+                                primus_tfhe_ntru_ntt::FactorizedEvaluator::new(&pbs);
                             evaluator.apply_lookup_table_to(
                                 input.as_view(),
                                 &lut,
