@@ -13,7 +13,7 @@ use primus_ntru::{NtruParameters, SecretKeyDistr};
 use primus_ntt::{MonomialNttTable, U32NttTable, U64NttTable};
 use primus_test_allocations::{CountingAllocator, measure};
 use primus_tfhe::rotation::RotationModulusSwitch;
-use primus_tfhe_ntru_ntt::{KeyGenerator, TfheContext, TfheParameters};
+use primus_tfhe_ntru_ntt::{BlindRotationConfig, KeyGenerator, TfheContext, TfheParameters};
 use rand::{SeedableRng, rngs::StdRng};
 
 #[global_allocator]
@@ -104,7 +104,7 @@ fn check_complete<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, weight:
         );
     }
     let classic_key = generator
-        .try_generate_server_key(&client, None, &mut rng)
+        .try_generate_server_key(&client, BlindRotationConfig::Classic, None, &mut rng)
         .unwrap();
     let mut classic = context.evaluator(&classic_key).unwrap();
     let modulus = context.parameters().external_lwe().cipher_modulus();
@@ -148,7 +148,15 @@ fn check_complete<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, weight:
     for &(copies, buckets, seed) in cases {
         let mut key_rng = StdRng::seed_from_u64(seed);
         let server = generator
-            .try_generate_sparse_server_key(&client, copies, buckets, None, &mut key_rng)
+            .try_generate_server_key(
+                &client,
+                BlindRotationConfig::Sparse {
+                    copy_count: copies,
+                    bucket_count: buckets,
+                },
+                None,
+                &mut key_rng,
+            )
             .unwrap();
         assert!(server.blind_rotation_key().classic_controls().is_none());
         assert!(server.circuit_bootstrap_key().is_none());
@@ -335,7 +343,15 @@ fn sparse_generation_rejects_invalid_secrets_buckets_and_cbs_before_sampling() {
         let mut untouched = StdRng::seed_from_u64(0xBAD);
         assert_eq!(
             context
-                .try_generate_sparse_server_key(&client, 3, 8, None, &mut rng)
+                .try_generate_server_key(
+                    &client,
+                    BlindRotationConfig::Sparse {
+                        copy_count: 3,
+                        bucket_count: 8
+                    },
+                    None,
+                    &mut rng
+                )
                 .err(),
             Some(expected)
         );
@@ -364,7 +380,15 @@ fn sparse_generation_rejects_invalid_secrets_buckets_and_cbs_before_sampling() {
         let mut untouched = StdRng::seed_from_u64(0xBAD);
         assert_eq!(
             generator
-                .try_generate_sparse_server_key(&client, copies, buckets, None, &mut rng)
+                .try_generate_server_key(
+                    &client,
+                    BlindRotationConfig::Sparse {
+                        copy_count: copies,
+                        bucket_count: buckets
+                    },
+                    None,
+                    &mut rng
+                )
                 .err(),
             Some(Error::SparseBootstrapping(expected))
         );
@@ -378,7 +402,15 @@ fn sparse_generation_rejects_invalid_secrets_buckets_and_cbs_before_sampling() {
     let mut untouched = StdRng::seed_from_u64(0xBAD);
     assert_eq!(
         generator
-            .try_generate_sparse_server_key(&noninvertible, 3, 8, None, &mut rng)
+            .try_generate_server_key(
+                &noninvertible,
+                BlindRotationConfig::Sparse {
+                    copy_count: 3,
+                    bucket_count: 8
+                },
+                None,
+                &mut rng
+            )
             .err(),
         Some(Error::Ntru(primus_ntru::NtruError::NonInvertibleSecretKey))
     );
@@ -403,7 +435,15 @@ fn sparse_generation_rejects_invalid_secrets_buckets_and_cbs_before_sampling() {
     let mut untouched = StdRng::seed_from_u64(0xBAD);
     assert!(
         generator
-            .try_generate_sparse_server_key(&client, 3, 8, Some(invalid_cbs), &mut rng)
+            .try_generate_server_key(
+                &client,
+                BlindRotationConfig::Sparse {
+                    copy_count: 3,
+                    bucket_count: 8
+                },
+                Some(invalid_cbs),
+                &mut rng
+            )
             .is_err()
     );
     assert_eq!(rng.next_u64(), untouched.next_u64());

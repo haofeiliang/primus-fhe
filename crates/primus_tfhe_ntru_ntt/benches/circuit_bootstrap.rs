@@ -16,7 +16,8 @@ use primus_lattice::ngsw::NttNgswIter;
 use primus_modulus::PowOf2Modulus;
 use primus_ntt::{MonomialNttTable, U32NttTable, U64NttTable};
 use primus_tfhe_ntru_ntt::{
-    CircuitBootstrapEvaluator, KeyGenerator, OneHotCircuitBootstrapEvaluator, TfheContext,
+    BlindRotationConfig, CircuitBootstrapEvaluator, KeyGenerator, OneHotCircuitBootstrapEvaluator,
+    TfheContext,
 };
 use primus_tfhe_test_support::parameters::ntt_circuit_modulus;
 use primus_tfhe_test_support::parameters::{N, ntru};
@@ -46,18 +47,17 @@ fn ordinary<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
             let mut rng = StdRng::seed_from_u64(42);
             let mut generator = KeyGenerator::new(&context);
             let client = generator.try_generate_client_key(&mut rng).unwrap();
-            let server = if sparse {
-                generator.try_generate_sparse_server_key(
-                    &client,
-                    3,
-                    64,
-                    Some(ntru::cbs::<T>()),
-                    &mut rng,
-                )
+            let blind_rotation = if sparse {
+                BlindRotationConfig::Sparse {
+                    copy_count: 3,
+                    bucket_count: 64,
+                }
             } else {
-                generator.try_generate_server_key(&client, Some(ntru::cbs::<T>()), &mut rng)
-            }
-            .unwrap();
+                BlindRotationConfig::Classic
+            };
+            let server = generator
+                .try_generate_server_key(&client, blind_rotation, Some(ntru::cbs::<T>()), &mut rng)
+                .unwrap();
             // Input/candidate encryption is identical across the two BR choices.
             let mut rng = StdRng::seed_from_u64(43);
             let input = context
@@ -142,18 +142,22 @@ fn one_hot<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
                 let mut rng = StdRng::seed_from_u64(42);
                 let mut generator = KeyGenerator::new(&context);
                 let client = generator.try_generate_client_key(&mut rng).unwrap();
-                let server = if sparse {
-                    generator.try_generate_sparse_server_key(
+                let blind_rotation = if sparse {
+                    BlindRotationConfig::Sparse {
+                        copy_count: 3,
+                        bucket_count: 64,
+                    }
+                } else {
+                    BlindRotationConfig::Classic
+                };
+                let server = generator
+                    .try_generate_server_key(
                         &client,
-                        3,
-                        64,
+                        blind_rotation,
                         Some(ntru::cbs::<T>()),
                         &mut rng,
                     )
-                } else {
-                    generator.try_generate_server_key(&client, Some(ntru::cbs::<T>()), &mut rng)
-                }
-                .unwrap();
+                    .unwrap();
                 // Input/candidate encryption is identical across the two BR choices.
                 let mut rng = StdRng::seed_from_u64(43);
                 let input = context

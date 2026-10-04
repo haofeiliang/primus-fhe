@@ -41,7 +41,7 @@ pub use lookup_table::{
     BivariateLookupTable, FactorizedLookupTable, InterleavedLookupTable, LookupTable,
     LookupTableCompiler, front_half_domain_len,
 };
-pub use parameters::CircuitBootstrapConfig;
+pub use parameters::{BlindRotationConfig, CircuitBootstrapConfig};
 pub use primus_decompose::{DecompositionBaseLog, DecompositionConfig, DecompositionLevelCount};
 pub use primus_lattice::lwe::Lwe;
 pub use primus_lwe::{LweCiphertext, LweSecretKeyRef};

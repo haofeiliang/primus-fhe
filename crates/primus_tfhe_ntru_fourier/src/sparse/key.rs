@@ -14,7 +14,7 @@ use zeroize::Zeroizing;
 
 use crate::{
     CircuitBootstrapConfig, CircuitBootstrapKey, CircuitBootstrapParameters, ClientKey,
-    KeyGenerationError, KeyGenerator, ServerKey, SparseBootstrappingKeyError, TfheContext,
+    KeyGenerationError, KeyGenerator, ServerKey, SparseBootstrappingKeyError,
 };
 
 /// Coefficient selectors and public buckets for a fixed-weight binary client.
@@ -116,29 +116,8 @@ where
     Table: FftTable,
     LM: primus_reduce::RingContext<T>,
 {
-    /// Generates sparse PBS material for an existing, fixed-weight binary client.
-    ///
-    /// Keeps the client secret fixed; only the public map retries, at most eight
-    /// times. Encrypts each selector and dummy independently after matching succeeds.
-    /// Requires `copy_count >= 1` and `bucket_count >= max(copy_count, h)`.
-    /// Returns the same server-key type as classic generation. `Some(config)` adds
-    /// trace/scheme-switch material for CBS and one-hot, reusing the accumulator
-    /// transform. `None` generates only BR and return material.
-    /// Enabling CBS inherits [`Self::try_generate_circuit_bootstrap_key`]'s contracts.
-    ///
-    /// # Errors
-    /// Rejects invalid CBS configuration, incompatible keys, a non-fixed-binary
-    /// distribution, `h` outside `0<h<n`, actual weight mismatch, invalid buckets, storage overflow,
-    /// noninvertible accumulator secrets or unstable Fourier inverses before
-    /// consuming randomness. Matching failure consumes only map randomness and
-    /// returns no partial key. It never resamples the client.
-    ///
-    /// # Correctness
-    /// Fourier material must use this context's FFT table instance.
-    /// Budget fused first-bucket lifting, later bucket errors, input quantization and return
-    /// key-switch noise, including coarser ManyLUT rotations. Matching is not
-    /// constant-time; see [`SparseNtruBootstrappingKey`]'s distribution requirements.
-    pub fn try_generate_sparse_server_key<R>(
+    // Generate sparse BR/CBS with one accumulator transform before allocating return material.
+    pub(crate) fn try_generate_sparse_server_key<R>(
         &mut self,
         client_key: &ClientKey<T>,
         copy_count: usize,
@@ -171,8 +150,21 @@ where
     }
 
     /// Generates only sparse BR controls, retaining the fixed input secret.
-    /// Inherits [`Self::try_generate_sparse_server_key`]'s matching, noise and
-    /// transform requirements, without requiring a return key or f's bound at q.
+    /// No return or CBS material is generated, and f's magnitude bound at external q
+    /// is not required. Each selector and dummy is encrypted independently.
+    ///
+    /// # Errors
+    /// Rejects incompatible keys, a non-fixed-binary distribution, `h` outside `0<h<n`,
+    /// actual weight mismatch, invalid buckets, storage overflow or an unusable
+    /// accumulator inverse before consuming randomness. Matching retries only the
+    /// public map (at most eight attempts); failure returns no partial key and never
+    /// resamples the client.
+    ///
+    /// # Correctness
+    /// Inherits [`FourierNtruSecretKey::try_from_coeff_secret_key`]'s secret and transform requirements.
+    /// Budget fused first-bucket lifting, later bucket errors and input quantization,
+    /// including coarser ManyLUT rotations. Matching is not constant-time; see
+    /// [`SparseNtruBootstrappingKey`]'s distribution requirements.
     pub fn try_generate_sparse_blind_rotation_key<R>(
         &mut self,
         client_key: &ClientKey<T>,
@@ -304,32 +296,5 @@ where
             )
         });
         Ok((blind_rotation, circuit))
-    }
-}
-
-impl<T, Table, LM> TfheContext<T, Table, LM>
-where
-    T: TorusFftValue,
-    Table: FftTable,
-    LM: primus_reduce::RingContext<T>,
-{
-    /// Generates experimental sparse PBS material for a fixed-weight binary client.
-    /// Inherits [`KeyGenerator::try_generate_sparse_server_key`]'s sampling, errors
-    /// and noise contracts, including optional CBS/one-hot material.
-    pub fn try_generate_sparse_server_key<R: rand::Rng + rand::CryptoRng>(
-        &self,
-        client_key: &ClientKey<T>,
-        copy_count: usize,
-        bucket_count: usize,
-        circuit_bootstrap: Option<CircuitBootstrapConfig>,
-        rng: &mut R,
-    ) -> Result<ServerKey<T>, KeyGenerationError> {
-        KeyGenerator::new(self).try_generate_sparse_server_key(
-            client_key,
-            copy_count,
-            bucket_count,
-            circuit_bootstrap,
-            rng,
-        )
     }
 }

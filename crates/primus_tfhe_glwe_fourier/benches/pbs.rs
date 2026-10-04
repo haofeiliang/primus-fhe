@@ -13,7 +13,9 @@ use primus_glwe::SecretKeyDistr;
 use primus_glwe::{FourierGlweKeySwitchingWorkspace, GlweCiphertext};
 use primus_lwe::LweCiphertext;
 use primus_modulus::NativeModulus;
-use primus_tfhe_glwe_fourier::{BootstrappingKey, FourierGlweBlindRotationWorkspace};
+use primus_tfhe_glwe_fourier::{
+    BlindRotationConfig, BlindRotationKey, FourierGlweBlindRotationWorkspace,
+};
 use primus_tfhe_glwe_fourier::{ClientKey, KeyGenerator, PbsOrder, TfheContext};
 use primus_tfhe_test_support::{
     benchmark::{PBS_WORKLOADS, PbsWorkload},
@@ -123,7 +125,12 @@ fn backend<T, Table>(
             || (),
             |()| {
                 generator
-                    .try_generate_server_key(black_box(client), None, &mut rng)
+                    .try_generate_server_key(
+                        black_box(client),
+                        BlindRotationConfig::Classic,
+                        None,
+                        &mut rng,
+                    )
                     .unwrap()
             },
             BatchSize::PerIteration,
@@ -168,7 +175,7 @@ fn stages<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) {
                     .unwrap()
                     .compile_fn(|m| T::as_from(m ^ 1))
                     .unwrap();
-                let BootstrappingKey::Classic(bootstrapping_key) = server_key.bootstrapping_key()
+                let BlindRotationKey::Classic(bootstrapping_key) = server_key.blind_rotation_key()
                 else {
                     panic!("stage fixture requires classic PBS");
                 };

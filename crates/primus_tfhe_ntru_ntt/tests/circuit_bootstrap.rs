@@ -79,7 +79,7 @@ fn circuit_bootstrap(distr: SecretKeyDistr, sparse: bool) {
     let br = if sparse {
         generator.try_generate_sparse_blind_rotation_key(&client, 3, 8, &mut rng)
     } else {
-        generator.try_generate_blind_rotation_key(&client, &mut rng)
+        generator.try_generate_classic_blind_rotation_key(&client, &mut rng)
     }
     .unwrap();
     let circuit = generator
@@ -437,7 +437,7 @@ fn independent_cbs_material_does_not_require_a_return_key() {
     assert_eq!(rng.random::<u64>(), untouched.random::<u64>());
     let mut generator = KeyGenerator::new(&context);
     let br = generator
-        .try_generate_blind_rotation_key(&client, &mut rng)
+        .try_generate_classic_blind_rotation_key(&client, &mut rng)
         .unwrap();
     let cbs_parameters = CircuitBootstrapParameters::try_from_config(
         context.parameters(),

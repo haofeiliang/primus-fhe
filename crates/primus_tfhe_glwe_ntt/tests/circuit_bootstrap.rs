@@ -12,9 +12,9 @@ use primus_ntt::U64NttTable;
 use primus_poly::Polynomial;
 use primus_test_allocations as allocations;
 use primus_tfhe_glwe_ntt::{
-    CircuitBootstrapConfig, CircuitBootstrapEvaluator, CircuitBootstrapParameters,
-    DecompositionConfig, KeyGenerator, PbsOrder, TfheConfig, TfheContext, TfheEvaluationError,
-    TfheParameters,
+    BlindRotationConfig, CircuitBootstrapConfig, CircuitBootstrapEvaluator,
+    CircuitBootstrapParameters, DecompositionConfig, KeyGenerator, PbsOrder, TfheConfig,
+    TfheContext, TfheEvaluationError, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -110,7 +110,15 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
             // Bundled generation and separately paired CBS material share the same evaluator.
             let config = (order == PbsOrder::BootstrapKeyswitch).then_some(cbs_config);
             KeyGenerator::new(&context)
-                .try_generate_sparse_server_key(&client_key, 3, 4, config, &mut rng)
+                .try_generate_server_key(
+                    &client_key,
+                    BlindRotationConfig::Sparse {
+                        copy_count: 3,
+                        bucket_count: 4,
+                    },
+                    config,
+                    &mut rng,
+                )
                 .unwrap()
         });
         let server_key = sparse_server_key.as_ref().unwrap_or(&classic_server_key);
@@ -248,7 +256,7 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
         // Missing input KS must fail at binding, for classic and sparse alike.
         if order == PbsOrder::KeyswitchBootstrap {
             let (result, allocation) = allocations::measure(|| {
-                context.bootstrap_resources(server_key.bootstrapping_key(), None)
+                context.bootstrap_resources(server_key.blind_rotation_key(), None)
             });
             assert!(matches!(
                 result,

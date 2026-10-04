@@ -12,8 +12,8 @@ use primus_ntt::{NttTable, U32NttTable};
 use primus_poly::{PolyLength, PolynomialOwned};
 use primus_tfhe::sparse::BucketMapError;
 use primus_tfhe_glwe_ntt::{
-    ClientKey, KeyGenerator, PbsOrder, SparseBootstrappingKeyError as Error, TfheContext,
-    TfheParameters,
+    BlindRotationConfig, ClientKey, KeyGenerator, PbsOrder, SparseBootstrappingKeyError as Error,
+    TfheContext, TfheParameters,
 };
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
@@ -74,7 +74,7 @@ fn encrypted_selections_cover_the_support_once_with_dummy_per_bucket() {
     // The second map must have at least one bucket with no public entries.
     for (copy_count, bucket_count) in [(3, 8), (1, 17)] {
         let key = generator
-            .try_generate_sparse_bootstrapping_key(&client, copy_count, bucket_count, &mut rng)
+            .try_generate_sparse_blind_rotation_key(&client, copy_count, bucket_count, &mut rng)
             .unwrap();
         assert_eq!(key.input_dimension(), LweDimension::new(16));
         assert_eq!(key.hamming_weight(), 4);
@@ -148,7 +148,7 @@ fn sparse_key_rejects_invalid_parameters_and_actual_secret_before_sampling() {
     );
     let mut rng = StdRng::seed_from_u64(43);
     let expected = generator
-        .try_generate_server_key(&wrong_order, None, &mut rng)
+        .try_generate_server_key(&wrong_order, BlindRotationConfig::Classic, None, &mut rng)
         .err()
         .unwrap();
     assert!(matches!(
@@ -157,13 +157,21 @@ fn sparse_key_rejects_invalid_parameters_and_actual_secret_before_sampling() {
     ));
     assert_eq!(
         generator
-            .try_generate_sparse_bootstrapping_key(&wrong_order, 3, 8, &mut rng)
+            .try_generate_sparse_blind_rotation_key(&wrong_order, 3, 8, &mut rng)
             .err(),
         Some(expected.clone())
     );
     assert_eq!(
         generator
-            .try_generate_sparse_server_key(&wrong_order, 3, 8, None, &mut rng)
+            .try_generate_server_key(
+                &wrong_order,
+                BlindRotationConfig::Sparse {
+                    copy_count: 3,
+                    bucket_count: 8
+                },
+                None,
+                &mut rng
+            )
             .err(),
         Some(expected)
     );
@@ -187,7 +195,15 @@ fn sparse_key_rejects_invalid_parameters_and_actual_secret_before_sampling() {
     };
     let mut rng = StdRng::seed_from_u64(43);
     assert!(matches!(
-        generator.try_generate_sparse_server_key(&client, 3, 8, Some(invalid_cbs), &mut rng),
+        generator.try_generate_server_key(
+            &client,
+            BlindRotationConfig::Sparse {
+                copy_count: 3,
+                bucket_count: 8
+            },
+            Some(invalid_cbs),
+            &mut rng
+        ),
         Err(
             primus_tfhe_glwe_ntt::KeyGenerationError::CircuitBootstrapParameters(
                 primus_tfhe_glwe_ntt::CircuitBootstrapParameterError::InvalidOutputBasis(_)
@@ -202,7 +218,7 @@ fn sparse_key_rejects_invalid_parameters_and_actual_secret_before_sampling() {
                      expected: primus_tfhe_glwe::KeyGenerationError| {
         let mut rng = StdRng::seed_from_u64(43);
         let result =
-            generator.try_generate_sparse_bootstrapping_key(client, copies, buckets, &mut rng);
+            generator.try_generate_sparse_blind_rotation_key(client, copies, buckets, &mut rng);
         assert_eq!(result.err(), Some(expected));
         assert_eq!(rng.next_u64(), StdRng::seed_from_u64(43).next_u64());
     };
@@ -261,7 +277,7 @@ fn sparse_key_rejects_invalid_parameters_and_actual_secret_before_sampling() {
         let client = ClientKey::generate(context.parameters(), &mut rng);
         let mut rng = StdRng::seed_from_u64(45);
         let mut expected_rng = StdRng::seed_from_u64(45);
-        let result = generator.try_generate_sparse_bootstrapping_key(&client, 3, 32, &mut rng);
+        let result = generator.try_generate_sparse_blind_rotation_key(&client, 3, 32, &mut rng);
         assert_eq!(result.err(), Some(expected.into()));
         assert_eq!(rng.next_u64(), expected_rng.next_u64());
     }

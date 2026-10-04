@@ -13,7 +13,7 @@ use primus_glwe::{GlweCiphertext, NttGlweKeySwitchingWorkspace};
 use primus_integer::FheUint;
 use primus_lwe::LweCiphertext;
 use primus_ntt::{MonomialNttTable, U32NttTable, U64NttTable};
-use primus_tfhe_glwe_ntt::{BootstrappingKey, NttGlweBlindRotationWorkspace};
+use primus_tfhe_glwe_ntt::{BlindRotationConfig, BlindRotationKey, NttGlweBlindRotationWorkspace};
 use primus_tfhe_glwe_ntt::{ClientKey, KeyGenerator, PbsOrder, TfheContext};
 use primus_tfhe_test_support::parameters::ntt_circuit_modulus;
 use primus_tfhe_test_support::{
@@ -124,7 +124,12 @@ fn backend<T, Table>(
             || (),
             |()| {
                 generator
-                    .try_generate_server_key(black_box(client), None, &mut rng)
+                    .try_generate_server_key(
+                        black_box(client),
+                        BlindRotationConfig::Classic,
+                        None,
+                        &mut rng,
+                    )
                     .unwrap()
             },
             BatchSize::PerIteration,
@@ -170,7 +175,7 @@ fn stages<T: FheUint, Table: MonomialNttTable<ValueT = T>>(c: &mut Criterion, ba
                     .unwrap()
                     .compile_fn(|m| T::as_from(m ^ 1))
                     .unwrap();
-                let BootstrappingKey::Classic(bootstrapping_key) = server_key.bootstrapping_key()
+                let BlindRotationKey::Classic(bootstrapping_key) = server_key.blind_rotation_key()
                 else {
                     panic!("stage fixture requires classic PBS");
                 };

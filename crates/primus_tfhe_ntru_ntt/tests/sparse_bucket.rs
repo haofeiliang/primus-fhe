@@ -14,7 +14,9 @@ use primus_ntru::{
 use primus_ntt::{MonomialNttTable, U32NttTable, U64NttTable};
 use primus_poly::{PolyLength, Polynomial};
 use primus_test_allocations::{CountingAllocator, measure};
-use primus_tfhe_ntru_ntt::{ClientKey, KeyGenerator, TfheContext, TfheParameters};
+use primus_tfhe_ntru_ntt::{
+    BlindRotationConfig, ClientKey, KeyGenerator, TfheContext, TfheParameters,
+};
 use rand::{SeedableRng, rngs::StdRng};
 use zeroize::Zeroizing;
 
@@ -177,7 +179,15 @@ fn check_bucket<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, level_cou
     for (copies, buckets) in [(3, 8), (1, DIM + 1)] {
         let imported = ClientKey::new(client.clone(), secret.clone());
         let server = KeyGenerator::new(&context)
-            .try_generate_sparse_server_key(&imported, copies, buckets, None, &mut rng)
+            .try_generate_server_key(
+                &imported,
+                BlindRotationConfig::Sparse {
+                    copy_count: copies,
+                    bucket_count: buckets,
+                },
+                None,
+                &mut rng,
+            )
             .unwrap();
         let key = server
             .blind_rotation_key()

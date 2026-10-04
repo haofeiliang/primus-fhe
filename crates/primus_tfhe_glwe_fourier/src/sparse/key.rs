@@ -26,7 +26,7 @@ use crate::{ClientKey, KeyGenerationError, KeyGenerator, SparseBootstrappingKeyE
 /// Ciphertexts are generated in Fourier form and converted to torus coefficients;
 /// this conversion can incur rounding error. Raw blind rotation is available via
 /// [`Self::fourier_blind_rotate_lookup_table_to`].
-/// [`KeyGenerator::try_generate_sparse_server_key`] can add CBS material and pairs this key with the GLWE
+/// [`KeyGenerator::try_generate_server_key`] can add CBS material and pairs this key with the GLWE
 /// KSK for ordinary/interleaved evaluation in [`crate::Evaluator`].
 ///
 /// Successful mapping conditions the joint distribution of the public map and
@@ -171,7 +171,7 @@ where
     /// contracts. This local key-generation procedure is not constant-time.
     /// Parameter validity and successful generation do not certify security or
     /// a PBS failure probability; see [`SparseGlweBootstrappingKey`].
-    pub fn try_generate_sparse_bootstrapping_key<R>(
+    pub fn try_generate_sparse_blind_rotation_key<R>(
         &mut self,
         client_key: &ClientKey<T>,
         copy_count: usize,

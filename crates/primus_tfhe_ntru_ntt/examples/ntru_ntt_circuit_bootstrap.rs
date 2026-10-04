@@ -115,7 +115,7 @@ fn main() {
     let blind_rotation_key = if SPARSE {
         generator.try_generate_sparse_blind_rotation_key(&client_key, 3, 64, &mut rng)
     } else {
-        generator.try_generate_blind_rotation_key(&client_key, &mut rng)
+        generator.try_generate_classic_blind_rotation_key(&client_key, &mut rng)
     }
     .unwrap();
     let circuit_parameters =

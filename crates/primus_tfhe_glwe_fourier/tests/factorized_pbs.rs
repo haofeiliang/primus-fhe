@@ -11,8 +11,8 @@ use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_test_allocations as allocations;
 use primus_tfhe_glwe_fourier::{
-    FactorizedLookupTable, FourierFactorizedLookupTable, KeyGenerator, LookupTable,
-    LookupTableError, PbsOrder, TfheContext, TfheParameters,
+    BlindRotationConfig, FactorizedLookupTable, FourierFactorizedLookupTable, KeyGenerator,
+    LookupTable, LookupTableError, PbsOrder, TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -102,7 +102,15 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(order: PbsOrder, ternary: b
     );
     let sparse = (!ternary).then(|| {
         KeyGenerator::new(&context)
-            .try_generate_sparse_server_key(&client, 3, 8, None, &mut rng)
+            .try_generate_server_key(
+                &client,
+                BlindRotationConfig::Sparse {
+                    copy_count: 3,
+                    bucket_count: 8,
+                },
+                None,
+                &mut rng,
+            )
             .unwrap()
     });
     // Reuse the same client/program for classic and sparse binary controls.

@@ -22,10 +22,10 @@ Examples separate client encryption, server evaluation and client decryption; se
 | Operation | Complete example |
 | --- | --- |
 | Classic PBS | [basic](examples/fourier_basic.rs) |
-| Sparse PBS / interleaved ManyLUT | [sparse](examples/fourier_sparse.rs); `SPARSE=false` selects classic ManyLUT |
+| Sparse PBS / interleaved ManyLUT | [sparse](examples/fourier_sparse.rs); `BLIND_ROTATION` selects classic/sparse |
 | Classic CBS → CMux | [circuit_bootstrap](examples/fourier_circuit_bootstrap.rs) |
 | Sparse CBS → CMux | [sparse_circuit_bootstrap](examples/fourier_sparse_circuit_bootstrap.rs) |
-| Factorized MVB | [thresholds](examples/fourier_mvb_thresholds.rs); `SPARSE=true` selects sparse MVB |
+| Factorized MVB | [thresholds](examples/fourier_mvb_thresholds.rs); `BLIND_ROTATION` selects classic/sparse |
 
 ManyLUT interleaves outputs within one blind rotation; factorized MVB uses public factors and a different evaluation interface.
 
@@ -45,7 +45,7 @@ Choose `PbsOrder::BootstrapKeyswitch` for external dimension n or `KeyswitchBoot
 
 Ordinary/interleaved `Evaluator` owns common `BootstrapResources` and its return stage. CBS owns only LUT/projection state and borrows `pbs.bootstrap_resources_mut()` as the final execution argument. MVB uses `FactorizedEvaluator::new(&pbs)` and takes `&mut pbs` per request. Ordinary PBS resumes when the borrow ends, without evaluator conversion or recovery. The same FFT engine serves input/output KS, BR, trace, scheme switch and factor products; borrowing does not create another FFT workspace.
 
-`ServerKey` remains the convenient complete PBS bundle. Advanced workflows can own `BootstrappingKey`, the ring KS key and `CircuitBootstrapKey` separately; `ServerKey::new` / `into_parts` move them without copying ciphertext arrays. `KeyGenerator::try_generate_bootstrapping_key` and the existing sparse entry generate only BR; `try_generate_glwe_key_switching_key` generates ring KS separately; `try_generate_circuit_bootstrap_key(accumulator_secret, parameters, rng)` needs only the accumulator secret. Separate generation may transform secrets again; paired generation retains its existing transform reuse.
+`ServerKey` remains the convenient complete PBS bundle. Advanced workflows can own `BlindRotationKey`, the ring KS key and `CircuitBootstrapKey` separately; `ServerKey::new` / `into_parts` move them without copying ciphertext arrays. `KeyGenerator::try_generate_classic_blind_rotation_key` and the existing sparse entry generate only BR; `try_generate_glwe_key_switching_key` generates ring KS separately; `try_generate_circuit_bootstrap_key(accumulator_secret, parameters, rng)` needs only the accumulator secret. Separate generation may transform secrets again; paired generation retains its existing transform reuse.
 
 For standalone CBS with an existing `ServerKey`, prepare only the required common resources:
 
@@ -73,16 +73,19 @@ Run the [17-threshold example](examples/fourier_mvb_thresholds.rs) with `--examp
 
 ## Experimental sparse PBS
 
+`KeyGenerator::try_generate_server_key(&client, blind_rotation, cbs, rng)` selects `BlindRotationConfig::Classic` or `Sparse { copy_count, bucket_count }` for an existing client. A fixed-weight binary secret supports both choices. `None` for CBS keeps ordinary BR/return material; `Some(config)` also generates CBS keys. The paired `try_generate_keys` shortcut selects classic and retains secret-transform reuse; independent components do not require a complete bundle. See [algorithm and material choices](../primus_tfhe/README.md#selecting-blind-rotation).
+
 Select a fixed-weight binary small-LWE distribution and choose sparse generation explicitly; a low-weight distribution alone still selects classic BR. Require `0<h<n`, `copy_count>=1` and `bucket_count>=max(copy_count,h)`.
 
 ```rust,ignore
 let mut generator = KeyGenerator::new(&context);
 let client = ClientKey::generate(context.parameters(), &mut rng);
-let server = generator.try_generate_sparse_server_key(&client, 3, 2 * h, None, &mut rng)?;
+let blind_rotation = BlindRotationConfig::Sparse { copy_count: 3, bucket_count: 2 * h };
+let server = generator.try_generate_server_key(&client, blind_rotation, None, &mut rng)?;
 let mut evaluator = context.evaluator(&server)?;
 ```
 
-Both orders support ordinary/interleaved PBS, MVB and CBS. Pass `Some(cbs_config)` to include sparse CBS material. `ServerKey::bootstrapping_key()` exposes `BootstrappingKey::{Classic,Sparse}`.
+Both orders support ordinary/interleaved PBS, MVB and CBS. Pass `Some(cbs_config)` to include sparse CBS material. `ServerKey::blind_rotation_key()` exposes `BlindRotationKey::{Classic,Sparse}`.
 
 ## Circuit bootstrapping
 

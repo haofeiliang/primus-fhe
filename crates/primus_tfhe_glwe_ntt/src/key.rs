@@ -11,22 +11,23 @@ use primus_reduce::Modulus;
 use primus_tfhe_glwe::ClientKey;
 
 use crate::{
-    CircuitBootstrapConfig, CircuitBootstrapKey, CircuitBootstrapParameters, KeyGenerationError,
-    NttGlweBootstrappingKey, SparseGlweBootstrappingKey, TfheContext, TfheParameters,
+    BlindRotationConfig, CircuitBootstrapConfig, CircuitBootstrapKey, CircuitBootstrapParameters,
+    KeyGenerationError, NttGlweBootstrappingKey, SparseGlweBootstrappingKey, TfheContext,
+    TfheParameters,
 };
 
 /// Blind-rotation key selected when generating a server key.
 ///
 /// Classic keys store NTT GGSWs; sparse keys store coefficient GGSWs and public
 /// buckets. Both target the same accumulator secret and use the small-LWE input.
-pub enum BootstrappingKey<T: FheUint> {
+pub enum BlindRotationKey<T: FheUint> {
     /// One binary control or a ternary control pair per input coefficient.
     Classic(NttGlweBootstrappingKey<T, BarrettModulus<T>>),
     /// Bucketed selections for a fixed-weight binary input secret.
     Sparse(SparseGlweBootstrappingKey<T>),
 }
 
-impl<T: FheUint> BootstrappingKey<T> {
+impl<T: FheUint> BlindRotationKey<T> {
     /// Validate the selected BR layout and input domain, independently of ring KS/CBS.
     pub(crate) fn is_compatible(&self, parameters: &TfheParameters<T>) -> bool {
         let (dimension, input_modulus, size, basis, cipher_modulus) = match self {
@@ -73,7 +74,7 @@ impl<T: FheUint> BootstrappingKey<T> {
 /// the order in which the evaluator applies them.
 pub struct ServerKey<T: FheUint> {
     circuit_bootstrap: Option<Box<CircuitBootstrapKey<T>>>,
-    bootstrapping_key: BootstrappingKey<T>,
+    blind_rotation_key: BlindRotationKey<T>,
     glwe_key_switching_key: NttGlweKeySwitchingKey<T>,
 }
 
@@ -83,12 +84,12 @@ impl<T: FheUint> ServerKey<T> {
     /// or transform identity. Both PBS orders use the same ring KS direction.
     #[must_use]
     pub fn new(
-        bootstrapping_key: BootstrappingKey<T>,
+        blind_rotation_key: BlindRotationKey<T>,
         glwe_key_switching_key: NttGlweKeySwitchingKey<T>,
         circuit_bootstrap: Option<CircuitBootstrapKey<T>>,
     ) -> Self {
         Self {
-            bootstrapping_key,
+            blind_rotation_key,
             glwe_key_switching_key,
             circuit_bootstrap: circuit_bootstrap.map(Box::new),
         }
@@ -103,8 +104,8 @@ impl<T: FheUint> ServerKey<T> {
     /// Returns the selected classic or sparse blind-rotation key.
     #[must_use]
     #[inline]
-    pub fn bootstrapping_key(&self) -> &BootstrappingKey<T> {
-        &self.bootstrapping_key
+    pub fn blind_rotation_key(&self) -> &BlindRotationKey<T> {
+        &self.blind_rotation_key
     }
 
     /// Returns the NTT GLWE key-switching key.
@@ -121,12 +122,12 @@ impl<T: FheUint> ServerKey<T> {
     pub fn into_parts(
         self,
     ) -> (
-        BootstrappingKey<T>,
+        BlindRotationKey<T>,
         NttGlweKeySwitchingKey<T>,
         Option<CircuitBootstrapKey<T>>,
     ) {
         (
-            self.bootstrapping_key,
+            self.blind_rotation_key,
             self.glwe_key_switching_key,
             self.circuit_bootstrap.map(|key| *key),
         )
@@ -182,7 +183,7 @@ where
     /// when combining independently generated materials.
     /// Imported coefficients inherit [`NttGlweSecretKey::from_coeff_secret_key`]'s
     /// unsigned-magnitude bound.
-    pub fn try_generate_bootstrapping_key<R>(
+    pub fn try_generate_classic_blind_rotation_key<R>(
         &mut self,
         client_key: &ClientKey<T>,
         rng: &mut R,
@@ -212,7 +213,7 @@ where
     /// PBS order determines whether it is used before BR or when returning its result.
     ///
     /// # Correctness
-    /// Inherits [`Self::try_generate_bootstrapping_key`]'s secret and transform requirements.
+    /// Inherits [`Self::try_generate_classic_blind_rotation_key`]'s secret and transform requirements.
     pub fn try_generate_glwe_key_switching_key<R>(
         &mut self,
         client_key: &ClientKey<T>,
@@ -225,16 +226,50 @@ where
         Ok(self.generate_glwe_key_switching_key(client_key, rng))
     }
 
-    /// Generates the selected capabilities from one compatible client key.
-    /// Invalid CBS configuration is rejected before sampling evaluation material.
-    /// Enabling CBS inherits [`Self::try_generate_circuit_bootstrap_key`]'s
-    /// mathematical and security requirements.
+    /// Generates BR, ring KS and optional CBS material for one existing client.
+    /// PBS order places ring KS before BR or in the ordinary return stage.
+    /// `blind_rotation` selects the algorithm independently of the client's distribution.
+    /// Sparse generation requires a fixed-weight binary secret with `0 < h < n` and
+    /// valid bucket counts. It retries only the public map (at most eight attempts),
+    /// never the client secret, and never falls back to classic. Invalid CBS configuration
+    /// is rejected before sampling; a failed matching returns no partial server key.
     ///
     /// # Correctness
-    /// Imported accumulator coefficients must have unsigned magnitude below q;
-    /// see [`NttGlweSecretKey::from_coeff_secret_key`]. Compatibility checks do not
-    /// establish this bound.
+    /// Inherits [`Self::try_generate_classic_blind_rotation_key`] and
+    /// [`Self::try_generate_sparse_blind_rotation_key`]'s secret, transform and noise
+    /// requirements for the selected algorithm. CBS additionally inherits
+    /// [`Self::try_generate_circuit_bootstrap_key`]'s requirements; PBS correctness
+    /// alone does not establish a margin at the smallest CBS gadget scale. Budget
+    /// sparse aggregation noise and the coarser rotations of interleaved LUTs.
     pub fn try_generate_server_key<R>(
+        &mut self,
+        client_key: &ClientKey<T>,
+        blind_rotation: BlindRotationConfig,
+        circuit_bootstrap: Option<CircuitBootstrapConfig>,
+        rng: &mut R,
+    ) -> Result<ServerKey<T>, KeyGenerationError>
+    where
+        R: rand::Rng + rand::CryptoRng,
+    {
+        match blind_rotation {
+            BlindRotationConfig::Classic => {
+                self.try_generate_classic_server_key(client_key, circuit_bootstrap, rng)
+            }
+            BlindRotationConfig::Sparse {
+                copy_count,
+                bucket_count,
+            } => self.try_generate_sparse_server_key(
+                client_key,
+                copy_count,
+                bucket_count,
+                circuit_bootstrap,
+                rng,
+            ),
+        }
+    }
+
+    // Keep algorithm-specific preparation and sampling order in their existing paths.
+    fn try_generate_classic_server_key<R>(
         &mut self,
         client_key: &ClientKey<T>,
         circuit_bootstrap: Option<CircuitBootstrapConfig>,
@@ -259,24 +294,8 @@ where
         ))
     }
 
-    /// Generates a sparse server key with optional CBS material for an existing client.
-    ///
-    /// Uses the client's fixed-weight binary small-LWE secret in both PBS orders.
-    /// The GLWE key-switching key has the same domains as in classic PBS. Sparse
-    /// generation checks parameters and privately retries matching before KSK
-    /// allocation; a failure returns no partial server key.
-    ///
-    /// # Errors
-    /// Invalid CBS configuration is rejected before sampling. Otherwise inherits
-    /// [`Self::try_generate_sparse_bootstrapping_key`]'s errors.
-    ///
-    /// # Correctness
-    /// Inherits that method's secret and security requirements. The caller must
-    /// budget sparse aggregation noise and, for interleaved LUTs, coarser rotations.
-    /// Enabling CBS also inherits [`Self::try_generate_circuit_bootstrap_key`]'s
-    /// requirements; ordinary PBS correctness alone does not establish sufficient
-    /// margin at the smallest output gadget scale.
-    pub fn try_generate_sparse_server_key<R>(
+    // Sparse map generation retains the client secret and prepares optional CBS before sampling.
+    fn try_generate_sparse_server_key<R>(
         &mut self,
         client_key: &ClientKey<T>,
         copy_count: usize,
@@ -288,8 +307,8 @@ where
         R: rand::Rng + rand::CryptoRng,
     {
         let circuit_parameters = self.prepare_circuit_bootstrap(circuit_bootstrap)?;
-        let bootstrapping_key =
-            self.try_generate_sparse_bootstrapping_key(client_key, copy_count, bucket_count, rng)?;
+        let blind_rotation_key =
+            self.try_generate_sparse_blind_rotation_key(client_key, copy_count, bucket_count, rng)?;
         let circuit_bootstrap = circuit_parameters
             .map(|parameters| {
                 self.try_generate_circuit_bootstrap_key(
@@ -303,7 +322,7 @@ where
         let glwe_key_switching_key = self.generate_glwe_key_switching_key(client_key, rng);
         Ok(ServerKey {
             circuit_bootstrap,
-            bootstrapping_key: BootstrappingKey::Sparse(bootstrapping_key),
+            blind_rotation_key: BlindRotationKey::Sparse(blind_rotation_key),
             glwe_key_switching_key,
         })
     }
@@ -323,7 +342,7 @@ where
     {
         let parameters = self.context.parameters();
         self.gadget.resize(parameters.blind_rotation_ggsw().size());
-        let bootstrapping_key = NttGlweBootstrappingKey::generate_ntt(
+        let blind_rotation_key = NttGlweBootstrappingKey::generate_ntt(
             client_key.small_lwe_secret_key(),
             parameters.small_lwe(),
             &main_glwe_secret_key,
@@ -344,7 +363,7 @@ where
         let glwe_key_switching_key = self.generate_glwe_key_switching_key(client_key, rng);
         ServerKey {
             circuit_bootstrap,
-            bootstrapping_key: BootstrappingKey::Classic(bootstrapping_key),
+            blind_rotation_key: BlindRotationKey::Classic(blind_rotation_key),
             glwe_key_switching_key,
         }
     }
@@ -376,7 +395,8 @@ where
         )
     }
 
-    /// Generates a fresh compatible pair with the selected evaluation capabilities.
+    /// Generates a fresh classic pair with the selected evaluation capabilities.
+    /// For sparse BR, generate a fixed-weight client first and use [`Self::try_generate_server_key`].
     /// Enabling CBS inherits [`Self::try_generate_circuit_bootstrap_key`]'s
     /// mathematical and security requirements.
     ///
@@ -432,7 +452,7 @@ where
     T: FheUint,
     Table: MonomialNttTable<ValueT = T>,
 {
-    /// Generates a fresh client/server pair; `None` selects PBS only and
+    /// Generates a fresh classic client/server pair; `None` selects PBS only and
     /// `Some(config)` also generates the configured CBS material.
     /// Inherits [`KeyGenerator::try_generate`]'s CBS requirements.
     ///

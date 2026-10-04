@@ -11,8 +11,8 @@ use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
 use primus_test_allocations as allocations;
 use primus_tfhe_glwe_ntt::{
-    ClientKey, FactorizedLookupTable, InterleavedLookupTable, KeyGenerator, LookupTable,
-    LookupTableError, NttFactorizedLookupTable, PbsOrder, TfheContext, TfheParameters,
+    BlindRotationConfig, ClientKey, FactorizedLookupTable, InterleavedLookupTable, KeyGenerator,
+    LookupTable, LookupTableError, NttFactorizedLookupTable, PbsOrder, TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -73,10 +73,18 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
         let mut generator = KeyGenerator::new(&context);
         let client = ClientKey::generate(context.parameters(), &mut rng);
         let classic = generator
-            .try_generate_server_key(&client, None, &mut rng)
+            .try_generate_server_key(&client, BlindRotationConfig::Classic, None, &mut rng)
             .unwrap();
         let sparse = generator
-            .try_generate_sparse_server_key(&client, 3, 4, None, &mut rng)
+            .try_generate_server_key(
+                &client,
+                BlindRotationConfig::Sparse {
+                    copy_count: 3,
+                    bucket_count: 4,
+                },
+                None,
+                &mut rng,
+            )
             .unwrap();
         let dimension = context.parameters().external_lwe_dimension().get();
         assert_eq!(

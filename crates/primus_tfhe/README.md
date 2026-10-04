@@ -20,8 +20,8 @@ Choose the function and encoding first, then the GLWE/NTRU family, NTT/Fourier r
 | Bounded two-input function | Same secret/codec, `x<B,y<R`, `B*R<=ceil(t/2)` | One Rounded LWE | Ordinary key | `BivariateLookupTable` and one reusable packed LWE |
 | Boolean gates | Rounded 0/1 with `t=4` | Same Boolean LWE encoding, ready for chaining | Ordinary key | `BooleanEvaluator` owns gate LUTs and temporary ciphertexts |
 | CBS → CMUX | Rounded front half; a CMUX control requires input 0/1 | Accumulator-secret GGSW/NGSW gadget control, then a selected ring ciphertext | BR + trace/SS; input KS for GLWE KS→BR | `CircuitBootstrapEvaluator`; separate `AccumulatorClient` for ring clients |
-| One-hot CBS | One padded chunk, t=2M | NLEV/NGSW selectors for δ_r(m) | Classic NTRU CBS material | [One-hot API](../primus_tfhe_ntru/README.md#one-hot-cbs) |
-| High-precision lookup | Separately encrypted chunks of uniform width | Independently chosen output chunk count | Classic NTRU CBS and return keys | [High-precision lookup](../primus_tfhe_ntru_lut/README.md) |
+| One-hot CBS | One padded chunk, t=2M | NLEV/NGSW selectors for δ_r(m) | NTRU CBS material | [One-hot API](../primus_tfhe_ntru/README.md#one-hot-cbs) |
+| High-precision lookup | Separately encrypted chunks of uniform width | Independently chosen output chunk count | NTRU CBS and return keys; public lift when required | [High-precision lookup](../primus_tfhe_ntru_lut/README.md) |
 
 ManyLUT and MVB evaluate **several functions of one input**, not independent inputs. MVB keeps step-one resolution but its factors amplify noise; interleaving trades rotation resolution for output count. Scaled numeric flags, Boolean LWEs and CBS gadget controls are not interchangeable. Start with a backend basic example; the sections below and rustdoc give each operation's domain and noise contracts.
 
@@ -42,6 +42,20 @@ All four backends provide secret-key and LWE public-key clients. Fourier support
 | NTRU sparse fixed-weight binary | Yes | Yes | Yes | Supported |
 
 Sparse mode requires explicit key generation; sparse ternary is unsupported. NTRU's external LWE secret is independent of its ring secret. Only the ring secret undergoes invertibility and Fourier inverse-stability screening; external fixed weights may be even.
+
+## Selecting blind rotation
+
+All four backends re-export `BlindRotationConfig`. With an existing client, select the algorithm independently of the secret distribution and optional CBS material:
+
+```rust,ignore
+let blind_rotation = BlindRotationConfig::Sparse { copy_count: 3, bucket_count: 64 };
+// Use BlindRotationConfig::Classic with the same fixed-weight binary client.
+let server = generator.try_generate_server_key(&client, blind_rotation, Some(cbs_config), rng)?;
+```
+
+`Classic` supports binary and ternary distributions, including fixed-weight ones. `Sparse` requires fixed-weight binary with `0<h<n`; it retries only the public bucket map and returns an error if matching fails. It never changes the client secret or falls back to classic. The paired `context.try_generate_keys(cbs, rng)` / `generator.try_generate(cbs, rng)` shortcuts still generate **classic** material and reuse transformed secrets.
+
+`None` for CBS generates BR and ordinary return material; `Some(config)` adds trace/scheme-switch keys. Independent BR, CBS and return generation remains available, and NTRU public lift is requested separately when a lookup needs it. Each backend's `BlindRotationKey` owns only BR material; `ServerKey` combines materials. GLWE ring KS and NTRU LWE return keep distinct APIs because their domains differ.
 
 ## Client and server roles
 

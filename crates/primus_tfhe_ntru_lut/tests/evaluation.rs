@@ -21,7 +21,7 @@ use primus_poly::PolyLength;
 use primus_reduce::RingContext;
 use primus_test_allocations as allocations;
 use primus_tfhe::LweCiphertext;
-use primus_tfhe::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_tfhe::{BlindRotationConfig, DecompositionBaseLog, DecompositionLevelCount};
 use primus_tfhe_ntru::{CircuitBootstrapConfig, DecompositionConfig, TfheParameters};
 #[cfg(any(feature = "rustfft", feature = "tfhe-fft"))]
 use primus_tfhe_ntru_lut::FourierLookupTableEvaluator;
@@ -374,12 +374,17 @@ fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T) {
         let mut rng = StdRng::seed_from_u64(0x48504c5554);
         let mut generator = primus_tfhe_ntru_ntt::KeyGenerator::new(&context);
         let client = generator.try_generate_client_key(&mut rng).unwrap();
-        let server = if sparse {
-            generator.try_generate_sparse_server_key(&client, 3, 8, Some(cbs::<T>()), &mut rng)
+        let blind_rotation = if sparse {
+            BlindRotationConfig::Sparse {
+                copy_count: 3,
+                bucket_count: 8,
+            }
         } else {
-            generator.try_generate_server_key(&client, Some(cbs::<T>()), &mut rng)
-        }
-        .unwrap();
+            BlindRotationConfig::Classic
+        };
+        let server = generator
+            .try_generate_server_key(&client, blind_rotation, Some(cbs::<T>()), &mut rng)
+            .unwrap();
         // Generate NLEV[1] independently; reuse it only for plans with explicit Lift.
         let lift_params =
             lift_parameters(context.parameters().poly_length(), BarrettModulus::new(q));
@@ -570,12 +575,17 @@ fn fourier<T: TorusFftValue, Table: FftTable>() {
         let mut rng = StdRng::seed_from_u64(0x48504c5554);
         let mut generator = primus_tfhe_ntru_fourier::KeyGenerator::new(&context);
         let client = generator.try_generate_client_key(&mut rng).unwrap();
-        let server = if sparse {
-            generator.try_generate_sparse_server_key(&client, 3, 8, Some(cbs::<T>()), &mut rng)
+        let blind_rotation = if sparse {
+            BlindRotationConfig::Sparse {
+                copy_count: 3,
+                bucket_count: 8,
+            }
         } else {
-            generator.try_generate_server_key(&client, Some(cbs::<T>()), &mut rng)
-        }
-        .unwrap();
+            BlindRotationConfig::Classic
+        };
+        let server = generator
+            .try_generate_server_key(&client, blind_rotation, Some(cbs::<T>()), &mut rng)
+            .unwrap();
         // Fourier lifting uses the same table instance, with an independent logB=4 basis.
         let lift_params = lift_parameters(context.parameters().poly_length(), NativeModulus::new());
         let mut lift_rng = StdRng::seed_from_u64(0x4c494654);

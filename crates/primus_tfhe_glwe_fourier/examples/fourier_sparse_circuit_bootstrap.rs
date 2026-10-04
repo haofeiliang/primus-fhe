@@ -13,8 +13,8 @@ use primus_lattice::{GlweDimension, LweDimension};
 use primus_lwe::LweParametersInner;
 use primus_modulus::NativeModulus;
 use primus_tfhe_glwe_fourier::{
-    CircuitBootstrapConfig, CircuitBootstrapEvaluator, ClientKey, DecompositionConfig,
-    KeyGenerator, PbsOrder, TfheConfig, TfheContext, TfheParameters,
+    BlindRotationConfig, CircuitBootstrapConfig, CircuitBootstrapEvaluator, ClientKey,
+    DecompositionConfig, KeyGenerator, PbsOrder, TfheConfig, TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -100,7 +100,15 @@ fn main() {
     let mut generator = KeyGenerator::new(&context);
     // Sparse CBS uses three copies and 64 buckets for the fixed-weight LWE secret.
     let server_key = generator
-        .try_generate_sparse_server_key(&client_key, 3, 64, Some(circuit_config()), &mut rng)
+        .try_generate_server_key(
+            &client_key,
+            BlindRotationConfig::Sparse {
+                copy_count: 3,
+                bucket_count: 64,
+            },
+            Some(circuit_config()),
+            &mut rng,
+        )
         .unwrap();
     // Ordinary messages borrow only the external secret from the setup bundle.
     let external_secret = client_key.external_lwe_secret_key();

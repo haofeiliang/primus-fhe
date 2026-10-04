@@ -15,7 +15,8 @@ use primus_fft::{FftTable, RustFftTable, TfheFftTable, TorusFftValue};
 use primus_lwe::LweCiphertext;
 use primus_modulus::NativeModulus;
 use primus_tfhe_glwe_fourier::{
-    ClientKey, InterleavedLookupTable, KeyGenerator, LookupTable, PbsOrder, TfheContext,
+    BlindRotationConfig, ClientKey, InterleavedLookupTable, KeyGenerator, LookupTable, PbsOrder,
+    TfheContext,
 };
 use primus_tfhe_test_support::parameters::glwe;
 use rand::{SeedableRng, rngs::StdRng};
@@ -55,15 +56,17 @@ where
                         let mut rng = StdRng::seed_from_u64(42);
                         let mut generator = KeyGenerator::new(&context);
                         let client = ClientKey::generate(context.parameters(), &mut rng);
-                        let server = if sparse {
-                            generator
-                                .try_generate_sparse_server_key(&client, 3, 64, None, &mut rng)
-                                .unwrap()
+                        let blind_rotation = if sparse {
+                            BlindRotationConfig::Sparse {
+                                copy_count: 3,
+                                bucket_count: 64,
+                            }
                         } else {
-                            generator
-                                .try_generate_server_key(&client, None, &mut rng)
-                                .unwrap()
+                            BlindRotationConfig::Classic
                         };
+                        let server = generator
+                            .try_generate_server_key(&client, blind_rotation, None, &mut rng)
+                            .unwrap();
                         let input = context
                             .encryptor(client.external_lwe_secret_key(), &input_codec)
                             .unwrap()

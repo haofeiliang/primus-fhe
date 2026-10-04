@@ -13,12 +13,16 @@ use primus_lattice::{GlweDimension, LweDimension};
 use primus_lwe::LweParametersInner;
 use primus_modulus::NativeModulus;
 use primus_tfhe_glwe_fourier::{
-    ClientKey, DecompositionConfig, KeyGenerator, PbsOrder, TfheConfig, TfheContext, TfheParameters,
+    BlindRotationConfig, ClientKey, DecompositionConfig, KeyGenerator, PbsOrder, TfheConfig,
+    TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
-// Set false to run the same interleaved ManyLUT with classic PBS.
-const SPARSE: bool = true;
+// Use BlindRotationConfig::Classic to run the same program with classic BR.
+const BLIND_ROTATION: BlindRotationConfig = BlindRotationConfig::Sparse {
+    copy_count: 3,
+    bucket_count: 64,
+};
 
 // The explicit parameters below select bases and moduli for this coefficient word.
 type Word = u32;
@@ -68,17 +72,14 @@ fn main() {
     // Public message encoding is independent of the evaluation keys.
     let input_codec = RoundedCodec::new(16 as Word, context.parameters().cipher_modulus());
 
-    // Client: explicitly request sparse evaluation material from this fixed-weight secret.
+    // Client: generate the selected BR algorithm from the fixed-weight secret.
     let mut rng = StdRng::seed_from_u64(42);
     let mut generator = KeyGenerator::new(&context);
     let client_key = ClientKey::generate(context.parameters(), &mut rng);
     // Three copies, 64 buckets. Map retries retain the same client secret.
-    let server_key = if SPARSE {
-        generator.try_generate_sparse_server_key(&client_key, 3, 64, None, &mut rng)
-    } else {
-        generator.try_generate_server_key(&client_key, None, &mut rng)
-    }
-    .unwrap();
+    let server_key = generator
+        .try_generate_server_key(&client_key, BLIND_ROTATION, None, &mut rng)
+        .unwrap();
     // Ordinary messages borrow only the external secret from the setup bundle.
     let external_secret = client_key.external_lwe_secret_key();
     let encryptor = context.encryptor(external_secret, &input_codec).unwrap();

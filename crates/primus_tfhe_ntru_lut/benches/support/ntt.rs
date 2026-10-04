@@ -1,4 +1,5 @@
 use primus_encoding::RoundedCodec;
+use primus_tfhe::BlindRotationConfig;
 // Ntt evaluation uses the public API and shared representative parameters.
 use std::hint::black_box;
 
@@ -61,18 +62,22 @@ fn benchmark_workload<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
             let ((client, server), keys) = measure(|| {
                 let mut generator = KeyGenerator::new(&context);
                 let client = generator.try_generate_client_key(&mut rng).unwrap();
-                let server = if sparse {
-                    generator.try_generate_sparse_server_key(
+                let blind_rotation = if sparse {
+                    BlindRotationConfig::Sparse {
+                        copy_count: 3,
+                        bucket_count: 64,
+                    }
+                } else {
+                    BlindRotationConfig::Classic
+                };
+                let server = generator
+                    .try_generate_server_key(
                         &client,
-                        3,
-                        64,
+                        blind_rotation,
                         Some(ntru::cbs::<T>()),
                         &mut rng,
                     )
-                } else {
-                    generator.try_generate_server_key(&client, Some(ntru::cbs::<T>()), &mut rng)
-                }
-                .unwrap();
+                    .unwrap();
                 (client, server)
             });
             heap(&format!("{name}/client_and_server_keys"), keys);

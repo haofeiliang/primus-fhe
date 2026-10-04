@@ -8,7 +8,7 @@ use primus_tfhe::{
 use primus_tfhe_glwe::PbsOrder;
 
 use crate::{
-    BootstrappingKey, Lwe, ServerKey, TfheContext,
+    BlindRotationKey, Lwe, ServerKey, TfheContext,
     bootstrap::{BootstrapResources, KeySwitchingWorkspace},
     error::TfheEvaluationError,
 };
@@ -80,7 +80,7 @@ where
     ) -> Result<Self, TfheEvaluationError> {
         Self::try_from_parts(
             context,
-            server_key.bootstrapping_key(),
+            server_key.blind_rotation_key(),
             server_key.glwe_key_switching_key(),
         )
     }
@@ -94,11 +94,11 @@ where
     /// Inherits [`Self::try_new`]'s transform requirements.
     pub fn try_from_parts(
         context: &'a TfheContext<T, Table>,
-        bootstrapping_key: &'a BootstrappingKey<T>,
+        blind_rotation_key: &'a BlindRotationKey<T>,
         key_switching_key: &'a FourierGlweKeySwitchingKey<T>,
     ) -> Result<Self, TfheEvaluationError> {
         let resources =
-            BootstrapResources::try_new(context, bootstrapping_key, Some(key_switching_key))?;
+            BootstrapResources::try_new(context, blind_rotation_key, Some(key_switching_key))?;
         Ok(Self::from_resources(resources, key_switching_key))
     }
 

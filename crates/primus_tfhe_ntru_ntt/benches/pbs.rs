@@ -13,7 +13,7 @@ use primus_integer::FheUint;
 use primus_modulus::PowOf2Modulus;
 use primus_ntru::SecretKeyDistr;
 use primus_ntt::{MonomialNttTable, U32NttTable, U64NttTable};
-use primus_tfhe_ntru_ntt::{KeyGenerator, TfheContext};
+use primus_tfhe_ntru_ntt::{BlindRotationConfig, KeyGenerator, TfheContext};
 use primus_tfhe_test_support::parameters::ntt_modulus;
 use primus_tfhe_test_support::{
     benchmark::{PBS_WORKLOADS, PbsWorkload},
@@ -121,7 +121,12 @@ fn backend<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
             || (),
             |()| {
                 generator
-                    .try_generate_server_key(black_box(client), None, &mut rng)
+                    .try_generate_server_key(
+                        black_box(client),
+                        BlindRotationConfig::Classic,
+                        None,
+                        &mut rng,
+                    )
                     .unwrap()
             },
             BatchSize::PerIteration,

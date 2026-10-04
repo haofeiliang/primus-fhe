@@ -12,9 +12,9 @@ use primus_modulus::NativeModulus;
 use primus_poly::PolyLength;
 use primus_test_allocations as allocations;
 use primus_tfhe_glwe_fourier::{
-    CircuitBootstrapConfig, CircuitBootstrapEvaluator, CircuitBootstrapParameters, ClientKey,
-    DecompositionConfig, KeyGenerationError, KeyGenerator, PbsOrder, TfheConfig, TfheContext,
-    TfheEvaluationError, TfheParameters,
+    BlindRotationConfig, CircuitBootstrapConfig, CircuitBootstrapEvaluator,
+    CircuitBootstrapParameters, ClientKey, DecompositionConfig, KeyGenerationError, KeyGenerator,
+    PbsOrder, TfheConfig, TfheContext, TfheEvaluationError, TfheParameters,
 };
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 
@@ -122,12 +122,17 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
     let mut rng = StdRng::seed_from_u64(0x4342_534b_4559 ^ order as u64);
     let client = ClientKey::generate(context.parameters(), &mut rng);
     let mut generator = KeyGenerator::new(&context);
-    let server = if sparse {
-        generator.try_generate_sparse_server_key(&client, 3, 4, Some(circuit_config()), &mut rng)
+    let blind_rotation = if sparse {
+        BlindRotationConfig::Sparse {
+            copy_count: 3,
+            bucket_count: 4,
+        }
     } else {
-        generator.try_generate_server_key(&client, Some(circuit_config()), &mut rng)
-    }
-    .unwrap();
+        BlindRotationConfig::Classic
+    };
+    let server = generator
+        .try_generate_server_key(&client, blind_rotation, Some(circuit_config()), &mut rng)
+        .unwrap();
     // The bundle factory must allocate exactly the resources needed by independently
     // bound material: no ordinary return scratch or extra FFT engine for standalone CBS.
     let (bundled_resources, bundled_allocation) = allocations::measure(|| {
@@ -451,7 +456,15 @@ fn evaluator_rejects_resource_mismatches_and_checks_shapes_before_writes() {
         .unwrap();
     // CBS leaves a different gadget layout; the next PBS generation must resize it.
     let server = generator
-        .try_generate_sparse_server_key(&client, 3, 4, None, &mut rng)
+        .try_generate_server_key(
+            &client,
+            BlindRotationConfig::Sparse {
+                copy_count: 3,
+                bucket_count: 4,
+            },
+            None,
+            &mut rng,
+        )
         .unwrap();
     let mut resources = context
         .bootstrap_resources_from_server_key(&server)
@@ -596,10 +609,12 @@ fn incompatible_parameters_and_client_keys_are_rejected_before_sampling() {
     let mut rng = StdRng::seed_from_u64(44);
     let mut untouched_rng = StdRng::seed_from_u64(44);
     assert!(matches!(
-        KeyGenerator::new(&context).try_generate_sparse_server_key(
+        KeyGenerator::new(&context).try_generate_server_key(
             &client,
-            3,
-            4,
+            BlindRotationConfig::Sparse {
+                copy_count: 3,
+                bucket_count: 4
+            },
             Some(invalid),
             &mut rng
         ),

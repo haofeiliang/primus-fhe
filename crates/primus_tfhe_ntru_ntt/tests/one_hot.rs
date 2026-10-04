@@ -14,7 +14,7 @@ use primus_ntt::U64NttTable;
 use primus_poly::PolyLength;
 use primus_test_allocations as allocations;
 use primus_tfhe_ntru_ntt::{
-    CircuitBootstrapConfig, CircuitBootstrapEvaluator, DecompositionConfig,
+    BlindRotationConfig, CircuitBootstrapConfig, CircuitBootstrapEvaluator, DecompositionConfig,
     OneHotCircuitBootstrapEvaluator, TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
@@ -96,12 +96,17 @@ fn selectors(distr: SecretKeyDistr, sparse: bool) {
     };
     let mut generator = primus_tfhe_ntru_ntt::KeyGenerator::new(&context);
     let client = generator.try_generate_client_key(&mut rng).unwrap();
-    let server = if sparse {
-        generator.try_generate_sparse_server_key(&client, 3, 8, Some(cbs_config), &mut rng)
+    let blind_rotation = if sparse {
+        BlindRotationConfig::Sparse {
+            copy_count: 3,
+            bucket_count: 8,
+        }
     } else {
-        generator.try_generate_server_key(&client, Some(cbs_config), &mut rng)
-    }
-    .unwrap();
+        BlindRotationConfig::Classic
+    };
+    let server = generator
+        .try_generate_server_key(&client, blind_rotation, Some(cbs_config), &mut rng)
+        .unwrap();
     let ((br, return_key, circuit), allocation) = allocations::measure(|| server.into_parts());
     assert_eq!(allocation.count, 0);
     let circuit = circuit.unwrap();
@@ -111,7 +116,7 @@ fn selectors(distr: SecretKeyDistr, sparse: bool) {
     let classic_br = if sparse {
         Some(
             generator
-                .try_generate_blind_rotation_key(&client, &mut rng)
+                .try_generate_classic_blind_rotation_key(&client, &mut rng)
                 .unwrap(),
         )
     } else {

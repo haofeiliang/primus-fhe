@@ -20,8 +20,8 @@
 | 有界双输入 | 同秘密/编码，`x<B,y<R` 且 `B*R<=ceil(t/2)` | 一个 Rounded LWE | 普通密钥 | `BivariateLookupTable`，另复用一个打包 LWE |
 | Boolean 门 | `t=4` 下的 Rounded 0/1 | 可直接串联的同编码 Boolean LWE | 普通密钥 | `BooleanEvaluator` 持有门 LUT 和临时密文 |
 | CBS → CMUX | Rounded 前半区；CMUX 控制输入为 0/1 | accumulator 秘密下的 GGSW/NGSW gadget 控制，再选择环密文 | BR + trace/SS；GLWE KS→BR 另需输入 KS | `CircuitBootstrapEvaluator`；环客户端独立使用 `AccumulatorClient` |
-| One-hot CBS | 一个 padded chunk，t=2M | δ_r(m) 的 NLEV/NGSW selectors | Classic NTRU CBS 材料 | [One-hot 接口](../primus_tfhe_ntru/README.zh_CN.md#one-hot-cbs) |
-| 高精度查表 | 多个独立加密、统一位宽的 chunks | 可独立指定数量的输出 chunks | Classic NTRU CBS 与返回密钥 | [高精度查表](../primus_tfhe_ntru_lut/README.zh_CN.md) |
+| One-hot CBS | 一个 padded chunk，t=2M | δ_r(m) 的 NLEV/NGSW selectors | NTRU CBS 材料 | [One-hot 接口](../primus_tfhe_ntru/README.zh_CN.md#one-hot-cbs) |
+| 高精度查表 | 多个独立加密、统一位宽的 chunks | 可独立指定数量的输出 chunks | NTRU CBS 和返回密钥；按需提供公开提升 | [高精度查表](../primus_tfhe_ntru_lut/README.zh_CN.md) |
 
 ManyLUT 和 MVB 都计算**同一个输入的多个函数**，不批处理独立输入。 MVB 保留步长 1，但因子会放大噪声；交错 LUT 则用旋转分辨率换多输出。 Scaled 数值标志、Boolean LWE 和 CBS gadget 控制不能互换。 完整工作流从后端 basic 示例开始；各方法的域与噪声前提见下文及 rustdoc。
 
@@ -42,6 +42,20 @@ ManyLUT 和 MVB 都计算**同一个输入的多个函数**，不批处理独立
 | NTRU sparse fixed-weight binary | 支持 | 支持 | 支持 | 支持 |
 
 Sparse 模式需显式选择生成入口，暂不支持 sparse ternary。NTRU 的外部 LWE 秘密独立于环秘密；只有环秘密需要可逆性筛选及 Fourier 逆稳定性检查，外部固定重量可以是偶数。
+
+## 选择盲旋转算法
+
+四个后端均导出 `BlindRotationConfig`。已有客户端密钥时，独立选择 BR 算法、秘密分布和可选 CBS 材料：
+
+```rust,ignore
+let blind_rotation = BlindRotationConfig::Sparse { copy_count: 3, bucket_count: 64 };
+// 同一个 fixed-weight binary 客户端也可使用 BlindRotationConfig::Classic。
+let server = generator.try_generate_server_key(&client, blind_rotation, Some(cbs_config), rng)?;
+```
+
+`Classic` 支持 binary/ternary，包括固定重量分布。`Sparse` 要求 fixed-weight binary 且 `0<h<n`，只重试公开桶映射，匹配失败返回错误；不会修改客户端秘密或回退到 classic。成对生成快捷入口 `context.try_generate_keys(cbs, rng)` / `generator.try_generate(cbs, rng)` 仍生成 **classic** 材料，并复用转换后的秘密。
+
+CBS 传 `None` 生成 BR 和普通返回材料，传 `Some(config)` 则添加 trace/scheme-switch 密钥。BR、CBS 和返回密钥仍可独立生成；NTRU 公开提升在查表需要时单独请求。各后端的 `BlindRotationKey` 只持有 BR 材料，`ServerKey` 组合材料。GLWE 环 KS 和 NTRU LWE 返回的域不同，继续保留各自的接口。
 
 ## 客户端与服务端边界
 

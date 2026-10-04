@@ -14,12 +14,12 @@ use primus_lwe::LweParametersInner;
 use primus_modulus::{NativeModulus, PowOf2Modulus};
 use primus_ntru::SecretKeyDistr;
 use primus_tfhe_ntru_fourier::{
-    DecompositionConfig, KeyGenerator, TfheConfig, TfheContext, TfheParameters,
+    BlindRotationConfig, DecompositionConfig, KeyGenerator, TfheConfig, TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
-// Set true to evaluate the same factorized MVB program with sparse PBS.
-const SPARSE: bool = false;
+// To use sparse BR, choose BlindRotationConfig::Sparse { copy_count: 3, bucket_count: 64 }.
+const BLIND_ROTATION: BlindRotationConfig = BlindRotationConfig::Classic;
 
 // The explicit parameters below select bases and moduli for this coefficient word.
 type Word = u32;
@@ -79,15 +79,9 @@ fn main() {
     let mut rng = StdRng::seed_from_u64(42);
     let mut generator = KeyGenerator::new(&context);
     let client_key = generator.try_generate_client_key(&mut rng).unwrap();
-    let server_key = if SPARSE {
-        generator
-            .try_generate_sparse_server_key(&client_key, 3, 64, None, &mut rng)
-            .unwrap()
-    } else {
-        generator
-            .try_generate_server_key(&client_key, None, &mut rng)
-            .unwrap()
-    };
+    let server_key = generator
+        .try_generate_server_key(&client_key, BLIND_ROTATION, None, &mut rng)
+        .unwrap();
     // Ordinary messages borrow only the external secret from the setup bundle.
     let external_secret = client_key.external_lwe_secret_key();
     let encryptor = context.encryptor(external_secret, &input_codec).unwrap();

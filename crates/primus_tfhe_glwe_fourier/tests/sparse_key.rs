@@ -11,8 +11,8 @@ use primus_lwe::{LweParameters, LweSecretKey};
 use primus_modulus::NativeModulus;
 use primus_tfhe::sparse::BucketMapError;
 use primus_tfhe_glwe_fourier::{
-    ClientKey, KeyGenerator, PbsOrder, SparseBootstrappingKeyError as Error, TfheContext,
-    TfheParameters,
+    BlindRotationConfig, ClientKey, KeyGenerator, PbsOrder, SparseBootstrappingKeyError as Error,
+    TfheContext, TfheParameters,
 };
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
@@ -76,7 +76,7 @@ fn check_selectors<Table: FftTable>() {
     // The second map must have at least one bucket with no public entries.
     for (copy_count, bucket_count) in [(3, 8), (1, 17)] {
         let key = generator
-            .try_generate_sparse_bootstrapping_key(&client, copy_count, bucket_count, &mut rng)
+            .try_generate_sparse_blind_rotation_key(&client, copy_count, bucket_count, &mut rng)
             .unwrap();
         assert_eq!(key.input_dimension(), LweDimension::new(16));
         assert_eq!(key.hamming_weight(), 4);
@@ -163,7 +163,7 @@ fn sparse_key_errors_do_not_consume_randomness() {
     );
     let mut rng = StdRng::seed_from_u64(43);
     let expected = generator
-        .try_generate_server_key(&wrong_order, None, &mut rng)
+        .try_generate_server_key(&wrong_order, BlindRotationConfig::Classic, None, &mut rng)
         .err()
         .unwrap();
     assert!(matches!(
@@ -172,13 +172,21 @@ fn sparse_key_errors_do_not_consume_randomness() {
     ));
     assert_eq!(
         generator
-            .try_generate_sparse_bootstrapping_key(&wrong_order, 3, 8, &mut rng)
+            .try_generate_sparse_blind_rotation_key(&wrong_order, 3, 8, &mut rng)
             .err(),
         Some(expected.clone())
     );
     assert_eq!(
         generator
-            .try_generate_sparse_server_key(&wrong_order, 3, 8, None, &mut rng)
+            .try_generate_server_key(
+                &wrong_order,
+                BlindRotationConfig::Sparse {
+                    copy_count: 3,
+                    bucket_count: 8
+                },
+                None,
+                &mut rng
+            )
             .err(),
         Some(expected)
     );
@@ -203,7 +211,7 @@ fn sparse_key_errors_do_not_consume_randomness() {
     ] {
         let mut rng = StdRng::seed_from_u64(43);
         let result =
-            generator.try_generate_sparse_bootstrapping_key(client, copies, buckets, &mut rng);
+            generator.try_generate_sparse_blind_rotation_key(client, copies, buckets, &mut rng);
         assert_eq!(result.err(), Some(error));
         assert_eq!(rng.next_u64(), StdRng::seed_from_u64(43).next_u64());
     }

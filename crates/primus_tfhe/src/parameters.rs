@@ -1,6 +1,27 @@
-//! Independent mathematical choices for circuit bootstrapping.
+//! Independent choices for blind rotation and circuit bootstrapping.
 
 use primus_decompose::DecompositionConfig;
+
+/// Blind-rotation algorithm used to generate evaluation material for an existing client.
+///
+/// This choice does not change the secret distribution in TFHE parameters. A fixed-weight
+/// binary secret can use either algorithm; selecting sparse with an unsupported distribution
+/// is an error, never a request to resample the secret or fall back to classic.
+/// Backend key generation validates bucket geometry against the actual secret and ciphertext
+/// layout. This configuration carries no keys, return policy, CBS material or runtime scratch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlindRotationConfig {
+    /// Per-coordinate binary or ternary CMux controls, including fixed-weight distributions.
+    Classic,
+    /// Bucketed controls for a fixed-weight binary secret with weight `0 < h < n`.
+    /// Matching retries the public map while keeping the client secret fixed.
+    Sparse {
+        /// Number of distinct buckets containing each input index; must be at least one.
+        copy_count: usize,
+        /// Number of buckets; must be at least `max(copy_count, h)`.
+        bucket_count: usize,
+    },
+}
 
 /// Independent choices for circuit-bootstrap output, trace and scheme switching.
 ///

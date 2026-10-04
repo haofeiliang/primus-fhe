@@ -22,7 +22,7 @@ use crate::{ClientKey, KeyGenerationError, KeyGenerator, SparseBootstrappingKeyE
 /// Generation retains only the public mapping and ciphertexts, never the support
 /// or matching. Input and accumulator use the context's explicit modulus.
 /// [`Self::ntt_blind_rotate_lookup_table_to`] provides raw sparse blind rotation.
-/// [`KeyGenerator::try_generate_sparse_server_key`] pairs it with a GLWE KSK
+/// [`KeyGenerator::try_generate_server_key`] pairs it with a GLWE KSK
 /// for ordinary/interleaved evaluation in [`crate::Evaluator`] and optional
 /// circuit-bootstrap material for [`crate::CircuitBootstrapEvaluator`].
 ///
@@ -159,7 +159,7 @@ where
     /// contracts. This local key-generation procedure is not constant-time.
     /// Parameter validity and successful generation do not certify security or
     /// a PBS failure probability; see [`SparseGlweBootstrappingKey`].
-    pub fn try_generate_sparse_bootstrapping_key<R>(
+    pub fn try_generate_sparse_blind_rotation_key<R>(
         &mut self,
         client_key: &ClientKey<T>,
         copy_count: usize,

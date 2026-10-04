@@ -145,9 +145,9 @@ fn split_keys_support_both_pbs_orders() {
         // Fresh key generation is covered by the PBS and Boolean tests.
         let mut generator = KeyGenerator::new(&context);
         let client = ClientKey::generate(context.parameters(), &mut rng);
-        let blind_rotation = primus_tfhe_glwe_ntt::BootstrappingKey::Classic(
+        let blind_rotation = primus_tfhe_glwe_ntt::BlindRotationKey::Classic(
             generator
-                .try_generate_bootstrapping_key(&client, &mut rng)
+                .try_generate_classic_blind_rotation_key(&client, &mut rng)
                 .unwrap(),
         );
         let key_switching = generator

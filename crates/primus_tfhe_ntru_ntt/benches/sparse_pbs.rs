@@ -12,7 +12,7 @@ use primus_encoding::RoundedCodec;
 use primus_integer::FheUint;
 use primus_modulus::PowOf2Modulus;
 use primus_ntt::{MonomialNttTable, U32NttTable, U64NttTable};
-use primus_tfhe_ntru_ntt::{KeyGenerator, TfheContext};
+use primus_tfhe_ntru_ntt::{BlindRotationConfig, KeyGenerator, TfheContext};
 use primus_tfhe_test_support::parameters::ntru;
 use primus_tfhe_test_support::parameters::ntt_modulus;
 use rand::{SeedableRng, rngs::StdRng};
@@ -43,15 +43,17 @@ fn backend<T: FheUint, Table: MonomialNttTable<ValueT = T>>(c: &mut Criterion, b
             let server = server.get_or_insert_with(|| {
                 let mut generator = KeyGenerator::new(context);
                 let mut rng = StdRng::seed_from_u64(4242);
-                if sparse {
-                    generator
-                        .try_generate_sparse_server_key(client, 3, 64, None, &mut rng)
-                        .unwrap()
+                let blind_rotation = if sparse {
+                    BlindRotationConfig::Sparse {
+                        copy_count: 3,
+                        bucket_count: 64,
+                    }
                 } else {
-                    generator
-                        .try_generate_server_key(client, None, &mut rng)
-                        .unwrap()
-                }
+                    BlindRotationConfig::Classic
+                };
+                generator
+                    .try_generate_server_key(client, blind_rotation, None, &mut rng)
+                    .unwrap()
             });
             let mut rng = StdRng::seed_from_u64(43);
             let input = context
@@ -103,33 +105,23 @@ fn backend<T: FheUint, Table: MonomialNttTable<ValueT = T>>(c: &mut Criterion, b
             });
             let mut generator = KeyGenerator::new(context);
             let mut rng = StdRng::seed_from_u64(4242);
-            if sparse {
-                b.iter_batched(
-                    || (),
-                    |()| {
-                        generator
-                            .try_generate_sparse_server_key(
-                                black_box(client),
-                                3,
-                                64,
-                                None,
-                                &mut rng,
-                            )
-                            .unwrap()
-                    },
-                    BatchSize::PerIteration,
-                );
+            let blind_rotation = if sparse {
+                BlindRotationConfig::Sparse {
+                    copy_count: 3,
+                    bucket_count: 64,
+                }
             } else {
-                b.iter_batched(
-                    || (),
-                    |()| {
-                        generator
-                            .try_generate_server_key(black_box(client), None, &mut rng)
-                            .unwrap()
-                    },
-                    BatchSize::PerIteration,
-                );
-            }
+                BlindRotationConfig::Classic
+            };
+            b.iter_batched(
+                || (),
+                |()| {
+                    generator
+                        .try_generate_server_key(black_box(client), blind_rotation, None, &mut rng)
+                        .unwrap()
+                },
+                BatchSize::PerIteration,
+            );
         });
     }
 }

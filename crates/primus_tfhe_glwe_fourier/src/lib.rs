@@ -4,7 +4,7 @@
 //!
 //! 1. Check mathematical choices with [`TfheParameters::try_from_config`].
 //! 2. Create a [`TfheContext`] and paired [`ClientKey`]/[`ServerKey`] with
-//!    [`TfheContext::try_generate_keys`]; `None` selects ordinary PBS material.
+//!    [`TfheContext::try_generate_keys`] for classic BR; `None` selects ordinary PBS material.
 //! 3. Choose a Rounded message codec; bind [`Encryptor`] and [`Decryptor`] with it,
 //!    and create an [`Evaluator`] from the context.
 //! 4. Pass the input codec to [`TfheParameters::lookup_table_compiler`] and call
@@ -21,7 +21,8 @@
 //! - [`boolean`]: Boolean clients and gates with plaintext modulus four.
 //! - [`circuit_bootstrap`]: optional trace/scheme-switch material and
 //!   [`CircuitBootstrapEvaluator`], producing accumulator-secret gadget controls for CMUX.
-//! - [`sparse`]: fixed-weight binary bucket material; select it explicitly at key generation.
+//! - [`sparse`]: fixed-weight binary bucket material; choose [`BlindRotationConfig::Sparse`]
+//!   with [`KeyGenerator::try_generate_server_key`] for an existing client.
 //!
 //! [`Evaluator`] owns common [`BootstrapResources`] and the ordinary return stage.
 //! CBS borrows common resources per operation; MVB borrows the complete evaluator.
@@ -82,13 +83,13 @@ pub use evaluator::Evaluator;
 #[doc(inline)]
 pub use factorized::{FactorizedEvaluator, FourierFactorizedLookupTable};
 #[doc(no_inline)]
-pub use key::BootstrappingKey;
+pub use key::BlindRotationKey;
 #[doc(inline)]
 pub use key::{KeyGenerator, ServerKey};
 pub use primus_tfhe::{
-    BivariateLookupTable, CircuitBootstrapConfig, ClientError, DecompositionConfig,
-    FactorizedLookupTable, InterleavedLookupTable, LookupTable, LookupTableCompiler, Lwe,
-    LweCiphertext, LweSecretKeyRef,
+    BivariateLookupTable, BlindRotationConfig, CircuitBootstrapConfig, ClientError,
+    DecompositionConfig, FactorizedLookupTable, InterleavedLookupTable, LookupTable,
+    LookupTableCompiler, Lwe, LweCiphertext, LweSecretKeyRef,
 };
 pub use primus_tfhe_glwe::{ClientKey, EncryptionKey, ExternalLweSecretKey, PbsOrder};
 #[doc(no_inline)]

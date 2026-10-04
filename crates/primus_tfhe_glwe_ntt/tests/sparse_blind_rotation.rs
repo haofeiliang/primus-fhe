@@ -101,7 +101,7 @@ fn sparse_rotation_matches_direct_phase_and_classic_with_reused_scratch() {
         let mut generator = KeyGenerator::new(&context);
         let client = ClientKey::generate(context.parameters(), &mut rng);
         let sparse = generator
-            .try_generate_sparse_bootstrapping_key(&client, copies, buckets, &mut rng)
+            .try_generate_sparse_blind_rotation_key(&client, copies, buckets, &mut rng)
             .unwrap();
         let output_key = NttGlweSecretKey::from_coeff_secret_key(client.glwe_secret_key(), ntt);
         let size = sparse.size();

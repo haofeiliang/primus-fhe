@@ -8,7 +8,7 @@ use primus_tfhe::TfheEvaluationError;
 use primus_tfhe_glwe::PbsOrder;
 
 use crate::{
-    BootstrappingKey, Lwe, NttGlweBlindRotationWorkspace, NttGlweBootstrappingKey, ServerKey,
+    BlindRotationKey, Lwe, NttGlweBlindRotationWorkspace, NttGlweBootstrappingKey, ServerKey,
     SparseGlweBlindRotationWorkspace, SparseGlweBootstrappingKey, TfheContext,
 };
 
@@ -88,11 +88,11 @@ where
     /// Layout, basis and modulus checks do not establish these identities.
     pub fn try_new(
         context: &'a TfheContext<T, Table>,
-        bootstrapping_key: &'a BootstrappingKey<T>,
+        blind_rotation_key: &'a BlindRotationKey<T>,
         input_key_switching_key: Option<&'a NttGlweKeySwitchingKey<T>>,
     ) -> Result<Self, TfheEvaluationError> {
         let parameters = context.parameters();
-        if !bootstrapping_key.is_compatible(parameters) {
+        if !blind_rotation_key.is_compatible(parameters) {
             return Err(TfheEvaluationError::IncompatibleBlindRotationKey);
         }
 
@@ -106,12 +106,12 @@ where
 
         Ok(Self {
             context,
-            blind_rotation: match bootstrapping_key {
-                BootstrappingKey::Classic(key) => BlindRotation::Classic {
+            blind_rotation: match blind_rotation_key {
+                BlindRotationKey::Classic(key) => BlindRotation::Classic {
                     key,
                     scratch: NttGlweBlindRotationWorkspace::new(key),
                 },
-                BootstrappingKey::Sparse(key) => BlindRotation::Sparse {
+                BlindRotationKey::Sparse(key) => BlindRotation::Sparse {
                     key,
                     scratch: SparseGlweBlindRotationWorkspace::new(key),
                 },
@@ -251,16 +251,16 @@ where
         let input_key_switching_key = (self.parameters().pbs_order()
             == PbsOrder::KeyswitchBootstrap)
             .then_some(server_key.glwe_key_switching_key());
-        self.bootstrap_resources(server_key.bootstrapping_key(), input_key_switching_key)
+        self.bootstrap_resources(server_key.blind_rotation_key(), input_key_switching_key)
     }
 
     /// Prepares BR/EP resources and the input KS required by KS→BR.
     /// Inherits [`BootstrapResources::try_new`]'s material requirements.
     pub fn bootstrap_resources<'a>(
         &'a self,
-        bootstrapping_key: &'a BootstrappingKey<T>,
+        blind_rotation_key: &'a BlindRotationKey<T>,
         input_key_switching_key: Option<&'a NttGlweKeySwitchingKey<T>>,
     ) -> Result<BootstrapResources<'a, T, Table>, TfheEvaluationError> {
-        BootstrapResources::try_new(self, bootstrapping_key, input_key_switching_key)
+        BootstrapResources::try_new(self, blind_rotation_key, input_key_switching_key)
     }
 }

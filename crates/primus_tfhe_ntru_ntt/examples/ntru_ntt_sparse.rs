@@ -12,12 +12,15 @@ use primus_modulus::{BarrettModulus, PowOf2Modulus};
 use primus_ntru::SecretKeyDistr;
 use primus_ntt::U32NttTable as Table;
 use primus_tfhe_ntru_ntt::{
-    DecompositionConfig, KeyGenerator, TfheConfig, TfheContext, TfheParameters,
+    BlindRotationConfig, DecompositionConfig, KeyGenerator, TfheConfig, TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
-// Set false to run the same interleaved ManyLUT with classic PBS.
-const SPARSE: bool = true;
+// Use BlindRotationConfig::Classic to run the same program with classic BR.
+const BLIND_ROTATION: BlindRotationConfig = BlindRotationConfig::Sparse {
+    copy_count: 3,
+    bucket_count: 64,
+};
 
 // The explicit parameters below select bases and moduli for this coefficient word.
 type Word = u32;
@@ -76,17 +79,14 @@ fn main() {
         RoundedCodec::new(8, context.parameters().accumulator_ntru().cipher_modulus());
     let output_codec = RoundedCodec::new(8, context.parameters().external_lwe().cipher_modulus());
 
-    // Client: explicitly request sparse evaluation material from this fixed-weight secret.
+    // Client: generate the selected BR algorithm from the fixed-weight secret.
     let mut rng = StdRng::seed_from_u64(42);
     let mut generator = KeyGenerator::new(&context);
     let client_key = generator.try_generate_client_key(&mut rng).unwrap();
     // Three copies, 64 buckets. Map retries retain the same client secret.
-    let server_key = if SPARSE {
-        generator.try_generate_sparse_server_key(&client_key, 3, 64, None, &mut rng)
-    } else {
-        generator.try_generate_server_key(&client_key, None, &mut rng)
-    }
-    .unwrap();
+    let server_key = generator
+        .try_generate_server_key(&client_key, BLIND_ROTATION, None, &mut rng)
+        .unwrap();
     // Ordinary messages borrow only the external secret from the setup bundle.
     let external_secret = client_key.external_lwe_secret_key();
     let encryptor = context.encryptor(external_secret, &input_codec).unwrap();

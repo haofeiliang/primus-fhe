@@ -22,10 +22,10 @@ cargo run -p primus_tfhe_ntru_fourier --release --example ntru_fourier_basic --f
 | 操作 | 完整示例 |
 | --- | --- |
 | Classic PBS | [basic](examples/ntru_fourier_basic.rs) |
-| Sparse PBS / 交错多输出 ManyLUT | [sparse](examples/ntru_fourier_sparse.rs)；`SPARSE=false` 切换 classic ManyLUT |
+| Sparse PBS / 交错多输出 ManyLUT | [sparse](examples/ntru_fourier_sparse.rs)；`BLIND_ROTATION` 选择 classic/sparse |
 | CBS → CMux | [circuit_bootstrap](examples/ntru_fourier_circuit_bootstrap.rs)；`SPARSE=true` 选择 sparse BR |
-| 分解式 MVB | [thresholds](examples/ntru_fourier_mvb_thresholds.rs)；`SPARSE=true` 选择 sparse BR |
-| One-hot CBS → CMux | [one_hot](examples/ntru_fourier_one_hot.rs)；`SPARSE=true` 选择 sparse BR |
+| 分解式 MVB | [thresholds](examples/ntru_fourier_mvb_thresholds.rs)；`BLIND_ROTATION` 选择 classic/sparse |
+| One-hot CBS → CMux | [one_hot](examples/ntru_fourier_one_hot.rs)；`BLIND_ROTATION` 选择 classic/sparse |
 | 高精度查表 | [lookup](../primus_tfhe_ntru_lut/examples/fourier_lookup.rs) |
 
 ManyLUT 通过交错共享一次盲旋转，多输出返回还共享一次 Q→q 转换并分块进行 LWE key switch；分解式 MVB 通过公共因子生成多输出，是不同的求值接口。 NTRU sparse 支持普通/交错 PBS、分解式 MVB、CBS 和 one-hot；稀疏 BR 要求 fixed-weight binary 外部秘密。
@@ -44,7 +44,7 @@ Fourier 环只支持 `NativeModulus`；`PowOf2Modulus` 环不受支持。 NTRU �
 
 ## 求值材料
 
-`ServerKey` 组合独立拥有的 `BlindRotationKey`、`NtruLweKeySwitchingKey` 和可选 `CircuitBootstrapKey`。`into_parts()` 移出组件，不复制密文缓冲；`ServerKey::new(br, return_key, cbs)` 组合各 owner。独立生成分别使用 `KeyGenerator::try_generate_blind_rotation_key(&client, rng)`、`parameters.try_generate_lwe_return_key(&client, rng)` 和 `generator.try_generate_circuit_bootstrap_key(client.accumulator_ntru_secret_key(), cbs_parameters, rng)`。稀疏 BR 使用 `try_generate_sparse_blind_rotation_key`。独立生成可能重复转换累加秘密；成对生成复用同一次变换。
+`ServerKey` 组合独立拥有的 `BlindRotationKey`、`NtruLweKeySwitchingKey` 和可选 `CircuitBootstrapKey`。`into_parts()` 移出组件，不复制密文缓冲；`ServerKey::new(br, return_key, cbs)` 组合各 owner。独立生成分别使用 `KeyGenerator::try_generate_classic_blind_rotation_key(&client, rng)`、`parameters.try_generate_lwe_return_key(&client, rng)` 和 `generator.try_generate_circuit_bootstrap_key(client.accumulator_ntru_secret_key(), cbs_parameters, rng)`。稀疏 BR 使用 `try_generate_sparse_blind_rotation_key`。独立生成可能重复转换累加秘密；成对生成复用同一次变换。
 
 `Evaluator::try_from_parts(context, br, return_key)` 绑定普通 PBS。独立 CBS/one-hot 先用 `context.bootstrap_resources(br)?` 准备公共 BR/外积资源，再用 `try_new(&resources, circuit_key, &input_codec)` 准备操作状态，无需返回密钥；CBS 示例展示这一流程。独立材料必须采用相同实际秘密与FFT table 实例，形状和模数检查不能证明身份。
 
@@ -70,16 +70,19 @@ Fourier 环只支持 `NativeModulus`；`PowOf2Modulus` 环不受支持。 NTRU �
 
 ## 实验性稀疏 PBS
 
+`KeyGenerator::try_generate_server_key(&client, blind_rotation, cbs, rng)` 为已有客户端选择 `BlindRotationConfig::Classic` 或 `Sparse { copy_count, bucket_count }`；同一个 fixed-weight binary 秘密支持两者。CBS 传 `None` 只生成普通 BR/返回材料，传 `Some(config)` 则添加 CBS 密钥。成对生成快捷入口 `try_generate_keys` 选择 classic 并保留秘密变换复用；独立组件不要求完整密钥包。见[算法和材料选择](../primus_tfhe/README.zh_CN.md#选择盲旋转算法)。
+
 为 external-LWE 选择固定重量 binary 分布，并显式调用稀疏生成器； 仅选择低重量分布仍使用经典 BR。要求 `0<h<n`、`copy_count>=1`、`bucket_count>=max(copy_count,h)`。
 
 ```rust,ignore
 let mut generator = KeyGenerator::new(&context);
 let client = generator.try_generate_client_key(&mut rng)?;
-let server = generator.try_generate_sparse_server_key(&client, 3, 2 * h, None, &mut rng)?;
+let blind_rotation = BlindRotationConfig::Sparse { copy_count: 3, bucket_count: 2 * h };
+let server = generator.try_generate_server_key(&client, blind_rotation, None, &mut rng)?;
 let mut evaluator = context.evaluator(&server)?;
 ```
 
-普通/交错 PBS 复用原 evaluator，分解式 MVB 每次调用时借用它。将 `None` 改为 `Some(cbs_config)` 会复用累加秘密变换并生成 CBS/one-hot 材料。仅需环输出时，可独立生成 sparse BR 和 CBS 组件，无需返回密钥。 `server.blind_rotation_key().sparse_bootstrapping_key()` 提供选择密文。
+普通/交错 PBS 复用原 evaluator，分解式 MVB 每次调用时借用它。将 `None` 改为 `Some(cbs_config)` 会复用累加秘密变换并生成 CBS/one-hot 材料。仅需环输出时，可独立生成 sparse BR 和 CBS 组件，无需返回密钥。 `server.blind_rotation_key().sparse_blind_rotation_key()` 提供选择密文。
 
 外部秘密允许偶数重量。只有环秘密需要可逆且 Fourier 逆稳定；系数恢复和聚合 FFT 另引入数值误差。
 

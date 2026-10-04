@@ -15,13 +15,14 @@ use primus_lwe::LweParametersInner;
 use primus_modulus::{NativeModulus, PowOf2Modulus};
 use primus_ntru::SecretKeyDistr;
 use primus_tfhe_ntru_fourier::{
-    CircuitBootstrapConfig, DecompositionConfig, KeyGenerator, OneHotCircuitBootstrapEvaluator,
-    TfheConfig, TfheContext, TfheParameters,
+    BlindRotationConfig, CircuitBootstrapConfig, DecompositionConfig, KeyGenerator,
+    OneHotCircuitBootstrapEvaluator, TfheConfig, TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
-// Set true to use fixed-weight binary sparse BR with the same CBS pipeline.
-const SPARSE: bool = false;
+// The same fixed-weight binary secret supports both choices. To select sparse BR,
+// use BlindRotationConfig::Sparse { copy_count: 3, bucket_count: 64 }.
+const BLIND_ROTATION: BlindRotationConfig = BlindRotationConfig::Classic;
 
 // The explicit parameters below select bases and moduli for this coefficient word.
 type Word = u32;
@@ -48,11 +49,7 @@ fn parameters() -> TfheParameters<Word, PowOf2Modulus<Word>> {
         external_lwe: LweParametersInner::new(
             LweDimension::new(800),
             PowOf2Modulus::new(lwe_modulus),
-            if SPARSE {
-                SecretKeyDistr::fixed_hamming_weight_binary(800, 32)
-            } else {
-                SecretKeyDistr::UniformBinary
-            },
+            SecretKeyDistr::fixed_hamming_weight_binary(800, 32),
             lwe_modulus as f64 * 2.046151696979124e-6,
         ),
         accumulator_modulus: modulus, // Ring Q; distinct from the external LWE q.
@@ -108,18 +105,14 @@ fn main() {
     let mut rng = StdRng::seed_from_u64(42);
     let mut generator = KeyGenerator::new(&context);
     let client_key = generator.try_generate_client_key(&mut rng).unwrap();
-    let server_key = if SPARSE {
-        generator.try_generate_sparse_server_key(
+    let server_key = generator
+        .try_generate_server_key(
             &client_key,
-            3,
-            64,
+            BLIND_ROTATION,
             Some(circuit_config()),
             &mut rng,
         )
-    } else {
-        generator.try_generate_server_key(&client_key, Some(circuit_config()), &mut rng)
-    }
-    .unwrap();
+        .unwrap();
     // Ordinary messages borrow only the external secret from the setup bundle.
     let external_secret = client_key.external_lwe_secret_key();
     let encryptor = context.encryptor(external_secret, &input_codec).unwrap();

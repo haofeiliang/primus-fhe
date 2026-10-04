@@ -10,8 +10,8 @@ use primus_modulus::NativeModulus;
 use primus_poly::{PolyLength, Polynomial};
 use primus_test_allocations as allocations;
 use primus_tfhe_glwe_fourier::{
-    BootstrappingKey, ClientKey, FourierGlweBlindRotationWorkspace, KeyGenerator, PbsOrder,
-    SparseGlweBlindRotationWorkspace, TfheContext, TfheParameters,
+    BlindRotationConfig, BlindRotationKey, ClientKey, FourierGlweBlindRotationWorkspace,
+    KeyGenerator, PbsOrder, SparseGlweBlindRotationWorkspace, TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -114,12 +114,12 @@ fn check_raw<Table: FftTable>() {
         let client = ClientKey::generate(context.parameters(), &mut rng);
         let mut generator = KeyGenerator::new(&context);
         let sparse = generator
-            .try_generate_sparse_bootstrapping_key(&client, copies, buckets, &mut rng)
+            .try_generate_sparse_blind_rotation_key(&client, copies, buckets, &mut rng)
             .unwrap();
         let server = generator
-            .try_generate_server_key(&client, None, &mut rng)
+            .try_generate_server_key(&client, BlindRotationConfig::Classic, None, &mut rng)
             .unwrap();
-        let BootstrappingKey::Classic(classic) = server.bootstrapping_key() else {
+        let BlindRotationKey::Classic(classic) = server.blind_rotation_key() else {
             panic!("expected classic key")
         };
         let mut sparse_scratch = SparseGlweBlindRotationWorkspace::new(&sparse);

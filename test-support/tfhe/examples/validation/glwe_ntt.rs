@@ -7,6 +7,7 @@ use primus_glwe::SecretKeyDistr;
 use primus_integer::{AsInto, FheUint};
 use primus_ntt::MonomialNttTable;
 use primus_poly::Polynomial;
+use primus_tfhe::BlindRotationConfig;
 use primus_tfhe_glwe::PbsOrder;
 use primus_tfhe_glwe_ntt::{ClientKey, KeyGenerator, TfheContext};
 use primus_tfhe_test_support::{
@@ -104,12 +105,17 @@ fn pbs<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     let mut rng = StdRng::seed_from_u64(seed);
     let client_key = ClientKey::generate(context.parameters(), &mut rng);
     let mut generator = KeyGenerator::new(context);
-    let server_key = if sparse {
-        generator.try_generate_sparse_server_key(&client_key, 3, 2 * SPARSE_WEIGHT, None, &mut rng)
+    let blind_rotation = if sparse {
+        BlindRotationConfig::Sparse {
+            copy_count: 3,
+            bucket_count: 2 * SPARSE_WEIGHT,
+        }
     } else {
-        generator.try_generate_server_key(&client_key, None, &mut rng)
-    }
-    .unwrap();
+        BlindRotationConfig::Classic
+    };
+    let server_key = generator
+        .try_generate_server_key(&client_key, blind_rotation, None, &mut rng)
+        .unwrap();
 
     let encryptor = context
         .encryptor(client_key.external_lwe_secret_key(), &input_codec)
@@ -284,18 +290,22 @@ fn circuit<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     let mut rng = StdRng::seed_from_u64(seed);
     let client_key = ClientKey::generate(context.parameters(), &mut rng);
     let mut generator = KeyGenerator::new(context);
-    let server_key = if sparse {
-        generator.try_generate_sparse_server_key(
+    let blind_rotation = if sparse {
+        BlindRotationConfig::Sparse {
+            copy_count: 3,
+            bucket_count: 2 * SPARSE_WEIGHT,
+        }
+    } else {
+        BlindRotationConfig::Classic
+    };
+    let server_key = generator
+        .try_generate_server_key(
             &client_key,
-            3,
-            2 * SPARSE_WEIGHT,
+            blind_rotation,
             Some(glwe::cbs::<T>()),
             &mut rng,
         )
-    } else {
-        generator.try_generate_server_key(&client_key, Some(glwe::cbs::<T>()), &mut rng)
-    }
-    .unwrap();
+        .unwrap();
 
     // Retain public output metadata for the client-side phase oracle.
     let cbs = server_key.circuit_bootstrap_key().unwrap().parameters();

@@ -9,7 +9,7 @@ use primus_ntru::NlevParameters;
 use primus_ntru::{NtruParameters, SecretKeyDistr};
 use primus_ntt::{NttTable, U32NttTable};
 use primus_poly::PolyLength;
-use primus_tfhe_ntru_ntt::{TfheContext, TfheEvaluationError, TfheParameters};
+use primus_tfhe_ntru_ntt::{BlindRotationConfig, TfheContext, TfheEvaluationError, TfheParameters};
 use rand::{SeedableRng, rngs::StdRng};
 use std::error::Error;
 
@@ -171,7 +171,12 @@ fn construction_errors_preserve_transform_sources() {
         Some(TfheClientError::Ntru(NtruError::NonInvertibleSecretKey))
     );
     let error = KeyGenerator::new(&context)
-        .try_generate_server_key(&client, None, &mut StdRng::seed_from_u64(42))
+        .try_generate_server_key(
+            &client,
+            BlindRotationConfig::Classic,
+            None,
+            &mut StdRng::seed_from_u64(42),
+        )
         .err()
         .unwrap();
     assert_eq!(

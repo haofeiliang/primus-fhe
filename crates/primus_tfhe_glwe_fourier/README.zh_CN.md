@@ -22,10 +22,10 @@ cargo run -p primus_tfhe_glwe_fourier --release --example fourier_basic --featur
 | 操作 | 完整示例 |
 | --- | --- |
 | Classic PBS | [basic](examples/fourier_basic.rs) |
-| Sparse PBS / 交错多输出 ManyLUT | [sparse](examples/fourier_sparse.rs)；`SPARSE=false` 切换 classic ManyLUT |
+| Sparse PBS / 交错多输出 ManyLUT | [sparse](examples/fourier_sparse.rs)；`BLIND_ROTATION` 选择 classic/sparse |
 | Classic CBS → CMux | [circuit_bootstrap](examples/fourier_circuit_bootstrap.rs) |
 | Sparse CBS → CMux | [sparse_circuit_bootstrap](examples/fourier_sparse_circuit_bootstrap.rs) |
-| 分解式 MVB | [thresholds](examples/fourier_mvb_thresholds.rs)；`SPARSE=true` 切换 sparse MVB |
+| 分解式 MVB | [thresholds](examples/fourier_mvb_thresholds.rs)；`BLIND_ROTATION` 选择 classic/sparse |
 
 ManyLUT 通过交错共享一次盲旋转；分解式 MVB 通过公共因子生成多输出，是不同的求值接口。
 
@@ -45,7 +45,7 @@ Fourier 环只支持 `NativeModulus`；`PowOf2Modulus` 环不受支持。
 
 普通/交错 `Evaluator` 拥有公共 `BootstrapResources` 与返回阶段。CBS 只保存 LUT/投影状态，执行时最后一个参数传 `pbs.bootstrap_resources_mut()`。MVB 用 `FactorizedEvaluator::new(&pbs)` 构造，每次执行传入 `&mut pbs`。借用结束即可继续普通 PBS，无需转换或恢复 evaluator。输入/输出 KS、BR、trace、scheme switch 与 factor 乘积共用同一 FFT engine，借用不会新建 FFT 工作区。
 
-`ServerKey` 仍是完整 PBS 的便捷组合。高级工作流可分别持有 `BootstrappingKey`、环 KS key 和 `CircuitBootstrapKey`，通过 `ServerKey::new` / `into_parts` 移动组合，不复制密文数组。`KeyGenerator::try_generate_bootstrapping_key` 与已有 sparse 入口只生成 BR；`try_generate_glwe_key_switching_key` 独立生成环 KS；`try_generate_circuit_bootstrap_key(accumulator_secret, parameters, rng)` 只需要累加器秘密。独立生成可能重复转换秘密；成对生成继续复用已准备的表示。
+`ServerKey` 仍是完整 PBS 的便捷组合。高级工作流可分别持有 `BlindRotationKey`、环 KS key 和 `CircuitBootstrapKey`，通过 `ServerKey::new` / `into_parts` 移动组合，不复制密文数组。`KeyGenerator::try_generate_classic_blind_rotation_key` 与已有 sparse 入口只生成 BR；`try_generate_glwe_key_switching_key` 独立生成环 KS；`try_generate_circuit_bootstrap_key(accumulator_secret, parameters, rng)` 只需要累加器秘密。独立生成可能重复转换秘密；成对生成继续复用已准备的表示。
 
 已有 `ServerKey`、仅需独立 CBS 时，按需准备公共资源：
 
@@ -73,16 +73,19 @@ let mut cbs = CircuitBootstrapEvaluator::try_new(&resources, circuit_key, &input
 
 ## 实验性稀疏 PBS
 
+`KeyGenerator::try_generate_server_key(&client, blind_rotation, cbs, rng)` 为已有客户端选择 `BlindRotationConfig::Classic` 或 `Sparse { copy_count, bucket_count }`；同一个 fixed-weight binary 秘密支持两者。CBS 传 `None` 只生成普通 BR/返回材料，传 `Some(config)` 则添加 CBS 密钥。成对生成快捷入口 `try_generate_keys` 选择 classic 并保留秘密变换复用；独立组件不要求完整密钥包。见[算法和材料选择](../primus_tfhe/README.zh_CN.md#选择盲旋转算法)。
+
 为 small-LWE 选择固定重量 binary 分布，并显式调用稀疏生成器； 仅选择低重量分布仍使用经典 BR。要求 `0<h<n`、`copy_count>=1`、`bucket_count>=max(copy_count,h)`。
 
 ```rust,ignore
 let mut generator = KeyGenerator::new(&context);
 let client = ClientKey::generate(context.parameters(), &mut rng);
-let server = generator.try_generate_sparse_server_key(&client, 3, 2 * h, None, &mut rng)?;
+let blind_rotation = BlindRotationConfig::Sparse { copy_count: 3, bucket_count: 2 * h };
+let server = generator.try_generate_server_key(&client, blind_rotation, None, &mut rng)?;
 let mut evaluator = context.evaluator(&server)?;
 ```
 
-两种 order 支持普通/交错 PBS、MVB 和 CBS。传入 `Some(cbs_config)` 添加稀疏 CBS 材料。 `ServerKey::bootstrapping_key()` 提供 `BootstrappingKey::{Classic,Sparse}`。
+两种 order 支持普通/交错 PBS、MVB 和 CBS。传入 `Some(cbs_config)` 添加稀疏 CBS 材料。 `ServerKey::blind_rotation_key()` 提供 `BlindRotationKey::{Classic,Sparse}`。
 
 ## 电路自举
 

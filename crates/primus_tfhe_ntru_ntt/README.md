@@ -22,10 +22,10 @@ Examples separate client encryption, server evaluation and client decryption; se
 | Operation | Complete example |
 | --- | --- |
 | Classic PBS | [basic](examples/ntru_ntt_basic.rs) |
-| Sparse PBS / interleaved ManyLUT | [sparse](examples/ntru_ntt_sparse.rs); `SPARSE=false` selects classic ManyLUT |
+| Sparse PBS / interleaved ManyLUT | [sparse](examples/ntru_ntt_sparse.rs); `BLIND_ROTATION` selects classic/sparse |
 | CBS → CMux | [circuit_bootstrap](examples/ntru_ntt_circuit_bootstrap.rs); `SPARSE=true` selects sparse BR |
-| Factorized MVB | [thresholds](examples/ntru_ntt_mvb_thresholds.rs); `SPARSE=true` selects sparse BR |
-| One-hot CBS → CMux | [one_hot](examples/ntru_ntt_one_hot.rs); `SPARSE=true` selects sparse BR |
+| Factorized MVB | [thresholds](examples/ntru_ntt_mvb_thresholds.rs); `BLIND_ROTATION` selects classic/sparse |
+| One-hot CBS → CMux | [one_hot](examples/ntru_ntt_one_hot.rs); `BLIND_ROTATION` selects classic/sparse |
 | High-precision lookup | [lookup](../primus_tfhe_ntru_lut/examples/ntt_lookup.rs) |
 
 ManyLUT interleaves outputs within one blind rotation, shares one Q→q conversion across multiple outputs, and batches their LWE key switches; factorized MVB uses public factors and a different evaluation interface. NTRU sparse supports ordinary/interleaved PBS, factorized MVB, CBS and one-hot. Sparse BR requires a fixed-weight binary external secret.
@@ -40,7 +40,7 @@ NTT tables must implement `MonomialNttTable`; built-in tables support it. Contex
 
 ## Evaluation material
 
-`ServerKey` bundles independently owned `BlindRotationKey`, `NtruLweKeySwitchingKey` and optional `CircuitBootstrapKey`. `into_parts()` moves them out without copying ciphertext buffers; `ServerKey::new(br, return_key, cbs)` combines owners. For independent generation, use `KeyGenerator::try_generate_blind_rotation_key(&client, rng)`, `parameters.try_generate_lwe_return_key(&client, rng)` and `generator.try_generate_circuit_bootstrap_key(client.accumulator_ntru_secret_key(), cbs_parameters, rng)`. Sparse BR has its own `try_generate_sparse_blind_rotation_key` entry. Component generation may repeat accumulator conversion; paired generation reuses the transform.
+`ServerKey` bundles independently owned `BlindRotationKey`, `NtruLweKeySwitchingKey` and optional `CircuitBootstrapKey`. `into_parts()` moves them out without copying ciphertext buffers; `ServerKey::new(br, return_key, cbs)` combines owners. For independent generation, use `KeyGenerator::try_generate_classic_blind_rotation_key(&client, rng)`, `parameters.try_generate_lwe_return_key(&client, rng)` and `generator.try_generate_circuit_bootstrap_key(client.accumulator_ntru_secret_key(), cbs_parameters, rng)`. Sparse BR has its own `try_generate_sparse_blind_rotation_key` entry. Component generation may repeat accumulator conversion; paired generation reuses the transform.
 
 `Evaluator::try_from_parts(context, br, return_key)` binds ordinary PBS. Standalone CBS/one-hot first prepares common BR/external-product resources with `context.bootstrap_resources(br)?`, then operation state with `try_new(&resources, circuit_key, &input_codec)`. No return key is needed; the CBS example demonstrates this workflow. Independent material must use the same actual secrets and transform representation. Shape and modulus checks do not prove identity.
 
@@ -66,16 +66,19 @@ Run the [17-threshold example](examples/ntru_ntt_mvb_thresholds.rs) with `--exam
 
 ## Experimental sparse PBS
 
+`KeyGenerator::try_generate_server_key(&client, blind_rotation, cbs, rng)` selects `BlindRotationConfig::Classic` or `Sparse { copy_count, bucket_count }` for an existing client. A fixed-weight binary secret supports both choices. `None` for CBS keeps ordinary BR/return material; `Some(config)` also generates CBS keys. The paired `try_generate_keys` shortcut selects classic and retains secret-transform reuse; independent components do not require a complete bundle. See [algorithm and material choices](../primus_tfhe/README.md#selecting-blind-rotation).
+
 Select a fixed-weight binary external-LWE distribution and choose sparse generation explicitly; a low-weight distribution alone still selects classic BR. Require `0<h<n`, `copy_count>=1` and `bucket_count>=max(copy_count,h)`.
 
 ```rust,ignore
 let mut generator = KeyGenerator::new(&context);
 let client = generator.try_generate_client_key(&mut rng)?;
-let server = generator.try_generate_sparse_server_key(&client, 3, 2 * h, None, &mut rng)?;
+let blind_rotation = BlindRotationConfig::Sparse { copy_count: 3, bucket_count: 2 * h };
+let server = generator.try_generate_server_key(&client, blind_rotation, None, &mut rng)?;
 let mut evaluator = context.evaluator(&server)?;
 ```
 
-Ordinary/interleaved PBS use the same evaluator; factorized MVB borrows it per call. Pass `Some(cbs_config)` in place of `None` to include CBS/one-hot material, reusing the accumulator transform. For ring-only operations, generate sparse BR and CBS components independently without a return key. `server.blind_rotation_key().sparse_bootstrapping_key()` exposes selectors.
+Ordinary/interleaved PBS use the same evaluator; factorized MVB borrows it per call. Pass `Some(cbs_config)` in place of `None` to include CBS/one-hot material, reusing the accumulator transform. For ring-only operations, generate sparse BR and CBS components independently without a return key. `server.blind_rotation_key().sparse_blind_rotation_key()` exposes selectors.
 
 ## Optional circuit bootstrapping
 

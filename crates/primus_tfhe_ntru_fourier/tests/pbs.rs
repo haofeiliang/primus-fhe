@@ -14,7 +14,7 @@ use primus_tfhe::{
     BivariateLookupTable, InterleavedLookupTable, LookupTable, Lwe, ProgrammableBootstrap,
     ProgrammableBootstrapInterleaved,
 };
-use primus_tfhe_ntru_fourier::{TfheContext, TfheParameters};
+use primus_tfhe_ntru_fourier::{BlindRotationConfig, TfheContext, TfheParameters};
 use rand::{SeedableRng, rngs::StdRng};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
@@ -97,7 +97,7 @@ where
     );
     // Re-import the generated coefficient secrets through the validation path.
     let imported = primus_tfhe_ntru_fourier::KeyGenerator::new(&context)
-        .try_generate_server_key(&client_key, None, &mut rng)
+        .try_generate_server_key(&client_key, BlindRotationConfig::Classic, None, &mut rng)
         .unwrap();
     assert!(context.evaluator(&imported).is_ok());
     let public = context
@@ -568,7 +568,7 @@ fn check_first_controls<T: TorusFftValue, Table: FftTable>(context: TfheContext<
             generated.accumulator_ntru_secret_key().clone(),
         );
         let server = generator
-            .try_generate_server_key(&client, None, &mut rng)
+            .try_generate_server_key(&client, BlindRotationConfig::Classic, None, &mut rng)
             .unwrap();
         let mut evaluator = context.evaluator(&server).unwrap();
         let decryptor = context

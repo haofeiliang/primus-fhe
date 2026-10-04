@@ -13,7 +13,7 @@ use primus_fft::{FftTable, RustFftTable, TfheFftTable, TorusFftValue};
 use primus_modulus::NativeModulus;
 use primus_modulus::PowOf2Modulus;
 use primus_ntru::SecretKeyDistr;
-use primus_tfhe_ntru_fourier::{KeyGenerator, TfheContext};
+use primus_tfhe_ntru_fourier::{BlindRotationConfig, KeyGenerator, TfheContext};
 use primus_tfhe_test_support::{
     benchmark::{PBS_WORKLOADS, PbsWorkload},
     parameters::ntru,
@@ -118,7 +118,12 @@ fn backend<T: TorusFftValue, Table: FftTable>(
             || (),
             |()| {
                 generator
-                    .try_generate_server_key(black_box(client), None, &mut rng)
+                    .try_generate_server_key(
+                        black_box(client),
+                        BlindRotationConfig::Classic,
+                        None,
+                        &mut rng,
+                    )
                     .unwrap()
             },
             BatchSize::PerIteration,

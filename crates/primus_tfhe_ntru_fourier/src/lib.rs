@@ -4,7 +4,7 @@
 //!
 //! 1. Check mathematical choices with [`TfheParameters::try_from_config`].
 //! 2. Create a [`TfheContext`] and paired [`ClientKey`]/[`ServerKey`] with
-//!    [`TfheContext::try_generate_keys`]; `None` selects ordinary PBS material.
+//!    [`TfheContext::try_generate_keys`] for classic BR; `None` selects ordinary PBS material.
 //! 3. Bind [`Encryptor`], [`Decryptor`] and [`Evaluator`] from that context.
 //! 4. Create a compiler with [`TfheParameters::lookup_table_compiler`] and call
 //!    [`LookupTableCompiler::compile_fn`]. Reuse [`Evaluator::apply_lookup_table_to`]
@@ -21,7 +21,8 @@
 //! - [`boolean`]: Boolean clients and gates with plaintext modulus four.
 //! - [`circuit_bootstrap`]: optional trace/scheme-switch material and
 //!   [`CircuitBootstrapEvaluator`], producing accumulator-secret gadget controls for CMUX.
-//! - [`sparse`]: fixed-weight binary bucket material; select it explicitly at key generation.
+//! - [`sparse`]: fixed-weight binary bucket material; choose [`BlindRotationConfig::Sparse`]
+//!   with [`KeyGenerator::try_generate_server_key`] for an existing client.
 //!
 //! [`Evaluator`] owns common [`BootstrapResources`] and client-return buffers.
 //! CBS/one-hot prepare only their LUT/projection state and borrow common resources
@@ -84,9 +85,9 @@ pub use key::{BlindRotationKey, ClassicControls, KeyGenerator, ServerKey};
 pub use sparse::SparseNtruBootstrappingKey;
 
 pub use primus_tfhe::{
-    BivariateLookupTable, CircuitBootstrapConfig, ClientError, DecompositionConfig,
-    FactorizedLookupTable, InterleavedLookupTable, LookupTable, LookupTableCompiler, Lwe,
-    LweCiphertext, LweSecretKeyRef,
+    BivariateLookupTable, BlindRotationConfig, CircuitBootstrapConfig, ClientError,
+    DecompositionConfig, FactorizedLookupTable, InterleavedLookupTable, LookupTable,
+    LookupTableCompiler, Lwe, LweCiphertext, LweSecretKeyRef,
 };
 pub use primus_tfhe_ntru::{
     ClientKey, EncryptionKey, LwePublicKey, LweReturnBatchWorkspace, LweReturnEvaluator,

@@ -9,7 +9,7 @@
 
 ## 工作流
 
-[NTT](../primus_tfhe_ntru_ntt/README.zh_CN.md) 和 [Fourier](../primus_tfhe_ntru_fourier/README.zh_CN.md) 均支持 classic binary/ternary 和 sparse fixed-weight binary 查表。Classic 使用 `context.try_generate_keys(Some(cbs_config), rng)`，sparse 使用 `generator.try_generate_sparse_server_key(&client, copies, buckets, Some(cbs_config), rng)`；CBS 材料为必需项。客户端生成 chunks，再用 `encrypt_padded` 分别加密。示例中设置 `SPARSE=true` 即可选择 sparse。
+[NTT](../primus_tfhe_ntru_ntt/README.zh_CN.md) 和 [Fourier](../primus_tfhe_ntru_fourier/README.zh_CN.md) 均支持 classic binary/ternary 和 sparse fixed-weight binary 查表。使用 `generator.try_generate_server_key(&client, blind_rotation, Some(cbs_config), rng)` 生成求值材料，算法选择 `BlindRotationConfig::Classic` 或 `Sparse { copy_count, bucket_count }`；CBS 材料为必需项。客户端生成 chunks，再用 `encrypt_padded` 分别加密。示例对两种算法均使用 fixed-weight binary 秘密，只需修改 `BLIND_ROTATION` 即可切换算法，无需改变秘密分布。
 
 `HighPrecisionLookupTable::try_new(parameters, &input_codec, config, function)` 编译公开表。回调接收 `(完整输入索引, 输出 chunk 索引)`，返回一个 digit。用 `NttLookupTableEvaluator::try_new(context, server_key, None, table)` 或 `FourierLookupTableEvaluator::try_new(context, server_key, None, table)` 绑定资源，调用一次 `allocate_output()`，随后重复调用 `evaluate_to(input_chunks, output_chunks)`。输出逐个使用 `context.decryptor(client.external_lwe_secret_key(), &input_codec)` 解码。表拥有 chunk 编码，密钥不依赖 t。Evaluator 借用 context、服务端密钥和表，求值不需要客户端秘密。
 

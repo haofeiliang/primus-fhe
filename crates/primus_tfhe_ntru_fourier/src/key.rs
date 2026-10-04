@@ -16,8 +16,8 @@ use primus_ntru::{
 use zeroize::Zeroizing;
 
 use crate::{
-    CircuitBootstrapConfig, CircuitBootstrapKey, CircuitBootstrapParameters, ClientKey,
-    KeyGenerationError, TfheContext,
+    BlindRotationConfig, CircuitBootstrapConfig, CircuitBootstrapKey, CircuitBootstrapParameters,
+    ClientKey, KeyGenerationError, TfheContext,
 };
 
 /// Owning PBS bundle: blind rotation, LWE return, and optional CBS material.
@@ -134,13 +134,49 @@ where
         Ok(client_key)
     }
 
-    /// Generates the selected capabilities from one compatible client key.
-    /// Invalid CBS configuration is rejected before sampling evaluation material.
-    /// Enabling CBS inherits [`Self::try_generate_circuit_bootstrap_key`]'s
-    /// mathematical and security requirements.
-    /// Returns an error for incompatible parameters, a noninvertible secret,
-    /// or an unstable Fourier inverse.
+    /// Generates BR, ordinary return and optional CBS material for one existing client.
+    /// `blind_rotation` selects the algorithm independently of the client's distribution.
+    /// Sparse generation requires a fixed-weight binary secret with `0 < h < n` and
+    /// valid bucket counts. It retries only the public map (at most eight attempts),
+    /// never the client secret, and never falls back to classic. Invalid CBS configuration
+    /// is rejected before sampling; a failed matching returns no partial server key.
+    ///
+    /// # Correctness
+    /// Inherits [`Self::try_generate_classic_blind_rotation_key`] and
+    /// [`Self::try_generate_sparse_blind_rotation_key`]'s secret, transform and noise
+    /// requirements for the selected algorithm. CBS additionally inherits
+    /// [`Self::try_generate_circuit_bootstrap_key`]'s requirements; PBS correctness
+    /// alone does not establish a margin at the smallest CBS gadget scale. Budget
+    /// ordinary modulus/key-switch return noise separately from the BR noise.
     pub fn try_generate_server_key<R>(
+        &mut self,
+        client_key: &ClientKey<T>,
+        blind_rotation: BlindRotationConfig,
+        circuit_bootstrap: Option<CircuitBootstrapConfig>,
+        rng: &mut R,
+    ) -> Result<ServerKey<T>, KeyGenerationError>
+    where
+        R: rand::Rng + rand::CryptoRng,
+    {
+        match blind_rotation {
+            BlindRotationConfig::Classic => {
+                self.try_generate_classic_server_key(client_key, circuit_bootstrap, rng)
+            }
+            BlindRotationConfig::Sparse {
+                copy_count,
+                bucket_count,
+            } => self.try_generate_sparse_server_key(
+                client_key,
+                copy_count,
+                bucket_count,
+                circuit_bootstrap,
+                rng,
+            ),
+        }
+    }
+
+    // Keep algorithm-specific preparation and sampling order in their existing paths.
+    fn try_generate_classic_server_key<R>(
         &mut self,
         client_key: &ClientKey<T>,
         circuit_bootstrap: Option<CircuitBootstrapConfig>,
@@ -208,7 +244,7 @@ where
     ///
     /// # Errors
     /// Rejects incompatible secrets and propagates backend conversion failures.
-    pub fn try_generate_blind_rotation_key<R: rand::Rng + rand::CryptoRng>(
+    pub fn try_generate_classic_blind_rotation_key<R: rand::Rng + rand::CryptoRng>(
         &mut self,
         client_key: &ClientKey<T>,
         rng: &mut R,
@@ -376,7 +412,8 @@ where
         controls
     }
 
-    /// Generates a fresh pair with the selected capabilities, reusing transformed secrets.
+    /// Generates a fresh classic pair, reusing transformed secrets for the selected capabilities.
+    /// For sparse BR, generate a fixed-weight client first and use [`Self::try_generate_server_key`].
     /// Enabling CBS inherits [`Self::try_generate_circuit_bootstrap_key`]'s
     /// mathematical and security requirements.
     /// Returns a key-generation error when the bounded rejection search is exhausted.
@@ -425,7 +462,7 @@ where
     Table: FftTable,
     LM: primus_reduce::RingContext<T>,
 {
-    /// Generates a fresh client/server pair; `None` selects PBS only and
+    /// Generates a fresh classic client/server pair; `None` selects PBS only and
     /// `Some(config)` also generates the configured CBS material.
     /// Inherits [`KeyGenerator::try_generate`]'s rejection-sampling errors and CBS requirements.
     ///
@@ -439,5 +476,23 @@ where
         R: rand::Rng + rand::CryptoRng,
     {
         KeyGenerator::new(self).try_generate(circuit_bootstrap, rng)
+    }
+
+    /// Generates server material for an existing client, selecting classic or sparse BR.
+    /// Inherits [`KeyGenerator::try_generate_server_key`]'s sampling, errors
+    /// and noise contracts, including optional CBS/one-hot material.
+    pub fn try_generate_server_key<R: rand::Rng + rand::CryptoRng>(
+        &self,
+        client_key: &ClientKey<T>,
+        blind_rotation: BlindRotationConfig,
+        circuit_bootstrap: Option<CircuitBootstrapConfig>,
+        rng: &mut R,
+    ) -> Result<ServerKey<T>, KeyGenerationError> {
+        KeyGenerator::new(self).try_generate_server_key(
+            client_key,
+            blind_rotation,
+            circuit_bootstrap,
+            rng,
+        )
     }
 }

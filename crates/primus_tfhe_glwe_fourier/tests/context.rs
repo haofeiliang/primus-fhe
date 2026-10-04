@@ -10,7 +10,7 @@ use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::NativeModulus;
 use primus_poly::{PolyLength, Polynomial};
 use primus_tfhe_glwe_fourier::{
-    BootstrappingKey, ClientKey, FourierGlweBlindRotationWorkspace, KeyGenerator, PbsOrder,
+    BlindRotationKey, ClientKey, FourierGlweBlindRotationWorkspace, KeyGenerator, PbsOrder,
     TfheContext, TfheContextError, TfheEvaluationError, TfheParameters,
 };
 
@@ -94,9 +94,9 @@ fn split_keys_support_both_pbs_orders() {
         // Fresh key generation is covered by the PBS and Boolean tests.
         let mut generator = KeyGenerator::new(&context);
         let client = ClientKey::generate(context.parameters(), &mut rng);
-        let blind_rotation = primus_tfhe_glwe_fourier::BootstrappingKey::Classic(
+        let blind_rotation = primus_tfhe_glwe_fourier::BlindRotationKey::Classic(
             generator
-                .try_generate_bootstrapping_key(&client, &mut rng)
+                .try_generate_classic_blind_rotation_key(&client, &mut rng)
                 .unwrap(),
         );
         let key_switching = generator
@@ -199,7 +199,7 @@ fn public_blind_rotation_rejects_mismatches_before_output_writes() {
 
     let mut rng = StdRng::seed_from_u64(42);
     let (_, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
-    let BootstrappingKey::Classic(key) = server_key.bootstrapping_key() else {
+    let BlindRotationKey::Classic(key) = server_key.blind_rotation_key() else {
         panic!("raw classic rotation test requires a classic key");
     };
     let size = key.size();
