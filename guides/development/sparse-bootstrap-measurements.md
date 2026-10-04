@@ -5,7 +5,8 @@ change is the paired GLWE CBS benchmark described below. These are functional
 arithmetic profiles, not assessed security parameters or equal-security comparisons.
 No production algorithm, workspace layout or public API changed in that baseline.
 The later [NTRU pair experiment](#ntru-paired-coefficient-aggregation) records an accepted kernel optimization.
-The [tile experiment](#coefficient-aggregation-tiles) records candidates that were not retained.
+The [tile experiment](#coefficient-aggregation-tiles) and
+[first-bucket experiment](#glwe-first-bucket-trivial-input) record candidates that were not retained.
 
 ## Conditions and workload pairing
 
@@ -762,3 +763,134 @@ per iteration. Reconstruct the tile traversal described above without changing
 key layout or pair arithmetic, and revalidate the executable rather than relying
 on a previously built artifact. All experimental source, capture hooks and
 executables were removed; no new benchmark or permanent test is retained.
+
+## GLWE first-bucket trivial input
+
+**2026-10-04; baseline `575de611`. Decision: retain the general first-bucket
+external product.** The algebraic specialization is valid, but this experiment
+found no repeatable complete-request gain. No production API, key layout,
+workspace, benchmark or test change is retained.
+
+### Preconditions and exact scope
+
+Both GLWE PBS orders enter sparse BR with a freshly initialized accumulator
+`(0, …, 0, P)`, where `P = X^(-R(b)) * LUT`. KS→BR first prepares the small LWE,
+then the same raw BR kernel overwrites every mask polynomial with zero. Previous
+workspace contents and the input order do not change this invariant.
+
+For the current `ApproxSignedBasis`, `init_value_carry(0) = (0, false)`:
+non-power-of-two adjustment starts at a strictly positive threshold, while a
+native power-of-two basis either extracts a zero carry bit or initializes it to
+false. Each decomposer subsequently receives `(0, false)` and emits the same
+pair. This holds with both full and truncated levels. See the
+[basis initialization](../../crates/primus_decompose/src/primitive/basis.rs) and
+[digit/carry kernel](../../crates/primus_decompose/src/primitive/common.rs).
+Consequently, in the sum over the `k+1` GLev rows, only the body row contributes.
+The actual Fourier transforms/products are finite, so the skipped zero terms
+also contribute no approximation error; this was independently checked below.
+
+The temporary candidate kept **all** first-bucket coefficient aggregation,
+control transforms, encrypted selections and dummy material. A temporary product
+entry reused the existing workspace and processed only the final input/key row
+for bucket zero; every subsequent bucket used the original full product. Thus
+only zero-mask decomposition, digit transforms and multiply-adds were removed;
+output clearing, body work and inverse transforms remained. No scan for zero
+coefficients, public empty-bucket skip, altered initial rotation or new scratch
+was introduced. This is the prerequisite external-product experiment, **not**
+an evaluation of first-bucket GLev storage or body-row-only aggregation.
+
+### First bucket and complete requests
+
+The fixtures use u64, n728/h32/N1024/k1, r3/B64 and unchanged diagnostic parameters:
+PBS t8, CBS t4; both orders, NTT and the two Fourier engines. The CPU/toolchain/features
+are those above, with timings pinned to CPU 4. No builds/tests overlapped timing.
+Each fixture retained the same deterministic client/key/input seeds and verified
+its decrypt or CBS CMux result outside timing.
+
+Separate instrumented binaries measured the three first-bucket stages with
+`Instant`. Each case supplied 28 observations; rows below give the range of
+per-case medians over PBS/CBS and both orders, in **microseconds**, not confidence
+intervals. Total includes aggregation, control transform and external product;
+probe/code-generation overhead was not subtracted.
+
+| Backend | First bucket total, general → candidate | First external product, general → candidate |
+| --- | --- | --- |
+| ntt | 195.43–272.11 → 201.03–245.97 | 14.78–16.63 → 9.33–10.32 |
+| rustfft | 193.96–255.06 → 187.99–279.94 | 16.27–17.36 → 10.09–10.37 |
+| tfhe_fft | 192.43–244.61 → 216.49–236.83 | 14.81–16.79 → 9.22–10.15 |
+
+The local external-product reduction is roughly 5–7 µs against a roughly 16 ms
+request: only about 0.03–0.04% of the request's arithmetic budget. Even eliminating
+the entire measured first external product would save only about 0.1% at these
+parameters; the real candidate still needs its body and inverse transform.
+These estimates do not bound unrelated compiler/layout or system effects, and
+must not be reported as measured end-to-end speedups.
+
+Fresh **uninstrumented** binaries then ran general/candidate/candidate/general
+in separate processes: 30 samples, 0.5 s warmup, 2 s measurement target, one
+complete request per iteration. Binary markers and build logs distinguished
+these executables from the stage probes. Means and CI envelopes below are in ms;
+the delta uses the average of the two means. An envelope spans the individual
+95% confidence intervals; it is not a pooled CI. BK means BR→KS, KB means KS→BR.
+
+| Backend / request / order | General means | Candidate means | Delta | General CI envelope → candidate CI envelope |
+| --- | --- | --- | --- | --- |
+| ntt / CBS / BK | 16.354 / 17.172 | 16.792 / 18.085 | +4.0% | [16.254, 18.002] → [16.569, 18.900] |
+| ntt / CBS / KB | 17.683 / 16.640 | 16.862 / 17.227 | -0.7% | [16.443, 18.382] → [16.575, 17.696] |
+| ntt / PBS / BK | 17.019 / 16.606 | 16.625 / 16.595 | -1.2% | [16.308, 17.474] → [16.308, 16.938] |
+| ntt / PBS / KB | 16.420 / 16.519 | 16.644 / 16.735 | +1.3% | [16.248, 16.858] → [16.388, 17.028] |
+| rustfft / CBS / BK | 16.270 / 16.209 | 16.234 / 16.263 | +0.1% | [16.037, 16.496] → [16.072, 16.497] |
+| rustfft / CBS / KB | 16.187 / 16.227 | 16.211 / 16.294 | +0.3% | [15.985, 16.459] → [16.028, 16.476] |
+| rustfft / PBS / BK | 16.089 / 16.151 | 16.480 / 16.337 | +1.8% | [15.928, 16.334] → [16.118, 16.743] |
+| rustfft / PBS / KB | 17.682 / 16.105 | 16.131 / 15.966 | -5.0% | [15.950, 17.921] → [15.792, 16.303] |
+| tfhe_fft / CBS / BK | 15.971 / 15.921 | 15.728 / 15.834 | -1.0% | [15.751, 16.209] → [15.518, 16.060] |
+| tfhe_fft / CBS / KB | 18.805 / 16.022 | 15.899 / 15.940 | -8.6% | [15.858, 21.050] → [15.720, 16.179] |
+| tfhe_fft / PBS / BK | 16.277 / 15.614 | 15.991 / 15.982 | +0.3% | [15.442, 16.638] → [15.798, 16.214] |
+| tfhe_fft / PBS / KB | 17.475 / 15.619 | 15.868 / 15.771 | -4.4% | [15.427, 17.649] → [15.600, 16.103] |
+
+The apparent larger reductions in some KB averages came with substantial baseline
+run-to-run variation; the last general run overlapped or beat the candidate.
+Other requests were neutral or regressed. The candidate therefore does not meet
+the repeatable complete-request criterion. Frequency/background activity was
+uncontrolled and hardware counters remained unavailable; no cache or scheduling
+cause is inferred. A smaller bucket count was not used to amplify the effect.
+
+### Correctness, resources and exit
+
+- 48 uninstrumented captures over all 12 request IDs matched the corresponding
+  key/public-map/input fingerprint and complete PBS/CBS output, including Fourier
+  gadget output. Every fixture also passed its decrypt/CMux oracle.
+- Two temporary focused tests covered u32/u64, N=32, k=1/2, full/truncated bases,
+  nonzero and zero bodies, and synthesized dummy-only/one/three-selector buckets
+  with exponents 0/N−1/N/2N−1. All 864 first-product comparisons were coefficient
+  exact against the general product; the measured pairs allocated zero times.
+  Each case subsequently reused both workspaces for a full product on the new
+  accumulator. The existing raw sparse tests independently checked phase and
+  direct negacyclic rotation; CBS tests checked gadget scales and CMux consumption.
+- Zero initialization and all later digits/carries were checked by scalar and
+  batch decomposition for every valid base-log/retained-level combination under
+  the tested u32/u64 NTT primes and native domains, starting with dirty buffers.
+- Key arrays stayed 441,974,784 bytes for NTT and 589,299,712 for each Fourier
+  engine. Aggregate scratch remained 192 KiB for NTT and 256 KiB for Fourier,
+  with the latter's existing 256 KiB transformed control buffer. These are array
+  footprints, not memory traffic or the complete workspace. All owners and
+  constructors stayed unchanged; no new keygen, construction-peak or RSS
+  measurement is claimed.
+
+The candidate passed 36 tests including the two temporary oracles. After restoring
+the original source and removing the oracles/capture hooks, all-targets check and
+34 existing GLWE backend tests passed (`rustfft,tfhe-fft`, `--lib --tests`). No new
+CI case or unused public product method is retained. No u32/SIMD performance or
+second-CPU acceptance matrix was added once the u64 complete-request test failed.
+First-bucket GLev storage, omitted-row aggregation/transforms and their sampling/
+noise effects remain untested follow-ups; they must not inherit a speedup claim
+from this valid but too small external-product simplification. NTRU was unchanged.
+
+To reproduce, add a temporary body-row product beside the existing NTT/Fourier
+GGSW product, retaining its clearing, carry initialization and inverse transform;
+in sparse BR call it only for bucket zero. Build separate uninstrumented
+`sparse_pbs` and `circuit_bootstrap` binaries for both GLWE backends with
+`--features rustfft,tfhe-fft`, rebuilding restored sources with fresh timestamps.
+Select `u64/.*sparse.*complete$`, pin to CPU 4 and use the Criterion settings above.
+Keep stage probes/capture setup outside measured complete requests and retain
+first-bucket material so the key and noise distribution are unchanged.
