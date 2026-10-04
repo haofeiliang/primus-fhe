@@ -105,7 +105,7 @@ let mut decoded = vec![0; lhs_message.len()];
 let mut pbs = context.evaluator(&server_key)?;
 let key = server_key.circuit_bootstrap_key().unwrap();
 let mut cbs = CircuitBootstrapEvaluator::try_new(
-    pbs.bootstrap_resources(), key.parameters(), key, &input_codec,
+    pbs.bootstrap_resources(), key, &input_codec,
 )?;
 let mut control = cbs.allocate_output();
 let mut selected = context.allocate_accumulator_ciphertext();
@@ -116,7 +116,7 @@ cbs.cmux_to(&control, &lhs, &rhs, &mut selected, pbs.bootstrap_resources_mut());
 ring_client.decrypt_to(&selected, &mut decoded);
 ```
 
-GLWE 两后端均使用上述借用接口。NTRU 两后端同样借用公共资源，但 CBS 构造器直接从 circuit key 取得输出参数，见下文资源复用。
+四个后端均借用公共资源，并从 circuit key 取得默认 CBS 输出参数，见下文资源复用。
 
 `allocate_output` 返回后端原有的 GGSW/NGSW，环密文仍是系数域 GLWE/NTRU。 `cmux_to` 在控制位为 0/1 时选择 lhs/rhs；`external_product_to` 也允许非 bit 的 gadget 控制。控制必须使用此 evaluator 的输出 basis、accumulator 私钥和变换表示， 候选使用该私钥/模数与相同编码。身份及噪声余量由调用方保证；所有密文长度在写输出前检查。
 
@@ -130,7 +130,7 @@ Context 保存不可变参数和变换表，ServerKey 保存求值材料；Evalu
 
 NTRU 两后端使用短借用组合：普通 PBS 拥有公共 BR/EP（Fourier 含 FFT）和返回缓冲，CBS/one-hot 只准备 LUT/投影状态。构造用 `try_new(pbs.bootstrap_resources(), circuit_key, &input_codec)`，执行时最后一个参数传 `pbs.bootstrap_resources_mut()`。Factorized MVB 用 `FactorizedEvaluator::new(&pbs)` 构造，执行时传 `&mut pbs`。仅需 CBS 时可用 `context.bootstrap_resources(br)` 独立准备公共资源。完整用法见 [NTT 资源复用](../primus_tfhe_ntru_ntt/README.zh_CN.md#复用-evaluator)与 [Fourier 资源复用](../primus_tfhe_ntru_fourier/README.zh_CN.md#复用-evaluator)。
 
-GLWE 两后端同样使用短借用。CBS 构造器另传所选输出参数；MVB 用无错误返回的 `FactorizedEvaluator::new(&pbs)`，支持 classic 和 sparse。公共资源在 KS→BR 时保留输入 KS；独立 BR→KS 不分配输出 KS。Fourier 整个流程复用同一 FFT engine。见 [GLWE NTT 资源复用](../primus_tfhe_glwe_ntt/README.zh_CN.md#复用-evaluator)与 [GLWE Fourier 资源复用](../primus_tfhe_glwe_fourier/README.zh_CN.md#复用-evaluator)。
+GLWE 两后端同样使用短借用。独立 CBS 可用 `context.bootstrap_resources_from_server_key(&server)` 准备资源，由工厂选择所需输入 KS；替代输出 basis 使用 `CircuitBootstrapEvaluator::try_with_parameters`。MVB 用无错误返回的 `FactorizedEvaluator::new(&pbs)`，支持 classic 和 sparse。公共资源在 KS→BR 时保留输入 KS；独立 BR→KS 不分配输出 KS。Fourier 整个流程复用同一 FFT engine。见 [GLWE NTT 资源复用](../primus_tfhe_glwe_ntt/README.zh_CN.md#复用-evaluator)与 [GLWE Fourier 资源复用](../primus_tfhe_glwe_fourier/README.zh_CN.md#复用-evaluator)。
 
 所有后端均在构造时准备存储，在线 `_to` 操作不隐式分配。Boolean 的 `try_new` 接受 PBS 所有权，`into_bootstrapper` 可回收。
 

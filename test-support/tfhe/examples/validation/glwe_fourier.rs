@@ -332,16 +332,11 @@ where
 
     // Server: bind the evaluation key and allocate CBS/CMux outputs locally.
     let mut resources = context
-        .bootstrap_resources(
-            server_key.bootstrapping_key(),
-            (context.parameters().pbs_order() == PbsOrder::KeyswitchBootstrap)
-                .then_some(server_key.glwe_key_switching_key()),
-        )
+        .bootstrap_resources_from_server_key(&server_key)
         .unwrap();
     let circuit_key = server_key.circuit_bootstrap_key().unwrap();
     let mut evaluator = primus_tfhe_glwe_fourier::CircuitBootstrapEvaluator::try_new(
         &resources,
-        circuit_key.parameters(),
         circuit_key,
         &input_codec,
     )

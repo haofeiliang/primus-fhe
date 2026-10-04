@@ -47,7 +47,17 @@ Fourier 环只支持 `NativeModulus`；`PowOf2Modulus` 环不受支持。
 
 `ServerKey` 仍是完整 PBS 的便捷组合。高级工作流可分别持有 `BootstrappingKey`、环 KS key 和 `CircuitBootstrapKey`，通过 `ServerKey::new` / `into_parts` 移动组合，不复制密文数组。`KeyGenerator::try_generate_bootstrapping_key` 与已有 sparse 入口只生成 BR；`try_generate_glwe_key_switching_key` 独立生成环 KS；`try_generate_circuit_bootstrap_key(accumulator_secret, parameters, rng)` 只需要累加器秘密。独立生成可能重复转换秘密；成对生成继续复用已准备的表示。
 
-`Evaluator::try_from_parts(context, br, ks)` 绑定完整 PBS/ManyLUT。独立 CBS 先准备 `context.bootstrap_resources(br, input_ks)`，再用 `CircuitBootstrapEvaluator::try_new(&resources, parameters, circuit_key, &input_codec)`；默认输出 basis 传 `circuit_key.parameters()`。BR→KS 的 input KS 可为 `None`，不分配输出 KS；KS→BR 必须提供 `Some(ks)`，并保留输入阶段。两种方式均支持 classic/sparse。布局、basis 和模数检查不证明实际秘密或变换身份。
+已有 `ServerKey`、仅需独立 CBS 时，按需准备公共资源：
+
+```rust,ignore
+let mut resources = context.bootstrap_resources_from_server_key(&server)?;
+let circuit_key = server.circuit_bootstrap_key().unwrap(); // 生成时传入 Some(cbs_config)。
+let mut cbs = CircuitBootstrapEvaluator::try_new(&resources, circuit_key, &input_codec)?;
+```
+
+工厂自动为 KS→BR 选择输入 KS；BR→KS 不分配输出 KS 工作区。`try_new` 使用 circuit key 自带参数。已有 PBS evaluator 时，直接传 `pbs.bootstrap_resources()`，后续 CBS 调用借用 `pbs.bootstrap_resources_mut()`。
+
+独立生成材料时，使用 `context.bootstrap_resources(br, input_ks)`：BR→KS 可传 `None`，KS→BR 必须传 `Some(ks)`；独立 CBS 不要求普通返回密钥。`Evaluator::try_from_parts(context, br, ks)` 绑定完整 PBS/ManyLUT。两种入口均支持 classic/sparse。布局、basis 和模数检查不证明实际秘密或变换身份。
 
 `Evaluator::try_from_resources(resources, ks)` 组合普通 PBS，只有 BR→KS 需要分配缺少的输出阶段。`try_rebind_key_switching_key(ks)` 用兼容材料复用活跃 KS 阶段的缓冲，失败保留旧绑定。CBS/MVB 接受同一 context 创建的任意资源实例，在写入前检查；调用方仍须配对秘密，可变资源借用必须保留所属 PBS 的绑定和 FFT table 实例。
 
@@ -82,7 +92,7 @@ let mut evaluator = context.evaluator(&server)?;
 
 输入编码与交错容量在 evaluator 绑定时检查，兼容程序可以用同一套密钥选择另一明文模数。
 
-输出为 accumulator 秘密下的 `FourierGgsw`。密钥绑定输出布局及 trace/scheme-switch basis； `try_new` 可以传入层数相同的另一输出 basis。 须对最小输出 gadget 尺度预算 Native trace halving 和 FFT 误差。
+输出为 accumulator 秘密下的 `FourierGgsw`。密钥绑定输出布局及 trace/scheme-switch basis； `try_with_parameters(&resources, parameters, circuit_key, &input_codec)` 显式选择层数相同的另一输出 basis。 须对最小输出 gadget 尺度预算 Native trace halving 和 FFT 误差。
 
 独立生成组件时须配对秘密并使用同一变换表示，形状检查不能证明身份。 输入/输出与消费要求见[共享 CBS 契约](../primus_tfhe/README.zh_CN.md#cbs-输出与消费)及 [家族 CBS 说明](../primus_tfhe_glwe/README.zh_CN.md#boolean-与-cbs)。
 

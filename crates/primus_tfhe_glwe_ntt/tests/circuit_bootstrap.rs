@@ -119,11 +119,7 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
             .unwrap_or_else(|| classic_server_key.circuit_bootstrap_key().unwrap());
         let circuit_parameters = circuit_key.parameters();
         let mut resources = context
-            .bootstrap_resources(
-                server_key.bootstrapping_key(),
-                (order == PbsOrder::KeyswitchBootstrap)
-                    .then_some(server_key.glwe_key_switching_key()),
-            )
+            .bootstrap_resources_from_server_key(server_key)
             .unwrap();
         let main_secret =
             NttGlweSecretKey::from_coeff_secret_key(client_key.glwe_secret_key(), context.table());
@@ -188,13 +184,8 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
                 .unwrap()
                 .encrypt_padded(1, &mut rng)
                 .unwrap();
-            let mut other = CircuitBootstrapEvaluator::try_new(
-                &resources,
-                circuit_parameters,
-                circuit_key,
-                &other_codec,
-            )
-            .unwrap();
+            let mut other =
+                CircuitBootstrapEvaluator::try_new(&resources, circuit_key, &other_codec).unwrap();
             let control = other.circuit_bootstrap(input.as_view(), &mut resources);
             let mut selected = context.allocate_accumulator_ciphertext();
             other.cmux_to(
@@ -213,10 +204,7 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
         ))
         .unwrap();
         assert!(matches!(
-            other_context.bootstrap_resources(
-                server_key.bootstrapping_key(),
-                Some(server_key.glwe_key_switching_key()),
-            ),
+            other_context.bootstrap_resources_from_server_key(server_key),
             Err(TfheEvaluationError::IncompatibleBlindRotationKey)
         ));
         let incompatible_trace = GgswParameters::with_glwe_params(
@@ -236,7 +224,7 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
         )
         .unwrap();
         assert!(matches!(
-            CircuitBootstrapEvaluator::try_new(
+            CircuitBootstrapEvaluator::try_with_parameters(
                 &resources,
                 &incompatible_parameters,
                 circuit_key,
@@ -274,12 +262,16 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
         } else {
             circuit_parameters
         };
-        let mut evaluator = CircuitBootstrapEvaluator::try_new(
-            &resources,
-            circuit_parameters,
-            circuit_key,
-            &input_codec,
-        )
+        let mut evaluator = if order == PbsOrder::KeyswitchBootstrap {
+            CircuitBootstrapEvaluator::try_with_parameters(
+                &resources,
+                circuit_parameters,
+                circuit_key,
+                &input_codec,
+            )
+        } else {
+            CircuitBootstrapEvaluator::try_new(&resources, circuit_key, &input_codec)
+        }
         .unwrap();
         // Standalone CBS has exactly the input resources required by its order.
         let mut control = evaluator.allocate_output();
@@ -318,11 +310,7 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
             TfheContext::<_, U64NttTable>::try_from_parameters(context.parameters().clone())
                 .unwrap();
         let mut foreign_resources = foreign_context
-            .bootstrap_resources(
-                server_key.bootstrapping_key(),
-                (order == PbsOrder::KeyswitchBootstrap)
-                    .then_some(server_key.glwe_key_switching_key()),
-            )
+            .bootstrap_resources_from_server_key(server_key)
             .unwrap();
         control.as_mut().fill(7);
         assert!(

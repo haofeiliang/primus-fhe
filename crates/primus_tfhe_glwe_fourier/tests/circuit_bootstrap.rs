@@ -128,6 +128,14 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
         generator.try_generate_server_key(&client, Some(circuit_config()), &mut rng)
     }
     .unwrap();
+    // The bundle factory must allocate exactly the resources needed by independently
+    // bound material: no ordinary return scratch or extra FFT engine for standalone CBS.
+    let (bundled_resources, bundled_allocation) = allocations::measure(|| {
+        context
+            .bootstrap_resources_from_server_key(&server)
+            .unwrap()
+    });
+    drop(bundled_resources);
     let ((blind_rotation, key_switching, circuit), split) =
         allocations::measure(|| server.into_parts());
     assert_eq!(
@@ -136,12 +144,19 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
     );
     let key = circuit.as_ref().unwrap();
     let parameters = key.parameters();
-    let mut resources = context
-        .bootstrap_resources(
-            &blind_rotation,
-            (order == PbsOrder::KeyswitchBootstrap).then_some(&key_switching),
-        )
-        .unwrap();
+    let (mut resources, independent_allocation) = allocations::measure(|| {
+        context
+            .bootstrap_resources(
+                &blind_rotation,
+                (order == PbsOrder::KeyswitchBootstrap).then_some(&key_switching),
+            )
+            .unwrap()
+    });
+    assert_eq!(bundled_allocation.count, independent_allocation.count);
+    assert_eq!(
+        bundled_allocation.allocated_bytes,
+        independent_allocation.allocated_bytes
+    );
     // GLWE scheme switching binds the output layout, not its exact gadget basis.
     let alternate = CircuitBootstrapParameters::try_new(
         context.parameters(),
@@ -218,8 +233,7 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
             .unwrap()
             .encrypt_padded(1, &mut rng)
             .unwrap();
-        let mut other =
-            CircuitBootstrapEvaluator::try_new(&resources, parameters, key, &other_codec).unwrap();
+        let mut other = CircuitBootstrapEvaluator::try_new(&resources, key, &other_codec).unwrap();
         let control = other.circuit_bootstrap(input.as_view(), &mut resources);
         let mut selected = context.allocate_accumulator_ciphertext();
         other.cmux_to(
@@ -248,8 +262,12 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
     } else {
         parameters
     };
-    let mut evaluator =
-        CircuitBootstrapEvaluator::try_new(&resources, parameters, key, &input_codec).unwrap();
+    let mut evaluator = if order == PbsOrder::KeyswitchBootstrap {
+        CircuitBootstrapEvaluator::try_with_parameters(&resources, parameters, key, &input_codec)
+    } else {
+        CircuitBootstrapEvaluator::try_new(&resources, key, &input_codec)
+    }
+    .unwrap();
     // Standalone resources contain input KS only when the selected order needs it.
     let mut control = evaluator.allocate_output();
     let mut selected = context.allocate_accumulator_ciphertext();
@@ -436,7 +454,7 @@ fn evaluator_rejects_resource_mismatches_and_checks_shapes_before_writes() {
         .try_generate_sparse_server_key(&client, 3, 4, None, &mut rng)
         .unwrap();
     let mut resources = context
-        .bootstrap_resources(server.bootstrapping_key(), None)
+        .bootstrap_resources_from_server_key(&server)
         .unwrap();
     // Keep level counts equal for basis mismatches, so layout checks cannot mask them.
     for (output, trace, scheme_switch) in [
@@ -480,7 +498,12 @@ fn evaluator_rejects_resource_mismatches_and_checks_shapes_before_writes() {
             CircuitBootstrapParameters::try_new(context.parameters(), output, trace, scheme_switch)
                 .unwrap();
         assert!(matches!(
-            CircuitBootstrapEvaluator::try_new(&resources, &foreign, &key, &input_codec),
+            CircuitBootstrapEvaluator::try_with_parameters(
+                &resources,
+                &foreign,
+                &key,
+                &input_codec
+            ),
             Err(Error::IncompatibleCircuitBootstrapKey)
         ));
     }
@@ -496,26 +519,20 @@ fn evaluator_rejects_resource_mismatches_and_checks_shapes_before_writes() {
     )
     .unwrap();
     assert!(matches!(
-        foreign_context.bootstrap_resources(
-            server.bootstrapping_key(),
-            Some(server.glwe_key_switching_key())
-        ),
+        foreign_context.bootstrap_resources_from_server_key(&server),
         Err(Error::IncompatibleBlindRotationKey)
     ));
     // Message t belongs to the program, so both encodings bind the same CBS key.
     let other_codec = primus_encoding::RoundedCodec::new(8, context.parameters().cipher_modulus());
-    assert!(
-        CircuitBootstrapEvaluator::try_new(&resources, &parameters, &key, &other_codec).is_ok()
-    );
+    assert!(CircuitBootstrapEvaluator::try_new(&resources, &key, &other_codec).is_ok());
 
-    let mut evaluator =
-        CircuitBootstrapEvaluator::try_new(&resources, &parameters, &key, &input_codec).unwrap();
+    let mut evaluator = CircuitBootstrapEvaluator::try_new(&resources, &key, &input_codec).unwrap();
     // Equal parameters do not identify an FFT table. Reject a foreign resource
     // owner before writing even when its geometry and keys are compatible.
     let foreign_context =
         TfheContext::<_, RustFftTable>::from_parameters(context.parameters().clone());
     let mut foreign_resources = foreign_context
-        .bootstrap_resources(server.bootstrapping_key(), None)
+        .bootstrap_resources_from_server_key(&server)
         .unwrap();
     let input = context.allocate_lwe_ciphertext();
     let marker = Complex64::new(7.0, -3.0);

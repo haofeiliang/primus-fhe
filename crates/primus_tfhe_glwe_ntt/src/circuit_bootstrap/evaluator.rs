@@ -41,8 +41,32 @@ where
     T: FheUint,
     Table: MonomialNttTable<ValueT = T>,
 {
+    /// Prepares CBS using the circuit key's output parameters.
+    /// Common resources may come from a PBS evaluator or be prepared independently;
+    /// they are borrowed only for construction and each online operation.
+    /// Both classic and sparse BR and both PBS orders are supported.
+    ///
+    /// Use [`Self::try_with_parameters`] to select a different compatible output basis.
+    ///
+    /// # Correctness
+    /// Inherits [`Self::try_with_parameters`]'s secret, representation and noise requirements.
+    pub fn try_new(
+        resources: &BootstrapResources<'a, T, Table>,
+        circuit_key: &'a CircuitBootstrapKey<T>,
+        input_codec: &RoundedCodec<T, BarrettModulus<T>>,
+    ) -> Result<Self, TfheEvaluationError> {
+        Self::try_with_parameters(
+            resources,
+            circuit_key.parameters(),
+            circuit_key,
+            input_codec,
+        )
+    }
+
     /// Checks CBS material, compiles the gadget identity LUT and allocates projection buffers.
-    /// `parameters` may select another compatible output basis with the same layout.
+    /// `parameters` may select another output basis with the same layout; trace and
+    /// scheme-switch parameters must still match the circuit key. Prefer [`Self::try_new`]
+    /// when using the key's original output basis.
     /// Common resources are borrowed only for construction and each online operation.
     /// Both classic and sparse BR and both PBS orders are supported.
     ///
@@ -50,7 +74,7 @@ where
     /// CBS and resource keys must use the same paired secrets and this context's
     /// NTT representation. Compatibility checks do not establish these identities
     /// or a noise margin; see [`primus_glwe::NttGlweSchemeSwitchKey::apply_to`].
-    pub fn try_new(
+    pub fn try_with_parameters(
         resources: &BootstrapResources<'a, T, Table>,
         parameters: &'a CircuitBootstrapParameters<T>,
         circuit_key: &'a CircuitBootstrapKey<T>,

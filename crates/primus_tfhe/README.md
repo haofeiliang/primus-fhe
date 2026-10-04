@@ -105,7 +105,7 @@ let mut decoded = vec![0; lhs_message.len()];
 let mut pbs = context.evaluator(&server_key)?;
 let key = server_key.circuit_bootstrap_key().unwrap();
 let mut cbs = CircuitBootstrapEvaluator::try_new(
-    pbs.bootstrap_resources(), key.parameters(), key, &input_codec,
+    pbs.bootstrap_resources(), key, &input_codec,
 )?;
 let mut control = cbs.allocate_output();
 let mut selected = context.allocate_accumulator_ciphertext();
@@ -116,7 +116,7 @@ cbs.cmux_to(&control, &lhs, &rhs, &mut selected, pbs.bootstrap_resources_mut());
 ring_client.decrypt_to(&selected, &mut decoded);
 ```
 
-Both GLWE backends use the borrowing calls above. The two NTRU backends also borrow common resources, but their CBS constructor takes the output parameters from the circuit key; see resource reuse below.
+All four backends borrow common resources and take the default CBS output parameters from the circuit key; see resource reuse below.
 
 `allocate_output` returns the backend's raw GGSW/NGSW, and ring ciphertexts remain coefficient-domain GLWE/NTRU values. `cmux_to` selects `lhs` for zero and `rhs` for one; `external_product_to` also accepts non-bit gadget controls. Controls must use this evaluator's output basis, accumulator secret and transform representation. Candidates must use that secret/modulus and a common encoding. These identities and the noise margin remain caller contracts; every ciphertext length is checked before output writes.
 
@@ -130,7 +130,7 @@ A context owns immutable parameters/tables; the server key owns evaluation mater
 
 Both NTRU backends compose short borrows: ordinary PBS owns common BR/EP (including FFT for Fourier) and return buffers, while CBS/one-hot prepares only LUT/projection state. Construct with `try_new(pbs.bootstrap_resources(), circuit_key, &input_codec)` and pass `pbs.bootstrap_resources_mut()` as the final execution argument. Construct factorized MVB with `FactorizedEvaluator::new(&pbs)` and pass `&mut pbs` for execution. CBS-only callers can prepare common resources independently with `context.bootstrap_resources(br)`. See [NTT resource reuse](../primus_tfhe_ntru_ntt/README.md#reusing-evaluators) and [Fourier resource reuse](../primus_tfhe_ntru_fourier/README.md#reusing-evaluators).
 
-Both GLWE backends use short borrows too. Their CBS constructor additionally takes the chosen output parameters; MVB uses infallible `FactorizedEvaluator::new(&pbs)`, supporting classic and sparse keys. Common resources keep input KS for KS→BR; standalone BR→KS omits output KS. Fourier reuses the same FFT engine throughout. See [GLWE NTT resource reuse](../primus_tfhe_glwe_ntt/README.md#reusing-evaluators) and [GLWE Fourier resource reuse](../primus_tfhe_glwe_fourier/README.md#reusing-evaluators).
+Both GLWE backends use short borrows too. Standalone CBS can prepare resources with `context.bootstrap_resources_from_server_key(&server)`; the factory selects the required input KS. Use `CircuitBootstrapEvaluator::try_with_parameters` for an alternate output basis; MVB uses infallible `FactorizedEvaluator::new(&pbs)`, supporting classic and sparse keys. Common resources keep input KS for KS→BR; standalone BR→KS omits output KS. Fourier reuses the same FFT engine throughout. See [GLWE NTT resource reuse](../primus_tfhe_glwe_ntt/README.md#reusing-evaluators) and [GLWE Fourier resource reuse](../primus_tfhe_glwe_fourier/README.md#reusing-evaluators).
 
 All backends prepare storage at construction; online `_to` operations never allocate implicitly. Boolean accepts PBS ownership through `try_new` and recovers it with `into_bootstrapper`.
 

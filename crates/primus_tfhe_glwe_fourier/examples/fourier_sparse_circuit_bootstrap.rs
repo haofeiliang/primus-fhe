@@ -124,20 +124,11 @@ fn main() {
 
     // Server: receive the encrypted candidates; allocate the control and result.
     let mut resources = context
-        .bootstrap_resources(
-            server_key.bootstrapping_key(),
-            (context.parameters().pbs_order() == PbsOrder::KeyswitchBootstrap)
-                .then_some(server_key.glwe_key_switching_key()),
-        )
+        .bootstrap_resources_from_server_key(&server_key)
         .unwrap();
     let circuit_key = server_key.circuit_bootstrap_key().unwrap();
-    let mut cbs = CircuitBootstrapEvaluator::try_new(
-        &resources,
-        circuit_key.parameters(),
-        circuit_key,
-        &input_codec,
-    )
-    .unwrap();
+    let mut cbs =
+        CircuitBootstrapEvaluator::try_new(&resources, circuit_key, &input_codec).unwrap();
     let mut control = cbs.allocate_output();
     let mut selected = context.allocate_accumulator_ciphertext();
 

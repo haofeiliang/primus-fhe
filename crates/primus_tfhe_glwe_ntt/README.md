@@ -45,7 +45,17 @@ Ordinary/interleaved `Evaluator` owns common `BootstrapResources` and its return
 
 `ServerKey` remains the convenient complete PBS bundle. Advanced workflows can own `BootstrappingKey`, the ring KS key and `CircuitBootstrapKey` separately; `ServerKey::new` / `into_parts` move them without copying ciphertext arrays. `KeyGenerator::try_generate_bootstrapping_key` and the existing sparse entry generate only BR; `try_generate_glwe_key_switching_key` generates ring KS separately; `try_generate_circuit_bootstrap_key(accumulator_secret, parameters, rng)` needs only the accumulator secret. Separate generation may transform secrets again; paired generation retains its existing transform reuse.
 
-`Evaluator::try_from_parts(context, br, ks)` binds complete PBS/ManyLUT. For standalone CBS, prepare `context.bootstrap_resources(br, input_ks)`, then `CircuitBootstrapEvaluator::try_new(&resources, parameters, circuit_key, &input_codec)`. Pass `circuit_key.parameters()` for the default output basis. BR→KS accepts `None` for input KS and allocates no output KS; KS→BR requires `Some(ks)` and retains that input stage. Both support classic/sparse. Layout, basis and modulus checks do not establish actual secret or transform identity.
+For standalone CBS with an existing `ServerKey`, prepare only the required common resources:
+
+```rust,ignore
+let mut resources = context.bootstrap_resources_from_server_key(&server)?;
+let circuit_key = server.circuit_bootstrap_key().unwrap(); // Generated with Some(cbs_config).
+let mut cbs = CircuitBootstrapEvaluator::try_new(&resources, circuit_key, &input_codec)?;
+```
+
+The factory selects input KS for KS→BR and omits output-KS scratch for BR→KS. `try_new` uses the circuit key's parameters. If PBS is already prepared, pass `pbs.bootstrap_resources()` instead; subsequent CBS calls borrow `pbs.bootstrap_resources_mut()`.
+
+For independently generated material, use `context.bootstrap_resources(br, input_ks)`: BR→KS accepts `None`, while KS→BR requires `Some(ks)`. Standalone CBS does not require an ordinary return key. `Evaluator::try_from_parts(context, br, ks)` binds complete PBS/ManyLUT. Both entries support classic/sparse. Layout, basis and modulus checks do not establish actual secret or transform identity.
 
 `Evaluator::try_from_resources(resources, ks)` assembles ordinary PBS: only BR→KS allocates a missing output stage. `try_rebind_key_switching_key(ks)` reuses the active KS stage's buffers with compatible material; failure leaves its binding intact. CBS/MVB accept any resource instance from the same context, checked before writes. Callers must retain paired secrets, and mutable resource borrows must preserve the owning PBS binding.
 
@@ -80,7 +90,7 @@ The [sparse CBS example](examples/ntt_sparse_circuit_bootstrap.rs) shows the fix
 
 Input encoding and interleaved capacity are checked when binding the evaluator, so compatible programs can reuse the keys with another `t`.
 
-The output is `NttGgsw` under the accumulator secret. The key binds output layout and trace/scheme-switch bases; `try_new` can use another output basis with the same level count.
+The output is `NttGgsw` under the accumulator secret. The key binds output layout and trace/scheme-switch bases; `try_with_parameters(&resources, parameters, circuit_key, &input_codec)` explicitly selects another output basis with the same level count.
 
 Standalone component generation must use paired secrets and the same transform representation; shape checks cannot prove identity. See [CBS input/output and consumption](../primus_tfhe/README.md#cbs-output-and-consumption) and the [family CBS contract](../primus_tfhe_glwe/README.md#boolean-and-cbs).
 

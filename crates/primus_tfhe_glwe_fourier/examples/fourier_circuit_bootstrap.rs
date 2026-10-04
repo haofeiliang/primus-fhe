@@ -144,13 +144,8 @@ fn main() {
     let mut resources = context
         .bootstrap_resources(&blind_rotation, input_key_switching.as_ref())
         .unwrap();
-    let mut cbs = CircuitBootstrapEvaluator::try_new(
-        &resources,
-        circuit_key.parameters(),
-        &circuit_key,
-        &input_codec,
-    )
-    .unwrap();
+    let mut cbs =
+        CircuitBootstrapEvaluator::try_new(&resources, &circuit_key, &input_codec).unwrap();
     let mut control = cbs.allocate_output();
     let mut selected = context.allocate_accumulator_ciphertext();
 

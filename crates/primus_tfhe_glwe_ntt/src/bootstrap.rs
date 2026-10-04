@@ -8,7 +8,7 @@ use primus_tfhe::TfheEvaluationError;
 use primus_tfhe_glwe::PbsOrder;
 
 use crate::{
-    BootstrappingKey, Lwe, NttGlweBlindRotationWorkspace, NttGlweBootstrappingKey,
+    BootstrappingKey, Lwe, NttGlweBlindRotationWorkspace, NttGlweBootstrappingKey, ServerKey,
     SparseGlweBlindRotationWorkspace, SparseGlweBootstrappingKey, TfheContext,
 };
 
@@ -237,6 +237,23 @@ where
     T: FheUint,
     Table: MonomialNttTable<ValueT = T>,
 {
+    /// Prepares common resources from a complete PBS key bundle.
+    /// Selects input KS only for KS→BR; BR→KS borrows only the BR key and allocates
+    /// no output-KS scratch. For independently generated material, use
+    /// [`Self::bootstrap_resources`]. CBS material is bound separately by its evaluator.
+    ///
+    /// # Correctness
+    /// Inherits [`BootstrapResources::try_new`]'s secret and transform requirements.
+    pub fn bootstrap_resources_from_server_key<'a>(
+        &'a self,
+        server_key: &'a ServerKey<T>,
+    ) -> Result<BootstrapResources<'a, T, Table>, TfheEvaluationError> {
+        let input_key_switching_key = (self.parameters().pbs_order()
+            == PbsOrder::KeyswitchBootstrap)
+            .then_some(server_key.glwe_key_switching_key());
+        self.bootstrap_resources(server_key.bootstrapping_key(), input_key_switching_key)
+    }
+
     /// Prepares BR/EP resources and the input KS required by KS→BR.
     /// Inherits [`BootstrapResources::try_new`]'s material requirements.
     pub fn bootstrap_resources<'a>(

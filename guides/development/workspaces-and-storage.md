@@ -300,8 +300,10 @@ complete PBS per call, without a nested evaluator or recovery protocol.
 | Fourier component product | MVB state | MVB state | Overwritten and inverse-transformed for each component |
 | FFT engine and table-bound scratch (Fourier only) | `BootstrapResources` | `BootstrapResources` | Input/output KS, BR, trace, scheme switch, CMux and MVB |
 
-`context.bootstrap_resources(br, input_ks)` checks material before allocation;
-only KS→BR requires `Some(ks)`. `Evaluator::try_from_resources(resources, ks)`
+`context.bootstrap_resources_from_server_key(&server)` selects the required
+input KS from a complete bundle without preparing ordinary return scratch.
+Independent material uses `context.bootstrap_resources(br, input_ks)`;
+only KS→BR requires `Some(ks)`. Both check material before allocation. `Evaluator::try_from_resources(resources, ks)`
 adds output KS for BR→KS or rebinds the existing input KS for KS→BR.
 `try_rebind_key_switching_key` validates and reuses either active stage's buffers;
 failure preserves its prior binding. PBS resource borrows must preserve the
@@ -311,7 +313,9 @@ GLWE CBS/MVB state does not cache BR controls. Its public borrowing boundary
 checks the same context, allowing independently prepared classic/sparse resources
 with that context; key generation and callers must still pair actual secrets.
 There is no extra identity token or general backend trait. CBS accepts independent
-compatible output parameters because its scheme-switch key binds output layout.
+compatible output parameters through `CircuitBootstrapEvaluator::try_with_parameters`
+because its scheme-switch key binds output layout. The default `try_new` uses
+the circuit key's parameters, including when borrowing an existing PBS evaluator's resources.
 EP buffers use existing `with_rebound` to change decomposition levels while
 preserving GLWE geometry, then restore their layout on return or unwind. No
 allocation, extra transform or coefficient-loop validation was added. Fourier

@@ -177,12 +177,12 @@ GLWE 复用已有独立 `BootstrappingKey::{Classic,Sparse}` 和底层环 KS own
 | --- | --- | --- |
 | `Evaluator::try_from_parts` | BR + 环 KS | BR 输入分布/维数、N/q/basis，以及 KS 输入/输出布局与 basis/q |
 | `BootstrapResources::try_new` | BR + 按顺序选择的 input KS | KS→BR 必需输入 KS；BR→KS 可省略；在分配前检查材料 |
-| CBS `try_new` | 公共资源 + 独立 output parameters + CBS | 参数/key/layout、input codec/ManyLUT 容量 |
+| CBS `try_new` / `try_with_parameters` | 公共资源 + CBS；后者显式提供替代 output parameters | 参数/key/layout、input codec/ManyLUT 容量 |
 | MVB `new(&pbs)` | 已绑定 PBS | 保留已有 classic/sparse 与两种顺序支持 |
 
 所有 GLWE 绑定均支持 classic binary/ternary 和 sparse fixed-weight binary。BR 与环 KS 不兼容分别返回 `IncompatibleBlindRotationKey` 和 `IncompatibleGlweKeySwitchingKey`，不再用笼统的 `IncompatibleServerKey`。NTT KS basis 包含模数；Fourier 固定 Native。材料元数据不证明实际秘密或变换身份。
 
-ServerKey 的可选 CBS 材料仍使用 `Option` 表示；四个后端的 CBS 操作构造器直接要求 circuit key 引用。私有绑定集中可用材料与所选 output parameters；NTRU CBS/one-hot 支持 classic/sparse，始终使用 circuit key 的完整 output basis。GLWE CBS 支持 classic 与 sparse，`try_new` 验证调用方提供的参数、trace basis 和 scheme-switch layout，可复用兼容的独立 output basis。构造后保存借用的绑定，在线操作不再取得可选材料。布局及 basis 一致仍不证明秘密或变换表示身份。
+ServerKey 的可选 CBS 材料仍使用 `Option` 表示；四个后端的 CBS 操作构造器直接要求 circuit key 引用。私有绑定集中可用材料与所选 output parameters；NTRU CBS/one-hot 支持 classic/sparse，始终使用 circuit key 的完整 output basis。GLWE CBS 支持 classic 与 sparse，`try_new` 使用 circuit key 自带参数；`try_with_parameters` 验证显式提供的参数、trace basis 和 scheme-switch layout，可复用兼容的独立 output basis。已有完整服务端材料时，`context.bootstrap_resources_from_server_key` 自动选择 order 所需的 input KS，独立 CBS 不分配普通返回工作区；独立生成材料仍通过 `bootstrap_resources(br, input_ks)` 绑定。构造后保存借用的绑定，在线操作不再取得可选材料。布局及 basis 一致仍不证明秘密或变换表示身份。
 
 入口：NTRU [NTT 控制视图](../../crates/primus_tfhe_ntru_ntt/src/key/classic.rs) / [Fourier 控制视图](../../crates/primus_tfhe_ntru_fourier/src/key/classic.rs)，各后端 `circuit_bootstrap/key.rs` 的私有绑定与 `circuit_bootstrap/evaluator.rs` 的公开构造器。高精度 LUT 按编译计划直接绑定提升 NLEV 与其参数，无 Lift 时不需要；返回密钥与 q 由家族 `LweReturnEvaluator` 绑定，缓冲由消费者独立持有，批次协议位于 `LweReturnBatchWorkspace`，NTT/Fourier evaluator 各自选择返回调度。
 

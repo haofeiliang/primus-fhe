@@ -75,21 +75,10 @@ where
             let rhs = ring.encrypt(&[T::ONE; N], &mut rng);
             (context, client, server, input, lhs, rhs)
         });
-        let mut resources = context
-            .bootstrap_resources(
-                server.bootstrapping_key(),
-                (context.parameters().pbs_order() == PbsOrder::KeyswitchBootstrap)
-                    .then_some(server.glwe_key_switching_key()),
-            )
-            .unwrap();
+        let mut resources = context.bootstrap_resources_from_server_key(server).unwrap();
         let circuit_key = server.circuit_bootstrap_key().unwrap();
-        let mut evaluator = CircuitBootstrapEvaluator::try_new(
-            &resources,
-            circuit_key.parameters(),
-            circuit_key,
-            &input_codec,
-        )
-        .unwrap();
+        let mut evaluator =
+            CircuitBootstrapEvaluator::try_new(&resources, circuit_key, &input_codec).unwrap();
         let mut output = evaluator.allocate_output();
         if !verified {
             evaluator.circuit_bootstrap_to(input.as_view(), &mut output, &mut resources);
