@@ -11,7 +11,6 @@
 
 | 类型 | 表示与布局 | 主要操作 |
 | --- | --- | --- |
-| `ArrayBase<S>` | 无符号整数的一维平坦数组 | 逐元素模算术与 butterfly helper |
 | `Polynomial<S>` | 单个模数下按幂次递增排列的 `N` 个系数 | 加、减、取负、scalar/factor 乘法、负循环单项式、朴素乘法、求值和采样 |
 | `NttPolynomial<S>` | 单个模数下的 `N` 个点值；顺序由 NTT context 定义 | 逐点算术、融合乘加、逆元和 uniform 采样 |
 | `CrtPolynomial<S>` | modulus-major 系数数据：每个模数对应一个连续的 `N` 系数多项式 | 分量算术、scalar/factor 操作、负循环单项式以及共享的 uniform-binary/sparse-ternary/Gaussian 采样 |
@@ -20,6 +19,11 @@
 | `FourierPolynomial<S>` | 独立复数求值；顺序由 Fourier 后端定义 | 逐点加、减、取负、乘法、融合乘加和 scalar 乘法 |
 
 `primus_poly` 负责保存数值并实现算术，不拥有变换表，也不替调用方选择表示。[`primus_ntt`](../primus_ntt) 负责系数与 NTT、CRT 与 DCRT 表示之间的转换；[`primus_fft`](../primus_fft) 提供 Fourier 变换。
+
+平坦标量缓冲使用 slice 和 [`primus_reduce`](../primus_reduce/README.zh_CN.md)
+的 `Reduce*Slice` trait，例如 `modulus.reduce_add_slice_assign(lhs, rhs)`。
+多项式和密文 wrapper 保留各自表示的运算；DCRT 逆 butterfly 继续通过
+`DcrtPolynomial::butterfly_mul_to` 和 `butterfly_mul_factor_to` 调用。
 
 ## 示例
 
@@ -58,7 +62,7 @@ Raw wrapper 使用 `len()` / `is_empty()` 查看完整存储：
 
 ## 存储与所有权
 
-大多数多项式类型都对 backing store `S` 泛型化；`S` 实现 [`primus_data`](../primus_data/README.zh_CN.md) 提供的连续存储 trait。常用的系数、NTT、Fourier 和数组表示提供了 `Vec` owned 别名与 slice borrowed 别名。CRT、DCRT 和多 limb wrapper 同样可以通过泛型类型构造在 owned 或 borrowed 存储之上。
+大多数多项式类型都对 backing store `S` 泛型化；`S` 实现 [`primus_data`](../primus_data/README.zh_CN.md) 提供的连续存储 trait。常用的系数、NTT 和 Fourier 表示提供了 `Vec` owned 别名与 slice borrowed 别名。CRT、DCRT 和多 limb wrapper 同样可以通过泛型类型构造在 owned 或 borrowed 存储之上。
 
 `as_view()` 和 `as_mut_view()` 借用完整存储，保持多项式的表示类型。对应的 `From<&Wrapper<S>>` / `From<&mut Wrapper<S>>` 转换同样返回 slice wrapper，不复制元素。`into_inner()` 消耗 wrapper 并返回原存储，包括借用或对齐存储；它不分配，也不会将借用变为拥有型容器。
 

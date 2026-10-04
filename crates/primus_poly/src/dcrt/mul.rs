@@ -3,7 +3,7 @@ use primus_data::{Data, DataMut};
 use primus_factor::{Factor, FactorMul, FactorSliceOps};
 use primus_integer::FheUint;
 use primus_modulus::common::compact;
-use primus_reduce::{ReduceMulAddSlice, ReduceMulSlice};
+use primus_reduce::{ReduceAdd, ReduceMul, ReduceMulAddSlice, ReduceMulSlice, ReduceSub};
 
 #[cfg(feature = "simd")]
 use primus_factor::SimdFactorMul;
@@ -12,9 +12,27 @@ use primus_integer::SimdArray;
 
 use super::DcrtPolynomial;
 
+// Both results depend on the original lhs. Save it before updating the sum,
+// then overwrite output with the weighted difference; no scratch is required.
+#[inline]
+fn butterfly_mul_slice<T, M>(lhs: &mut [T], rhs: &[T], w: &[T], output: &mut [T], modulus: M)
+where
+    T: FheUint,
+    M: Copy + ReduceAdd<T, Output = T> + ReduceSub<T, Output = T> + ReduceMul<T, Output = T>,
+{
+    debug_assert_eq!(lhs.len(), rhs.len());
+    debug_assert_eq!(lhs.len(), w.len());
+    debug_assert_eq!(lhs.len(), output.len());
+    izip!(lhs, rhs, w, output).for_each(|(a, &s, &w, b)| {
+        let a_orig = *a;
+        *a = modulus.reduce_add(a_orig, s);
+        *b = modulus.reduce_mul(modulus.reduce_sub(a_orig, s), w);
+    });
+}
+
 // Writes (a+s, (a-s)*w) modulo the current CRT limb's modulus. Preserve the
 // original a for the difference; the two outputs are not independent updates.
-fn slice_butterfly<T, F>(a: &mut [T], s: &[T], w: &[F], b: &mut [T], modulus: T)
+fn butterfly_mul_factor_slice<T, F>(a: &mut [T], s: &[T], w: &[F], b: &mut [T], modulus: T)
 where
     T: FheUint,
     F: Copy + FactorMul<T>,
@@ -35,7 +53,7 @@ where
 // then delegate the tail to the same scalar butterfly used without SIMD.
 #[cfg(feature = "simd")]
 #[allow(clippy::chunks_exact_to_as_chunks)]
-fn simd_butterfly<T, F>(a: &mut [T], s: &[T], w: &[F], b: &mut [T], modulus: T)
+fn simd_butterfly_mul_factor_slice<T, F>(a: &mut [T], s: &[T], w: &[F], b: &mut [T], modulus: T)
 where
     T: FheUint,
     F: SimdFactorMul<T>,
@@ -69,7 +87,7 @@ where
         *b = wf.factor_mul_modulo(diff, m).to_array();
     }
 
-    slice_butterfly(a_rem, s_rem, w_rem, out_rem, modulus);
+    butterfly_mul_factor_slice(a_rem, s_rem, w_rem, out_rem, modulus);
 }
 
 impl<S, T> DcrtPolynomial<S>
@@ -188,6 +206,44 @@ where
             moduli
         )
         .for_each(|(a, b, &modulus)| modulus.reduce_mul_slice_assign(a, b))
+    }
+
+    /// Inverse butterfly: `(self, output) = (self + rhs, (self_orig - rhs) * w)`.
+    /// Both results use the original `self`; `output` is overwritten.
+    ///
+    /// # Correctness
+    ///
+    /// All four polynomials have the same modulus-major layout and length
+    /// `poly_length * moduli.len()`. Each block uses its corresponding modulus;
+    /// values must satisfy its addition, subtraction and multiplication ranges.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `poly_length` is zero.
+    #[inline]
+    pub fn butterfly_mul_to<M, A, B, C>(
+        &mut self,
+        rhs: &DcrtPolynomial<A>,
+        w: &DcrtPolynomial<B>,
+        output: &mut DcrtPolynomial<C>,
+        poly_length: usize,
+        moduli: &[M],
+    ) where
+        M: Copy + ReduceAdd<T, Output = T> + ReduceSub<T, Output = T> + ReduceMul<T, Output = T>,
+        A: Data<Elem = T>,
+        B: Data<Elem = T>,
+        C: DataMut<Elem = T>,
+    {
+        izip!(
+            self.iter_each_modulus_mut(poly_length),
+            rhs.iter_each_modulus(poly_length),
+            w.iter_each_modulus(poly_length),
+            output.iter_each_modulus_mut(poly_length),
+            moduli
+        )
+        .for_each(|(lhs, rhs, w, output, &modulus)| {
+            butterfly_mul_slice(lhs, rhs, w, output, modulus);
+        });
     }
 
     /// Inverse butterfly with a precomputed-factor polynomial.
@@ -326,9 +382,9 @@ fn butterfly_mul_factor_to_kernel<T, F>(
     )
     .for_each(|(a, s, w, b, &modulus)| {
         #[cfg(not(feature = "simd"))]
-        slice_butterfly(a, s, w, b, modulus);
+        butterfly_mul_factor_slice(a, s, w, b, modulus);
 
         #[cfg(feature = "simd")]
-        simd_butterfly(a, s, w, b, modulus);
+        simd_butterfly_mul_factor_slice(a, s, w, b, modulus);
     })
 }

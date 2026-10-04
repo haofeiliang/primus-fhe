@@ -3,8 +3,6 @@ use primus_data::{Data, DataMut};
 use primus_integer::FheUint;
 use primus_reduce::ReduceAddSlice;
 
-use crate::ArrayBase;
-
 use super::CrtPolynomial;
 
 impl<S, T> CrtPolynomial<S>
@@ -35,9 +33,7 @@ where
             rhs.iter_each_modulus(poly_length),
             moduli
         )
-        .for_each(|(xs, ys, &modulus)| {
-            ArrayBase(xs).add_element_wise_assign(&ArrayBase(ys), modulus);
-        });
+        .for_each(|(lhs, rhs, &modulus)| modulus.reduce_add_slice_assign(lhs, rhs));
     }
 }
 
@@ -65,8 +61,8 @@ where
             output.iter_each_modulus_mut(poly_length),
             moduli
         )
-        .for_each(|(xs, ys, zs, &modulus)| {
-            ArrayBase(xs).add_element_wise_to(&ArrayBase(ys), &mut ArrayBase(zs), modulus);
+        .for_each(|(lhs, rhs, output, &modulus)| {
+            modulus.reduce_add_slice_to(lhs, rhs, output);
         });
     }
 }

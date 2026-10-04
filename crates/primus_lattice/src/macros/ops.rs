@@ -20,8 +20,7 @@ macro_rules! impl_basic_operation_single_modulus {
                 M: Copy + primus_reduce::ReduceAddSlice<T>,
                 A: Data<Elem = T>,
             {
-                primus_poly::ArrayBase(self.as_mut())
-                    .add_element_wise_assign(&primus_poly::ArrayBase(rhs.as_ref()), modulus);
+                modulus.reduce_add_slice_assign(self.as_mut(), rhs.as_ref());
                 self
             }
 
@@ -38,8 +37,7 @@ macro_rules! impl_basic_operation_single_modulus {
                 M: Copy + primus_reduce::ReduceSubSlice<T>,
                 A: Data<Elem = T>,
             {
-                primus_poly::ArrayBase(self.as_mut())
-                    .sub_element_wise_assign(&primus_poly::ArrayBase(rhs.as_ref()), modulus);
+                modulus.reduce_sub_slice_assign(self.as_mut(), rhs.as_ref());
                 self
             }
 
@@ -55,8 +53,7 @@ macro_rules! impl_basic_operation_single_modulus {
                 M: Copy + primus_reduce::ReduceAddSlice<T>,
                 A: Data<Elem = T>,
             {
-                primus_poly::ArrayBase(self.as_mut())
-                    .add_element_wise_assign(&primus_poly::ArrayBase(rhs.as_ref()), modulus);
+                modulus.reduce_add_slice_assign(self.as_mut(), rhs.as_ref());
             }
 
             /// Performs an element-wise modular subtraction assignment `self -= rhs`
@@ -71,8 +68,7 @@ macro_rules! impl_basic_operation_single_modulus {
                 M: Copy + primus_reduce::ReduceSubSlice<T>,
                 A: Data<Elem = T>,
             {
-                primus_poly::ArrayBase(self.as_mut())
-                    .sub_element_wise_assign(&primus_poly::ArrayBase(rhs.as_ref()), modulus);
+                modulus.reduce_sub_slice_assign(self.as_mut(), rhs.as_ref());
             }
         }
 
@@ -94,11 +90,7 @@ macro_rules! impl_basic_operation_single_modulus {
                 A: Data<Elem = T>,
                 B: DataMut<Elem = T>,
             {
-                primus_poly::ArrayBase(self.as_ref()).add_element_wise_to(
-                    &primus_poly::ArrayBase(rhs.as_ref()),
-                    &mut primus_poly::ArrayBase(output.as_mut()),
-                    modulus,
-                )
+                modulus.reduce_add_slice_to(self.as_ref(), rhs.as_ref(), output.as_mut());
             }
 
             /// Writes the element-wise modular difference `output = self - rhs`.
@@ -114,11 +106,7 @@ macro_rules! impl_basic_operation_single_modulus {
                 A: Data<Elem = T>,
                 B: DataMut<Elem = T>,
             {
-                primus_poly::ArrayBase(self.as_ref()).sub_element_wise_to(
-                    &primus_poly::ArrayBase(rhs.as_ref()),
-                    &mut primus_poly::ArrayBase(output.as_mut()),
-                    modulus,
-                )
+                modulus.reduce_sub_slice_to(self.as_ref(), rhs.as_ref(), output.as_mut());
             }
         }
     };

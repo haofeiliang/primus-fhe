@@ -2,9 +2,7 @@ use itertools::izip;
 use num_traits::Zero;
 use primus_data::{Data, DataMut, DataOwned, RawData};
 use primus_integer::{ByteCount, FheUint, Size};
-use primus_reduce::{ReduceAdd, ReduceMul, ReduceMulAddSlice, ReduceSub};
-
-use crate::ArrayBase;
+use primus_reduce::ReduceMulAddSlice;
 
 mod add;
 mod inv;
@@ -119,38 +117,6 @@ where
             moduli
         )
         .for_each(|(acc, a, b, &modulus)| modulus.reduce_add_mul_slice_assign(acc, a, b))
-    }
-
-    /// Inverse butterfly: `(self, result) = (self + rhs, (self_orig - rhs) * w)`
-    #[inline]
-    pub fn butterfly_mul_to<M, A, B, C>(
-        &mut self,
-        rhs: &DcrtPolynomial<A>,
-        w: &DcrtPolynomial<B>,
-        output: &mut DcrtPolynomial<C>,
-        poly_length: usize,
-        moduli: &[M],
-    ) where
-        M: Copy + ReduceAdd<T, Output = T> + ReduceSub<T, Output = T> + ReduceMul<T, Output = T>,
-        A: Data<Elem = T>,
-        B: Data<Elem = T>,
-        C: DataMut<Elem = T>,
-    {
-        izip!(
-            self.iter_each_modulus_mut(poly_length),
-            rhs.iter_each_modulus(poly_length),
-            w.iter_each_modulus(poly_length),
-            output.iter_each_modulus_mut(poly_length),
-            moduli
-        )
-        .for_each(|(a, s, w, b, &modulus)| {
-            ArrayBase(a).butterfly_mul_element_wise_to(
-                &ArrayBase(s),
-                &ArrayBase(w),
-                &mut ArrayBase(b),
-                modulus,
-            );
-        })
     }
 }
 

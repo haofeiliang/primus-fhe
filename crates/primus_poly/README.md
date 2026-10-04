@@ -11,7 +11,6 @@ English | [简体中文](README.zh_CN.md)
 
 | Type | Representation and layout | Main operations |
 | --- | --- | --- |
-| `ArrayBase<S>` | Flat unsigned-integer array | Element-wise modular arithmetic and butterfly helpers |
 | `Polynomial<S>` | `N` coefficients in ascending-power order under one modulus | Add, subtract, negate, scalar/factor multiplication, negacyclic monomials, naive multiplication, evaluation, and sampling |
 | `NttPolynomial<S>` | `N` point values under one modulus; ordering is defined by the NTT context | Point-wise arithmetic, fused multiply-add, inverse, and uniform sampling |
 | `CrtPolynomial<S>` | Modulus-major coefficient data: one contiguous `N`-coefficient polynomial per modulus | Component-wise arithmetic, scalar/factor operations, negacyclic monomials, and shared uniform-binary/sparse-ternary/Gaussian sampling |
@@ -20,6 +19,12 @@ English | [简体中文](README.zh_CN.md)
 | `FourierPolynomial<S>` | Independent complex evaluations; ordering is defined by the Fourier backend | Point-wise add, subtract, negate, multiply, fused multiply-add, and scalar multiplication |
 
 `primus_poly` stores values and implements arithmetic; it does not own transform tables or perform representation selection. [`primus_ntt`](../primus_ntt) converts between coefficient and NTT/CRT and DCRT representations, while [`primus_fft`](../primus_fft) supplies Fourier transforms.
+
+For flat scalar buffers, use slices and the `Reduce*Slice` traits from
+[`primus_reduce`](../primus_reduce/README.md), such as
+`modulus.reduce_add_slice_assign(lhs, rhs)`. Polynomial and ciphertext wrappers
+retain their representation-specific operations. DCRT inverse butterflies remain
+available through `DcrtPolynomial::butterfly_mul_to` and `butterfly_mul_factor_to`.
 
 ## Example
 
@@ -58,7 +63,7 @@ These accessors do not validate geometry or layout. Empty, arbitrary-length and 
 
 ## Storage and ownership
 
-Most polynomial types are generic over a backing store `S` implementing the contiguous-storage traits from [`primus_data`](../primus_data/README.md). Owned `Vec` aliases and borrowed slice aliases are available for the common coefficient, NTT, Fourier, and array forms. CRT, DCRT, and multi-limb wrappers can likewise be constructed over owned or borrowed storage through their generic types.
+Most polynomial types are generic over a backing store `S` implementing the contiguous-storage traits from [`primus_data`](../primus_data/README.md). Owned `Vec` aliases and borrowed slice aliases are available for the common coefficient, NTT, and Fourier forms. CRT, DCRT, and multi-limb wrappers can likewise be constructed over owned or borrowed storage through their generic types.
 
 `as_view()` and `as_mut_view()` borrow the complete storage while preserving the polynomial representation. Equivalent `From<&Wrapper<S>>` / `From<&mut Wrapper<S>>` conversions return slice-backed wrappers without copying. `into_inner()` consumes a wrapper and returns its original storage, including borrowed or aligned storage; it does not allocate or turn a borrow into an owner.
 
