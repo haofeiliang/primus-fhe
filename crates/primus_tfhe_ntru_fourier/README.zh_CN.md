@@ -23,12 +23,12 @@ cargo run -p primus_tfhe_ntru_fourier --release --example ntru_fourier_basic --f
 | --- | --- |
 | Classic PBS | [basic](examples/ntru_fourier_basic.rs) |
 | Sparse PBS / 交错多输出 ManyLUT | [sparse](examples/ntru_fourier_sparse.rs)；`SPARSE=false` 切换 classic ManyLUT |
-| Classic CBS → CMux | [circuit_bootstrap](examples/ntru_fourier_circuit_bootstrap.rs) |
+| CBS → CMux | [circuit_bootstrap](examples/ntru_fourier_circuit_bootstrap.rs)；`SPARSE=true` 选择 sparse BR |
 | 分解式 MVB | [thresholds](examples/ntru_fourier_mvb_thresholds.rs)；`SPARSE=true` 选择 sparse BR |
-| One-hot CBS → CMux | [one_hot](examples/ntru_fourier_one_hot.rs) |
+| One-hot CBS → CMux | [one_hot](examples/ntru_fourier_one_hot.rs)；`SPARSE=true` 选择 sparse BR |
 | 高精度查表 | [lookup](../primus_tfhe_ntru_lut/examples/fourier_lookup.rs) |
 
-ManyLUT 通过交错共享一次盲旋转，多输出返回还共享一次 Q→q 转换并分块进行 LWE key switch；分解式 MVB 通过公共因子生成多输出，是不同的求值接口。 NTRU sparse 支持普通/交错 PBS 和分解式 MVB；CBS、one-hot 仍要求 classic 密钥。
+ManyLUT 通过交错共享一次盲旋转，多输出返回还共享一次 Q→q 转换并分块进行 LWE key switch；分解式 MVB 通过公共因子生成多输出，是不同的求值接口。 NTRU sparse 支持普通/交错 PBS、分解式 MVB、CBS 和 one-hot；稀疏 BR 要求 fixed-weight binary 外部秘密。
 
 消息 codec 在 `main` 中独立选择，密钥生成不依赖 t。CBS/one-hot 的容量在绑定输入 codec 时检查。
 
@@ -48,11 +48,11 @@ Fourier 环只支持 `NativeModulus`；`PowOf2Modulus` 环不受支持。 NTRU �
 
 `Evaluator::try_from_parts(context, br, return_key)` 绑定普通 PBS。独立 CBS/one-hot 先用 `context.bootstrap_resources(br)?` 准备公共 BR/外积资源，再用 `try_new(&resources, circuit_key, &input_codec)` 准备操作状态，无需返回密钥；CBS 示例展示这一流程。独立材料必须采用相同实际秘密与FFT table 实例，形状和模数检查不能证明身份。
 
-`server_key.blind_rotation_key().classic_controls()` 返回借用的 `ClassicControls` 视图，稀疏材料返回 `None`。视图的 `initializer()` 用于提升公开多项式；首坐标使用 NLEV bit，后续坐标使用 NGSW bit，ternary 秘密按正/负 bit 配对。CBS、one-hot 在构造时仍要求 classic 控制材料；MVB 借用所选 PBS 路径，不需要额外的提升或 CBS 材料。可选的 `circuit_bootstrap_key()` 仍可用于查看或组合 CBS 材料。
+`server_key.blind_rotation_key().classic_controls()` 返回借用的 `ClassicControls` 视图，稀疏材料返回 `None`。视图的 `initializer()` 用于提升公开多项式；首坐标使用 NLEV bit，后续坐标使用 NGSW bit，ternary 秘密按正/负 bit 配对。CBS、one-hot 在所选 classic/sparse BR 上使用独立的 trace/scheme-switch 材料；MVB 不需要额外的提升或 CBS 材料。可选的 `circuit_bootstrap_key()` 仍可用于查看或组合 CBS 材料。
 
 ## 复用 evaluator
 
-普通/interleaved `Evaluator` 拥有公共 `BootstrapResources` 和 scalar/batch 返回缓冲。CBS/one-hot 只保存 LUT 与投影缓冲，调用时最后一个参数传 `pbs.bootstrap_resources_mut()`；factorized MVB 使用 `FactorizedEvaluator::new(&pbs)` 构造，调用时最后一个参数传 `&mut pbs`。借用结束即可继续普通 PBS，无需转换或恢复 evaluator；在线 `_to` 复用所有缓冲。操作状态要求资源使用构造时的同一 context 和 BR key 引用，在写入前检查。
+普通/interleaved `Evaluator` 拥有公共 `BootstrapResources` 和 scalar/batch 返回缓冲。CBS/one-hot 只保存 LUT 与投影缓冲，调用时最后一个参数传 `pbs.bootstrap_resources_mut()`；factorized MVB 使用 `FactorizedEvaluator::new(&pbs)` 构造，调用时最后一个参数传 `&mut pbs`。借用结束即可继续普通 PBS，无需转换或恢复 evaluator；在线 `_to` 复用所有缓冲。操作状态在写入前检查同一 context。实际输入与累加秘密相同的 classic/sparse 资源可以共享准备状态；context 身份不证明秘密身份。
 
 仅使用 CBS/one-hot 时，单独保留 `BootstrapResources`，不分配返回缓冲。以后需要 PBS，可用 `Evaluator::try_from_resources(resources, return_key)` 接管公共资源并分配返回缓冲。`try_rebind_return_key` 更换兼容返回密钥而不重新分配；成功时丢弃待提交样本，失败保持原绑定。资源所有权变化不验证密钥的实际秘密身份。
 
@@ -73,11 +73,11 @@ Fourier 环只支持 `NativeModulus`；`PowOf2Modulus` 环不受支持。 NTRU �
 ```rust,ignore
 let mut generator = KeyGenerator::new(&context);
 let client = generator.try_generate_client_key(&mut rng)?;
-let server = generator.try_generate_sparse_server_key(&client, 3, 2 * h, &mut rng)?;
+let server = generator.try_generate_sparse_server_key(&client, 3, 2 * h, None, &mut rng)?;
 let mut evaluator = context.evaluator(&server)?;
 ```
 
-普通/交错 PBS 复用原 evaluator，分解式 MVB 每次调用时借用它。CBS 和 one-hot 拒绝 sparse 密钥，包括另传 CBS 材料的构造方式。 `server.blind_rotation_key().sparse_bootstrapping_key()` 提供选择密文。
+普通/交错 PBS 复用原 evaluator，分解式 MVB 每次调用时借用它。将 `None` 改为 `Some(cbs_config)` 会复用累加秘密变换并生成 CBS/one-hot 材料。仅需环输出时，可独立生成 sparse BR 和 CBS 组件，无需返回密钥。 `server.blind_rotation_key().sparse_bootstrapping_key()` 提供选择密文。
 
 外部秘密允许偶数重量。只有环秘密需要可逆且 Fourier 逆稳定；系数恢复和聚合 FFT 另引入数值误差。
 

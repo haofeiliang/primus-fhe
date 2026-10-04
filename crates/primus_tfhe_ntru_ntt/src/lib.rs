@@ -39,8 +39,8 @@
 //! [`Evaluator::try_from_parts`] or [`BootstrapResources::try_new`] plus CBS/one-hot
 //! `try_new`. [`ServerKey::into_parts`] moves out the bundle's components.
 //! CBS/one-hot needs only BR and CBS material; high-precision LUT also needs return.
-//! Classic binary/ternary keys support PBS/MVB/CBS; sparse keys support
-//! ordinary/interleaved PBS and factorized MVB.
+//! Classic binary/ternary and sparse fixed-weight binary BR support PBS, MVB,
+//! CBS and one-hot. CBS/one-hot require trace and scheme-switch material.
 //! Only accumulator secrets undergo NTRU invertibility screening; external LWE secrets are independent.
 //! Keys and values must use this context's NTT root and ordering convention.
 //! Raw ciphertexts do not record secret identity, encoding or noise margins.

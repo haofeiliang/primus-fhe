@@ -77,7 +77,7 @@ fn main() {
     let client_key = generator.try_generate_client_key(&mut rng).unwrap();
     // Three copies, 64 buckets. Map retries retain the same client secret.
     let server_key = if SPARSE {
-        generator.try_generate_sparse_server_key(&client_key, 3, 64, &mut rng)
+        generator.try_generate_sparse_server_key(&client_key, 3, 64, None, &mut rng)
     } else {
         generator.try_generate_server_key(&client_key, None, &mut rng)
     }

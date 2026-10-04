@@ -42,7 +42,7 @@ fn backend<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) 
                 let mut rng = StdRng::seed_from_u64(4242);
                 if sparse {
                     generator
-                        .try_generate_sparse_server_key(client, 3, 64, &mut rng)
+                        .try_generate_sparse_server_key(client, 3, 64, None, &mut rng)
                         .unwrap()
                 } else {
                     generator
@@ -103,7 +103,13 @@ fn backend<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) 
                     || (),
                     |()| {
                         generator
-                            .try_generate_sparse_server_key(black_box(client), 3, 64, &mut rng)
+                            .try_generate_sparse_server_key(
+                                black_box(client),
+                                3,
+                                64,
+                                None,
+                                &mut rng,
+                            )
                             .unwrap()
                     },
                     BatchSize::PerIteration,

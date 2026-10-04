@@ -162,14 +162,17 @@ where
     /// between that rescaled scale and round(q/t_out). See
     /// [`FactorizedLookupTable`] for the factorization and noise bound.
     ///
+    /// Classic/sparse evaluators may share this workspace only when their actual
+    /// input and accumulator secrets match. Context identity does not prove this.
+    ///
     /// # Panics
     ///
     /// Panics before any output write unless the program was prepared by the
     /// same context instance, input and all outputs have the external LWE
     /// dimension, and the output slice has exactly the program's output count.
-    /// The borrowed evaluator must use the context and BR key references selected
-    /// at construction. A new valid request supersedes pending return samples
-    /// from a previous interrupted MVB request.
+    /// The borrowed evaluator must use the context selected at construction.
+    /// A new valid request supersedes pending return samples from a previous
+    /// interrupted MVB request.
     pub fn apply_lookup_table_to(
         &mut self,
         input: Lwe<&[T]>,

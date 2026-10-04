@@ -28,7 +28,7 @@ All geometries below run with u32 and u64. Fourier validation includes both Rust
 | GLWE fixed-weight / sparse | 728 / 1024 | 8 for single-output PBS; 16 for ManyLUT; 4 for CBS | fixed-weight binary, h=32 | sparse ternary |
 | GLWE MVB | 728 / 1024 | 128 | fixed-weight binary, h=32 | sparse ternary |
 | NTRU dense Boolean / 2+2 bit PBS | 800 / 1024; 866 / 2048 | 4; 32 | uniform binary or uniform ternary | sparse ternary |
-| NTRU fixed-weight / sparse / MVB | 728 / 1024 | 16 for PBS; 128 for MVB | fixed-weight binary, h=32 | sparse ternary |
+| NTRU fixed-weight / sparse / MVB | 728 / 1024 | 16 for PBS; 4 for CBS; 8 for one-hot; 128 for MVB | fixed-weight binary, h=32 | sparse ternary |
 | NTRU ordinary CBS | 800 / 1024 | 4 | uniform binary or uniform ternary | sparse ternary |
 | NTRU one-hot / lookup | 800 / 1024 | 8, radix M=4 | uniform binary or uniform ternary | sparse ternary |
 
@@ -44,7 +44,7 @@ All constructor arguments are **coefficient-domain standard deviations under the
 | GLWE circuit / ternary | αQ | 6.4 | 6.4, the shared GLWE KS key noise | 6.4 / 6.4 |
 | GLWE fixed-weight / sparse / MVB | 3.2Q/16384 | 6.4 | 6.4, the shared GLWE KS key noise | 6.4 / 6.4 when CBS is requested |
 | NTRU dense / circuit / lookup | α·2^24 ≈34.328 | 0.7 | 3.2 at q24 | 0.7 / 0.7 when CBS is requested |
-| NTRU fixed-weight / sparse / MVB | 3.2·2^24/16384 =3276.8 | 0.7 | 3.2 at q24 | not used |
+| NTRU fixed-weight / sparse / MVB | 3.2·2^24/16384 =3276.8 | 0.7 | 3.2 at q24 | 0.7 / 0.7 when CBS is requested |
 
 Both GLWE orders use the same GLWE KS key and accumulator-derived noise; order changes where it is applied. The small-LWE σ is the input-encryption noise for PBS→KS; KS→PBS external inputs use the accumulator-derived LWE parameters. See the [domain and return-path guide](tfhe-parameters-and-boundaries.md). The fixed-weight NTRU diagnostic retains the existing MVB normalized input noise after changing the external modulus to q24. NTRU retains its previous ring/CBS σ=0.7; it does not reuse that value for independent LWE and return-key noise. The NTRU ring budget is small because CBS and NGSW products amplify errors through f and f². Increasing dimensions or noise calls for revalidation of the entire chain, not just a key constructor.
 
@@ -175,7 +175,7 @@ Examples do not import the test-support factories. Their local configuration fun
 
 All examples are arithmetic demonstrations, not assessed security presets. NTRU consistently uses independent LWE q24 and a separate ring Q; its ordinary return path and MVB scaled-output distinction are visible in the code. The explicit local configurations mirror the validated profiles above; their noise and decomposition choices remain specific to the workflow.
 
-All four backends have classic PBS, sparse/interleaved ManyLUT, ordinary CBS and factorized MVB entries. All four MVB examples can switch `SPARSE` to true; GLWE sparse CBS has a separate entry because its secret and parameter choices differ from dense CBS. NTRU sparse supports ordinary/interleaved PBS and factorized MVB; its CBS and one-hot require classic keys. One-hot and the full high-precision pipeline are NTRU extensions. ManyLUT and factorized MVB are distinct multi-output algorithms.
+All four backends have classic PBS, sparse/interleaved ManyLUT, ordinary CBS and factorized MVB entries. All four MVB examples can switch `SPARSE` to true; GLWE sparse CBS has a separate entry because its secret and parameter choices differ from dense CBS. NTRU sparse also supports CBS and one-hot; their examples expose `SPARSE=true` and select an explicit fixed-weight binary secret. One-hot and the full high-precision pipeline are NTRU extensions. ManyLUT and factorized MVB are distinct multi-output algorithms.
 
 Boolean gates, bivariate LUTs and odd full-domain LUTs are derived encoding/composition APIs, not additional blind-rotation algorithms. They retain their [user guide](../../crates/primus_tfhe/README.md#choosing-an-operation) and test coverage; this list does not claim a standalone example for every public wrapper or secret distribution. Classic binary/ternary validation remains in the numerical diagnostic above.
 

@@ -133,7 +133,8 @@ pub fn cbs<T: FheUint>() -> CircuitBootstrapConfig {
     }
 }
 
-/// Fixed-weight profile for sparse PBS and MVB's narrow input cells.
+/// Fixed-weight profile for paired classic/sparse PBS, CBS, one-hot and MVB.
+/// CBS/one-hot consumers select the circuit modulus and attach their CBS bases.
 ///
 /// # Panics
 /// Panics unless the coefficient word is u32 or u64. The family parameter

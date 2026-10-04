@@ -163,7 +163,7 @@ fn check<T: FheUint, Table: MonomialNttTable<ValueT = T>>(ring_q: T) {
         }
         if distr.is_binary() {
             let sparse_server = context
-                .try_generate_sparse_server_key(&client, 3, 8, &mut rng)
+                .try_generate_sparse_server_key(&client, 3, 8, None, &mut rng)
                 .unwrap();
             let mut sparse = context.evaluator(&sparse_server).unwrap();
             // Reuse the same public factors with the sparse key and independent

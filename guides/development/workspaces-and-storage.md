@@ -256,10 +256,10 @@ Each NTRU backend's ordinary `Evaluator` owns `BootstrapResources` and both retu
 CBS/one-hot retains a compiled LUT, trace scratch and projected NLEV, then borrows
 common resources for each call. `FactorizedEvaluator::new(&pbs)` prepares one
 extra NTT polynomial, or two Fourier polynomials, and borrows `&mut pbs` per request. No evaluator nesting or
-recovery protocol is needed. The short-borrow boundary requires the same context
-and BR key references used at operation construction, before any writes. Multiple
-resource instances prepared from those same references are allowed; these checks
-do not prove actual secret or representation identity of independently generated keys.
+recovery protocol is needed. The short-borrow boundary checks the same context
+before any writes. Prepared state does not retain BR controls: classic/sparse
+resources can share it when both actual secrets match. Context identity does not
+prove the secret identity of independently generated material.
 When borrowing resources from PBS, preserve its context/BR key binding: the retained
 return material and buffers were prepared for it. The mutable accessor does not rebind PBS.
 `Evaluator::try_from_resources(resources, return_key)` adds return buffers to

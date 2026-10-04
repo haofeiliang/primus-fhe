@@ -11,7 +11,7 @@ use crate::{CircuitBootstrapParameters, TfheEvaluationError, TfheParameters};
 /// Failure to bind one-hot CBS resources or compile its packed test polynomial.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum OneHotBootstrapError {
-    /// Missing or incompatible CBS/BR material, including sparse keys.
+    /// Incompatible CBS/BR parameters or input encoding.
     #[error(transparent)]
     Evaluation(#[from] TfheEvaluationError),
     /// Chunk encoding requires plaintext modulus 2*M, with M=2^tau and tau>=1.

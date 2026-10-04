@@ -23,7 +23,9 @@ fixed-weight `glwe::diagnostic` profile at t4, with client seed 42 and input see
 client coefficients, input ciphertext, codec, LUT and bases within each pair.
 Their former n800 binary classic fixture was not comparable with sparse n728;
 the new `n728_h32_N1024` ID prevents mixing Criterion histories. NTRU classic CBS
-keeps n800/N1024/t4 and seed 42 as a separate future sparse-CBS baseline.
+used n800/N1024/t4 and seed 42 in the measurements below. Current NTRU CBS/one-hot
+benchmarks instead pair classic/sparse at n728/h32/N1024, with separate input RNG;
+those new IDs have passed numerical smoke checks but have no timing results in this report.
 
 Parameters come from the [shared profiles](../../test-support/tfhe/src/parameters/mod.rs):
 NTT Q=132120577 for u32 PBS, Q=998244353 for u32 CBS, Q=1125899906826241 for u64;
@@ -248,7 +250,7 @@ latency; use the existing `server_keygen` Criterion IDs for sustained timing.
   KiB. No evidence here justifies merging same-sized scratch or changing public
   ownership APIs. The [address comparison below](#aggregate-scratch-address-comparison)
   separately tests reuse across consecutive buckets.
-- NTRU sparse CBS/one-hot/high-precision LUT are not yet supported and were not
+- NTRU sparse CBS/one-hot were not supported at this measurement baseline and were not
   measured. No SIMD timing, multi-request throughput, performance counters or
   statistical failure-rate study was performed.
 

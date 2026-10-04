@@ -39,11 +39,12 @@ where
 {
     /// Binds the circuit key, compiles the gadget-scaled identity LUT, and allocates
     /// projection scratch. Does not retain a borrow of the resource owner itself.
-    /// Online calls accept resources made from the same context and BR key references.
+    /// Online calls accept resources made from the same context.
     ///
     /// # Correctness
     /// The circuit key must share the resources' actual accumulator secret and
     /// NTT representation; compatibility checks do not establish these identities.
+    /// Switching between classic and sparse resources must preserve both secrets.
     pub fn try_new(
         resources: &BootstrapResources<'a, T, Table, LM>,
         circuit_key: &'a CircuitBootstrapKey<T>,
@@ -51,11 +52,7 @@ where
     ) -> Result<Self, TfheEvaluationError> {
         let context = resources.context;
         let tfhe = context.parameters();
-        let circuit = CircuitBootstrapBinding::try_new(
-            tfhe,
-            resources.workspace.rotation.classic_controls(),
-            circuit_key,
-        )?;
+        let circuit = CircuitBootstrapBinding::try_new(tfhe, circuit_key)?;
         let parameters = circuit.parameters;
         let poly_length = tfhe.poly_length();
         let n = poly_length.get();
@@ -92,7 +89,7 @@ where
     /// See [`NttNgswCiphertext::cmux_to`] for the underlying numerical contract.
     ///
     /// # Panics
-    /// Panics before output writes on a different context/BR key binding or a
+    /// Panics before output writes on a different context binding or a
     /// wrong ciphertext length.
     pub fn cmux_to<A, B, C, D>(
         &mut self,
@@ -144,7 +141,7 @@ where
     /// See [`NttNgswCiphertext::external_product_to`].
     ///
     /// # Panics
-    /// Panics before output writes on a different context/BR key binding or a
+    /// Panics before output writes on a different context binding or a
     /// wrong ciphertext length.
     pub fn external_product_to<A, B, C>(
         &mut self,
@@ -208,7 +205,7 @@ where
     ///
     /// # Panics
     /// Panics before output writes if input dimension or output NGSW length is
-    /// wrong, or resources use a different context/BR key binding. Fixed LUT
+    /// wrong, or resources use a different context binding. Fixed LUT
     /// geometry was checked during construction.
     pub fn circuit_bootstrap_to<S: DataMut<Elem = T>>(
         &mut self,

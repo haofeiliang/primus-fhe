@@ -165,9 +165,9 @@ NTRU 三类材料可分别生成和持有：`KeyGenerator::try_generate_blind_ro
 | NTRU 求值入口 | 借用材料 | 绑定检查 |
 | --- | --- | --- |
 | `Evaluator::try_from_parts` | BR + return | BR layout/distribution/basis、返回 N/Q/q/n/basis |
-| CBS / one-hot `try_new` | 公共资源 + CBS | classic 能力、累加 N/Q、CBS 完整 basis 及输入 codec/容量；无返回约束 |
+| CBS / one-hot `try_new` | 公共资源 + CBS | 累加 N/Q、CBS 完整 basis 及输入 codec/容量；无返回约束 |
 | 高精 LUT `try_from_parts` | BR + return + CBS + 按需 public lift | 上述材料、编译表的 N/Q/q/编码及独立提升 NLEV 的 N/Q/长度 |
-| Factorized MVB `new(&pbs)` | 已绑定 classic/sparse PBS | 构造仅分配额外变换缓冲；求值前检查 context/BR 绑定与程序、输入输出形状 |
+| Factorized MVB `new(&pbs)` | 已绑定 classic/sparse PBS | 构造仅分配额外变换缓冲；求值前检查 context 与程序、输入输出形状 |
 
 BR 不依赖返回 basis；位控制也不绑定外部 q。外部模数由输入程序和返回材料绑定。独立 BR/CBS 生成不检查 f 在返回 q 下的幅度界，完整 PBS 及返回密钥生成保留该要求。各入口检查一次，在线不再解包可选材料或扫描秘密。相同布局/模数不能证明独立材料的实际秘密身份。
 
@@ -182,7 +182,7 @@ GLWE 复用已有独立 `BootstrappingKey::{Classic,Sparse}` 和底层环 KS own
 
 所有 GLWE 绑定均支持 classic binary/ternary 和 sparse fixed-weight binary。BR 与环 KS 不兼容分别返回 `IncompatibleBlindRotationKey` 和 `IncompatibleGlweKeySwitchingKey`，不再用笼统的 `IncompatibleServerKey`。NTT KS basis 包含模数；Fourier 固定 Native。材料元数据不证明实际秘密或变换身份。
 
-ServerKey 的可选 CBS 材料仍使用 `Option` 表示；四个后端的 CBS 操作构造器直接要求 circuit key 引用。私有绑定集中可用材料与所选 output parameters；NTRU CBS/one-hot 要求 classic，并始终使用 circuit key 的完整 output basis。GLWE CBS 支持 classic 与 sparse，`try_new` 验证调用方提供的参数、trace basis 和 scheme-switch layout，可复用兼容的独立 output basis。构造后保存借用的绑定，在线操作不再取得可选材料。布局及 basis 一致仍不证明秘密或变换表示身份。
+ServerKey 的可选 CBS 材料仍使用 `Option` 表示；四个后端的 CBS 操作构造器直接要求 circuit key 引用。私有绑定集中可用材料与所选 output parameters；NTRU CBS/one-hot 支持 classic/sparse，始终使用 circuit key 的完整 output basis。GLWE CBS 支持 classic 与 sparse，`try_new` 验证调用方提供的参数、trace basis 和 scheme-switch layout，可复用兼容的独立 output basis。构造后保存借用的绑定，在线操作不再取得可选材料。布局及 basis 一致仍不证明秘密或变换表示身份。
 
 入口：NTRU [NTT 控制视图](../../crates/primus_tfhe_ntru_ntt/src/key/classic.rs) / [Fourier 控制视图](../../crates/primus_tfhe_ntru_fourier/src/key/classic.rs)，各后端 `circuit_bootstrap/key.rs` 的私有绑定与 `circuit_bootstrap/evaluator.rs` 的公开构造器。高精度 LUT 按编译计划直接绑定提升 NLEV 与其参数，无 Lift 时不需要；返回密钥与 q 由家族 `LweReturnEvaluator` 绑定，缓冲由消费者独立持有，批次协议位于 `LweReturnBatchWorkspace`，NTT/Fourier evaluator 各自选择返回调度。
 
@@ -196,7 +196,7 @@ ServerKey 的可选 CBS 材料仍使用 `Option` 表示；四个后端的 CBS �
 
 四后端各自的公共 `BootstrapResources` 绑定 input 准备、所选 BR key/scratch、系数 accumulator 与 Fourier FFT engine。GLWE KS→BR 保留输入 KS，BR→KS 直接使用外部 input。普通 `Evaluator` 组合完整返回阶段：GLWE BR→KS 的输出 KS、KS→BR 的直接提取，或 NTRU 返回对象；必需资源不再是可能缺失的 `Option`。
 
-NTRU 两后端将公共 BR/外积资源放入各自的 `BootstrapResources`，Fourier 还在其中绑定同一个 FFT engine。普通 `Evaluator` 拥有公共资源与返回缓冲；CBS/one-hot 只持 LUT/投影状态，MVB 持额外变换域多项式。执行时短借用资源或 PBS，在新借用边界检查同一 context/BR key 引用；检查不证明独立材料的实际秘密身份。LUT 独立拥有公共资源、one-hot 状态与返回缓冲：NTT 仅 scalar，Fourier 仅 batch。没有 evaluator 嵌套或恢复协议；Fourier 因子保持整数变换，gadget 保持 torus 变换，streamed tile 顺序不变。
+NTRU 两后端将公共 BR/外积资源放入各自的 `BootstrapResources`，Fourier 还在其中绑定同一个 FFT engine。普通 `Evaluator` 拥有公共资源与返回缓冲；CBS/one-hot 只持 LUT/投影状态，MVB 持额外变换域多项式。执行时短借用资源或 PBS，在借用边界检查同一 context；准备状态不缓存 BR 控制，实际秘密配对的 classic/sparse 资源可以互换，检查不证明独立材料的秘密身份。LUT 独立拥有公共资源、one-hot 状态与返回缓冲：NTT 仅 scalar，Fourier 仅 batch。没有 evaluator 嵌套或恢复协议；Fourier 因子保持整数变换，gadget 保持 torus 变换，streamed tile 顺序不变。
 
 GLWE 两后端的普通 PBS 拥有公共资源和完整返回阶段，CBS 只保存 LUT/投影，MVB 保存额外变换域 GLWE（Fourier 另有一个多项式乘积缓冲），执行时短借用。GLWE 操作状态不缓存 BR 控制，借用边界只检查同一 context；各公共资源已绑定合法 classic/sparse 材料，实际秘密仍由调用方配对。`try_from_resources(resources, ks)` 只在 BR→KS 分配输出 KS，KS→BR 复用输入 KS；`try_rebind_key_switching_key` 检查后零分配换绑。外积 `with_rebound` 保留 GLWE 几何并临时切换 level 布局，返回或 unwind 后恢复；没有将 NTRU 布局假设套入 GLWE。
 

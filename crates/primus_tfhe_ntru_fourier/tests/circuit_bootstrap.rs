@@ -25,7 +25,7 @@ static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocato
 const N: usize = 64;
 
 // Reuse one evaluator across controls, then consume its gadget ciphertexts.
-fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr) {
+fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr, sparse: bool) {
     let modulus = NativeModulus::<u64>::new();
     let lwe = LweParameters::new(
         LweDimension::new(16),
@@ -75,9 +75,12 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr) {
     // CBS-only material can be generated and bound before any return key exists.
     let mut generator = primus_tfhe_ntru_fourier::KeyGenerator::new(&context);
     let client = generator.try_generate_client_key(&mut rng).unwrap();
-    let br = generator
-        .try_generate_blind_rotation_key(&client, &mut rng)
-        .unwrap();
+    let br = if sparse {
+        generator.try_generate_sparse_blind_rotation_key(&client, 3, 8, &mut rng)
+    } else {
+        generator.try_generate_blind_rotation_key(&client, &mut rng)
+    }
+    .unwrap();
     let circuit = generator
         .try_generate_circuit_bootstrap_key(
             client.accumulator_ntru_secret_key(),
@@ -100,16 +103,18 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr) {
     let server = primus_tfhe_ntru_fourier::ServerKey::new(br, return_key, Some(circuit));
     let circuit_key = server.circuit_bootstrap_key().unwrap();
     let parameters = circuit_key.parameters();
-    // Public capability layout: the first coordinate is separate from the
-    // remaining NGSW bits; ternary coordinates have positive/negative pairs.
-    let controls = server.blind_rotation_key().classic_controls().unwrap();
-    assert_eq!(controls.is_binary(), distr.is_binary());
-    assert_eq!(controls.first_controls().1.is_none(), distr.is_binary());
-    assert_eq!(
-        controls.remaining_controls().len(),
-        (context.parameters().external_lwe_dimension().get() - 1)
-            * if distr.is_binary() { 1 } else { 2 },
-    );
+    // Classic exposes coordinate controls; sparse owns coefficient buckets.
+    if let Some(controls) = server.blind_rotation_key().classic_controls() {
+        assert_eq!(controls.is_binary(), distr.is_binary());
+        assert_eq!(controls.first_controls().1.is_none(), distr.is_binary());
+        assert_eq!(
+            controls.remaining_controls().len(),
+            (context.parameters().external_lwe_dimension().get() - 1)
+                * if distr.is_binary() { 1 } else { 2 },
+        );
+    } else {
+        assert!(sparse);
+    }
 
     let mut fft = context.new_fft_engine();
     let key = FourierNtruSecretKey::try_from_coeff_secret_key(
@@ -348,12 +353,13 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr) {
 
 #[test]
 fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
-    for distr in [
-        SecretKeyDistr::UniformBinary,
-        SecretKeyDistr::fixed_composition_ternary(16, 3, 4),
+    for (distr, sparse) in [
+        (SecretKeyDistr::UniformBinary, false),
+        (SecretKeyDistr::fixed_composition_ternary(16, 3, 4), false),
+        (SecretKeyDistr::fixed_hamming_weight_binary(16, 2), true),
     ] {
-        circuit_bootstrap::<RustFftTable>(distr);
-        circuit_bootstrap::<TfheFftTable>(distr);
+        circuit_bootstrap::<RustFftTable>(distr, sparse);
+        circuit_bootstrap::<TfheFftTable>(distr, sparse);
     }
 }
 

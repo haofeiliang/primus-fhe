@@ -39,7 +39,7 @@ ManyLUT 和 MVB 都计算**同一个输入的多个函数**，不批处理独立
 | GLWE classic binary/ternary | 两种 PBS 顺序 | 支持 | 支持 | 未提供 |
 | GLWE sparse fixed-weight binary | 两种 PBS 顺序 | 支持 | 支持 | 未提供 |
 | NTRU classic binary/ternary | 支持 | 支持 | 支持 | 支持 |
-| NTRU sparse fixed-weight binary | 支持 | 不支持 | 不支持 | 不支持 |
+| NTRU sparse fixed-weight binary | 支持 | 支持 | 支持 | One-hot 支持；完整查表待验证 |
 
 Sparse 模式需显式选择生成入口，暂不支持 sparse ternary。NTRU 的外部 LWE 秘密独立于环秘密；只有环秘密需要可逆性筛选及 Fourier 逆稳定性检查，外部固定重量可以是偶数。
 

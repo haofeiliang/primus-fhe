@@ -177,7 +177,7 @@ fn check_bucket<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, level_cou
     for (copies, buckets) in [(3, 8), (1, DIM + 1)] {
         let imported = ClientKey::new(client.clone(), secret.clone());
         let server = KeyGenerator::new(&context)
-            .try_generate_sparse_server_key(&imported, copies, buckets, &mut rng)
+            .try_generate_sparse_server_key(&imported, copies, buckets, None, &mut rng)
             .unwrap();
         let key = server
             .blind_rotation_key()

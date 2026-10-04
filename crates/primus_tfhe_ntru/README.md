@@ -23,7 +23,7 @@ The direct composition entry is `TfheParameters::try_new(external_lwe, blind_rot
 
 Ordinary PBS returns through: blind rotation under f,Q → coefficient-wise nearest rounding Q→q → phase-coefficient extraction → LWE key switching at q to s. ManyLUT shares blind rotation but returns each output separately. `context.allocate_lwe_ciphertext()` uses the external dimension.
 
-Classic PBS, ManyLUT, CBS, Boolean and MVB support binary/ternary external secrets. Sparse requires the explicit fixed-weight binary generation entry, allows even weight, and supports ordinary/ManyLUT PBS and factorized MVB. CBS and one-hot still require classic keys. The `SparseTernary` distribution alone does not select bucket aggregation. First lifting and sparse-bucket derivations live in the [implementation notes](../primus_tfhe/IMPLEMENTATION.md#ternary-and-sparse-rotation).
+Classic PBS, ManyLUT, CBS, Boolean and MVB support binary/ternary external secrets. Sparse requires the explicit fixed-weight binary generation entry, allows even weight, and supports ordinary/ManyLUT PBS, factorized MVB, CBS and one-hot. The `SparseTernary` distribution alone does not select bucket aggregation. First lifting and sparse-bucket derivations live in the [implementation notes](../primus_tfhe/IMPLEMENTATION.md#ternary-and-sparse-rotation).
 
 ## Clients and LUTs
 
@@ -45,7 +45,7 @@ Pass an explicit t=4 `RoundedCodec` to `boolean_encryptor`, `boolean_public_encr
 
 The backends expose independent `BlindRotationKey`, return and `CircuitBootstrapKey` owners, with `ServerKey::new` / `into_parts` for moving them into or out of a complete bundle. `parameters.try_generate_lwe_return_key(&client, rng)` generates return material without a transform workspace; `parameters.check_lwe_return_key(&key)` checks N/Q/q/dimension/basis at composition. CBS-only generation and binding do not require a return key or f's magnitude bound at external q. The accumulator's backend conversion requirements still apply.
 
-`context.try_generate_keys(Some(cbs_config), rng)` includes trace/scheme-switch material. Both backends compose common `BootstrapResources` with `CircuitBootstrapEvaluator::try_new`. See each backend README for resource reuse. CBS skips the ordinary PBS return path and produces NGSW under f. An input bit 0/1 produces a CMux control; candidate ring ciphertexts must share f, Q and encoding. Backend examples show the complete consumption chain.
+`context.try_generate_keys(Some(cbs_config), rng)` includes trace/scheme-switch material. For sparse BR, use `context.try_generate_sparse_server_key(&client, copies, buckets, Some(cbs_config), rng)`; `None` omits CBS material. Both backends compose common `BootstrapResources` with `CircuitBootstrapEvaluator::try_new`. See each backend README for resource reuse. CBS skips the ordinary PBS return path and produces NGSW under f. An input bit 0/1 produces a CMux control; candidate ring ciphertexts must share f, Q and encoding. Backend examples show the complete consumption chain.
 
 `CircuitBootstrapParameters` chooses independent output, trace and scheme-switch bases. Output retains the requested level count and the scheme-switch key binds the complete output basis. Matching lengths do not establish basis or actual secret identity. BR decomposition must resolve the LUT and smallest output gadget scale. CBS input encoding and ManyLUT capacity are checked when binding the evaluator; the same key material can serve several t values. `accumulator_client(client.accumulator_ntru_secret_key(), scaled_codec)` independently binds ordinary ring messages at Q, sharing the gadget’s sampling state; its message modulus may differ from the input LWE modulus.
 
@@ -53,7 +53,7 @@ NTT reverse trace uses modular inverses; Fourier uses native integer halving and
 
 ## One-hot CBS
 
-`OneHotCircuitBootstrapEvaluator::try_new(&resources, circuit_key, &input_codec)` reuses classic binary/ternary CBS material and borrows common resources per call. Require t=2M, M=2^tau and tau>=1; encrypt inputs in 0..M with `encrypt_padded`. For L output gadget levels, let W=next_power_of_two(L) and require 2MW<=N.
+`OneHotCircuitBootstrapEvaluator::try_new(&resources, circuit_key, &input_codec)` reuses CBS material with classic binary/ternary or sparse fixed-weight binary BR and borrows common resources per call. Require t=2M, M=2^tau and tau>=1; encrypt inputs in 0..M with `encrypt_padded`. For L output gadget levels, let W=next_power_of_two(L) and require 2MW<=N.
 
 Full-output APIs allocate with `allocate_nlev_output` / `allocate_ngsw_output`, then write δ_r(m), r=0..M-1, with `one_hot_nlev_to`, `one_hot_ngsw_to` or `one_hot_to`. NLEV uses coefficient representation at Q; NGSW uses the backend's transform representation. Layout is `[selector][level][row element]`, with levels in `output_basis().scalar_iter()` order. Rows contain N integers, or N/2 complex values for Fourier NGSW. Transform NLEV before lifting public polynomials; use NGSW for CMux on encrypted candidates.
 

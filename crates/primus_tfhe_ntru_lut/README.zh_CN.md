@@ -9,7 +9,7 @@
 
 ## 工作流
 
-使用 [NTT](../primus_tfhe_ntru_ntt/README.zh_CN.md) 或 [Fourier](../primus_tfhe_ntru_fourier/README.zh_CN.md) 的 classic binary/ternary context，通过 `context.try_generate_keys(Some(cbs_config), rng)` 生成配对密钥。拒绝 sparse 密钥和缺失 CBS 材料。客户端生成 chunks，再用 `encrypt_padded` 分别加密。
+使用 [NTT](../primus_tfhe_ntru_ntt/README.zh_CN.md) 或 [Fourier](../primus_tfhe_ntru_fourier/README.zh_CN.md) 的 classic binary/ternary context，通过 `context.try_generate_keys(Some(cbs_config), rng)` 生成配对密钥。CBS 材料为必需项；完整 sparse 查表流程尚未验证。客户端生成 chunks，再用 `encrypt_padded` 分别加密。
 
 `HighPrecisionLookupTable::try_new(parameters, &input_codec, config, function)` 编译公开表。回调接收 `(完整输入索引, 输出 chunk 索引)`，返回一个 digit。用 `NttLookupTableEvaluator::try_new(context, server_key, table)` 或 `FourierLookupTableEvaluator::try_new(context, server_key, table)` 绑定资源，调用一次 `allocate_output()`，随后重复调用 `evaluate_to(input_chunks, output_chunks)`。输出逐个使用 `context.decryptor(client.external_lwe_secret_key(), &input_codec)` 解码。表拥有 chunk 编码，密钥不依赖 t。Evaluator 借用 context、服务端密钥和表，求值不需要客户端秘密。
 
@@ -84,7 +84,7 @@ cargo run --release -p primus_tfhe_ntru_lut --example fourier_lookup --features 
 
 `table.needs_public_lift()` 表示剪枝后的选表计划是否包含显式 `Lift`。需要时，`public_lift` 必须传入 `Some((nlev_view, &nlev_parameters))`，即 NTT/Fourier 的 NLEV[1] 视图及生成它时使用的 `NlevParameters`。`NttPublicLift` / `FourierPublicLift` 是这两个借用元组的类型别名，没有新增 owner 或构造器。Evaluator 检查 N、Q 和变换域存储长度，随后使用该材料自己的 basis，允许其不同于 BR/CBS。材料必须使用相同 accumulator 秘密和变换表示（Fourier 使用同一 table 实例）；所声明的明文、basis 和噪声预算仍由调用方保证。无 `Lift` 时传 `None`；多余材料会被忽略，不予保留。
 
-`try_new` 自动借用已有 classic initializer 与 BR 参数，不额外生成或复制密钥。高级调用方可通过 `server_key.blind_rotation_key().classic_controls().unwrap().initializer()` 借用它，并配对 `context.parameters().blind_rotation()`，也可以提供独立生成的 NLEV[1]。One-hot evaluator 不再暴露 BR controls。此次材料分离尚未开放 sparse CBS 或 sparse 高精度查表。
+`try_new` 自动借用已有 classic initializer 与 BR 参数，不额外生成或复制密钥。高级调用方可通过 `server_key.blind_rotation_key().classic_controls().unwrap().initializer()` 借用它，并配对 `context.parameters().blind_rotation()`，也可以提供独立生成的 NLEV[1]。One-hot evaluator 不再暴露 BR controls。后端已支持 sparse CBS/one-hot；完整 sparse 查表仍需单独数值验证，计划包含公开提升时还需独立提供 NLEV[1]。该 sparse 情况下 `try_new` 返回 `MissingPublicLiftKey`；无 Lift 计划不需要 initializer。
 
 每次调用对低位 chunks 及编译计划实际使用的高位 chunks 执行 one-hot CBS。全等分支省去选择，重复子树只计算一次。公开选择用完整 NLEV selectors 同时提升多项式，加密选择用非零 NGSW selectors；同一 chunk 需要两种表示时共享 BR 与投影。完全不依赖高位的输出使用绑定的 NLEV[1] 提升，公密混合选择也可能需要它。因此，全剪枝表和 c=d 仍需要该材料。每个不同的根仍需低位旋转与返回；重复根在同一 evaluator 内的后续操作完全相同，直接复制已完成的输出。
 

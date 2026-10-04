@@ -86,7 +86,7 @@ fn main() {
     let client_key = generator.try_generate_client_key(&mut rng).unwrap();
     let server_key = if SPARSE {
         generator
-            .try_generate_sparse_server_key(&client_key, 3, 64, &mut rng)
+            .try_generate_sparse_server_key(&client_key, 3, 64, None, &mut rng)
             .unwrap()
     } else {
         generator

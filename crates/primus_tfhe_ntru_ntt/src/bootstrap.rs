@@ -70,11 +70,10 @@ where
         self.workspace.rotation.external_product()
     }
 
-    /// Records which parameter/control binding an operation's prepared buffers use.
+    /// Records the context whose geometry and representation prepared the operation.
     pub(crate) fn binding(&self) -> BootstrapBinding<'a, T, Table, LM> {
         BootstrapBinding {
             context: self.context,
-            blind_rotation_key: self.blind_rotation_key,
         }
     }
 
@@ -101,8 +100,9 @@ where
 }
 
 /// Read-only binding retained by CBS/one-hot/MVB while common buffers are borrowed
-/// only during execution. Pointer checks protect the prepared geometry/control
-/// choice, not the mathematical identity of independently generated material.
+/// only during execution. Prepared LUTs and buffers depend on the context, not
+/// individual BR controls. Classic/sparse resources may therefore be interchanged
+/// when their actual secrets match; the context check cannot prove that identity.
 pub(crate) struct BootstrapBinding<'a, T, Table, LM>
 where
     T: FheUint,
@@ -110,7 +110,6 @@ where
     LM: primus_reduce::RingContext<T>,
 {
     pub(crate) context: &'a TfheContext<T, Table, LM>,
-    blind_rotation_key: &'a BlindRotationKey<T>,
 }
 
 impl<T, Table, LM> BootstrapBinding<'_, T, Table, LM>
@@ -119,13 +118,11 @@ where
     Table: MonomialNttTable<ValueT = T>,
     LM: primus_reduce::RingContext<T>,
 {
-    /// Check the new public resource-borrow boundary before any scratch/output writes.
-    /// Separate resource instances prepared from these same references are allowed.
+    /// Reject a different geometry/transform context before any scratch/output writes.
     pub(crate) fn check(&self, resources: &BootstrapResources<'_, T, Table, LM>) {
         assert!(
-            core::ptr::eq(self.context, resources.context)
-                && core::ptr::eq(self.blind_rotation_key, resources.blind_rotation_key),
-            "bootstrap resources use a different context or blind-rotation key binding"
+            core::ptr::eq(self.context, resources.context),
+            "bootstrap resources use a different context binding"
         );
     }
 }

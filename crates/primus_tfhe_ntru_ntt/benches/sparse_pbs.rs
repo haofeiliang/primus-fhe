@@ -45,7 +45,7 @@ fn backend<T: FheUint, Table: MonomialNttTable<ValueT = T>>(c: &mut Criterion, b
                 let mut rng = StdRng::seed_from_u64(4242);
                 if sparse {
                     generator
-                        .try_generate_sparse_server_key(client, 3, 64, &mut rng)
+                        .try_generate_sparse_server_key(client, 3, 64, None, &mut rng)
                         .unwrap()
                 } else {
                     generator
@@ -108,7 +108,13 @@ fn backend<T: FheUint, Table: MonomialNttTable<ValueT = T>>(c: &mut Criterion, b
                     || (),
                     |()| {
                         generator
-                            .try_generate_sparse_server_key(black_box(client), 3, 64, &mut rng)
+                            .try_generate_sparse_server_key(
+                                black_box(client),
+                                3,
+                                64,
+                                None,
+                                &mut rng,
+                            )
                             .unwrap()
                     },
                     BatchSize::PerIteration,

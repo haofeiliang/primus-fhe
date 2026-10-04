@@ -12,7 +12,7 @@ use crate::{
     bootstrap::{BootstrapBinding, BootstrapResources},
 };
 
-/// One-hot extension of CBS for classic binary/ternary LWE secrets.
+/// One-hot extension of CBS for classic binary/ternary and sparse binary BR.
 ///
 /// Input uses unsigned Rounded encoding with t=2*M, M=2^tau, tau>=1.
 /// Full-output methods materialize all M selectors, including r=0;
@@ -46,21 +46,19 @@ where
 {
     /// Compiles the packed LUT and allocates projection buffers without retaining
     /// a borrow of the resource owner. Online calls accept resources made from
-    /// the same context and BR key references.
+    /// the same context.
     ///
     /// # Correctness
     /// The circuit key must share the resources' actual accumulator secret and
     /// FFT table instance; compatibility checks do not establish these identities.
+    /// Switching between classic and sparse resources must preserve both secrets.
     pub fn try_new(
         resources: &BootstrapResources<'a, T, Table, LM>,
         circuit_key: &'a CircuitBootstrapKey<T>,
         input_codec: &RoundedCodec<T, LM>,
     ) -> Result<Self, OneHotBootstrapError> {
-        let circuit = CircuitBootstrapBinding::try_new(
-            resources.context.parameters(),
-            resources.workspace.rotation.classic_controls(),
-            circuit_key,
-        )?;
+        let circuit =
+            CircuitBootstrapBinding::try_new(resources.context.parameters(), circuit_key)?;
         let lookup_table = OneHotLookupTable::try_new(
             resources.context.parameters(),
             circuit.parameters,
@@ -158,7 +156,7 @@ where
     /// Inherits [`Self::one_hot_to`]'s input, representation and noise requirements.
     ///
     /// # Panics
-    /// Rejects a different context/BR key binding, input dimension or exact output length before BR or output writes.
+    /// Rejects a different context binding, input dimension or exact output length before BR or output writes.
     pub fn one_hot_nonzero_ngsw_to(
         &mut self,
         input: Lwe<&[T]>,
@@ -184,7 +182,7 @@ where
     /// noise or security certification. See [`CircuitBootstrapParameters`].
     ///
     /// # Panics
-    /// Rejects a different context/BR key binding, input dimension or exact output lengths before BR or output writes.
+    /// Rejects a different context binding, input dimension or exact output lengths before BR or output writes.
     /// Output buffers contain no padding and need no prior reset.
     pub fn one_hot_to(
         &mut self,
@@ -203,7 +201,7 @@ where
     /// [`Self::one_hot_nonzero_ngsw_to`].
     ///
     /// # Panics
-    /// Rejects a different context/BR key binding, input dimension or exact output lengths before any writes.
+    /// Rejects a different context binding, input dimension or exact output lengths before any writes.
     pub fn one_hot_nlev_and_nonzero_ngsw_to(
         &mut self,
         input: Lwe<&[T]>,

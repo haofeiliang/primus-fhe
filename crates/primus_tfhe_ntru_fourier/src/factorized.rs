@@ -171,12 +171,15 @@ impl<'a, T: TorusFftValue, Table: FftTable, LM: primus_reduce::RingContext<T>>
     /// the difference between the rescaled delta and round(q/t). No noise bound
     /// is checked.
     ///
+    /// Classic/sparse evaluators may share this workspace only when their actual
+    /// input and accumulator secrets match. Context identity does not prove this.
+    ///
     /// # Panics
     ///
     /// Panics before output writes unless the program was prepared by this exact
     /// context, input and every output have the external LWE dimension, and the
     /// output slice length equals the program's output count. The evaluator must
-    /// use the context and BR key references selected at construction. A new
+    /// use the context selected at construction. A new
     /// valid request supersedes pending samples from an interrupted MVB request.
     pub fn apply_lookup_table_to(
         &mut self,

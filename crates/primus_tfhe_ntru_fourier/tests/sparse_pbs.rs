@@ -12,7 +12,7 @@ use primus_ntru::NlevParameters;
 use primus_ntru::{NtruParameters, SecretKeyDistr};
 use primus_test_allocations::{CountingAllocator, measure};
 use primus_tfhe::rotation::RotationModulusSwitch;
-use primus_tfhe_ntru_fourier::{KeyGenerator, TfheContext, TfheEvaluationError, TfheParameters};
+use primus_tfhe_ntru_fourier::{KeyGenerator, TfheContext, TfheParameters};
 use rand::{SeedableRng, rngs::StdRng};
 
 #[global_allocator]
@@ -143,9 +143,10 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(weight: usize) {
     for &(copies, buckets, seed) in cases {
         let mut key_rng = StdRng::seed_from_u64(seed);
         let server = generator
-            .try_generate_sparse_server_key(&client, copies, buckets, &mut key_rng)
+            .try_generate_sparse_server_key(&client, copies, buckets, None, &mut key_rng)
             .unwrap();
         assert!(server.blind_rotation_key().classic_controls().is_none());
+        assert!(server.circuit_bootstrap_key().is_none());
         let key = server
             .blind_rotation_key()
             .sparse_bootstrapping_key()
@@ -283,12 +284,11 @@ fn sparse_pbs_matches_classic_outputs_and_independent_rotation_without_allocatio
 }
 
 #[test]
-fn sparse_generation_boundaries_and_unsupported_combinations() {
+fn sparse_generation_rejects_invalid_secrets_buckets_and_cbs_before_sampling() {
     use primus_ntru::NtruSecretKey;
     use primus_tfhe::sparse::BucketMapError;
     use primus_tfhe_ntru_fourier::{
-        CircuitBootstrapConfig, CircuitBootstrapEvaluator, CircuitBootstrapParameters, ClientKey,
-        DecompositionConfig, KeyGenerationError as Error,
+        CircuitBootstrapConfig, ClientKey, DecompositionConfig, KeyGenerationError as Error,
         SparseBootstrappingKeyError as SparseError,
     };
     use rand::Rng;
@@ -332,15 +332,13 @@ fn sparse_generation_boundaries_and_unsupported_combinations() {
         let mut untouched = StdRng::seed_from_u64(0xBAD);
         assert_eq!(
             context
-                .try_generate_sparse_server_key(&client, 3, 8, &mut rng)
+                .try_generate_sparse_server_key(&client, 3, 8, None, &mut rng)
                 .err(),
             Some(expected)
         );
         assert_eq!(rng.next_u64(), untouched.next_u64());
     }
     let context = context::<u32, RustFftTable>(SecretKeyDistr::fixed_hamming_weight_binary(DIM, 5));
-    let input_codec =
-        RoundedCodec::new(16u32, context.parameters().external_lwe().cipher_modulus());
     let mut generator = KeyGenerator::new(&context);
     let (client, _) = generator.try_generate(None, &mut rng).unwrap();
     for (copies, buckets, expected) in [
@@ -360,7 +358,7 @@ fn sparse_generation_boundaries_and_unsupported_combinations() {
         let mut untouched = StdRng::seed_from_u64(0xBAD);
         assert_eq!(
             generator
-                .try_generate_sparse_server_key(&client, copies, buckets, &mut rng)
+                .try_generate_sparse_server_key(&client, copies, buckets, None, &mut rng)
                 .err(),
             Some(Error::SparseBootstrapping(expected))
         );
@@ -374,54 +372,33 @@ fn sparse_generation_boundaries_and_unsupported_combinations() {
     let mut untouched = StdRng::seed_from_u64(0xBAD);
     assert_eq!(
         generator
-            .try_generate_sparse_server_key(&noninvertible, 3, 8, &mut rng)
+            .try_generate_sparse_server_key(&noninvertible, 3, 8, None, &mut rng)
             .err(),
         Some(Error::Ntru(primus_ntru::NtruError::NonInvertibleSecretKey))
     );
     assert_eq!(rng.next_u64(), untouched.next_u64());
 
-    // Supplying valid standalone CBS material must not bypass the sparse gate.
+    // Optional CBS configuration is validated before sparse-map or key sampling.
     let decomposition = DecompositionConfig {
         log_basis: DecompositionBaseLog::new(8),
         level_count: None,
     };
-    let parameters = CircuitBootstrapParameters::try_from_config(
-        context.parameters(),
-        CircuitBootstrapConfig {
-            output: DecompositionConfig {
-                log_basis: DecompositionBaseLog::new(8),
-                level_count: Some(DecompositionLevelCount::new(1)),
-            },
-            trace: decomposition,
-            trace_noise_standard_deviation: 0.7,
-            scheme_switch: decomposition,
-            scheme_switch_noise_standard_deviation: 0.7,
+    let invalid_cbs = CircuitBootstrapConfig {
+        output: DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(8),
+            level_count: Some(DecompositionLevelCount::new(1)),
         },
-    )
-    .unwrap();
-    let circuit = generator
-        .try_generate_circuit_bootstrap_key(
-            client.accumulator_ntru_secret_key(),
-            parameters,
-            &mut rng,
-        )
-        .unwrap();
-    let br = generator
-        .try_generate_sparse_blind_rotation_key(&client, 3, 8, &mut rng)
-        .unwrap();
-    let resources = context.bootstrap_resources(&br).unwrap();
-    assert_eq!(
-        CircuitBootstrapEvaluator::try_new(&resources, &circuit, &input_codec).err(),
-        Some(TfheEvaluationError::UnsupportedSparseBootstrapping)
+        trace: decomposition,
+        trace_noise_standard_deviation: -1.0,
+        scheme_switch: decomposition,
+        scheme_switch_noise_standard_deviation: 0.7,
+    };
+    rng = StdRng::seed_from_u64(0xBAD);
+    let mut untouched = StdRng::seed_from_u64(0xBAD);
+    assert!(
+        generator
+            .try_generate_sparse_server_key(&client, 3, 8, Some(invalid_cbs), &mut rng)
+            .is_err()
     );
-    assert!(matches!(
-        primus_tfhe_ntru_fourier::OneHotCircuitBootstrapEvaluator::try_new(
-            &resources,
-            &circuit,
-            &input_codec
-        ),
-        Err(primus_tfhe_ntru_fourier::OneHotBootstrapError::Evaluation(
-            TfheEvaluationError::UnsupportedSparseBootstrapping
-        ))
-    ));
+    assert_eq!(rng.next_u64(), untouched.next_u64());
 }

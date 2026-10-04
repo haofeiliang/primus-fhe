@@ -385,7 +385,7 @@ where
         Ok((client_key, server_key))
     }
 
-    fn prepare_circuit_bootstrap(
+    pub(crate) fn prepare_circuit_bootstrap(
         &self,
         circuit_bootstrap: Option<CircuitBootstrapConfig>,
     ) -> Result<Option<CircuitBootstrapParameters<T>>, KeyGenerationError> {

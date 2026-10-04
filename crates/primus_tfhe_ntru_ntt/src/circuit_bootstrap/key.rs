@@ -24,14 +24,13 @@ pub(super) struct CircuitBootstrapBinding<'a, T: FheUint> {
 }
 
 impl<'a, T: FheUint> CircuitBootstrapBinding<'a, T> {
-    // Reject sparse controls and incompatible CBS parameters before online use.
+    // Check CBS parameters before online use; both BR algorithms produce the
+    // same accumulator representation for trace and scheme switching.
     // Receiving material and checking its geometry do not prove actual key identity.
     pub(super) fn try_new<LM: primus_reduce::RingContext<T>>(
         tfhe: &crate::TfheParameters<T, LM>,
-        controls: Option<crate::ClassicControls<'a, T>>,
         key: &'a CircuitBootstrapKey<T>,
     ) -> Result<Self, crate::TfheEvaluationError> {
-        controls.ok_or(crate::TfheEvaluationError::UnsupportedSparseBootstrapping)?;
         let parameters = key.parameters();
         if !parameters.is_compatible(tfhe) {
             return Err(crate::TfheEvaluationError::IncompatibleCircuitBootstrapParameters);

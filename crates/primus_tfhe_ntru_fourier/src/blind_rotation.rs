@@ -65,14 +65,6 @@ pub(crate) enum RotationState<'a, T: TorusFftValue> {
 }
 
 impl<'a, T: TorusFftValue> RotationState<'a, T> {
-    /// Borrows the classic material already selected with this BR workspace.
-    pub(crate) fn classic_controls(&self) -> Option<ClassicControls<'a>> {
-        match self {
-            Self::Sparse { .. } => None,
-            Self::Binary { controls, .. } | Self::Ternary { controls, .. } => Some(*controls),
-        }
-    }
-
     pub(crate) fn external_product(
         &mut self,
     ) -> &mut primus_ntru::FourierNtruExternalProductWorkspace<T> {

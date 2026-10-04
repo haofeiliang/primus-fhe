@@ -204,7 +204,7 @@ fn check<T: TorusFftValue, Table: FftTable>(level_count: Option<usize>) {
     assert!(init_budget < q / 32 && init_error <= init_budget);
     for (copies, buckets) in [(3, 10), (1, 17)] {
         let server = KeyGenerator::new(&context)
-            .try_generate_sparse_server_key(&imported, copies, buckets, &mut rng)
+            .try_generate_sparse_server_key(&imported, copies, buckets, None, &mut rng)
             .unwrap();
         let sparse = server
             .blind_rotation_key()

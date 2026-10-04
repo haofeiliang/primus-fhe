@@ -1,6 +1,7 @@
 //! One complete CBS into a reused gadget ciphertext; NTRU also measures full
 //! and nonzero one-hot batches. Keygen, encryption, allocation and the CMux
 //! correctness probe are outside timing. Ordinary CBS uses t4; one-hot uses t8.
+//! Classic/sparse pairs share n728/h32/N1024 secrets and separately seeded inputs.
 //! Parameters: primus_tfhe_test_support::parameters (arithmetic cost profiles).
 //! Fixtures are initialized only for selected IDs, then reused across samples.
 //! Run: cargo bench -p primus_tfhe_ntru_fourier --bench circuit_bootstrap
@@ -14,22 +15,20 @@ use primus_fft::{FftTable, RustFftTable, TfheFftTable, TorusFftValue};
 use primus_lattice::ngsw::FourierNgswIter;
 use primus_modulus::NativeModulus;
 use primus_modulus::PowOf2Modulus;
-use primus_ntru::SecretKeyDistr;
 use primus_tfhe_ntru_fourier::{
-    CircuitBootstrapEvaluator, OneHotCircuitBootstrapEvaluator, TfheContext,
+    CircuitBootstrapEvaluator, KeyGenerator, OneHotCircuitBootstrapEvaluator, TfheContext,
 };
 use primus_tfhe_test_support::parameters::{N, ntru};
 use rand::{SeedableRng, rngs::StdRng};
 
 // CBS consumes a bit and emits a gadget control, not an LWE result. Verify
 // that representation by selecting an encrypted ring message before timing.
-fn ordinary<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) {
+fn ordinary<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str, sparse: bool) {
     let input_codec = RoundedCodec::new(T::as_from(4u32), PowOf2Modulus::new(T::ONE << 24u32));
-    let kind = "classic";
-    let dimension = 800;
-    let parameters = ntru::circuit(NativeModulus::<T>::new(), SecretKeyDistr::UniformBinary);
+    let kind = if sparse { "sparse" } else { "classic" };
+    let parameters = ntru::diagnostic(NativeModulus::<T>::new());
     let name = format!(
-        "ntru/{backend}/u{}/cbs/{kind}/n{dimension}_N1024/complete",
+        "ntru/{backend}/u{}/cbs/{kind}/n728_h32_N1024/complete",
         T::BITS
     );
     let mut fixture = None;
@@ -39,9 +38,22 @@ fn ordinary<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str)
             let context =
                 TfheContext::<T, Table, PowOf2Modulus<T>>::from_parameters(parameters.clone());
             let mut rng = StdRng::seed_from_u64(42);
-            let (client, server) = context
-                .try_generate_keys(Some(ntru::cbs::<T>()), &mut rng)
-                .unwrap();
+            let mut generator = KeyGenerator::new(&context);
+            let client = generator.try_generate_client_key(&mut rng).unwrap();
+            let server = if sparse {
+                generator.try_generate_sparse_server_key(
+                    &client,
+                    3,
+                    64,
+                    Some(ntru::cbs::<T>()),
+                    &mut rng,
+                )
+            } else {
+                generator.try_generate_server_key(&client, Some(ntru::cbs::<T>()), &mut rng)
+            }
+            .unwrap();
+            // Input/candidate encryption is identical across the two BR choices.
+            let mut rng = StdRng::seed_from_u64(43);
             let input = context
                 .encryptor(client.external_lwe_secret_key(), &input_codec)
                 .unwrap()
@@ -100,23 +112,39 @@ fn ordinary<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str)
 
 // The compact batch omits delta_0. Compare equal input geometry to isolate the
 // saved selector work; one iteration produces M or M-1 complete NGSW controls.
-fn one_hot<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) {
+fn one_hot<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str, sparse: bool) {
     let input_codec = RoundedCodec::new(T::as_from(8u32), PowOf2Modulus::new(T::ONE << 24u32));
+    let br = if sparse { "sparse" } else { "classic" };
     let mut fixture = None;
     for compact in [false, true] {
         let kind = if compact { "nonzero" } else { "full" };
         let mut verified = false;
-        let name = format!("ntru/{backend}/u{}/one_hot/n800_N1024/M4/{kind}", T::BITS);
+        let name = format!(
+            "ntru/{backend}/u{}/one_hot/{br}/n728_h32_N1024/M4/{kind}",
+            T::BITS
+        );
         c.bench_function(&name, |b| {
             let (context, client, server, input, lhs, rhs) = fixture.get_or_insert_with(|| {
-                let parameters =
-                    ntru::circuit(NativeModulus::<T>::new(), SecretKeyDistr::UniformBinary);
+                let parameters = ntru::diagnostic(NativeModulus::<T>::new());
                 let context =
                     TfheContext::<T, Table, PowOf2Modulus<T>>::from_parameters(parameters);
                 let mut rng = StdRng::seed_from_u64(42);
-                let (client, server) = context
-                    .try_generate_keys(Some(ntru::cbs::<T>()), &mut rng)
-                    .unwrap();
+                let mut generator = KeyGenerator::new(&context);
+                let client = generator.try_generate_client_key(&mut rng).unwrap();
+                let server = if sparse {
+                    generator.try_generate_sparse_server_key(
+                        &client,
+                        3,
+                        64,
+                        Some(ntru::cbs::<T>()),
+                        &mut rng,
+                    )
+                } else {
+                    generator.try_generate_server_key(&client, Some(ntru::cbs::<T>()), &mut rng)
+                }
+                .unwrap();
+                // Input/candidate encryption is identical across the two BR choices.
+                let mut rng = StdRng::seed_from_u64(43);
                 let input = context
                     .encryptor(client.external_lwe_secret_key(), &input_codec)
                     .unwrap()
@@ -213,14 +241,16 @@ fn one_hot<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) 
 }
 
 fn bench_cbs(c: &mut Criterion) {
-    ordinary::<u32, RustFftTable>(c, "rustfft");
-    ordinary::<u64, RustFftTable>(c, "rustfft");
-    ordinary::<u32, TfheFftTable>(c, "tfhe_fft");
-    ordinary::<u64, TfheFftTable>(c, "tfhe_fft");
-    one_hot::<u32, RustFftTable>(c, "rustfft");
-    one_hot::<u64, RustFftTable>(c, "rustfft");
-    one_hot::<u32, TfheFftTable>(c, "tfhe_fft");
-    one_hot::<u64, TfheFftTable>(c, "tfhe_fft");
+    for sparse in [false, true] {
+        ordinary::<u32, RustFftTable>(c, "rustfft", sparse);
+        ordinary::<u64, RustFftTable>(c, "rustfft", sparse);
+        ordinary::<u32, TfheFftTable>(c, "tfhe_fft", sparse);
+        ordinary::<u64, TfheFftTable>(c, "tfhe_fft", sparse);
+        one_hot::<u32, RustFftTable>(c, "rustfft", sparse);
+        one_hot::<u64, RustFftTable>(c, "rustfft", sparse);
+        one_hot::<u32, TfheFftTable>(c, "tfhe_fft", sparse);
+        one_hot::<u64, TfheFftTable>(c, "tfhe_fft", sparse);
+    }
 }
 
 criterion_group!(benches, bench_cbs);

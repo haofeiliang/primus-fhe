@@ -338,7 +338,7 @@ fn pbs<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     let mut generator = KeyGenerator::new(context);
     let client_key = generator.try_generate_client_key(&mut rng).unwrap();
     let server_key = if sparse {
-        generator.try_generate_sparse_server_key(&client_key, 3, 2 * SPARSE_WEIGHT, &mut rng)
+        generator.try_generate_sparse_server_key(&client_key, 3, 2 * SPARSE_WEIGHT, None, &mut rng)
     } else {
         generator.try_generate_server_key(&client_key, None, &mut rng)
     }

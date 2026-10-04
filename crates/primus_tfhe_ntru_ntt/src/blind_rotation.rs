@@ -69,14 +69,6 @@ pub(crate) enum RotationState<'a, T: FheUint> {
 }
 
 impl<'a, T: FheUint> RotationState<'a, T> {
-    /// Borrows the classic material already selected with this BR workspace.
-    pub(crate) fn classic_controls(&self) -> Option<ClassicControls<'a, T>> {
-        match self {
-            Self::Sparse { .. } => None,
-            Self::Binary { controls, .. } | Self::Ternary { controls, .. } => Some(*controls),
-        }
-    }
-
     pub(crate) fn external_product(&mut self) -> &mut NttNtruExternalProductWorkspace<T> {
         match self {
             Self::Sparse { scratch, .. } => &mut scratch.external_product,

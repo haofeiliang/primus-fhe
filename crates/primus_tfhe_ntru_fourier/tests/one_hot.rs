@@ -57,7 +57,7 @@ fn assert_phase(actual: &[u64], expected: &[u64]) {
     }
 }
 
-fn selectors<Table: FftTable>(distr: SecretKeyDistr) {
+fn selectors<Table: FftTable>(distr: SecretKeyDistr, sparse: bool) {
     let modulus = primus_modulus::NativeModulus::<u64>::new();
     let full = DecompositionConfig {
         log_basis: DecompositionBaseLog::new(10),
@@ -84,27 +84,49 @@ fn selectors<Table: FftTable>(distr: SecretKeyDistr) {
     let context = TfheContext::<_, Table, _>::from_parameters(tfhe);
     let input_codec = RoundedCodec::new(8, context.parameters().external_lwe().cipher_modulus());
     let mut rng = StdRng::seed_from_u64(0x4f48434253);
-    let (client, server) = context
-        .try_generate_keys(
-            Some(CircuitBootstrapConfig {
-                output: DecompositionConfig {
-                    log_basis: DecompositionBaseLog::new(8),
-                    level_count: Some(DecompositionLevelCount::new(L)),
-                },
-                trace: full,
-                trace_noise_standard_deviation: 0.7,
-                scheme_switch: full,
-                scheme_switch_noise_standard_deviation: 0.7,
-            }),
-            &mut rng,
-        )
-        .unwrap();
+    let cbs_config = CircuitBootstrapConfig {
+        output: DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(8),
+            level_count: Some(DecompositionLevelCount::new(L)),
+        },
+        trace: full,
+        trace_noise_standard_deviation: 0.7,
+        scheme_switch: full,
+        scheme_switch_noise_standard_deviation: 0.7,
+    };
+    let mut generator = primus_tfhe_ntru_fourier::KeyGenerator::new(&context);
+    let client = generator.try_generate_client_key(&mut rng).unwrap();
+    let server = if sparse {
+        generator.try_generate_sparse_server_key(&client, 3, 8, Some(cbs_config), &mut rng)
+    } else {
+        generator.try_generate_server_key(&client, Some(cbs_config), &mut rng)
+    }
+    .unwrap();
     let ((br, return_key, circuit), allocation) = allocations::measure(|| server.into_parts());
     assert_eq!(allocation.count, 0);
     let circuit = circuit.unwrap();
-    let resources = context.bootstrap_resources(&br).unwrap();
+    // One-hot preparation depends on the context/CBS key, not on BR controls.
+    // In the sparse case prepare using a classic BR over the same two secrets,
+    // then lend sparse resources for every numerical check below.
+    let classic_br = if sparse {
+        Some(
+            generator
+                .try_generate_blind_rotation_key(&client, &mut rng)
+                .unwrap(),
+        )
+    } else {
+        None
+    };
+    let resources = context
+        .bootstrap_resources(classic_br.as_ref().unwrap_or(&br))
+        .unwrap();
     let mut evaluator =
         OneHotCircuitBootstrapEvaluator::try_new(&resources, &circuit, &input_codec).unwrap();
+    let resources = if sparse {
+        context.bootstrap_resources(&br).unwrap()
+    } else {
+        resources
+    };
     let (mut pbs, allocation) = allocations::measure(|| {
         primus_tfhe_ntru_fourier::Evaluator::try_from_resources(resources, &return_key).unwrap()
     });
@@ -159,9 +181,23 @@ fn selectors<Table: FftTable>(distr: SecretKeyDistr) {
     let mut transformed_nlev = primus_ntru::FourierNlevCiphertext::<Vec<_>>::zero(L * (N / 2));
     let public = primus_poly::Polynomial::new(vec![(3 * Q / (2 * M) as u128) as u64; N]);
     let mut decoded = vec![0; N];
-    // Descending inputs force every selector to overwrite previous nonzero rows.
-    for message in (0..M).rev() {
-        let input = encryptor.encrypt_padded(message as u64, &mut rng).unwrap();
+    // Descending inputs overwrite nonzero rows. Exact quantized guard endpoints
+    // isolate the packed LUT convention from fresh-encryption randomness.
+    let a = evaluator.lookup_table().guard_radius() as i64;
+    let cases = (0..M)
+        .rev()
+        .map(|message| (message, None))
+        .chain([(0, Some(-a)), (M - 1, Some(a - 1))]);
+    for (message, error) in cases {
+        let mut input = encryptor.encrypt_padded(message as u64, &mut rng).unwrap();
+        if let Some(error) = error {
+            let lut = evaluator.lookup_table();
+            let exponent = (message as i64 * lut.selector_stride() as i64
+                + error * lut.rotation_step() as i64)
+                .rem_euclid(2 * N as i64) as u64;
+            input.a_mut().fill(0);
+            *input.b_mut() = exponent * ((1u64 << 24) / (2 * N as u64));
+        }
         let (_, allocation) = allocations::measure(|| {
             evaluator.one_hot_to(
                 input.as_view(),
@@ -557,11 +593,12 @@ fn assert_rejected(operation: impl FnOnce()) {
 
 #[test]
 fn one_hot_selectors_preserve_gadget_scales_and_control_cmux_without_allocations() {
-    for distr in [
-        SecretKeyDistr::UniformBinary,
-        SecretKeyDistr::UniformTernary,
+    for (distr, sparse) in [
+        (SecretKeyDistr::UniformBinary, false),
+        (SecretKeyDistr::UniformTernary, false),
+        (SecretKeyDistr::fixed_hamming_weight_binary(4, 2), true),
     ] {
-        selectors::<RustFftTable>(distr);
-        selectors::<TfheFftTable>(distr);
+        selectors::<RustFftTable>(distr, sparse);
+        selectors::<TfheFftTable>(distr, sparse);
     }
 }

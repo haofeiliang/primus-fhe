@@ -57,7 +57,7 @@ fn backend<T: FheUint, Table: MonomialNttTable<ValueT = T>>(c: &mut Criterion, b
                         let client = generator.try_generate_client_key(&mut rng).unwrap();
                         let server = if sparse {
                             generator
-                                .try_generate_sparse_server_key(&client, 3, 64, &mut rng)
+                                .try_generate_sparse_server_key(&client, 3, 64, None, &mut rng)
                                 .unwrap()
                         } else {
                             generator

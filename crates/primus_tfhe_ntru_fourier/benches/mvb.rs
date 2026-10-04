@@ -54,7 +54,7 @@ fn backend<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) 
                         let client = generator.try_generate_client_key(&mut rng).unwrap();
                         let server = if sparse {
                             generator
-                                .try_generate_sparse_server_key(&client, 3, 64, &mut rng)
+                                .try_generate_sparse_server_key(&client, 3, 64, None, &mut rng)
                                 .unwrap()
                         } else {
                             generator

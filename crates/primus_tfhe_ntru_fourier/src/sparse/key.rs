@@ -13,8 +13,8 @@ use std::alloc::Layout;
 use zeroize::Zeroizing;
 
 use crate::{
-    ClientKey, KeyGenerationError, KeyGenerator, ServerKey, SparseBootstrappingKeyError,
-    TfheContext,
+    CircuitBootstrapConfig, CircuitBootstrapKey, CircuitBootstrapParameters, ClientKey,
+    KeyGenerationError, KeyGenerator, ServerKey, SparseBootstrappingKeyError, TfheContext,
 };
 
 /// Coefficient selectors and public buckets for a fixed-weight binary client.
@@ -121,12 +121,14 @@ where
     /// Keeps the client secret fixed; only the public map retries, at most eight
     /// times. Encrypts each selector and dummy independently after matching succeeds.
     /// Requires `copy_count >= 1` and `bucket_count >= max(copy_count, h)`.
-    /// Returns the same high-level server-key type as classic generation. Sparse
-    /// CBS and MVB are not supported; this key contains no CBS material.
+    /// Returns the same server-key type as classic generation. `Some(config)` adds
+    /// trace/scheme-switch material for CBS and one-hot, reusing the accumulator
+    /// transform. `None` generates only BR and return material.
+    /// Enabling CBS inherits [`Self::try_generate_circuit_bootstrap_key`]'s contracts.
     ///
     /// # Errors
-    /// Rejects incompatible keys, a non-fixed-binary distribution, `h` outside
-    /// `0<h<n`, actual weight mismatch, invalid buckets, storage overflow,
+    /// Rejects invalid CBS configuration, incompatible keys, a non-fixed-binary
+    /// distribution, `h` outside `0<h<n`, actual weight mismatch, invalid buckets, storage overflow,
     /// noninvertible accumulator secrets or unstable Fourier inverses before
     /// consuming randomness. Matching failure consumes only map randomness and
     /// returns no partial key. It never resamples the client.
@@ -141,14 +143,21 @@ where
         client_key: &ClientKey<T>,
         copy_count: usize,
         bucket_count: usize,
+        circuit_bootstrap: Option<CircuitBootstrapConfig>,
         rng: &mut R,
     ) -> Result<ServerKey<T>, KeyGenerationError>
     where
         R: rand::Rng + rand::CryptoRng,
     {
+        let circuit_parameters = self.prepare_circuit_bootstrap(circuit_bootstrap)?;
         client_key.check_compatible(self.context.parameters())?;
-        let blind_rotation =
-            self.generate_sparse_blind_rotation_key(client_key, copy_count, bucket_count, rng)?;
+        let (blind_rotation, circuit) = self.generate_sparse_bootstrap_keys(
+            client_key,
+            copy_count,
+            bucket_count,
+            circuit_parameters,
+            rng,
+        )?;
         let parameters = self.context.parameters();
         let return_key = NtruLweKeySwitchingKey::generate(
             client_key.accumulator_ntru_secret_key(),
@@ -158,7 +167,7 @@ where
             parameters.key_switching_basis().clone(),
             rng,
         );
-        Ok(ServerKey::new(blind_rotation, return_key, None))
+        Ok(ServerKey::new(blind_rotation, return_key, circuit))
     }
 
     /// Generates only sparse BR controls, retaining the fixed input secret.
@@ -175,17 +184,22 @@ where
         R: rand::Rng + rand::CryptoRng,
     {
         client_key.check_blind_rotation_compatible(self.context.parameters())?;
-        self.generate_sparse_blind_rotation_key(client_key, copy_count, bucket_count, rng)
+        let (blind_rotation, _) =
+            self.generate_sparse_bootstrap_keys(client_key, copy_count, bucket_count, None, rng)?;
+        Ok(blind_rotation)
     }
 
-    /// Shares sparse matching/encryption after either public entry checked its secret roles.
-    fn generate_sparse_blind_rotation_key<R: rand::Rng + rand::CryptoRng>(
+    /// Shares matching/encryption after the public boundary checked secret roles.
+    /// Optional CBS generation reuses the same accumulator transform, with its own bases.
+    fn generate_sparse_bootstrap_keys<R: rand::Rng + rand::CryptoRng>(
         &mut self,
         client_key: &ClientKey<T>,
         copy_count: usize,
         bucket_count: usize,
+        circuit_parameters: Option<CircuitBootstrapParameters<T>>,
         rng: &mut R,
-    ) -> Result<crate::BlindRotationKey<T>, KeyGenerationError> {
+    ) -> Result<(crate::BlindRotationKey<T>, Option<CircuitBootstrapKey<T>>), KeyGenerationError>
+    {
         use SparseBootstrappingKeyError as Error;
         let parameters = self.context.parameters();
         let SecretKeyDistr::FixedHammingWeightBinary { hamming_weight } =
@@ -280,7 +294,16 @@ where
             copy_count,
             control_len,
         };
-        Ok(crate::BlindRotationKey::from_sparse(parameters, controls))
+        let blind_rotation = crate::BlindRotationKey::from_sparse(parameters, controls);
+        let circuit = circuit_parameters.map(|parameters| {
+            self.generate_circuit_bootstrap_key_with_main(
+                client_key.accumulator_ntru_secret_key(),
+                &accumulator_fourier,
+                parameters,
+                rng,
+            )
+        });
+        Ok((blind_rotation, circuit))
     }
 }
 
@@ -292,19 +315,20 @@ where
 {
     /// Generates experimental sparse PBS material for a fixed-weight binary client.
     /// Inherits [`KeyGenerator::try_generate_sparse_server_key`]'s sampling, errors
-    /// and noise contracts. Reuses the ordinary evaluator for PBS and factorized MVB;
-    /// CBS and one-hot remain unsupported.
+    /// and noise contracts, including optional CBS/one-hot material.
     pub fn try_generate_sparse_server_key<R: rand::Rng + rand::CryptoRng>(
         &self,
         client_key: &ClientKey<T>,
         copy_count: usize,
         bucket_count: usize,
+        circuit_bootstrap: Option<CircuitBootstrapConfig>,
         rng: &mut R,
     ) -> Result<ServerKey<T>, KeyGenerationError> {
         KeyGenerator::new(self).try_generate_sparse_server_key(
             client_key,
             copy_count,
             bucket_count,
+            circuit_bootstrap,
             rng,
         )
     }

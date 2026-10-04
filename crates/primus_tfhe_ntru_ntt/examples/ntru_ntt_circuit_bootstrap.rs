@@ -18,6 +18,9 @@ use primus_tfhe_ntru_ntt::{
 };
 use rand::{SeedableRng, rngs::StdRng};
 
+// Set true to use fixed-weight binary sparse BR with the same CBS pipeline.
+const SPARSE: bool = false;
+
 // The explicit parameters below select bases and moduli for this coefficient word.
 type Word = u32;
 const N: usize = 1024;
@@ -48,7 +51,11 @@ fn parameters() -> TfheParameters<Word, PowOf2Modulus<Word>> {
         external_lwe: LweParametersInner::new(
             LweDimension::new(800),
             PowOf2Modulus::new(lwe_modulus),
-            SecretKeyDistr::UniformBinary,
+            if SPARSE {
+                SecretKeyDistr::fixed_hamming_weight_binary(800, 32)
+            } else {
+                SecretKeyDistr::UniformBinary
+            },
             lwe_modulus as f64 * 2.046151696979124e-6,
         ),
         accumulator_modulus: modulus, // Ring Q; distinct from the external LWE q.
@@ -105,9 +112,12 @@ fn main() {
     let mut rng = StdRng::seed_from_u64(42);
     let mut generator = KeyGenerator::new(&context);
     let client_key = generator.try_generate_client_key(&mut rng).unwrap();
-    let blind_rotation_key = generator
-        .try_generate_blind_rotation_key(&client_key, &mut rng)
-        .unwrap();
+    let blind_rotation_key = if SPARSE {
+        generator.try_generate_sparse_blind_rotation_key(&client_key, 3, 64, &mut rng)
+    } else {
+        generator.try_generate_blind_rotation_key(&client_key, &mut rng)
+    }
+    .unwrap();
     let circuit_parameters =
         CircuitBootstrapParameters::try_from_config(context.parameters(), circuit_config())
             .unwrap();

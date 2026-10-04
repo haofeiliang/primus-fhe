@@ -78,7 +78,9 @@ where
 {
     /// Checks table encoding, one-hot geometry and server resources, then allocates scratch.
     /// Borrows the classic initializer only if the compiled plan needs a public lift.
-    /// Sparse keys and keys without CBS material are rejected.
+    /// Requires CBS material. Sparse keys require an explicitly supplied lift key
+    /// via `try_from_parts` when the plan contains a public lift; the complete
+    /// sparse lookup pipeline has not yet been numerically validated.
     ///
     /// # Correctness
     /// The server key must belong to this context's secrets and NTT representation,
