@@ -5,6 +5,11 @@ and timing boundaries; the [parameter matrix](tfhe-parameters.md) owns the
 numerical profiles. This report records the current measurements, not production
 security recommendations or a performance comparison between equal-security systems.
 
+For the newer matched classic/sparse PBS and CBS comparison, see the
+[2026-10-04 sparse baseline](sparse-bootstrap-measurements.md). It also rechecks
+the CPU-dependent CBS regression and distinguishes retained heap from requested
+live-heap peak. The cleanup measurements below remain historical.
+
 ## Scope and enumeration cost
 
 The cleanup starts from `e76ed14`. It changes benchmark harnesses, parameters

@@ -1,5 +1,6 @@
 //! One complete CBS into a reused gadget ciphertext. Keygen, encryption,
 //! allocation and the CMux correctness probe are outside timing; t=4.
+//! Classic/sparse share n728/h32/N1024, client seed and input randomness.
 //! Parameters: primus_tfhe_test_support::parameters (arithmetic cost profiles).
 //! Fixtures are initialized only for selected IDs, then reused across samples.
 //! Run: cargo bench -p primus_tfhe_glwe_fourier --bench circuit_bootstrap
@@ -8,7 +9,6 @@ use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use primus_fft::{FftTable, RustFftTable, TfheFftTable, TorusFftValue};
-use primus_glwe::SecretKeyDistr;
 use primus_modulus::NativeModulus;
 use primus_tfhe_glwe_fourier::{
     CircuitBootstrapEvaluator, ClientKey, KeyGenerator, PbsOrder, TfheContext,
@@ -24,20 +24,12 @@ where
     Table: FftTable,
 {
     let kind = if sparse { "sparse" } else { "classic" };
-    let dimension = if sparse { 728 } else { 800 };
-    let parameters = if sparse {
-        glwe::diagnostic(NativeModulus::<T>::new(), order)
-    } else {
-        glwe::circuit(
-            NativeModulus::<T>::new(),
-            order,
-            SecretKeyDistr::UniformBinary,
-        )
-    };
+    // Pair classic and sparse BR using identical parameters and client seed.
+    let parameters = glwe::diagnostic(NativeModulus::<T>::new(), order);
     let input_codec =
         primus_encoding::RoundedCodec::new(T::as_from(4u32), parameters.cipher_modulus());
     let name = format!(
-        "glwe/{backend}/u{}/cbs/{kind}/n{dimension}_N1024/{order:?}/complete",
+        "glwe/{backend}/u{}/cbs/{kind}/n728_h32_N1024/{order:?}/complete",
         T::BITS
     );
     let mut fixture = None;
@@ -63,6 +55,8 @@ where
                     .try_generate_server_key(&client, Some(glwe::cbs::<T>()), &mut rng)
                     .unwrap()
             };
+            // Separate input randomness from scheme-dependent key generation.
+            let mut rng = StdRng::seed_from_u64(43);
             let input = context
                 .encryptor(client.external_lwe_secret_key(), &input_codec)
                 .unwrap()

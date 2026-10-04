@@ -15,8 +15,13 @@ fixtures, not assessed security parameters or equal-security comparisons.
 | GLWE `pbs` stage IDs | One BR or one GLWE key switch at binary n800/N1024; excludes extraction and prerequisite operations |
 | Four backends' `sparse_pbs` | One complete classic or bucket-sparse PBS, or one server-key generation, for the same n728/h32/N1024/t8 secret profile |
 | Four backends' `mvb` | Produce k Scaled threshold bits from one input: D8/k3 compares independent PBS, interleaved ManyLUT and factorized MVB; D64/k17 compares independent and factorized because interleaving does not fit |
-| Four backends' `circuit_bootstrap` | One ordinary CBS into a reused gadget ciphertext; GLWE also has sparse CBS, NTRU also compares full M4 and compact M-1 one-hot batches |
+| Four backends' `circuit_bootstrap` | One ordinary CBS into a reused gadget ciphertext; GLWE pairs classic/sparse at n728/h32/N1024/t4, NTRU retains n800 classic CBS and full M4 / compact M-1 one-hot batches |
 | `primus_tfhe_ntru_lut/pipeline` | `create_lut_and_drop`: create/drop one public high-precision LUT; `evaluate`: homomorphically evaluate all eight outputs at c8/d5/o8 (16 input/output bits), n800/N1024, excluding public LUT creation |
+
+GLWE CBS fixes the client seed and gives input encryption its own seed, so both
+BR variants receive identical fixed-weight secrets, input ciphertexts and LUTs.
+The current [sparse measurement report](../../guides/development/sparse-bootstrap-measurements.md)
+records paired latency, stage costs, setup and memory accounting.
 
 MVB compares classic and sparse GLWE keys. NTRU sparse supports only ordinary
 and interleaved PBS, so it has just the D8/k3 independent/interleaved pair.
