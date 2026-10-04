@@ -26,7 +26,7 @@ fn parameters(
 ) -> CrtGlweParameters<u32, BarrettModulus<u32>> {
     CrtGlweParameters::new(
         GlweDimension::new(dimension),
-        n,
+        PolyLength::new(n),
         BarrettModulus::new(3),
         BarrettModulus::new(101),
         moduli,
@@ -44,8 +44,13 @@ fn encryption_bindings_check_layout_and_ordered_moduli() {
     let mut rng = StdRng::seed_from_u64(0x4249_4e44);
     let secret = GlweSecretKey::generate(params.glwe_size(), params.secret_key_sampler(), &mut rng);
     let key = DcrtGlweSecretKey::from_coeff_secret_key(&secret, &table);
-    let public_key =
-        DcrtGlwePublicKey::new(&key, params.inner(), params.base_q(), &table, &mut rng);
+    let public_key = DcrtGlwePublicKey::new(
+        &key,
+        params.encryption_parameters(),
+        params.base_q(),
+        &table,
+        &mut rng,
+    );
     assert!(key.try_bind(&params, &table).is_ok());
     assert!(public_key.try_bind(&params, &table).is_ok());
 
@@ -78,7 +83,7 @@ fn encryption_bindings_check_layout_and_ordered_moduli() {
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 DcrtGlwePublicKey::new(
                     &key,
-                    params.inner(),
+                    params.encryption_parameters(),
                     other_params.base_q(),
                     &other_table,
                     &mut rejected_rng,
@@ -127,8 +132,13 @@ fn classic_switch_binding_checks_radix_and_retained_levels() {
         Some(DecompositionLevelCount::new(1)),
     );
     let domain = DcrtGadgetDomain::try_new(&gadget, &table).unwrap();
-    let key =
-        DcrtGlweKeySwitchingKey::generate(&secret, params.inner(), &dcrt_secret, &domain, &mut rng);
+    let key = DcrtGlweKeySwitchingKey::generate(
+        &secret,
+        params.encryption_parameters(),
+        &dcrt_secret,
+        &domain,
+        &mut rng,
+    );
     assert!(DcrtGlweKeySwitchEvaluator::try_new(&key, &domain).is_ok());
 
     let other_radix = CrtGlevParameters::with_glwe_params(
@@ -179,8 +189,13 @@ fn hybrid_binding_checks_qp_order_split_and_partition_width() {
     let domain = HybridRnsKeySwitchDomain::try_new(&hybrid, &table).unwrap();
     let mut rng = StdRng::seed_from_u64(0x4859_4249);
     let secret = GlweSecretKey::generate(params.glwe_size(), params.secret_key_sampler(), &mut rng);
-    let key =
-        HybridRnsGlweKeySwitchingKey::generate(&secret, params.inner(), &secret, &domain, &mut rng);
+    let key = HybridRnsGlweKeySwitchingKey::generate(
+        &secret,
+        params.encryption_parameters(),
+        &secret,
+        &domain,
+        &mut rng,
+    );
     assert!(HybridRnsGlweKeySwitchEvaluator::try_new(&key, &domain).is_ok());
 
     // Both have two active partitions, but their actual Q ranges are 2+2 and 3+1.
@@ -225,7 +240,7 @@ fn hybrid_binding_checks_qp_order_split_and_partition_width() {
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             HybridRnsGlweKeySwitchingKey::generate(
                 &secret,
-                reordered_params.inner(),
+                reordered_params.encryption_parameters(),
                 &secret,
                 &domain,
                 &mut generation_rng,

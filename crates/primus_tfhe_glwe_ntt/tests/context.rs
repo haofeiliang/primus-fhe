@@ -32,7 +32,7 @@ fn parameters_with_bases(
     let lwe = LweParameters::new(LweDimension::new(4), 4, modulus, distribution, 0.7);
     let glwe = GlweParameters::new(
         GlweDimension::new(1),
-        POLY_LENGTH,
+        PolyLength::new(POLY_LENGTH),
         4,
         modulus,
         SecretKeyDistr::UniformBinary,
@@ -44,7 +44,7 @@ fn parameters_with_bases(
         Some(DecompositionLevelCount::new(3)),
     );
     TfheParameters::try_new(
-        lwe.into_inner(),
+        lwe.into_encryption_parameters(),
         primus_glwe::GgswParameters::try_with_basis(&glwe, bootstrapping).unwrap(),
         ApproxSignedBasis::new(
             Some(MODULUS),

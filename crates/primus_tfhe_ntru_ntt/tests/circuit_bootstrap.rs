@@ -11,6 +11,7 @@ use primus_modulus::{BarrettModulus, PowOf2Modulus};
 use primus_ntru::NlevParameters;
 use primus_ntru::{NtruParameters, NttNgswCiphertext, NttNtruSecretKey, SecretKeyDistr};
 use primus_ntt::U64NttTable;
+use primus_poly::PolyLength;
 use primus_poly::Polynomial;
 use primus_test_allocations as allocations;
 use primus_tfhe_ntru_ntt::{
@@ -35,7 +36,13 @@ fn circuit_bootstrap(distr: SecretKeyDistr, sparse: bool) {
         distr,
         0.7,
     );
-    let accumulator = NtruParameters::new(N, 4, modulus, SecretKeyDistr::SparseTernary, 0.7);
+    let accumulator = NtruParameters::new(
+        PolyLength::new(N),
+        4,
+        modulus,
+        SecretKeyDistr::SparseTernary,
+        0.7,
+    );
     let blind_rotation_basis = ApproxSignedBasis::new(
         accumulator.cipher_modulus_value(),
         DecompositionBaseLog::new(10),
@@ -43,7 +50,7 @@ fn circuit_bootstrap(distr: SecretKeyDistr, sparse: bool) {
     );
 
     let tfhe = TfheParameters::try_new(
-        lwe.into_inner(),
+        lwe.into_encryption_parameters(),
         NlevParameters::try_with_basis(&accumulator, blind_rotation_basis).unwrap(),
         primus_tfhe_ntru::DecompositionConfig {
             log_basis: DecompositionBaseLog::new(10),
@@ -394,14 +401,14 @@ fn independent_cbs_material_does_not_require_a_return_key() {
         level_count: None,
     };
     let parameters = TfheParameters::try_from_config(primus_tfhe_ntru_ntt::TfheConfig {
-        external_lwe: primus_lwe::LweParametersInner::new(
+        external_lwe: primus_lwe::LweEncryptionParameters::new(
             LweDimension::new(2),
             primus_modulus::PowOf2Modulus::new(16u32),
             SecretKeyDistr::UniformBinary,
             0.7,
         ),
         accumulator_modulus: primus_modulus::BarrettModulus::new(65_537u32),
-        poly_length: 32,
+        poly_length: PolyLength::new(32),
         accumulator_secret_key_distr: SecretKeyDistr::gaussian(3.2),
         accumulator_noise_standard_deviation: 0.7,
         blind_rotation: full,

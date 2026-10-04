@@ -67,7 +67,7 @@ fn sparse_rotation_matches_direct_phase_and_classic_with_reused_scratch() {
         );
         let glwe = GlweParameters::new(
             GlweDimension::new(k),
-            n,
+            PolyLength::new(n),
             T,
             modulus,
             SecretKeyDistr::UniformBinary,
@@ -85,7 +85,7 @@ fn sparse_rotation_matches_direct_phase_and_classic_with_reused_scratch() {
             )
         };
         let parameters = TfheParameters::try_new(
-            lwe.into_inner(),
+            lwe.into_encryption_parameters(),
             primus_glwe::GgswParameters::try_with_basis(&glwe, basis.clone()).unwrap(),
             basis,
             PbsOrder::KeyswitchBootstrap,

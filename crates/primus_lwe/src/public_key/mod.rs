@@ -10,7 +10,7 @@ use primus_lattice::lwe::Lwe;
 use primus_reduce::RingContext;
 
 use crate::{
-    LweCiphertext, LweParameters, LweParametersInner, LweSecretKeyRef, PlaintextEmbedding,
+    LweCiphertext, LweEncryptionParameters, LweParameters, LweSecretKeyRef, PlaintextEmbedding,
 };
 
 // A full row block consumes whole random words for any ciphertext tile count.
@@ -78,7 +78,7 @@ impl<T: FheUint> LwePublicKey<T> {
     #[must_use]
     pub fn generate<M, R>(
         secret_key: LweSecretKeyRef<'_, T>,
-        params: &LweParametersInner<T, M>,
+        params: &LweEncryptionParameters<T, M>,
         rng: &mut R,
     ) -> Self
     where

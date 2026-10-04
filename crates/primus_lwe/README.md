@@ -7,7 +7,7 @@ English | [简体中文](README.zh_CN.md)
 
 Single-modulus LWE key generation, secret-key and public-key encryption, and key switching for Primus FHE. Ciphertext storage and arithmetic come from [`primus_lattice`](../primus_lattice/README.md); message encoding uses [`RoundedCodec`](../primus_encoding/README.md).
 
-`LweParametersInner` owns the checked ciphertext domain and prepared samplers without a message codec. `LweParameters` adds a `RoundedCodec` for ordinary encryption/decryption. Key generation takes `params.inner()`; `params.into_inner()` moves the sampling state without cloning. TFHE can construct the inner directly and bind message codecs later.
+`LweEncryptionParameters` owns the checked ciphertext domain and prepared samplers without a message codec. `LweParameters` adds a `RoundedCodec` for ordinary encryption/decryption. Key generation takes `params.encryption_parameters()`; `params.into_encryption_parameters()` moves the sampling state without cloning. TFHE can construct `LweEncryptionParameters` directly and bind message codecs later.
 
 ## APIs
 
@@ -44,7 +44,7 @@ fn main() {
         0.7,
     );
     let mut rng = rand::rng();
-    let secret = LweSecretKey::generate(params.inner(), &mut rng);
+    let secret = LweSecretKey::generate(params.encryption_parameters(), &mut rng);
 
     let ciphertext = secret.encrypt(3u32, &params, &mut rng);
     assert_eq!(secret.decrypt(&ciphertext, &params), 3);
@@ -56,7 +56,7 @@ fn main() {
         2
     );
 
-    let public = LwePublicKey::generate(secret.as_view(), params.inner(), &mut rng);
+    let public = LwePublicKey::generate(secret.as_view(), params.encryption_parameters(), &mut rng);
     let messages = [0u32, 1, 2, 3];
     let batch = public.encrypt_batch(&messages, &params, &mut rng);
     assert_eq!(secret.decrypt_batch(&batch, &params), messages);
@@ -71,12 +71,12 @@ fn main() {
         SecretKeyDistr::UniformBinary,
         0.7,
     );
-    let output_secret = LweSecretKey::generate(output_params.inner(), &mut rng);
+    let output_secret = LweSecretKey::generate(output_params.encryption_parameters(), &mut rng);
     let basis = ApproxSignedBasis::new(params.cipher_modulus_value(), DecompositionBaseLog::new(4), None);
     let switching = LweKeySwitchingKey::generate(
         secret.as_view(),
         &output_secret,
-        output_params.inner(),
+        output_params.encryption_parameters(),
         basis,
         &mut rng,
     );
@@ -135,7 +135,7 @@ Packed encryption has a different layout: `encrypt_multi_messages` stores one le
 
 ## Key switching
 
-`LweKeySwitchingKey::generate` accepts an `Encoded` or `Signed` input key view, an encoded `&LweSecretKey<T>` output key, codec-free `&LweParametersInner<T, M>` output parameters and an owned `ApproxSignedBasis<T>`. The key retains its dimensions and decomposition basis, not a full `LweParameters` object. Entries are ordered by input coefficient, then decomposition level, then the output ciphertext's `[a, b]` coefficients. Storage uses `input_dimension * levels * (output_dimension + 1)` elements.
+`LweKeySwitchingKey::generate` accepts an `Encoded` or `Signed` input key view, an encoded `&LweSecretKey<T>` output key, codec-free `&LweEncryptionParameters<T, M>` output parameters and an owned `ApproxSignedBasis<T>`. The key retains its dimensions and decomposition basis, not a full `LweParameters` object. Entries are ordered by input coefficient, then decomposition level, then the output ciphertext's `[a, b]` coefficients. Storage uses `input_dimension * levels * (output_dimension + 1)` elements.
 
 `key_switch` / `key_switch_to` process a single sample; `key_switch_batch` / `key_switch_batch_to` use independent batch slices. Input and output use their respective dimensions and the same ciphertext modulus. Key switching does not re-encode messages or switch moduli. Decryption parameters must preserve the encoding, and the noise budget must cover decomposition error and key-entry noise. Batch output equals repeated single key switching coefficient for coefficient; the `_to` path reuses key entries without heap scratch.
 

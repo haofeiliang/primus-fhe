@@ -1,6 +1,6 @@
 //! NLev/NGSW layouts and approximate signed-decomposition basis.
 
-use super::{NlevParameterError, NtruParameters, NtruParametersInner};
+use super::{NlevParameterError, NtruEncryptionParameters, NtruParameters};
 use primus_decompose::{
     DecompositionBaseLog, DecompositionLevelCount, primitive::ApproxSignedBasis,
 };
@@ -21,7 +21,7 @@ where
     T: FheUint,
     M: RingContext<T>,
 {
-    pub(super) inner: Arc<NtruParametersInner<T, M>>,
+    pub(super) encryption_parameters: Arc<NtruEncryptionParameters<T, M>>,
     basis: ApproxSignedBasis<T>,
     nlev_len: usize,
 }
@@ -39,19 +39,19 @@ where
     /// Rejects a different explicit/native basis modulus or an overflowing N*L
     /// ciphertext length. Secret support/weight and noise are already validated.
     pub fn try_from_parts(
-        inner: Arc<NtruParametersInner<T, M>>,
+        encryption_parameters: Arc<NtruEncryptionParameters<T, M>>,
         basis: ApproxSignedBasis<T>,
     ) -> Result<Self, NlevParameterError> {
-        if basis.modulus() != inner.cipher_modulus_value() {
+        if basis.modulus() != encryption_parameters.cipher_modulus_value() {
             return Err(NlevParameterError::BasisModulusMismatch);
         }
         let nlev_len = basis
             .decompose_length()
             .get()
-            .checked_mul(inner.poly_length().get())
+            .checked_mul(encryption_parameters.poly_length().get())
             .ok_or(NlevParameterError::CiphertextLengthOverflow)?;
         Ok(Self {
-            inner,
+            encryption_parameters,
             basis,
             nlev_len,
         })
@@ -66,7 +66,7 @@ where
         ntru: &NtruParameters<T, M>,
         basis: ApproxSignedBasis<T>,
     ) -> Result<Self, NlevParameterError> {
-        Self::try_from_parts(Arc::clone(&ntru.inner), basis)
+        Self::try_from_parts(Arc::clone(&ntru.encryption_parameters), basis)
     }
 
     /// Creates NLev/NGSW parameters from matching NTRU parameters.
@@ -105,8 +105,8 @@ where
     /// Returns the shared ring and sampling state, without ordinary message encoding.
     #[must_use]
     #[inline]
-    pub fn inner(&self) -> &NtruParametersInner<T, M> {
-        &self.inner
+    pub fn encryption_parameters(&self) -> &NtruEncryptionParameters<T, M> {
+        &self.encryption_parameters
     }
 
     /// Returns the approximate signed decomposition basis.
@@ -120,7 +120,7 @@ where
     #[must_use]
     #[inline]
     pub fn poly_length(&self) -> PolyLength {
-        self.inner.poly_length()
+        self.encryption_parameters.poly_length()
     }
 
     /// Returns the number of retained decomposition levels.

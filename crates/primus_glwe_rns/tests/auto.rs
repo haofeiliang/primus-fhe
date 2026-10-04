@@ -19,16 +19,16 @@ fn coefficient_automorphism(
     degree: usize,
     modulus: BarrettModulus<u64>,
 ) -> Vec<u64> {
-    let poly_length = polynomial.len();
-    let twice_poly_length = 2 * poly_length;
-    let mut result = vec![0; poly_length];
+    let n = polynomial.len();
+    let twice_poly_length = 2 * n;
+    let mut result = vec![0; n];
 
     for (index, &coefficient) in polynomial.iter().enumerate() {
         let target = index * degree % twice_poly_length;
-        if target < poly_length {
+        if target < n {
             result[target] = coefficient;
         } else {
-            result[target - poly_length] = modulus.reduce_neg(coefficient);
+            result[target - n] = modulus.reduce_neg(coefficient);
         }
     }
 
@@ -45,8 +45,8 @@ fn test_crt_glwe_auto() {
     type ValueT = u64;
 
     let dimension = 3;
-    let poly_length: usize = 32;
-    let log_n = poly_length.trailing_zeros();
+    let poly_length = PolyLength::new(32);
+    let n = poly_length.get();
     let t: ValueT = 12289;
     let mod_t = <BarrettModulus<ValueT>>::new(t);
 
@@ -55,7 +55,7 @@ fn test_crt_glwe_auto() {
 
     let moduli_values: [ValueT; _] = [1125899906826241, 1125899906629633];
     let moduli = moduli_values.map(<BarrettModulus<ValueT>>::new);
-    let table = UintDcrtTable::new(PolyLength::new(1usize << log_n), &moduli).unwrap();
+    let table = UintDcrtTable::new(poly_length, &moduli).unwrap();
 
     let mut rng = StdRng::seed_from_u64(42);
 
@@ -81,7 +81,7 @@ fn test_crt_glwe_auto() {
         CrtGlevParameters::with_glwe_params(&glwe_params, DecompositionBaseLog::new(20), None);
     let domain = DcrtGadgetDomain::try_new(&glev_params, &table).unwrap();
 
-    let input1: Polynomial<Vec<ValueT>> = Polynomial::random(poly_length, mod_t, &mut rng);
+    let input1: Polynomial<Vec<ValueT>> = Polynomial::random(n, mod_t, &mut rng);
     let mut c1: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
     let mut c2: CrtGlwe<Vec<ValueT>> = CrtGlwe::zero(rns_glwe_len);
     let mut decrypt_workspace = DcrtGlweDecryptWorkspace::new(glwe_params.size());
@@ -92,7 +92,7 @@ fn test_crt_glwe_auto() {
     let c1 = c1.into_coeff_form(&table);
 
     let mut transformed = DcrtGlweCiphertext::<Vec<ValueT>>::zero(rns_glwe_len);
-    for degree in [1, poly_length + 1, 3] {
+    for degree in [1, n + 1, 3] {
         let auto_key = CrtGlweAutoKey::new(&domain, degree, &sk, &dcrt_sk, &mut rng);
         let mut evaluator = CrtGlweAutoEvaluator::new(&auto_key, &domain);
         evaluator.automorphism_to(&c1.as_view(), &mut c2.as_mut_view());
@@ -118,8 +118,8 @@ fn test_dcrt_glwe_auto() {
     type ValueT = u64;
 
     let dimension = 3;
-    let poly_length: usize = 32;
-    let log_n = poly_length.trailing_zeros();
+    let poly_length = PolyLength::new(32);
+    let n = poly_length.get();
     let t: ValueT = 12289;
     let mod_t = <BarrettModulus<ValueT>>::new(t);
     let gamma: ValueT = 2199023190017;
@@ -127,7 +127,7 @@ fn test_dcrt_glwe_auto() {
 
     let moduli_values: [ValueT; _] = [1125899906826241, 1125899906629633];
     let moduli = moduli_values.map(<BarrettModulus<ValueT>>::new);
-    let table = UintDcrtTable::new(PolyLength::new(1usize << log_n), &moduli).unwrap();
+    let table = UintDcrtTable::new(poly_length, &moduli).unwrap();
 
     let mut rng = StdRng::seed_from_u64(42);
 
@@ -153,7 +153,7 @@ fn test_dcrt_glwe_auto() {
         CrtGlevParameters::with_glwe_params(&glwe_params, DecompositionBaseLog::new(20), None);
     let domain = DcrtGadgetDomain::try_new(&glev_params, &table).unwrap();
 
-    let input1: Polynomial<Vec<ValueT>> = Polynomial::random(poly_length, mod_t, &mut rng);
+    let input1: Polynomial<Vec<ValueT>> = Polynomial::random(n, mod_t, &mut rng);
     let mut c1: DcrtGlweCiphertext<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
     let mut c2: DcrtGlweCiphertext<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
     let mut decrypt_workspace = DcrtGlweDecryptWorkspace::new(glwe_params.size());
@@ -161,7 +161,7 @@ fn test_dcrt_glwe_auto() {
     let dcrt_sk_context = dcrt_sk.try_bind(&glwe_params, &table).unwrap();
     dcrt_sk_context.encrypt_to(&input1, &mut c1, &mut rng);
 
-    for degree in [1, poly_length + 1, 3] {
+    for degree in [1, n + 1, 3] {
         let auto_key = DcrtGlweAutoKey::new(&domain, degree, &dcrt_sk, &mut rng);
         let mut evaluator = DcrtGlweAutoEvaluator::new(&auto_key, &domain);
         evaluator.automorphism_to(&c1.as_view(), &mut c2.as_mut_view());

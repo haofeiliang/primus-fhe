@@ -69,10 +69,14 @@ fn ntt_padded_ternary_has_exact_coefficient_phase() {
         one_weight: 1,
     };
     for distribution in DISTRIBUTIONS.into_iter().chain([even]) {
-        let params = NtruParameters::new(N, 16, modulus, distribution, 0.7);
-        let (coeff, key) =
-            NttNtruSecretKey::generate_padded_pair(params.inner(), ACTIVE_LENGTH, &table, &mut rng)
-                .unwrap();
+        let params = NtruParameters::new(PolyLength::new(N), 16, modulus, distribution, 0.7);
+        let (coeff, key) = NttNtruSecretKey::generate_padded_pair(
+            params.encryption_parameters(),
+            ACTIVE_LENGTH,
+            &table,
+            &mut rng,
+        )
+        .unwrap();
         assert_prefix(&coeff, distribution);
 
         // Replay only the encryption noise. Compute f*c directly in the
@@ -119,9 +123,15 @@ fn assert_fourier_prefix<Table: FftTable>(table: &Table) {
     let mut encrypt = FourierNtruEncryptWorkspace::new(PolyLength::new(N));
     let mut decrypt = FourierNtruDecryptWorkspace::new(PolyLength::new(N));
     for distribution in DISTRIBUTIONS {
-        let params = NtruParameters::new(N, 16, NativeModulus::new(), distribution, 0.7);
+        let params = NtruParameters::new(
+            PolyLength::new(N),
+            16,
+            NativeModulus::new(),
+            distribution,
+            0.7,
+        );
         let (coeff, key) = FourierNtruSecretKey::generate_padded_pair(
-            params.inner(),
+            params.encryption_parameters(),
             ACTIVE_LENGTH,
             &mut fft,
             &mut rng,
@@ -164,19 +174,29 @@ fn native_fixed_even_weights_fail_without_sampling() {
             one_weight: 0,
         },
     ] {
-        let params = NtruParameters::new(N, 16u64, NativeModulus::new(), distribution, 0.7);
+        let params = NtruParameters::new(
+            PolyLength::new(N),
+            16u64,
+            NativeModulus::new(),
+            distribution,
+            0.7,
+        );
         for padded in [false, true] {
             let mut rng = StdRng::seed_from_u64(0xB701);
             let mut untouched = StdRng::seed_from_u64(0xB701);
             let result = if padded {
                 FourierNtruSecretKey::generate_padded_pair(
-                    params.inner(),
+                    params.encryption_parameters(),
                     ACTIVE_LENGTH,
                     &mut fft,
                     &mut rng,
                 )
             } else {
-                FourierNtruSecretKey::generate_pair(params.inner(), &mut fft, &mut rng)
+                FourierNtruSecretKey::generate_pair(
+                    params.encryption_parameters(),
+                    &mut fft,
+                    &mut rng,
+                )
             };
             assert!(matches!(result, Err(NtruError::NonInvertibleSecretKey)));
             assert_eq!(rng.next_u64(), untouched.next_u64());

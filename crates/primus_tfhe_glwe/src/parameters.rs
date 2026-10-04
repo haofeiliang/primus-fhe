@@ -2,10 +2,10 @@
 
 use crate::TfheParameterError;
 use primus_decompose::{DecompositionConfig, primitive::ApproxSignedBasis};
-use primus_glwe::{GlweParametersInner, GlweSize};
+use primus_glwe::{GlweEncryptionParameters, GlweSize};
 use primus_integer::FheUint;
 use primus_lattice::{GlweDimension, LweDimension};
-use primus_lwe::LweParametersInner;
+use primus_lwe::LweEncryptionParameters;
 use primus_poly::PolyLength;
 use primus_reduce::RingContext;
 use std::sync::Arc;
@@ -32,11 +32,11 @@ pub enum PbsOrder {
 pub struct TfheConfig<T: FheUint, M: RingContext<T>> {
     /// Small BR-control secret, dimension, ciphertext modulus and fresh LWE noise.
     /// This is the external domain only for [`PbsOrder::BootstrapKeyswitch`].
-    pub small_lwe: LweParametersInner<T, M>,
+    pub small_lwe: LweEncryptionParameters<T, M>,
     /// Number of secret polynomials in the accumulator.
     pub accumulator_dimension: GlweDimension,
     /// Accumulator polynomial length `N`.
-    pub poly_length: usize,
+    pub poly_length: PolyLength,
     /// Coefficient distribution of the accumulator secret.
     pub accumulator_secret_key_distr: SecretKeyDistr,
     /// Coefficient-unit standard deviation for accumulator, BR and return-KS encryption.
@@ -57,14 +57,9 @@ impl<T: FheUint, M: RingContext<T>> TfheParameters<T, M> {
     /// errors of [`Self::try_new`]. This does not validate a noise/security budget.
     pub fn try_from_config(config: TfheConfig<T, M>) -> Result<Self, TfheParameterError> {
         let modulus = config.small_lwe.cipher_modulus();
-        let poly_length = PolyLength::try_new(config.poly_length).map_err(|_| {
-            TfheParameterError::AccumulatorLayout(
-                primus_lattice::GlweSizeError::InvalidPolynomialLength,
-            )
-        })?;
-        let size = GlweSize::try_new(config.accumulator_dimension, poly_length)
+        let size = GlweSize::try_new(config.accumulator_dimension, config.poly_length)
             .map_err(TfheParameterError::AccumulatorLayout)?;
-        let inner = GlweParametersInner::try_new(
+        let inner = GlweEncryptionParameters::try_new(
             modulus,
             config.accumulator_secret_key_distr,
             config.accumulator_noise_standard_deviation,
@@ -101,7 +96,7 @@ where
     T: FheUint,
     M: RingContext<T>,
 {
-    small_lwe: LweParametersInner<T, M>,
+    small_lwe: LweEncryptionParameters<T, M>,
     blind_rotation_ggsw: GgswParameters<T, M>,
     glwe_key_switching: GlweKeySwitchingParameters<T, M>,
     pbs_order: PbsOrder,
@@ -124,7 +119,7 @@ where
     /// dimensions or decomposition bases, a rotation domain `2N` not representable
     /// by `T`, or a derived gadget layout overflow.
     pub fn try_new(
-        small_lwe: LweParametersInner<T, M>,
+        small_lwe: LweEncryptionParameters<T, M>,
         blind_rotation_ggsw: GgswParameters<T, M>,
         key_switching_basis: ApproxSignedBasis<T>,
         pbs_order: PbsOrder,
@@ -181,7 +176,7 @@ where
         );
         // These samplers were validated in the source parameters at the same q;
         // combine the small-secret distribution with the accumulator's KS noise.
-        let inner = Arc::new(GlweParametersInner::new(
+        let inner = Arc::new(GlweEncryptionParameters::new(
             accumulator.cipher_modulus(),
             small_lwe_distr,
             accumulator.noise_distribution().standard_deviation(),
@@ -195,7 +190,7 @@ where
     /// Returns the small-LWE parameters used by the bootstrapping key.
     #[must_use]
     #[inline]
-    pub fn small_lwe(&self) -> &LweParametersInner<T, M> {
+    pub fn small_lwe(&self) -> &LweEncryptionParameters<T, M> {
         &self.small_lwe
     }
 

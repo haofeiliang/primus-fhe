@@ -6,9 +6,10 @@
 use primus_glwe::SecretKeyDistr;
 use primus_integer::FheUint;
 use primus_lwe::LweDimension;
-use primus_lwe::LweParametersInner;
+use primus_lwe::LweEncryptionParameters;
 use primus_modulus::PowOf2Modulus;
 use primus_reduce::RingContext;
+use primus_tfhe::PolyLength;
 use primus_tfhe::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_tfhe_ntru::{CircuitBootstrapConfig, DecompositionConfig, TfheConfig, TfheParameters};
 
@@ -65,14 +66,14 @@ where
     super::require_word::<T>();
     let q = T::ONE << 24u32;
     TfheParameters::try_from_config(TfheConfig {
-        external_lwe: LweParametersInner::new(
+        external_lwe: LweEncryptionParameters::new(
             LweDimension::new(lwe_dimension),
             PowOf2Modulus::new(q),
             secret,
             lwe_standard_deviation,
         ),
         accumulator_modulus: modulus,
-        poly_length,
+        poly_length: PolyLength::new(poly_length),
         accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
         // Preserve the existing NTRU ring noise: CBS multiplies errors by f/f².
         // External LWE and return KS use their independent q-domain budgets.

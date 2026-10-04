@@ -25,7 +25,7 @@ fn parameters(bootstrapping_log_basis: u32, key_switching_log_basis: u32) -> Tfh
         0.7,
     );
     let accumulator = NtruParameters::new(
-        POLY_LENGTH,
+        PolyLength::new(POLY_LENGTH),
         PLAIN_MODULUS,
         modulus,
         SecretKeyDistr::SparseTernary,
@@ -38,7 +38,7 @@ fn parameters(bootstrapping_log_basis: u32, key_switching_log_basis: u32) -> Tfh
     );
 
     TfheParameters::try_new(
-        external_lwe.into_inner(),
+        external_lwe.into_encryption_parameters(),
         NlevParameters::try_with_basis(&accumulator, blind_rotation_basis).unwrap(),
         primus_tfhe_ntru::DecompositionConfig {
             log_basis: DecompositionBaseLog::new(key_switching_log_basis),

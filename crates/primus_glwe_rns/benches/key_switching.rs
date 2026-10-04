@@ -47,7 +47,7 @@ fn bench_key_switching(c: &mut Criterion) {
 
         let glwe_params = CrtGlweParameters::new(
             GlweDimension::new(DIMENSION),
-            poly_length.get(),
+            poly_length,
             mod_t,
             mod_gamma,
             &q_moduli,
@@ -77,7 +77,7 @@ fn bench_key_switching(c: &mut Criterion) {
         // Key generation is intentionally outside the timed region.
         let crt_ksk = DcrtGlweKeySwitchingKey::generate(
             &input_sk,
-            glwe_params.inner(),
+            glwe_params.encryption_parameters(),
             &output_dcrt_sk,
             &dcrt_domain,
             &mut rng,
@@ -113,7 +113,7 @@ fn bench_key_switching(c: &mut Criterion) {
             let hybrid_domain = HybridRnsKeySwitchDomain::try_new(&hybrid_rns, &qp_table).unwrap();
             let hybrid_ksk = HybridRnsGlweKeySwitchingKey::generate(
                 &input_sk,
-                glwe_params.inner(),
+                glwe_params.encryption_parameters(),
                 &output_sk,
                 &hybrid_domain,
                 &mut rng,

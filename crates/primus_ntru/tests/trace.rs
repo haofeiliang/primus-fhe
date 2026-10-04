@@ -166,7 +166,13 @@ fn check_operations(
 fn ntt_trace_projection_and_expansion_match_ring_phases() {
     let modulus = BarrettModulus::new(Q);
     let table = U64NttTable::new(PolyLength::new(N), modulus).unwrap();
-    let parameters = NtruParameters::new(N, 64, modulus, SecretKeyDistr::SparseTernary, 0.7);
+    let parameters = NtruParameters::new(
+        PolyLength::new(N),
+        64,
+        modulus,
+        SecretKeyDistr::SparseTernary,
+        0.7,
+    );
     let gadget = NlevParameters::with_ntru_params(&parameters, DecompositionBaseLog::new(10), None);
     let secret = secret();
     let key = NttNtruSecretKey::try_from_coeff_secret_key(&secret, modulus, &table).unwrap();
@@ -188,7 +194,7 @@ fn ntt_trace_projection_and_expansion_match_ring_phases() {
     key.encrypt_encoded_to(
         &Polynomial(m.as_slice()),
         &mut transformed,
-        parameters.inner(),
+        parameters.encryption_parameters(),
         &table,
         &mut rng,
     );
@@ -259,7 +265,7 @@ fn ntt_trace_projection_and_expansion_match_ring_phases() {
         key.encrypt_encoded_to(
             &Polynomial(m.as_slice()),
             &mut transformed,
-            parameters.inner(),
+            parameters.encryption_parameters(),
             &table,
             &mut rng,
         );
@@ -286,7 +292,7 @@ fn fourier_trace<Table: FftTable>() {
     let table = Table::new(PolyLength::new(N));
     let mut fft = FftEngine::new(&table);
     let parameters = NtruParameters::new(
-        N,
+        PolyLength::new(N),
         64u64,
         NativeModulus::new(),
         SecretKeyDistr::SparseTernary,
@@ -318,7 +324,7 @@ fn fourier_trace<Table: FftTable>() {
     key.encrypt_encoded_to(
         &Polynomial(m.as_slice()),
         &mut transformed,
-        parameters.inner(),
+        parameters.encryption_parameters(),
         &mut fft,
         &mut rng,
         &mut encrypt,
@@ -380,7 +386,7 @@ fn fourier_trace<Table: FftTable>() {
         key.encrypt_encoded_to(
             &Polynomial(m.as_slice()),
             &mut transformed,
-            parameters.inner(),
+            parameters.encryption_parameters(),
             &mut fft,
             &mut rng,
             &mut encrypt,
@@ -433,7 +439,13 @@ fn reverse_trace_preserves_the_distinct_modular_and_native_halving_paths() {
     let secret = NtruSecretKey::<u32>::new(secret, SecretKeyDistr::UniformBinary);
     let modulus = BarrettModulus::new(257u32);
     let table = primus_ntt::UintNttTable::new(PolyLength::new(N), modulus).unwrap();
-    let params = NtruParameters::new(N, 4, modulus, SecretKeyDistr::UniformBinary, 0.7);
+    let params = NtruParameters::new(
+        PolyLength::new(N),
+        4,
+        modulus,
+        SecretKeyDistr::UniformBinary,
+        0.7,
+    );
     let params = NlevParameters::with_ntru_params(&params, DecompositionBaseLog::new(3), None);
     let key = NttNtruSecretKey::try_from_coeff_secret_key(&secret, modulus, &table).unwrap();
     let trace = NttNtruTraceKey::generate(
@@ -466,7 +478,7 @@ fn reverse_trace_preserves_the_distinct_modular_and_native_halving_paths() {
     let table = RustFftTable::new(PolyLength::new(N));
     let mut fft = FftEngine::new(&table);
     let params = NtruParameters::new(
-        N,
+        PolyLength::new(N),
         4u32,
         NativeModulus::new(),
         SecretKeyDistr::UniformBinary,

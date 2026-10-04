@@ -9,13 +9,15 @@ Parameters and LWE clients for NTRU-TFHE. The [NTT](../primus_tfhe_ntru_ntt/READ
 
 This family uses only coefficient types, parameters and client operations by default, without pulling in NTT/FFT. Select a concrete backend below for homomorphic evaluation; its normal dependencies enable the required representation.
 
+`TfheConfig::poly_length` takes `primus_poly::PolyLength`. Construct it once with `PolyLength::try_new(n)?` (or `new` for known constants) and reuse it for parameters, sizes and transform tables. Invalid integers are reported by `PolyLengthError`; parameter construction retains its combined-layout, modulus and sampler checks.
+
 ## Parameters and key domains
 
 `TfheParameters<T, M, LM=M>` separates ring modulus Q from external LWE modulus q, sharing coefficient type T. Construct it with `TfheParameters::try_from_config(TfheConfig { .. })`: `external_lwe` selects the external dimension, q, binary/ternary distribution and encryption noise; `accumulator_modulus` selects Q. `blind_rotation` decomposition uses Q, while `key_switching` decomposition and return-key noise use q. `level_count: None` selects the maximum supported level count; still check the [decomposition precision](../primus_decompose/README.md).
 
 Dimension choices use `LweDimension`; decomposition choices use `DecompositionBaseLog` and `Option<DecompositionLevelCount>`. Construct these checked units once and pass parameter accessors directly to workspaces. `.get()` exposes the integer at raw storage or kernel boundaries; composed lengths and basis/modulus compatibility remain constructor checks.
 
-The direct composition entry is `TfheParameters::try_new(external_lwe, blind_rotation, key_switching, key_switching_noise_standard_deviation)`. `external_lwe` is a codec-free `LweParametersInner`; `blind_rotation` is `NlevParameters`. 2N must fit T; the external dimension n need not be at most N. Constructors report specific parameter errors but do not validate security or a complete noise budget.
+The direct composition entry is `TfheParameters::try_new(external_lwe, blind_rotation, key_switching, key_switching_noise_standard_deviation)`. `external_lwe` is a codec-free `LweEncryptionParameters`; `blind_rotation` is `NlevParameters`. 2N must fit T; the external dimension n need not be at most N. Constructors report specific parameter errors but do not validate security or a complete noise budget.
 
 `accumulator_ntru()` borrows the ring/sampling state owned by the blind-rotation gadget at Q. Key parameters contain no message codec. Trace and scheme-switch configurations construct codec-free NLev parameters with independent noise.
 

@@ -36,14 +36,18 @@ fn ntt_glwe_key_switches_for_equal_and_smaller_output_dimensions() {
     let mut rng = StdRng::seed_from_u64(42);
     let input_params = GlweParameters::new(
         GlweDimension::new(INPUT_DIMENSION),
-        POLY_LENGTH,
+        PolyLength::new(POLY_LENGTH),
         PLAINTEXT_MODULUS,
         modulus,
         SecretKeyDistr::UniformBinary,
         0.7,
     );
-    let (input_coeff_key, input_key) =
-        NttGlweSecretKey::generate_pair(input_params.size(), input_params.inner(), &ntt, &mut rng);
+    let (input_coeff_key, input_key) = NttGlweSecretKey::generate_pair(
+        input_params.size(),
+        input_params.encryption_parameters(),
+        &ntt,
+        &mut rng,
+    );
     let message_values = plaintext();
     let message = Polynomial::new(message_values.clone());
     let mut encrypted: NttGlwe<Vec<u32>> = NttGlwe::zero(input_params.glwe_len());
@@ -53,7 +57,7 @@ fn ntt_glwe_key_switches_for_equal_and_smaller_output_dimensions() {
     for output_dimension in [INPUT_DIMENSION, 1] {
         let output_params = GlweParameters::new(
             GlweDimension::new(output_dimension),
-            POLY_LENGTH,
+            PolyLength::new(POLY_LENGTH),
             PLAINTEXT_MODULUS,
             modulus,
             SecretKeyDistr::UniformBinary,
@@ -109,7 +113,7 @@ fn fourier_glwe_key_switches_for_equal_and_smaller_output_dimensions() {
     let mut rng = StdRng::seed_from_u64(42);
     let input_params = GlweParameters::new(
         GlweDimension::new(INPUT_DIMENSION),
-        POLY_LENGTH,
+        PolyLength::new(POLY_LENGTH),
         PLAINTEXT_MODULUS,
         NativeModulus::new(),
         SecretKeyDistr::UniformBinary,
@@ -117,7 +121,7 @@ fn fourier_glwe_key_switches_for_equal_and_smaller_output_dimensions() {
     );
     let (input_coeff_key, input_key) = FourierGlweSecretKey::generate_pair(
         input_params.size(),
-        input_params.inner(),
+        input_params.encryption_parameters(),
         &mut fft,
         &mut rng,
     );
@@ -139,7 +143,7 @@ fn fourier_glwe_key_switches_for_equal_and_smaller_output_dimensions() {
     for output_dimension in [INPUT_DIMENSION, 1] {
         let output_params = GlweParameters::new(
             GlweDimension::new(output_dimension),
-            POLY_LENGTH,
+            PolyLength::new(POLY_LENGTH),
             PLAINTEXT_MODULUS,
             NativeModulus::new(),
             SecretKeyDistr::UniformBinary,

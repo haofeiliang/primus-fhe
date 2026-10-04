@@ -22,7 +22,7 @@ where
     /// in coefficient-domain CRT layout. This method applies `floor(Q/t)` scaling;
     /// passing the already-scaled output of [`crate::BfvRnsCodec::encode_coeffs_to`]
     /// would apply the scale twice.
-    pub fn encrypt_crt_to<R, A, B>(
+    pub fn encrypt_plaintext_crt_to<R, A, B>(
         &self,
         input: &CrtPolynomial<A>,
         output: &mut DcrtGlweCiphertext<B>,
@@ -33,7 +33,7 @@ where
         B: DataMut<Elem = T>,
     {
         self.encrypt_kernel_to(
-            DcrtEncryptionMessage::Crt(input.as_view()),
+            DcrtEncryptionMessage::PlaintextCrt(input.as_view()),
             output.as_mut_view(),
             rng,
         );
@@ -122,7 +122,7 @@ where
             rng,
         );
         match message {
-            DcrtEncryptionMessage::Crt(message) => {
+            DcrtEncryptionMessage::PlaintextCrt(message) => {
                 CrtPolynomial(b.as_mut()).add_mul_factor_assign(
                     &message,
                     parameters.delta_factor_mod_q().as_ref(),
@@ -160,7 +160,7 @@ where
 /// CRT input contains unscaled plaintext lifts; raw plaintext uses the requested
 /// embedding. Both receive BFV scaling before the forward transform.
 enum DcrtEncryptionMessage<'a, T: FheUint> {
-    Crt(CrtPolynomial<&'a [T]>),
+    PlaintextCrt(CrtPolynomial<&'a [T]>),
     Plaintext {
         polynomial: Polynomial<&'a [T]>,
         embedding: PlaintextEmbedding,

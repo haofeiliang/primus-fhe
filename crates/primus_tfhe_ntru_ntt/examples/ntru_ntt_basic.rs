@@ -7,10 +7,11 @@
 use primus_decompose::DecompositionBaseLog;
 use primus_encoding::RoundedCodec;
 use primus_lattice::LweDimension;
-use primus_lwe::LweParametersInner;
+use primus_lwe::LweEncryptionParameters;
 use primus_modulus::{BarrettModulus, PowOf2Modulus};
 use primus_ntru::SecretKeyDistr;
 use primus_ntt::U32NttTable as Table;
+use primus_poly::PolyLength;
 use primus_tfhe_ntru_ntt::{DecompositionConfig, TfheConfig, TfheContext, TfheParameters};
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -41,14 +42,14 @@ fn parameters() -> TfheParameters<Word, PowOf2Modulus<Word>> {
     };
 
     TfheParameters::try_from_config(TfheConfig {
-        external_lwe: LweParametersInner::new(
+        external_lwe: LweEncryptionParameters::new(
             LweDimension::new(866),
             PowOf2Modulus::new(lwe_modulus),
             SecretKeyDistr::UniformBinary,
             lwe_modulus as f64 * 2.046151696979124e-6,
         ),
         accumulator_modulus: modulus, // Ring Q; distinct from the external LWE q.
-        poly_length: N,
+        poly_length: PolyLength::new(N),
         accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
         accumulator_noise_standard_deviation: 0.7,
         blind_rotation: full,

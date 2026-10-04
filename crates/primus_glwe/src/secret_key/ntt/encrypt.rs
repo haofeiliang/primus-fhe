@@ -1,7 +1,7 @@
 //! NTT GLWE encryption.
 
 use super::NttGlweSecretKey;
-use crate::{GlweParameters, GlweParametersInner, NttGlweCiphertext, PlaintextEmbedding};
+use crate::{GlweEncryptionParameters, GlweParameters, NttGlweCiphertext, PlaintextEmbedding};
 use primus_data::{Data, DataMut};
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
@@ -58,7 +58,11 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         B: DataMut<Elem = T>,
     {
         assert_eq!(self.size, params.size(), "GLWE parameter layout mismatch");
-        self.assert_encrypt_compatible(output.as_ref().len(), params.inner(), ntt_table);
+        self.assert_encrypt_compatible(
+            output.as_ref().len(),
+            params.encryption_parameters(),
+            ntt_table,
+        );
         assert_eq!(
             input.as_ref().len(),
             self.poly_length(),
@@ -95,7 +99,11 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         B: DataMut<Elem = T>,
     {
         assert_eq!(self.size, params.size(), "GLWE parameter layout mismatch");
-        self.assert_encrypt_compatible(output.as_ref().len(), params.inner(), ntt_table);
+        self.assert_encrypt_compatible(
+            output.as_ref().len(),
+            params.encryption_parameters(),
+            ntt_table,
+        );
         assert_eq!(
             input.as_ref().len(),
             self.poly_length(),
@@ -127,7 +135,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         &self,
         input: &Polynomial<A>,
         output: &mut NttGlweCiphertext<B>,
-        params: &GlweParametersInner<T, M>,
+        params: &GlweEncryptionParameters<T, M>,
         ntt_table: &Table,
         rng: &mut R,
     ) where
@@ -160,7 +168,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     #[must_use]
     pub fn encrypt_zeros<M, Table, R>(
         &self,
-        params: &GlweParametersInner<T, M>,
+        params: &GlweEncryptionParameters<T, M>,
         ntt_table: &Table,
         rng: &mut R,
     ) -> NttGlweCiphertext<Vec<T>>
@@ -183,7 +191,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     pub fn encrypt_zeros_to<M, Table, R, A>(
         &self,
         output: &mut NttGlweCiphertext<A>,
-        params: &GlweParametersInner<T, M>,
+        params: &GlweEncryptionParameters<T, M>,
         ntt_table: &Table,
         rng: &mut R,
     ) where
@@ -212,11 +220,17 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
     {
-        self.encrypt_kernel_to(output, params.inner(), ntt_table, rng, |body| {
-            params
-                .plaintext_codec()
-                .add_encode_slice_assign(body, input.as_ref(), embedding);
-        });
+        self.encrypt_kernel_to(
+            output,
+            params.encryption_parameters(),
+            ntt_table,
+            rng,
+            |body| {
+                params
+                    .plaintext_codec()
+                    .add_encode_slice_assign(body, input.as_ref(), embedding);
+            },
+        );
     }
 
     /// Encrypts an encoded coefficient polynomial without repeating boundary checks.
@@ -230,7 +244,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         &self,
         input: Polynomial<&[T]>,
         output: NttGlweCiphertext<&mut [T]>,
-        params: &GlweParametersInner<T, M>,
+        params: &GlweEncryptionParameters<T, M>,
         ntt_table: &Table,
         rng: &mut R,
     ) where
@@ -251,7 +265,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     pub(super) fn encrypt_zeros_kernel_to<M, Table, R>(
         &self,
         output: NttGlweCiphertext<&mut [T]>,
-        params: &GlweParametersInner<T, M>,
+        params: &GlweEncryptionParameters<T, M>,
         ntt_table: &Table,
         rng: &mut R,
     ) where
@@ -267,7 +281,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     fn assert_encrypt_compatible<M, Table>(
         &self,
         output_len: usize,
-        params: &GlweParametersInner<T, M>,
+        params: &GlweEncryptionParameters<T, M>,
         ntt_table: &Table,
     ) where
         M: FieldContext<T>,
@@ -288,7 +302,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     fn encrypt_kernel_to<M, Table, R>(
         &self,
         mut output: NttGlweCiphertext<&mut [T]>,
-        params: &GlweParametersInner<T, M>,
+        params: &GlweEncryptionParameters<T, M>,
         ntt_table: &Table,
         rng: &mut R,
         add_message: impl FnOnce(&mut [T]),

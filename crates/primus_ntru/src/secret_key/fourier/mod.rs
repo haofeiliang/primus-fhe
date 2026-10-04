@@ -7,7 +7,7 @@ use primus_poly::FourierPolynomialOwned;
 use primus_reduce::EncodeSigned;
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
-use crate::{NtruError, NtruParametersInner, SecretKeyDistr};
+use crate::{NtruEncryptionParameters, NtruError, SecretKeyDistr};
 
 use super::NtruSecretKey;
 
@@ -156,7 +156,7 @@ impl FourierNtruSecretKey {
     /// Rejection-samples a native-ring unit with a stable Fourier inverse.
     /// See [`Self::generate_pair`] for error and panic conditions.
     pub fn generate<T, Table, R>(
-        params: &NtruParametersInner<T, NativeModulus<T>>,
+        params: &NtruEncryptionParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
     ) -> Result<Self, NtruError>
@@ -186,7 +186,7 @@ impl FourierNtruSecretKey {
     /// Panics if the FFT length differs from the parameters,
     /// or a fixed weight exceeds the polynomial length or its sum overflows.
     pub fn generate_pair<T, Table, R>(
-        params: &NtruParametersInner<T, NativeModulus<T>>,
+        params: &NtruEncryptionParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
     ) -> Result<(NtruSecretKey<T>, Self), NtruError>
@@ -225,7 +225,7 @@ impl FourierNtruSecretKey {
     /// weight exceeds `active_length` or its sum overflows, or the FFT length
     /// differs from the parameters.
     pub fn generate_padded_pair<T, Table, R>(
-        params: &NtruParametersInner<T, NativeModulus<T>>,
+        params: &NtruEncryptionParameters<T, NativeModulus<T>>,
         active_length: usize,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
@@ -296,7 +296,7 @@ impl FourierNtruSecretKey {
 
     pub(super) fn assert_domain<T, Table>(
         &self,
-        params: &NtruParametersInner<T, NativeModulus<T>>,
+        params: &NtruEncryptionParameters<T, NativeModulus<T>>,
         fft: &FftEngine<'_, Table>,
     ) where
         T: TorusFftValue,

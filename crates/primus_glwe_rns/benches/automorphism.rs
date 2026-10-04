@@ -34,8 +34,9 @@ fn bench_automorphism(c: &mut Criterion) {
     let mut group = c.benchmark_group("automorphism");
 
     for log_n in [10u32, 11, 12] {
-        let poly_length = 1usize << log_n;
-        let table = U64DcrtTable::new(PolyLength::new(poly_length), &moduli).unwrap();
+        let poly_length = PolyLength::new(1usize << log_n);
+        let n = poly_length.get();
+        let table = U64DcrtTable::new(poly_length, &moduli).unwrap();
 
         let glwe_params = CrtGlweParameters::new(
             GlweDimension::new(dimension),
@@ -66,13 +67,13 @@ fn bench_automorphism(c: &mut Criterion) {
         let table_ref = &table;
 
         // Ciphertexts
-        let input: Polynomial<Vec<V>> = Polynomial::random(poly_length, mod_t, &mut rng);
+        let input: Polynomial<Vec<V>> = Polynomial::random(n, mod_t, &mut rng);
         let mut msg: CrtPolynomial<Vec<V>> = CrtPolynomial::zero(crt_poly_len);
         let mut c_ntt: DcrtGlwe<Vec<V>> = DcrtGlweCiphertext::zero(rns_glwe_len);
 
         base_q.wrapping_decompose_small_polynomial_to(&input, &mut msg, t);
         let dcrt_sk_context = dcrt_sk.try_bind(&glwe_params, table_ref).unwrap();
-        dcrt_sk_context.encrypt_crt_to(&msg, &mut c_ntt, &mut rng);
+        dcrt_sk_context.encrypt_plaintext_crt_to(&msg, &mut c_ntt, &mut rng);
 
         let c_coeff: CrtGlwe<Vec<V>> = {
             let tmp = DcrtGlweCiphertext::new(c_ntt.as_ref().to_vec());
@@ -85,14 +86,14 @@ fn bench_automorphism(c: &mut Criterion) {
 
         // Identity and N+1 retain their specialized coefficient paths; degree 5
         // exercises the general gather. Key switching remains part of all cases.
-        for auto_degree in [1, poly_length + 1, 5] {
+        for auto_degree in [1, n + 1, 5] {
             let crt_auto_key = CrtGlweAutoKey::new(&domain, auto_degree, &sk, &dcrt_sk, &mut rng);
             let dcrt_auto_key = DcrtGlweAutoKey::new(&domain, auto_degree, &dcrt_sk, &mut rng);
 
             let mut crt_evaluator = CrtGlweAutoEvaluator::new(&crt_auto_key, &domain);
             let mut dcrt_evaluator = DcrtGlweAutoEvaluator::new(&dcrt_auto_key, &domain);
 
-            let label = format!("N={poly_length}/degree={auto_degree}");
+            let label = format!("N={n}/degree={auto_degree}");
 
             group.bench_function(BenchmarkId::new("CRT", &label), |b| {
                 b.iter(|| {

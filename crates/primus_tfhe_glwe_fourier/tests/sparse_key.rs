@@ -9,6 +9,7 @@ use primus_lattice::{GlweDimension, LweDimension};
 use primus_lattice::{ggsw::FourierGgsw, workspace::FourierGlweExternalProductWorkspace};
 use primus_lwe::{LweParameters, LweSecretKey};
 use primus_modulus::NativeModulus;
+use primus_poly::PolyLength;
 use primus_tfhe::sparse::BucketMapError;
 use primus_tfhe_glwe_fourier::{
     BlindRotationConfig, ClientKey, KeyGenerator, PbsOrder, SparseBootstrappingKeyError as Error,
@@ -23,7 +24,7 @@ fn context<Table: FftTable>(distribution: SecretKeyDistr) -> TfheContext<u64, Ta
     let lwe = LweParameters::new(LweDimension::new(16), 8, modulus, distribution, 0.7);
     let glwe = GlweParameters::new(
         GlweDimension::new(1),
-        N,
+        PolyLength::new(N),
         8,
         modulus,
         SecretKeyDistr::UniformBinary,
@@ -35,7 +36,7 @@ fn context<Table: FftTable>(distribution: SecretKeyDistr) -> TfheContext<u64, Ta
         Some(DecompositionLevelCount::new(6)),
     );
     let parameters = TfheParameters::try_new(
-        lwe.into_inner(),
+        lwe.into_encryption_parameters(),
         primus_glwe::GgswParameters::try_with_basis(&glwe, basis.clone()).unwrap(),
         basis,
         PbsOrder::KeyswitchBootstrap,

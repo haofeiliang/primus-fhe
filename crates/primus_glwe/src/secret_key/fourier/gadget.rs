@@ -84,7 +84,7 @@ impl FourierGlweSecretKey {
             self.encrypt_encoded_kernel_to(
                 workspace.encoded.as_view(),
                 glwe,
-                params.inner(),
+                params.encryption_parameters(),
                 fft,
                 rng,
                 &mut workspace.glwe,
@@ -199,7 +199,7 @@ impl FourierGlweSecretKey {
             {
                 self.encrypt_zeros_kernel_to(
                     glwe.as_mut_view(),
-                    params.inner(),
+                    params.encryption_parameters(),
                     fft,
                     rng,
                     &mut workspace.glwe,

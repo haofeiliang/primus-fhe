@@ -5,7 +5,7 @@ use primus_integer::FheUint;
 use primus_ntt::NttTable;
 use primus_reduce::FieldContext;
 
-use crate::{GlweParametersInner, NttGlweCiphertext, NttGlweSecretKey};
+use crate::{GlweEncryptionParameters, NttGlweCiphertext, NttGlweSecretKey};
 
 /// A GLWE public key represented by one NTT-domain encryption of zero.
 ///
@@ -66,7 +66,7 @@ impl<T: FheUint> NttGlwePublicKey<Vec<T>> {
     #[must_use]
     pub fn generate<M, Table, R>(
         secret_key: &NttGlweSecretKey<T>,
-        params: &GlweParametersInner<T, M>,
+        params: &GlweEncryptionParameters<T, M>,
         ntt_table: &Table,
         rng: &mut R,
     ) -> Self

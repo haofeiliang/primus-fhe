@@ -1,7 +1,7 @@
 use primus_decompose::{DecompositionBaseLog, big_integer::BigUintApproxSignedBasis};
 use primus_glwe_rns::{
-    BfvRnsCodec, CrtGlevParameters, CrtGlweParameters, CrtGlweParametersInner, DcrtGadgetDomain,
-    DcrtGlweDecryptWorkspace, DcrtGlweSecretKey, GlweSecretKey, SecretKeyDistr,
+    BfvRnsCodec, CrtGlevParameters, CrtGlweEncryptionParameters, CrtGlweParameters,
+    DcrtGadgetDomain, DcrtGlweDecryptWorkspace, DcrtGlweSecretKey, GlweSecretKey, SecretKeyDistr,
 };
 use primus_lattice::{GlweDimension, GlweSize, RnsGlweSize};
 use primus_lattice::{glev::DcrtGlev, glwe::DcrtGlwe, workspace::DcrtGlevMulWorkspace};
@@ -46,7 +46,7 @@ fn test_rns_glev() {
         GlweSize::new(GlweDimension::new(dimension), table.poly_length()),
         base_q.moduli_count(),
     );
-    let inner = Arc::new(CrtGlweParametersInner::new(
+    let inner = Arc::new(CrtGlweEncryptionParameters::new(
         size,
         &base_q,
         SecretKeyDistr::SparseTernary,

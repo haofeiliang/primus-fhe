@@ -8,7 +8,7 @@ use primus_modulus::NativeModulus;
 use primus_poly::FourierPolynomialIter;
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
-use crate::{GlweParametersInner, SecretKeyDistr};
+use crate::{GlweEncryptionParameters, SecretKeyDistr};
 
 use super::GlweSecretKey;
 
@@ -166,7 +166,7 @@ impl FourierGlweSecretKey {
     #[must_use]
     pub fn generate_pair<T, R, Table>(
         size: GlweSize,
-        params: &GlweParametersInner<T, NativeModulus<T>>,
+        params: &GlweEncryptionParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
     ) -> (GlweSecretKey<T>, Self)

@@ -39,7 +39,7 @@ where
     ] {
         let params = GlweParameters::new(
             GlweDimension::new(DIMENSION),
-            POLY_LENGTH,
+            PolyLength::new(POLY_LENGTH),
             T::try_from(PLAIN_MODULUS).unwrap(),
             NativeModulus::new(),
             secret_key_distr,
@@ -55,8 +55,12 @@ where
             params.secret_key_sampler(),
             &mut expected_rng,
         );
-        let (coefficients, secret_key) =
-            FourierGlweSecretKey::generate_pair(params.size(), params.inner(), &mut fft, &mut rng);
+        let (coefficients, secret_key) = FourierGlweSecretKey::generate_pair(
+            params.size(),
+            params.encryption_parameters(),
+            &mut fft,
+            &mut rng,
+        );
         assert_eq!(coefficients.as_slice(), expected_coefficients.as_slice());
         assert_eq!(rng.next_u64(), expected_rng.next_u64());
         let mut encrypt_workspace = FourierGlweEncryptWorkspace::new(PolyLength::new(POLY_LENGTH));
@@ -93,7 +97,7 @@ where
 
         secret_key.encrypt_zeros_to(
             &mut cipher,
-            params.inner(),
+            params.encryption_parameters(),
             &mut fft,
             &mut rng,
             &mut encrypt_workspace,
@@ -126,7 +130,7 @@ where
         secret_key.encrypt_encoded_to(
             &Polynomial::new(encoded),
             &mut cipher,
-            params.inner(),
+            params.encryption_parameters(),
             &mut fft,
             &mut rng,
             &mut encrypt_workspace,

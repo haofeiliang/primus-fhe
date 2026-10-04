@@ -29,7 +29,7 @@ fn components() -> Components {
     );
     let glwe = GlweParameters::new(
         GlweDimension::new(GLWE_DIMENSION),
-        POLY_LENGTH,
+        PolyLength::new(POLY_LENGTH),
         PLAIN_MODULUS,
         NativeModulus::new(),
         SecretKeyDistr::SparseTernary,
@@ -54,9 +54,9 @@ fn derives_bootstrapping_and_key_switching_for_both_orders() {
             Some(DecompositionLevelCount::new(4)),
         );
         let parameters = TfheParameters::try_from_config(TfheConfig {
-            small_lwe: small_lwe.into_inner(),
+            small_lwe: small_lwe.into_encryption_parameters(),
             accumulator_dimension: GlweDimension::new(GLWE_DIMENSION),
-            poly_length: POLY_LENGTH,
+            poly_length: PolyLength::new(POLY_LENGTH),
             accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
             accumulator_noise_standard_deviation: 3.2,
             blind_rotation: DecompositionConfig {
@@ -70,7 +70,10 @@ fn derives_bootstrapping_and_key_switching_for_both_orders() {
             pbs_order: order,
         })
         .unwrap();
-        assert!(parameters.blind_rotation_ggsw().inner() == glwe.inner());
+        assert!(
+            parameters.blind_rotation_ggsw().encryption_parameters()
+                == glwe.encryption_parameters()
+        );
         // Ordinary ring messages bind their own codec and retain the same sampler tables.
         let ordinary = GlweParameters::try_from_glev(
             parameters.blind_rotation_ggsw(),
@@ -79,8 +82,8 @@ fn derives_bootstrapping_and_key_switching_for_both_orders() {
         .unwrap();
         assert_eq!(ordinary.plain_modulus_value(), 3);
         assert!(std::ptr::eq(
-            ordinary.inner(),
-            parameters.blind_rotation_ggsw().inner()
+            ordinary.encryption_parameters(),
+            parameters.blind_rotation_ggsw().encryption_parameters()
         ));
 
         assert_eq!(
@@ -132,7 +135,7 @@ fn rejects_key_switching_basis_from_another_modulus() {
     use primus_tfhe_glwe::TfheParameterError;
     let (small_lwe, glwe, basis) = components();
     let result = TfheParameters::try_new(
-        small_lwe.into_inner(),
+        small_lwe.into_encryption_parameters(),
         GgswParameters::try_with_basis(&glwe, basis).unwrap(),
         ApproxSignedBasis::new(
             Some(257),
@@ -174,7 +177,7 @@ fn rotation_domain_must_be_representable_by_input_coefficients() {
         );
         let glwe = GlweParameters::new(
             GlweDimension::new(1),
-            1 << log_n,
+            PolyLength::new(1 << log_n),
             2,
             modulus,
             SecretKeyDistr::UniformBinary,
@@ -183,7 +186,7 @@ fn rotation_domain_must_be_representable_by_input_coefficients() {
         let basis = ApproxSignedBasis::new(None, DecompositionBaseLog::new(4), None);
         assert_eq!(
             TfheParameters::try_new(
-                small_lwe.into_inner(),
+                small_lwe.into_encryption_parameters(),
                 primus_glwe::GgswParameters::try_with_basis(&glwe, basis.clone()).unwrap(),
                 basis,
                 PbsOrder::BootstrapKeyswitch
@@ -202,7 +205,7 @@ fn check_ternary_padding<M: primus_reduce::RingContext<u32>>(modulus: M) {
     // A 33-dimensional LWE secret crosses two length-32 GLWE components.
     let glwe = GlweParameters::new(
         GlweDimension::new(2),
-        32,
+        PolyLength::new(32),
         2,
         modulus,
         SecretKeyDistr::UniformBinary,
@@ -219,7 +222,8 @@ fn check_ternary_padding<M: primus_reduce::RingContext<u32>>(modulus: M) {
         SecretKeyDistr::gaussian(0.7),
     ] {
         let result = TfheParameters::try_new(
-            (LweParameters::new(LweDimension::new(33), 2, modulus, distribution, 0.7)).into_inner(),
+            (LweParameters::new(LweDimension::new(33), 2, modulus, distribution, 0.7))
+                .into_encryption_parameters(),
             primus_glwe::GgswParameters::try_with_basis(&glwe, basis.clone()).unwrap(),
             basis.clone(),
             PbsOrder::BootstrapKeyswitch,
@@ -269,7 +273,7 @@ fn check_circuit_parameters<M: primus_reduce::RingContext<u64>>(modulus: M, fore
 
     let glwe = GlweParameters::new(
         GlweDimension::new(1),
-        32,
+        PolyLength::new(32),
         32,
         modulus,
         SecretKeyDistr::UniformBinary,
@@ -285,7 +289,7 @@ fn check_circuit_parameters<M: primus_reduce::RingContext<u64>>(modulus: M, fore
             SecretKeyDistr::UniformBinary,
             0.7,
         ))
-        .into_inner(),
+        .into_encryption_parameters(),
         primus_glwe::GgswParameters::try_with_basis(&glwe, basis.clone()).unwrap(),
         basis,
         PbsOrder::BootstrapKeyswitch,
@@ -402,7 +406,7 @@ fn check_circuit_parameters<M: primus_reduce::RingContext<u64>>(modulus: M, fore
         let foreign = GgswParameters::with_glwe_params(
             &GlweParameters::new(
                 GlweDimension::new(dimension),
-                n,
+                PolyLength::new(n),
                 32,
                 q,
                 SecretKeyDistr::UniformBinary,
@@ -449,14 +453,14 @@ fn configs_return_accumulator_and_cbs_construction_errors() {
         level_count: Some(DecompositionLevelCount::new(2)),
     };
     let config = TfheConfig {
-        small_lwe: primus_lwe::LweParametersInner::new(
+        small_lwe: primus_lwe::LweEncryptionParameters::new(
             LweDimension::new(4),
             NativeModulus::<u32>::new(),
             SecretKeyDistr::UniformBinary,
             0.7,
         ),
         accumulator_dimension: GlweDimension::new(1),
-        poly_length: 32,
+        poly_length: PolyLength::new(32),
         accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
         accumulator_noise_standard_deviation: 0.7,
         blind_rotation: basis,
@@ -464,12 +468,6 @@ fn configs_return_accumulator_and_cbs_construction_errors() {
         pbs_order: PbsOrder::BootstrapKeyswitch,
     };
     let tfhe = TfheParameters::try_from_config(config.clone()).unwrap();
-    let mut invalid = config.clone();
-    invalid.poly_length = 3;
-    assert!(matches!(
-        TfheParameters::try_from_config(invalid),
-        Err(TfheParameterError::AccumulatorLayout(_))
-    ));
     let mut invalid = config.clone();
     invalid.accumulator_noise_standard_deviation = f64::NAN;
     assert!(matches!(

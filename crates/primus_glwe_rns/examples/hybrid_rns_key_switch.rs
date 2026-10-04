@@ -17,14 +17,14 @@ fn main() {
     type Value = u64;
 
     let dimension = 2;
-    let poly_length: usize = 512;
+    let poly_length = PolyLength::new(512);
     let plaintext_modulus = BarrettModulus::new(12289);
     let gamma = BarrettModulus::new(2305843009213554689);
     let q_moduli = [1125899906826241, 1125899906629633, 1125899906031617].map(BarrettModulus::new);
     let p_moduli = [1125899905036289].map(BarrettModulus::new);
     let qp_moduli: Vec<_> = q_moduli.iter().chain(&p_moduli).copied().collect();
-    let q_table = UintDcrtTable::new(PolyLength::new(poly_length), &q_moduli).unwrap();
-    let qp_table = UintDcrtTable::new(PolyLength::new(poly_length), &qp_moduli).unwrap();
+    let q_table = UintDcrtTable::new(poly_length, &q_moduli).unwrap();
+    let qp_table = UintDcrtTable::new(poly_length, &qp_moduli).unwrap();
 
     let glwe_parameters = CrtGlweParameters::new(
         GlweDimension::new(dimension),
@@ -54,14 +54,14 @@ fn main() {
     let output_dcrt_key = DcrtGlweSecretKey::from_coeff_secret_key(&output_key, &q_table);
     let switching_key = HybridRnsGlweKeySwitchingKey::generate(
         &input_key,
-        glwe_parameters.inner(),
+        glwe_parameters.encryption_parameters(),
         &output_key,
         &domain,
         &mut rng,
     );
 
     let plaintext: Polynomial<Vec<Value>> =
-        Polynomial::random(poly_length, plaintext_modulus, &mut rng);
+        Polynomial::random(poly_length.get(), plaintext_modulus, &mut rng);
     let mut input: DcrtGlwe<Vec<Value>> = DcrtGlweCiphertext::zero(glwe_parameters.rns_glwe_len());
     let mut output: DcrtGlwe<Vec<Value>> = DcrtGlweCiphertext::zero(glwe_parameters.rns_glwe_len());
     let input_dcrt_key_context = input_dcrt_key.try_bind(&glwe_parameters, &q_table).unwrap();

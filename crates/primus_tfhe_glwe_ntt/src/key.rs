@@ -415,7 +415,7 @@ where
         let accumulator = parameters.blind_rotation_ggsw();
         let (glwe_secret_key, main_glwe_secret_key) = NttGlweSecretKey::generate_pair(
             accumulator.glwe_size(),
-            accumulator.inner(),
+            accumulator.encryption_parameters(),
             self.context.table(),
             rng,
         );

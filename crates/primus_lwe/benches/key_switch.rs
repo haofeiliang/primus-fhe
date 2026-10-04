@@ -26,7 +26,7 @@ fn bench_domain<M: RingContext<u32>>(c: &mut Criterion, name: &str, modulus: M) 
             SecretKeyDistr::UniformBinary,
             0.7,
         );
-        let secret = LweSecretKey::generate(params.inner(), &mut rng);
+        let secret = LweSecretKey::generate(params.encryption_parameters(), &mut rng);
         let basis = ApproxSignedBasis::new(
             modulus.explicit_value(),
             DecompositionBaseLog::new(log_basis),
@@ -36,7 +36,7 @@ fn bench_domain<M: RingContext<u32>>(c: &mut Criterion, name: &str, modulus: M) 
         let key = LweKeySwitchingKey::generate(
             LweSecretKeyRef::Encoded(&[1; 1024]),
             &secret,
-            params.inner(),
+            params.encryption_parameters(),
             basis,
             &mut rng,
         );
@@ -102,7 +102,8 @@ fn bench_generation(c: &mut Criterion) {
         Some(DecompositionLevelCount::new(LEVEL_COUNT)),
     );
     let mut rng = StdRng::seed_from_u64(0xdec0_005e);
-    let output_secret_key = LweSecretKey::generate(output_parameters.inner(), &mut rng);
+    let output_secret_key =
+        LweSecretKey::generate(output_parameters.encryption_parameters(), &mut rng);
     let mut group = c.benchmark_group("lwe_key_switch_generation/u32/explicit");
     group.sample_size(10);
 
@@ -114,7 +115,7 @@ fn bench_generation(c: &mut Criterion) {
             LweKeySwitchingKey::generate(
                 LweSecretKeyRef::Encoded(black_box(&input_secret_key)),
                 &output_secret_key,
-                output_parameters.inner(),
+                output_parameters.encryption_parameters(),
                 basis.clone(),
                 &mut rng,
             )

@@ -63,7 +63,7 @@ impl FourierNtruSecretKey {
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
     {
-        let ntru_params = params.inner();
+        let ntru_params = params.encryption_parameters();
         let modulus = ntru_params.cipher_modulus();
         for (scalar, level) in params
             .basis()
@@ -150,7 +150,7 @@ impl FourierNtruSecretKey {
             self.encrypt_encoded_to_unchecked(
                 workspace.encoded.as_view(),
                 level,
-                params.inner(),
+                params.encryption_parameters(),
                 fft,
                 rng,
                 &mut workspace.ntru,
@@ -212,7 +212,7 @@ impl FourierNtruSecretKey {
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
     {
-        let ntru_params = params.inner();
+        let ntru_params = params.encryption_parameters();
         let modulus = ntru_params.cipher_modulus();
         for (scalar, mut level) in params
             .basis()
@@ -289,7 +289,7 @@ impl FourierNtruSecretKey {
                 let mut level = crate::FourierNtruCiphertext::new(level);
                 self.encrypt_zeros_to_unchecked(
                     level.as_mut_view(),
-                    params.inner(),
+                    params.encryption_parameters(),
                     fft,
                     rng,
                     &mut workspace.ntru,
@@ -309,7 +309,7 @@ impl FourierNtruSecretKey {
         T: TorusFftValue,
         Table: FftTable,
     {
-        self.assert_domain(params.inner(), fft);
+        self.assert_domain(params.encryption_parameters(), fft);
         assert_eq!(workspace.encoded.as_ref().len(), self.poly_length());
         assert_eq!(workspace.transformed.len(), fft.fourier_length());
     }

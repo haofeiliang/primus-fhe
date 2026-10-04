@@ -30,7 +30,7 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
         );
         let glwe = GlweParameters::new(
             GlweDimension::new(2),
-            32,
+            PolyLength::new(32),
             plain_modulus,
             modulus,
             SecretKeyDistr::UniformTernary,
@@ -42,7 +42,7 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
             None,
         );
         let params = TfheParameters::try_new(
-            small.into_inner(),
+            small.into_encryption_parameters(),
             primus_glwe::GgswParameters::try_with_basis(&glwe, bsk).unwrap(),
             ApproxSignedBasis::new(modulus.explicit_value(), DecompositionBaseLog::new(8), None),
             order,
@@ -80,7 +80,7 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
                 LweSecretKeyRef::Signed(client.glwe_secret_key().as_slice()),
                 params
                     .blind_rotation_ggsw()
-                    .inner()
+                    .encryption_parameters()
                     .cipher_modulus_uniform_distr(),
                 params.blind_rotation_ggsw().noise_distribution(),
             ),
@@ -178,9 +178,13 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
             SecretKeyDistr::UniformBinary,
             0.7,
         );
-        let foreign_secret = LweSecretKey::generate(foreign_params.inner(), &mut rng);
-        let foreign =
-            LwePublicKey::generate(foreign_secret.as_view(), foreign_params.inner(), &mut rng);
+        let foreign_secret =
+            LweSecretKey::generate(foreign_params.encryption_parameters(), &mut rng);
+        let foreign = LwePublicKey::generate(
+            foreign_secret.as_view(),
+            foreign_params.encryption_parameters(),
+            &mut rng,
+        );
         assert_eq!(
             params.public_encryptor(&foreign, &codec).err(),
             Some(ClientError::PublicKeyModulusMismatch)
@@ -192,8 +196,12 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
             SecretKeyDistr::UniformBinary,
             0.7,
         );
-        let short_secret = LweSecretKey::generate(short_params.inner(), &mut rng);
-        let short = LwePublicKey::generate(short_secret.as_view(), short_params.inner(), &mut rng);
+        let short_secret = LweSecretKey::generate(short_params.encryption_parameters(), &mut rng);
+        let short = LwePublicKey::generate(
+            short_secret.as_view(),
+            short_params.encryption_parameters(),
+            &mut rng,
+        );
         assert_eq!(
             params.public_encryptor(&short, &codec).err(),
             Some(ClientError::KeyDimensionMismatch {
@@ -262,11 +270,11 @@ fn boolean_clients_reject_other_plaintext_moduli() {
                 SecretKeyDistr::UniformBinary,
                 0.7,
             ))
-            .into_inner(),
+            .into_encryption_parameters(),
             primus_glwe::GgswParameters::try_with_basis(
                 &(GlweParameters::new(
                     GlweDimension::new(1),
-                    32,
+                    PolyLength::new(32),
                     t,
                     modulus,
                     SecretKeyDistr::UniformTernary,
@@ -312,9 +320,17 @@ fn external_binding_checks_small_secret_coefficients_without_an_accumulator() {
             SecretKeyDistr::UniformTernary,
         ] {
             let parameters = TfheParameters::try_new(
-                (LweParameters::new(LweDimension::new(4), 4, modulus, distr, 0.7)).into_inner(),
+                (LweParameters::new(LweDimension::new(4), 4, modulus, distr, 0.7))
+                    .into_encryption_parameters(),
                 primus_glwe::GgswParameters::try_with_basis(
-                    &(GlweParameters::new(GlweDimension::new(1), 32, 4, modulus, gaussian, 0.7)),
+                    &(GlweParameters::new(
+                        GlweDimension::new(1),
+                        PolyLength::new(32),
+                        4,
+                        modulus,
+                        gaussian,
+                        0.7,
+                    )),
                     ApproxSignedBasis::new(
                         modulus.explicit_value(),
                         DecompositionBaseLog::new(8),
@@ -451,17 +467,17 @@ fn check_reused_output<M, Key>(
 
 #[test]
 fn message_codec_must_match_the_key_ciphertext_modulus() {
-    use primus_lwe::LweParametersInner;
+    use primus_lwe::LweEncryptionParameters;
     use primus_tfhe_glwe::{DecompositionConfig, LookupTableError, TfheConfig};
     let parameters = TfheParameters::try_from_config(TfheConfig {
-        small_lwe: LweParametersInner::new(
+        small_lwe: LweEncryptionParameters::new(
             LweDimension::new(4),
             BarrettModulus::new(132_120_577u32),
             SecretKeyDistr::UniformBinary,
             0.7,
         ),
         accumulator_dimension: GlweDimension::new(1),
-        poly_length: 32,
+        poly_length: PolyLength::new(32),
         accumulator_secret_key_distr: SecretKeyDistr::UniformTernary,
         accumulator_noise_standard_deviation: 0.7,
         blind_rotation: DecompositionConfig {

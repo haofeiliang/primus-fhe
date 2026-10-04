@@ -7,7 +7,9 @@ use primus_reduce::FieldContext;
 use rand::distr::Uniform;
 
 use super::HybridRnsGlweKeySwitchingKey;
-use crate::{CrtGlweParametersInner, DcrtGlweSecretKey, GlweSecretKey, HybridRnsKeySwitchDomain};
+use crate::{
+    CrtGlweEncryptionParameters, DcrtGlweSecretKey, GlweSecretKey, HybridRnsKeySwitchDomain,
+};
 
 impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
     /// Generates a hybrid-RNS key-switching key in the NTT domain over `QP`.
@@ -27,7 +29,7 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
     /// following [`DcrtGlweSecretKey::from_coeff_secret_key`]'s bounded-lift contract.
     pub fn generate<R, M, QpTable>(
         input_secret_key: &GlweSecretKey<T>,
-        input_parameters: &CrtGlweParametersInner<T>,
+        input_parameters: &CrtGlweEncryptionParameters<T>,
         output_secret_key: &GlweSecretKey<T>,
         domain: &HybridRnsKeySwitchDomain<'_, T, M, QpTable>,
         rng: &mut R,

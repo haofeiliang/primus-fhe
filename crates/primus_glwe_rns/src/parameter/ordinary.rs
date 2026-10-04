@@ -11,7 +11,7 @@ use primus_rns::{RNSBase, ResidueFactors};
 use rand::distr::Uniform;
 use std::sync::Arc;
 
-use super::{CrtGlweParametersError, core::CrtGlweParametersInner};
+use super::{CrtGlweParametersError, core::CrtGlweEncryptionParameters};
 use crate::{BfvRnsCodec, SecretKeyDistr};
 
 /// Ordinary CRT GLWE parameters with a BFV plaintext codec.
@@ -27,7 +27,7 @@ where
     T: FheUint,
     M: FieldContext<T>,
 {
-    pub(super) inner: Arc<CrtGlweParametersInner<T>>,
+    pub(super) encryption_parameters: Arc<CrtGlweEncryptionParameters<T>>,
     codec: BfvRnsCodec<T, M>,
 }
 
@@ -46,7 +46,7 @@ where
     #[must_use]
     pub fn new(
         dimension: GlweDimension,
-        poly_length: usize,
+        poly_length: PolyLength,
         plain_modulus: M,
         gamma_modulus: M,
         cipher_moduli: &[M],
@@ -86,26 +86,24 @@ where
     /// secret/noise sampling parameters, preserving the underlying reason.
     pub fn try_new(
         dimension: GlweDimension,
-        poly_length: usize,
+        poly_length: PolyLength,
         plain_modulus: M,
         gamma_modulus: M,
         cipher_moduli: &[M],
         secret_key_distr: SecretKeyDistr,
         noise_standard_deviation: f64,
     ) -> Result<Self, CrtGlweParametersError<T>> {
-        let poly_length = PolyLength::try_new(poly_length)
-            .map_err(|_| primus_lattice::GlweSizeError::InvalidPolynomialLength)?;
         let glwe_size = GlweSize::try_new(dimension, poly_length)?;
         let base_q = RNSBase::new(cipher_moduli)?;
         let size = RnsGlweSize::try_new(glwe_size, base_q.moduli_count())?;
         let codec = BfvRnsCodec::try_new(plain_modulus, base_q, gamma_modulus)?;
-        let inner = CrtGlweParametersInner::try_new(
+        let encryption_parameters = CrtGlweEncryptionParameters::try_new(
             size,
             codec.base_q(),
             secret_key_distr,
             noise_standard_deviation,
         )?;
-        Self::try_from_parts(Arc::new(inner), codec)
+        Self::try_from_parts(Arc::new(encryption_parameters), codec)
     }
 
     /// Binds prepared layout/samplers to ordinary BFV encoding without rebuilding them.
@@ -116,36 +114,40 @@ where
     /// for the complete fresh private-key noise support. The unsigned bound also
     /// covers centered lifting; public-key and evaluation noise need their own bounds.
     pub fn try_from_parts(
-        inner: Arc<CrtGlweParametersInner<T>>,
+        encryption_parameters: Arc<CrtGlweEncryptionParameters<T>>,
         codec: BfvRnsCodec<T, M>,
     ) -> Result<Self, CrtGlweParametersError<T>> {
-        inner.validate_base(codec.base_q())?;
+        encryption_parameters.validate_base(codec.base_q())?;
         // Every modulus already contains the signed support, so the magnitude
         // fits T. For private-key plaintext encryption it bounds the phase noise.
-        let maximum_noise_magnitude = T::as_from(inner.noise_distribution.maximum_magnitude());
+        let maximum_noise_magnitude =
+            T::as_from(encryption_parameters.noise_distribution.maximum_magnitude());
         codec.validate_noise_bound(maximum_noise_magnitude, PlaintextEmbedding::Unsigned)?;
-        Ok(Self { inner, codec })
+        Ok(Self {
+            encryption_parameters,
+            codec,
+        })
     }
 
     /// Returns the shared layout and sampling state, without BFV encoding.
     #[must_use]
     #[inline]
-    pub fn inner(&self) -> &CrtGlweParametersInner<T> {
-        &self.inner
+    pub fn encryption_parameters(&self) -> &CrtGlweEncryptionParameters<T> {
+        &self.encryption_parameters
     }
 
     /// Returns the dimension of this [`CrtGlweParameters<T, M>`].
     #[must_use]
     #[inline]
     pub fn dimension(&self) -> GlweDimension {
-        self.inner.size.dimension()
+        self.encryption_parameters.size.dimension()
     }
 
     /// Returns the poly length of this [`CrtGlweParameters<T, M>`].
     #[must_use]
     #[inline]
     pub fn poly_length(&self) -> PolyLength {
-        self.inner.size.poly_length()
+        self.encryption_parameters.size.poly_length()
     }
 
     /// Returns the plain modulus value of this [`CrtGlweParameters<T, M>`].
@@ -160,7 +162,7 @@ where
 
     /// Returns a reference to the modulus minus one of this [`CrtGlweParameters<T, M>`].
     pub fn cipher_modulus_minus_one(&self) -> BigUint<&[T]> {
-        self.inner.cipher_modulus_minus_one.view()
+        self.encryption_parameters.cipher_modulus_minus_one.view()
     }
 
     /// Returns a reference to the moduli of this [`CrtGlweParameters<T, M>`].
@@ -176,7 +178,7 @@ where
 
     /// Returns a reference to the cipher moduli minus one of this [`CrtGlweParameters<T, M>`].
     pub fn cipher_moduli_minus_one(&self) -> &[T] {
-        &self.inner.cipher_moduli_minus_one
+        &self.encryption_parameters.cipher_moduli_minus_one
     }
 
     /// Returns the moduli count of this [`CrtGlweParameters<T, M>`].
@@ -186,7 +188,7 @@ where
 
     /// Returns a reference to the cipher moduli uniform distr of this [`CrtGlweParameters<T, M>`].
     pub fn cipher_moduli_uniform_distr(&self) -> &[Uniform<T>] {
-        &self.inner.cipher_moduli_uniform_distr
+        &self.encryption_parameters.cipher_moduli_uniform_distr
     }
 
     /// Returns the big uint value len of this [`CrtGlweParameters<T, M>`].
@@ -197,24 +199,26 @@ where
 
     /// Returns the secret key type of this [`CrtGlweParameters<T, M>`].
     pub fn secret_key_distr(&self) -> SecretKeyDistr {
-        self.inner.secret_key_sampler.distr()
+        self.encryption_parameters.secret_key_sampler.distr()
     }
 
     /// Returns shared precomputation for coefficient secret-key generation.
     #[must_use]
     #[inline]
     pub fn secret_key_sampler(&self) -> &SecretKeySampler<T> {
-        &self.inner.secret_key_sampler
+        &self.encryption_parameters.secret_key_sampler
     }
 
     /// Returns a reference to the noise distribution of this [`CrtGlweParameters<T, M>`].
     pub fn noise_distribution(&self) -> &SignedDiscreteGaussian<T::SignedInteger> {
-        &self.inner.noise_distribution
+        &self.encryption_parameters.noise_distribution
     }
 
     /// Returns the noise standard deviation of this [`CrtGlweParameters<T, M>`].
     pub fn noise_standard_deviation(&self) -> f64 {
-        self.inner.noise_distribution.standard_deviation()
+        self.encryption_parameters
+            .noise_distribution
+            .standard_deviation()
     }
 
     /// Returns a reference to the delta of this [`CrtGlweParameters<T, M>`].
@@ -239,7 +243,7 @@ where
 
     /// Returns the cached RNS GLWE layout.
     pub fn size(&self) -> RnsGlweSize {
-        self.inner.size
+        self.encryption_parameters.size
     }
 
     /// Returns the limb length of one polynomial in big-integer representation.
@@ -249,21 +253,21 @@ where
 
     /// Returns the coefficient count of one RNS polynomial.
     pub fn rns_poly_len(&self) -> usize {
-        self.inner.size.rns_poly_len()
+        self.encryption_parameters.size.rns_poly_len()
     }
 
     /// Returns the coefficient count of one RNS GLWE ciphertext.
     pub fn rns_glwe_len(&self) -> usize {
-        self.inner.size.rns_glwe_len()
+        self.encryption_parameters.size.rns_glwe_len()
     }
 
     /// Returns the coefficient count of the RNS secret-key mask.
     pub fn secret_key_len(&self) -> usize {
-        self.inner.size.rns_mask_len()
+        self.encryption_parameters.size.rns_mask_len()
     }
 
     /// Returns the underlying single-modulus GLWE layout.
     pub fn glwe_size(&self) -> GlweSize {
-        self.inner.size.glwe_size()
+        self.encryption_parameters.size.glwe_size()
     }
 }

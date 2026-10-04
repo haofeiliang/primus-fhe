@@ -106,7 +106,7 @@ A cache-aligned base pointer does not align every subview. Polynomial strides in
 
 ## NTRU parameter sharing
 
-`NtruParameters` and `NlevParameters` share an `Arc<NtruParametersInner>` containing N, q and prepared secret/noise samplers. The ordinary codec and each gadget basis remain independently owned. Separate key-noise roles construct separate inner states. This shares distribution tables, never secret coefficients, RNG state or mutable workspace buffers; online operations borrow the inner state without cloning an Arc.
+`NtruParameters` and `NlevParameters` share an `Arc<NtruEncryptionParameters>` containing N, q and prepared secret/noise samplers. The ordinary codec and each gadget basis remain independently owned. Separate key-noise roles construct separate encryption states. This shares distribution tables, never secret coefficients, RNG state or mutable workspace buffers; online operations borrow the encryption state without cloning an Arc.
 
 The constructor calls below describe the measured revision. Current composition APIs and TFHE codec ownership are documented in the [parameter guide](tfhe-parameters-and-boundaries.md#ntru-普通与-gadget-参数组合).
 
@@ -121,7 +121,7 @@ Measured on 2026-10-03 against `d8eedf4f`, on AMD Ryzen 9 9955HX3D, x86_64 Linux
 | Gaussian, sigma=3.2 | Gadget derivation | 4 → 2 | 712 → 72 | 0 → 0 |
 | Gaussian, sigma=3.2 | Gadget clone | 4 → 2 | 712 → 72 | 0 → 0 |
 
-For these three live parameter objects, `sum(size_of_val)` fell from 1856 to 408 bytes. Total retained requested heap (`sum(allocated_bytes - released_bytes)`) fell from 1104 to 928 bytes for sparse ternary and from 2064 to 1248 bytes for Gaussian secrets. Inline plus retained heap therefore fell from **2960 to 1336 bytes**, or **3920 to 1656 bytes**, respectively. This estimate excludes allocator overhead and stack placement. The tradeoff is one additional 464-byte allocation at initial construction; the inner state was previously inline, so heap bytes alone do not express its total memory cost. Each gadget still allocates its own basis arrays. The temporary measurement harness was removed after recording these results.
+For these three live parameter objects, `sum(size_of_val)` fell from 1856 to 408 bytes. Total retained requested heap (`sum(allocated_bytes - released_bytes)`) fell from 1104 to 928 bytes for sparse ternary and from 2064 to 1248 bytes for Gaussian secrets. Inline plus retained heap therefore fell from **2960 to 1336 bytes**, or **3920 to 1656 bytes**, respectively. This estimate excludes allocator overhead and stack placement. The tradeoff is one additional 464-byte allocation at initial construction; the encryption state was previously inline, so heap bytes alone do not express its total memory cost. Each gadget still allocates its own basis arrays. The temporary measurement harness was removed after recording these results.
 
 Online encryption was measured separately using the existing [encryption benchmark](../../crates/primus_ntru/benches/encryption.rs), with one `encrypt_to` per iteration. Setup, keys, tables and output allocation were excluded. N=1024, u64, t=16, sparse ternary secret, noise sigma=3.2; NTT used q=1125899906826241 and Fourier used the native modulus. Commands on the baseline and changed tree, respectively:
 

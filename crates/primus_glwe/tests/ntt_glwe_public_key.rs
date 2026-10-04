@@ -2,7 +2,7 @@
 
 use primus_encoding::PlaintextEmbedding;
 use primus_glwe::{
-    GlweParameters, GlweParametersInner, NttGlweCiphertext, NttGlwePublicEncryptWorkspace,
+    GlweEncryptionParameters, GlweParameters, NttGlweCiphertext, NttGlwePublicEncryptWorkspace,
     NttGlwePublicKey, NttGlweSecretKey, SecretKeyDistr,
 };
 use primus_lattice::GlweDimension;
@@ -22,7 +22,7 @@ fn public_key_encoding_modes_reuse_workspace() {
     let modulus = BarrettModulus::new(CIPHER_MODULUS);
     let params = GlweParameters::new(
         GlweDimension::new(DIMENSION),
-        POLY_LENGTH,
+        PolyLength::new(POLY_LENGTH),
         PLAIN_MODULUS,
         modulus,
         SecretKeyDistr::UniformBinary,
@@ -30,9 +30,18 @@ fn public_key_encoding_modes_reuse_workspace() {
     );
     let table = UintNttTable::new(PolyLength::new(POLY_LENGTH), modulus).unwrap();
     let mut rng = StdRng::seed_from_u64(42);
-    let (_, secret_key) =
-        NttGlweSecretKey::generate_pair(params.size(), params.inner(), &table, &mut rng);
-    let public_key = NttGlwePublicKey::generate(&secret_key, params.inner(), &table, &mut rng);
+    let (_, secret_key) = NttGlweSecretKey::generate_pair(
+        params.size(),
+        params.encryption_parameters(),
+        &table,
+        &mut rng,
+    );
+    let public_key = NttGlwePublicKey::generate(
+        &secret_key,
+        params.encryption_parameters(),
+        &table,
+        &mut rng,
+    );
     let public_key_view = NttGlwePublicKey::from(NttGlweCiphertext::new(public_key.as_ref()));
     // Keep the centered sign boundary and endpoints even when N is smaller than t.
     let message = Polynomial::new(
@@ -90,7 +99,7 @@ fn public_key_encoding_modes_reuse_workspace() {
         public_key_view.encrypt_encoded_to(
             &encoded.as_view(),
             &mut ciphertext.as_mut_view(),
-            params.inner(),
+            params.encryption_parameters(),
             &table,
             &mut actual_rng,
             &mut workspace,
@@ -103,7 +112,12 @@ fn public_key_encoding_modes_reuse_workspace() {
         );
     }
 
-    let encrypted_zero = public_key.encrypt_zeros(params.inner(), &table, &mut rng, &mut workspace);
+    let encrypted_zero = public_key.encrypt_zeros(
+        params.encryption_parameters(),
+        &table,
+        &mut rng,
+        &mut workspace,
+    );
     assert_eq!(
         secret_key
             .decrypt(&encrypted_zero, &params, &table)
@@ -120,7 +134,7 @@ fn raw_public_encryption_checks_complete_key_and_output_layouts() {
 
     let n = POLY_LENGTH;
     let modulus = BarrettModulus::new(CIPHER_MODULUS);
-    let inner = GlweParametersInner::new(modulus, SecretKeyDistr::UniformBinary, 0.7);
+    let inner = GlweEncryptionParameters::new(modulus, SecretKeyDistr::UniformBinary, 0.7);
     let table = UintNttTable::new(PolyLength::new(n), modulus).unwrap();
     let mut workspace = NttGlwePublicEncryptWorkspace::new(PolyLength::new(n));
     let encoded = Polynomial::new(vec![1; n]);

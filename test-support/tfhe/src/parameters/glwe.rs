@@ -6,9 +6,10 @@ use primus_glwe::GlweDimension;
 use primus_glwe::SecretKeyDistr;
 use primus_integer::FheUint;
 use primus_lwe::LweDimension;
-use primus_lwe::LweParametersInner;
+use primus_lwe::LweEncryptionParameters;
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_reduce::RingContext;
+use primus_tfhe::PolyLength;
 use primus_tfhe::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_tfhe_glwe::{
     CircuitBootstrapConfig, DecompositionConfig, PbsOrder, TfheConfig, TfheParameters,
@@ -80,14 +81,14 @@ where
         .explicit_value()
         .map_or(2f64.powi(T::BITS as i32), |q| q.as_into());
     TfheParameters::try_from_config(TfheConfig {
-        small_lwe: LweParametersInner::new(
+        small_lwe: LweEncryptionParameters::new(
             LweDimension::new(workload.lwe_dimension),
             modulus,
             SecretKeyDistr::UniformBinary,
             q * LWE_STD_DEV,
         ),
         accumulator_dimension: GlweDimension::new(1),
-        poly_length: workload.poly_length,
+        poly_length: PolyLength::new(workload.poly_length),
         accumulator_secret_key_distr: SecretKeyDistr::UniformBinary,
         accumulator_noise_standard_deviation: (q * GLWE_STD_DEV).max(6.4),
         blind_rotation: decomposition(blind_rotation.0, Some(blind_rotation.1)),
@@ -114,14 +115,14 @@ where
         .explicit_value()
         .map_or(2f64.powi(T::BITS as i32), |q| q.as_into());
     TfheParameters::try_from_config(TfheConfig {
-        small_lwe: LweParametersInner::new(
+        small_lwe: LweEncryptionParameters::new(
             LweDimension::new(DIMENSION),
             modulus,
             secret,
             q * LWE_STD_DEV,
         ),
         accumulator_dimension: GlweDimension::new(1),
-        poly_length: N,
+        poly_length: PolyLength::new(N),
         accumulator_secret_key_distr: SecretKeyDistr::UniformTernary,
         accumulator_noise_standard_deviation: 6.4,
         blind_rotation: decomposition(if T::BITS == 32 { 2 } else { 8 }, None),
@@ -167,14 +168,14 @@ where
         .explicit_value()
         .map_or(2f64.powi(T::BITS as i32), |q| q.as_into());
     TfheParameters::try_from_config(TfheConfig {
-        small_lwe: LweParametersInner::new(
+        small_lwe: LweEncryptionParameters::new(
             LweDimension::new(SPARSE_DIMENSION),
             modulus,
             SecretKeyDistr::fixed_hamming_weight_binary(SPARSE_DIMENSION, SPARSE_WEIGHT),
             3.2 * q / 16384.0,
         ),
         accumulator_dimension: GlweDimension::new(1),
-        poly_length: N,
+        poly_length: PolyLength::new(N),
         accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
         accumulator_noise_standard_deviation: 6.4,
         blind_rotation: decomposition(if T::BITS == 32 { 2 } else { 8 }, None),

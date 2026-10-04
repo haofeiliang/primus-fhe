@@ -130,7 +130,7 @@ fn ntt_trace_projection_and_packing() {
     let size = GlweSize::new(GlweDimension::new(K), PolyLength::new(N));
     let params = GlweParameters::new(
         GlweDimension::new(K),
-        N,
+        PolyLength::new(N),
         64,
         modulus,
         SecretKeyDistr::UniformTernary,
@@ -313,7 +313,7 @@ fn fourier_trace_projection_and_packing_backend<Table: FftTable>() {
     let size = GlweSize::new(GlweDimension::new(K), PolyLength::new(N));
     let params = GlweParameters::new(
         GlweDimension::new(K),
-        N,
+        PolyLength::new(N),
         64,
         modulus,
         SecretKeyDistr::UniformTernary,

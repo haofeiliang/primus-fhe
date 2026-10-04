@@ -29,9 +29,10 @@ static ALLOCATOR: CountingAllocator = CountingAllocator;
 fn ntt<T: FheUint + PrimitiveRoot>(c: &mut Criterion, q: T, levels: usize) {
     const N: usize = 1024;
     let modulus = BarrettModulus::new(q);
-    let table = UintNttTable::new(PolyLength::new(N), modulus).unwrap();
+    let poly_length = PolyLength::new(N);
+    let table = UintNttTable::new(poly_length, modulus).unwrap();
     let params = NtruParameters::new(
-        N,
+        poly_length,
         T::try_from(16).unwrap(),
         modulus,
         SecretKeyDistr::SparseTernary,
@@ -43,7 +44,7 @@ fn ntt<T: FheUint + PrimitiveRoot>(c: &mut Criterion, q: T, levels: usize) {
         Some(DecompositionLevelCount::new(levels)),
     );
     let mut rng = StdRng::seed_from_u64(0xB702);
-    let key = NttNtruSecretKey::generate(params.inner(), &table, &mut rng).unwrap();
+    let key = NttNtruSecretKey::generate(params.encryption_parameters(), &table, &mut rng).unwrap();
     let message = Polynomial::new(
         (0..N)
             .map(|i| T::try_from(i % 16).unwrap())
@@ -67,11 +68,11 @@ fn ntt<T: FheUint + PrimitiveRoot>(c: &mut Criterion, q: T, levels: usize) {
     let exponent = N / 3;
     let mut output = NtruCiphertext::<Vec<T>>::zero(N);
     let (mut fused, fused_allocations) = measure(|| {
-        NttNtruCmuxWorkspace::<T>::new(PolyLength::new(N), DecompositionLevelCount::new(levels))
+        NttNtruCmuxWorkspace::<T>::new(poly_length, DecompositionLevelCount::new(levels))
     });
     let ((mut binary, mut intermediate), binary_allocations) = measure(|| {
         (
-            NttNtruExternalProductWorkspace::<T>::new(PolyLength::new(N)),
+            NttNtruExternalProductWorkspace::<T>::new(poly_length),
             NtruCiphertext::<Vec<T>>::zero(N),
         )
     });
@@ -147,10 +148,11 @@ fn native_phase<T: TorusFftValue>(cipher: &[T], secret: &[T::SignedInteger]) -> 
 
 fn fourier<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str, levels: usize) {
     const N: usize = 1024;
-    let table = Table::new(PolyLength::new(N));
+    let poly_length = PolyLength::new(N);
+    let table = Table::new(poly_length);
     let mut fft = FftEngine::new(&table);
     let params = NtruParameters::new(
-        N,
+        poly_length,
         T::try_from(16).unwrap(),
         NativeModulus::new(),
         SecretKeyDistr::SparseTernary,
@@ -163,7 +165,8 @@ fn fourier<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str, 
     );
     let mut rng = StdRng::seed_from_u64(0xB703);
     let (coeff, key) =
-        FourierNtruSecretKey::generate_pair(params.inner(), &mut fft, &mut rng).unwrap();
+        FourierNtruSecretKey::generate_pair(params.encryption_parameters(), &mut fft, &mut rng)
+            .unwrap();
     let message = Polynomial::new(
         (0..N)
             .map(|i| T::try_from(i % 16).unwrap())
@@ -175,7 +178,7 @@ fn fourier<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str, 
         &params,
         &mut fft,
         &mut rng,
-        &mut FourierNtruEncryptWorkspace::new(PolyLength::new(N)),
+        &mut FourierNtruEncryptWorkspace::new(poly_length),
     )
     .write_torus_form(&mut input, &mut fft);
     let mut controls = vec![Complex64::default(); 2 * gadget.fourier_nlev_len()];
@@ -185,7 +188,7 @@ fn fourier<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str, 
         &gadget,
         &mut fft,
         &mut rng,
-        &mut FourierNtruGadgetEncryptWorkspace::new(PolyLength::new(N)),
+        &mut FourierNtruGadgetEncryptWorkspace::new(poly_length),
     );
     let (positive, negative) = controls.split_at(gadget.fourier_nlev_len());
     let positive = FourierNgswCiphertext::new(positive);
@@ -193,11 +196,11 @@ fn fourier<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str, 
     let exponent = N / 3;
     let mut output = NtruCiphertext::<Vec<T>>::zero(N);
     let (mut fused, fused_allocations) = measure(|| {
-        FourierNtruCmuxWorkspace::<T>::new(PolyLength::new(N), DecompositionLevelCount::new(levels))
+        FourierNtruCmuxWorkspace::<T>::new(poly_length, DecompositionLevelCount::new(levels))
     });
     let ((mut binary, mut intermediate), binary_allocations) = measure(|| {
         (
-            FourierNtruExternalProductWorkspace::<T>::new(PolyLength::new(N)),
+            FourierNtruExternalProductWorkspace::<T>::new(poly_length),
             NtruCiphertext::<Vec<T>>::zero(N),
         )
     });

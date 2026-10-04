@@ -4,9 +4,10 @@ use primus_decompose::DecompositionBaseLog;
 use primus_encoding::RoundedCodec;
 use primus_fft::{FftTable, RustFftTable, TfheFftTable};
 use primus_lattice::LweDimension;
-use primus_lwe::LweParametersInner;
+use primus_lwe::LweEncryptionParameters;
 use primus_modulus::NativeModulus;
 use primus_ntru::SecretKeyDistr;
+use primus_poly::PolyLength;
 use primus_test_allocations as allocations;
 use primus_tfhe_ntru_fourier::{
     BooleanGate, DecompositionConfig, LweCiphertext, TfheConfig, TfheContext, TfheParameters,
@@ -22,13 +23,13 @@ static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocato
 fn check_context<Table: FftTable>(distr: SecretKeyDistr) {
     let parameters = TfheParameters::<u32>::try_from_config(TfheConfig {
         accumulator_modulus: NativeModulus::new(),
-        external_lwe: LweParametersInner::new(
+        external_lwe: LweEncryptionParameters::new(
             LweDimension::new(4),
             NativeModulus::new(),
             distr,
             0.7,
         ),
-        poly_length: 32,
+        poly_length: PolyLength::new(32),
         accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
         accumulator_noise_standard_deviation: 0.7,
         blind_rotation: DecompositionConfig {

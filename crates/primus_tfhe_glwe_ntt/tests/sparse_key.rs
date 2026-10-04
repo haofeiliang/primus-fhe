@@ -25,7 +25,7 @@ fn context(distribution: SecretKeyDistr) -> TfheContext<u32, U32NttTable> {
     let lwe = LweParameters::new(LweDimension::new(16), 8, modulus, distribution, 0.7);
     let glwe = GlweParameters::new(
         GlweDimension::new(1),
-        N,
+        PolyLength::new(N),
         8,
         modulus,
         SecretKeyDistr::UniformBinary,
@@ -33,7 +33,7 @@ fn context(distribution: SecretKeyDistr) -> TfheContext<u32, U32NttTable> {
     );
     let basis = ApproxSignedBasis::new(Some(Q), DecompositionBaseLog::new(9), None);
     let parameters = TfheParameters::try_new(
-        lwe.into_inner(),
+        lwe.into_encryption_parameters(),
         primus_glwe::GgswParameters::try_with_basis(&glwe, basis.clone()).unwrap(),
         basis,
         PbsOrder::KeyswitchBootstrap,

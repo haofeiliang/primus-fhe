@@ -38,7 +38,7 @@ fn fourier_cmux_selects_requested_glwe() {
     let mut rng = StdRng::seed_from_u64(42);
     let glwe_params = GlweParameters::new(
         GlweDimension::new(DIMENSION),
-        POLY_LENGTH,
+        PolyLength::new(POLY_LENGTH),
         PLAINTEXT_MODULUS,
         NativeModulus::new(),
         SecretKeyDistr::UniformBinary,
@@ -47,7 +47,7 @@ fn fourier_cmux_selects_requested_glwe() {
     let params = GlevParameters::with_glwe_params(&glwe_params, DecompositionBaseLog::new(8), None);
     let (_, secret_key) = FourierGlweSecretKey::generate_pair(
         glwe_params.size(),
-        glwe_params.inner(),
+        glwe_params.encryption_parameters(),
         &mut fft,
         &mut rng,
     );
@@ -133,15 +133,19 @@ fn ntt_cmux_selects_requested_glwe() {
     let mut rng = StdRng::seed_from_u64(42);
     let glwe_params = GlweParameters::new(
         GlweDimension::new(DIMENSION),
-        POLY_LENGTH,
+        PolyLength::new(POLY_LENGTH),
         PLAINTEXT_MODULUS,
         modulus,
         SecretKeyDistr::SparseTernary,
         0.7,
     );
     let params = GlevParameters::with_glwe_params(&glwe_params, DecompositionBaseLog::new(8), None);
-    let (_, secret_key) =
-        NttGlweSecretKey::generate_pair(glwe_params.size(), glwe_params.inner(), &ntt, &mut rng);
+    let (_, secret_key) = NttGlweSecretKey::generate_pair(
+        glwe_params.size(),
+        glwe_params.encryption_parameters(),
+        &ntt,
+        &mut rng,
+    );
     let mut gadget_workspace = NttGlweGadgetEncryptWorkspace::new(params.size());
     let mut cmux_workspace = NttGlweExternalProductWorkspace::new(params.size());
 
@@ -217,7 +221,7 @@ fn ntt_ternary_cmux_rotates_phase_with_encrypted_controls() {
     let ntt = UintNttTable::new(PolyLength::new(N), modulus).unwrap();
     let glwe = GlweParameters::new(
         GlweDimension::new(K),
-        N,
+        PolyLength::new(N),
         16,
         modulus,
         SecretKeyDistr::SparseTernary,
@@ -301,7 +305,7 @@ fn check_fourier_ternary_cmux<Table: FftTable>() {
     let mut fft = FftEngine::new(&table);
     let glwe = GlweParameters::new(
         GlweDimension::new(K),
-        N,
+        PolyLength::new(N),
         16u64,
         NativeModulus::new(),
         SecretKeyDistr::SparseTernary,

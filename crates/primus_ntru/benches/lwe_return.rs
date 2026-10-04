@@ -56,12 +56,13 @@ fn source<T: FheUint, Q: RingContext<T>>(c: &mut Criterion, source: Q, name: &st
                             .collect(),
                         SecretKeyDistr::UniformTernary,
                     );
-                    let secret = LweSecretKey::generate(parameters.inner(), &mut rng);
+                    let secret =
+                        LweSecretKey::generate(parameters.encryption_parameters(), &mut rng);
                     let key = NtruLweKeySwitchingKey::generate(
                         &f,
                         source,
                         &secret,
-                        parameters.inner(),
+                        parameters.encryption_parameters(),
                         ApproxSignedBasis::new(
                             Some(T::ONE << 24u32),
                             DecompositionBaseLog::new(3),

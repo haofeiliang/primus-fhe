@@ -22,7 +22,7 @@ fn bench_domain<M: RingContext<u32>>(c: &mut Criterion, name: &str, modulus: M, 
         SecretKeyDistr::UniformBinary,
         0.7,
     );
-    let sk = LweSecretKey::generate(params.inner(), &mut rng);
+    let sk = LweSecretKey::generate(params.encryption_parameters(), &mut rng);
     let signed: Vec<i32> = (0..dimension).map(|i| (i % 3) as i32 - 1).collect();
     let plaintext = params
         .plaintext_codec()

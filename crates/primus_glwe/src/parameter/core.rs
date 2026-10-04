@@ -13,12 +13,12 @@ use crate::SecretKeyDistr;
 /// Ciphertext sizes and plaintext encoding intentionally live in their
 /// respective outer parameter types. Ordinary and gadget parameters can be
 /// constructed independently from this state through [`std::sync::Arc`]; cloning
-/// the inner directly still copies its sampler tables.
+/// this value directly still copies its sampler tables.
 /// Mask and noise samplers serve both ordinary encryption and evaluation-key
 /// row encryption; the secret sampler serves key generation. Separate noise
 /// roles use separate prepared states, even when layout and modulus agree.
 #[derive(Clone)]
-pub struct GlweParametersInner<T, M>
+pub struct GlweEncryptionParameters<T, M>
 where
     T: FheUint,
     M: RingContext<T>,
@@ -30,7 +30,7 @@ where
     noise_distribution: DiscreteGaussian<T>,
 }
 
-impl<T, M> PartialEq for GlweParametersInner<T, M>
+impl<T, M> PartialEq for GlweEncryptionParameters<T, M>
 where
     T: FheUint,
     M: RingContext<T>,
@@ -44,13 +44,12 @@ where
     }
 }
 
-impl<T, M> GlweParametersInner<T, M>
+impl<T, M> GlweEncryptionParameters<T, M>
 where
     T: FheUint,
     M: RingContext<T>,
 {
-    /// Creates GLWE encryption and secret-key parameters without ciphertext
-    /// sizes or plaintext encoding.
+    /// Creates a [`GlweEncryptionParameters`] without ciphertext sizes or plaintext encoding.
     ///
     /// # Panics
     ///

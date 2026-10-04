@@ -7,7 +7,7 @@ use primus_fft::{Complex64, FftTable, RustFftTable, TfheFftTable};
 use primus_glwe::{GlevParameters, SecretKeyDistr};
 use primus_lattice::ggsw::{FourierGgsw, Ggsw};
 use primus_lattice::{GlweDimension, LweDimension};
-use primus_lwe::{LweCiphertext, LweParametersInner};
+use primus_lwe::{LweCiphertext, LweEncryptionParameters};
 use primus_modulus::NativeModulus;
 use primus_poly::PolyLength;
 use primus_test_allocations as allocations;
@@ -45,14 +45,14 @@ fn parameters_with_order_and_distribution(
         level_count: Some(DecompositionLevelCount::new(6)),
     };
     TfheParameters::try_from_config(TfheConfig {
-        small_lwe: LweParametersInner::new(
+        small_lwe: LweEncryptionParameters::new(
             LweDimension::new(4),
             NativeModulus::new(),
             distribution,
             0.7,
         ),
         accumulator_dimension: GlweDimension::new(dimension),
-        poly_length,
+        poly_length: PolyLength::new(poly_length),
         accumulator_secret_key_distr: SecretKeyDistr::UniformTernary,
         accumulator_noise_standard_deviation: 0.7,
         blind_rotation: decomposition,

@@ -3,7 +3,7 @@ use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_encoding::RoundedCodec;
 use primus_encoding::ScaledCodec;
 use primus_lattice::LweDimension;
-use primus_lwe::LweParametersInner;
+use primus_lwe::LweEncryptionParameters;
 use primus_modulus::{BarrettModulus, PowOf2Modulus};
 use primus_ntru::NlevParameters;
 use primus_ntru::{
@@ -63,14 +63,20 @@ fn selectors(distr: SecretKeyDistr, sparse: bool) {
         log_basis: DecompositionBaseLog::new(10),
         level_count: None,
     };
-    let ring = NtruParameters::new(N, 2 * M as u64, modulus, SecretKeyDistr::SparseTernary, 0.7);
+    let ring = NtruParameters::new(
+        PolyLength::new(N),
+        2 * M as u64,
+        modulus,
+        SecretKeyDistr::SparseTernary,
+        0.7,
+    );
     let blind_rotation_basis = ApproxSignedBasis::new(
         ring.cipher_modulus_value(),
         DecompositionBaseLog::new(10),
         None,
     );
     let tfhe = TfheParameters::try_new(
-        LweParametersInner::new(
+        LweEncryptionParameters::new(
             LweDimension::new(4),
             PowOf2Modulus::new(1u64 << 24),
             distr,

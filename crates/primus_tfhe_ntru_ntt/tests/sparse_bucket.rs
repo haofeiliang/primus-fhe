@@ -1,5 +1,5 @@
 //! Sparse key selection semantics and independent NLev/bucket error budgets.
-use primus_lwe::LweParametersInner;
+use primus_lwe::LweEncryptionParameters;
 
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_integer::{AsInto, FheUint};
@@ -82,7 +82,8 @@ fn check_bucket<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, level_cou
         0.7,
     );
     let mut rng = StdRng::seed_from_u64(0xB801);
-    let client = primus_lwe::LweSecretKey::generate(client_params.inner(), &mut rng);
+    let client =
+        primus_lwe::LweSecretKey::generate(client_params.encryption_parameters(), &mut rng);
     let nonzero_indices = Zeroizing::new(
         client
             .as_ref()
@@ -94,7 +95,7 @@ fn check_bucket<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, level_cou
     assert_eq!(nonzero_indices.len(), WEIGHT);
 
     let params = NtruParameters::new(
-        N,
+        PolyLength::new(N),
         T::as_from(16usize),
         modulus,
         SecretKeyDistr::SparseTernary,
@@ -107,7 +108,7 @@ fn check_bucket<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, level_cou
     );
     let context = TfheContext::try_new(
         TfheParameters::try_new(
-            LweParametersInner::new(
+            LweEncryptionParameters::new(
                 LweDimension::new(DIM),
                 modulus,
                 client_params.secret_key_distr(),
@@ -130,7 +131,8 @@ fn check_bucket<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, level_cou
     let digit_bound: i128 = basis.basis_value().as_into();
     let digit_bound = digit_bound / 2;
     let residual: i128 = basis.approximate_error_bound().as_into();
-    let (secret, key) = NttNtruSecretKey::generate_pair(params.inner(), ntt, &mut rng).unwrap();
+    let (secret, key) =
+        NttNtruSecretKey::generate_pair(params.encryption_parameters(), ntt, &mut rng).unwrap();
     let secret_coefficients: Vec<i128> = secret.as_slice().iter().map(|&v| v.as_into()).collect();
     let secret_norm: i128 = secret_coefficients.iter().map(|v| v.abs()).sum();
 

@@ -10,7 +10,7 @@
 //! Phase extraction returns undecoded coefficients: NTT takes a modulus and
 //! table, while Fourier takes an FFT engine and decryption workspace. Decoding
 //! methods additionally take [`NtruParameters`] for the plaintext codec.
-//! Key generation and encoded/zero encryption take [`NtruParametersInner`],
+//! Key generation and encoded/zero encryption take [`NtruEncryptionParameters`],
 //! the codec-free ring/sampling state shared by ordinary and [`NlevParameters`].
 //!
 //! `encrypt_nlev_constant_to` encrypts raw ring constants without plaintext
@@ -27,7 +27,7 @@
 //!
 //! Explicit-modulus conversions use bounded signed encoding: every secret
 //! coefficient must have unsigned magnitude strictly less than the target
-//! ciphertext modulus. [`NtruParametersInner`] checks this for its sampling support.
+//! ciphertext modulus. [`NtruEncryptionParameters`] checks this for its sampling support.
 //! Callers importing coefficient keys or selecting a different target modulus
 //! must establish the same bound; conversion does not perform general reduction.
 //! The native Fourier representation accepts every signed coefficient.
@@ -87,7 +87,8 @@ pub use key_switch::{
     NtruLweKeySwitchingBatchWorkspace, NtruLweKeySwitchingKey, NtruLweKeySwitchingWorkspace,
 };
 pub use parameter::{
-    NlevParameterError, NlevParameters, NtruParameterError, NtruParameters, NtruParametersInner,
+    NlevParameterError, NlevParameters, NtruEncryptionParameters, NtruParameterError,
+    NtruParameters,
 };
 pub use primus_distr::SecretKeyDistr;
 pub use primus_lattice::LweDimension;

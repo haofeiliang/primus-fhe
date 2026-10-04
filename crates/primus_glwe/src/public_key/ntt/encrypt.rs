@@ -1,7 +1,7 @@
 //! NTT public-key encryption.
 
 use super::{NttGlwePublicEncryptWorkspace, NttGlwePublicKey};
-use crate::{GlweParameters, GlweParametersInner, NttGlweCiphertext, PlaintextEmbedding};
+use crate::{GlweEncryptionParameters, GlweParameters, NttGlweCiphertext, PlaintextEmbedding};
 use primus_data::{Data, DataMut};
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
@@ -111,7 +111,7 @@ where
         &self,
         input: &Polynomial<A>,
         output: &mut NttGlweCiphertext<B>,
-        params: &GlweParametersInner<T, M>,
+        params: &GlweEncryptionParameters<T, M>,
         ntt: &Table,
         rng: &mut R,
         workspace: &mut NttGlwePublicEncryptWorkspace<T>,
@@ -172,7 +172,7 @@ where
     pub fn encrypt_zeros_to<M, Table, R, B>(
         &self,
         output: &mut NttGlweCiphertext<B>,
-        params: &GlweParametersInner<T, M>,
+        params: &GlweEncryptionParameters<T, M>,
         ntt: &Table,
         rng: &mut R,
         workspace: &mut NttGlwePublicEncryptWorkspace<T>,
@@ -200,7 +200,7 @@ where
     #[must_use]
     pub fn encrypt_zeros<M, Table, R>(
         &self,
-        params: &GlweParametersInner<T, M>,
+        params: &GlweEncryptionParameters<T, M>,
         ntt: &Table,
         rng: &mut R,
         workspace: &mut NttGlwePublicEncryptWorkspace<T>,
@@ -260,11 +260,18 @@ impl<T: FheUint> NttGlwePublicKey<&[T]> {
             params.poly_length(),
             "NTT polynomial length mismatch"
         );
-        self.encrypt_kernel_to(output, params.inner(), ntt, rng, workspace, |body| {
-            params
-                .plaintext_codec()
-                .add_encode_slice_assign(body, input.as_ref(), embedding);
-        });
+        self.encrypt_kernel_to(
+            output,
+            params.encryption_parameters(),
+            ntt,
+            rng,
+            workspace,
+            |body| {
+                params
+                    .plaintext_codec()
+                    .add_encode_slice_assign(body, input.as_ref(), embedding);
+            },
+        );
     }
 
     /// Input length was checked at the public entry; resource checks precede sampling.
@@ -273,7 +280,7 @@ impl<T: FheUint> NttGlwePublicKey<&[T]> {
         &self,
         input: Polynomial<&[T]>,
         output: NttGlweCiphertext<&mut [T]>,
-        params: &GlweParametersInner<T, M>,
+        params: &GlweEncryptionParameters<T, M>,
         ntt: &Table,
         rng: &mut R,
         workspace: &mut NttGlwePublicEncryptWorkspace<T>,
@@ -290,7 +297,7 @@ impl<T: FheUint> NttGlwePublicKey<&[T]> {
     fn encrypt_zeros_kernel_to<M, Table, R>(
         &self,
         output: NttGlweCiphertext<&mut [T]>,
-        params: &GlweParametersInner<T, M>,
+        params: &GlweEncryptionParameters<T, M>,
         ntt: &Table,
         rng: &mut R,
         workspace: &mut NttGlwePublicEncryptWorkspace<T>,
@@ -308,7 +315,7 @@ impl<T: FheUint> NttGlwePublicKey<&[T]> {
     fn encrypt_kernel_to<M, Table, R>(
         &self,
         mut output: NttGlweCiphertext<&mut [T]>,
-        params: &GlweParametersInner<T, M>,
+        params: &GlweEncryptionParameters<T, M>,
         ntt: &Table,
         rng: &mut R,
         workspace: &mut NttGlwePublicEncryptWorkspace<T>,

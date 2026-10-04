@@ -16,7 +16,7 @@ use crate::SecretKeyDistr;
 /// type: the ordinary codec or the gadget base. No second RNSBase is stored here.
 /// Arc sharing retains the same prepared Gaussian tables and secret sampler when
 /// gadget parameters are derived, instead of cloning those precomputations.
-pub struct CrtGlweParametersInner<T: FheUint> {
+pub struct CrtGlweEncryptionParameters<T: FheUint> {
     pub(super) size: RnsGlweSize,
     pub(super) cipher_modulus_minus_one: BigUint<Vec<T>>,
     pub(super) cipher_moduli_minus_one: Vec<T>,
@@ -25,8 +25,8 @@ pub struct CrtGlweParametersInner<T: FheUint> {
     pub(super) noise_distribution: SignedDiscreteGaussian<T::SignedInteger>,
 }
 
-impl<T: FheUint> CrtGlweParametersInner<T> {
-    /// Prepares a [`CrtGlweParametersInner`] without BFV encoding.
+impl<T: FheUint> CrtGlweEncryptionParameters<T> {
+    /// Prepares a [`CrtGlweEncryptionParameters`] without BFV encoding.
     ///
     /// # Panics
     /// Panics on the layout/base or sampler errors of [`Self::try_new`].

@@ -26,13 +26,14 @@ const DOMAIN: usize = 8;
 fn context(order: PbsOrder, distribution: SecretKeyDistr) -> TfheContext<u32, U32NttTable> {
     let modulus = BarrettModulus::new(Q);
     let parameters = TfheParameters::try_new(
-        (LweParameters::new(LweDimension::new(8), 15, modulus, distribution, 0.7)).into_inner(),
+        (LweParameters::new(LweDimension::new(8), 15, modulus, distribution, 0.7))
+            .into_encryption_parameters(),
         primus_glwe::GgswParameters::try_with_basis(
             &(
                 // d=2 also exercises multiplication of all mask components, not just a,b.
                 GlweParameters::new(
                     GlweDimension::new(2),
-                    N,
+                    PolyLength::new(N),
                     15,
                     modulus,
                     SecretKeyDistr::UniformBinary,

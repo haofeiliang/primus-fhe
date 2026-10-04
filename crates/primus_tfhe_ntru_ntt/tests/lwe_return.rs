@@ -2,8 +2,9 @@ use primus_decompose::DecompositionBaseLog;
 use primus_encoding::ScaledCodec;
 use primus_integer::FheUint;
 use primus_lattice::LweDimension;
-use primus_lwe::LweParametersInner;
+use primus_lwe::LweEncryptionParameters;
 use primus_ntt::{MonomialNttTable, U32NttTable, U64NttTable};
+use primus_poly::PolyLength;
 use primus_tfhe_ntru_ntt::{
     BlindRotationConfig, DecompositionConfig, TfheConfig, TfheContext, TfheEvaluationError,
     TfheParameters,
@@ -32,14 +33,14 @@ fn check<T: FheUint, Table: MonomialNttTable<ValueT = T>>(ring_q: T) {
             level_count: None,
         };
         let config = TfheConfig {
-            external_lwe: LweParametersInner::new(
+            external_lwe: LweEncryptionParameters::new(
                 LweDimension::new(DIM),
                 external_modulus,
                 distr,
                 0.7,
             ),
             accumulator_modulus: BarrettModulus::new(ring_q),
-            poly_length: N,
+            poly_length: PolyLength::new(N),
             accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
             accumulator_noise_standard_deviation: 0.7,
             blind_rotation: DecompositionConfig {
@@ -210,7 +211,7 @@ fn check<T: FheUint, Table: MonomialNttTable<ValueT = T>>(ring_q: T) {
         }
         // Changing only q must reject a server key before online work.
         let mut wrong = config;
-        wrong.external_lwe = LweParametersInner::new(
+        wrong.external_lwe = LweEncryptionParameters::new(
             LweDimension::new(DIM),
             PowOf2Modulus::new(q / T::as_from(2u32)),
             distr,

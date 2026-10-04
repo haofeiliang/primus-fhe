@@ -2,10 +2,11 @@ use primus_decompose::primitive::ApproxSignedBasis;
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_encoding::RoundedCodec;
 use primus_lwe::LweDimension;
-use primus_lwe::LweParametersInner;
+use primus_lwe::LweEncryptionParameters;
 use primus_modulus::{BarrettModulus, NativeModulus, PowOf2Modulus};
 use primus_ntru::NlevParameters;
 use primus_ntru::{NtruParameters, SecretKeyDistr};
+use primus_poly::PolyLength;
 use primus_reduce::RingContext;
 use primus_tfhe_ntru::{
     CircuitBootstrapConfig, CircuitBootstrapParameters, DecompositionConfig, OneHotBootstrapError,
@@ -20,7 +21,13 @@ fn parameters<M: RingContext<u64>>(
     TfheParameters<u64, M, PowOf2Modulus<u64>>,
     CircuitBootstrapParameters<u64, M>,
 ) {
-    let ring = NtruParameters::new(64, t, modulus, SecretKeyDistr::SparseTernary, 0.7);
+    let ring = NtruParameters::new(
+        PolyLength::new(64),
+        t,
+        modulus,
+        SecretKeyDistr::SparseTernary,
+        0.7,
+    );
     let blind_rotation_basis = ApproxSignedBasis::new(
         ring.cipher_modulus_value(),
         DecompositionBaseLog::new(3),
@@ -31,7 +38,7 @@ fn parameters<M: RingContext<u64>>(
         level_count: None,
     };
     let tfhe = TfheParameters::try_new(
-        LweParametersInner::new(
+        LweEncryptionParameters::new(
             LweDimension::new(4),
             PowOf2Modulus::new(1 << 20),
             SecretKeyDistr::UniformBinary,

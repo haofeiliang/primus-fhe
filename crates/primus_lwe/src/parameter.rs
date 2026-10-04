@@ -23,7 +23,7 @@ pub enum LweParameterError {
 /// Ciphertext domain and prepared LWE samplers, independent of message encoding.
 /// The ciphertext length `dimension + 1` always fits in `usize`.
 #[derive(Clone)]
-pub struct LweParametersInner<T, M>
+pub struct LweEncryptionParameters<T, M>
 where
     T: FheUint,
     M: RingContext<T>,
@@ -40,12 +40,12 @@ where
     noise_distribution: DiscreteGaussian<T>,
 }
 
-impl<T, M> LweParametersInner<T, M>
+impl<T, M> LweEncryptionParameters<T, M>
 where
     T: FheUint,
     M: RingContext<T>,
 {
-    /// Creates a new [`LweParametersInner<T, M>`].
+    /// Creates a new [`LweEncryptionParameters<T, M>`].
     ///
     /// # Panics
     ///
@@ -97,14 +97,14 @@ where
         })
     }
 
-    /// Returns the dimension of this [`LweParametersInner<T, M>`].
+    /// Returns the dimension of this [`LweEncryptionParameters<T, M>`].
     #[must_use]
     #[inline]
     pub fn dimension(&self) -> LweDimension {
         self.dimension
     }
 
-    /// Returns the cipher modulus of this [`LweParametersInner<T, M>`].
+    /// Returns the cipher modulus of this [`LweEncryptionParameters<T, M>`].
     #[must_use]
     #[inline]
     pub fn cipher_modulus(&self) -> M {
@@ -118,20 +118,20 @@ where
         self.cipher_modulus.explicit_value()
     }
 
-    /// Returns the cipher modulus minus one of this [`LweParametersInner<T, M>`].
+    /// Returns the cipher modulus minus one of this [`LweEncryptionParameters<T, M>`].
     #[must_use]
     #[inline]
     pub fn cipher_modulus_minus_one(&self) -> T {
         self.cipher_modulus_minus_one
     }
 
-    /// Returns the cipher modulus uniform distr of this [`LweParametersInner<T, M>`].
+    /// Returns the cipher modulus uniform distr of this [`LweEncryptionParameters<T, M>`].
     #[must_use]
     pub fn cipher_modulus_uniform_distr(&self) -> Uniform<T> {
         self.cipher_modulus_uniform_distr
     }
 
-    /// Returns the secret key type of this [`LweParametersInner<T, M>`].
+    /// Returns the secret key type of this [`LweEncryptionParameters<T, M>`].
     #[must_use]
     #[inline]
     pub fn secret_key_distr(&self) -> SecretKeyDistr {
@@ -145,7 +145,7 @@ where
         &self.secret_key_sampler
     }
 
-    /// Returns the noise standard deviation of this [`LweParametersInner<T, M>`].
+    /// Returns the noise standard deviation of this [`LweEncryptionParameters<T, M>`].
     #[must_use]
     #[inline]
     pub fn noise_standard_deviation(&self) -> f64 {
@@ -161,10 +161,10 @@ where
 }
 
 /// Ordinary LWE parameters combining checked sampling state with a Rounded codec.
-/// Message operations use this type; key generation only needs [`LweParametersInner`].
+/// Message operations use this type; key generation only needs [`LweEncryptionParameters`].
 #[derive(Clone)]
 pub struct LweParameters<T: FheUint, M: RingContext<T>> {
-    inner: LweParametersInner<T, M>,
+    encryption_parameters: LweEncryptionParameters<T, M>,
     plaintext_codec: RoundedCodec<T, M>,
 }
 
@@ -201,14 +201,14 @@ impl<T: FheUint, M: RingContext<T>> LweParameters<T, M> {
         noise_standard_deviation: f64,
     ) -> Result<Self, LweParameterError> {
         let plaintext_codec = RoundedCodec::try_new(plain_modulus_value, cipher_modulus)?;
-        let inner = LweParametersInner::try_new(
+        let encryption_parameters = LweEncryptionParameters::try_new(
             dimension,
             cipher_modulus,
             secret_key_distr,
             noise_standard_deviation,
         )?;
         Ok(Self {
-            inner,
+            encryption_parameters,
             plaintext_codec,
         })
     }
@@ -216,14 +216,14 @@ impl<T: FheUint, M: RingContext<T>> LweParameters<T, M> {
     /// Returns the checked ciphertext domain and prepared samplers without a codec.
     #[must_use]
     #[inline]
-    pub fn inner(&self) -> &LweParametersInner<T, M> {
-        &self.inner
+    pub fn encryption_parameters(&self) -> &LweEncryptionParameters<T, M> {
+        &self.encryption_parameters
     }
 
     /// Moves the sampling state out without cloning its tables.
     #[must_use]
-    pub fn into_inner(self) -> LweParametersInner<T, M> {
-        self.inner
+    pub fn into_encryption_parameters(self) -> LweEncryptionParameters<T, M> {
+        self.encryption_parameters
     }
 
     /// Returns the message modulus.
@@ -244,54 +244,54 @@ impl<T: FheUint, M: RingContext<T>> LweParameters<T, M> {
     #[must_use]
     #[inline]
     pub fn dimension(&self) -> LweDimension {
-        self.inner.dimension()
+        self.encryption_parameters.dimension()
     }
 
     /// Returns the cipher modulus of this [`LweParameters<T, M>`].
     #[must_use]
     #[inline]
     pub fn cipher_modulus(&self) -> M {
-        self.inner.cipher_modulus()
+        self.encryption_parameters.cipher_modulus()
     }
 
     /// Returns the representable ciphertext modulus, or `None` for a native torus.
     #[must_use]
     #[inline]
     pub fn cipher_modulus_value(&self) -> Option<T> {
-        self.inner.cipher_modulus_value()
+        self.encryption_parameters.cipher_modulus_value()
     }
 
     /// Returns the cipher modulus minus one of this [`LweParameters<T, M>`].
     #[must_use]
     #[inline]
     pub fn cipher_modulus_minus_one(&self) -> T {
-        self.inner.cipher_modulus_minus_one()
+        self.encryption_parameters.cipher_modulus_minus_one()
     }
 
     /// Returns the cipher modulus uniform distr of this [`LweParameters<T, M>`].
     #[must_use]
     pub fn cipher_modulus_uniform_distr(&self) -> Uniform<T> {
-        self.inner.cipher_modulus_uniform_distr()
+        self.encryption_parameters.cipher_modulus_uniform_distr()
     }
 
     /// Returns the secret key type of this [`LweParameters<T, M>`].
     #[must_use]
     #[inline]
     pub fn secret_key_distr(&self) -> SecretKeyDistr {
-        self.inner.secret_key_distr()
+        self.encryption_parameters.secret_key_distr()
     }
 
     /// Returns the noise standard deviation of this [`LweParameters<T, M>`].
     #[must_use]
     #[inline]
     pub fn noise_standard_deviation(&self) -> f64 {
-        self.inner.noise_standard_deviation()
+        self.encryption_parameters.noise_standard_deviation()
     }
 
     /// Gets the discrete gaussian noise distribution.
     #[must_use]
     #[inline]
     pub fn noise_distribution(&self) -> &DiscreteGaussian<T> {
-        self.inner.noise_distribution()
+        self.encryption_parameters.noise_distribution()
     }
 }

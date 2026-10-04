@@ -16,7 +16,7 @@ use rand::{SeedableRng, rngs::StdRng};
 /// Test GLWE trace in the coefficient (CRT) domain.
 ///
 /// Trace decrypts the constant coefficient m₀ of a ciphertext:
-///   Trace(c) → Enc(N · m₀),  where N = poly_length.
+///   Trace(c) → Enc(N · m₀),  where N = n.
 ///
 /// Multiplying the input ciphertext by N⁻¹ before the trace recovers
 /// the original m₀ directly (without the N factor).
@@ -26,8 +26,8 @@ fn test_crt_glwe_trace() {
     type ValueT = u64;
 
     let dimension = 2;
-    let poly_length: usize = 32;
-    let log_n = poly_length.trailing_zeros();
+    let poly_length = PolyLength::new(32);
+    let n = poly_length.get();
 
     let t: ValueT = 12_288; // Even, divisible by N, and not a power of two.
     let mod_t = <BarrettModulus<ValueT>>::new(t);
@@ -37,7 +37,7 @@ fn test_crt_glwe_trace() {
 
     let moduli_values: [ValueT; _] = [1125899906826241, 1125899906629633];
     let moduli = moduli_values.map(<BarrettModulus<ValueT>>::new);
-    let table = UintDcrtTable::new(PolyLength::new(1usize << log_n), &moduli).unwrap();
+    let table = UintDcrtTable::new(poly_length, &moduli).unwrap();
 
     let mut rng = StdRng::seed_from_u64(42);
 
@@ -68,7 +68,7 @@ fn test_crt_glwe_trace() {
 
     let trace_key = CrtGlweTraceKey::new(&domain, &sk, &dcrt_sk, &mut rng);
 
-    let input1: Polynomial<Vec<ValueT>> = Polynomial::random(poly_length, mod_t, &mut rng);
+    let input1: Polynomial<Vec<ValueT>> = Polynomial::random(n, mod_t, &mut rng);
     let mut c1: DcrtGlweCiphertext<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
     let mut c2: CrtGlwe<Vec<ValueT>> = CrtGlwe::zero(rns_glwe_len);
     let mut evaluator = CrtGlweTraceEvaluator::new(&trace_key, &domain);
@@ -86,15 +86,12 @@ fn test_crt_glwe_trace() {
     let trace_msg = dcrt_sk_context.decrypt(&c2, &mut decrypt_workspace);
 
     // trace_msg[0] = N · input1[0]  (mod t)
-    assert_eq!(
-        mod_t.reduce_mul(input1[0], poly_length as ValueT),
-        trace_msg[0]
-    );
+    assert_eq!(mod_t.reduce_mul(input1[0], n as ValueT), trace_msg[0]);
     // Other coefficients are zero.
     assert!(trace_msg[1..].iter().all(|&v| v == 0));
 
     let scalar_residue = base_q
-        .wrapping_decompose(poly_length as ValueT, t)
+        .wrapping_decompose(n as ValueT, t)
         .iter()
         .zip(moduli.iter())
         .map(|(&n, m)| m.reduce_inv(n))
@@ -102,7 +99,7 @@ fn test_crt_glwe_trace() {
 
     c1.mul_scalar_assign(
         &primus_rns::Residues(scalar_residue.as_slice()),
-        poly_length,
+        n,
         rns_poly_len,
         &moduli,
     );
@@ -127,8 +124,8 @@ fn test_dcrt_glwe_trace() {
     type ValueT = u64;
 
     let dimension = 2;
-    let poly_length: usize = 32;
-    let log_n = poly_length.trailing_zeros();
+    let poly_length = PolyLength::new(32);
+    let n = poly_length.get();
 
     let t: ValueT = 12_288; // Even, divisible by N, and not a power of two.
     let mod_t = <BarrettModulus<ValueT>>::new(t);
@@ -138,7 +135,7 @@ fn test_dcrt_glwe_trace() {
 
     let moduli_values: [ValueT; _] = [1125899906826241, 1125899906629633];
     let moduli = moduli_values.map(<BarrettModulus<ValueT>>::new);
-    let table = UintDcrtTable::new(PolyLength::new(1usize << log_n), &moduli).unwrap();
+    let table = UintDcrtTable::new(poly_length, &moduli).unwrap();
 
     let mut rng = StdRng::seed_from_u64(42);
 
@@ -169,7 +166,7 @@ fn test_dcrt_glwe_trace() {
 
     let trace_key = DcrtGlweTraceKey::new(&domain, &dcrt_sk, &mut rng);
 
-    let input1: Polynomial<Vec<ValueT>> = Polynomial::random(poly_length, mod_t, &mut rng);
+    let input1: Polynomial<Vec<ValueT>> = Polynomial::random(n, mod_t, &mut rng);
     let mut c1: DcrtGlweCiphertext<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
     let mut c2: DcrtGlweCiphertext<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
     let mut evaluator = DcrtGlweTraceEvaluator::new(&trace_key, &domain);
@@ -182,14 +179,11 @@ fn test_dcrt_glwe_trace() {
 
     let trace_msg = dcrt_sk_context.decrypt(&c2, &mut decrypt_workspace);
 
-    assert_eq!(
-        mod_t.reduce_mul(input1[0], poly_length as ValueT),
-        trace_msg[0]
-    );
+    assert_eq!(mod_t.reduce_mul(input1[0], n as ValueT), trace_msg[0]);
     assert!(trace_msg[1..].iter().all(|&v| v == 0));
 
     let scalar_residue = base_q
-        .wrapping_decompose(poly_length as ValueT, t)
+        .wrapping_decompose(n as ValueT, t)
         .iter()
         .zip(moduli.iter())
         .map(|(&n, m)| m.reduce_inv(n))
@@ -197,7 +191,7 @@ fn test_dcrt_glwe_trace() {
 
     c1.mul_scalar_assign(
         &primus_rns::Residues(scalar_residue.as_slice()),
-        poly_length,
+        n,
         rns_poly_len,
         &moduli,
     );
@@ -219,8 +213,8 @@ fn test_dcrt_glwe_rev_trace() {
     type ValueT = u64;
 
     let dimension = 2;
-    let poly_length: usize = 32;
-    let log_n = poly_length.trailing_zeros();
+    let poly_length = PolyLength::new(32);
+    let n = poly_length.get();
 
     let t: ValueT = 12_288; // Even, divisible by N, and not a power of two.
     let mod_t = <BarrettModulus<ValueT>>::new(t);
@@ -230,7 +224,7 @@ fn test_dcrt_glwe_rev_trace() {
 
     let moduli_values: [ValueT; _] = [1125899906826241, 1125899906629633];
     let moduli = moduli_values.map(<BarrettModulus<ValueT>>::new);
-    let table = UintDcrtTable::new(PolyLength::new(1usize << log_n), &moduli).unwrap();
+    let table = UintDcrtTable::new(poly_length, &moduli).unwrap();
 
     let mut rng = StdRng::seed_from_u64(42);
 
@@ -259,7 +253,7 @@ fn test_dcrt_glwe_rev_trace() {
 
     let rev_trace_key = DcrtGlweRevTraceKey::new(&domain, &dcrt_sk, &mut rng);
 
-    let input1: Polynomial<Vec<ValueT>> = Polynomial::random(poly_length, mod_t, &mut rng);
+    let input1: Polynomial<Vec<ValueT>> = Polynomial::random(n, mod_t, &mut rng);
     let mut c1: DcrtGlweCiphertext<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
     let mut c2: DcrtGlweCiphertext<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
     let mut evaluator = DcrtGlweRevTraceEvaluator::new(&rev_trace_key, &domain);

@@ -8,9 +8,10 @@ use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_encoding::RoundedCodec;
 use primus_glwe::SecretKeyDistr;
 use primus_lattice::{GlweDimension, LweDimension};
-use primus_lwe::LweParametersInner;
+use primus_lwe::LweEncryptionParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntt::U32NttTable as Table;
+use primus_poly::PolyLength;
 use primus_tfhe_glwe_ntt::{
     BlindRotationKey, CircuitBootstrapConfig, CircuitBootstrapEvaluator,
     CircuitBootstrapParameters, ClientKey, DecompositionConfig, KeyGenerator, PbsOrder, TfheConfig,
@@ -46,14 +47,14 @@ fn parameters() -> TfheParameters<Word> {
     };
 
     TfheParameters::try_from_config(TfheConfig {
-        small_lwe: LweParametersInner::new(
+        small_lwe: LweEncryptionParameters::new(
             LweDimension::new(800),
             modulus,
             SecretKeyDistr::UniformBinary,
             q * 2.046151696979124e-6,
         ),
         accumulator_dimension: GlweDimension::new(1),
-        poly_length: N,
+        poly_length: PolyLength::new(N),
         accumulator_secret_key_distr: SecretKeyDistr::UniformTernary,
         accumulator_noise_standard_deviation: 6.4,
         blind_rotation: full,

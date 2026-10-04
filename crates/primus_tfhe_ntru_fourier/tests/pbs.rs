@@ -33,7 +33,7 @@ fn parameters<T: TorusFftValue>(distr: SecretKeyDistr, dimension: usize) -> Tfhe
         0.7,
     );
     let acc = NtruParameters::new(
-        N,
+        PolyLength::new(N),
         T::as_from(15u32),
         modulus,
         SecretKeyDistr::SparseTernary,
@@ -46,7 +46,7 @@ fn parameters<T: TorusFftValue>(distr: SecretKeyDistr, dimension: usize) -> Tfhe
     );
 
     TfheParameters::try_new(
-        lwe.into_inner(),
+        lwe.into_encryption_parameters(),
         NlevParameters::try_with_basis(&acc, blind_rotation_basis).unwrap(),
         primus_tfhe_ntru::DecompositionConfig {
             log_basis: DecompositionBaseLog::new(8),

@@ -25,10 +25,14 @@ fn ntt(c: &mut Criterion) {
     for n in [1024usize, 4096] {
         let mut rng = StdRng::seed_from_u64(42);
         let modulus = BarrettModulus::new(1_125_899_906_826_241u64);
-        let params = NtruParameters::new(n, 16, modulus, SecretKeyDistr::SparseTernary, 3.2);
-        let table = UintNttTable::new(PolyLength::new(n), modulus).unwrap();
-        let (_, key) = NttNtruSecretKey::generate_pair(params.inner(), &table, &mut rng).unwrap();
-        let mut workspace = NttNtruGadgetEncryptWorkspace::new(PolyLength::new(n));
+        let poly_length = PolyLength::new(n);
+        let params =
+            NtruParameters::new(poly_length, 16, modulus, SecretKeyDistr::SparseTernary, 3.2);
+        let table = UintNttTable::new(poly_length, modulus).unwrap();
+        let (_, key) =
+            NttNtruSecretKey::generate_pair(params.encryption_parameters(), &table, &mut rng)
+                .unwrap();
+        let mut workspace = NttNtruGadgetEncryptWorkspace::new(poly_length);
         for log_basis in [3, 10] {
             let gadget = NlevParameters::with_ntru_params(
                 &params,
@@ -73,18 +77,20 @@ fn ntt(c: &mut Criterion) {
 fn fourier(c: &mut Criterion) {
     for n in [1024usize, 4096] {
         let mut rng = StdRng::seed_from_u64(42);
+        let poly_length = PolyLength::new(n);
         let params = NtruParameters::new(
-            n,
+            poly_length,
             16u64,
             NativeModulus::new(),
             SecretKeyDistr::SparseTernary,
             3.2,
         );
-        let table = RustFftTable::new(PolyLength::new(n));
+        let table = RustFftTable::new(poly_length);
         let mut fft = FftEngine::new(&table);
         let (_, key) =
-            FourierNtruSecretKey::generate_pair(params.inner(), &mut fft, &mut rng).unwrap();
-        let mut workspace = FourierNtruGadgetEncryptWorkspace::new(PolyLength::new(n));
+            FourierNtruSecretKey::generate_pair(params.encryption_parameters(), &mut fft, &mut rng)
+                .unwrap();
+        let mut workspace = FourierNtruGadgetEncryptWorkspace::new(poly_length);
         for log_basis in [3, 10] {
             let gadget = NlevParameters::with_ntru_params(
                 &params,

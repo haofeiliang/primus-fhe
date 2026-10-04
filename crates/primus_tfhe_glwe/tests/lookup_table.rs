@@ -25,7 +25,7 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
         );
         let glwe = GlweParameters::new(
             GlweDimension::new(1),
-            32,
+            PolyLength::new(32),
             t,
             modulus,
             SecretKeyDistr::UniformBinary,
@@ -37,7 +37,7 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
             None,
         );
         let parameters = TfheParameters::try_new(
-            lwe.into_inner(),
+            lwe.into_encryption_parameters(),
             primus_glwe::GgswParameters::try_with_basis(&glwe, bsk).unwrap(),
             ApproxSignedBasis::new(None, DecompositionBaseLog::new(8), None),
             PbsOrder::BootstrapKeyswitch,

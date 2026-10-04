@@ -12,7 +12,7 @@ use primus_rns::{RNSBase, Residues};
 use rand::distr::Uniform;
 use std::sync::Arc;
 
-use super::{CrtGlevParametersError, CrtGlweParameters, core::CrtGlweParametersInner};
+use super::{CrtGlevParametersError, CrtGlweParameters, core::CrtGlweEncryptionParameters};
 use crate::SecretKeyDistr;
 
 /// CRT GLev/GGSW parameters for gadget encryption under the product modulus Q.
@@ -26,7 +26,7 @@ where
     T: FheUint,
     M: FieldContext<T>,
 {
-    inner: Arc<CrtGlweParametersInner<T>>,
+    encryption_parameters: Arc<CrtGlweEncryptionParameters<T>>,
     size: RnsGadgetSize,
     base_q: RNSBase<T, M>,
     basis: BigUintApproxSignedBasis<T>,
@@ -77,7 +77,7 @@ where
             reverse_length,
         )?;
         Self::try_from_parts(
-            Arc::clone(&glwe_params.inner),
+            Arc::clone(&glwe_params.encryption_parameters),
             glwe_params.base_q().clone(),
             basis,
         )
@@ -92,11 +92,11 @@ where
     /// width, radix >= any q_i, or an overflowing gadget layout. The limb-width
     /// check preserves the exact fixed-width representation used by decomposition.
     pub fn try_from_parts(
-        inner: Arc<CrtGlweParametersInner<T>>,
+        encryption_parameters: Arc<CrtGlweEncryptionParameters<T>>,
         base_q: RNSBase<T, M>,
         basis: BigUintApproxSignedBasis<T>,
     ) -> Result<Self, CrtGlevParametersError<T>> {
-        inner.validate_base(&base_q)?;
+        encryption_parameters.validate_base(&base_q)?;
         if basis.modulus() != base_q.moduli_product().0 {
             return Err(CrtGlevParametersError::BasisModulusMismatch);
         }
@@ -109,7 +109,7 @@ where
                 });
             }
         }
-        let size = RnsGadgetSize::try_new(inner.size, basis.decompose_length())?;
+        let size = RnsGadgetSize::try_new(encryption_parameters.size, basis.decompose_length())?;
         // L*m weights fit because the checked gadget layout contains
         // L*m*(k+1)*N coefficients. Validate that layout before allocating.
         let mut scalar_residues =
@@ -121,7 +121,7 @@ where
             base_q.decompose_to(BigUint(scalar), &mut Residues(residues));
         }
         Ok(Self {
-            inner,
+            encryption_parameters,
             size,
             base_q,
             basis,
@@ -132,8 +132,8 @@ where
     /// Returns the shared layout and sampling state, without BFV encoding.
     #[must_use]
     #[inline]
-    pub fn inner(&self) -> &CrtGlweParametersInner<T> {
-        &self.inner
+    pub fn encryption_parameters(&self) -> &CrtGlweEncryptionParameters<T> {
+        &self.encryption_parameters
     }
 
     /// Returns the dimension of this [`CrtGlevParameters<T, M>`].
@@ -158,7 +158,7 @@ where
 
     /// Returns a reference to the cipher modulus minus one of this [`CrtGlevParameters<T, M>`].
     pub fn cipher_modulus_minus_one(&self) -> BigUint<&[T]> {
-        self.inner.cipher_modulus_minus_one.view()
+        self.encryption_parameters.cipher_modulus_minus_one.view()
     }
 
     /// Returns the big uint value len of this [`CrtGlevParameters<T, M>`].
@@ -186,12 +186,12 @@ where
 
     /// Returns a reference to the cipher moduli minus one of this [`CrtGlevParameters<T, M>`].
     pub fn cipher_moduli_minus_one(&self) -> &[T] {
-        &self.inner.cipher_moduli_minus_one
+        &self.encryption_parameters.cipher_moduli_minus_one
     }
 
     /// Returns a reference to the cipher moduli uniform distr of this [`CrtGlevParameters<T, M>`].
     pub fn cipher_moduli_uniform_distr(&self) -> &[Uniform<T>] {
-        &self.inner.cipher_moduli_uniform_distr
+        &self.encryption_parameters.cipher_moduli_uniform_distr
     }
 
     /// Returns the ordered ciphertext RNS basis.
@@ -203,18 +203,20 @@ where
     /// Returns the secret key type of this [`CrtGlevParameters<T, M>`].
     #[inline]
     pub fn secret_key_distr(&self) -> SecretKeyDistr {
-        self.inner.secret_key_sampler.distr()
+        self.encryption_parameters.secret_key_sampler.distr()
     }
 
     /// Returns a reference to the noise distribution of this [`CrtGlevParameters<T, M>`].
     #[inline]
     pub fn noise_distribution(&self) -> &SignedDiscreteGaussian<T::SignedInteger> {
-        &self.inner.noise_distribution
+        &self.encryption_parameters.noise_distribution
     }
 
     /// Returns the noise standard deviation of this  [`CrtGlevParameters<T, M>`].
     pub fn noise_standard_deviation(&self) -> f64 {
-        self.inner.noise_distribution.standard_deviation()
+        self.encryption_parameters
+            .noise_distribution
+            .standard_deviation()
     }
 
     /// Returns a reference to the basis of this [`CrtGlevParameters<T, M>`].

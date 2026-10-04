@@ -10,7 +10,7 @@ use primus_poly::PolyLength;
 use primus_reduce::RingContext;
 use std::sync::Arc;
 
-use super::{GlevParameterError, GlweParameters, GlweParametersInner};
+use super::{GlevParameterError, GlweEncryptionParameters, GlweParameters};
 use crate::SecretKeyDistr;
 
 /// GLWE parameters and decomposition basis shared by GLev and GGSW operations.
@@ -24,7 +24,7 @@ where
     M: RingContext<T>,
 {
     size: GadgetSize,
-    pub(super) inner: Arc<GlweParametersInner<T, M>>,
+    pub(super) encryption_parameters: Arc<GlweEncryptionParameters<T, M>>,
     /// Decompose basis for `Q`.
     basis: ApproxSignedBasis<T>,
 }
@@ -37,28 +37,28 @@ where
     /// Binds a GLWE layout and prepared sampling state to a gadget basis.
     ///
     /// Takes ownership of the shared state and basis without rebuilding sampler
-    /// tables or basis precomputation. The noise in `inner` encrypts each gadget
+    /// tables or basis precomputation. The noise in `encryption_parameters` encrypts each gadget
     /// row; callers choose it for the intended evaluation-key role.
     ///
     /// # Errors
     ///
     /// Rejects a fixed secret weight exceeding the complete `kN` key length,
     /// a basis modulus mismatch (including native versus explicit), or gadget
-    /// layout overflow. Modulus support and noise were checked by `inner`.
+    /// layout overflow. Modulus support and noise were checked by `encryption_parameters`.
     pub fn try_from_parts(
         glwe_size: GlweSize,
-        inner: Arc<GlweParametersInner<T, M>>,
+        encryption_parameters: Arc<GlweEncryptionParameters<T, M>>,
         basis: ApproxSignedBasis<T>,
     ) -> Result<Self, GlevParameterError> {
-        if basis.modulus() != inner.cipher_modulus_value() {
+        if basis.modulus() != encryption_parameters.cipher_modulus_value() {
             return Err(GlevParameterError::BasisModulusMismatch);
         }
-        inner
+        encryption_parameters
             .secret_key_sampler()
             .validate_length(glwe_size.mask_len())?;
         Ok(Self {
             size: GadgetSize::try_new(glwe_size, basis.decompose_length())?,
-            inner,
+            encryption_parameters,
             basis,
         })
     }
@@ -76,7 +76,11 @@ where
         glwe_params: &GlweParameters<T, M>,
         basis: ApproxSignedBasis<T>,
     ) -> Result<Self, GlevParameterError> {
-        Self::try_from_parts(glwe_params.size(), Arc::clone(&glwe_params.inner), basis)
+        Self::try_from_parts(
+            glwe_params.size(),
+            Arc::clone(&glwe_params.encryption_parameters),
+            basis,
+        )
     }
 
     /// Creates GLev/GGSW parameters from matching GLWE parameters.
@@ -117,8 +121,8 @@ where
 
     /// Returns the parameters shared by GLWE and its gadget ciphertexts.
     #[inline]
-    pub fn inner(&self) -> &GlweParametersInner<T, M> {
-        self.inner.as_ref()
+    pub fn encryption_parameters(&self) -> &GlweEncryptionParameters<T, M> {
+        self.encryption_parameters.as_ref()
     }
 
     /// Returns the pre-computed GLev/GGSW size constants.
@@ -149,29 +153,31 @@ where
 
     /// Returns the cipher modulus minus one of this [`GlevParameters<T, M>`].
     pub fn cipher_modulus_minus_one(&self) -> T {
-        self.inner.cipher_modulus_minus_one()
+        self.encryption_parameters.cipher_modulus_minus_one()
     }
 
     /// Returns the modulus of this [`GlevParameters<T, M>`].
     #[inline]
     pub fn cipher_modulus(&self) -> M {
-        self.inner.cipher_modulus()
+        self.encryption_parameters.cipher_modulus()
     }
 
     /// Returns the secret key type of this [`GlevParameters<T, M>`].
     pub fn secret_key_distr(&self) -> SecretKeyDistr {
-        self.inner.secret_key_distr()
+        self.encryption_parameters.secret_key_distr()
     }
 
     /// Returns a reference to the noise distribution of this [`GlevParameters<T, M>`].
     #[inline]
     pub fn noise_distribution(&self) -> &DiscreteGaussian<T> {
-        self.inner.noise_distribution()
+        self.encryption_parameters.noise_distribution()
     }
 
     /// Returns the noise standard deviation of this [`GlevParameters<T, M>`].
     pub fn noise_standard_deviation(&self) -> f64 {
-        self.inner.noise_distribution().standard_deviation()
+        self.encryption_parameters
+            .noise_distribution()
+            .standard_deviation()
     }
 
     /// Returns a reference to the basis of this [`GlevParameters<T, M>`].

@@ -73,7 +73,13 @@ fn messages(q: u128) -> [Polynomial<Vec<u64>>; 2] {
 fn ntt_scheme_switch_has_independent_bases_and_produces_cmux_controls() {
     let modulus = BarrettModulus::new(Q);
     let table = U64NttTable::new(PolyLength::new(N), modulus).unwrap();
-    let parameters = NtruParameters::new(N, 16, modulus, SecretKeyDistr::SparseTernary, 0.7);
+    let parameters = NtruParameters::new(
+        PolyLength::new(N),
+        16,
+        modulus,
+        SecretKeyDistr::SparseTernary,
+        0.7,
+    );
     let secret = secret();
     let key = NttNtruSecretKey::try_from_coeff_secret_key(&secret, modulus, &table).unwrap();
     let mut rng = StdRng::seed_from_u64(117);
@@ -85,7 +91,7 @@ fn ntt_scheme_switch_has_independent_bases_and_produces_cmux_controls() {
         key.encrypt_encoded_to(
             message,
             &mut transformed,
-            parameters.inner(),
+            parameters.encryption_parameters(),
             &table,
             &mut rng,
         );
@@ -227,7 +233,7 @@ fn fourier<Table: FftTable>() {
     let table = Table::new(PolyLength::new(N));
     let mut fft = FftEngine::new(&table);
     let parameters = NtruParameters::new(
-        N,
+        PolyLength::new(N),
         16u64,
         NativeModulus::new(),
         SecretKeyDistr::SparseTernary,
@@ -245,7 +251,7 @@ fn fourier<Table: FftTable>() {
         key.encrypt_encoded_to(
             message,
             &mut transformed,
-            parameters.inner(),
+            parameters.encryption_parameters(),
             &mut fft,
             &mut rng,
             &mut encrypt,

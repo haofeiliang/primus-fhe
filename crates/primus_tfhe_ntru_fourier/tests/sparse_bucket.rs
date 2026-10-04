@@ -1,5 +1,5 @@
 //! Independent coefficient phases and FFT error in NTRU bucket aggregation.
-use primus_lwe::LweParametersInner;
+use primus_lwe::LweEncryptionParameters;
 
 use num_traits::ConstZero;
 use primus_decompose::primitive::ApproxSignedBasis;
@@ -97,7 +97,7 @@ fn check<T: TorusFftValue, Table: FftTable>(level_count: Option<usize>) {
         0.7,
     );
     let params = NtruParameters::new(
-        N,
+        PolyLength::new(N),
         T::as_from(16usize),
         modulus,
         SecretKeyDistr::SparseTernary,
@@ -110,7 +110,8 @@ fn check<T: TorusFftValue, Table: FftTable>(level_count: Option<usize>) {
     );
     let basis = gadget.basis();
     let mut rng = StdRng::seed_from_u64(0xB803);
-    let client = primus_lwe::LweSecretKey::generate(client_params.inner(), &mut rng);
+    let client =
+        primus_lwe::LweSecretKey::generate(client_params.encryption_parameters(), &mut rng);
     let support: Vec<_> = client
         .as_ref()
         .iter()
@@ -119,11 +120,12 @@ fn check<T: TorusFftValue, Table: FftTable>(level_count: Option<usize>) {
         .collect();
     assert_eq!(support.len(), WEIGHT);
     let (secret, key) =
-        FourierNtruSecretKey::generate_pair(params.inner(), &mut fft, &mut rng).unwrap();
+        FourierNtruSecretKey::generate_pair(params.encryption_parameters(), &mut fft, &mut rng)
+            .unwrap();
     drop(fft);
     let context = TfheContext::try_new(
         TfheParameters::try_new(
-            LweParametersInner::new(
+            LweEncryptionParameters::new(
                 LweDimension::new(DIM),
                 modulus,
                 client_params.secret_key_distr(),

@@ -1,7 +1,7 @@
 use primus_decompose::DecompositionBaseLog;
 use primus_encoding::{PlaintextEmbedding, RoundedCodec, ScaledCodec};
 use primus_lattice::LweDimension;
-use primus_lwe::LweParametersInner;
+use primus_lwe::LweEncryptionParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntru::SecretKeyDistr;
 use primus_ntt::U32NttTable;
@@ -25,13 +25,13 @@ const DOMAIN: usize = 8;
 fn context(distr: SecretKeyDistr) -> TfheContext<u32, U32NttTable> {
     let parameters = TfheParameters::try_from_config(TfheConfig {
         accumulator_modulus: BarrettModulus::new(Q),
-        external_lwe: LweParametersInner::new(
+        external_lwe: LweEncryptionParameters::new(
             LweDimension::new(3),
             BarrettModulus::new(Q),
             distr,
             0.7,
         ),
-        poly_length: N,
+        poly_length: PolyLength::new(N),
         accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
         accumulator_noise_standard_deviation: 0.7,
         blind_rotation: DecompositionConfig {

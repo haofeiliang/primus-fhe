@@ -37,19 +37,24 @@ fn ntt_encryption(c: &mut Criterion) {
         let message = Polynomial::new((0..n).map(|i| (i % 16) as u64).collect::<Vec<_>>());
         let mut plaintext = Polynomial::new(vec![0u64; n]);
         let modulus = BarrettModulus::new(1_125_899_906_826_241u64);
+        let poly_length = PolyLength::new(n);
         let params = GlweParameters::new(
             GlweDimension::new(dimension),
-            n,
+            poly_length,
             16,
             modulus,
             SecretKeyDistr::UniformBinary,
             3.2,
         );
-        let ntt = UintNttTable::new(PolyLength::new(n), modulus).unwrap();
-        let (_, sk) =
-            NttGlweSecretKey::generate_pair(params.size(), params.inner(), &ntt, &mut rng);
-        let pk = NttGlwePublicKey::generate(&sk, params.inner(), &ntt, &mut rng);
-        let mut public_workspace = NttGlwePublicEncryptWorkspace::new(PolyLength::new(n));
+        let ntt = UintNttTable::new(poly_length, modulus).unwrap();
+        let (_, sk) = NttGlweSecretKey::generate_pair(
+            params.size(),
+            params.encryption_parameters(),
+            &ntt,
+            &mut rng,
+        );
+        let pk = NttGlwePublicKey::generate(&sk, params.encryption_parameters(), &ntt, &mut rng);
+        let mut public_workspace = NttGlwePublicEncryptWorkspace::new(poly_length);
         let mut ciphertext = sk.encrypt(&message, &params, &ntt, &mut rng);
         sk.decrypt_to(&ciphertext, &mut plaintext, &params, &ntt);
         assert_eq!(plaintext.as_ref(), message.as_ref());
@@ -202,20 +207,25 @@ fn fourier_encryption(c: &mut Criterion) {
         let mut rng = StdRng::seed_from_u64(42);
         let message = Polynomial::new((0..n).map(|i| (i % 16) as u64).collect::<Vec<_>>());
         let mut plaintext = Polynomial::new(vec![0u64; n]);
+        let poly_length = PolyLength::new(n);
         let params = GlweParameters::new(
             GlweDimension::new(dimension),
-            n,
+            poly_length,
             16,
             NativeModulus::<u64>::new(),
             SecretKeyDistr::UniformBinary,
             3.2,
         );
-        let table = RustFftTable::new(PolyLength::new(n));
+        let table = RustFftTable::new(poly_length);
         let mut fft = FftEngine::new(&table);
-        let (_, sk) =
-            FourierGlweSecretKey::generate_pair(params.size(), params.inner(), &mut fft, &mut rng);
-        let mut encrypt_workspace = FourierGlweEncryptWorkspace::new(PolyLength::new(n));
-        let mut decrypt_workspace = FourierGlweDecryptWorkspace::new(PolyLength::new(n));
+        let (_, sk) = FourierGlweSecretKey::generate_pair(
+            params.size(),
+            params.encryption_parameters(),
+            &mut fft,
+            &mut rng,
+        );
+        let mut encrypt_workspace = FourierGlweEncryptWorkspace::new(poly_length);
+        let mut decrypt_workspace = FourierGlweDecryptWorkspace::new(poly_length);
         let mut ciphertext = sk.encrypt(
             &message,
             &params,

@@ -24,8 +24,8 @@ fn crt_expansion_matches_parallel_and_plaintext() {
     type ValueT = u64;
 
     let dimension = 2;
-    let poly_length: usize = 32;
-    let log_n = poly_length.trailing_zeros();
+    let poly_length = PolyLength::new(32);
+    let n = poly_length.get();
 
     let t: ValueT = 12289;
     let mod_t = <BarrettModulus<ValueT>>::new(t);
@@ -35,7 +35,7 @@ fn crt_expansion_matches_parallel_and_plaintext() {
 
     let moduli_values: [ValueT; _] = [1125899906826241, 1125899906629633];
     let moduli = moduli_values.map(<BarrettModulus<ValueT>>::new);
-    let table = UintDcrtTable::new(PolyLength::new(1usize << log_n), &moduli).unwrap();
+    let table = UintDcrtTable::new(poly_length, &moduli).unwrap();
 
     let mut rng = StdRng::seed_from_u64(42);
 
@@ -64,9 +64,9 @@ fn crt_expansion_matches_parallel_and_plaintext() {
 
     let expand_key = CrtGlweExpandCoeffKey::new(&domain, &sk, &dcrt_sk, &mut rng);
 
-    let mut input1: Polynomial<Vec<ValueT>> = Polynomial::random(poly_length, mod_t, &mut rng);
+    let mut input1: Polynomial<Vec<ValueT>> = Polynomial::random(n, mod_t, &mut rng);
     let mut c1: DcrtGlweCiphertext<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
-    let mut c_expand: Vec<CrtGlwe<Vec<ValueT>>> = vec![CrtGlwe::zero(rns_glwe_len); poly_length];
+    let mut c_expand: Vec<CrtGlwe<Vec<ValueT>>> = vec![CrtGlwe::zero(rns_glwe_len); n];
     let mut evaluator = CrtGlweExpandCoeffEvaluator::new(&expand_key, &domain);
     let mut parallel_evaluator = CrtGlweExpandCoeffParallelEvaluator::new(&expand_key, &domain, 2);
     let mut parallel_output = c_expand.clone();
@@ -126,7 +126,7 @@ fn crt_expansion_matches_parallel_and_plaintext() {
 
     // Partial expansion assumes the omitted coefficients are zero. Reuse dirty
     // output buffers and both workspaces from the full expansion.
-    for retained in [poly_length / 2, 1] {
+    for retained in [n / 2, 1] {
         input1[retained..].fill(0);
 
         dcrt_sk_context.encrypt_to(&input1, &mut c1, &mut rng);
@@ -162,8 +162,8 @@ fn dcrt_expansion_matches_parallel_and_plaintext() {
     type ValueT = u64;
 
     let dimension = 2;
-    let poly_length: usize = 32;
-    let log_n = poly_length.trailing_zeros();
+    let poly_length = PolyLength::new(32);
+    let n = poly_length.get();
 
     let t: ValueT = 12289;
     let mod_t = <BarrettModulus<ValueT>>::new(t);
@@ -173,7 +173,7 @@ fn dcrt_expansion_matches_parallel_and_plaintext() {
 
     let moduli_values: [ValueT; _] = [1125899906826241, 1125899906629633];
     let moduli = moduli_values.map(<BarrettModulus<ValueT>>::new);
-    let table = UintDcrtTable::new(PolyLength::new(1usize << log_n), &moduli).unwrap();
+    let table = UintDcrtTable::new(poly_length, &moduli).unwrap();
 
     let mut rng = StdRng::seed_from_u64(42);
 
@@ -202,10 +202,10 @@ fn dcrt_expansion_matches_parallel_and_plaintext() {
 
     let expand_key = DcrtGlweExpandCoeffKey::new(&domain, &dcrt_sk, &mut rng);
 
-    let mut input1: Polynomial<Vec<ValueT>> = Polynomial::random(poly_length, mod_t, &mut rng);
+    let mut input1: Polynomial<Vec<ValueT>> = Polynomial::random(n, mod_t, &mut rng);
     let mut c1: DcrtGlweCiphertext<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
     let mut c_expand: Vec<DcrtGlweCiphertext<Vec<ValueT>>> =
-        vec![DcrtGlweCiphertext::zero(rns_glwe_len); poly_length];
+        vec![DcrtGlweCiphertext::zero(rns_glwe_len); n];
     let mut evaluator = DcrtGlweExpandCoeffEvaluator::new(&expand_key, &domain);
     let mut parallel_evaluator = DcrtGlweExpandCoeffParallelEvaluator::new(&expand_key, &domain, 2);
     let mut parallel_output = c_expand.clone();
@@ -257,7 +257,7 @@ fn dcrt_expansion_matches_parallel_and_plaintext() {
 
     // Partial expansion assumes the omitted coefficients are zero. Reuse dirty
     // output buffers and both workspaces from the full expansion.
-    for retained in [poly_length / 2, 1] {
+    for retained in [n / 2, 1] {
         input1[retained..].fill(0);
 
         dcrt_sk_context.encrypt_to(&input1, &mut c1, &mut rng);

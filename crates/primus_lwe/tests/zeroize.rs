@@ -9,7 +9,7 @@ use std::{
     sync::atomic::{AtomicBool, AtomicPtr, Ordering},
 };
 
-use primus_lwe::{LweDimension, LweParametersInner, LweSecretKey, SecretKeyDistr};
+use primus_lwe::{LweDimension, LweEncryptionParameters, LweSecretKey, SecretKeyDistr};
 use primus_modulus::BarrettModulus;
 use rand::{TryCryptoRng, TryRng};
 
@@ -93,7 +93,7 @@ impl TryCryptoRng for PanicAfterOneWord {}
 #[test]
 fn key_generation_erases_partial_binary_and_gaussian_samples_on_unwind() {
     for distribution in [SecretKeyDistr::UniformBinary, SecretKeyDistr::gaussian(3.2)] {
-        let params = LweParametersInner::new(
+        let params = LweEncryptionParameters::new(
             LweDimension::new(64),
             BarrettModulus::new(1009u64),
             distribution,

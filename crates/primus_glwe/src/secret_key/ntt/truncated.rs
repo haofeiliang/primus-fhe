@@ -1,7 +1,7 @@
 //! Coefficient-domain GLWE ciphertexts with a truncated body.
 
 use super::NttGlweSecretKey;
-use crate::{GlweParameters, GlweParametersInner, TruncatedGlweCiphertext};
+use crate::{GlweEncryptionParameters, GlweParameters, TruncatedGlweCiphertext};
 use primus_data::Data;
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
@@ -24,7 +24,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     pub fn encrypt_truncated_zeros<M, Table, R>(
         &self,
         message_count: usize,
-        params: &GlweParametersInner<T, M>,
+        params: &GlweEncryptionParameters<T, M>,
         ntt_table: &Table,
         rng: &mut R,
     ) -> TruncatedGlweCiphertext<Vec<T>>

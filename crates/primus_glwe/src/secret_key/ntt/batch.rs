@@ -136,7 +136,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
                 {
                     self.encrypt_coeff_kernel_to(
                         glwe.as_mut_view(),
-                        params.inner(),
+                        params.encryption_parameters(),
                         ntt,
                         rng,
                         workspace.encoded.as_mut(),

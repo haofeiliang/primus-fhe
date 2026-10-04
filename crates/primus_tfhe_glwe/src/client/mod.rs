@@ -73,7 +73,7 @@ impl<T: FheUint, M: RingContext<T>> TfheParameters<T, M> {
             }
             crate::PbsOrder::KeyswitchBootstrap => {
                 let glwe = self.blind_rotation_ggsw();
-                let lwe = primus_lwe::LweParametersInner::new(
+                let lwe = primus_lwe::LweEncryptionParameters::new(
                     self.external_lwe_dimension(),
                     self.cipher_modulus(),
                     glwe.secret_key_distr(),

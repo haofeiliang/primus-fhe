@@ -6,14 +6,14 @@
 
 以 q 表示外部 LWE 模数、Q 表示累加环模数，n 表示盲旋转控制秘密的 LWE 维数，N 表示环长度，k 表示 GLWE 秘密多项式数。
 
-已验证的参数、size 和工作区沿调用链传递 `LweDimension`、`GlweDimension`、`primus_poly::PolyLength`；分解参数使用 `DecompositionBaseLog` 和 `DecompositionLevelCount`。组合长度由拥有布局的构造边界检查。Raw 存储和数值内核使用整数，不从存储长度推断模数、秘密或表示身份。
+已验证的参数、size 和工作区沿调用链传递 `LweDimension`、`GlweDimension`、`primus_poly::PolyLength`；分解参数使用 `DecompositionBaseLog` 和 `DecompositionLevelCount`。组合长度由拥有布局的构造边界检查。Raw 存储和数值内核使用整数，不从存储长度推断模数、秘密或表示身份。普通 GLWE/NTRU/CRT GLWE 构造及两家族 `TfheConfig` 均直接接收 `PolyLength`，无效环长归 `PolyLengthError`；上层只检查自身组合约束。
 
 | 对象 | 独立选择 | 派生或绑定内容 |
 | --- | --- | --- |
-| `LweParametersInner` | n、q、秘密分布、系数噪声标准差 | n+1 密文长度可表示；秘密/噪声 sampler，无 codec |
+| `LweEncryptionParameters` | n、q、秘密分布、系数噪声标准差 | n+1 密文长度可表示；秘密/噪声 sampler，无 codec |
 | `LweParameters` | n、t、q、秘密分布、系数噪声标准差 | n+1 密文长度可表示；Rounded codec、秘密/噪声 sampler；t 从 codec 读取 |
-| `GlweParameters` | k、N、t、Q、环秘密分布、系数噪声 | `GlweSize`、Scaled codec、`GlweParametersInner`；固定重量作用于整个 kN 秘密 |
-| `NtruParameters` | N、t、Q、环秘密分布、系数噪声 | Scaled codec、共享 `NtruParametersInner`；固定重量作用于整个 N 系数秘密；不预先证明秘密可逆 |
+| `GlweParameters` | k、N、t、Q、环秘密分布、系数噪声 | `GlweSize`、Scaled codec、`GlweEncryptionParameters`；固定重量作用于整个 kN 秘密 |
+| `NtruParameters` | N、t、Q、环秘密分布、系数噪声 | Scaled codec、共享 `NtruEncryptionParameters`；固定重量作用于整个 N 系数秘密；不预先证明秘密可逆 |
 | `DecompositionConfig` | `log_basis`、`level_count` | 绑定 q 或 Q 后生成 `ApproxSignedBasis`；`None` 表示保留全部可用层，不等于零分解残差 |
 | `GlevParameters` / `GgswParameters` | `GlweSize`、共享模数/采样状态、该运算的 basis | 固定秘密重量、basis 模数和 gadget 布局；无需普通消息 codec |
 | `NlevParameters` | 共享 NTRU 环/采样状态和该运算的 basis | basis 模数、N*L 布局和层序；无需普通消息 codec |
@@ -30,34 +30,34 @@
 | 资料 | 拥有者与检查边界 |
 | --- | --- |
 | k、N 和组合长度 | `GlweSize`；`GadgetSize` 再绑定分解层数并检查 GLev/GGSW 长度 |
-| 密文模数、mask sampler、noise sampler | `GlweParametersInner`；构造时验证噪声及秘密支持界。Mask/noise 同时服务普通加密和求值密钥行加密 |
-| secret sampler | 同一 `GlweParametersInner` 保存预计算，供秘密生成；与布局组合时检查完整 kN 上的固定重量 |
+| 密文模数、mask sampler、noise sampler | `GlweEncryptionParameters`；构造时验证噪声及秘密支持界。Mask/noise 同时服务普通加密和求值密钥行加密 |
+| secret sampler | 同一 `GlweEncryptionParameters` 保存预计算，供秘密生成；与布局组合时检查完整 kN 上的固定重量 |
 | gadget basis | `GlevParameters` 拥有，构造时核对其模数；与普通消息 t 无关 |
 | 普通消息 codec | `GlweParameters` 独立拥有 `ScaledCodec`，组合时检查密文模数匹配；恢复条件由 codec 构造器验证 |
 
-`GlevParameters::try_from_parts(size, Arc<GlweParametersInner>, basis)` 可直接构造 GLev/GGSW 参数。`GlweParameters::try_from_parts(size, shared_inner, codec)` 只在需要普通消息编码时组合 codec。两种入口都消费已经准备好的部件，不复制采样表、不重建 basis；独立布局与采样状态之间的固定重量检查仍由组合入口负责。既有 `try_with_basis` / `try_with_glwe_params` 适用于从已有普通参数派生 gadget，继续共享同一 Arc。
+`GlevParameters::try_from_parts(size, Arc<GlweEncryptionParameters>, basis)` 可直接构造 GLev/GGSW 参数。`GlweParameters::try_from_parts(size, shared_encryption, codec)` 只在需要普通消息编码时组合 codec。两种入口都消费已经准备好的部件，不复制采样表、不重建 basis；独立布局与采样状态之间的固定重量检查仍由组合入口负责。既有 `try_with_basis` / `try_with_glwe_params` 适用于从已有普通参数派生 gadget，继续共享同一 Arc。
 
 TFHE 的 BSK 共享 accumulator 的布局和采样状态。KS 目标直接组合补零后的布局、small-secret 分布、accumulator 噪声与 KS basis；不创建临时普通 GLWE codec。CBS trace 和 scheme-switch 同样直接组合 gadget 参数，分别准备各自噪声的状态。普通 GLWE 加密、client Rounded 编码与 LUT 几何各自的检查仍保留在原有边界。
 
 ## NTRU 普通与 gadget 参数组合
 
-`NtruParametersInner` 绑定 N、Q、秘密 sampler 和系数单位噪声，不保存 codec，也没有 GLWE 的 mask sampler。NTRU 的完整秘密长度就是 N，固定重量和支持界在 inner 构造时检查；补零密钥生成另检查活跃前缀。可逆性、最多 1024 次候选重试、Fourier 逆元稳定性仍归密钥生成。
+`NtruEncryptionParameters` 绑定 N、Q、秘密 sampler 和系数单位噪声，不保存 codec，也没有 GLWE 的 mask sampler。NTRU 的完整秘密长度就是 N，固定重量和支持界在加密参数构造时检查；补零密钥生成另检查活跃前缀。可逆性、最多 1024 次候选重试、Fourier 逆元稳定性仍归密钥生成。
 
-`NlevParameters::try_from_parts(Arc<NtruParametersInner>, basis)` 检查 basis/Q 和 N*L；`NtruParameters::try_from_parts(shared_inner, codec)` 检查 codec/Q，固定尺度恢复条件由 codec 自身保证。两者 `inner()` 均借用同一状态。密钥生成、encoded/zero 加密只需 inner；普通加解密仍使用含 codec 的参数。`try_with_basis` / `try_with_ntru_params` 是从普通参数派生 gadget 的便捷入口，只复制 Arc，不复制采样表。NLev 克隆仍复制其独立 basis；没有把秘密系数或 RNG 放入共享状态。
+`NlevParameters::try_from_parts(Arc<NtruEncryptionParameters>, basis)` 检查 basis/Q 和 N*L；`NtruParameters::try_from_parts(shared_encryption, codec)` 检查 codec/Q，固定尺度恢复条件由 codec 自身保证。两者 `encryption_parameters()` 均借用同一状态。密钥生成、encoded/zero 加密只需加密参数；普通加解密仍使用含 codec 的参数。`try_with_basis` / `try_with_ntru_params` 是从普通参数派生 gadget 的便捷入口，只复制 Arc，不复制采样表。NLev 克隆仍复制其独立 basis；没有把秘密系数或 RNG 放入共享状态。
 
-TFHE 的 `TfheParameters::try_new(external_lwe, blind_rotation, key_switching, key_switching_noise_standard_deviation)` 接收外部 `LweParametersInner`、BR `NlevParameters` 和返回 KS 的分解配置与噪声。`accumulator_ntru()` 借用 BR 内的 `NtruParametersInner`，TFHE 不另存普通 accumulator 参数或 codec。构造时检查外部 binary/ternary 控制秘密、2N 可表示性，并在外部 q 下构造返回 KS basis 和采样状态。
+TFHE 的 `TfheParameters::try_new(external_lwe, blind_rotation, key_switching, key_switching_noise_standard_deviation)` 接收外部 `LweEncryptionParameters`、BR `NlevParameters` 和返回 KS 的分解配置与噪声。`accumulator_ntru()` 借用 BR 内的 `NtruEncryptionParameters`，TFHE 不另存普通 accumulator 参数或 codec。构造时检查外部 binary/ternary 控制秘密、2N 可表示性，并在外部 q 下构造返回 KS basis 和采样状态。
 
-消息 t 和 codec 在 client、LUT/CBS 程序绑定时确定，密钥参数构造不检查共同 t；具体归属见[NTRU TFHE 的密钥域与消息程序](#ntru-tfhe-的密钥域与消息程序)。CBS trace/scheme-switch 直接构造无 codec 的 NLev，每个噪声角色独立准备 inner。构造分配、保留内存与在线加密的历史对比见[采样状态共享测量](workspaces-and-storage.md#ntru-parameter-sharing)。
+消息 t 和 codec 在 client、LUT/CBS 程序绑定时确定，密钥参数构造不检查共同 t；具体归属见[NTRU TFHE 的密钥域与消息程序](#ntru-tfhe-的密钥域与消息程序)。CBS trace/scheme-switch 直接构造无 codec 的 NLev，每个噪声角色独立准备加密参数。构造分配、保留内存与在线加密的历史对比见[采样状态共享测量](workspaces-and-storage.md#ntru-parameter-sharing)。
 
 ## RNS 普通与 gadget 参数组合
 
-`CrtGlweParametersInner` 绑定 `RnsGlweSize`、有序 Q 对应的 mask sampler、秘密 sampler 和系数噪声；固定重量按完整 kN 检查，秘密及噪声支持必须适用于每个 q_i。它只借用 `RNSBase` 准备采样缓存，不拥有另一份 base 或 converter。
+`CrtGlweEncryptionParameters` 绑定 `RnsGlweSize`、有序 Q 对应的 mask sampler、秘密 sampler 和系数噪声；固定重量按完整 kN 检查，秘密及噪声支持必须适用于每个 q_i。它只借用 `RNSBase` 准备采样缓存，不拥有另一份 base 或 converter。
 
-`CrtGlevParameters::try_from_parts(Arc<CrtGlweParametersInner>, base_q, basis)` 检查缓存与 base 的模数数量及顺序、basis 的精确乘积和 limb 宽度、逐模数的 centered-lift radix 条件，以及 `RnsGadgetSize` 组合长度。它拥有传入的 base、basis 和各层 CRT 权重，不需要 t/gamma。普通 `CrtGlweParameters::try_from_parts(shared_inner, codec)` 则检查 codec 的有序 Q，并用共享噪声采样器的最大幅度验证新鲜私钥密文的 BFV 恢复条件；这不包含公钥或求值的附加噪声。
+`CrtGlevParameters::try_from_parts(Arc<CrtGlweEncryptionParameters>, base_q, basis)` 检查缓存与 base 的模数数量及顺序、basis 的精确乘积和 limb 宽度、逐模数的 centered-lift radix 条件，以及 `RnsGadgetSize` 组合长度。它拥有传入的 base、basis 和各层 CRT 权重，不需要 t/gamma。普通 `CrtGlweParameters::try_from_parts(shared_encryption, codec)` 则检查 codec 的有序 Q，并用共享噪声采样器的最大幅度验证新鲜私钥密文的 BFV 恢复条件；这不包含公钥或求值的附加噪声。
 
-两种参数都通过 `inner()` 借用共享状态。公钥生成接收 inner、base 和 table；普通 DCRT key switch 接收 input inner 和 output gadget domain，输出噪声来自 domain；hybrid key switch 沿用 input inner 的密钥噪声，并额外检查辅助 P 模数的支持界。这些生成流程均不依赖 BFV codec，秘密缓冲擦除及采样顺序保持不变。`try_with_glwe_params` 从普通参数派生 gadget，共享 sampler 和 RNSBase 的不可变表；codec 内的转换器也共享该基。基内部集中有序模数值缓存，外层继续各自拥有基句柄、BFV/gadget 权重及转换矩阵；在线借用不 clone Arc。具体取舍见[存储说明](workspaces-and-storage.md#rns-base-sharing)。
+两种参数都通过 `encryption_parameters()` 借用共享状态。公钥生成接收加密参数、base 和 table；普通 DCRT key switch 接收 输入加密参数 和 output gadget domain，输出噪声来自 domain；hybrid key switch 沿用 输入加密参数 的密钥噪声，并额外检查辅助 P 模数的支持界。这些生成流程均不依赖 BFV codec，秘密缓冲擦除及采样顺序保持不变。`try_with_glwe_params` 从普通参数派生 gadget，共享 sampler 和 RNSBase 的不可变表；codec 内的转换器也共享该基。基内部集中有序模数值缓存，外层继续各自拥有基句柄、BFV/gadget 权重及转换矩阵；在线借用不 clone Arc。具体取舍见[存储说明](workspaces-and-storage.md#rns-base-sharing)。
 
-三个方案共同遵循“采样状态 + gadget basis”与“采样状态 + 普通 codec”的组合规则，但布局检查保留各方案差异：GLWE inner 不绑定 k/N，固定重量由组合入口检查；NTRU inner 绑定 N；RNS inner 绑定 k/N/模数数量和缓存顺序。不能仅凭乘积 Q 相等认为 RNS 缓冲兼容，也不能把 GLWE 的 mask sampler 套用到 NTRU。组合检查都在构造边界，在线 kernel 沿用已经建立的不变量。
+三个方案共同遵循“采样状态 + gadget basis”与“采样状态 + 普通 codec”的组合规则，但布局检查保留各方案差异：GLWE 加密参数不绑定 k/N，固定重量由组合入口检查；NTRU 加密参数绑定 N；RNS 加密参数绑定 k/N/模数数量和缓存顺序。不能仅凭乘积 Q 相等认为 RNS 缓冲兼容，也不能把 GLWE 的 mask sampler 套用到 NTRU。组合检查都在构造边界，在线 kernel 沿用已经建立的不变量。
 
 ## 配置、绑定与工作区的职责
 
@@ -111,7 +111,7 @@ PBS trait、四后端、Boolean 门、双输入打包、CBS、one-hot 与 MVB �
 
 ## GLWE TFHE 的密钥域与消息程序
 
-`TfheParameters` 不保存明文模数或 codec。`TfheConfig.small_lwe` 使用 `LweParametersInner`；直接构造入口接受 small LWE core、`GgswParameters` 和返回 KS basis。`blind_rotation_ggsw()` 同时提供累加环布局与 BR gadget 配置。普通 LWE 仍用 `LweParameters` 绑定 codec，密钥生成传入其 `inner()`。
+`TfheParameters` 不保存明文模数或 codec。`TfheConfig.small_lwe` 使用 `LweEncryptionParameters`；直接构造入口接受 small LWE core、`GgswParameters` 和返回 KS basis。`blind_rotation_ggsw()` 同时提供累加环布局与 BR gadget 配置。普通 LWE 仍用 `LweParameters` 绑定 codec，密钥生成传入其 `encryption_parameters()`。
 
 | 数据或检查 | 唯一归属与使用时机 |
 | --- | --- |
@@ -127,7 +127,7 @@ PBS trait、四后端、Boolean 门、双输入打包、CBS、one-hot 与 MVB �
 
 ## NTRU TFHE 的密钥域与消息程序
 
-`TfheConfig.external_lwe` 使用 `LweParametersInner`；直接组合入口接受 external LWE core、BR `NlevParameters` 和 q 下的返回 KS 配置。`accumulator_ntru()` 只借用 BR gadget 内的 `NtruParametersInner`，没有第二份普通参数或 codec。`NtruParameters::try_from_nlev` 在 accumulator client 绑定 Scaled codec 时共享 Arc 采样状态。
+`TfheConfig.external_lwe` 使用 `LweEncryptionParameters`；直接组合入口接受 external LWE core、BR `NlevParameters` 和 q 下的返回 KS 配置。`accumulator_ntru()` 只借用 BR gadget 内的 `NtruEncryptionParameters`，没有第二份普通参数或 codec。`NtruParameters::try_from_nlev` 在 accumulator client 绑定 Scaled codec 时共享 Arc 采样状态。
 
 | 数据或检查 | 唯一归属与使用时机 |
 | --- | --- |
@@ -234,7 +234,7 @@ NTT 与 native Fourier 的 reverse trace 归一化契约不同：前者使用模
 | `SecretKeySampler::try_new` | 概率和对应 signed 字宽下的 Gaussian 预计算 | `SecretKeySamplerError`，嵌套 `GaussianError` |
 | `SecretKeySampler::validate_length` | 固定重量及加和溢出，按完整逻辑密钥长度 | `SecretKeySamplerError::InvalidWeight` |
 | `SecretKeySampler::validate_modulus` | 秘密支持范围是否适配输出模数；`T::MAX` 作为 modulus-minus-one 表示 native | `SecretKeySamplerError::ModulusTooSmall`，携带支持上界和 modulus-minus-one |
-| `LweParametersInner::try_new` | LWE 维数、秘密支持集/重量和噪声；不构造 codec | `LweParameterError` 的 `SecretKey` / `Noise` |
+| `LweEncryptionParameters::try_new` | LWE 维数、秘密支持集/重量和噪声；不构造 codec | `LweParameterError` 的 `SecretKey` / `Noise` |
 | `LweParameters::try_new` / `GlweParameters::try_new` / `NtruParameters::try_new` | 布局、codec、秘密支持集/重量、噪声 sampler；复用上述检查 | 家族各自的 `*ParameterError`；`SecretKey` 保留 `SecretKeySamplerError`，`Noise` 保留 `GaussianError` |
 | `TfheParameters::try_from_config` / `try_new` | BR/KS 域及分解、控制秘密类别、维数容量、2N 可表示性 | `TfheParameterError`；累加环错误为 `AccumulatorParameters`，NTRU 返回加密错误为 `KeySwitchingEncryption` |
 | 两家族 client / `lookup_table_compiler(&input_codec)` / CBS evaluator | 输入 codec 与密钥 q 一致；独立 NTRU CBS 编译器只拥有 Q，绑定时核对 q | `ClientError::CodecModulusMismatch` / `LookupTableError::InputModulusMismatch` |
@@ -243,7 +243,7 @@ NTT 与 native Fourier 的 reverse trace 归一化契约不同：前者使用模
 | `CircuitBootstrapParameters::try_from_config` / `try_new` | output/trace/SS basis、环布局和组合长度；trace/SS 噪声。两家族消息容量均由 CBS LUT 编译检查 | `CircuitBootstrapParameterError`，`EncryptionParameters` 标明 key role 和原错误 |
 | Context / key generation / evaluator | 表、秘密实际可用性、选定能力及密钥布局绑定 | 各层已有的 context/key/evaluation errors |
 
-底层 `new` 是在相同校验错误下主动 panic 的便捷形式，适合已知有效的常量配置；其实现复用 `try_new`，没有第二套校验。`GlweParametersInner` 不持有布局，固定重量检查由普通/gadget 参数与布局的组合入口或实际采样入口完成。公开 sampler 接受不同输出长度时仍需检查实际长度。
+底层 `new` 是在相同校验错误下主动 panic 的便捷形式，适合已知有效的常量配置；其实现复用 `try_new`，没有第二套校验。`GlweEncryptionParameters` 不持有布局，固定重量检查由普通/gadget 参数与布局的组合入口或实际采样入口完成。公开 sampler 接受不同输出长度时仍需检查实际长度。
 
 RNS GLWE 提供 `CrtGlweParameters::try_new`，其 `new` 是调用同一校验的 panicking 便捷形式。`CrtGlweParametersError` 保留布局、RNS 基、BFV 编码与秘密/噪声错误。构造时检查有序 RNS 基的每个 limb 能表示秘密和噪声的完整支持集，并用 `BfvRnsCodec::validate_noise_bound` 验证新鲜私钥明文加密的恢复条件；这不保证公钥加密或同态运算后的噪声余量。
 

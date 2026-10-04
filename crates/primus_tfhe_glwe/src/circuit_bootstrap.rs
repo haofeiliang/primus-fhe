@@ -1,7 +1,7 @@
 //! Backend-independent parameters for GLWE circuit bootstrapping.
 
 use primus_decompose::primitive::ApproxSignedBasis;
-use primus_glwe::{GadgetSize, GgswParameters, GlevParameters, GlweParametersInner};
+use primus_glwe::{GadgetSize, GgswParameters, GlevParameters, GlweEncryptionParameters};
 use primus_integer::FheUint;
 use primus_reduce::RingContext;
 use std::sync::Arc;
@@ -48,7 +48,7 @@ impl<T: FheUint, M: RingContext<T>> CircuitBootstrapParameters<T, M> {
         let key_parameters = |role, decomposition: crate::DecompositionConfig, noise| {
             // Trace and scheme-switch rows have independent noise roles. Reuse
             // the accumulator layout, without constructing a message codec.
-            let inner = GlweParametersInner::try_new(
+            let inner = GlweEncryptionParameters::try_new(
                 accumulator.cipher_modulus(),
                 accumulator.secret_key_distr(),
                 noise,

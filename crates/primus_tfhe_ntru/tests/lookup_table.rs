@@ -2,10 +2,11 @@ use primus_decompose::DecompositionBaseLog;
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_encoding::RoundedCodec;
 use primus_lwe::LweDimension;
-use primus_lwe::LweParametersInner;
+use primus_lwe::LweEncryptionParameters;
 use primus_modulus::NativeModulus;
 use primus_ntru::NlevParameters;
 use primus_ntru::{NtruParameters, NtruSecretKey, SecretKeyDistr};
+use primus_poly::PolyLength;
 use primus_tfhe_ntru::{ClientError, ClientKey, TfheParameters};
 
 const N: usize = 32;
@@ -14,14 +15,20 @@ const LWE_DIMENSION: usize = 4;
 fn parameters_with_plaintext(t: u32) -> TfheParameters<u32, NativeModulus<u32>> {
     let modulus = NativeModulus::new();
 
-    let accumulator = NtruParameters::new(N, t, modulus, SecretKeyDistr::gaussian(3.2), 0.7);
+    let accumulator = NtruParameters::new(
+        PolyLength::new(N),
+        t,
+        modulus,
+        SecretKeyDistr::gaussian(3.2),
+        0.7,
+    );
     let blind_rotation_basis = ApproxSignedBasis::new(
         accumulator.cipher_modulus_value(),
         DecompositionBaseLog::new(8),
         None,
     );
     TfheParameters::try_new(
-        LweParametersInner::new(
+        LweEncryptionParameters::new(
             LweDimension::new(LWE_DIMENSION),
             modulus,
             SecretKeyDistr::UniformBinary,
@@ -120,14 +127,14 @@ fn codec_binding_checks_input_q_and_default_output_encoding() {
         level_count: None,
     };
     let parameters = TfheParameters::try_from_config(TfheConfig {
-        external_lwe: LweParametersInner::new(
+        external_lwe: LweEncryptionParameters::new(
             LweDimension::new(LWE_DIMENSION),
             BarrettModulus::new(257),
             SecretKeyDistr::UniformBinary,
             0.7,
         ),
         accumulator_modulus: BarrettModulus::new(41),
-        poly_length: N,
+        poly_length: PolyLength::new(N),
         accumulator_secret_key_distr: SecretKeyDistr::gaussian(3.2),
         accumulator_noise_standard_deviation: 0.7,
         blind_rotation: basis,

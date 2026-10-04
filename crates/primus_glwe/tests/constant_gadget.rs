@@ -31,7 +31,7 @@ fn check_ntt_batch<T: FheUint, Table: NttTable<ValueT = T>>() {
     let modulus = BarrettModulus::new(T::try_from(257usize).unwrap());
     let glwe = GlweParameters::new(
         GlweDimension::new(2),
-        n,
+        PolyLength::new(n),
         T::try_from(16usize).unwrap(),
         modulus,
         SecretKeyDistr::UniformBinary,
@@ -40,7 +40,12 @@ fn check_ntt_batch<T: FheUint, Table: NttTable<ValueT = T>>() {
     let params = GlevParameters::with_glwe_params(&glwe, DecompositionBaseLog::new(4), None);
     let table = Table::new(PolyLength::new(n), modulus).unwrap();
     let mut rng = StdRng::seed_from_u64(42);
-    let (_, key) = NttGlweSecretKey::generate_pair(glwe.size(), glwe.inner(), &table, &mut rng);
+    let (_, key) = NttGlweSecretKey::generate_pair(
+        glwe.size(),
+        glwe.encryption_parameters(),
+        &table,
+        &mut rng,
+    );
     let mut workspace = NttGlweGadgetEncryptWorkspace::new(params.size());
     let mut single_workspace = NttGlweGadgetEncryptWorkspace::new(params.size());
     // Coefficient output only needs the polynomial scratch, independent of levels.
@@ -160,7 +165,7 @@ fn check_fourier_batch<T: TorusFftValue, Table: FftTable>() {
     let n = 32usize;
     let glwe = GlweParameters::new(
         GlweDimension::new(2),
-        n,
+        PolyLength::new(n),
         T::try_from(16usize).unwrap(),
         NativeModulus::new(),
         SecretKeyDistr::SparseTernary,
@@ -174,8 +179,12 @@ fn check_fourier_batch<T: TorusFftValue, Table: FftTable>() {
     let table = Table::new(PolyLength::new(n));
     let mut fft = FftEngine::new(&table);
     let mut rng = StdRng::seed_from_u64(42);
-    let (_, key) =
-        FourierGlweSecretKey::generate_pair(glwe.size(), glwe.inner(), &mut fft, &mut rng);
+    let (_, key) = FourierGlweSecretKey::generate_pair(
+        glwe.size(),
+        glwe.encryption_parameters(),
+        &mut fft,
+        &mut rng,
+    );
     let mut workspace = FourierGlweGadgetEncryptWorkspace::new(params.size());
     let sentinel = Complex64::new(7.0, 9.0);
     // Repeated constants reuse prepared levels; transitions must refresh them.

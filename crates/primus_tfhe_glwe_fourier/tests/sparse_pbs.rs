@@ -9,6 +9,7 @@ use primus_glwe::{GlweParameters, SecretKeyDistr};
 use primus_lattice::{GlweDimension, LweDimension};
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::NativeModulus;
+use primus_poly::PolyLength;
 use primus_test_allocations as allocations;
 use primus_tfhe::{ProgrammableBootstrap, ProgrammableBootstrapInterleaved};
 use primus_tfhe_glwe_fourier::{
@@ -36,11 +37,11 @@ fn context<Table: FftTable>(
             SecretKeyDistr::fixed_hamming_weight_binary(16, weight),
             0.7,
         ))
-        .into_inner(),
+        .into_encryption_parameters(),
         primus_glwe::GgswParameters::try_with_basis(
             &(GlweParameters::new(
                 GlweDimension::new(1),
-                N,
+                PolyLength::new(N),
                 15,
                 modulus,
                 SecretKeyDistr::UniformTernary,

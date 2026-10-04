@@ -331,7 +331,7 @@ fn check_native_lift<Table: FftTable>() {
     );
     let key = FourierNtruSecretKey::try_from_coeff_secret_key(&secret, &mut fft).unwrap();
     let params = NtruParameters::new(
-        N,
+        PolyLength::new(N),
         4u32,
         NativeModulus::new(),
         SecretKeyDistr::SparseTernary,
@@ -564,7 +564,13 @@ fn ntt_reverse_trace_matches_exact_same_secret_oracle() {
         SECRET.map(|x| x as i32).to_vec(),
         SecretKeyDistr::SparseTernary,
     );
-    let params = NtruParameters::new(N, 4, modulus, SecretKeyDistr::SparseTernary, 0.7);
+    let params = NtruParameters::new(
+        PolyLength::new(N),
+        4,
+        modulus,
+        SecretKeyDistr::SparseTernary,
+        0.7,
+    );
     let gadget = NlevParameters::with_ntru_params(&params, DecompositionBaseLog::new(3), None);
     let key = NttNtruSecretKey::try_from_coeff_secret_key(&secret, modulus, &table).unwrap();
     let trace = NttNtruTraceKey::generate(
@@ -605,7 +611,7 @@ fn check_native_trace<Table: FftTable>() {
         SecretKeyDistr::SparseTernary,
     );
     let params = NtruParameters::new(
-        N,
+        PolyLength::new(N),
         4u32,
         NativeModulus::new(),
         SecretKeyDistr::SparseTernary,

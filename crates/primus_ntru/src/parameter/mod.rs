@@ -5,7 +5,7 @@ mod error;
 mod gadget;
 mod ordinary;
 
-pub use core::NtruParametersInner;
+pub use core::NtruEncryptionParameters;
 pub use error::{NlevParameterError, NtruParameterError};
 pub use gadget::NlevParameters;
 pub use ordinary::NtruParameters;

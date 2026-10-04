@@ -1,6 +1,6 @@
 //! CRT/DCRT GLWE operations and Hybrid-RNS key switching.
 //!
-//! [`CrtGlweParametersInner`] prepares layout and sampling without plaintext
+//! [`CrtGlweEncryptionParameters`] prepares layout and sampling without plaintext
 //! encoding. [`CrtGlweParameters`] binds it to a BFV codec; [`CrtGlevParameters`]
 //! binds it to an ordered RNS base and gadget decomposition instead.
 
@@ -35,8 +35,8 @@ pub use key_switch::{
     HybridRnsGlweKeySwitchingKey,
 };
 pub use parameter::{
-    CrtGgswParameters, CrtGlevParameters, CrtGlevParametersError, CrtGlweParameters,
-    CrtGlweParametersError, CrtGlweParametersInner, DcrtGadgetDomain, HybridRnsKeySwitchDomain,
+    CrtGgswParameters, CrtGlevParameters, CrtGlevParametersError, CrtGlweEncryptionParameters,
+    CrtGlweParameters, CrtGlweParametersError, DcrtGadgetDomain, HybridRnsKeySwitchDomain,
     RnsDomainError,
 };
 pub use primus_encoding::BfvRnsCodec;

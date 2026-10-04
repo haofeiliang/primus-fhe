@@ -91,11 +91,11 @@ fn check_raw<Table: FftTable>() {
                 SecretKeyDistr::fixed_hamming_weight_binary(16, 4),
                 0.7,
             ))
-            .into_inner(),
+            .into_encryption_parameters(),
             primus_glwe::GgswParameters::try_with_basis(
                 &(GlweParameters::new(
                     GlweDimension::new(dimension),
-                    N,
+                    PolyLength::new(N),
                     8,
                     modulus,
                     SecretKeyDistr::UniformTernary,

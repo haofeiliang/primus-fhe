@@ -1,6 +1,6 @@
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_lattice::LweDimension;
-use primus_lwe::LweParametersInner;
+use primus_lwe::LweEncryptionParameters;
 use primus_poly::PolyLength;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
@@ -26,13 +26,13 @@ const DOMAIN: usize = 8;
 fn context<T: TorusFftValue, Table: FftTable>(distr: SecretKeyDistr) -> TfheContext<T, Table> {
     let parameters = TfheParameters::try_from_config(TfheConfig {
         accumulator_modulus: NativeModulus::new(),
-        external_lwe: LweParametersInner::new(
+        external_lwe: LweEncryptionParameters::new(
             LweDimension::new(DIM),
             NativeModulus::new(),
             distr,
             0.7,
         ),
-        poly_length: N,
+        poly_length: PolyLength::new(N),
         accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
         accumulator_noise_standard_deviation: 0.7,
         blind_rotation: DecompositionConfig {

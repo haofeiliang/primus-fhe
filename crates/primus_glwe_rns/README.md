@@ -7,6 +7,8 @@ English | [简体中文](README.zh_CN.md)
 
 GLWE encryption and evaluation over an ordered RNS basis, with CRT coefficient and DCRT NTT representations. This crate supplies BFV-scaled coefficient encryption, gadget products, automorphism, trace, expansion and key switching. It is a building block, not a complete BFV/BGV/CKKS scheme.
 
+`CrtGlweParameters::new` / `try_new` takes `primus_poly::PolyLength`. Construct it once with `PolyLength::try_new(n)?` (or `new` for known constants) and reuse it for parameters, sizes and transform tables. Invalid integers are reported by `PolyLengthError`; parameter construction retains its combined-layout, modulus and sampler checks.
+
 ## Recommended workflow
 
 1. Choose ordered, pairwise-coprime NTT primes and construct one `DcrtTable`. Each prime must satisfy the [NTT constraints](../primus_ntt/README.md#construction-constraints).
@@ -26,9 +28,10 @@ use primus_ntt::UintDcrtTable;
 use primus_poly::{PolyLength, Polynomial};
 
 let moduli = [998_244_353u32, 1_004_535_809].map(BarrettModulus::new);
-let table = UintDcrtTable::new(PolyLength::new(32), &moduli).unwrap();
+let poly_length = PolyLength::new(32);
+let table = UintDcrtTable::new(poly_length, &moduli).unwrap();
 let parameters = CrtGlweParameters::new(
-    primus_lattice::GlweDimension::new(2), 32, BarrettModulus::new(17), BarrettModulus::new(65_537),
+    primus_lattice::GlweDimension::new(2), poly_length, BarrettModulus::new(17), BarrettModulus::new(65_537),
     &moduli, SecretKeyDistr::UniformBinary, 3.2,
 );
 let mut rng = rand::rng();
@@ -48,19 +51,19 @@ assert_eq!(decoded.as_ref(), message.as_ref());
 
 ## Encoding and representation
 
-`encrypt_to` uses unsigned BFV scaling, and `encrypt_centered_to` uses centered lifting; messages contain N canonical values in `[0,t)`. `encrypt_crt_to` accepts unscaled plaintext lifts reduced into each CRT modulus and applies `floor(Q/t)` scaling; do not pass the already-scaled output of the codec. These methods overwrite DCRT ciphertext output. `encrypt_zeros_to` encrypts zero. `phase_to` writes a DCRT phase; `decrypt` allocates plaintext output, while `decrypt_to` reuses it. Decryption performs coefficient recovery and decoding. `DcrtGlwePublicKey` supports public encryption; its noise budget includes the additional public-key terms.
+`encrypt_to` uses unsigned BFV scaling, and `encrypt_centered_to` uses centered lifting; messages contain N canonical values in `[0,t)`. `encrypt_plaintext_crt_to` accepts unscaled plaintext lifts reduced into each CRT modulus and applies `floor(Q/t)` scaling; do not pass the already-scaled output of the codec. These methods overwrite DCRT ciphertext output. `encrypt_zeros_to` encrypts zero. `phase_to` writes a DCRT phase; `decrypt` allocates plaintext output, while `decrypt_to` reuses it. Decryption performs coefficient recovery and decoding. `DcrtGlwePublicKeyContext::encrypt_plaintext_crt` allocates public encryption of the same unscaled CRT lifts; its noise budget includes the additional public-key terms.
 
 For m moduli, ordinary storage contains `(k+1)*m*N` elements in `[component][modulus][coefficient/evaluation]` order. Gadget storage adds outer row/level dimensions. Use `RnsGlweSize` / `RnsGadgetSize` and polynomial/ciphertext iterators rather than inferring chunk sizes. CRT and DCRT have the same shape but different arithmetic; see [ciphertext layouts](../primus_lattice/README.md#storage-and-layout).
 
 ## Parameter composition
 
-`CrtGlweParameters` takes `GlweDimension`, and gadget construction takes `DecompositionBaseLog` and `Option<DecompositionLevelCount>`. Parameter accessors return these checked units; use `.get()` at raw storage or numerical boundaries.
+`CrtGlweParameters` takes `GlweDimension` and `PolyLength`, and gadget construction takes `DecompositionBaseLog` and `Option<DecompositionLevelCount>`. Parameter accessors return these checked units; use `.get()` at raw storage or numerical boundaries.
 
 The ordinary constructor above prepares all parts. For gadget-only encryption or independently chosen encoding, prepare and combine them explicitly:
 
-- `CrtGlweParametersInner::try_new(size, &base_q, secret_distribution, noise)` prepares layout and samplers without t or gamma. Fixed secret weights apply to the complete kN signed key, before replication across moduli; secret and noise support must fit below every q_i. Wrap the result in `Arc` to share those precomputations.
-- `CrtGlevParameters::try_from_parts(shared_inner, base_q, basis)` moves the ordered `RNSBase` and `BigUintApproxSignedBasis` into gadget parameters. It checks the sampler's ordered moduli, the basis's exact product modulus and limb width, radix < every q_i, and composed gadget lengths before caching level weights. It needs no BFV codec.
-- `CrtGlweParameters::try_from_parts(shared_inner, codec)` binds ordinary BFV encoding, checking the codec's ordered moduli and fresh private-key recovery margin. The codec owns its RNS base and conversion data; the shared sampling state stores no additional base or converter.
+- `CrtGlweEncryptionParameters::try_new(size, &base_q, secret_distribution, noise)` prepares layout and samplers without t or gamma. Fixed secret weights apply to the complete kN signed key, before replication across moduli; secret and noise support must fit below every q_i. Wrap the result in `Arc` to share those precomputations.
+- `CrtGlevParameters::try_from_parts(shared_encryption, base_q, basis)` moves the ordered `RNSBase` and `BigUintApproxSignedBasis` into gadget parameters. It checks the sampler's ordered moduli, the basis's exact product modulus and limb width, radix < every q_i, and composed gadget lengths before caching level weights. It needs no BFV codec.
+- `CrtGlweParameters::try_from_parts(shared_encryption, codec)` binds ordinary BFV encoding, checking the codec's ordered moduli and fresh private-key recovery margin. The codec owns its RNS base and conversion data; the shared sampling state stores no additional base or converter.
 
 `CrtGlweParameters::try_new` and `try_from_parts` report errors through `CrtGlweParametersError<T>`, preserving their causes. `CrtGlevParameters::try_with_glwe_params` remains the convenient way to derive gadget parameters from existing ordinary parameters and shares their samplers. Gadget construction reports `CrtGlevParametersError`; its `Layout` variant reports length overflow. Distinct noise roles require independently prepared sampling states.
 
@@ -70,7 +73,7 @@ Ordinary parameter construction passes the noise sampler's maximum magnitude to 
 
 ## Evaluation resources
 
-Both parameter types expose their sampling state through `inner()`. Public-key generation takes `DcrtGlwePublicKey::new(&secret, parameters.inner(), parameters.base_q(), &table, rng)`; zero encryption needs no codec. DCRT and hybrid key-switch generation likewise accept `input_parameters.inner()` rather than ordinary BFV parameters. These setup calls validate ordered bases before consuming randomness. Hybrid generation also checks the input sampling state's key noise against the auxiliary P limbs.
+Both parameter types expose their sampling state through `encryption_parameters()`. Public-key generation takes `DcrtGlwePublicKey::new(&secret, parameters.encryption_parameters(), parameters.base_q(), &table, rng)`; zero encryption needs no codec. DCRT and hybrid key-switch generation likewise accept `input_parameters.encryption_parameters()` rather than ordinary BFV parameters. These setup calls validate ordered bases before consuming randomness. Hybrid generation also checks the input sampling state's key noise against the auxiliary P limbs.
 
 `DcrtGadgetDomain::try_new` binds gadget parameters and a table, checking polynomial length and ordered moduli. Ordinary DCRT key switching uses this domain. Hybrid switching instead binds the complete Q/P basis with `HybridRnsKeySwitchDomain::try_new`; partitioning and ModUp/ModDown contracts live in [`primus_rns`](../primus_rns/README.md#hybrid-rns).
 

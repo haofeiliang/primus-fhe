@@ -6,7 +6,7 @@ mod gadget;
 mod key_switch;
 mod ordinary;
 
-pub use core::GlweParametersInner;
+pub use core::GlweEncryptionParameters;
 pub use error::{GlevParameterError, GlweParameterError};
 pub use gadget::{GgswParameters, GlevParameters};
 pub use key_switch::GlweKeySwitchingParameters;

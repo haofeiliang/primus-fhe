@@ -24,7 +24,7 @@ fn hybrid_generation_rejects_input_secret_layout_before_sampling() {
     let domain = HybridRnsKeySwitchDomain::try_new(&hybrid, &table).unwrap();
     let parameters = CrtGlweParameters::new(
         GlweDimension::new(2),
-        32,
+        PolyLength::new(32),
         BarrettModulus::new(3),
         BarrettModulus::new(101),
         &q,
@@ -51,7 +51,7 @@ fn hybrid_generation_rejects_input_secret_layout_before_sampling() {
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             HybridRnsGlweKeySwitchingKey::generate(
                 &input_secret,
-                parameters.inner(),
+                parameters.encryption_parameters(),
                 &output_secret,
                 &domain,
                 &mut rng,
@@ -79,7 +79,7 @@ fn hybrid_noise_support_must_fit_auxiliary_moduli() {
     for (sigma, valid) in [(21.375, true), (21.4375, false), (21.5, false)] {
         let params = CrtGlweParameters::new(
             GlweDimension::new(1),
-            32,
+            PolyLength::new(32),
             BarrettModulus::new(3),
             BarrettModulus::new(101),
             &q,
@@ -93,7 +93,7 @@ fn hybrid_noise_support_must_fit_auxiliary_moduli() {
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             HybridRnsGlweKeySwitchingKey::generate(
                 &secret,
-                params.inner(),
+                params.encryption_parameters(),
                 &secret,
                 &domain,
                 &mut rng,
@@ -133,7 +133,7 @@ fn test_rns_glwe_ksk() {
 
     let glwe_params = CrtGlweParameters::new(
         GlweDimension::new(dimension),
-        poly_length.get(),
+        poly_length,
         mod_t,
         mod_gamma,
         &moduli,
@@ -163,7 +163,7 @@ fn test_rns_glwe_ksk() {
 
     let key_switching_key = DcrtGlweKeySwitchingKey::generate(
         &sk_1,
-        glwe_params.inner(),
+        glwe_params.encryption_parameters(),
         &dcrt_sk_2,
         &domain,
         &mut rng,
@@ -220,7 +220,7 @@ fn test_rns_glwe_ksk_hybrid() {
 
     let glwe_params = CrtGlweParameters::new(
         GlweDimension::new(dimension),
-        poly_length.get(),
+        poly_length,
         mod_t,
         mod_gamma,
         &q_moduli,
@@ -248,7 +248,7 @@ fn test_rns_glwe_ksk_hybrid() {
 
     let key_switching_key = HybridRnsGlweKeySwitchingKey::generate(
         &sk_1,
-        glwe_params.inner(),
+        glwe_params.encryption_parameters(),
         &sk_2,
         &hybrid_domain,
         &mut rng,

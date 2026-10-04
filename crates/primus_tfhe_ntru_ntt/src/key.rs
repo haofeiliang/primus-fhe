@@ -284,7 +284,7 @@ where
         rng: &mut R,
     ) -> Result<NttNlev<Vec<T>>, KeyGenerationError> {
         if parameters.poly_length() != self.context.parameters().poly_length()
-            || parameters.inner().cipher_modulus_value()
+            || parameters.encryption_parameters().cipher_modulus_value()
                 != self
                     .context
                     .parameters()
@@ -298,7 +298,7 @@ where
             .check_accumulator_secret_key(secret)?;
         let transformed = NttNtruSecretKey::try_from_coeff_secret_key(
             secret,
-            parameters.inner().cipher_modulus(),
+            parameters.encryption_parameters().cipher_modulus(),
             self.context.table(),
         )?;
         Ok(self.generate_public_lift_from_transformed(&transformed, parameters, rng))

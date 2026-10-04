@@ -405,7 +405,7 @@ where
         let accumulator = parameters.blind_rotation_ggsw();
         let (glwe_secret_key, main_glwe_secret_key) = FourierGlweSecretKey::generate_pair(
             accumulator.glwe_size(),
-            accumulator.inner(),
+            accumulator.encryption_parameters(),
             &mut self.fft,
             rng,
         );

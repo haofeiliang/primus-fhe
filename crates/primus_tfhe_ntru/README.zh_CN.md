@@ -9,13 +9,15 @@ NTRU-TFHE 的参数与 LWE 客户端层；[NTT](../primus_tfhe_ntru_ntt/README.z
 
 该 family 的默认依赖只使用系数类型、参数和客户端运算，不引入 NTT/FFT。需要同态求值时选择下述具体后端；其普通依赖会启用对应表示。
 
+`TfheConfig::poly_length` 接收 `primus_poly::PolyLength`。用 `PolyLength::try_new(n)?`（已知常量可用 `new`）构造一次，供参数、尺寸与变换表复用。无效整数由 `PolyLengthError` 报告；参数构造仍负责组合布局、模数及采样器检查。
+
 ## 参数与密钥域
 
 `TfheParameters<T, M, LM=M>` 分离环模数 Q 与外部 LWE 模数 q，共用整数类型 T。通过 `TfheParameters::try_from_config(TfheConfig { .. })` 构造：`external_lwe` 指定外部维数、q、binary/ternary 分布和加密噪声；`accumulator_modulus` 指定 Q；`blind_rotation` 分解在 Q 下，`key_switching` 分解和返回密钥噪声在 q 下。`level_count: None` 选择支持的最大层数，仍须检查[分解精度](../primus_decompose/README.zh_CN.md)。
 
 维数选择使用 `LweDimension`；分解选择使用 `DecompositionBaseLog` 和 `Option<DecompositionLevelCount>`。这些单位只构造一次，参数访问器返回的值直接传给工作区。在原始存储或内核边界用 `.get()` 提取整数；组合长度和 basis/模数兼容性仍由构造器检查。
 
-直接组合入口为 `TfheParameters::try_new(external_lwe, blind_rotation, key_switching, key_switching_noise_standard_deviation)`。`external_lwe` 为不含 codec 的 `LweParametersInner`，`blind_rotation` 为 `NlevParameters`。2N 必须能由 T 表示；外部维数 n 不要求小于等于 N。构造器返回带具体原因的参数错误，不验证安全性或完整噪声预算。
+直接组合入口为 `TfheParameters::try_new(external_lwe, blind_rotation, key_switching, key_switching_noise_standard_deviation)`。`external_lwe` 为不含 codec 的 `LweEncryptionParameters`，`blind_rotation` 为 `NlevParameters`。2N 必须能由 T 表示；外部维数 n 不要求小于等于 N。构造器返回带具体原因的参数错误，不验证安全性或完整噪声预算。
 
 `accumulator_ntru()` 借用盲旋转 gadget 在 Q 下的环与采样状态。密钥参数不保存消息 codec。Trace 和 scheme-switch 配置构造不含 codec 的 NLev 参数，各自选择噪声。
 

@@ -63,7 +63,7 @@ fn functional_bootstrapping_key_blind_rotates() {
     );
     let glwe_params = GlweParameters::new(
         GlweDimension::new(GLWE_DIMENSION),
-        POLY_LENGTH,
+        PolyLength::new(POLY_LENGTH),
         PLAINTEXT_MODULUS,
         NativeModulus::new(),
         SecretKeyDistr::UniformBinary,
@@ -78,7 +78,7 @@ fn functional_bootstrapping_key_blind_rotates() {
     );
     let (_, output_secret_key) = FourierGlweSecretKey::generate_pair(
         glwe_params.size(),
-        glwe_params.inner(),
+        glwe_params.encryption_parameters(),
         &mut fft,
         &mut rng,
     );
@@ -95,7 +95,7 @@ fn functional_bootstrapping_key_blind_rotates() {
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             FourierGlweBootstrappingKey::generate_fourier(
                 &foreign,
-                lwe_params.inner(),
+                lwe_params.encryption_parameters(),
                 &output_secret_key,
                 &ggsw_params,
                 &mut fft,
@@ -112,7 +112,7 @@ fn functional_bootstrapping_key_blind_rotates() {
 
     let key = FourierGlweBootstrappingKey::generate_fourier(
         &input_secret_key,
-        lwe_params.inner(),
+        lwe_params.encryption_parameters(),
         &output_secret_key,
         &ggsw_params,
         &mut fft,

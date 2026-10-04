@@ -40,11 +40,11 @@ fn context(
             SecretKeyDistr::fixed_hamming_weight_binary(16, weight),
             0.7,
         ))
-        .into_inner(),
+        .into_encryption_parameters(),
         primus_glwe::GgswParameters::try_with_basis(
             &(GlweParameters::new(
                 GlweDimension::new(1),
-                N,
+                PolyLength::new(N),
                 plaintext_modulus,
                 modulus,
                 SecretKeyDistr::UniformBinary,

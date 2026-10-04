@@ -74,7 +74,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         R: rand::Rng + rand::CryptoRng,
     {
         let poly_length = self.poly_length();
-        let ntru_params = params.inner();
+        let ntru_params = params.encryption_parameters();
         let modulus = ntru_params.cipher_modulus();
         for (scalar, level) in params
             .basis()
@@ -125,7 +125,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
             params.nlev_len(),
             "NLev output length mismatch"
         );
-        let modulus = params.inner().cipher_modulus();
+        let modulus = params.encryption_parameters().cipher_modulus();
         assert!(
             input < modulus.value(),
             "NLev constant must be a canonical residue"
@@ -155,7 +155,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
     {
-        let modulus = params.inner().cipher_modulus();
+        let modulus = params.encryption_parameters().cipher_modulus();
         workspace.encoded.as_mut().fill(T::ZERO);
         for (scalar, level) in params
             .basis()
@@ -166,7 +166,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
             self.encrypt_encoded_to_unchecked(
                 workspace.encoded.as_view(),
                 level,
-                params.inner(),
+                params.encryption_parameters(),
                 ntt,
                 rng,
             );
@@ -229,7 +229,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         R: rand::Rng + rand::CryptoRng,
     {
         let poly_length = self.poly_length();
-        let ntru_params = params.inner();
+        let ntru_params = params.encryption_parameters();
         let modulus = ntru_params.cipher_modulus();
         for (scalar, mut level) in params
             .basis()
@@ -274,14 +274,14 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
     {
-        self.assert_domain(params.inner(), ntt);
+        self.assert_domain(params.encryption_parameters(), ntt);
         let nlev_len = params.nlev_len();
         let expected = input
             .len()
             .checked_mul(nlev_len)
             .expect("NGSW batch length overflow");
         assert_eq!(output.len(), expected, "NGSW batch output length mismatch");
-        let modulus = params.inner().cipher_modulus();
+        let modulus = params.encryption_parameters().cipher_modulus();
         // Scan all secret coefficients rather than stopping at the first bad one.
         assert!(
             input.iter().fold(true, |valid, &value| valid
@@ -296,7 +296,12 @@ impl<T: FheUint> NttNtruSecretKey<T> {
                 .zip(block.chunks_exact_mut(self.poly_length()))
             {
                 let mut level = NttNtruCiphertext::new(level);
-                self.encrypt_zeros_to_unchecked(level.as_mut_view(), params.inner(), ntt, rng);
+                self.encrypt_zeros_to_unchecked(
+                    level.as_mut_view(),
+                    params.encryption_parameters(),
+                    ntt,
+                    rng,
+                );
                 let diagonal = modulus.reduce_mul(constant, scalar);
                 for coefficient in level.as_mut() {
                     *coefficient = modulus.reduce_add(*coefficient, diagonal);
@@ -314,7 +319,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
     {
-        self.assert_domain(params.inner(), ntt);
+        self.assert_domain(params.encryption_parameters(), ntt);
         assert_eq!(workspace.encoded.as_ref().len(), self.poly_length());
     }
 }

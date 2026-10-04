@@ -5,7 +5,7 @@ use primus_encoding::ScaledCodec;
 use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_glwe::{
     FourierGlweDecryptWorkspace, FourierGlweEncryptWorkspace, FourierGlweGadgetEncryptWorkspace,
-    FourierGlweSecretKey, GlevParameters, GlweParameters, GlweParametersInner, GlweSecretKey,
+    FourierGlweSecretKey, GlevParameters, GlweEncryptionParameters, GlweParameters, GlweSecretKey,
     GlweSize, NttGlweGadgetEncryptWorkspace, NttGlweSecretKey, SecretKeyDistr,
 };
 use primus_lattice::GlweDimension;
@@ -64,7 +64,7 @@ fn fourier_gadget_phases_and_external_product() {
     let mut rng = StdRng::seed_from_u64(42);
     // Gadget encryption and key generation need no ordinary message codec.
     let size = GlweSize::new(GlweDimension::new(DIMENSION), PolyLength::new(POLY_LENGTH));
-    let inner = Arc::new(GlweParametersInner::new(
+    let inner = Arc::new(GlweEncryptionParameters::new(
         NativeModulus::new(),
         SecretKeyDistr::UniformBinary,
         0.7,
@@ -211,7 +211,7 @@ fn ntt_gadget_phases_and_external_product() {
     let mut rng = StdRng::seed_from_u64(42);
     // Gadget encryption and key generation need no ordinary message codec.
     let size = GlweSize::new(GlweDimension::new(DIMENSION), PolyLength::new(POLY_LENGTH));
-    let inner = Arc::new(GlweParametersInner::new(
+    let inner = Arc::new(GlweEncryptionParameters::new(
         modulus,
         SecretKeyDistr::SparseTernary,
         0.7,

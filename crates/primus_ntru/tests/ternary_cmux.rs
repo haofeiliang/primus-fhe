@@ -61,7 +61,13 @@ fn distance(lhs: u64, rhs: u64) -> u64 {
 fn encrypted_ternary_step_matches_phase_oracle_and_two_binary_cmuxes_without_allocation() {
     let modulus = BarrettModulus::new(Q);
     let ntt = UintNttTable::new(PolyLength::new(N), modulus).unwrap();
-    let params = NtruParameters::new(N, 16, modulus, SecretKeyDistr::SparseTernary, 0.7);
+    let params = NtruParameters::new(
+        PolyLength::new(N),
+        16,
+        modulus,
+        SecretKeyDistr::SparseTernary,
+        0.7,
+    );
     let gadget = NlevParameters::with_ntru_params(
         &params,
         DecompositionBaseLog::new(8),
@@ -69,7 +75,8 @@ fn encrypted_ternary_step_matches_phase_oracle_and_two_binary_cmuxes_without_all
     );
     let basis = gadget.basis();
     let mut rng = StdRng::seed_from_u64(0xB702);
-    let (coeff, key) = NttNtruSecretKey::generate_pair(params.inner(), &ntt, &mut rng).unwrap();
+    let (coeff, key) =
+        NttNtruSecretKey::generate_pair(params.encryption_parameters(), &ntt, &mut rng).unwrap();
     let message = Polynomial::new((0..N as u64).map(|i| i % 16).collect::<Vec<_>>());
     let input = key
         .encrypt(&message, &params, &ntt, &mut rng)
@@ -197,7 +204,7 @@ fn check_fourier_step<T: TorusFftValue, Table: FftTable>() {
     let table = Table::new(PolyLength::new(N));
     let mut fft = FftEngine::new(&table);
     let params = NtruParameters::new(
-        N,
+        PolyLength::new(N),
         T::try_from(16).unwrap(),
         NativeModulus::new(),
         SecretKeyDistr::SparseTernary,
@@ -211,7 +218,8 @@ fn check_fourier_step<T: TorusFftValue, Table: FftTable>() {
     let basis = gadget.basis();
     let mut rng = StdRng::seed_from_u64(0xB703);
     let (coeff, key) =
-        FourierNtruSecretKey::generate_pair(params.inner(), &mut fft, &mut rng).unwrap();
+        FourierNtruSecretKey::generate_pair(params.encryption_parameters(), &mut fft, &mut rng)
+            .unwrap();
     let message = Polynomial::new(
         (0..N)
             .map(|i| T::try_from(i % 16).unwrap())

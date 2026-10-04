@@ -11,11 +11,13 @@
 
 该 family 的默认依赖只使用系数类型、参数和客户端运算，不引入 NTT/FFT。需要同态求值时选择下述具体后端；其普通依赖会启用对应表示。
 
+`TfheConfig::poly_length` 接收 `primus_poly::PolyLength`。用 `PolyLength::try_new(n)?`（已知常量可用 `new`）构造一次，供参数、尺寸与变换表复用。无效整数由 `PolyLengthError` 报告；参数构造仍负责组合布局、模数及采样器检查。
+
 ## 参数与外部密钥域
 
 `TfheParameters<T, M>` 和客户端使用同一个密文模数类型 `M`；两后端的类型别名固定各自的模数实现。
 
-推荐使用 `TfheParameters::try_from_config(TfheConfig { .. })`：在 `small_lwe` 中传入不含 codec 的 `LweParametersInner`，只指定一次 `q`，具名字段选择 accumulator 的维数、长度、秘密分布和噪声，以及 blind rotation、key switching 的 `DecompositionConfig { log_basis, level_count }` 和 PBS order。`level_count: None` 选择支持的最大层数，仍可能丢弃低位（见[分解精度](../primus_decompose/README.zh_CN.md)）；各 basis 自动绑定同一模数。 普通 BR/KS 密钥沿用 accumulator 噪声。补零的 KS 目标直接由 GLWE 布局、采样状态和 basis 构造，无需消息 codec；CBS trace 和 scheme-switch 密钥沿用这一独立构造方式，分别使用各自配置的噪声。已持有环参数或预计算 basis 时，使用下述直接入口。
+推荐使用 `TfheParameters::try_from_config(TfheConfig { .. })`：在 `small_lwe` 中传入不含 codec 的 `LweEncryptionParameters`，只指定一次 `q`，具名字段选择 accumulator 的维数、长度、秘密分布和噪声，以及 blind rotation、key switching 的 `DecompositionConfig { log_basis, level_count }` 和 PBS order。`level_count: None` 选择支持的最大层数，仍可能丢弃低位（见[分解精度](../primus_decompose/README.zh_CN.md)）；各 basis 自动绑定同一模数。 普通 BR/KS 密钥沿用 accumulator 噪声。补零的 KS 目标直接由 GLWE 布局、采样状态和 basis 构造，无需消息 codec；CBS trace 和 scheme-switch 密钥沿用这一独立构造方式，分别使用各自配置的噪声。已持有环参数或预计算 basis 时，使用下述直接入口。
 
 维数选择使用 `LweDimension`，GLWE 另用 `GlweDimension`；分解选择使用 `DecompositionBaseLog` 和 `Option<DecompositionLevelCount>`。这些单位只构造一次，参数访问器返回的值直接传给工作区。在原始存储或内核边界用 `.get()` 提取整数；组合长度和 basis/模数兼容性仍由构造器检查。
 

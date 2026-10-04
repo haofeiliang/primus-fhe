@@ -153,8 +153,9 @@ fn secret_buffers_are_reused_and_erased() {
         NttNtruSecretKey::try_from_coeff_secret_key(&coefficient_key, modulus, &ntt).unwrap();
     let mut fourier_key =
         FourierNtruSecretKey::try_from_coeff_secret_key(&coefficient_key, &mut fft).unwrap();
-    let ntt_params = NtruParameters::new(N, 4, modulus, distr, 0.7);
-    let fourier_params = NtruParameters::new(N, 4, NativeModulus::new(), distr, 0.7);
+    let ntt_params = NtruParameters::new(PolyLength::new(N), 4, modulus, distr, 0.7);
+    let fourier_params =
+        NtruParameters::new(PolyLength::new(N), 4, NativeModulus::new(), distr, 0.7);
     let ntt_gadget = NlevParameters::with_ntru_params(
         &ntt_params,
         DecompositionBaseLog::new(4),
@@ -264,13 +265,17 @@ fn secret_buffers_are_reused_and_erased() {
             || {
                 if padded {
                     NttNtruSecretKey::generate_padded_pair(
-                        ntt_params.inner(),
+                        ntt_params.encryption_parameters(),
                         N / 2,
                         &ntt,
                         &mut words,
                     )
                 } else {
-                    NttNtruSecretKey::generate_pair(ntt_params.inner(), &ntt, &mut words)
+                    NttNtruSecretKey::generate_pair(
+                        ntt_params.encryption_parameters(),
+                        &ntt,
+                        &mut words,
+                    )
                 }
             },
             |result| {
@@ -292,14 +297,14 @@ fn secret_buffers_are_reused_and_erased() {
             || {
                 if padded {
                     FourierNtruSecretKey::generate_padded_pair(
-                        fourier_params.inner(),
+                        fourier_params.encryption_parameters(),
                         N / 2,
                         &mut fft,
                         &mut words,
                     )
                 } else {
                     FourierNtruSecretKey::generate_pair(
-                        fourier_params.inner(),
+                        fourier_params.encryption_parameters(),
                         &mut fft,
                         &mut words,
                     )
@@ -332,7 +337,7 @@ fn secret_buffers_are_reused_and_erased() {
     // FFT. Both retry paths allocate all four buffers once and erase them when
     // the search exhausts its attempt bound.
     let rejecting_params = NtruParameters::new(
-        N,
+        PolyLength::new(N),
         4,
         NativeModulus::<u32>::new(),
         SecretKeyDistr::binary(1.0),
@@ -344,14 +349,14 @@ fn secret_buffers_are_reused_and_erased() {
             || {
                 if padded {
                     FourierNtruSecretKey::generate_padded_pair(
-                        rejecting_params.inner(),
+                        rejecting_params.encryption_parameters(),
                         N / 2,
                         &mut fft,
                         &mut rng,
                     )
                 } else {
                     FourierNtruSecretKey::generate_pair(
-                        rejecting_params.inner(),
+                        rejecting_params.encryption_parameters(),
                         &mut fft,
                         &mut rng,
                     )

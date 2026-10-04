@@ -2,7 +2,7 @@ use primus_integer::{FheUint, Size};
 use primus_reduce::{Modulus, RingContext};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-use crate::{LweParametersInner, SecretKeyDistr};
+use crate::{LweEncryptionParameters, SecretKeyDistr};
 
 use super::LweSecretKeyRef;
 
@@ -130,7 +130,7 @@ impl<T: FheUint> LweSecretKey<T> {
     /// Generates a new [`LweSecretKey<T>`] with random values.
     /// Partial secret storage is erased if sampling unwinds.
     #[inline]
-    pub fn generate<R, M>(params: &LweParametersInner<T, M>, rng: &mut R) -> Self
+    pub fn generate<R, M>(params: &LweEncryptionParameters<T, M>, rng: &mut R) -> Self
     where
         R: rand::Rng + rand::CryptoRng,
         M: RingContext<T>,

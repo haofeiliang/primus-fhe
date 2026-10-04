@@ -5,7 +5,7 @@ use primus_decompose::primitive::ApproxSignedBasis;
 use primus_integer::{FheUint, SignedInteger};
 use primus_lattice::LweDimension;
 use primus_lattice::lwe::Lwe;
-use primus_lwe::{LweKeySwitchingKey, LweParametersInner, LweSecretKey, LweSecretKeyRef};
+use primus_lwe::{LweEncryptionParameters, LweKeySwitchingKey, LweSecretKey, LweSecretKeyRef};
 use primus_poly::PolyLength;
 use primus_reduce::{Modulus, ModulusSwitch, RingContext};
 
@@ -61,7 +61,7 @@ impl<T: FheUint> NtruLweKeySwitchingKey<T> {
         input_secret_key: &NtruSecretKey<T>,
         input_modulus: S,
         output_secret_key: &LweSecretKey<T>,
-        output_parameters: &LweParametersInner<T, M>,
+        output_parameters: &LweEncryptionParameters<T, M>,
         basis: ApproxSignedBasis<T>,
         rng: &mut R,
     ) -> Self

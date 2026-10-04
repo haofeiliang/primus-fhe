@@ -27,7 +27,7 @@ fn message_polynomial(plain_modulus: ValueT, rng: &mut StdRng) -> Polynomial<Vec
 }
 
 /// Manually decompose a polynomial into CRT form (centered lifting, no delta scaling).
-/// Used to test the low-level `encrypt_crt_to` API directly.
+/// Used to test the low-level `encrypt_plaintext_crt_to` API directly.
 fn decompose_message<M>(
     message: &Polynomial<Vec<ValueT>>,
     params: &CrtGlweParameters<ValueT, M>,
@@ -49,7 +49,7 @@ where
 /// Tests four encryption paths:
 /// 1. `encrypt_to` — unsigned encoding (codec-managed)
 /// 2. `encrypt_centered_to` — centered encoding (codec-managed)
-/// 3. `encrypt_crt_to` with manual `decompose_message` — low-level API
+/// 3. `encrypt_plaintext_crt_to` with manual `decompose_message` — low-level API
 /// 4. `encrypt_zeros_to` — zero plaintext
 fn assert_dcrt_glwe_secret_key_enc_dec(secret_key_distr: SecretKeyDistr, plain_modulus: ValueT) {
     let mod_t = BarrettModulus::new(plain_modulus);
@@ -60,7 +60,7 @@ fn assert_dcrt_glwe_secret_key_enc_dec(secret_key_distr: SecretKeyDistr, plain_m
 
     let params = CrtGlweParameters::new(
         GlweDimension::new(DIMENSION),
-        POLY_LENGTH,
+        PolyLength::new(POLY_LENGTH),
         mod_t,
         mod_gamma,
         &moduli,
@@ -99,7 +99,7 @@ fn assert_dcrt_glwe_secret_key_enc_dec(secret_key_distr: SecretKeyDistr, plain_m
 
     // Reuse the same ciphertext storage through centered, CRT and zero inputs.
     let decomposed_message = decompose_message(&message, &params);
-    secret_key_context.encrypt_crt_to(
+    secret_key_context.encrypt_plaintext_crt_to(
         &decomposed_message.as_view(),
         &mut ciphertext.as_mut_view(),
         &mut crt_rng,
@@ -147,7 +147,7 @@ fn public_encrypt_accepts_unscaled_crt_plaintexts() {
         let table = UintDcrtTable::new(PolyLength::new(POLY_LENGTH), moduli).unwrap();
         let params = CrtGlweParameters::new(
             GlweDimension::new(DIMENSION),
-            POLY_LENGTH,
+            PolyLength::new(POLY_LENGTH),
             BarrettModulus::new(t),
             BarrettModulus::new(GAMMA_MODULUS),
             moduli,
@@ -157,8 +157,13 @@ fn public_encrypt_accepts_unscaled_crt_plaintexts() {
         let secret =
             GlweSecretKey::generate(params.glwe_size(), params.secret_key_sampler(), &mut rng);
         let secret = DcrtGlweSecretKey::from_coeff_secret_key(&secret, &table);
-        let public =
-            DcrtGlwePublicKey::new(&secret, params.inner(), params.base_q(), &table, &mut rng);
+        let public = DcrtGlwePublicKey::new(
+            &secret,
+            params.encryption_parameters(),
+            params.base_q(),
+            &table,
+            &mut rng,
+        );
         let mut workspace = DcrtGlweDecryptWorkspace::new(params.size());
         let message = Polynomial(
             (0..POLY_LENGTH)
@@ -167,7 +172,7 @@ fn public_encrypt_accepts_unscaled_crt_plaintexts() {
         );
         let lifted = decompose_message(&message, &params);
         let public_context = public.try_bind(&params, &table).unwrap();
-        let ciphertext = public_context.encrypt(&lifted.as_view(), &mut rng);
+        let ciphertext = public_context.encrypt_plaintext_crt(&lifted.as_view(), &mut rng);
         let secret_context = secret.try_bind(&params, &table).unwrap();
         assert_eq!(secret_context.decrypt(&ciphertext, &mut workspace), message);
 
@@ -187,7 +192,7 @@ fn public_encrypt_accepts_unscaled_crt_plaintexts() {
                 let mut rng = StdRng::seed_from_u64(17);
                 let mut expected_rng = StdRng::seed_from_u64(17);
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    public_context.encrypt(&invalid, &mut rng)
+                    public_context.encrypt_plaintext_crt(&invalid, &mut rng)
                 }));
                 assert!(result.is_err(), "accepted CRT plaintext length {len}");
                 assert_eq!(
@@ -212,7 +217,7 @@ fn dcrt_polynomial_product_preserves_bfv_scaling() {
 
     let params = CrtGlweParameters::new(
         GlweDimension::new(DIMENSION),
-        POLY_LENGTH,
+        PolyLength::new(POLY_LENGTH),
         mod_t,
         mod_gamma,
         &moduli,

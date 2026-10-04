@@ -2,8 +2,8 @@ use primus_decompose::primitive::ApproxSignedBasis;
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_encoding::RoundedCodec;
 use primus_lwe::LweDimension;
+use primus_lwe::LweEncryptionParameters;
 use primus_lwe::LweParameters;
-use primus_lwe::LweParametersInner;
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
 use primus_poly::PolyLength;
@@ -20,14 +20,14 @@ const DECOMPOSITION: DecompositionConfig = DecompositionConfig {
 #[test]
 fn independent_domains_and_noise_are_preserved() {
     let config = TfheConfig {
-        external_lwe: LweParametersInner::new(
+        external_lwe: LweEncryptionParameters::new(
             LweDimension::new(N * 2),
             BarrettModulus::new(65_537),
             SecretKeyDistr::UniformBinary,
             0.7,
         ),
         accumulator_modulus: BarrettModulus::new(Q),
-        poly_length: N,
+        poly_length: PolyLength::new(N),
         accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
         accumulator_noise_standard_deviation: 1.25,
         blind_rotation: DecompositionConfig {
@@ -45,7 +45,7 @@ fn independent_domains_and_noise_are_preserved() {
     )
     .unwrap();
     assert!(std::ptr::eq(
-        ordinary.inner(),
+        ordinary.encryption_parameters(),
         parameters.accumulator_ntru()
     ));
     assert_eq!(parameters.poly_length(), PolyLength::new(N));
@@ -112,7 +112,13 @@ fn independent_domains_and_noise_are_preserved() {
 #[test]
 fn external_control_domain_is_checked() {
     let modulus = NativeModulus::<u32>::new();
-    let accumulator = NtruParameters::new(N, 4, modulus, SecretKeyDistr::SparseTernary, 0.7);
+    let accumulator = NtruParameters::new(
+        PolyLength::new(N),
+        4,
+        modulus,
+        SecretKeyDistr::SparseTernary,
+        0.7,
+    );
     for distr in [
         SecretKeyDistr::UniformBinary,
         SecretKeyDistr::UniformTernary,
@@ -130,7 +136,7 @@ fn external_control_domain_is_checked() {
             0.7,
         );
         let result = TfheParameters::try_new(
-            external.into_inner(),
+            external.into_encryption_parameters(),
             NlevParameters::try_with_basis(
                 &accumulator,
                 ApproxSignedBasis::new(
@@ -169,10 +175,16 @@ fn rotation_domain_must_be_representable_by_input_coefficients() {
             SecretKeyDistr::UniformBinary,
             0.7,
         );
-        let ring = NtruParameters::new(1 << log_n, 2, modulus, SecretKeyDistr::UniformBinary, 0.7);
+        let ring = NtruParameters::new(
+            PolyLength::new(1 << log_n),
+            2,
+            modulus,
+            SecretKeyDistr::UniformBinary,
+            0.7,
+        );
         assert_eq!(
             TfheParameters::try_new(
-                external.into_inner(),
+                external.into_encryption_parameters(),
                 NlevParameters::try_with_basis(
                     &ring,
                     ApproxSignedBasis::new(
@@ -202,14 +214,14 @@ fn configs_return_accumulator_return_key_and_cbs_errors() {
         level_count: Some(DecompositionLevelCount::new(1)),
     };
     let config = TfheConfig {
-        external_lwe: LweParametersInner::new(
+        external_lwe: LweEncryptionParameters::new(
             LweDimension::new(4),
             primus_modulus::PowOf2Modulus::new(256u32),
             SecretKeyDistr::UniformBinary,
             0.7,
         ),
         accumulator_modulus: BarrettModulus::new(257),
-        poly_length: 32,
+        poly_length: PolyLength::new(32),
         accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
         accumulator_noise_standard_deviation: 0.7,
         blind_rotation: basis,
@@ -217,14 +229,6 @@ fn configs_return_accumulator_return_key_and_cbs_errors() {
         key_switching_noise_standard_deviation: 0.7,
     };
     let tfhe = TfheParameters::try_from_config(config.clone()).unwrap();
-    let mut invalid = config.clone();
-    invalid.poly_length = 3;
-    assert!(matches!(
-        TfheParameters::try_from_config(invalid),
-        Err(TfheParameterError::AccumulatorParameters(
-            NtruParameterError::InvalidPolynomialLength
-        ))
-    ));
     let mut invalid = config.clone();
     invalid.accumulator_noise_standard_deviation = f64::NAN;
     assert!(matches!(
@@ -302,10 +306,16 @@ fn check_circuit_parameters<M: primus_reduce::RingContext<u64>>(
         CircuitBootstrapConfig, CircuitBootstrapParameterError as Error, CircuitBootstrapParameters,
     };
     let make = |plain| {
-        let acc = NtruParameters::new(N, plain, modulus, SecretKeyDistr::SparseTernary, 0.7);
+        let acc = NtruParameters::new(
+            PolyLength::new(N),
+            plain,
+            modulus,
+            SecretKeyDistr::SparseTernary,
+            0.7,
+        );
 
         TfheParameters::try_new(
-            LweParametersInner::new(
+            LweEncryptionParameters::new(
                 LweDimension::new(16),
                 modulus,
                 SecretKeyDistr::UniformBinary,
@@ -352,7 +362,7 @@ fn check_circuit_parameters<M: primus_reduce::RingContext<u64>>(
     assert_eq!(
         configured
             .trace()
-            .inner()
+            .encryption_parameters()
             .noise_distribution()
             .standard_deviation(),
         1.25
@@ -365,7 +375,7 @@ fn check_circuit_parameters<M: primus_reduce::RingContext<u64>>(
     assert_eq!(
         configured
             .scheme_switch()
-            .inner()
+            .encryption_parameters()
             .noise_distribution()
             .standard_deviation(),
         2.5
@@ -406,9 +416,22 @@ fn check_circuit_parameters<M: primus_reduce::RingContext<u64>>(
     assert!(cbs.compile_lookup_table(&crowded).is_err());
     let fitting = RoundedCodec::new(4, modulus);
     assert!(cbs.compile_lookup_table(&fitting).is_ok());
-    let foreign_ring = NtruParameters::new(N * 2, 4, modulus, SecretKeyDistr::SparseTernary, 0.7);
-    let foreign_modulus = foreign_modulus
-        .map(|modulus| NtruParameters::new(N, 4, modulus, SecretKeyDistr::SparseTernary, 0.7));
+    let foreign_ring = NtruParameters::new(
+        PolyLength::new(N * 2),
+        4,
+        modulus,
+        SecretKeyDistr::SparseTernary,
+        0.7,
+    );
+    let foreign_modulus = foreign_modulus.map(|modulus| {
+        NtruParameters::new(
+            PolyLength::new(N),
+            4,
+            modulus,
+            SecretKeyDistr::SparseTernary,
+            0.7,
+        )
+    });
     for foreign in std::iter::once(&foreign_ring).chain(foreign_modulus.as_ref()) {
         assert!(matches!(
             CircuitBootstrapParameters::try_new(

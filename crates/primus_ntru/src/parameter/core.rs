@@ -13,17 +13,17 @@ use primus_reduce::RingContext;
 /// and modulus support are checked here. This does not establish invertibility:
 /// NTT/Fourier key generation retains its rejection and numerical-stability checks.
 /// Ordinary and gadget parameters share this immutable state through `Arc`;
-/// cloning this inner value directly still copies its sampler tables.
+/// cloning this value directly still copies its sampler tables.
 #[derive(Clone)]
-pub struct NtruParametersInner<T: FheUint, M: RingContext<T>> {
+pub struct NtruEncryptionParameters<T: FheUint, M: RingContext<T>> {
     poly_length: PolyLength,
     cipher_modulus: M,
     secret_key_sampler: SecretKeySampler<T>,
     noise_distribution: DiscreteGaussian<T>,
 }
 
-impl<T: FheUint, M: RingContext<T>> NtruParametersInner<T, M> {
-    /// Creates NTRU sampling state without a message codec.
+impl<T: FheUint, M: RingContext<T>> NtruEncryptionParameters<T, M> {
+    /// Creates a [`NtruEncryptionParameters`] without a message codec.
     ///
     /// # Panics
     /// Panics on the secret/noise sampler errors of [`Self::try_new`].

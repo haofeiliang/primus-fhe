@@ -2,11 +2,12 @@ use primus_decompose::DecompositionBaseLog;
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_encoding::RoundedCodec;
 use primus_lwe::LweDimension;
-use primus_lwe::LweParametersInner;
+use primus_lwe::LweEncryptionParameters;
 use primus_lwe::{LweCiphertext, LweParameters, LwePublicKey, LweSecretKey};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::NlevParameters;
 use primus_ntru::{NtruParameters, NtruSecretKey, SecretKeyDistr};
+use primus_poly::PolyLength;
 use primus_reduce::RingContext;
 use primus_test_allocations as allocations;
 use primus_tfhe_ntru::{
@@ -21,14 +22,14 @@ static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocato
 fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
     let input_codec = RoundedCodec::new(plain_modulus, modulus);
     let ring = NtruParameters::new(
-        32,
+        PolyLength::new(32),
         plain_modulus,
         modulus,
         SecretKeyDistr::UniformBinary,
         1.4,
     );
     let params = TfheParameters::try_new(
-        LweParametersInner::new(
+        LweEncryptionParameters::new(
             LweDimension::new(4),
             modulus,
             SecretKeyDistr::UniformBinary,
@@ -159,9 +160,12 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
         SecretKeyDistr::UniformBinary,
         0.7,
     );
-    let foreign_secret = LweSecretKey::generate(foreign_params.inner(), &mut rng);
-    let foreign =
-        LwePublicKey::generate(foreign_secret.as_view(), foreign_params.inner(), &mut rng);
+    let foreign_secret = LweSecretKey::generate(foreign_params.encryption_parameters(), &mut rng);
+    let foreign = LwePublicKey::generate(
+        foreign_secret.as_view(),
+        foreign_params.encryption_parameters(),
+        &mut rng,
+    );
     assert_eq!(
         params.public_encryptor(&foreign, &input_codec).err(),
         Some(ClientError::PublicKeyModulusMismatch)
@@ -173,8 +177,12 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
         SecretKeyDistr::UniformBinary,
         0.7,
     );
-    let full_secret = LweSecretKey::generate(full_params.inner(), &mut rng);
-    let full = LwePublicKey::generate(full_secret.as_view(), full_params.inner(), &mut rng);
+    let full_secret = LweSecretKey::generate(full_params.encryption_parameters(), &mut rng);
+    let full = LwePublicKey::generate(
+        full_secret.as_view(),
+        full_params.encryption_parameters(),
+        &mut rng,
+    );
     assert_eq!(
         params.public_encryptor(&full, &input_codec).err(),
         Some(ClientError::KeyDimensionMismatch {

@@ -10,9 +10,9 @@ use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable};
 use primus_glwe::{
     FourierGgswCiphertext, FourierGlevCiphertext, FourierGlweCiphertext,
     FourierGlweEncryptWorkspace, FourierGlweGadgetEncryptWorkspace, FourierGlweSecretKey,
-    GadgetSize, GlevParameters, GlweCiphertext, GlweKeySwitchingParameters, GlweParameters,
-    GlweParametersInner, GlweSize, GlweSizeError, NttGgswCiphertext, NttGlevCiphertext,
-    NttGlweCiphertext, NttGlweGadgetEncryptWorkspace, NttGlweKeySwitchingKey,
+    GadgetSize, GlevParameters, GlweCiphertext, GlweEncryptionParameters,
+    GlweKeySwitchingParameters, GlweParameters, GlweSize, GlweSizeError, NttGgswCiphertext,
+    NttGlevCiphertext, NttGlweCiphertext, NttGlweGadgetEncryptWorkspace, NttGlweKeySwitchingKey,
     NttGlweKeySwitchingWorkspace, NttGlwePublicEncryptWorkspace, NttGlwePublicKey,
     NttGlweSecretKey, SecretKeyDistr,
 };
@@ -27,7 +27,7 @@ const N: usize = 64;
 fn key_switch_parameters_check_input_layout_at_construction() {
     let glwe = GlweParameters::new(
         GlweDimension::new(1),
-        N,
+        PolyLength::new(N),
         4,
         NativeModulus::<u32>::new(),
         SecretKeyDistr::UniformBinary,
@@ -70,19 +70,18 @@ fn fallible_parameters_check_layout_codec_and_samplers() {
     let make = |k, n, t, distr, noise| {
         GlweParameters::try_new(
             GlweDimension::new(k),
-            n,
+            PolyLength::new(n),
             t,
             NativeModulus::<u32>::new(),
             distr,
             noise,
         )
     };
-    for (k, n) in [(1, 3), (usize::MAX - 1, 32)] {
-        assert!(matches!(
-            make(k, n, 4, SecretKeyDistr::UniformBinary, 0.7),
-            Err(Error::Layout(_))
-        ));
-    }
+    // Ring length is checked by PolyLength; this boundary owns composed overflow.
+    assert!(matches!(
+        make(usize::MAX - 1, 32, 4, SecretKeyDistr::UniformBinary, 0.7),
+        Err(Error::Layout(_))
+    ));
     assert!(matches!(
         make(1, 32, 1, SecretKeyDistr::UniformBinary, 0.7),
         Err(Error::Encoding(_))
@@ -101,7 +100,7 @@ fn fallible_parameters_check_layout_codec_and_samplers() {
     assert!(matches!(
         GlweParameters::try_new(
             GlweDimension::new(1),
-            32,
+            PolyLength::new(32),
             12,
             BarrettModulus::new(17u32),
             SecretKeyDistr::UniformBinary,
@@ -116,11 +115,11 @@ fn fallible_parameters_check_layout_codec_and_samplers() {
 #[test]
 fn independent_parameter_parts_check_secret_weight_and_codec_domain() {
     use primus_decompose::primitive::ApproxSignedBasis;
-    use primus_glwe::{GlevParameterError, GlweParameterError, GlweParametersInner, GlweSize};
+    use primus_glwe::{GlevParameterError, GlweEncryptionParameters, GlweParameterError, GlweSize};
     use std::sync::Arc;
 
     let modulus = BarrettModulus::new(257u32);
-    let inner = Arc::new(GlweParametersInner::new(
+    let inner = Arc::new(GlweEncryptionParameters::new(
         modulus,
         SecretKeyDistr::FixedHammingWeightBinary { hamming_weight: 33 },
         0.7,
@@ -139,8 +138,14 @@ fn independent_parameter_parts_check_secret_weight_and_codec_domain() {
             let gadget = gadget.unwrap();
             let ordinary = ordinary.unwrap();
             // Binding and cloning outer parameters retain the prepared samplers.
-            assert!(std::ptr::eq(gadget.clone().inner(), inner.as_ref()));
-            assert!(std::ptr::eq(ordinary.clone().inner(), inner.as_ref()));
+            assert!(std::ptr::eq(
+                gadget.clone().encryption_parameters(),
+                inner.as_ref()
+            ));
+            assert!(std::ptr::eq(
+                ordinary.clone().encryption_parameters(),
+                inner.as_ref()
+            ));
             assert_eq!(gadget.basis(), &basis);
             assert_eq!(ordinary.plain_modulus_value(), 4);
         }
@@ -159,7 +164,7 @@ fn independent_parameter_parts_check_secret_weight_and_codec_domain() {
 fn secret_generation_rejects_incompatible_tables_before_sampling() {
     let size = GlweSize::new(GlweDimension::new(1), PolyLength::new(N));
     let modulus = BarrettModulus::new(257u32);
-    let params = GlweParametersInner::new(modulus, SecretKeyDistr::UniformBinary, 0.7);
+    let params = GlweEncryptionParameters::new(modulus, SecretKeyDistr::UniformBinary, 0.7);
     for table in [
         UintNttTable::new(PolyLength::new(N), BarrettModulus::new(769u32)).unwrap(),
         UintNttTable::new(PolyLength::new(N * 2), modulus).unwrap(),
@@ -175,7 +180,7 @@ fn secret_generation_rejects_incompatible_tables_before_sampling() {
         assert_eq!(rng.next_u64(), expected_rng.next_u64());
     }
 
-    let params = GlweParametersInner::new(
+    let params = GlweEncryptionParameters::new(
         NativeModulus::<u32>::new(),
         SecretKeyDistr::UniformBinary,
         0.7,
@@ -199,7 +204,7 @@ fn secret_support_is_checked_at_parameter_construction() {
         let result = catch_unwind(|| {
             GlweParameters::new(
                 GlweDimension::new(1),
-                N,
+                PolyLength::new(N),
                 2u32,
                 BarrettModulus::new(13),
                 SecretKeyDistr::gaussian(sigma),
@@ -214,7 +219,7 @@ fn secret_support_is_checked_at_parameter_construction() {
 fn fourier_encryption_rejects_incomplete_and_excess_masks_before_writes() {
     let params = GlweParameters::new(
         GlweDimension::new(1),
-        N,
+        PolyLength::new(N),
         16u32,
         NativeModulus::new(),
         SecretKeyDistr::UniformBinary,
@@ -223,8 +228,12 @@ fn fourier_encryption_rejects_incomplete_and_excess_masks_before_writes() {
     let table = RustFftTable::new(PolyLength::new(N));
     let mut fft = FftEngine::new(&table);
     let mut rng = StdRng::seed_from_u64(42);
-    let (_, key) =
-        FourierGlweSecretKey::generate_pair(params.size(), params.inner(), &mut fft, &mut rng);
+    let (_, key) = FourierGlweSecretKey::generate_pair(
+        params.size(),
+        params.encryption_parameters(),
+        &mut fft,
+        &mut rng,
+    );
     let mut workspace = FourierGlweEncryptWorkspace::new(PolyLength::new(N));
     let message = Polynomial::new(vec![3u32; N]);
     let sentinel = Complex64::new(7.0, 9.0);
@@ -255,7 +264,7 @@ fn ntt_operations_reject_incompatible_domains_and_workspace_before_writes() {
     let modulus = BarrettModulus::new(257u32);
     let params = GlweParameters::new(
         GlweDimension::new(1),
-        N,
+        PolyLength::new(N),
         16,
         modulus,
         SecretKeyDistr::UniformBinary,
@@ -266,11 +275,16 @@ fn ntt_operations_reject_incompatible_domains_and_workspace_before_writes() {
     let wrong_length_table = UintNttTable::new(PolyLength::new(N * 2), modulus).unwrap();
     let gadget = GlevParameters::with_glwe_params(&params, DecompositionBaseLog::new(4), None);
     let mut rng = StdRng::seed_from_u64(42);
-    let (coeff_key, key) =
-        NttGlweSecretKey::generate_pair(params.size(), params.inner(), &table, &mut rng);
+    let (coeff_key, key) = NttGlweSecretKey::generate_pair(
+        params.size(),
+        params.encryption_parameters(),
+        &table,
+        &mut rng,
+    );
     // Equal layouts and matching parameters/table do not establish the secret's domain.
     let foreign_key = NttGlweSecretKey::from_coeff_secret_key(&coeff_key, &wrong_table);
-    let public_key = NttGlwePublicKey::generate(&key, params.inner(), &table, &mut rng);
+    let public_key =
+        NttGlwePublicKey::generate(&key, params.encryption_parameters(), &table, &mut rng);
     let message = Polynomial::new(vec![3u32; N]);
     let mut workspace = NttGlwePublicEncryptWorkspace::new(PolyLength::new(N));
 
@@ -468,7 +482,7 @@ fn only_ggsw_requires_matching_workspace_levels_in_both_domains() {
     let modulus = BarrettModulus::new(132_120_577u32);
     let ntt_params = GlweParameters::new(
         GlweDimension::new(1),
-        N,
+        PolyLength::new(N),
         16,
         modulus,
         SecretKeyDistr::UniformBinary,
@@ -476,7 +490,7 @@ fn only_ggsw_requires_matching_workspace_levels_in_both_domains() {
     );
     let fourier_params = GlweParameters::new(
         GlweDimension::new(1),
-        N,
+        PolyLength::new(N),
         16u32,
         NativeModulus::new(),
         SecretKeyDistr::UniformBinary,
@@ -495,11 +509,15 @@ fn only_ggsw_requires_matching_workspace_levels_in_both_domains() {
     let ntt = UintNttTable::new(PolyLength::new(N), modulus).unwrap();
     let table = RustFftTable::new(PolyLength::new(N));
     let mut fft = FftEngine::new(&table);
-    let (_, ntt_key) =
-        NttGlweSecretKey::generate_pair(ntt_params.size(), ntt_params.inner(), &ntt, &mut rng);
+    let (_, ntt_key) = NttGlweSecretKey::generate_pair(
+        ntt_params.size(),
+        ntt_params.encryption_parameters(),
+        &ntt,
+        &mut rng,
+    );
     let (_, fourier_key) = FourierGlweSecretKey::generate_pair(
         fourier_params.size(),
-        fourier_params.inner(),
+        fourier_params.encryption_parameters(),
         &mut fft,
         &mut rng,
     );
@@ -573,7 +591,7 @@ fn glev_construction_reuses_basis_and_rejects_incompatible_domains_or_layouts() 
 
     let native = GlweParameters::new(
         GlweDimension::new(2),
-        N,
+        PolyLength::new(N),
         16u32,
         NativeModulus::new(),
         SecretKeyDistr::UniformBinary,
@@ -581,7 +599,7 @@ fn glev_construction_reuses_basis_and_rejects_incompatible_domains_or_layouts() 
     );
     let explicit = GlweParameters::new(
         GlweDimension::new(2),
-        N,
+        PolyLength::new(N),
         16u32,
         BarrettModulus::new(257),
         SecretKeyDistr::UniformBinary,
@@ -600,7 +618,10 @@ fn glev_construction_reuses_basis_and_rejects_incompatible_domains_or_layouts() 
         assert_eq!(params.basis(), &basis);
         assert_eq!(params.glwe_size(), native.size());
         // Derivation and both outer parameter clones retain the prepared samplers.
-        assert!(std::ptr::eq(params.clone().inner(), native.inner()));
+        assert!(std::ptr::eq(
+            params.clone().encryption_parameters(),
+            native.encryption_parameters()
+        ));
         let basis = ApproxSignedBasis::new(
             Some(257),
             DecompositionBaseLog::new(3),
@@ -609,7 +630,10 @@ fn glev_construction_reuses_basis_and_rejects_incompatible_domains_or_layouts() 
         let params = GlevParameters::try_with_basis(&explicit, basis.clone()).unwrap();
         assert_eq!(params.basis(), &basis);
         assert_eq!(params.glwe_size(), explicit.size());
-        assert!(std::ptr::eq(params.inner(), explicit.inner()));
+        assert!(std::ptr::eq(
+            params.encryption_parameters(),
+            explicit.encryption_parameters()
+        ));
     }
     for modulus in [Some(257), Some(769)] {
         assert!(matches!(
@@ -632,7 +656,7 @@ fn glev_construction_reuses_basis_and_rejects_incompatible_domains_or_layouts() 
     // GLWE lengths fit but the quadratic GGSW layout overflows, without allocating it.
     let huge = GlweParameters::new(
         GlweDimension::new(1usize << (usize::BITS / 2)),
-        N,
+        PolyLength::new(N),
         16u32,
         NativeModulus::new(),
         SecretKeyDistr::UniformBinary,

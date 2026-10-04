@@ -90,7 +90,7 @@ where
             .check_accumulator_secret_key(secret)?;
         let transformed = NttNtruSecretKey::try_from_coeff_secret_key(
             secret,
-            parameters.trace().inner().cipher_modulus(),
+            parameters.trace().encryption_parameters().cipher_modulus(),
             self.context.table(),
         )?;
         Ok(self.generate_circuit_bootstrap_key_with_main(secret, &transformed, parameters, rng))

@@ -414,7 +414,7 @@ mod tests {
         let qp_table = UintDcrtTable::new(poly_length, &qp_moduli).unwrap();
         let parameters = CrtGlweParameters::new(
             GlweDimension::new(dimension),
-            poly_length.get(),
+            poly_length,
             plaintext_modulus,
             gamma,
             &q_moduli,
@@ -437,7 +437,7 @@ mod tests {
         let input_dcrt_key = DcrtGlweSecretKey::from_coeff_secret_key(&input_key, &q_table);
         let switching_key = HybridRnsGlweKeySwitchingKey::generate(
             &input_key,
-            parameters.inner(),
+            parameters.encryption_parameters(),
             &output_key,
             &domain,
             &mut rng,

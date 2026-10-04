@@ -7,7 +7,7 @@
 
 Primus FHE 的单模数 LWE 密钥生成、私钥加密、公钥加密和密钥切换实现。 密文存储与算术来自 [`primus_lattice`](../primus_lattice/README.zh_CN.md)， 消息编码使用 [`RoundedCodec`](../primus_encoding/README.zh_CN.md)。
 
-`LweParametersInner` 保存已验证的密文域和预计算采样器，不含消息 codec；`LweParameters` 再绑定 `RoundedCodec` 供普通加解密使用。生成密钥传入 `params.inner()`，`params.into_inner()` 可直接移出采样状态而不克隆。TFHE 可直接构造 inner，稍后再选择消息编码。
+`LweEncryptionParameters` 保存已验证的密文域和预计算采样器，不含消息 codec；`LweParameters` 再绑定 `RoundedCodec` 供普通加解密使用。生成密钥传入 `params.encryption_parameters()`，`params.into_encryption_parameters()` 可直接移出采样状态而不克隆。TFHE 可直接构造 `LweEncryptionParameters`，稍后再选择消息编码。
 
 ## API
 
@@ -44,7 +44,7 @@ fn main() {
         0.7,
     );
     let mut rng = rand::rng();
-    let secret = LweSecretKey::generate(params.inner(), &mut rng);
+    let secret = LweSecretKey::generate(params.encryption_parameters(), &mut rng);
 
     let ciphertext = secret.encrypt(3u32, &params, &mut rng);
     assert_eq!(secret.decrypt(&ciphertext, &params), 3);
@@ -56,7 +56,7 @@ fn main() {
         2
     );
 
-    let public = LwePublicKey::generate(secret.as_view(), params.inner(), &mut rng);
+    let public = LwePublicKey::generate(secret.as_view(), params.encryption_parameters(), &mut rng);
     let messages = [0u32, 1, 2, 3];
     let batch = public.encrypt_batch(&messages, &params, &mut rng);
     assert_eq!(secret.decrypt_batch(&batch, &params), messages);
@@ -71,12 +71,12 @@ fn main() {
         SecretKeyDistr::UniformBinary,
         0.7,
     );
-    let output_secret = LweSecretKey::generate(output_params.inner(), &mut rng);
+    let output_secret = LweSecretKey::generate(output_params.encryption_parameters(), &mut rng);
     let basis = ApproxSignedBasis::new(params.cipher_modulus_value(), DecompositionBaseLog::new(4), None);
     let switching = LweKeySwitchingKey::generate(
         secret.as_view(),
         &output_secret,
-        output_params.inner(),
+        output_params.encryption_parameters(),
         basis,
         &mut rng,
     );
@@ -135,7 +135,7 @@ Packed 加密使用不同布局：`encrypt_multi_messages` 存储一个长度为
 
 ## 密钥切换
 
-`LweKeySwitchingKey::generate` 接受 `Encoded` 或 `Signed` 输入私钥视图、 Encoded 输出私钥 `&LweSecretKey<T>`、不含 codec 的 `&LweParametersInner<T, M>` 输出参数以及转移所有权的 `ApproxSignedBasis<T>`。 生成的切换密钥保留维度与分解基，不保存完整 `LweParameters`。 存储顺序为输入私钥系数、分解层、输出密文的 `[a, b]` 系数， 总计 `input_dimension * levels * (output_dimension + 1)` 个元素。
+`LweKeySwitchingKey::generate` 接受 `Encoded` 或 `Signed` 输入私钥视图、 Encoded 输出私钥 `&LweSecretKey<T>`、不含 codec 的 `&LweEncryptionParameters<T, M>` 输出参数以及转移所有权的 `ApproxSignedBasis<T>`。 生成的切换密钥保留维度与分解基，不保存完整 `LweParameters`。 存储顺序为输入私钥系数、分解层、输出密文的 `[a, b]` 系数， 总计 `input_dimension * levels * (output_dimension + 1)` 个元素。
 
 `key_switch` / `key_switch_to` 处理单条密文；`key_switch_batch` / `key_switch_batch_to` 使用独立 batch 切片。输入、输出分别使用各自维度，密文模数必须相同。 密钥切换不重新编码消息，也不切换模数。解密参数需要保持编码一致，噪声预算需覆盖 分解误差和密钥条目噪声。Batch 输出与逐条切换逐系数相同，`_to` 路径复用密钥条目， 不需要堆上临时工作区。
 

@@ -9,9 +9,11 @@
 
 `GlweParameters::try_from_glev(&gadget, codec)` 为已有 gadget 域绑定普通 `ScaledCodec`，共享预计算采样状态并检查 codec 模数，不保留或复制 gadget basis。
 
+`GlweParameters::new` / `try_new` 接收 `primus_poly::PolyLength`。用 `PolyLength::try_new(n)?`（已知常量可用 `new`）构造一次，供参数、尺寸与变换表复用。无效整数由 `PolyLengthError` 报告；参数构造仍负责组合布局、模数及采样器检查。
+
 ## 密钥与表示
 
-`GlweParameters::try_new` 对布局、固定尺度编码和采样错误返回 `GlweParameterError`，包括固定重量超过完整 kN 密钥长度。`GlweParametersInner::try_new` 不持有布局，只检查模数/采样。对应 `new` 构造器在非法参数下 panic；变换可用性及噪声/安全预算仍需另外验证。 `GlweParameterError::SecretKey` 以 `SecretKeySamplerError` 保留采样配置、重量或模数适配的具体原因；`Noise` 保留 `GaussianError`。
+`GlweParameters::try_new` 对布局、固定尺度编码和采样错误返回 `GlweParameterError`，包括固定重量超过完整 kN 密钥长度。`GlweEncryptionParameters::try_new` 不持有布局，只检查模数/采样。对应 `new` 构造器在非法参数下 panic；变换可用性及噪声/安全预算仍需另外验证。 `GlweParameterError::SecretKey` 以 `SecretKeySamplerError` 保留采样配置、重量或模数适配的具体原因；`Noise` 保留 `GaussianError`。
 
 | 类型 | 存储与职责 |
 | --- | --- |
@@ -20,15 +22,15 @@
 | `FourierGlweSecretKey` | 按整数尺度变换的 Fourier 私钥多项式；原生环面 Fourier 加解密 |
 | `NttGlwePublicKey<S>` | 一个 NTT 零加密密文；公钥加密 |
 
-根据所用的 NTT 或 Fourier 后端，通过 `generate_pair` 生成私钥。它接收已检查的 `GlweSize` 和借用的 `GlweParametersInner`，只采样一次，返回有符号系数私钥及其对应的变换形式，无需明文 codec：
+根据所用的 NTT 或 Fourier 后端，通过 `generate_pair` 生成私钥。它接收已检查的 `GlweSize` 和借用的 `GlweEncryptionParameters`，只采样一次，返回有符号系数私钥及其对应的变换形式，无需明文 codec：
 
 ```rust,ignore
-let (coeff_sk, ntt_sk) = NttGlweSecretKey::generate_pair(size, &ntt_inner, &ntt_table, &mut rng);
+let (coeff_sk, ntt_sk) = NttGlweSecretKey::generate_pair(size, &ntt_encryption, &ntt_table, &mut rng);
 let (coeff_sk, fourier_sk) =
-    FourierGlweSecretKey::generate_pair(size, &fourier_inner, &mut fft, &mut rng);
+    FourierGlweSecretKey::generate_pair(size, &fourier_encryption, &mut fft, &mut rng);
 ```
 
-普通参数提供 `size()` 和 `inner()`；gadget 参数提供 `glwe_size()` 和 `inner()`。固定秘密重量在采样前对传入的完整布局进行检查。
+普通参数提供 `size()` 和 `encryption_parameters()`；gadget 参数提供 `glwe_size()` 和 `encryption_parameters()`。固定秘密重量在采样前对传入的完整布局进行检查。
 
 只需要有符号系数私钥时使用 `GlweSecretKey::generate`。转换已有系数私钥时使用 `from_coeff_secret_key`。固定重量分布作用于全部 `k*N` 个系数，而非逐多项式分别采样。私钥缓冲区在析构时擦除，也覆盖生成或系数/NTT/Fourier 导入检查失败时的栈展开路径。
 
@@ -47,7 +49,7 @@ NTT 私钥、Fourier 私钥和 NTT 公钥共享以下普通加密接口：
 | `encrypt_encoded_to` | 已编码的密文环系数 | 覆盖；不做明文缩放 |
 | `encrypt_zeros` / `encrypt_zeros_to` | 零多项式 | 分配 / 覆盖 |
 
-`encrypt_encoded_to`、`encrypt_zeros` / `encrypt_zeros_to` 和 `NttGlwePublicKey::generate` 直接接收 `&GlweParametersInner`。普通消息方法接收同时提供 codec 的 `&GlweParameters`。私钥使用自身布局；raw 公钥由 NTT 表确定 N、完整 mask/body 存储确定 k，输出须与公钥长度一致。长度一致不能证明变换来源兼容。
+`encrypt_encoded_to`、`encrypt_zeros` / `encrypt_zeros_to` 和 `NttGlwePublicKey::generate` 直接接收 `&GlweEncryptionParameters`。普通消息方法接收同时提供 codec 的 `&GlweParameters`。私钥使用自身布局；raw 公钥由 NTT 表确定 N、完整 mask/body 存储确定 k，输出须与公钥长度一致。长度一致不能证明变换来源兼容。
 
 私钥提供 `decrypt`、`decrypt_to` 和 `phase_to`。Phase 提取返回带噪声的系数域值，不做解码；两种明文嵌入使用同一解码器。解密多项式使用密文系数类型 `T`，输出类型转换由应用处理。
 
@@ -69,22 +71,22 @@ NTT 域私钥运算无需 workspace。Fourier 运算使用 `FourierGlweEncryptWo
 
 `encrypt_glev_to` 和 `encrypt_ggsw_to` 对系数域环多项式应用 gadget 基，不做明文缩放。因此 GGSW 控制位使用常数多项式 `0` 或 `1`。两者使用由 `GadgetSize` 构造的 gadget workspace：GLev 要求多项式长度匹配；GGSW 还要求 level 数量匹配。
 
-仅需 gadget 参数时，使用 `GlevParameters::try_from_parts(size, inner, basis)`：`size` 是经过验证的 `GlweSize`，`inner` 是 `Arc<GlweParametersInner<T, M>>`，`basis` 是预计算的 `ApproxSignedBasis<T>`。无需明文模数或 codec。构造器检查 basis 模数、固定秘密重量是否适合完整 `kN` 长度，以及 gadget 布局，返回 `GlevParameterError`；接收所有权时不复制采样表或重建 basis。
+仅需 gadget 参数时，使用 `GlevParameters::try_from_parts(size, encryption, basis)`：`size` 是经过验证的 `GlweSize`，`encryption` 是 `Arc<GlweEncryptionParameters<T, M>>`，`basis` 是预计算的 `ApproxSignedBasis<T>`。无需明文模数或 codec。构造器检查 basis 模数、固定秘密重量是否适合完整 `kN` 长度，以及 gadget 布局，返回 `GlevParameterError`；接收所有权时不复制采样表或重建 basis。
 
 ```rust,ignore
 // 准备环采样状态和 gadget basis，无需普通消息编码。
-let inner = std::sync::Arc::new(GlweParametersInner::try_new(modulus, secret_distr, sigma)?);
-let basis = ApproxSignedBasis::try_new(inner.cipher_modulus_value(), log_basis, levels)?;
-let gadget = GlevParameters::try_from_parts(size, inner.clone(), basis)?;
+let encryption = std::sync::Arc::new(GlweEncryptionParameters::try_new(modulus, secret_distr, sigma)?);
+let basis = ApproxSignedBasis::try_new(encryption.cipher_modulus_value(), log_basis, levels)?;
+let gadget = GlevParameters::try_from_parts(size, encryption.clone(), basis)?;
 
 // 同时需要普通消息加密时，再绑定 codec。
 let codec = primus_encoding::ScaledCodec::try_new(plain_modulus, modulus)?;
-let ordinary = GlweParameters::try_from_parts(size, inner, codec)?;
+let ordinary = GlweParameters::try_from_parts(size, encryption, codec)?;
 ```
 
 普通参数组合入口检查 codec 与密文模数的一致性及固定秘密重量；布局、采样和固定尺度恢复条件由传入部件的构造器验证。`GlweParameters::try_new` 保留为直接构造普通加密参数的便捷入口。Mask/noise 采样器用于普通密文和求值密钥行的加密，secret sampler 用于秘密生成；不同噪声角色使用各自的预计算状态。
 
-已有普通参数时，`GlevParameters::try_with_basis(&glwe_params, basis)` 共享其预计算状态，`try_with_glwe_params` 还会根据基的对数和 level 数构造 basis。两者沿用相同的 gadget 绑定检查，均不读取普通 codec。参数 clone 共享不可变的模数/采样预计算。`inner()` 返回借用的 `GlweParametersInner`；布局、明文编码和 gadget basis 继续分别拥有。
+已有普通参数时，`GlevParameters::try_with_basis(&glwe_params, basis)` 共享其预计算状态，`try_with_glwe_params` 还会根据基的对数和 level 数构造 basis。两者沿用相同的 gadget 绑定检查，均不读取普通 codec。参数 clone 共享不可变的模数/采样预计算。`encryption_parameters()` 返回借用的 `GlweEncryptionParameters`；布局、明文编码和 gadget basis 继续分别拥有。
 
 `encrypt_ggsw_constant_batch_to` 将环常数切片加密为连续的 GGSW，仅做一次批量检查，不分配临时缓冲区。NTT 接收规范剩余类，直接填充各层常数，输出长度为 `input.len() * params.ggsw_len()`；Fourier 接收原生环值，输出包含 `input.len() * params.fourier_ggsw_len()` 个复数。Fourier 保留逐 level 原生环缩放后再 FFT 的数值路径；批内相邻相同常数复用这些变换，因此准备耗时依赖输入序列。空批次仍检查共享资源，但不消耗随机数。
 
@@ -92,7 +94,7 @@ let ordinary = GlweParameters::try_from_parts(size, inner, codec)?;
 
 `FourierGlweSecretKey::encrypt_ggsw_constant_batch_coeff_to` 通过相同加密后逆 FFT，输出系数域 GGSW。它额外接收长度为 `params.fourier_ggsw_len()` 的 scratch 切片，只复用一份变换域 GGSW，保持原 Fourier 路径的舍入与 RNG 消费。
 
-NTT 的 `encrypt_truncated_zeros` 同样接收 `&GlweParametersInner`。它和 `phase_truncated`、`decrypt_truncated` 操作系数域密文，其 mask 完整，body 最多包含 `N` 个系数。Phase 提取和解密只返回保留的系数，内部工作区仍保存完整多项式。
+NTT 的 `encrypt_truncated_zeros` 同样接收 `&GlweEncryptionParameters`。它和 `phase_truncated`、`decrypt_truncated` 操作系数域密文，其 mask 完整，body 最多包含 `N` 个系数。Phase 提取和解密只返回保留的系数，内部工作区仍保存完整多项式。
 
 ## 求值原语
 

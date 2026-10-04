@@ -10,7 +10,7 @@ use rand::{SeedableRng, rngs::StdRng};
 #[test]
 fn key_generation_preserves_samples_and_rng_consumption() {
     use primus_integer::FheUint;
-    use primus_lwe::LweParametersInner;
+    use primus_lwe::LweEncryptionParameters;
     use primus_modulus::NativeModulus;
     use primus_reduce::RingContext;
     use rand::Rng;
@@ -23,7 +23,8 @@ fn key_generation_preserves_samples_and_rng_consumption() {
             SecretKeyDistr::gaussian(3.2),
             SecretKeyDistr::gaussian(30.0),
         ] {
-            let params = LweParametersInner::new(LweDimension::new(67), modulus, distribution, 0.7);
+            let params =
+                LweEncryptionParameters::new(LweDimension::new(67), modulus, distribution, 0.7);
             let mut rng = StdRng::seed_from_u64(201);
             let mut oracle_rng = StdRng::seed_from_u64(201);
             let signed = params
@@ -53,7 +54,7 @@ fn message_encryption_reuses_storage_for_both_embeddings() {
         0.7,
     );
     let mut rng = StdRng::seed_from_u64(0x1_ee06);
-    let key = LweSecretKey::generate(params.inner(), &mut rng);
+    let key = LweSecretKey::generate(params.encryption_parameters(), &mut rng);
     let mut storage = [u32::MAX; 8];
     for message in 0..4u32 {
         for centered in [false, true] {
@@ -133,7 +134,7 @@ fn owning_domain_is_preserved_and_rejected_before_sampling_or_writing() {
             0.7,
         );
         let mut rng = StdRng::seed_from_u64(0x4c57_4544);
-        let generated = LweSecretKey::generate(params.inner(), &mut rng);
+        let generated = LweSecretKey::generate(params.encryption_parameters(), &mut rng);
         assert_eq!(generated.cipher_modulus_minus_one(), modulus.minus_one());
 
         // Both imports contain the same valid binary secret, so residue scans

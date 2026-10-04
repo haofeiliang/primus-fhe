@@ -9,7 +9,7 @@ use primus_rns::{RNSBase, Residues};
 
 use crate::parameter::{validate_dcrt_table, validate_glwe_size, validate_moduli};
 use crate::{
-    CrtGgswParameters, CrtGlevParameters, CrtGlweParameters, CrtGlweParametersInner,
+    CrtGgswParameters, CrtGlevParameters, CrtGlweEncryptionParameters, CrtGlweParameters,
     DcrtGadgetDomain, DcrtGlweSecretKey, RnsDomainError,
 };
 
@@ -55,7 +55,7 @@ impl<T: FheUint> DcrtGlwePublicKey<T> {
     /// The secret key and table must use the same NTT representation.
     pub fn new<Table, R, M>(
         secret_key: &DcrtGlweSecretKey<T>,
-        params: &CrtGlweParametersInner<T>,
+        params: &CrtGlweEncryptionParameters<T>,
         base_q: &RNSBase<T, M>,
         table: &DcrtTable<Table>,
         rng: &mut R,
@@ -361,7 +361,7 @@ where
 {
     /// Encrypts one CRT plaintext polynomial into a newly allocated ciphertext.
     ///
-    /// Like [`crate::DcrtGlweSecretKeyContext::encrypt_crt_to`], this accepts unscaled
+    /// Like [`crate::DcrtGlweSecretKeyContext::encrypt_plaintext_crt_to`], this accepts unscaled
     /// plaintext lifts reduced into each `[0, q_i)` in coefficient-domain CRT
     /// layout and applies `floor(Q/t)` scaling. Passing the already-scaled output
     /// of [`crate::BfvRnsCodec::encode_coeffs_to`] would apply the scale twice.
@@ -371,7 +371,11 @@ where
     /// Panics if the CRT plaintext length differs from the bound parameters'
     /// [`CrtGlweParameters::rns_poly_len`]. This is checked before consuming randomness.
     #[must_use]
-    pub fn encrypt<R, A>(&self, message: &CrtPolynomial<A>, rng: &mut R) -> DcrtGlwe<Vec<T>>
+    pub fn encrypt_plaintext_crt<R, A>(
+        &self,
+        message: &CrtPolynomial<A>,
+        rng: &mut R,
+    ) -> DcrtGlwe<Vec<T>>
     where
         R: rand::Rng + rand::CryptoRng,
         A: Data<Elem = T>,

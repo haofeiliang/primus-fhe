@@ -43,7 +43,7 @@ fn ntt_and_coefficient_inputs_reuse_the_automorphism_key() {
     let ntt = U64NttTable::new(PolyLength::new(POLY_LENGTH), modulus).unwrap();
     let glwe_parameters = GlweParameters::new(
         GlweDimension::new(DIMENSION),
-        POLY_LENGTH,
+        PolyLength::new(POLY_LENGTH),
         PLAINTEXT_MODULUS,
         modulus,
         SecretKeyDistr::UniformBinary,
@@ -57,7 +57,7 @@ fn ntt_and_coefficient_inputs_reuse_the_automorphism_key() {
     let mut rng = StdRng::seed_from_u64(0x0043_4253_5052_494d);
     let (coefficient_secret, secret) = NttGlweSecretKey::generate_pair(
         glwe_parameters.size(),
-        glwe_parameters.inner(),
+        glwe_parameters.encryption_parameters(),
         &ntt,
         &mut rng,
     );
@@ -143,7 +143,7 @@ fn fourier_automorphism_input<Table: FftTable>() {
     let size = GlweSize::new(GlweDimension::new(K), PolyLength::new(N));
     let params = GlweParameters::new(
         GlweDimension::new(K),
-        N,
+        PolyLength::new(N),
         64,
         NativeModulus::new(),
         SecretKeyDistr::UniformTernary,

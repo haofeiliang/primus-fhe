@@ -39,7 +39,7 @@ where
     ] {
         let params = GlweParameters::new(
             GlweDimension::new(DIMENSION),
-            POLY_LENGTH,
+            PolyLength::new(POLY_LENGTH),
             T::try_from(PLAIN_MODULUS).unwrap(),
             modulus,
             secret_key_distr,
@@ -55,8 +55,12 @@ where
             params.secret_key_sampler(),
             &mut expected_rng,
         );
-        let (coefficients, secret_key) =
-            NttGlweSecretKey::generate_pair(params.size(), params.inner(), &ntt, &mut rng);
+        let (coefficients, secret_key) = NttGlweSecretKey::generate_pair(
+            params.size(),
+            params.encryption_parameters(),
+            &ntt,
+            &mut rng,
+        );
         assert_eq!(coefficients.as_slice(), expected_coefficients.as_slice());
         assert_eq!(rng.next_u64(), expected_rng.next_u64());
         assert_eq!(secret_key.cipher_modulus(), cipher_modulus);
@@ -96,7 +100,7 @@ where
             messages
         );
 
-        secret_key.encrypt_zeros_to(&mut cipher, params.inner(), &ntt, &mut rng);
+        secret_key.encrypt_zeros_to(&mut cipher, params.encryption_parameters(), &ntt, &mut rng);
         assert_eq!(
             secret_key.decrypt(&cipher, &params, &ntt).as_ref(),
             vec![T::ZERO; POLY_LENGTH]
@@ -117,7 +121,7 @@ where
         secret_key.encrypt_encoded_to(
             &Polynomial::new(encoded),
             &mut cipher,
-            params.inner(),
+            params.encryption_parameters(),
             &ntt,
             &mut rng,
         );
@@ -145,7 +149,7 @@ fn noise_diagnostics_report_signed_phase_distance() {
     let modulus = BarrettModulus::new(1_125_899_906_826_241u64);
     let params = GlweParameters::new(
         GlweDimension::new(DIMENSION),
-        POLY_LENGTH,
+        PolyLength::new(POLY_LENGTH),
         PLAIN_MODULUS as u64,
         modulus,
         SecretKeyDistr::UniformBinary,
@@ -186,7 +190,7 @@ fn truncated_decryption_returns_only_retained_coefficients() {
     let modulus = BarrettModulus::new(1_125_899_906_826_241u64);
     let params = GlweParameters::new(
         GlweDimension::new(DIMENSION),
-        POLY_LENGTH,
+        PolyLength::new(POLY_LENGTH),
         PLAIN_MODULUS as u64,
         modulus,
         SecretKeyDistr::UniformBinary,
@@ -194,11 +198,19 @@ fn truncated_decryption_returns_only_retained_coefficients() {
     );
     let table = UintNttTable::new(PolyLength::new(POLY_LENGTH), modulus).unwrap();
     let mut rng = StdRng::seed_from_u64(42);
-    let (_, secret_key) =
-        NttGlweSecretKey::generate_pair(params.size(), params.inner(), &table, &mut rng);
+    let (_, secret_key) = NttGlweSecretKey::generate_pair(
+        params.size(),
+        params.encryption_parameters(),
+        &table,
+        &mut rng,
+    );
     for count in [0, 3, POLY_LENGTH] {
-        let mut ciphertext =
-            secret_key.encrypt_truncated_zeros(count, params.inner(), &table, &mut rng);
+        let mut ciphertext = secret_key.encrypt_truncated_zeros(
+            count,
+            params.encryption_parameters(),
+            &table,
+            &mut rng,
+        );
         let message: Vec<_> = (0..count)
             .map(|i| ((3 * i + 1) % PLAIN_MODULUS) as u64)
             .collect();

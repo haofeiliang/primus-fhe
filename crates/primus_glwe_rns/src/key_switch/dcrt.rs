@@ -16,7 +16,7 @@ use zeroize::Zeroizing;
 
 use crate::secret_key::encode_secret_polynomial_to_rns;
 use crate::{
-    CrtGlweCiphertext, CrtGlweParametersInner, DcrtGadgetDomain, DcrtGlweCiphertext,
+    CrtGlweCiphertext, CrtGlweEncryptionParameters, DcrtGadgetDomain, DcrtGlweCiphertext,
     DcrtGlweSecretKey, GlweSecretKey, RnsDomainError,
 };
 
@@ -44,7 +44,7 @@ impl<T: FheUint> DcrtGlweKeySwitchingKey<T> {
     /// the intended secrets and the table's NTT representation.
     pub fn generate<R, M, Table>(
         input_sk: &GlweSecretKey<T>,
-        input_params: &CrtGlweParametersInner<T>,
+        input_params: &CrtGlweEncryptionParameters<T>,
         output_sk: &DcrtGlweSecretKey<T>,
         domain: &DcrtGadgetDomain<'_, T, M, Table>,
         rng: &mut R,

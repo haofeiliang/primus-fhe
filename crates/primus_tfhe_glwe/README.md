@@ -11,11 +11,13 @@ The shared layer and both backends use the same role names: `Encryptor`, `Decryp
 
 This family uses only coefficient types, parameters and client operations by default, without pulling in NTT/FFT. Select a concrete backend below for homomorphic evaluation; its normal dependencies enable the required representation.
 
+`TfheConfig::poly_length` takes `primus_poly::PolyLength`. Construct it once with `PolyLength::try_new(n)?` (or `new` for known constants) and reuse it for parameters, sizes and transform tables. Invalid integers are reported by `PolyLengthError`; parameter construction retains its combined-layout, modulus and sampler checks.
+
 ## Parameters and external key domain
 
 `TfheParameters<T, M>` and clients share one ciphertext modulus type `M`; backend aliases fix their modulus implementation.
 
-Prefer `TfheParameters::try_from_config(TfheConfig { .. })`: supply a codec-free `LweParametersInner` in `small_lwe`, specifying `q` once, then name the accumulator dimension, length, secret distribution and noise, the blind-rotation/key-switch `DecompositionConfig { log_basis, level_count }`, and PBS order. `level_count: None` selects the maximum supported level count, which may still omit low bits (see [decomposition precision](../primus_decompose/README.md)); bases inherit the shared modulus. Ordinary BR and KS keys inherit accumulator noise. The padded KS target is constructed directly from its GLWE layout, sampling state and basis, without a message codec. CBS trace and scheme-switch keys use the same codec-free construction with their separately configured noise. Use the direct constructor below when supplying existing ring parameters or prepared bases.
+Prefer `TfheParameters::try_from_config(TfheConfig { .. })`: supply a codec-free `LweEncryptionParameters` in `small_lwe`, specifying `q` once, then name the accumulator dimension, length, secret distribution and noise, the blind-rotation/key-switch `DecompositionConfig { log_basis, level_count }`, and PBS order. `level_count: None` selects the maximum supported level count, which may still omit low bits (see [decomposition precision](../primus_decompose/README.md)); bases inherit the shared modulus. Ordinary BR and KS keys inherit accumulator noise. The padded KS target is constructed directly from its GLWE layout, sampling state and basis, without a message codec. CBS trace and scheme-switch keys use the same codec-free construction with their separately configured noise. Use the direct constructor below when supplying existing ring parameters or prepared bases.
 
 Dimension choices use `LweDimension` and, for GLWE, `GlweDimension`; decomposition choices use `DecompositionBaseLog` and `Option<DecompositionLevelCount>`. Construct these checked units once and pass parameter accessors directly to workspaces. `.get()` exposes the integer at raw storage or kernel boundaries; composed lengths and basis/modulus compatibility remain constructor checks.
 

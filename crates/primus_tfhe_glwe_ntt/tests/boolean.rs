@@ -30,7 +30,7 @@ fn parameters(pbs_order: PbsOrder) -> TfheParameters<u32> {
     );
     let glwe = GlweParameters::new(
         GlweDimension::new(1),
-        POLY_LENGTH,
+        PolyLength::new(POLY_LENGTH),
         4,
         modulus,
         SecretKeyDistr::UniformBinary,
@@ -42,7 +42,7 @@ fn parameters(pbs_order: PbsOrder) -> TfheParameters<u32> {
         Some(DecompositionLevelCount::new(3)),
     );
     TfheParameters::try_new(
-        lwe.into_inner(),
+        lwe.into_encryption_parameters(),
         primus_glwe::GgswParameters::try_with_basis(&glwe, bootstrapping).unwrap(),
         ApproxSignedBasis::new(
             Some(MODULUS),

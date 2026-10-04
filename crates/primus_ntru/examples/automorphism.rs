@@ -14,11 +14,14 @@ use rand::{SeedableRng, rngs::StdRng};
 fn main() {
     const N: usize = 1024;
     let modulus = BarrettModulus::new(132_120_577u32);
-    let table = UintNttTable::new(PolyLength::new(N), modulus).unwrap();
-    let parameters = NtruParameters::new(N, 16, modulus, SecretKeyDistr::SparseTernary, 0.7);
+    let poly_length = PolyLength::new(N);
+    let table = UintNttTable::new(poly_length, modulus).unwrap();
+    let parameters =
+        NtruParameters::new(poly_length, 16, modulus, SecretKeyDistr::SparseTernary, 0.7);
     let mut rng = StdRng::seed_from_u64(42);
     let (coeff_secret, secret) =
-        NttNtruSecretKey::generate_pair(parameters.inner(), &table, &mut rng).unwrap();
+        NttNtruSecretKey::generate_pair(parameters.encryption_parameters(), &table, &mut rng)
+            .unwrap();
     let key_parameters =
         NlevParameters::with_ntru_params(&parameters, DecompositionBaseLog::new(3), None);
     let auto = NttNtruAutomorphismKey::generate(

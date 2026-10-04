@@ -147,7 +147,7 @@ where
         let public_lift = if lookup_table.needs_public_lift() {
             let (key, parameters) = public_lift.ok_or(LookupTableError::MissingPublicLiftKey)?;
             if parameters.poly_length() != context.parameters().poly_length()
-                || parameters.inner().cipher_modulus_value()
+                || parameters.encryption_parameters().cipher_modulus_value()
                     != context
                         .parameters()
                         .accumulator_ntru()

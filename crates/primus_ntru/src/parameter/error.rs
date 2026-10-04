@@ -2,12 +2,9 @@
 
 use primus_decompose::ApproxSignedBasisError;
 
-/// Invalid NTRU layout, encoding or sampling parameters.
+/// Invalid NTRU encoding or sampling parameters.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum NtruParameterError {
-    /// The ring length is outside the supported power-of-two range.
-    #[error("NTRU polynomial length must be a supported power of two")]
-    InvalidPolynomialLength,
     /// Invalid message/ciphertext domain or fixed-scale recovery bound.
     #[error(transparent)]
     Encoding(#[from] primus_encoding::CodecError),

@@ -57,7 +57,7 @@ fn check_signed_generation<M: RingContext<u32>>(modulus: M) {
     let key_switching_key = LweKeySwitchingKey::generate(
         input_secret_key.as_view(),
         &output_secret_key,
-        output_parameters.inner(),
+        output_parameters.encryption_parameters(),
         basis.clone(),
         &mut encoded_rng,
     );
@@ -66,7 +66,7 @@ fn check_signed_generation<M: RingContext<u32>>(modulus: M) {
     let signed_key_switching_key = LweKeySwitchingKey::generate(
         LweSecretKeyRef::Signed(&signed_key),
         &output_secret_key,
-        output_parameters.inner(),
+        output_parameters.encryption_parameters(),
         basis,
         &mut signed_rng,
     );
@@ -113,7 +113,7 @@ fn key_switch_validates_before_writing() {
     let key = LweKeySwitchingKey::generate(
         LweSecretKeyRef::Encoded(&[1, 0, 1]),
         &output_key,
-        output_parameters.inner(),
+        output_parameters.encryption_parameters(),
         basis,
         &mut rng,
     );
@@ -189,7 +189,7 @@ fn generation_validates_before_sampling() {
                 LweKeySwitchingKey::generate(
                     input_key,
                     &output_key,
-                    parameters.inner(),
+                    parameters.encryption_parameters(),
                     basis,
                     &mut rng,
                 )
@@ -220,7 +220,7 @@ fn check_batch_sum<T: primus_integer::FheUint, M: RingContext<T>>(modulus: M) {
         SecretKeyDistr::UniformBinary,
         0.7,
     );
-    let output_key = LweSecretKey::generate(params.inner(), &mut rng);
+    let output_key = LweSecretKey::generate(params.encryption_parameters(), &mut rng);
     for log_basis in [2, 4] {
         let basis = ApproxSignedBasis::new(
             modulus.explicit_value(),
@@ -230,7 +230,7 @@ fn check_batch_sum<T: primus_integer::FheUint, M: RingContext<T>>(modulus: M) {
         let key = LweKeySwitchingKey::generate(
             LweSecretKeyRef::Encoded(&[T::ONE; 7]),
             &output_key,
-            params.inner(),
+            params.encryption_parameters(),
             basis,
             &mut rng,
         );

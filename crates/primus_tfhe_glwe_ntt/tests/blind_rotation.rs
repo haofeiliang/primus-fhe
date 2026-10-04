@@ -65,7 +65,7 @@ fn functional_bootstrapping_key_blind_rotates() {
     );
     let glwe_params = GlweParameters::new(
         GlweDimension::new(GLWE_DIMENSION),
-        POLY_LENGTH,
+        PolyLength::new(POLY_LENGTH),
         PLAINTEXT_MODULUS,
         modulus,
         SecretKeyDistr::SparseTernary,
@@ -109,7 +109,7 @@ fn functional_bootstrapping_key_blind_rotates() {
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 NttGlweBootstrappingKey::generate_ntt(
                     input,
-                    lwe_params.inner(),
+                    lwe_params.encryption_parameters(),
                     output,
                     &ggsw_params,
                     &ntt,
@@ -127,7 +127,7 @@ fn functional_bootstrapping_key_blind_rotates() {
 
     let key = NttGlweBootstrappingKey::generate_ntt(
         &input_secret_key,
-        lwe_params.inner(),
+        lwe_params.encryption_parameters(),
         &output_secret_key,
         &ggsw_params,
         &ntt,

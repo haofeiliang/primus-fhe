@@ -1,9 +1,9 @@
 //! Public GGSW encryption and external product across two wide CRT limbs.
 use primus_decompose::{DecompositionBaseLog, big_integer::BigUintApproxSignedBasis};
 use primus_glwe_rns::{
-    BfvRnsCodec, CrtGlevParameters, CrtGlweParameters, CrtGlweParametersInner, DcrtGadgetDomain,
-    DcrtGlweCiphertext, DcrtGlweDecryptWorkspace, DcrtGlwePublicKey, DcrtGlweSecretKey,
-    GlweSecretKey, SecretKeyDistr,
+    BfvRnsCodec, CrtGlevParameters, CrtGlweEncryptionParameters, CrtGlweParameters,
+    DcrtGadgetDomain, DcrtGlweCiphertext, DcrtGlweDecryptWorkspace, DcrtGlwePublicKey,
+    DcrtGlweSecretKey, GlweSecretKey, SecretKeyDistr,
 };
 use primus_lattice::{GlweDimension, GlweSize, RnsGlweSize};
 use primus_lattice::{glwe::DcrtGlwe, workspace::DcrtGlevMulWorkspace};
@@ -47,7 +47,7 @@ fn test_external_product() {
         GlweSize::new(GlweDimension::new(dimension), table.poly_length()),
         base_q.moduli_count(),
     );
-    let inner = Arc::new(CrtGlweParametersInner::new(
+    let inner = Arc::new(CrtGlweEncryptionParameters::new(
         size,
         &base_q,
         SecretKeyDistr::SparseTernary,

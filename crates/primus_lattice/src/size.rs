@@ -6,16 +6,11 @@
 
 use crate::GlweDimension;
 use primus_decompose::DecompositionLevelCount;
-use primus_poly::{MAX_POLY_LENGTH, MIN_POLY_LENGTH, PolyLength};
+use primus_poly::PolyLength;
 
 /// An error produced while constructing a checked GLWE-family size.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum GlweSizeError {
-    /// The polynomial length is outside the supported power-of-two range.
-    #[error(
-        "GLWE polynomial length must be a power of two in {MIN_POLY_LENGTH}..={MAX_POLY_LENGTH}"
-    )]
-    InvalidPolynomialLength,
     /// An RNS layout has no moduli.
     #[error("RNS modulus count must be non-zero")]
     ZeroModuliCount,

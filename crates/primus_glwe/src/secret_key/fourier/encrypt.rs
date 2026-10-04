@@ -1,7 +1,7 @@
 //! Native-torus Fourier GLWE encryption.
 
 use super::{FourierGlweEncryptWorkspace, FourierGlweSecretKey};
-use crate::{FourierGlweCiphertext, GlweParameters, GlweParametersInner, PlaintextEmbedding};
+use crate::{FourierGlweCiphertext, GlweEncryptionParameters, GlweParameters, PlaintextEmbedding};
 use primus_data::{Data, DataMut};
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
 use primus_modulus::NativeModulus;
@@ -127,7 +127,7 @@ impl FourierGlweSecretKey {
         &self,
         input: &Polynomial<A>,
         output: &mut FourierGlweCiphertext<B>,
-        params: &GlweParametersInner<T, NativeModulus<T>>,
+        params: &GlweEncryptionParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
         workspace: &mut FourierGlweEncryptWorkspace<T>,
@@ -162,7 +162,7 @@ impl FourierGlweSecretKey {
     #[must_use]
     pub fn encrypt_zeros<T, Table, R>(
         &self,
-        params: &GlweParametersInner<T, NativeModulus<T>>,
+        params: &GlweEncryptionParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
         workspace: &mut FourierGlweEncryptWorkspace<T>,
@@ -186,7 +186,7 @@ impl FourierGlweSecretKey {
     pub fn encrypt_zeros_to<T, Table, R, B>(
         &self,
         output: &mut FourierGlweCiphertext<B>,
-        params: &GlweParametersInner<T, NativeModulus<T>>,
+        params: &GlweEncryptionParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
         workspace: &mut FourierGlweEncryptWorkspace<T>,
@@ -221,11 +221,18 @@ impl FourierGlweSecretKey {
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
     {
-        self.encrypt_kernel_to(output, params.inner(), fft, rng, workspace, |body| {
-            params
-                .plaintext_codec()
-                .add_encode_slice_assign(body, input.as_ref(), embedding);
-        });
+        self.encrypt_kernel_to(
+            output,
+            params.encryption_parameters(),
+            fft,
+            rng,
+            workspace,
+            |body| {
+                params
+                    .plaintext_codec()
+                    .add_encode_slice_assign(body, input.as_ref(), embedding);
+            },
+        );
     }
 
     /// Encrypts an encoded coefficient polynomial without repeating boundary checks.
@@ -239,7 +246,7 @@ impl FourierGlweSecretKey {
         &self,
         input: Polynomial<&[T]>,
         output: FourierGlweCiphertext<&mut [Complex64]>,
-        params: &GlweParametersInner<T, NativeModulus<T>>,
+        params: &GlweEncryptionParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
         workspace: &mut FourierGlweEncryptWorkspace<T>,
@@ -261,7 +268,7 @@ impl FourierGlweSecretKey {
     pub(super) fn encrypt_zeros_kernel_to<T, Table, R>(
         &self,
         output: FourierGlweCiphertext<&mut [Complex64]>,
-        params: &GlweParametersInner<T, NativeModulus<T>>,
+        params: &GlweEncryptionParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
         workspace: &mut FourierGlweEncryptWorkspace<T>,
@@ -304,7 +311,7 @@ impl FourierGlweSecretKey {
     fn encrypt_kernel_to<T, Table, R>(
         &self,
         mut output: FourierGlweCiphertext<&mut [Complex64]>,
-        params: &GlweParametersInner<T, NativeModulus<T>>,
+        params: &GlweEncryptionParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
         workspace: &mut FourierGlweEncryptWorkspace<T>,

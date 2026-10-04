@@ -35,7 +35,11 @@ impl<T: FheUint> ClientKey<T> {
         let glwe = parameters.blind_rotation_ggsw();
         Self::new(
             LweSecretKey::generate(parameters.small_lwe(), rng),
-            GlweSecretKey::generate(glwe.glwe_size(), glwe.inner().secret_key_sampler(), rng),
+            GlweSecretKey::generate(
+                glwe.glwe_size(),
+                glwe.encryption_parameters().secret_key_sampler(),
+                rng,
+            ),
             parameters.pbs_order(),
         )
     }

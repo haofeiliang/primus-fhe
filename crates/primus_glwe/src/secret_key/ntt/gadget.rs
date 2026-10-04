@@ -85,7 +85,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
             self.encrypt_encoded_kernel_to(
                 workspace.encoded.as_view(),
                 glwe,
-                params.inner(),
+                params.encryption_parameters(),
                 ntt,
                 rng,
             );
@@ -203,7 +203,12 @@ impl<T: FheUint> NttGlweSecretKey<T> {
                 .iter_ntt_glwe_mut(glwe_len)
                 .zip(workspace.level_transforms.chunks_exact(poly_length))
             {
-                self.encrypt_zeros_kernel_to(glwe.as_mut_view(), params.inner(), ntt, rng);
+                self.encrypt_zeros_kernel_to(
+                    glwe.as_mut_view(),
+                    params.encryption_parameters(),
+                    ntt,
+                    rng,
+                );
                 NttPolynomial::new(
                     &mut glwe.as_mut()[diagonal_start..diagonal_start + poly_length],
                 )

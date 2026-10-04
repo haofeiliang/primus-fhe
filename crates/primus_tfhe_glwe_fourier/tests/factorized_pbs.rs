@@ -37,13 +37,13 @@ fn context<T: TorusFftValue, Table: FftTable>(
     TfheContext::from_parameters(
         TfheParameters::try_new(
             (LweParameters::new(LweDimension::new(DIM), t, modulus, distribution, 0.7))
-                .into_inner(),
+                .into_encryption_parameters(),
             primus_glwe::GgswParameters::try_with_basis(
                 &(
                     // Multiple masks and a different KS output dimension protect component reuse.
                     GlweParameters::new(
                         GlweDimension::new(2),
-                        N,
+                        PolyLength::new(N),
                         t,
                         modulus,
                         SecretKeyDistr::UniformBinary,

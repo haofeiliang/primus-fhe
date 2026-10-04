@@ -79,7 +79,7 @@ fn ntt_nlev_generation_and_ngsw_cmux() {
     let modulus = BarrettModulus::new(EXPLICIT_MODULUS);
     let ntt = UintNttTable::new(PolyLength::new(POLY_LENGTH), modulus).unwrap();
     let params = NtruParameters::new(
-        POLY_LENGTH,
+        PolyLength::new(POLY_LENGTH),
         PLAINTEXT_MODULUS,
         modulus,
         SecretKeyDistr::SparseTernary,
@@ -89,7 +89,8 @@ fn ntt_nlev_generation_and_ngsw_cmux() {
         NlevParameters::with_ntru_params(&params, DecompositionBaseLog::new(9), None);
     let basis = gadget_params.basis();
     let mut rng = StdRng::seed_from_u64(42);
-    let secret_key = NttNtruSecretKey::generate(params.inner(), &ntt, &mut rng).unwrap();
+    let secret_key =
+        NttNtruSecretKey::generate(params.encryption_parameters(), &ntt, &mut rng).unwrap();
     let mut gadget_workspace = NttNtruGadgetEncryptWorkspace::new(PolyLength::new(POLY_LENGTH));
 
     let mut nlev: NttNlevCiphertext<Vec<u32>> = NttNlevCiphertext::zero(gadget_params.nlev_len());
@@ -223,7 +224,7 @@ fn fourier_nlev_generation_and_ngsw_cmux() {
     let table = RustFftTable::new(PolyLength::new(POLY_LENGTH));
     let mut fft = FftEngine::new(&table);
     let params = NtruParameters::new(
-        POLY_LENGTH,
+        PolyLength::new(POLY_LENGTH),
         PLAINTEXT_MODULUS,
         NativeModulus::new(),
         SecretKeyDistr::SparseTernary,
@@ -233,7 +234,8 @@ fn fourier_nlev_generation_and_ngsw_cmux() {
         NlevParameters::with_ntru_params(&params, DecompositionBaseLog::new(8), None);
     let basis = gadget_params.basis();
     let mut rng = StdRng::seed_from_u64(42);
-    let secret_key = FourierNtruSecretKey::generate(params.inner(), &mut fft, &mut rng).unwrap();
+    let secret_key =
+        FourierNtruSecretKey::generate(params.encryption_parameters(), &mut fft, &mut rng).unwrap();
     let mut gadget_workspace = FourierNtruGadgetEncryptWorkspace::new(PolyLength::new(POLY_LENGTH));
     let mut decrypt_workspace = FourierNtruDecryptWorkspace::new(PolyLength::new(POLY_LENGTH));
 

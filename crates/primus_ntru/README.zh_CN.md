@@ -21,21 +21,21 @@ NLev 与 NGSW 存储的行数相同，但数学角色不同。`NLev[1]` 可通�
 
 ## 私钥与推荐流程
 
-普通 `NtruParameters::new` / `try_new` 构造传入整数 `N`。验证后的参数保存共享的 [primus_poly::PolyLength](../primus_poly/README.zh_CN.md#环多项式长度)；`params.poly_length()` 返回经过检查的值，直接传给工作区和 NTT/FFT 表构造器，raw 存储或数值内核处才调用 `.get()`。`PolyLength` 集中检查 FHE 共用的 `32..=2^17` 二次幂范围，NTRU 参数不重复检查上界。
+普通 `NtruParameters::new` / `try_new` 构造直接传入已验证的 [primus_poly::PolyLength](../primus_poly/README.zh_CN.md#环多项式长度)；`params.poly_length()` 返回经过检查的值，直接传给工作区和 NTT/FFT 表构造器，raw 存储或数值内核处才调用 `.get()`。`PolyLength` 集中检查 FHE 共用的 `32..=2^17` 二次幂范围，NTRU 参数不重复检查上界。
 
-`NtruParameters::try_new` 对环长度、固定尺度编码、秘密支持集/重量和噪声采样错误返回 `NtruParameterError`，固定重量不得超过 N；`new` 在相同错误下 panic。这些检查不证明采样秘密可逆、变换可用或噪声/安全预算成立。 `NtruParameterError::SecretKey` 以 `SecretKeySamplerError` 保留采样配置、重量或模数适配的具体原因；`Noise` 保留 `GaussianError`。
+`NtruParameters::try_new` 对固定尺度编码、秘密支持集/重量和噪声采样错误返回 `NtruParameterError`，固定重量不得超过 N；`new` 在相同错误下 panic。这些检查不证明采样秘密可逆、变换可用或噪声/安全预算成立。 `NtruParameterError::SecretKey` 以 `SecretKeySamplerError` 保留采样配置、重量或模数适配的具体原因；`Noise` 保留 `GaussianError`。
 
-`NtruParametersInner::try_new(poly_length, modulus, secret_distribution, noise)` 不依赖明文域，直接准备环和采样器。仅使用 gadget 时，将它放入 `Arc`，调用 `NlevParameters::try_from_parts(shared_inner, basis)`；需要普通加密时才调用 `NtruParameters::try_from_parts(shared_inner, codec)`。组合入口检查 basis 或 codec 的模数与 inner 一致。已有 `NlevParameters::with_ntru_params` / `try_with_basis` 同样共享普通参数的 inner，不保留其 codec。
+`NtruEncryptionParameters::try_new(poly_length, modulus, secret_distribution, noise)` 不依赖明文域，直接准备环和采样器。仅使用 gadget 时，将它放入 `Arc`，调用 `NlevParameters::try_from_parts(shared_encryption, basis)`；需要普通加密时才调用 `NtruParameters::try_from_parts(shared_encryption, codec)`。组合入口检查 basis 或 codec 的模数与加密参数一致。已有 `NlevParameters::with_ntru_params` / `try_with_basis` 同样共享普通参数的加密状态，不保留其 codec。
 
-两种参数均通过 `inner()` 为密钥生成、raw/零加密提供采样状态。普通 `encrypt_to`、`encrypt_centered_to` 和解密仍接收 `NtruParameters`。克隆普通或 gadget 参数共享不可变采样表，gadget basis 仍独立拥有。不同密钥噪声角色应使用独立 inner。共享内容是分布预计算，不包含秘密系数或可变 RNG 状态。
+两种参数均通过 `encryption_parameters()` 为密钥生成、raw/零加密提供采样状态。普通 `encrypt_to`、`encrypt_centered_to` 和解密仍接收 `NtruParameters`。克隆普通或 gadget 参数共享不可变采样表，gadget basis 仍独立拥有。不同密钥噪声角色应使用独立的加密参数。共享内容是分布预计算，不包含秘密系数或可变 RNG 状态。
 
-将 `params.inner()` 传给 `NttNtruSecretKey::generate_pair` 或 `FourierNtruSecretKey::generate_pair`，同时保留有符号系数私钥和变换表示。系数私钥用于生成求值密钥；变换私钥及其缓存 逆元用于加密和相位提取。
+将 `params.encryption_parameters()` 传给 `NttNtruSecretKey::generate_pair` 或 `FourierNtruSecretKey::generate_pair`，同时保留有符号系数私钥和变换表示。系数私钥用于生成求值密钥；变换私钥及其缓存 逆元用于加密和相位提取。
 
 `NttNtruSecretKey` 记录 `NTT(f)` 及其逆元共同使用的显式 q，通过 `cipher_modulus()` 读取。转换和生成在同一模数/table 下建立两者。普通加密、phase 和 gadget 入口在采样或输出写入前核对拥有型密钥、算术参数和 table 的 q。Key-switch、自同构、trace、scheme-switch 和 TFHE 密钥生成继承 gadget 检查。相同 q/N 不能证明 NTT roots、求值顺序或秘密身份，后续操作仍须保留构造时的表示。通过 `try_from_coeff_secret_key` 导入时，有符号系数幅度须小于 q；不可逆秘密被拒绝，转换失败的缓冲区会擦除。不提供 raw NTT 密钥/逆元对导入。
 
 NTT 生成拒绝含零点值的私钥。Fourier 生成检查原生环可逆性（系数和为奇数）和 复数逆元的稳定性。这两组条件不同。有界拒绝采样可能失败，重试次数及逆元例程 不承诺常数时间。
 
-`generate_padded_pair(params.inner(), active_length, ...)` 只采样有效前缀，尾部保持为零； 固定重量作用于该前缀。它与完整长度生成共用采样器，包括 ternary。最多尝试 1024 个 候选；Native 的固定 binary/ternary 分布若非零总数为偶数，在采样前返回 `NonInvertibleSecretKey`，其他未找到可用候选的情况返回 `KeyGenerationExhausted`。 返回私钥服从候选分布**在后端接受条件下的条件分布**；`distr()` 记录候选分布。
+`generate_padded_pair(params.encryption_parameters(), active_length, ...)` 只采样有效前缀，尾部保持为零； 固定重量作用于该前缀。它与完整长度生成共用采样器，包括 ternary。最多尝试 1024 个 候选；Native 的固定 binary/ternary 分布若非零总数为偶数，在采样前返回 `NonInvertibleSecretKey`，其他未找到可用候选的情况返回 `KeyGenerationExhausted`。 返回私钥服从候选分布**在后端接受条件下的条件分布**；`distr()` 记录候选分布。
 
 一般 NTRU 支持非 binary 环秘密。NTRU TFHE 使用独立外部 LWE 秘密作为 binary/ternary 盲旋转控制，不要求环秘密为补零 binary。
 
@@ -78,7 +78,7 @@ Sample extraction、NLev/NGSW 外积与 CMUX 位于 [`primus_lattice`](../primus
 
 ## 独立 LWE 返回
 
-`NtruLweKeySwitchingKey::generate(f, Q, s, lwe_parameters.inner(), basis, rng)` 从有符号 NTRU 秘密 f 生成返回原语，目标 s 是独立生成的 `primus_lwe::LweSecretKey`。密钥接收不含 codec 的 `LweParametersInner` 和目标模数 q 下的 basis；s 的维数可以不同，也无需补零成为可逆 NTRU 秘密。f 的每个有符号系数的幅值必须小于显式 q，生成时在采样前检查。返回密钥和 batch 工作区的维数使用 `LweDimension`；`LweDimension::from(params.poly_length())` 返回提取维数 N。组合密钥和批量存储长度仍在构造边界检查。
+`NtruLweKeySwitchingKey::generate(f, Q, s, lwe_parameters.encryption_parameters(), basis, rng)` 从有符号 NTRU 秘密 f 生成返回原语，目标 s 是独立生成的 `primus_lwe::LweSecretKey`。密钥接收不含 codec 的 `LweEncryptionParameters` 和目标模数 q 下的 basis；s 的维数可以不同，也无需补零成为可逆 NTRU 秘密。f 的每个有符号系数的幅值必须小于显式 q，生成时在采样前检查。返回密钥和 batch 工作区的维数使用 `LweDimension`；`LweDimension::from(params.poly_length())` 返回提取维数 N。组合密钥和批量存储长度仍在构造边界检查。
 
 输入必须是系数域 NTRU 密文，NTT/Fourier 输出需要先恢复为系数。工作区一次创建后复用。所有返回路径均覆盖输出，在线不分配，并在写入前检查调用方提供的形状和目标模数。
 

@@ -1,7 +1,7 @@
 //! Ordinary encryption.
 
 use super::NttNtruSecretKey;
-use crate::{NtruParameters, NtruParametersInner, NttNtruCiphertext};
+use crate::{NtruEncryptionParameters, NtruParameters, NttNtruCiphertext};
 use primus_data::{Data, DataMut};
 use primus_encoding::{PlaintextEmbedding, ScaledCodec};
 use primus_integer::FheUint;
@@ -64,7 +64,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
                 codec: params.plaintext_codec(),
             },
             result.as_mut_view(),
-            params.inner(),
+            params.encryption_parameters(),
             ntt_table,
             rng,
         );
@@ -93,7 +93,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
                 codec: params.plaintext_codec(),
             },
             result.as_mut_view(),
-            params.inner(),
+            params.encryption_parameters(),
             ntt_table,
             rng,
         );
@@ -110,7 +110,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         &self,
         encoded: &Polynomial<A>,
         result: &mut NttNtruCiphertext<B>,
-        params: &NtruParametersInner<T, M>,
+        params: &NtruEncryptionParameters<T, M>,
         ntt_table: &Table,
         rng: &mut R,
     ) where
@@ -136,7 +136,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
     /// Inherits [`Self::encrypt_zeros_to`]'s transform and layout requirements.
     pub fn encrypt_zeros<M, Table, R>(
         &self,
-        params: &NtruParametersInner<T, M>,
+        params: &NtruEncryptionParameters<T, M>,
         ntt_table: &Table,
         rng: &mut R,
     ) -> NttNtruCiphertext<Vec<T>>
@@ -156,7 +156,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         &self,
         message: NttEncryptionMessage<'_, T, M>,
         result: NttNtruCiphertext<&mut [T]>,
-        params: &NtruParametersInner<T, M>,
+        params: &NtruEncryptionParameters<T, M>,
         ntt_table: &Table,
         rng: &mut R,
     ) where
@@ -177,7 +177,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         &self,
         encoded: Polynomial<&[T]>,
         result: NttNtruCiphertext<&mut [T]>,
-        params: &NtruParametersInner<T, M>,
+        params: &NtruEncryptionParameters<T, M>,
         ntt_table: &Table,
         rng: &mut R,
     ) where
@@ -209,7 +209,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
     pub fn encrypt_zeros_to<M, Table, R, B>(
         &self,
         result: &mut NttNtruCiphertext<B>,
-        params: &NtruParametersInner<T, M>,
+        params: &NtruEncryptionParameters<T, M>,
         ntt_table: &Table,
         rng: &mut R,
     ) where
@@ -230,7 +230,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
     pub(super) fn encrypt_zeros_to_unchecked<M, Table, R>(
         &self,
         result: NttNtruCiphertext<&mut [T]>,
-        params: &NtruParametersInner<T, M>,
+        params: &NtruEncryptionParameters<T, M>,
         ntt_table: &Table,
         rng: &mut R,
     ) where
@@ -255,7 +255,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         &self,
         message: NttEncryptionMessage<'_, T, M>,
         mut result: NttNtruCiphertext<&mut [T]>,
-        params: &NtruParametersInner<T, M>,
+        params: &NtruEncryptionParameters<T, M>,
         ntt_table: &Table,
         rng: &mut R,
     ) where

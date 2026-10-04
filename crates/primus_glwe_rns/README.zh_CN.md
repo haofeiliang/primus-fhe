@@ -7,6 +7,8 @@
 
 有序 RNS 基上的 GLWE 加密与求值，分别使用 CRT 系数表示和 DCRT NTT 表示。本 crate 提供 BFV 尺度的系数加密、gadget 乘法、自同构、trace、展开与密钥切换。它是构建模块，不是完整的 BFV/BGV/CKKS 方案。
 
+`CrtGlweParameters::new` / `try_new` 接收 `primus_poly::PolyLength`。用 `PolyLength::try_new(n)?`（已知常量可用 `new`）构造一次，供参数、尺寸与变换表复用。无效整数由 `PolyLengthError` 报告；参数构造仍负责组合布局、模数及采样器检查。
+
 ## 推荐流程
 
 1. 选择有序、两两互素的 NTT 素数，构造一个 `DcrtTable`；每个素数须满足 [NTT 条件](../primus_ntt/README.zh_CN.md#构造约束)。
@@ -26,9 +28,10 @@ use primus_ntt::UintDcrtTable;
 use primus_poly::{PolyLength, Polynomial};
 
 let moduli = [998_244_353u32, 1_004_535_809].map(BarrettModulus::new);
-let table = UintDcrtTable::new(PolyLength::new(32), &moduli).unwrap();
+let poly_length = PolyLength::new(32);
+let table = UintDcrtTable::new(poly_length, &moduli).unwrap();
 let parameters = CrtGlweParameters::new(
-    primus_lattice::GlweDimension::new(2), 32, BarrettModulus::new(17), BarrettModulus::new(65_537),
+    primus_lattice::GlweDimension::new(2), poly_length, BarrettModulus::new(17), BarrettModulus::new(65_537),
     &moduli, SecretKeyDistr::UniformBinary, 3.2,
 );
 let mut rng = rand::rng();
@@ -48,19 +51,19 @@ assert_eq!(decoded.as_ref(), message.as_ref());
 
 ## 编码与表示
 
-`encrypt_to` 使用 unsigned BFV 缩放，`encrypt_centered_to` 使用中心提升；消息包含 N 个 `[0,t)` 内的规范值。`encrypt_crt_to` 接受已约简到各 CRT 模数的未缩放明文提升，并施加 `floor(Q/t)` 缩放；不要传入 codec 已缩放的输出。这些接口覆盖写入 DCRT 密文输出；`encrypt_zeros_to` 加密零。`phase_to` 写入 DCRT 相位，`decrypt` 分配明文输出，`decrypt_to` 复用输出；解密恢复系数并解码。`DcrtGlwePublicKey` 支持公钥加密，其噪声预算包含额外的公钥误差项。
+`encrypt_to` 使用 unsigned BFV 缩放，`encrypt_centered_to` 使用中心提升；消息包含 N 个 `[0,t)` 内的规范值。`encrypt_plaintext_crt_to` 接受已约简到各 CRT 模数的未缩放明文提升，并施加 `floor(Q/t)` 缩放；不要传入 codec 已缩放的输出。这些接口覆盖写入 DCRT 密文输出；`encrypt_zeros_to` 加密零。`phase_to` 写入 DCRT 相位，`decrypt` 分配明文输出，`decrypt_to` 复用输出；解密恢复系数并解码。`DcrtGlwePublicKeyContext::encrypt_plaintext_crt` 接收同样的未缩放 CRT 提升并分配公钥密文，其噪声预算包含额外的公钥误差项。
 
 m 个模数下，普通密文包含 `(k+1)*m*N` 个元素，顺序为 `[component][modulus][coefficient/evaluation]`；gadget 在外层增加 row/level。使用 `RnsGlweSize` / `RnsGadgetSize` 及多项式/密文迭代器，避免自行推算切片长度。CRT 与 DCRT 形状相同、算术含义不同，见[密文布局](../primus_lattice/README.zh_CN.md#存储与布局)。
 
 ## 参数组合
 
-`CrtGlweParameters` 接收 `GlweDimension`，gadget 构造接收 `DecompositionBaseLog` 和 `Option<DecompositionLevelCount>`。参数访问器返回这些已验证单位，在原始存储或数值边界用 `.get()` 提取整数。
+`CrtGlweParameters` 接收 `GlweDimension` 和 `PolyLength`，gadget 构造接收 `DecompositionBaseLog` 和 `Option<DecompositionLevelCount>`。参数访问器返回这些已验证单位，在原始存储或数值边界用 `.get()` 提取整数。
 
 上面的普通构造器一次准备全部部件。只需要 gadget 加密，或需要独立选择编码时，可显式准备和组合：
 
-- `CrtGlweParametersInner::try_new(size, &base_q, secret_distribution, noise)` 准备布局及采样器，无需 t 或 gamma。固定秘密权重对应完整 kN 个有符号系数，之后才向各模数复制；秘密及噪声支持范围必须小于每个 q_i。用 `Arc` 包裹结果，即可共享这些预计算。
-- `CrtGlevParameters::try_from_parts(shared_inner, base_q, basis)` 将有序 `RNSBase` 和 `BigUintApproxSignedBasis` 移入 gadget 参数。缓存各层权重前，检查采样器的有序模数、basis 的精确乘积模数及 limb 宽度、radix < 每个 q_i，以及组合 gadget 长度；无需 BFV codec。
-- `CrtGlweParameters::try_from_parts(shared_inner, codec)` 绑定普通 BFV 编码，检查 codec 的有序模数及新鲜私钥密文恢复余量。Codec 拥有自己的 RNS 基与转换数据，共享采样状态不再保存另一份 base 或转换器。
+- `CrtGlweEncryptionParameters::try_new(size, &base_q, secret_distribution, noise)` 准备布局及采样器，无需 t 或 gamma。固定秘密权重对应完整 kN 个有符号系数，之后才向各模数复制；秘密及噪声支持范围必须小于每个 q_i。用 `Arc` 包裹结果，即可共享这些预计算。
+- `CrtGlevParameters::try_from_parts(shared_encryption, base_q, basis)` 将有序 `RNSBase` 和 `BigUintApproxSignedBasis` 移入 gadget 参数。缓存各层权重前，检查采样器的有序模数、basis 的精确乘积模数及 limb 宽度、radix < 每个 q_i，以及组合 gadget 长度；无需 BFV codec。
+- `CrtGlweParameters::try_from_parts(shared_encryption, codec)` 绑定普通 BFV 编码，检查 codec 的有序模数及新鲜私钥密文恢复余量。Codec 拥有自己的 RNS 基与转换数据，共享采样状态不再保存另一份 base 或转换器。
 
 `CrtGlweParameters::try_new` 和 `try_from_parts` 通过 `CrtGlweParametersError<T>` 报告错误并保留底层原因。`CrtGlevParameters::try_with_glwe_params` 仍可便捷地从已有普通参数派生 gadget，并共享其采样器。Gadget 构造返回 `CrtGlevParametersError`，其中 `Layout` 变体报告长度溢出。不同噪声角色需要独立准备采样状态。
 
@@ -70,7 +73,7 @@ m 个模数下，普通密文包含 `(k+1)*m*N` 个元素，顺序为 `[componen
 
 ## 求值资源
 
-两种参数均通过 `inner()` 暴露采样状态。公钥生成使用 `DcrtGlwePublicKey::new(&secret, parameters.inner(), parameters.base_q(), &table, rng)`，其零加密无需 codec。DCRT 和 hybrid 密钥切换生成同样接收 `input_parameters.inner()`，不再接收普通 BFV 参数。这些准备操作在消耗随机数前验证有序模数；hybrid 生成还检查输入采样状态所提供的密钥噪声是否适用于辅助 P 模数。
+两种参数均通过 `encryption_parameters()` 暴露采样状态。公钥生成使用 `DcrtGlwePublicKey::new(&secret, parameters.encryption_parameters(), parameters.base_q(), &table, rng)`，其零加密无需 codec。DCRT 和 hybrid 密钥切换生成同样接收 `input_parameters.encryption_parameters()`，不再接收普通 BFV 参数。这些准备操作在消耗随机数前验证有序模数；hybrid 生成还检查输入采样状态所提供的密钥噪声是否适用于辅助 P 模数。
 
 `DcrtGadgetDomain::try_new` 绑定 gadget 参数与 table，检查多项式长度和有序模数；普通 DCRT 密钥切换使用此域。Hybrid 切换通过 `HybridRnsKeySwitchDomain::try_new` 绑定完整 Q/P 基，分区及 ModUp/ModDown 契约见 [`primus_rns`](../primus_rns/README.zh_CN.md#hybrid-rns)。
 

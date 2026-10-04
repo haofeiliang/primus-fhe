@@ -2,11 +2,12 @@ use primus_decompose::DecompositionBaseLog;
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_encoding::RoundedCodec;
 use primus_lwe::LweDimension;
-use primus_lwe::LweParametersInner;
+use primus_lwe::LweEncryptionParameters;
 use primus_lwe::LweSecretKey;
 use primus_modulus::{BarrettModulus, PowOf2Modulus};
 use primus_ntru::NlevParameters;
 use primus_ntru::{NtruParameters, NtruSecretKey, SecretKeyDistr};
+use primus_poly::PolyLength;
 use primus_tfhe_ntru::{
     ClientKey, DecompositionConfig, TfheClientError, TfheKeyError, TfheParameters,
 };
@@ -16,13 +17,19 @@ use rand::{RngExt, SeedableRng};
 fn imported_external_residues_must_match_the_control_domain() {
     let modulus = BarrettModulus::new(65_537u32);
     let input_codec = RoundedCodec::new(4, modulus);
-    let accumulator = NtruParameters::new(32, 4, modulus, SecretKeyDistr::gaussian(3.2), 0.7);
+    let accumulator = NtruParameters::new(
+        PolyLength::new(32),
+        4,
+        modulus,
+        SecretKeyDistr::gaussian(3.2),
+        0.7,
+    );
     for distr in [
         SecretKeyDistr::UniformBinary,
         SecretKeyDistr::UniformTernary,
     ] {
         let parameters = TfheParameters::try_new(
-            LweParametersInner::new(LweDimension::new(4), modulus, distr, 0.7),
+            LweEncryptionParameters::new(LweDimension::new(4), modulus, distr, 0.7),
             NlevParameters::try_with_basis(
                 &accumulator,
                 ApproxSignedBasis::new(
@@ -90,9 +97,15 @@ fn imported_external_residues_must_match_the_control_domain() {
 #[test]
 fn return_key_rejects_accumulator_magnitudes_outside_external_modulus() {
     let distr = SecretKeyDistr::gaussian(3.2);
-    let accumulator = NtruParameters::new(32, 2, BarrettModulus::new(65_537u32), distr, 0.7);
+    let accumulator = NtruParameters::new(
+        PolyLength::new(32),
+        2,
+        BarrettModulus::new(65_537u32),
+        distr,
+        0.7,
+    );
     let parameters = TfheParameters::try_new(
-        LweParametersInner::new(
+        LweEncryptionParameters::new(
             LweDimension::new(1),
             PowOf2Modulus::new(16),
             SecretKeyDistr::UniformBinary,

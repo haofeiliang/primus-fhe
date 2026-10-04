@@ -3,7 +3,7 @@
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_integer::FheUint;
 use primus_modulus::NativeModulus;
-use primus_ntru::{NlevParameters, NtruParametersInner};
+use primus_ntru::{NlevParameters, NtruEncryptionParameters};
 use primus_poly::PolyLength;
 use primus_reduce::RingContext;
 use std::sync::Arc;
@@ -46,7 +46,7 @@ impl<T: FheUint, M: RingContext<T>> CircuitBootstrapParameters<T, M> {
             .try_build(accumulator.cipher_modulus_value())?;
         let key_parameters = |role, decomposition: crate::DecompositionConfig, noise| {
             // Each key role has its own encryption noise and needs no codec.
-            let inner = NtruParametersInner::try_new(
+            let inner = NtruEncryptionParameters::try_new(
                 accumulator.poly_length(),
                 accumulator.cipher_modulus(),
                 accumulator.secret_key_distr(),
@@ -88,7 +88,7 @@ impl<T: FheUint, M: RingContext<T>> CircuitBootstrapParameters<T, M> {
             if parameters.poly_length() != tfhe.poly_length() {
                 return Err(CircuitBootstrapParameterError::PolynomialLengthMismatch { role });
             }
-            if parameters.inner().cipher_modulus_value()
+            if parameters.encryption_parameters().cipher_modulus_value()
                 != tfhe.accumulator_ntru().cipher_modulus_value()
             {
                 return Err(CircuitBootstrapParameterError::CipherModulusMismatch { role });
@@ -96,7 +96,7 @@ impl<T: FheUint, M: RingContext<T>> CircuitBootstrapParameters<T, M> {
         }
         // Explicit-modulus trace uses modular halving. Native trace instead
         // uses coefficient halving with a distinct rounding-error contract.
-        if let Some(q) = trace.inner().cipher_modulus_value()
+        if let Some(q) = trace.encryption_parameters().cipher_modulus_value()
             && (q & T::ONE != T::ONE || q >= T::ONE << (T::BITS - 1))
         {
             return Err(CircuitBootstrapParameterError::UnsupportedTraceModulus);
@@ -125,7 +125,7 @@ impl<T: FheUint, M: RingContext<T>> CircuitBootstrapParameters<T, M> {
         input_codec: &primus_encoding::RoundedCodec<T, LM>,
     ) -> Result<primus_tfhe::InterleavedLookupTable<T>, primus_tfhe::LookupTableError> {
         use primus_tfhe::{InterleavedLookupTable, LookupTableError, front_half_domain_len};
-        let modulus = self.trace.inner().cipher_modulus();
+        let modulus = self.trace.encryption_parameters().cipher_modulus();
         let poly_length = self.poly_length;
         let plaintext_modulus = input_codec.plaintext_modulus();
         let domain_len = front_half_domain_len(plaintext_modulus, poly_length)?;

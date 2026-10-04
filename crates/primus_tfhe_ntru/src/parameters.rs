@@ -1,8 +1,8 @@
 use primus_decompose::{DecompositionConfig, primitive::ApproxSignedBasis};
 use primus_integer::FheUint;
 use primus_lwe::LweDimension;
-use primus_lwe::LweParametersInner;
-use primus_ntru::{NlevParameters, NtruParametersInner, SecretKeyDistr};
+use primus_lwe::LweEncryptionParameters;
+use primus_ntru::{NlevParameters, NtruEncryptionParameters, SecretKeyDistr};
 use primus_poly::PolyLength;
 use primus_reduce::RingContext;
 use primus_tfhe::rotation::RotationModulusSwitch;
@@ -14,11 +14,11 @@ use crate::TfheParameterError;
 #[derive(Clone)]
 pub struct TfheConfig<T: FheUint, M: RingContext<T>, LM: RingContext<T> = M> {
     /// External LWE dimension, ciphertext modulus q, secret distribution and fresh encryption noise.
-    pub external_lwe: LweParametersInner<T, LM>,
+    pub external_lwe: LweEncryptionParameters<T, LM>,
     /// Accumulator ciphertext modulus Q, independent of external q.
     pub accumulator_modulus: M,
     /// Common NTRU polynomial length `N`.
-    pub poly_length: usize,
+    pub poly_length: PolyLength,
     /// Coefficient distribution of the accumulator secret.
     pub accumulator_secret_key_distr: SecretKeyDistr,
     /// Coefficient-unit standard deviation at Q for accumulator and BR-key encryption.
@@ -43,9 +43,9 @@ where
     M: RingContext<T>,
     LM: RingContext<T>,
 {
-    external_lwe: LweParametersInner<T, LM>,
+    external_lwe: LweEncryptionParameters<T, LM>,
     blind_rotation: NlevParameters<T, M>,
-    key_switching_lwe: LweParametersInner<T, LM>,
+    key_switching_lwe: LweEncryptionParameters<T, LM>,
     key_switching_basis: ApproxSignedBasis<T>,
     rotation_modulus_switch: RotationModulusSwitch<T>,
 }
@@ -61,13 +61,8 @@ where
     /// Returns accumulator/return-key construction and compatibility errors.
     /// This does not validate a noise/security budget or NTRU invertibility.
     pub fn try_from_config(config: TfheConfig<T, M, LM>) -> Result<Self, TfheParameterError> {
-        let poly_length = PolyLength::try_new(config.poly_length).map_err(|_| {
-            TfheParameterError::AccumulatorParameters(
-                primus_ntru::NtruParameterError::InvalidPolynomialLength,
-            )
-        })?;
-        let accumulator = NtruParametersInner::try_new(
-            poly_length,
+        let accumulator = NtruEncryptionParameters::try_new(
+            config.poly_length,
             config.accumulator_modulus,
             config.accumulator_secret_key_distr,
             config.accumulator_noise_standard_deviation,
@@ -94,7 +89,7 @@ where
     /// The BR gadget owns the accumulator ring/sampling state without a codec.
     /// Returns domain, decomposition or return-key noise-sampler errors.
     pub fn try_new(
-        external_lwe: LweParametersInner<T, LM>,
+        external_lwe: LweEncryptionParameters<T, LM>,
         blind_rotation: NlevParameters<T, M>,
         key_switching: DecompositionConfig,
         key_switching_noise_standard_deviation: f64,
@@ -108,7 +103,7 @@ where
         let key_switching_basis = key_switching
             .try_build(external_lwe.cipher_modulus_value())
             .map_err(TfheParameterError::KeySwitchingParameters)?;
-        let key_switching_lwe = LweParametersInner::try_new(
+        let key_switching_lwe = LweEncryptionParameters::try_new(
             external_lwe.dimension(),
             external_lwe.cipher_modulus(),
             distr,
@@ -136,7 +131,7 @@ where
     /// Returns the externally visible LWE parameters.
     #[must_use]
     #[inline]
-    pub fn external_lwe(&self) -> &LweParametersInner<T, LM> {
+    pub fn external_lwe(&self) -> &LweEncryptionParameters<T, LM> {
         &self.external_lwe
     }
 
@@ -150,8 +145,8 @@ where
     /// Borrows the accumulator ring and samplers owned by the BR gadget, without a codec.
     #[must_use]
     #[inline]
-    pub fn accumulator_ntru(&self) -> &NtruParametersInner<T, M> {
-        self.blind_rotation.inner()
+    pub fn accumulator_ntru(&self) -> &NtruEncryptionParameters<T, M> {
+        self.blind_rotation.encryption_parameters()
     }
 
     /// Returns the dimension of externally visible LWE ciphertexts.
@@ -163,7 +158,7 @@ where
 
     /// Returns the target-q LWE encryption parameters used for return key rows.
     #[must_use]
-    pub fn key_switching_lwe(&self) -> &LweParametersInner<T, LM> {
+    pub fn key_switching_lwe(&self) -> &LweEncryptionParameters<T, LM> {
         &self.key_switching_lwe
     }
 

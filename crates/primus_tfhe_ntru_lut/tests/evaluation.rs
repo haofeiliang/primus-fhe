@@ -12,9 +12,9 @@ use primus_fft::TfheFftTable;
 use primus_fft::{FftTable, TorusFftValue};
 use primus_integer::FheUint;
 use primus_lattice::LweDimension;
-use primus_lwe::LweParametersInner;
+use primus_lwe::LweEncryptionParameters;
 use primus_modulus::{BarrettModulus, NativeModulus, PowOf2Modulus};
-use primus_ntru::{NlevParameters, NtruParametersInner, SecretKeyDistr};
+use primus_ntru::{NlevParameters, NtruEncryptionParameters, SecretKeyDistr};
 #[cfg(feature = "ntt")]
 use primus_ntt::{MonomialNttTable, U32NttTable, U64NttTable};
 use primus_poly::PolyLength;
@@ -42,14 +42,14 @@ fn parameters<T: FheUint, M: RingContext<T>>(
     dimension: usize,
 ) -> TfheParameters<T, M, PowOf2Modulus<T>> {
     TfheParameters::try_from_config(primus_tfhe_ntru::TfheConfig {
-        external_lwe: LweParametersInner::new(
+        external_lwe: LweEncryptionParameters::new(
             LweDimension::new(dimension),
             PowOf2Modulus::new(T::ONE << 24u32),
             distr,
             0.7,
         ),
         accumulator_modulus: modulus,
-        poly_length: N,
+        poly_length: PolyLength::new(N),
         accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
         accumulator_noise_standard_deviation: 0.7,
         blind_rotation: DecompositionConfig {
@@ -78,7 +78,7 @@ fn lift_parameters<T: FheUint, M: RingContext<T>>(
     .try_build(modulus.explicit_value())
     .unwrap();
     NlevParameters::try_from_parts(
-        std::sync::Arc::new(NtruParametersInner::new(
+        std::sync::Arc::new(NtruEncryptionParameters::new(
             poly_length,
             modulus,
             SecretKeyDistr::SparseTernary,

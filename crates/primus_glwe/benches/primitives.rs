@@ -32,18 +32,23 @@ fn ntt_primitives(c: &mut Criterion) {
     for (k, n) in SIZES {
         let mut rng = StdRng::seed_from_u64(42);
         let modulus = BarrettModulus::new(1_125_899_906_826_241u64);
-        let table = U64NttTable::new(PolyLength::new(n), modulus).unwrap();
+        let poly_length = PolyLength::new(n);
+        let table = U64NttTable::new(poly_length, modulus).unwrap();
         let params = GlweParameters::new(
             GlweDimension::new(k),
-            n,
+            poly_length,
             64,
             modulus,
             SecretKeyDistr::UniformBinary,
             3.2,
         );
         let size = params.size();
-        let (coeff, sk) =
-            NttGlweSecretKey::generate_pair(params.size(), params.inner(), &table, &mut rng);
+        let (coeff, sk) = NttGlweSecretKey::generate_pair(
+            params.size(),
+            params.encryption_parameters(),
+            &table,
+            &mut rng,
+        );
         let glev = GlevParameters::with_glwe_params(
             &params,
             DecompositionBaseLog::new(10),
@@ -165,19 +170,24 @@ fn fourier_primitives(c: &mut Criterion) {
     for (k, n) in SIZES {
         let mut rng = StdRng::seed_from_u64(42);
         let modulus = NativeModulus::<u64>::new();
-        let table = RustFftTable::new(PolyLength::new(n));
+        let poly_length = PolyLength::new(n);
+        let table = RustFftTable::new(poly_length);
         let mut fft = FftEngine::new(&table);
         let params = GlweParameters::new(
             GlweDimension::new(k),
-            n,
+            poly_length,
             64,
             modulus,
             SecretKeyDistr::UniformBinary,
             3.2,
         );
         let size = params.size();
-        let (coeff, sk) =
-            FourierGlweSecretKey::generate_pair(params.size(), params.inner(), &mut fft, &mut rng);
+        let (coeff, sk) = FourierGlweSecretKey::generate_pair(
+            params.size(),
+            params.encryption_parameters(),
+            &mut fft,
+            &mut rng,
+        );
         let glev = GlevParameters::with_glwe_params(
             &params,
             DecompositionBaseLog::new(10),
@@ -188,7 +198,7 @@ fn fourier_primitives(c: &mut Criterion) {
             FourierGlweTraceKey::generate(&coeff, &sk, &glev, &mut fft, &mut rng, &mut gadget);
         let mut trace = FourierGlweTraceWorkspace::new(size);
         let message = Polynomial::new((0..n).map(|i| (i % 16) as u64).collect::<Vec<_>>());
-        let mut encryption = FourierGlweEncryptWorkspace::new(PolyLength::new(n));
+        let mut encryption = FourierGlweEncryptWorkspace::new(poly_length);
         let encrypted = sk.encrypt(&message, &params, &mut fft, &mut rng, &mut encryption);
         let mut input = Glwe::new(vec![0u64; size.glwe_len()]);
         encrypted.write_torus_form(&mut input, &mut fft);
@@ -291,19 +301,24 @@ fn fourier_primitives(c: &mut Criterion) {
 
 fn fourier_automorphism_backend<Table: FftTable>(c: &mut Criterion, backend: &str) {
     for (k, n) in SIZES {
-        let table = Table::new(PolyLength::new(n));
+        let poly_length = PolyLength::new(n);
+        let table = Table::new(poly_length);
         let mut fft = FftEngine::new(&table);
         let mut rng = StdRng::seed_from_u64(42);
         let params = GlweParameters::new(
             GlweDimension::new(k),
-            n,
+            poly_length,
             64u64,
             NativeModulus::new(),
             SecretKeyDistr::UniformBinary,
             3.2,
         );
-        let (coeff, sk) =
-            FourierGlweSecretKey::generate_pair(params.size(), params.inner(), &mut fft, &mut rng);
+        let (coeff, sk) = FourierGlweSecretKey::generate_pair(
+            params.size(),
+            params.encryption_parameters(),
+            &mut fft,
+            &mut rng,
+        );
         let glev = GlevParameters::with_glwe_params(
             &params,
             DecompositionBaseLog::new(10),
@@ -321,7 +336,7 @@ fn fourier_automorphism_backend<Table: FftTable>(c: &mut Criterion, backend: &st
         );
         let mut workspace = FourierGlweAutomorphismWorkspace::new(params.size());
         let message = Polynomial::new((0..n).map(|i| (i % 16) as u64).collect::<Vec<_>>());
-        let mut encryption = FourierGlweEncryptWorkspace::new(PolyLength::new(n));
+        let mut encryption = FourierGlweEncryptWorkspace::new(poly_length);
         let input = sk.encrypt(&message, &params, &mut fft, &mut rng, &mut encryption);
         let mut output = input.clone();
         let mut group = c.benchmark_group(format!("glwe/automorphism/{backend}/k{k}_n{n}"));

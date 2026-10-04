@@ -356,7 +356,7 @@ fn check_modulus_pair<T: FheUint, Q: Modulus<ValueT = T>, M: RingContext<T>>(sou
             &secret,
             source,
             &output_secret,
-            parameters.inner(),
+            parameters.encryption_parameters(),
             basis,
             &mut rng,
         );
@@ -563,7 +563,7 @@ fn check_generation_errors(params: &LweParameters<u32, BarrettModulus<u32>>) {
                     &secret,
                     UintModulus(source_q),
                     &output_key,
-                    params.inner(),
+                    params.encryption_parameters(),
                     ApproxSignedBasis::new(Some(basis_q), DecompositionBaseLog::new(4), None),
                     &mut rng,
                 );
@@ -611,7 +611,7 @@ fn validation_precedes_output_writes_and_key_sampling() {
         &secret,
         NativeModulus::new(),
         &target,
-        params.inner(),
+        params.encryption_parameters(),
         basis,
         &mut rng,
     );
@@ -637,12 +637,12 @@ fn check_encrypted_return<T: FheUint, Q: Modulus<ValueT = T>>(
         0.7,
     );
     let mut rng = StdRng::seed_from_u64(0x4e54524c57);
-    let output_secret = LweSecretKey::generate(params.inner(), &mut rng);
+    let output_secret = LweSecretKey::generate(params.encryption_parameters(), &mut rng);
     let key = NtruLweKeySwitchingKey::generate(
         secret,
         source,
         &output_secret,
-        params.inner(),
+        params.encryption_parameters(),
         ApproxSignedBasis::new(target.explicit_value(), DecompositionBaseLog::new(4), None),
         &mut rng,
     );
@@ -666,7 +666,7 @@ fn check_ntt_encryption<T: FheUint, Table: primus_ntt::MonomialNttTable<ValueT =
     let modulus = BarrettModulus::new(q);
     let ntt = Table::new(PolyLength::new(32), modulus).unwrap();
     let params = NtruParameters::new(
-        32,
+        PolyLength::new(32),
         T::as_from(16u32),
         modulus,
         SecretKeyDistr::SparseTernary,
@@ -674,7 +674,7 @@ fn check_ntt_encryption<T: FheUint, Table: primus_ntt::MonomialNttTable<ValueT =
     );
     let mut rng = StdRng::seed_from_u64(0x4e54524e54);
     let (secret, transformed) =
-        NttNtruSecretKey::generate_pair(params.inner(), &ntt, &mut rng).unwrap();
+        NttNtruSecretKey::generate_pair(params.encryption_parameters(), &ntt, &mut rng).unwrap();
     let message = Polynomial::new(
         (0..32usize)
             .map(|i| T::as_from((3 * i + 1) % 8))
@@ -695,7 +695,7 @@ fn check_fourier_encryption<T: primus_fft::TorusFftValue, Table: primus_fft::Fft
     let mut fft = FftEngine::new(&table);
     let modulus = NativeModulus::<T>::new();
     let params = NtruParameters::new(
-        32,
+        PolyLength::new(32),
         T::as_from(16u32),
         modulus,
         SecretKeyDistr::SparseTernary,
@@ -703,7 +703,8 @@ fn check_fourier_encryption<T: primus_fft::TorusFftValue, Table: primus_fft::Fft
     );
     let mut rng = StdRng::seed_from_u64(0x4e54524654);
     let (secret, transformed) =
-        FourierNtruSecretKey::generate_pair(params.inner(), &mut fft, &mut rng).unwrap();
+        FourierNtruSecretKey::generate_pair(params.encryption_parameters(), &mut fft, &mut rng)
+            .unwrap();
     let message = Polynomial::new(
         (0..32usize)
             .map(|i| T::as_from((3 * i + 1) % 8))

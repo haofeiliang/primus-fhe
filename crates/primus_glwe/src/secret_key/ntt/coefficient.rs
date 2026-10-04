@@ -1,7 +1,7 @@
 //! Coefficient-domain GLWE operations using an already transformed secret.
 
 use super::NttGlweSecretKey;
-use crate::{GlweCiphertext, GlweParameters, GlweParametersInner, PlaintextEmbedding};
+use crate::{GlweCiphertext, GlweEncryptionParameters, GlweParameters, PlaintextEmbedding};
 use primus_data::{Data, DataMut};
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
@@ -76,13 +76,20 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
     {
-        self.encrypt_coeff_kernel_to(output, params.inner(), ntt_table, rng, scratch, |body| {
-            params.plaintext_codec().add_encode_slice_assign(
-                body,
-                input.as_ref(),
-                PlaintextEmbedding::Unsigned,
-            );
-        });
+        self.encrypt_coeff_kernel_to(
+            output,
+            params.encryption_parameters(),
+            ntt_table,
+            rng,
+            scratch,
+            |body| {
+                params.plaintext_codec().add_encode_slice_assign(
+                    body,
+                    input.as_ref(),
+                    PlaintextEmbedding::Unsigned,
+                );
+            },
+        );
     }
 
     /// Encrypts after layout/table/scratch validation. Message and noise stay in
@@ -90,7 +97,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     pub(super) fn encrypt_coeff_kernel_to<M, Table, R>(
         &self,
         mut output: GlweCiphertext<&mut [T]>,
-        params: &GlweParametersInner<T, M>,
+        params: &GlweEncryptionParameters<T, M>,
         ntt_table: &Table,
         rng: &mut R,
         scratch: &mut [T],

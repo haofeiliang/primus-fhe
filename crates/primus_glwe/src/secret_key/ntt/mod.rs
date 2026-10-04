@@ -9,7 +9,7 @@ use primus_poly::NttPolynomialIter;
 use primus_reduce::{EncodeSigned, ExplicitModulus, FieldContext};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-use crate::{GlweParametersInner, SecretKeyDistr};
+use crate::{GlweEncryptionParameters, SecretKeyDistr};
 
 use super::GlweSecretKey;
 
@@ -192,7 +192,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     #[must_use]
     pub fn generate_pair<R, M>(
         size: GlweSize,
-        params: &GlweParametersInner<T, M>,
+        params: &GlweEncryptionParameters<T, M>,
         ntt_table: &impl NttTable<ValueT = T>,
         rng: &mut R,
     ) -> (GlweSecretKey<T>, Self)

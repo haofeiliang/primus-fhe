@@ -1,8 +1,9 @@
 use primus_encoding::RoundedCodec;
 use primus_lattice::LweDimension;
-use primus_lwe::LweParametersInner;
+use primus_lwe::LweEncryptionParameters;
 use primus_modulus::{BarrettModulus, NativeModulus, PowOf2Modulus};
 use primus_ntru::SecretKeyDistr;
+use primus_poly::PolyLength;
 use primus_reduce::RingContext;
 use primus_tfhe::DecompositionBaseLog;
 use primus_tfhe_ntru::{DecompositionConfig, TfheParameters};
@@ -15,14 +16,14 @@ fn parameters<M: RingContext<u64>>(modulus: M) -> TfheParameters<u64, M, PowOf2M
         level_count: None,
     };
     TfheParameters::try_from_config(primus_tfhe_ntru::TfheConfig {
-        external_lwe: LweParametersInner::new(
+        external_lwe: LweEncryptionParameters::new(
             LweDimension::new(2),
             PowOf2Modulus::new(1 << 24),
             SecretKeyDistr::UniformBinary,
             0.7,
         ),
         accumulator_modulus: modulus,
-        poly_length: 64,
+        poly_length: PolyLength::new(64),
         accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
         accumulator_noise_standard_deviation: 0.7,
         blind_rotation: basis,

@@ -44,8 +44,8 @@ pub use packing_key_switch::FourierLwePackingKeySwitchingKey;
 #[cfg(feature = "ntt")]
 pub use packing_key_switch::NttLwePackingKeySwitchingKey;
 pub use parameter::{
-    GadgetSize, GgswParameters, GlevParameterError, GlevParameters, GlweKeySwitchingParameters,
-    GlweParameterError, GlweParameters, GlweParametersInner, GlweSize, GlweSizeError,
+    GadgetSize, GgswParameters, GlevParameterError, GlevParameters, GlweEncryptionParameters,
+    GlweKeySwitchingParameters, GlweParameterError, GlweParameters, GlweSize, GlweSizeError,
 };
 pub use primus_distr::SecretKeyDistr;
 pub use primus_lattice::{GlweDimension, GlweDimensionError, LweDimension};

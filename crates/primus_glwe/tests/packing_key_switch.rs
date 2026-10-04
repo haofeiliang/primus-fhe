@@ -85,7 +85,7 @@ fn ntt_packing(log_basis: u32, levels: usize) {
     let ntt = U64NttTable::new(PolyLength::new(N), modulus).unwrap();
     let params = GlweParameters::new(
         GlweDimension::new(K),
-        N,
+        PolyLength::new(N),
         64,
         modulus,
         SecretKeyDistr::UniformTernary,
@@ -163,7 +163,7 @@ fn fourier_packing<Table: FftTable>(log_basis: u32, levels: usize) {
     let mut fft = FftEngine::new(&table);
     let params = GlweParameters::new(
         GlweDimension::new(K),
-        N,
+        PolyLength::new(N),
         64u64,
         NativeModulus::new(),
         SecretKeyDistr::UniformTernary,

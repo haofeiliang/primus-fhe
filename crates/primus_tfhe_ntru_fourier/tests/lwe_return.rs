@@ -2,8 +2,9 @@ use primus_decompose::DecompositionBaseLog;
 use primus_encoding::ScaledCodec;
 use primus_fft::{FftTable, RustFftTable, TfheFftTable, TorusFftValue};
 use primus_lattice::LweDimension;
-use primus_lwe::LweParametersInner;
+use primus_lwe::LweEncryptionParameters;
 use primus_modulus::NativeModulus;
+use primus_poly::PolyLength;
 use primus_tfhe_ntru_fourier::{
     BlindRotationConfig, DecompositionConfig, TfheConfig, TfheContext, TfheEvaluationError,
     TfheParameters,
@@ -32,14 +33,14 @@ fn check<T: TorusFftValue, Table: FftTable>() {
             level_count: None,
         };
         let config = TfheConfig {
-            external_lwe: LweParametersInner::new(
+            external_lwe: LweEncryptionParameters::new(
                 LweDimension::new(DIM),
                 external_modulus,
                 distr,
                 0.7,
             ),
             accumulator_modulus: NativeModulus::new(),
-            poly_length: N,
+            poly_length: PolyLength::new(N),
             accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
             accumulator_noise_standard_deviation: 0.7,
             blind_rotation: DecompositionConfig {
@@ -209,7 +210,7 @@ fn check<T: TorusFftValue, Table: FftTable>() {
         }
         // Changing only q must reject a server key before online work.
         let mut wrong = config;
-        wrong.external_lwe = LweParametersInner::new(
+        wrong.external_lwe = LweEncryptionParameters::new(
             LweDimension::new(DIM),
             PowOf2Modulus::new(q / T::as_from(2u32)),
             distr,

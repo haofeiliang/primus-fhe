@@ -6,9 +6,10 @@ use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_glwe::{GgswParameters, NttGlweSecretKey, SecretKeyDistr};
 use primus_lattice::ggsw::NttGgsw;
 use primus_lattice::{GlweDimension, LweDimension};
-use primus_lwe::{LweCiphertext, LweParametersInner};
+use primus_lwe::{LweCiphertext, LweEncryptionParameters};
 use primus_modulus::BarrettModulus;
 use primus_ntt::U64NttTable;
+use primus_poly::PolyLength;
 use primus_poly::Polynomial;
 use primus_test_allocations as allocations;
 use primus_tfhe_glwe_ntt::{
@@ -26,14 +27,14 @@ const MODULUS: u64 = 1_125_899_906_826_241;
 
 fn parameters(order: PbsOrder, distribution: SecretKeyDistr) -> TfheParameters<u64> {
     TfheParameters::try_from_config(TfheConfig {
-        small_lwe: LweParametersInner::new(
+        small_lwe: LweEncryptionParameters::new(
             LweDimension::new(4),
             BarrettModulus::new(MODULUS),
             distribution,
             0.7,
         ),
         accumulator_dimension: GlweDimension::new(1),
-        poly_length: POLY_LENGTH,
+        poly_length: PolyLength::new(POLY_LENGTH),
         accumulator_secret_key_distr: SecretKeyDistr::UniformBinary,
         accumulator_noise_standard_deviation: 0.7,
         // Full decomposition keeps phase error below the third output level.

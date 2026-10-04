@@ -2,13 +2,13 @@
 
 use primus_distr::{DiscreteGaussian, SecretKeySampler};
 use primus_integer::FheUint;
-use primus_lattice::{GlweDimension, GlweSize, GlweSizeError};
+use primus_lattice::{GlweDimension, GlweSize};
 use primus_poly::PolyLength;
 use primus_reduce::RingContext;
 use rand::distr::Uniform;
 use std::sync::Arc;
 
-use super::{GlweParameterError, GlweParametersInner};
+use super::{GlweEncryptionParameters, GlweParameterError};
 use crate::{ScaledCodec, SecretKeyDistr};
 
 /// Ordinary GLWE layout, shared encryption state and plaintext encoding.
@@ -20,7 +20,7 @@ where
     M: RingContext<T>,
 {
     size: GlweSize,
-    pub(super) inner: Arc<GlweParametersInner<T, M>>,
+    pub(super) encryption_parameters: Arc<GlweEncryptionParameters<T, M>>,
     plaintext_codec: ScaledCodec<T, M>,
 }
 
@@ -37,7 +37,7 @@ where
     #[must_use]
     pub fn new(
         dimension: GlweDimension,
-        poly_length: usize,
+        poly_length: PolyLength,
         plain_modulus_value: T,
         cipher_modulus: M,
         secret_key_distr: SecretKeyDistr,
@@ -54,28 +54,27 @@ where
         .expect("invalid GLWE parameters")
     }
 
-    /// Checks dimensions, fixed-scale encoding, secret support/weight and noise.
+    /// Checks combined layout, fixed-scale encoding, secret support/weight and noise.
+    /// The dimension and ring length have already been checked by their types.
     /// Noise standard deviation is in coefficient units at the ciphertext modulus.
     /// This validates construction, not transform availability or a noise/security budget.
     pub fn try_new(
         dimension: GlweDimension,
-        poly_length: usize,
+        poly_length: PolyLength,
         plain_modulus_value: T,
         cipher_modulus: M,
         secret_key_distr: SecretKeyDistr,
         noise_standard_deviation: f64,
     ) -> Result<Self, GlweParameterError> {
-        let poly_length =
-            PolyLength::try_new(poly_length).map_err(|_| GlweSizeError::InvalidPolynomialLength)?;
         let size = GlweSize::try_new(dimension, poly_length)?;
         let plaintext_codec = ScaledCodec::try_new(plain_modulus_value, cipher_modulus)?;
 
-        let inner = GlweParametersInner::try_new(
+        let encryption_parameters = GlweEncryptionParameters::try_new(
             cipher_modulus,
             secret_key_distr,
             noise_standard_deviation,
         )?;
-        Self::try_from_parts(size, Arc::new(inner), plaintext_codec)
+        Self::try_from_parts(size, Arc::new(encryption_parameters), plaintext_codec)
     }
 
     /// Binds a GLWE layout and prepared sampling state to ordinary message encoding.
@@ -90,18 +89,18 @@ where
     /// fixed-scale recovery were checked by the supplied parts' constructors.
     pub fn try_from_parts(
         size: GlweSize,
-        inner: Arc<GlweParametersInner<T, M>>,
+        encryption_parameters: Arc<GlweEncryptionParameters<T, M>>,
         plaintext_codec: ScaledCodec<T, M>,
     ) -> Result<Self, GlweParameterError> {
-        if plaintext_codec.ciphertext_modulus() != inner.cipher_modulus() {
+        if plaintext_codec.ciphertext_modulus() != encryption_parameters.cipher_modulus() {
             return Err(GlweParameterError::CodecModulusMismatch);
         }
-        inner
+        encryption_parameters
             .secret_key_sampler()
             .validate_length(size.mask_len())?;
         Ok(Self {
             size,
-            inner,
+            encryption_parameters,
             plaintext_codec,
         })
     }
@@ -121,15 +120,15 @@ where
         // The gadget already checked fixed secret weights against this layout.
         Ok(Self {
             size: gadget.glwe_size(),
-            inner: Arc::clone(&gadget.inner),
+            encryption_parameters: Arc::clone(&gadget.encryption_parameters),
             plaintext_codec,
         })
     }
 
     /// Returns the parameters shared by GLWE and its gadget ciphertexts.
     #[inline]
-    pub fn inner(&self) -> &GlweParametersInner<T, M> {
-        self.inner.as_ref()
+    pub fn encryption_parameters(&self) -> &GlweEncryptionParameters<T, M> {
+        self.encryption_parameters.as_ref()
     }
 
     /// Returns the dimension of this [`GlweParameters<T, M>`].
@@ -195,7 +194,7 @@ where
 
     /// Returns the cipher modulus of this [`GlweParameters<T, M>`].
     pub fn cipher_modulus(&self) -> M {
-        self.inner.cipher_modulus()
+        self.encryption_parameters.cipher_modulus()
     }
 
     /// Returns the explicit ciphertext modulus, or `None` for the native modulus
@@ -203,41 +202,42 @@ where
     #[must_use]
     #[inline]
     pub fn cipher_modulus_value(&self) -> Option<T> {
-        self.inner.cipher_modulus_value()
+        self.encryption_parameters.cipher_modulus_value()
     }
 
     /// Returns the cipher modulus minus one of this [`GlweParameters<T, M>`].
     pub fn cipher_modulus_minus_one(&self) -> T {
-        self.inner.cipher_modulus_minus_one()
+        self.encryption_parameters.cipher_modulus_minus_one()
     }
 
     /// Returns the cipher modulus uniform distr of this [`GlweParameters<T, M>`].
     pub fn cipher_modulus_uniform_distr(&self) -> Uniform<T> {
-        self.inner.cipher_modulus_uniform_distr()
+        self.encryption_parameters.cipher_modulus_uniform_distr()
     }
 
     /// Returns the secret key type of this [`GlweParameters<T, M>`].
     pub fn secret_key_distr(&self) -> SecretKeyDistr {
-        self.inner.secret_key_distr()
+        self.encryption_parameters.secret_key_distr()
     }
 
     /// Returns shared precomputation for signed and encoded secret coefficients.
     #[must_use]
     #[inline]
     pub fn secret_key_sampler(&self) -> &SecretKeySampler<T> {
-        self.inner.secret_key_sampler()
+        self.encryption_parameters.secret_key_sampler()
     }
 
     /// Returns a reference to the noise distribution of this [`GlweParameters<T, M>`].
     #[inline]
     pub fn noise_distribution(&self) -> &DiscreteGaussian<T> {
-        self.inner.noise_distribution()
+        self.encryption_parameters.noise_distribution()
     }
 
-    /// Forwards to [`GlweParametersInner::noise_distribution_div_count`],
+    /// Forwards to [`GlweEncryptionParameters::noise_distribution_div_count`],
     /// including its minimum-sigma bound and panic conditions.
     #[inline]
     pub fn noise_distribution_div_count(&self, count: u32, min_sigma: f64) -> DiscreteGaussian<T> {
-        self.inner.noise_distribution_div_count(count, min_sigma)
+        self.encryption_parameters
+            .noise_distribution_div_count(count, min_sigma)
     }
 }

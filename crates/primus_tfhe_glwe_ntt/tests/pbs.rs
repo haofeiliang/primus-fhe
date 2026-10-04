@@ -35,7 +35,7 @@ fn parameters<T: FheUint>(q: T, order: PbsOrder) -> TfheParameters<T> {
     );
     let glwe = GlweParameters::new(
         GlweDimension::new(1),
-        N,
+        PolyLength::new(N),
         T::as_from(15u32),
         modulus,
         SecretKeyDistr::UniformBinary,
@@ -47,7 +47,7 @@ fn parameters<T: FheUint>(q: T, order: PbsOrder) -> TfheParameters<T> {
         None,
     );
     TfheParameters::try_new(
-        lwe.into_inner(),
+        lwe.into_encryption_parameters(),
         primus_glwe::GgswParameters::try_with_basis(&glwe, bsk).unwrap(),
         ApproxSignedBasis::new(Some(q), DecompositionBaseLog::new(8), None),
         order,
