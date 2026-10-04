@@ -3,7 +3,7 @@ use primus_integer::{BigUint, BigUintIter, BigUintIterMut, DivRem, FheUint};
 
 use crate::{
     ApproxSignedBasisError, DecompositionBaseLog, DecompositionLevelCount,
-    decomposition_length_and_drop_bits,
+    level_count_and_drop_bits,
 };
 
 use super::common::{BigUintSignedDecomposerIter, BigUintValueCarryInitMode, ValueMask};
@@ -45,8 +45,8 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
     /// most-significant limb. The basis owns a copy of the modulus.
     /// `log_basis` is the base-2 logarithm of the decomposition basis
     /// (`basis = 2^log_basis`) and must satisfy `2 <= log_basis < T::BITS`.
-    /// `reverse_length`, when provided, limits the number of decomposition
-    /// steps by discarding more low bits and retaining the highest levels.
+    /// `level_count` selects how many highest decomposition levels to retain;
+    /// `None` uses the full level count. Retaining fewer levels discards more low bits.
     ///
     /// # Panics
     ///
@@ -55,9 +55,9 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
     pub fn new(
         modulus: BigUint<&[T]>,
         log_basis: DecompositionBaseLog,
-        reverse_length: Option<DecompositionLevelCount>,
+        level_count: Option<DecompositionLevelCount>,
     ) -> Self {
-        Self::try_new(modulus, log_basis, reverse_length).unwrap_or_else(|error| {
+        Self::try_new(modulus, log_basis, level_count).unwrap_or_else(|error| {
             panic!("failed to construct BigUint approximate signed basis: {error}")
         })
     }
@@ -67,8 +67,8 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
     /// `modulus` must be nonempty, with little-endian limbs and a nonzero
     /// most-significant limb. `log_basis` must satisfy
     /// `log_basis < T::BITS` (its lower bound is already checked), and `2^log_basis` must not
-    /// exceed that modulus. `reverse_length`, when provided, must be in the
-    /// range `1..=full_decomposition_length`; positivity is already checked.
+    /// exceed that modulus. `level_count`, when provided, must be in the
+    /// range `1..=full_level_count`; positivity is already checked.
     /// It retains the highest levels; iteration still proceeds from the
     /// lowest retained level to the highest.
     /// The modulus bit width and offsets use `u32`; the packed scalar
@@ -82,7 +82,7 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
     pub fn try_new(
         modulus: BigUint<&[T]>,
         log_basis: DecompositionBaseLog,
-        reverse_length: Option<DecompositionLevelCount>,
+        level_count: Option<DecompositionLevelCount>,
     ) -> Result<Self, ApproxSignedBasisError> {
         if log_basis.get() >= T::BITS {
             return Err(ApproxSignedBasisError::InvalidLogBasis {
@@ -107,11 +107,8 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
         let log_basis = log_basis.get();
         let basis = T::ONE << log_basis;
         let basis_minus_one = basis - T::ONE;
-        let (decompose_length, drop_bits) = decomposition_length_and_drop_bits(
-            modulus_bits_count,
-            checked_log_basis,
-            reverse_length,
-        )?;
+        let (decompose_length, drop_bits) =
+            level_count_and_drop_bits(modulus_bits_count, checked_log_basis, level_count)?;
         let checked_decompose_length = decompose_length;
         let decompose_length = decompose_length.get();
         let scalar_storage_len = big_uint_value_len.checked_mul(decompose_length).ok_or(

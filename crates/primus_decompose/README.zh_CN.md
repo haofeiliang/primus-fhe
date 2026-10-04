@@ -30,7 +30,9 @@ weight_i = 2^d * B^i                  (0 <= i < L)
 reconstructed = sum(digit_i * weight_i) mod modulus
 ```
 
-`decomposer_iter()` 和 `scalar_iter()` 都从最低保留层迭代到最高层。输入与重组结果 之间的模环距离不超过 `approximate_error_bound()`：`d == 0` 时为零，否则为 `2^(d - 1)`。
+`decomposer_iter()` 和 `scalar_iter()` 都从最低保留层迭代到最高层。输入与重组结果之间的模环距离不超过 `approximate_error_bound()`：`d == 0` 时为零，否则为 `2^(d - 1)`。
+
+Primitive 的 `scalar_iter()` 返回 `Copied<slice::Iter<T>>`，BigUint 对应入口返回完整权重的 `ChunksExact<T>`；两者均保留双向、精确长度及 fused 迭代能力，不分配空间。
 
 初始化负责选择内部代表元并计算初始舍入 carry。被丢弃的位按最近值舍入，在该代表元中 恰好位于中点时向上舍入。特别是，native 输入的重组结果为 `round_half_up(input / 2^d) * 2^d` 模 `2^T::BITS`。对于其他模数，不能用直接舍入 canonical 输入替代初始化：代表元调整属于正确性前提。
 
@@ -50,7 +52,7 @@ reconstructed = sum(digit_i * weight_i) mod modulus
 
 两种 basis 还要求 `log_basis < T::BITS`、模数不小于 `B`，并且保留层数适合分解位宽。多 limb basis 的层数可以大于一个 limb 的位数。对这些配对错误，basis 的 `new` 会 panic，`try_new` 返回 `ApproxSignedBasisError`。
 
-`DecompositionConfig { log_basis, level_count }` 将分解选择与模数分开。 `config.try_build::<u32>(None)` 准备 native basis，`config.try_build(Some(q))` 使用显式模数。 `level_count` 与下文的 `reverse_length` 含义相同。校验和错误由 `primitive::ApproxSignedBasis::try_new` 提供；config 本身不持有预计算存储。
+`DecompositionConfig { log_basis, level_count }` 将分解选择与模数分开。 `config.try_build::<u32>(None)` 准备 native basis，`config.try_build(Some(q))` 使用显式模数。校验和错误由 `primitive::ApproxSignedBasis::try_new` 提供；config 本身不持有预计算存储。
 
 不同表示的分解位宽 `m` 定义如下：
 
@@ -61,7 +63,7 @@ reconstructed = sum(digit_i * weight_i) mod modulus
 | Primitive，其他显式模数 `q` | `bit_width(q)` |
 | BigUint，任意显式模数 `Q` | `bit_width(Q)`，**包括二次幂模数** |
 
-完整层数为 `floor(m / log_basis)`。构造参数 `reverse_length` 表示可选的**保留层数**， 不是迭代方向：`Some(L)` 要求 `1 <= L <= full_length`，`None` 使用全部完整层。 两种情况下都有 `drop_bits = m - L * log_basis`，因此当 `m` 不能被 `log_basis` 整除时，即使传入 `None` 也会丢弃低位。
+完整层数为 `floor(m / log_basis)`。构造参数 `level_count` 表示可选的**保留层数**：`Some(L)` 要求 `1 <= L <= full_level_count`，`None` 使用全部完整层。两种情况下都有 `drop_bits = m - L * log_basis`，因此当 `m` 不能被 `log_basis` 整除时，即使传入 `None` 也会丢弃低位。
 
 BigUint 模数必须是非空、little-endian 的 limb slice，最高 limb 不能为零。Basis 拥有模数的一份副本。每个输入都必须使用与模数相同的 limb 数，即使输入值较小，也要 保留高位的零 limb。
 

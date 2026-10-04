@@ -1,11 +1,13 @@
+use core::{iter::Copied, slice::Iter};
+
 use primus_integer::FheUint;
 
 use crate::{
     ApproxSignedBasisError, DecompositionBaseLog, DecompositionLevelCount,
-    decomposition_length_and_drop_bits,
+    level_count_and_drop_bits,
 };
 
-use super::common::{ScalarIter, SignedDecomposerIter, ValueCarryInitMode, ValueMask};
+use super::common::{SignedDecomposerIter, ValueCarryInitMode, ValueMask};
 
 /// Precomputed approximate signed decomposition modulo `q`.
 ///
@@ -53,8 +55,8 @@ impl<T: FheUint> ApproxSignedBasis<T> {
     /// `modulus` may be `None` to use the implicit power-of-two modulus
     /// `2^T::BITS`. `log_basis` is the base-2 logarithm of the decomposition
     /// basis (`basis = 2^log_basis`) and must be below `T::BITS`. The checked type establishes its lower bound.
-    /// `reverse_length`, when provided, limits the number of decomposition
-    /// steps by discarding more low bits and retaining the highest levels.
+    /// `level_count` selects how many highest decomposition levels to retain;
+    /// `None` uses the full level count. Retaining fewer levels discards more low bits.
     ///
     /// Digits lie in `[-basis / 2, basis / 2)`. Both decomposition operators
     /// and their corresponding scalars are yielded from the lowest retained
@@ -63,16 +65,15 @@ impl<T: FheUint> ApproxSignedBasis<T> {
     /// # Panics
     ///
     /// Panics if `log_basis >= T::BITS`, if an explicit modulus
-    /// is smaller than the basis, or if `reverse_length` exceeds
-    /// the full decomposition length.
+    /// is smaller than the basis, or if `level_count` exceeds
+    /// the full level count.
     #[inline]
     pub fn new(
         modulus: Option<T>,
         log_basis: DecompositionBaseLog,
-        reverse_length: Option<DecompositionLevelCount>,
+        level_count: Option<DecompositionLevelCount>,
     ) -> Self {
-        Self::try_new(modulus, log_basis, reverse_length)
-            .unwrap_or_else(|message| panic!("{message}"))
+        Self::try_new(modulus, log_basis, level_count).unwrap_or_else(|message| panic!("{message}"))
     }
 
     /// Tries to create a decomposition basis with the same validity rules as
@@ -81,7 +82,7 @@ impl<T: FheUint> ApproxSignedBasis<T> {
     pub fn try_new(
         modulus: Option<T>,
         log_basis: DecompositionBaseLog,
-        reverse_length: Option<DecompositionLevelCount>,
+        level_count: Option<DecompositionLevelCount>,
     ) -> Result<Self, ApproxSignedBasisError> {
         if log_basis.get() >= T::BITS {
             return Err(ApproxSignedBasisError::InvalidLogBasis {
@@ -112,7 +113,7 @@ impl<T: FheUint> ApproxSignedBasis<T> {
             }
         };
         let (decompose_length, drop_bits) =
-            decomposition_length_and_drop_bits(value_bits, checked_log_basis, reverse_length)?;
+            level_count_and_drop_bits(value_bits, checked_log_basis, level_count)?;
         let checked_decompose_length = decompose_length;
         let decompose_length = decompose_length.get();
         let init_carry_mask = drop_bits.checked_sub(1).map(|bit| T::ONE << bit);
@@ -249,10 +250,10 @@ impl<T: FheUint> ApproxSignedBasis<T> {
         }
     }
 
-    /// Returns reconstruction weights in the same order as [`Self::decomposer_iter`].
+    /// Returns copied reconstruction weights in the same order as [`Self::decomposer_iter`].
     #[inline]
-    pub fn scalar_iter<'a>(&'a self) -> ScalarIter<'a, T> {
-        ScalarIter::new(&self.scalars)
+    pub fn scalar_iter(&self) -> Copied<Iter<'_, T>> {
+        self.scalars.iter().copied()
     }
 
     /// Returns an adjusted input and its initial carry.

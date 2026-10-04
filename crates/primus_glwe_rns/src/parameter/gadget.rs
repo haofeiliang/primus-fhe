@@ -49,9 +49,9 @@ where
     pub fn with_glwe_params(
         glwe_params: &CrtGlweParameters<T, M>,
         log_basis: DecompositionBaseLog,
-        reverse_length: Option<DecompositionLevelCount>,
+        level_count: Option<DecompositionLevelCount>,
     ) -> Self {
-        Self::try_with_glwe_params(glwe_params, log_basis, reverse_length)
+        Self::try_with_glwe_params(glwe_params, log_basis, level_count)
             .unwrap_or_else(|error| panic!("failed to construct CRT GLev parameters: {error}"))
     }
 
@@ -69,12 +69,12 @@ where
     pub fn try_with_glwe_params(
         glwe_params: &CrtGlweParameters<T, M>,
         log_basis: DecompositionBaseLog,
-        reverse_length: Option<DecompositionLevelCount>,
+        level_count: Option<DecompositionLevelCount>,
     ) -> Result<Self, CrtGlevParametersError<T>> {
         let basis = BigUintApproxSignedBasis::try_new(
             glwe_params.cipher_modulus(),
             log_basis,
-            reverse_length,
+            level_count,
         )?;
         Self::try_from_parts(
             Arc::clone(&glwe_params.encryption_parameters),

@@ -72,7 +72,7 @@ where
     /// Creates NLev/NGSW parameters from matching NTRU parameters.
     ///
     /// `log_basis` is the base-2 logarithm of the gadget basis.
-    /// `reverse_length`, when present, selects the retained decomposition
+    /// `level_count`, when present, selects the retained decomposition
     /// level count.
     ///
     /// # Panics
@@ -84,9 +84,9 @@ where
     pub fn with_ntru_params(
         ntru: &NtruParameters<T, M>,
         log_basis: DecompositionBaseLog,
-        reverse_length: Option<DecompositionLevelCount>,
+        level_count: Option<DecompositionLevelCount>,
     ) -> Self {
-        Self::try_with_ntru_params(ntru, log_basis, reverse_length)
+        Self::try_with_ntru_params(ntru, log_basis, level_count)
             .unwrap_or_else(|error| panic!("failed to construct NLev parameters: {error}"))
     }
 
@@ -95,10 +95,10 @@ where
     pub fn try_with_ntru_params(
         ntru: &NtruParameters<T, M>,
         log_basis: DecompositionBaseLog,
-        reverse_length: Option<DecompositionLevelCount>,
+        level_count: Option<DecompositionLevelCount>,
     ) -> Result<Self, NlevParameterError> {
         let basis =
-            ApproxSignedBasis::try_new(ntru.cipher_modulus_value(), log_basis, reverse_length)?;
+            ApproxSignedBasis::try_new(ntru.cipher_modulus_value(), log_basis, level_count)?;
         Self::try_with_basis(ntru, basis)
     }
 

@@ -1,7 +1,4 @@
-use core::{
-    iter::{Copied, FusedIterator},
-    slice::Iter,
-};
+use core::{iter::FusedIterator, slice::Iter};
 
 use primus_integer::FheUint;
 
@@ -35,72 +32,6 @@ pub(super) enum ValueCarryInitMode<T: FheUint> {
     },
     /// No adjustment and no initial carry — value passes through unchanged.
     Plain,
-}
-
-/// An iterator over scalars.
-pub struct ScalarIter<'a, T: FheUint> {
-    iter: Copied<Iter<'a, T>>,
-}
-
-impl<'a, T: FheUint> ScalarIter<'a, T> {
-    /// Creates a new [`ScalarIter<T>`].
-    #[inline]
-    pub fn new(scalars: &'a [T]) -> Self {
-        Self {
-            iter: scalars.iter().copied(),
-        }
-    }
-}
-
-impl<'a, T: FheUint> Iterator for ScalarIter<'a, T> {
-    type Item = T;
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next()
-    }
-
-    #[inline]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let n = self.len();
-        (n, Some(n))
-    }
-
-    #[inline]
-    fn count(self) -> usize {
-        self.len()
-    }
-
-    #[inline]
-    fn nth(&mut self, n: usize) -> Option<Self::Item> {
-        self.iter.nth(n)
-    }
-
-    #[inline]
-    fn last(mut self) -> Option<Self::Item> {
-        self.next_back()
-    }
-}
-
-impl<'a, T: FheUint> FusedIterator for ScalarIter<'a, T> {}
-
-impl<'a, T: FheUint> core::iter::DoubleEndedIterator for ScalarIter<'a, T> {
-    #[inline]
-    fn next_back(&mut self) -> Option<Self::Item> {
-        self.iter.next_back()
-    }
-
-    #[inline]
-    fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
-        self.iter.nth_back(n)
-    }
-}
-
-impl<'a, T: FheUint> ExactSizeIterator for ScalarIter<'a, T> {
-    #[inline]
-    fn len(&self) -> usize {
-        self.iter.len()
-    }
 }
 
 /// Mask to extract a window of bits from a single-limb value.

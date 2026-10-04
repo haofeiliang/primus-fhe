@@ -44,14 +44,14 @@ pub enum ApproxSignedBasisError {
     /// The decomposition basis is larger than the modulus.
     #[error("decomposition basis must not exceed the modulus")]
     BasisExceedsModulus,
-    /// The requested retained decomposition length exceeds the full length.
+    /// The requested retained level count exceeds the full level count.
     #[error(
-        "reverse_length must not exceed the full decomposition length {full_length}, got {reverse_length}"
+        "level_count must not exceed the full decomposition level count {full_level_count}, got {level_count}"
     )]
-    ReverseLengthTooLarge {
+    LevelCountTooLarge {
         /// Requested retained level count.
-        reverse_length: usize,
+        level_count: usize,
         /// Maximum level count for this modulus and basis.
-        full_length: usize,
+        full_level_count: usize,
     },
 }

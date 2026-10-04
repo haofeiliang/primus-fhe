@@ -32,6 +32,8 @@ reconstructed = sum(digit_i * weight_i) mod modulus
 
 Both `decomposer_iter()` and `scalar_iter()` visit levels from the lowest retained level to the highest. The circular distance between the input and its reconstruction is at most `approximate_error_bound()`: zero when `d == 0`, otherwise `2^(d - 1)`.
 
+Primitive `scalar_iter()` returns `Copied<slice::Iter<T>>`; the BigUint counterpart returns `ChunksExact<T>` of full-width weights. Both retain double-ended, exact-size and fused iteration without allocation.
+
 Initialization selects the internal representative and initial rounding carry. Discarded bits are rounded to nearest, with half-way cases rounded up in that representative. In particular, native inputs recompose to `round_half_up(input / 2^d) * 2^d` modulo `2^T::BITS`. For other moduli, do not replace initialization with rounding the canonical input: the representative adjustment is part of correctness.
 
 The output encoding depends on the operation:
@@ -50,7 +52,7 @@ Despite its name, `unsigned_decompose*` still represents a **signed** digit. For
 
 Both bases additionally require `log_basis < T::BITS`, a modulus at least `B`, and a retained count that fits the decomposition width. A multi-limb basis can have more levels than one limb has bits. Basis `new` panics on these contextual errors; `try_new` returns `ApproxSignedBasisError`.
 
-`DecompositionConfig { log_basis, level_count }` keeps these choices independent of the modulus. `config.try_build::<u32>(None)` prepares a native basis, while `config.try_build(Some(q))` uses an explicit modulus. `level_count` has the same meaning as `reverse_length` below. Validation and errors come from `primitive::ApproxSignedBasis::try_new`; the config itself has no precomputed storage.
+`DecompositionConfig { log_basis, level_count }` keeps these choices independent of the modulus. `config.try_build::<u32>(None)` prepares a native basis, while `config.try_build(Some(q))` uses an explicit modulus. Validation and errors come from `primitive::ApproxSignedBasis::try_new`; the config itself has no precomputed storage.
 
 The decomposition width `m` differs between representations:
 
@@ -61,7 +63,7 @@ The decomposition width `m` differs between representations:
 | Primitive, other explicit `q` | `bit_width(q)` |
 | BigUint, any explicit `Q` | `bit_width(Q)`, **including powers of two** |
 
-The full level count is `floor(m / log_basis)`. The constructor argument named `reverse_length` is an optional **retained level count**, not an iteration direction: `Some(L)` requires `1 <= L <= full_length`, while `None` uses all full levels. In both cases, `drop_bits = m - L * log_basis`, so even `None` can discard low bits when `m` is not divisible by `log_basis`.
+The full level count is `floor(m / log_basis)`. The constructor argument `level_count` is an optional **retained level count**: `Some(L)` requires `1 <= L <= full_level_count`, while `None` uses all full levels. In both cases, `drop_bits = m - L * log_basis`, so even `None` can discard low bits when `m` is not divisible by `log_basis`.
 
 A BigUint modulus must have a nonempty little-endian limb slice with a nonzero most-significant limb. The basis owns a copy. Inputs use exactly that same limb count, including leading zero limbs when the input value is small.
 

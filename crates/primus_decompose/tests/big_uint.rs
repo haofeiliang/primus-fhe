@@ -222,9 +222,9 @@ fn invalid_parameters_and_modulus_representations_are_rejected() {
         (
             4,
             Some(3),
-            ApproxSignedBasisError::ReverseLengthTooLarge {
-                reverse_length: 3,
-                full_length: 2,
+            ApproxSignedBasisError::LevelCountTooLarge {
+                level_count: 3,
+                full_level_count: 2,
             },
         ),
     ] {

@@ -26,24 +26,24 @@ pub mod primitive;
 
 /// Selects the retained high levels and their first bit offset.
 /// Callers have already validated `0 < log_basis <= value_bits`.
-fn decomposition_length_and_drop_bits(
+fn level_count_and_drop_bits(
     value_bits: u32,
     log_basis: DecompositionBaseLog,
-    reverse_length: Option<DecompositionLevelCount>,
+    level_count: Option<DecompositionLevelCount>,
 ) -> Result<(DecompositionLevelCount, u32), ApproxSignedBasisError> {
     let log_basis = log_basis.get();
-    let full_length = (value_bits / log_basis) as usize;
-    let length = reverse_length.map_or(full_length, DecompositionLevelCount::get);
-    if length > full_length {
-        return Err(ApproxSignedBasisError::ReverseLengthTooLarge {
-            reverse_length: length,
-            full_length,
+    let full_level_count = (value_bits / log_basis) as usize;
+    let level_count = level_count.map_or(full_level_count, DecompositionLevelCount::get);
+    if level_count > full_level_count {
+        return Err(ApproxSignedBasisError::LevelCountTooLarge {
+            level_count,
+            full_level_count,
         });
     }
-    // length <= value_bits/log_basis, so narrowing the retained count is
+    // level_count <= value_bits/log_basis, so narrowing the retained count is
     // lossless and its product with log_basis cannot exceed value_bits.
     Ok((
-        DecompositionLevelCount::new(length),
-        value_bits - length as u32 * log_basis,
+        DecompositionLevelCount::new(level_count),
+        value_bits - level_count as u32 * log_basis,
     ))
 }
