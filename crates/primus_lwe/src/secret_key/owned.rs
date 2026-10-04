@@ -128,22 +128,22 @@ impl<T: FheUint> LweSecretKey<T> {
     }
 
     /// Generates a new [`LweSecretKey<T>`] with random values.
+    /// Partial secret storage is erased if sampling unwinds.
     #[inline]
     pub fn generate<R, M>(params: &LweParametersInner<T, M>, rng: &mut R) -> Self
     where
         R: rand::Rng + rand::CryptoRng,
         M: RingContext<T>,
     {
-        let distr = params.secret_key_distr();
-        let key = params.secret_key_sampler().sample_encoded(
-            params.dimension().get(),
-            params.cipher_modulus_minus_one(),
-            rng,
-        );
-        Self {
-            data: key,
-            distr,
+        // Own the allocation before sampling so unwinding erases partial secrets.
+        let mut key = Self {
+            data: vec![T::ZERO; params.dimension().get()],
+            distr: params.secret_key_distr(),
             modulus_minus_one: params.cipher_modulus_minus_one(),
-        }
+        };
+        params
+            .secret_key_sampler()
+            .sample_encoded_to(&mut key.data, key.modulus_minus_one, rng);
+        key
     }
 }

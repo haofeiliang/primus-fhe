@@ -88,11 +88,13 @@ impl TryRng for PanicAfterOneWord {
 }
 impl TryCryptoRng for PanicAfterOneWord {}
 
-fn assert_erased_on_drop<K>(key: K, data: *const u8, len: usize) {
+fn watch(data: *const u8, len: usize) {
     ERASED.store(false, Ordering::SeqCst);
     LENGTH.store(len, Ordering::SeqCst);
     WATCHED.store(data.cast_mut(), Ordering::SeqCst);
-    drop(key);
+}
+
+fn assert_erased() {
     assert!(
         WATCHED.load(Ordering::SeqCst).is_null(),
         "secret allocation was not released"
@@ -103,9 +105,22 @@ fn assert_erased_on_drop<K>(key: K, data: *const u8, len: usize) {
     );
 }
 
+fn assert_erased_on_drop<K>(key: K, data: *const u8, len: usize) {
+    watch(data, len);
+    drop(key);
+    assert_erased();
+}
+
+// Imports take ownership even when layout validation rejects the buffer.
+fn assert_erased_on_rejection<K>(data: *const u8, len: usize, import: impl FnOnce() -> K) {
+    watch(data, len);
+    assert!(catch_unwind(AssertUnwindSafe(import)).is_err());
+    assert_erased();
+}
+
 // Keep allocator observations serial: all cases share the watched allocation.
 #[test]
-fn secret_storage_is_erased_on_drop_and_sampling_unwind() {
+fn secret_storage_is_erased_on_drop_and_unwind() {
     let size = GlweSize::new(GlweDimension::new(1), PolyLength::new(32));
     let mut coefficients = vec![1i32; 2 * size.mask_len()];
     let data = coefficients.as_ptr().cast();
@@ -132,26 +147,28 @@ fn secret_storage_is_erased_on_drop_and_sampling_unwind() {
         len,
     );
 
-    let invalid_ntt = vec![1u32; size.mask_len() - 1];
-    WATCHED.store(invalid_ntt.as_ptr().cast_mut().cast(), Ordering::SeqCst);
-    LENGTH.store(size_of_val(invalid_ntt.as_slice()), Ordering::SeqCst);
-    ERASED.store(false, Ordering::SeqCst);
-    assert!(
-        catch_unwind(AssertUnwindSafe(|| {
-            let _ = NttGlweSecretKey::new(
-                invalid_ntt,
-                size,
-                SecretKeyDistr::UniformBinary,
-                primus_modulus::BarrettModulus::new(257),
-            );
-        }))
-        .is_err()
-    );
-    assert!(WATCHED.load(Ordering::SeqCst).is_null());
-    assert!(
-        ERASED.load(Ordering::SeqCst),
-        "rejected NTT import was not erased"
-    );
+    // Keep an initialized, truncated tail: rejection must also erase capacity
+    // that once held coefficients, not only the invalid logical prefix.
+    let mut invalid_coefficients = vec![1i32; 2 * size.mask_len()];
+    let data = invalid_coefficients.as_ptr().cast();
+    let len = size_of_val(invalid_coefficients.as_slice());
+    invalid_coefficients.truncate(size.mask_len() - 1);
+    assert_erased_on_rejection(data, len, || {
+        GlweSecretKey::<u32>::new(invalid_coefficients, size, SecretKeyDistr::UniformBinary)
+    });
+
+    let mut invalid_ntt = vec![1u32; 2 * size.mask_len()];
+    let data = invalid_ntt.as_ptr().cast();
+    let len = size_of_val(invalid_ntt.as_slice());
+    invalid_ntt.truncate(size.mask_len() - 1);
+    assert_erased_on_rejection(data, len, || {
+        NttGlweSecretKey::new(
+            invalid_ntt,
+            size,
+            SecretKeyDistr::UniformBinary,
+            primus_modulus::BarrettModulus::new(257),
+        )
+    });
 
     let mut fourier = vec![Complex64::new(1.0, 1.0); 2 * size.fourier_mask_len()];
     let data = fourier.as_ptr().cast();
@@ -162,6 +179,14 @@ fn secret_storage_is_erased_on_drop_and_sampling_unwind() {
         data,
         len,
     );
+
+    let mut invalid_fourier = vec![Complex64::new(1.0, 1.0); 2 * size.fourier_mask_len()];
+    let data = invalid_fourier.as_ptr().cast();
+    let len = size_of_val(invalid_fourier.as_slice());
+    invalid_fourier.truncate(size.fourier_mask_len() - 1);
+    assert_erased_on_rejection(data, len, || {
+        FourierGlweSecretKey::new(invalid_fourier, size, SecretKeyDistr::UniformBinary)
+    });
 
     let sampler = SecretKeySampler::<u32>::new(SecretKeyDistr::UniformBinary);
     let size = GlweSize::new(GlweDimension::new(1), PolyLength::new(64));

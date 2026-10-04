@@ -100,7 +100,7 @@ fn main() {
 
 对密文 `[a, b]`，私钥加密计算 `b = <a,s> + e + Encode(message) mod q`。 只有相位噪声处于 codec 的解码余量内时，才能恢复原消息。私钥、密文和参数的维度及模数 必须一致，Encoded 系数必须是规范剩余类。拥有型私钥操作在采样或写入前检查记录的模数；raw view 依赖调用方事先建立模数兼容性。
 
-`LweSecretKey::generate` 记录参数模数；`LweSecretKey::new(coefficients, distribution, modulus)` 导入时记录显式传入的模数，不扫描系数。导入数据须已是符合声明分布的规范剩余类。`cipher_modulus_minus_one()` 返回 `q - 1`（Native 为 `T::MAX`），用于区分剩余类域，不证明秘密身份或导入来源。`as_view()` 不携带这些元数据：调用 raw 接口前，应先检查拥有型密钥。显式 `zeroize()` 清空系数，保留公开的模数/分布元数据；擦除后应丢弃密钥。
+`LweSecretKey::generate` 在采样前接管秘密缓冲区，采样 panic 导致栈展开时擦除已写入的秘密，并记录参数模数；`LweSecretKey::new(coefficients, distribution, modulus)` 导入时记录显式传入的模数，不扫描系数。导入数据须已是符合声明分布的规范剩余类。`cipher_modulus_minus_one()` 返回 `q - 1`（Native 为 `T::MAX`），用于区分剩余类域，不证明秘密身份或导入来源。`as_view()` 不携带这些元数据：调用 raw 接口前，应先检查拥有型密钥。显式 `zeroize()` 清空系数，保留公开的模数/分布元数据；擦除后应丢弃密钥。
 
 单条私钥 raw 操作通过 `secret.as_view()` 调用：`encrypt_encoded` / `encrypt_encoded_to` 接受已编码的剩余类、模数、均匀采样器、噪声采样器和 RNG； `decrypt_phase` 返回 `b - <a,s>`，不进行解码。向 raw 加密传入零会得到随机化的零密文。 `LweSecretKeyRef::Signed` 直接借用有符号系数，不分配 Encoded 副本。点积调用模数后端的 `ReduceDotProductSigned` 实现，将表示转换与乘法融合。 显式模数下要求 `-q < s_i < q`；Native 模数下允许所有有符号值。 Raw 采样器必须使用相同模数。这些范围及采样器约定是调用方前提。
 

@@ -5,6 +5,44 @@ use primus_lwe::{LweParameters, LweSecretKey, SecretKeyDistr};
 use primus_modulus::BarrettModulus;
 use rand::{SeedableRng, rngs::StdRng};
 
+// Owning generation must preserve the signed sampler's values and RNG stream,
+// including both Gaussian backends and a whole-key fixed composition.
+#[test]
+fn key_generation_preserves_samples_and_rng_consumption() {
+    use primus_integer::FheUint;
+    use primus_lwe::LweParametersInner;
+    use primus_modulus::NativeModulus;
+    use primus_reduce::RingContext;
+    use rand::Rng;
+
+    fn check<T: FheUint>(modulus: impl RingContext<T>) {
+        for distribution in [
+            SecretKeyDistr::UniformBinary,
+            SecretKeyDistr::UniformTernary,
+            SecretKeyDistr::fixed_composition_ternary(67, 22, 22),
+            SecretKeyDistr::gaussian(3.2),
+            SecretKeyDistr::gaussian(30.0),
+        ] {
+            let params = LweParametersInner::new(LweDimension::new(67), modulus, distribution, 0.7);
+            let mut rng = StdRng::seed_from_u64(201);
+            let mut oracle_rng = StdRng::seed_from_u64(201);
+            let signed = params
+                .secret_key_sampler()
+                .sample_signed(67, &mut oracle_rng);
+            let key = LweSecretKey::generate(&params, &mut rng);
+            assert_eq!(key.dimension(), signed.len());
+            for (&actual, expected) in key.as_ref().iter().zip(signed) {
+                assert_eq!(actual, modulus.encode_signed(expected), "{distribution:?}");
+            }
+            assert_eq!(rng.next_u64(), oracle_rng.next_u64(), "{distribution:?}");
+        }
+    }
+    check(NativeModulus::<u32>::new());
+    check(BarrettModulus::new(1009u32));
+    check(NativeModulus::<u64>::new());
+    check(BarrettModulus::new(1009u64));
+}
+
 #[test]
 fn message_encryption_reuses_storage_for_both_embeddings() {
     let params = LweParameters::new(

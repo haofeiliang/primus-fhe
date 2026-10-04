@@ -36,6 +36,7 @@ impl<T: FheUint> Drop for GlweSecretKey<T> {
 impl<T: FheUint> GlweSecretKey<T> {
     /// Wraps signed coefficient storage with its layout and distribution metadata.
     /// The distribution is recorded without checking the supplied coefficients.
+    /// Rejected storage is erased when layout validation unwinds.
     ///
     /// # Panics
     ///
@@ -43,17 +44,19 @@ impl<T: FheUint> GlweSecretKey<T> {
     #[inline]
     #[must_use]
     pub fn new(key: Vec<T::SignedInteger>, glwe_size: GlweSize, distr: SecretKeyDistr) -> Self {
+        // Establish the erasing owner before validation can unwind.
+        let secret = Self {
+            key,
+            glwe_size,
+            distr,
+        };
         assert_eq!(
-            key.len(),
+            secret.key.len(),
             glwe_size.mask_len(),
             "coefficient secret key layout mismatch"
         );
 
-        Self {
-            key,
-            glwe_size,
-            distr,
-        }
+        secret
     }
 
     /// Returns the GLWE layout of this [`GlweSecretKey<T>`].

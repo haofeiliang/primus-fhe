@@ -60,6 +60,7 @@ impl FourierGlweSecretKey {
     /// Wraps integer-scaled Fourier secret polynomials.
     /// The values must follow this type's representation contract and the
     /// recorded distribution; raw construction does not check those properties.
+    /// Rejected storage is erased when layout validation unwinds.
     ///
     /// # Panics
     ///
@@ -67,12 +68,14 @@ impl FourierGlweSecretKey {
     #[inline]
     #[must_use]
     pub fn new(key: Vec<Complex64>, size: GlweSize, distr: SecretKeyDistr) -> Self {
+        // Establish the erasing owner before validation can unwind.
+        let secret = Self { key, size, distr };
         assert_eq!(
-            key.len(),
+            secret.key.len(),
             size.fourier_mask_len(),
             "FOURIER secret key layout mismatch"
         );
-        Self { key, size, distr }
+        secret
     }
 
     /// Returns the coefficient-domain GLWE layout.

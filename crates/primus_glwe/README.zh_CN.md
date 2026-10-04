@@ -28,9 +28,9 @@ let (coeff_sk, fourier_sk) =
     FourierGlweSecretKey::generate_pair(&fourier_params, &mut fft, &mut rng);
 ```
 
-只需要有符号系数私钥时使用 `GlweSecretKey::generate`。转换已有系数私钥时使用 `from_coeff_secret_key`。固定重量分布作用于全部 `k*N` 个系数，而非逐多项式分别采样。私钥缓冲区在析构时擦除，也覆盖生成中发生 panic 的展开路径。
+只需要有符号系数私钥时使用 `GlweSecretKey::generate`。转换已有系数私钥时使用 `from_coeff_secret_key`。固定重量分布作用于全部 `k*N` 个系数，而非逐多项式分别采样。私钥缓冲区在析构时擦除，也覆盖生成或系数/NTT/Fourier 导入检查失败时的栈展开路径。
 
-`NttGlweSecretKey` 在转换/生成时记录显式 `q`。导入变换值使用 `NttGlweSecretKey::new(values, size, distribution, modulus)`；`modulus` 实现 `ExplicitModulus`，`cipher_modulus()` 返回记录的数值。导入只检查布局，不扫描系数规范性、分布或验证变换来源；布局不匹配时也会擦除已接收的秘密缓冲。
+`NttGlweSecretKey` 在转换/生成时记录显式 `q`。导入变换值使用 `NttGlweSecretKey::new(values, size, distribution, modulus)`；`modulus` 实现 `ExplicitModulus`，`cipher_modulus()` 返回记录的数值。导入只检查布局，不扫描系数规范性、分布或验证变换来源。
 
 普通、系数域、截断和 gadget 操作在公开边界核对 key/参数/table 的模数，在采样或写入前拒绝不匹配；gadget/密钥生成循环复用该检查。密钥不保存 table，相同 `q` 和布局不能证明 NTT roots、求值顺序或秘密身份，调用方仍须保持变换表示。显式 `zeroize()` 清空秘密缓冲、保留公开元数据，擦除后应丢弃密钥。公钥原始字节采用本机字节序，不包含参数元数据。
 
