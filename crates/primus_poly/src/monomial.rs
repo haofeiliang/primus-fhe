@@ -1,3 +1,7 @@
+mod lazy;
+
+pub use lazy::{lazy_add_mul_monomial_assign, lazy_add_mul_monomial_pair_assign};
+
 use primus_integer::FheUint;
 use primus_reduce::{ReduceAdd, ReduceSub};
 

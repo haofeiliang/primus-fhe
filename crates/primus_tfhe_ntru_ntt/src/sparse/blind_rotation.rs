@@ -12,6 +12,7 @@ use primus_modulus::BarrettModulus;
 use primus_ntru::NttNtruExternalProductWorkspace;
 use primus_ntt::MonomialNttTable;
 use primus_poly::Polynomial;
+use primus_reduce::ReduceOnceSlice;
 
 pub(crate) struct SparseWorkspace<T: FheUint> {
     pub(crate) exponents: Vec<usize>,
@@ -76,8 +77,10 @@ pub(crate) fn rotate_buckets<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
 
 /// Starts from the encrypted dummy and adds every selector in key order. Pairing
 /// shares an accumulator traversal without skipping zero exponents or encrypted
-/// zeros; an odd final selector uses the single-product kernel. The key and
-/// workspace establish complete, equally sized controls and canonical residues.
+/// zeros; an odd final selector uses the single-product kernel. For u64, pairs
+/// retain [0,2q) residues until one final normalization before NTT; other widths
+/// retain canonical updates. The key and workspace establish complete, equally
+/// sized controls and canonical source residues.
 #[inline]
 fn aggregate_bucket<T: FheUint>(
     indices: &[usize],
@@ -94,17 +97,40 @@ fn aggregate_bucket<T: FheUint>(
     while let Some((&first_index, first)) = controls.next() {
         let exponent = exponents[first_index];
         if let Some((&second_index, second)) = controls.next() {
-            aggregate.add_mul_monomial_pair_assign(
-                &first,
+            if T::BITS == 64 {
+                primus_poly::lazy_add_mul_monomial_pair_assign(
+                    aggregate.as_mut(),
+                    first.as_ref(),
+                    exponent,
+                    second.as_ref(),
+                    exponents[second_index],
+                    poly_length,
+                    modulus,
+                );
+            } else {
+                aggregate.add_mul_monomial_pair_assign(
+                    &first,
+                    exponent,
+                    &second,
+                    exponents[second_index],
+                    poly_length,
+                    modulus,
+                );
+            }
+        } else if T::BITS == 64 {
+            primus_poly::lazy_add_mul_monomial_assign(
+                aggregate.as_mut(),
+                first.as_ref(),
                 exponent,
-                &second,
-                exponents[second_index],
                 poly_length,
                 modulus,
             );
         } else {
             aggregate.add_mul_monomial_assign(&first, exponent, poly_length, modulus);
         }
+    }
+    if T::BITS == 64 {
+        modulus.reduce_once_slice_assign(aggregate.as_mut());
     }
 }
 

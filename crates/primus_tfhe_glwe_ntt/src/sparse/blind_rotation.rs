@@ -7,6 +7,7 @@ use primus_lattice::{
 };
 use primus_ntt::NttTable;
 use primus_poly::Polynomial;
+use primus_reduce::ReduceOnceSlice;
 use primus_tfhe::rotation::RotationModulusSwitch;
 
 use super::SparseGlweBootstrappingKey;
@@ -155,15 +156,15 @@ impl<T: FheUint> SparseGlweBootstrappingKey<T> {
                     continue;
                 }
                 let ggsw_len = size.ggsw_len();
-                // Fuse two rotations so each accumulator coefficient is loaded and
-                // stored once per pair; each modular contribution remains canonical.
+                // Fuse two rotations and correct once per pair, retaining [0,2q)
+                // residues until the complete bucket is normalized before NTT.
                 let (index_pairs, index_tail) = indices.as_chunks::<2>();
                 let mut selection_pairs = selections.chunks_exact(2 * ggsw_len);
                 for (indices, pair) in index_pairs.iter().zip(selection_pairs.by_ref()) {
                     let (a, b) = pair.split_at(ggsw_len);
                     // A tile contains complete polynomials but need not be a
                     // complete GGSW, so use the shared coefficient-batch kernel.
-                    primus_poly::add_mul_monomial_pair_assign(
+                    primus_poly::lazy_add_mul_monomial_pair_assign(
                         tile,
                         &a[start..end],
                         input_exponents[indices[0]],
@@ -175,17 +176,18 @@ impl<T: FheUint> SparseGlweBootstrappingKey<T> {
                 }
                 if let Some(&index) = index_tail.first() {
                     let selection = selection_pairs.remainder();
-                    for (acc, source) in tile
-                        .chunks_exact_mut(poly_length)
-                        .zip(selection[start..end].chunks_exact(poly_length))
-                    {
-                        Polynomial(acc).add_mul_monomial_assign(
-                            &Polynomial(source),
-                            input_exponents[index],
-                            modulus,
-                        );
-                    }
+                    primus_poly::lazy_add_mul_monomial_assign(
+                        tile,
+                        &selection[start..end],
+                        input_exponents[index],
+                        poly_length,
+                        modulus,
+                    );
                 }
+            }
+            if T::BITS == 64 {
+                // The ordinary NTT entry requires canonical coefficients.
+                modulus.reduce_once_slice_assign(aggregate);
             }
             let aggregate_ntt = Ggsw::new(aggregate.as_mut_slice()).into_ntt_form(ntt);
             if output_is_current {

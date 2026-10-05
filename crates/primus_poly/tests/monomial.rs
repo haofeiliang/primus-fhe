@@ -154,3 +154,79 @@ fn monomial_operations_match_independent_ring_arithmetic() {
     const Q64: u64 = 1_152_921_504_606_830_593;
     check::<u64, _>(BarrettModulus::new(Q64), Q64.into());
 }
+
+// Start at both ends of the redundant range, then retain it across paired and
+// odd-tail updates. The independent scatter oracle always computes in Z_q.
+fn check_lazy_monomials<T: FheUint + Into<u64>>(q: T) {
+    use primus_poly::{lazy_add_mul_monomial_assign, lazy_add_mul_monomial_pair_assign};
+    use primus_reduce::ReduceOnceSlice;
+
+    let modulus = BarrettModulus::new(q);
+    let wide_q = u128::from(q.into());
+    lazy_add_mul_monomial_pair_assign(&mut [], &[], 0, &[], 0, 32, modulus);
+    lazy_add_mul_monomial_assign(&mut [], &[], 0, 32, modulus);
+    for (n, components) in [(1, 1), (2, 3), (32, 3)] {
+        let len = n * components;
+        let first: Vec<T> = (0..len)
+            .map(|i| {
+                T::as_from(if i % 3 == 0 {
+                    0
+                } else {
+                    wide_q - 1 - i as u128 % 13
+                })
+            })
+            .collect();
+        let second: Vec<T> = first.iter().copied().rev().collect();
+        for a in [0, n / 2, n - 1, n, 2 * n - 1] {
+            for b in [0, n / 2, n - 1, n, 2 * n - 1] {
+                let mut actual: Vec<T> = (0..len)
+                    .map(|i| T::as_from([0, wide_q - 1, wide_q, 2 * wide_q - 1][i % 4]))
+                    .collect();
+                let mut expected: Vec<_> = actual
+                    .iter()
+                    .map(|&v| u128::from(v.into()) % wide_q)
+                    .collect();
+                let rotations = [
+                    monomial_oracle(&first, a, n, wide_q),
+                    monomial_oracle(&second, b, n, wide_q),
+                    monomial_oracle(&first, b, n, wide_q),
+                ];
+                for _ in 0..2 {
+                    lazy_add_mul_monomial_pair_assign(
+                        &mut actual,
+                        &first,
+                        a,
+                        &second,
+                        b,
+                        n,
+                        modulus,
+                    );
+                    assert!(actual.iter().all(|&v| v < q + q));
+                    lazy_add_mul_monomial_assign(&mut actual, &first, b, n, modulus);
+                    assert!(actual.iter().all(|&v| v < q + q));
+                    for rotated in &rotations {
+                        for (sum, &value) in expected.iter_mut().zip(rotated) {
+                            *sum = (*sum + u128::from(value.into())) % wide_q;
+                        }
+                    }
+                }
+                modulus.reduce_once_slice_assign(&mut actual);
+                assert!(
+                    actual
+                        .iter()
+                        .zip(expected)
+                        .all(|(&a, b)| u128::from(a.into()) == b),
+                    "n={n}, a={a}, b={b}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn lazy_monomials_preserve_residue_and_spare_bit_bounds() {
+    check_lazy_monomials(132_120_577u32);
+    check_lazy_monomials((1u32 << 30) - 35);
+    check_lazy_monomials(1_125_899_906_826_241u64);
+    check_lazy_monomials((1u64 << 62) - 57);
+}

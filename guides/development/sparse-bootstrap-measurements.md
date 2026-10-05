@@ -8,6 +8,8 @@ The later [NTRU pair experiment](#ntru-paired-coefficient-aggregation) records a
 The [tile experiment](#coefficient-aggregation-tiles) and
 [first-bucket experiment](#glwe-first-bucket-trivial-input) record candidates that were not retained.
 The [streaming experiment](#streaming-control-aggregation-and-external-product) likewise retains the existing pipeline.
+The later [layout and batch review](#layout-and-batch-admission-review) records prerequisites, without new timing results.
+The [bounded lazy NTT pair](#bounded-lazy-ntt-pair) is retained for the two u64 NTT backends.
 
 ## Conditions and workload pairing
 
@@ -1063,3 +1065,218 @@ timestamps, and verify no stage probe remains in the latency binary. Pin with
 `u(32|64)/.*sparse.*complete$`, and use the stated Criterion settings and separate
 `CRITERION_HOME` directories. Captures and allocation instrumentation belong
 outside timed iterations. All temporary implementations and artifacts were removed.
+
+## Layout and batch admission review
+
+**2026-10-05; source `344be16b`. Decision: defer both experiments under their
+entry conditions.** This was a source/consumer and existing-evidence review.
+No layout or batching prototype was implemented, no benchmark was run, and no
+performance, noise or memory improvement is claimed. The two decisions are
+independent; neither is evidence that the corresponding optimization cannot work.
+
+### Key layout
+
+The [GLWE NTT kernel](../../crates/primus_tfhe_glwe_ntt/src/sparse/blind_rotation.rs)
+still traverses approximately 16 KiB aggregate tiles outside the selector loop.
+Its [source storage](../../crates/primus_tfhe_glwe_ntt/src/sparse/key.rs) is
+`[bucket][entry...,dummy][row][level][component][coefficient]`. With the existing
+u64/k1/L6/N1024 fixture, adjacent entries' corresponding tiles start 192 KiB apart.
+This is a concrete strided-access hypothesis for a tile-major layout, not a
+measurement of cache misses, TLB pressure or stalled source loads. The required
+logical source coefficients are still read once per BR; reordering them alone
+does not reduce those bytes.
+
+The [GLWE Fourier](../../crates/primus_tfhe_glwe_fourier/src/sparse/blind_rotation.rs),
+[NTRU NTT](../../crates/primus_tfhe_ntru_ntt/src/sparse/blind_rotation.rs) and
+[NTRU Fourier](../../crates/primus_tfhe_ntru_fourier/src/sparse/blind_rotation.rs)
+production paths instead consume whole controls in single/pair order. A
+tile-major replacement there would also need a different traversal; it cannot
+be justified by the GLWE NTT stride alone.
+
+The earlier tile and streaming experiments changed traversal/scheduling, not
+source layout. Aggregation's large share and the narrow u64 streaming signal
+do not isolate source locality as the limiting cost. No source-load/cache/TLB
+counter evidence has been collected; the host still reports
+`perf_event_paranoid=4`. The present gate decision rests on the missing evidence,
+not on a requirement to obtain hardware counters specifically. A controlled
+source-access diagnostic could also justify reopening the layout experiment.
+
+Once that evidence exists, isolate one backend and reorder the same sampled
+coefficients, preserving dummy, selector and polynomial order within the
+arithmetic. Check the logical key coefficient-for-coefficient and measure
+complete PBS/CBS plus conversion/keygen, retained key bytes and construction
+live peak. Account for the existing contiguous GGSW/NLEV views when defining
+the new layout; do not silently reinterpret those views or keep a permanent
+second full key solely to preserve them.
+
+### Batch consumers
+
+Existing uses of “many”, “batch” and output throughput have different meanings:
+
+| Consumer | Current computation | Relevance to bucket-wise batching of different inputs |
+| --- | --- | --- |
+| Interleaved ManyLUT and factorized MVB | One input BR supplies several outputs | Output count is not the number of independent BR requests. |
+| NTRU one-hot CBS | One input BR supplies several selectors | Selector count is not an input batch size. |
+| NTRU LWE return batches | Extraction/conversion and key switching after BR | Existing return batching does not supply a BR batch scheduler. |
+| High-precision LUT selector preparation | Different input chunks each require one-hot BR | A real potential internal consumer, subject to pruning and buffer/latency choices. |
+
+The [NTT LUT evaluator](../../crates/primus_tfhe_ntru_lut/src/ntt.rs) and
+[Fourier LUT evaluator](../../crates/primus_tfhe_ntru_lut/src/fourier.rs) prepare
+low-chunk rotation controls, then required high-chunk selectors. A chunk needing
+both NLEV and NGSW already shares one BR/projection; unused high chunks are skipped.
+The actual BR count is exposed by
+[`LookupTableStats::one_hot_chunk_count`](../../crates/primus_tfhe_ntru_lut/src/lookup_table/statistics.rs):
+`d + number of non-unused high chunks`, not the output chunk count.
+The [current fixture](../../crates/primus_tfhe_ntru_lut/benches/support/mod.rs)
+uses c8/d5/o8 and several differently pruned functions.
+
+Thus it would be incorrect to claim there is no possible batch consumer or an
+algebraic obstacle. However, no specific BR batch window, permitted extra
+workspace or complete-request latency tradeoff has been selected for it. Current
+chunk preparation deliberately reuses one set of BR/selector scratch. Grouping
+chunks would require keeping independent accumulators live and separating their
+BR preparation from projection/consumption. That is a separate design decision,
+not a mechanical use of the existing LWE return batch.
+
+Reopen batching with an explicit workload and batch window, an end-to-end latency
+criterion and a memory allowance. For an internal LUT consumer, compare one
+complete evaluation against the existing serial chunk preparation, retain all
+pruning and selector omissions, and include projection, selection, rotation and
+return. For external independent requests, specify arrival/batch latency as well
+as throughput. Verify batch=1, tails, output order, per-request bucket order and
+zero online allocation. Do not add implicit threads, queues or per-request
+workspaces to the default evaluator before that decision.
+
+## Bounded lazy NTT pair
+
+**2026-10-05; baseline `344be16b`. Decision: retain for GLWE NTT and NTRU NTT
+u64 sparse aggregation.** u32 keeps its existing single/pair choice. Fourier,
+key layouts, aggregation tiles, pair order, dummy initialization, NTT and
+external products are unchanged. Every selector is still consumed, including
+zero exponents and encrypted zeros; no new workspace or strategy object is added.
+
+### Arithmetic and shared kernel
+
+The two [coefficient-batch functions](../../crates/primus_poly/src/monomial/lazy.rs)
+`lazy_add_mul_monomial_pair_assign` and `lazy_add_mul_monomial_assign` accept
+canonical sources and an initialized accumulator in `[0,2q)`. For one pair,
+fixed interval signs select one of:
+
+```text
+acc + a + b
+acc + a + q - b
+acc + q - a + b
+acc + 2q - a - b
+```
+
+Adding one `q` per negative source prevents underflow. All intermediates are
+below `4q`, which fits the word under the existing Barrett bound
+`q < 2^(BITS-2)`. One conditional subtraction of `2q` restores `[0,2q)`;
+an odd tail has an intermediate below `3q` and uses the same correction.
+At each bucket's end, `ReduceOnceSlice::reduce_once_slice_assign` restores
+`[0,q)` before the ordinary NTT. Biases are multiples of `q`, so the canonical
+aggregate and downstream ciphertext must be exactly unchanged. The ordinary
+NTT input contract is not widened, and no division or full Barrett reduction
+is introduced in the pair loop.
+
+The private prototypes were consolidated into these two shared functions.
+The flat coefficient kernel retains slice chunks, as does the existing
+canonical pair kernel. A separate CPU 4 GLWE PBS BK comparison of otherwise
+identical lazy kernels measured polynomial-view iteration at 16.096 / 16.411 ms
+versus slice chunks at 15.471 / 15.473 ms. This supports the local traversal
+choice, not a general claim about iterators or a diagnosed cache mechanism.
+The surrounding NTRU control traversal still uses `NlevIter` and borrowed views.
+
+### Complete requests and normalization cost
+
+The hardware, toolchain and diagnostic profiles above are unchanged:
+n728/h32/N1024, r3/B64, Q=1125899906826241, BR base-log 8/L6; GLWE k1.
+PBS uses t8, CBS t4, and NTRU nonzero one-hot uses t8/M4 and produces three
+controls. Seeds, return keys, LUTs, bases and noise settings match each baseline.
+These are functional comparison profiles, not assessed security parameters.
+
+Each saved binary ran in a fresh process and Criterion directory, pinned to
+CPU 4 in baseline/candidate/candidate/baseline order, then CPU 8 in the reverse
+order for PBS. The normal settings were 30 samples, 0.5 s warmup and a 2 s
+measurement target. One iteration performs one complete preallocated request;
+setup, keygen, encryption and correctness checks are outside timing. Final
+normalization is included. There are no stage timers in these binaries;
+temporary fixture captures also run only outside timed iterations. Builds and
+tests ran separately from measurements. No workspace SIMD feature was enabled.
+
+Values are milliseconds. Each pair contains the two run means; the last column
+is the envelope of their separate 95% CIs, not a pooled confidence interval.
+Change compares the average of the two run means. BK means BR→KS, KB means KS→BR.
+
+| CPU / request | Baseline means | Lazy means | Change | 95% CI envelopes, baseline → lazy |
+| --- | ---: | ---: | ---: | --- |
+| 4 / GLWE PBS BK | 16.263 / 16.263 | 15.414 / 15.437 | -5.2% | [16.243, 16.282] → [15.394, 15.459] |
+| 4 / GLWE PBS KB | 16.390 / 16.365 | 15.510 / 15.600 | -5.0% | [16.340, 16.418] → [15.491, 15.726] |
+| 4 / GLWE CBS BK | 16.381 / 16.352 | 15.481 / 15.494 | -5.4% | [16.323, 16.418] → [15.457, 15.514] |
+| 4 / GLWE CBS KB | 16.430 / 16.412 | 15.661 / 15.665 | -4.6% | [16.387, 16.460] → [15.636, 15.692] |
+| 8 / GLWE PBS BK | 17.146 / 17.130 | 16.275 / 16.219 | -5.2% | [17.107, 17.175] → [16.190, 16.301] |
+| 8 / GLWE PBS KB | 17.412 / 17.289 | 16.280 / 16.233 | -6.3% | [17.259, 17.454] → [16.207, 16.314] |
+| 4 / NTRU PBS | 4.651 / 4.688 | 4.518 / 4.521 | -3.2% | [4.647, 4.700] → [4.512, 4.532] |
+| 4 / NTRU CBS | 3.277 / 3.347 | 3.217 / 3.254 | -2.3% | [3.275, 3.365] → [3.197, 3.275] |
+| 8 / NTRU PBS | 5.251 / 5.289 | 5.117 / 5.112 | -3.0% | [5.243, 5.307] → [5.104, 5.131] |
+| 4 / NTRU one-hot, 30 samples | 3.652 / 3.685 | 3.714 / 3.703 | +1.1% | [3.648, 3.691] → [3.676, 3.730] |
+| 4 / NTRU one-hot, 50 samples | 3.659 / 3.636 | 3.547 / 3.545 | -2.8% | [3.634, 3.665] → [3.540, 3.554] |
+
+The short one-hot run regressed, so the same saved binaries were repeated with
+50 samples, 1 s warmup and an 8 s measurement target. Both longer candidate
+runs improved; retain the short result to show sensitivity to measurement
+conditions. Frequency and unrelated system activity were not controlled.
+No claim is made that every parameter set, CPU or feature benefits equally.
+
+A separate instrumented PBS binary summed a timer around just the normalization
+call in each of the 64 buckets, printing only after the complete BR. On CPU 4,
+after excluding the first five requests, the per-request median was **92.838 µs
+for GLWE** (147 requests) and **18.376 µs for NTRU** (363 requests). This used
+15 samples, 0.3 s warmup and a 1 s target. These diagnostic sums include timer
+overhead; they are not subtracted from the complete-request results, and the
+instrumented total latency is not used for acceptance.
+
+### Correctness, resources and limits
+
+One permanent [polynomial test](../../crates/primus_poly/tests/monomial.rs)
+uses independent u128 scatter arithmetic, covering u32/u64, small and near-limit
+Barrett moduli, all sign combinations, equal/wrapping/boundary exponents, empty
+batches, multiple polynomials, canonical source endpoints and initialized
+accumulators at `0`, `q-1`, `q`, `2q-1`. Repeated pair and odd-tail updates check
+the redundant bound before final canonical comparison. Existing NTRU bucket
+tests cover dummy reset, empty/odd buckets, nonconsecutive indices and first-NLEV
+versus later-NGSW consumption. Existing PBS/CBS/one-hot/LUT tests cover consumers
+and reuse, including zero-allocation assertions; no additional large CI case
+or benchmark target was added.
+
+Across the baseline, private prototypes and shared-kernel comparisons, all 128
+setup captures across seven request IDs matched their coefficient-key
+fingerprint, complete input and complete output. The public bucket map was not
+separately fingerprinted. Decryption and CMux assertions passed outside timing.
+Together with the coefficient oracle this verifies the selected deterministic
+workloads, not a statistical noise study.
+
+Key generation, retained key arrays, workspace owners and allocations are
+unchanged by construction; the final pass reuses the existing aggregate.
+No new retained/peak-memory or keygen-time measurements were made. Logical
+source-key reads are unchanged. Cache/TLB counters remain unavailable on this
+host; the timing differences do not identify a cache or bandwidth cause.
+
+After removing probes, all-targets workspace check with `ntt,rustfft,tfhe-fft`
+passed. The four affected packages (`primus_poly`, the two NTT backends and
+`primus_tfhe_ntru_lut` with `ntt`) passed check and clippy (`-D warnings`),
+49 default tests and the same 49 tests with nightly SIMD. Strict rustdoc for
+the three implementation crates, the existing polynomial doctest and format
+checks passed. SIMD performance, u32 performance and full high-precision LUT
+latency were not measured here; correctness coverage is not a timing claim.
+
+To reproduce, build and save separate binaries from the baseline and candidate
+using `cargo bench -p primus_tfhe_glwe_ntt --bench sparse_pbs --bench circuit_bootstrap --no-run`,
+then repeat for `primus_tfhe_ntru_ntt`. Rebuild restored sources with fresh
+timestamps. Run with `taskset -c 4` or `8`, a separate `CRITERION_HOME` per process,
+`--bench --sample-size 30 --warm-up-time 0.5 --measurement-time 2 --noplot`.
+Use `u64/.*sparse.*complete$` for GLWE, and
+`u64/.*(sparse/complete|cbs/sparse/.*/complete|one_hot/sparse/.*/nonzero)$` for NTRU;
+use the longer settings above for the one-hot confirmation. Capture full outputs
+only in setup. All temporary probes, duplicate kernels and experiment artifacts
+were removed; the existing benchmarks remain unchanged.
