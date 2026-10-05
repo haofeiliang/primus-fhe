@@ -156,6 +156,10 @@ fn selectors<Table: FftTable>(distr: SecretKeyDistr, sparse: bool) {
     let mut nonzero_ngsw = evaluator.allocate_nonzero_ngsw_output();
     let mut joint_nonzero_ngsw = nonzero_ngsw.clone();
     let mut joint_nlev = nlev.clone();
+    let mut pair = evaluator.new_sparse_pair_workspace(pbs.bootstrap_resources_mut());
+    assert_eq!(pair.is_some(), sparse);
+    let mut paired_nlev = nlev.clone();
+    let mut paired_ngsw = nonzero_ngsw.clone();
     let selector_len = L * (N / 2);
     assert_eq!(evaluator.ngsw_selector_len(), selector_len);
     assert_eq!(evaluator.ngsw_batch_len(), M * selector_len);
@@ -192,6 +196,17 @@ fn selectors<Table: FftTable>(distr: SecretKeyDistr, sparse: bool) {
     let mut transformed_nlev = primus_ntru::FourierNlevCiphertext::<Vec<_>>::zero(L * (N / 2));
     let public = primus_poly::Polynomial::new(vec![(3 * Q / (2 * M) as u128) as u64; N]);
     let mut decoded = vec![0; N];
+    // Keep an independent second input and its serial oracle. Repeated pairs
+    // must preserve input order while reusing the same projection destinations.
+    let second_input = encryptor.encrypt_padded(2, &mut rng).unwrap();
+    let mut second_nlev = nlev.clone();
+    let mut second_ngsw = nonzero_ngsw.clone();
+    evaluator.one_hot_nlev_and_nonzero_ngsw_to(
+        second_input.as_view(),
+        &mut second_nlev,
+        &mut second_ngsw,
+        pbs.bootstrap_resources_mut(),
+    );
     // Descending inputs overwrite nonzero rows. Exact quantized guard endpoints
     // isolate the packed LUT convention from fresh-encryption randomness.
     let a = evaluator.lookup_table().guard_radius() as i64;
@@ -248,6 +263,31 @@ fn selectors<Table: FftTable>(distr: SecretKeyDistr, sparse: bool) {
         // Joint generation reuses projections, preserving both representations.
         assert_eq!(joint_nlev, nlev);
         assert_eq!(joint_nonzero_ngsw, nonzero_ngsw);
+        if let Some(pair) = pair.as_mut() {
+            let mut next = 0;
+            let (_, allocation) = allocations::measure(|| {
+                evaluator.with_sparse_pair(
+                    [input.as_view(), second_input.as_view()],
+                    pair,
+                    pbs.bootstrap_resources_mut(),
+                    |index, projection| {
+                        assert_eq!(index, next);
+                        next += 1;
+                        projection.project_to(Some(&mut paired_nlev), Some(&mut paired_ngsw));
+                        let (expected_nlev, expected_ngsw) = if index == 0 {
+                            (&nlev, &nonzero_ngsw)
+                        } else {
+                            (&second_nlev, &second_ngsw)
+                        };
+                        assert_eq!(&paired_nlev, expected_nlev);
+                        assert_eq!(&paired_ngsw, expected_ngsw);
+                    },
+                );
+            });
+            assert_eq!(next, 2);
+            assert_eq!(allocation.count, 0);
+        }
+
         assert_eq!(
             context
                 .decryptor(client.external_lwe_secret_key(), &input_codec)
@@ -327,6 +367,47 @@ fn selectors<Table: FftTable>(distr: SecretKeyDistr, sparse: bool) {
     }
     let input = encryptor.encrypt_padded(1u64, &mut rng).unwrap();
     let invalid = primus_tfhe::LweCiphertext::zero(3);
+    if let Some(pair) = pair.as_mut() {
+        // Invalid second input is rejected before any callback. A later output
+        // error can leave the first callback written; the next call must recover.
+        let mut calls = 0;
+        assert!(
+            catch_unwind(AssertUnwindSafe(|| evaluator.with_sparse_pair(
+                [input.as_view(), invalid.as_view()],
+                pair,
+                pbs.bootstrap_resources_mut(),
+                |_, _| calls += 1,
+            )))
+            .is_err()
+        );
+        assert_eq!(calls, 0);
+        assert!(
+            catch_unwind(AssertUnwindSafe(|| evaluator.with_sparse_pair(
+                [second_input.as_view(), input.as_view()],
+                pair,
+                pbs.bootstrap_resources_mut(),
+                |index, projection| {
+                    if index == 0 {
+                        projection.project_to(Some(&mut paired_nlev), Some(&mut paired_ngsw));
+                    } else {
+                        projection.project_to(Some(&mut []), None);
+                    }
+                },
+            )))
+            .is_err()
+        );
+        assert_eq!(paired_nlev, second_nlev);
+        evaluator.with_sparse_pair(
+            [second_input.as_view(), second_input.as_view()],
+            pair,
+            pbs.bootstrap_resources_mut(),
+            |_, projection| {
+                projection.project_to(Some(&mut paired_nlev), Some(&mut paired_ngsw));
+                assert_eq!(paired_nlev, second_nlev);
+                assert_eq!(paired_ngsw, second_ngsw);
+            },
+        );
+    }
     let nlev_len = nlev.len();
     // Both joint layouts reject bad shapes before touching either output.
     for compact in [false, true] {

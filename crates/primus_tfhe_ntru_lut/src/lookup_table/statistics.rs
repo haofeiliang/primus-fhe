@@ -39,7 +39,8 @@ pub struct LookupTableStats {
 /// Includes retained selectors, rotation controls/factors, selected-table slots,
 /// current/product polynomials, and Fourier conversion/gadget-one buffers.
 ///
-/// **Excludes** nested BR/CBS/one-hot and LWE-return workspaces, transform engines,
+/// **Excludes** BR/CBS/one-hot workspaces (including the extra sparse input state),
+/// LWE-return workspaces, transform engines,
 /// keys, public table/plan, caller inputs/outputs, allocator overhead and temporary
 /// construction storage. This is a partial workspace estimate, not peak or total memory.
 /// Both representations are available to compiler-only consumers without loading a backend.

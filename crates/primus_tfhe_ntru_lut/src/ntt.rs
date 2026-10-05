@@ -1,19 +1,22 @@
 use primus_encoding::RoundedCodec;
 use primus_integer::FheUint;
 use primus_lattice::{
-    ngsw::{NttNgswIter, NttNgswIterMut},
+    ngsw::NttNgswIter,
     nlev::{NttNlev, NttNlevIter},
 };
 use primus_modulus::BarrettModulus;
 use primus_ntru::{NlevParameters, NtruCiphertext, NttNgswCiphertext};
 use primus_ntt::MonomialNttTable;
-use primus_poly::{NttPolynomialIter, NttPolynomialIterMut, Polynomial, PolynomialIterMut};
+use primus_poly::{NttPolynomialIter, NttPolynomialIterMut, Polynomial};
 use primus_reduce::{ReduceSub, RingContext};
 use primus_tfhe::LweCiphertext;
 use primus_tfhe_ntru::{CircuitBootstrapParameters, LweReturnEvaluator};
 use primus_tfhe_ntru_ntt::{
     BlindRotationKey, CircuitBootstrapKey, OneHotCircuitBootstrapEvaluator, ServerKey, TfheContext,
 };
+
+mod selectors;
+use selectors::SelectorBuffers;
 
 use crate::{
     HighPrecisionLookupTable, LookupTableError,
@@ -38,6 +41,8 @@ pub type NttPublicLift<'a, T> = (NttNlev<&'a [T]>, &'a NlevParameters<T, Barrett
 /// chunks that require both representations. Low chunks retain aggregated
 /// rotation controls. Shared results and their noise are correlated across
 /// outputs; no independence of output errors is promised.
+/// Sparse BR processes surviving chunks in pairs, retaining one extra input
+/// aggregate/current/exponent state only when at least two chunks need BR.
 /// Public monomial factors and all online workspaces are allocated at binding.
 /// Table products reuse one-hot CBS's external-product workspace between calls.
 pub struct NttLookupTableEvaluator<'a, T, Table, LM = BarrettModulus<T>>
@@ -50,6 +55,8 @@ where
     lookup_table: &'a HighPrecisionLookupTable<T>,
     resources: primus_tfhe_ntru_ntt::BootstrapResources<'a, T, Table, LM>,
     one_hot: OneHotCircuitBootstrapEvaluator<'a, T, Table, LM>,
+    // One extra input state; transform, product and projection scratch stay shared.
+    sparse_pair: Option<primus_tfhe_ntru_ntt::sparse::SparseBlindRotationPairWorkspace<T>>,
     // Present only when the compiled plan needs `NLEV[1]`, with its own basis.
     public_lift: Option<NttPublicLift<'a, T>>,
     lwe_return: LweReturnEvaluator<'a, T, LM>,
@@ -172,6 +179,11 @@ where
         let resources = context.bootstrap_resources(blind_rotation_key)?;
         let one_hot =
             OneHotCircuitBootstrapEvaluator::try_new(&resources, circuit_key, &input_codec)?;
+        let sparse_pair = if lookup_table.stats().one_hot_chunk_count >= 2 {
+            one_hot.new_sparse_pair_workspace(&resources)
+        } else {
+            None
+        };
         let layout = lookup_table.layout;
         let n = layout.polynomial_length;
         let lengths = lookup_table
@@ -185,6 +197,7 @@ where
             lookup_table,
             public_lift,
             one_hot,
+            sparse_pair,
             resources,
             scalar_return: lwe_return.new_scalar_workspace(),
             lwe_return,
@@ -289,99 +302,77 @@ where
         }
     }
 
-    /// Refreshes required controls for one validated, least-significant-first input.
-    /// Low chunks produce rotation controls; high chunks produce table selectors.
-    /// These buffers are prepared once and reused for every output chunk.
+    /// Refreshes surviving input chunks in order. Sparse pairs share source-key
+    /// traversal; projection and immediate consumption reuse the selector scratch.
     fn prepare_selectors(&mut self, input: &[LweCiphertext<T>]) {
-        let (coefficient_chunks, table_chunks) =
-            input.split_at(self.lookup_table.config().coefficient_chunk_count);
-        self.prepare_rotation_controls(coefficient_chunks);
-        self.prepare_table_selectors(table_chunks);
-    }
-
-    /// Overwrites one `NGSW[X^(-m_i*M^i)]` control per low input chunk.
-    /// Input contains exactly d chunks, matching the control and factor batches
-    /// allocated at construction. One nonzero-selector scratch batch is reused.
-    fn prepare_rotation_controls(&mut self, input: &[LweCiphertext<T>]) {
-        let layout = self.lookup_table.layout;
-        let selector_len = self.one_hot.ngsw_selector_len();
-        let factors_chunk_len = (layout.radix - 1) * layout.polynomial_length;
-        let modulus = self
-            .context
-            .parameters()
-            .accumulator_ntru()
-            .cipher_modulus();
-        // All three batches follow low-chunk order: input m_i, output C_i,
-        // and the M-1 public factors X^(-k*M^i)-1 for this same i.
-        for ((input, mut control), factors) in input
-            .iter()
-            .zip(NttNgswIterMut::new(
-                &mut self.rotation_controls,
-                selector_len,
-            ))
-            .zip(self.rotation_factors.chunks_exact(factors_chunk_len))
-        {
-            self.one_hot.one_hot_nonzero_ngsw_to(
-                input.as_view(),
-                &mut self.nonzero_selectors,
-                &mut self.resources,
-            );
-            // Save this chunk's aggregated rotation control.
-            // The next chunk overwrites `nonzero_selectors` with its own M-1 selectors.
-            aggregate_rotation_control_to(
-                &self.nonzero_selectors,
-                factors,
-                &mut control,
-                self.one_hot.parameters(),
-                modulus,
-            );
-        }
-    }
-
-    /// Generates only the representations needed by surviving choices. A chunk
-    /// may select both public and encrypted operands after local pruning; its
-    /// NLEV and nonzero NGSW then share one BR and projection pass.
-    fn prepare_table_selectors(&mut self, input: &[LweCiphertext<T>]) {
-        let full_len = self.one_hot.ngsw_batch_len();
-        let nonzero_len = full_len - self.one_hot.ngsw_selector_len();
-        for (input, &batches) in input.iter().zip(&self.lookup_table.selection.selectors) {
-            match batches {
-                SelectorBatches::Unused => {}
-                SelectorBatches::Ngsw(_) => {
-                    self.one_hot.one_hot_nonzero_ngsw_to(
-                        input.as_view(),
-                        &mut self.encrypted_table_selectors[batches.ngsw_range(nonzero_len)],
-                        &mut self.resources,
-                    );
-                }
-                SelectorBatches::Nlev(_) => {
-                    self.one_hot.one_hot_nlev_to(
-                        input.as_view(),
-                        &mut self.public_table_selectors[batches.nlev_range(full_len)],
-                        &mut self.resources,
-                    );
-                    self.transform_public_selectors(batches);
-                }
-                SelectorBatches::Both { .. } => {
-                    self.one_hot.one_hot_nlev_and_nonzero_ngsw_to(
-                        input.as_view(),
-                        &mut self.public_table_selectors[batches.nlev_range(full_len)],
-                        &mut self.encrypted_table_selectors[batches.ngsw_range(nonzero_len)],
-                        &mut self.resources,
-                    );
-                    self.transform_public_selectors(batches);
-                }
+        let table = self.lookup_table;
+        let d = table.config().coefficient_chunk_count;
+        let mut chunks = (0..d).chain(
+            table
+                .selection
+                .selectors
+                .iter()
+                .enumerate()
+                .filter(|(_, batches)| **batches != SelectorBatches::Unused)
+                .map(|(index, _)| d + index),
+        );
+        // Borrow only selector outputs so the callback can consume each prepared
+        // BR without exposing or replacing the shared one-hot/resource owners.
+        let mut selectors = SelectorBuffers {
+            public: &mut self.public_table_selectors,
+            encrypted: &mut self.encrypted_table_selectors,
+            rotations: &mut self.rotation_controls,
+            nonzero: &mut self.nonzero_selectors,
+        };
+        let parameters = self.one_hot.parameters();
+        while let Some(first) = chunks.next() {
+            if let Some(pair) = self.sparse_pair.as_mut()
+                && let Some(second) = chunks.next()
+            {
+                self.one_hot.with_sparse_pair(
+                    [input[first].as_view(), input[second].as_view()],
+                    pair,
+                    &mut self.resources,
+                    |index, projection| {
+                        selectors.project_chunk(
+                            [first, second][index],
+                            table,
+                            &self.rotation_factors,
+                            parameters,
+                            self.context,
+                            |nlev, ngsw| projection.project_to(nlev, ngsw),
+                        );
+                    },
+                );
+            } else {
+                // Classic consumes only `first`; sparse reaches here for an odd tail.
+                selectors.project_chunk(
+                    first,
+                    table,
+                    &self.rotation_factors,
+                    parameters,
+                    self.context,
+                    |nlev, ngsw| match (nlev, ngsw) {
+                        (Some(nlev), Some(ngsw)) => self.one_hot.one_hot_nlev_and_nonzero_ngsw_to(
+                            input[first].as_view(),
+                            nlev,
+                            ngsw,
+                            &mut self.resources,
+                        ),
+                        (Some(nlev), None) => self.one_hot.one_hot_nlev_to(
+                            input[first].as_view(),
+                            nlev,
+                            &mut self.resources,
+                        ),
+                        (None, Some(ngsw)) => self.one_hot.one_hot_nonzero_ngsw_to(
+                            input[first].as_view(),
+                            ngsw,
+                            &mut self.resources,
+                        ),
+                        (None, None) => {} // Unused high chunks were omitted by the iterator.
+                    },
+                );
             }
-        }
-    }
-
-    /// NLEV projection writes coefficients; public products consume NTT rows.
-    /// Both request forms transform the same full batch exactly once.
-    fn transform_public_selectors(&mut self, batches: SelectorBatches) {
-        let nlev =
-            &mut self.public_table_selectors[batches.nlev_range(self.one_hot.ngsw_batch_len())];
-        for row in PolynomialIterMut::new(nlev, self.lookup_table.layout.polynomial_length) {
-            self.context.table().transform_slice(row.0);
         }
     }
 

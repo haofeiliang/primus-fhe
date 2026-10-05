@@ -8,6 +8,9 @@ pub use primus_tfhe_ntru::{OneHotBootstrapError, OneHotLookupTable};
 
 use super::key::CircuitBootstrapBinding;
 
+mod pair;
+pub use pair::OneHotProjection;
+
 use crate::{
     CircuitBootstrapKey, CircuitBootstrapParameters, Lwe,
     bootstrap::{BootstrapBinding, BootstrapResources},
@@ -220,36 +223,25 @@ where
         &mut self,
         input: Lwe<&[T]>,
         first_ngsw_selector: usize,
-        mut nlev_output: Option<&mut [T]>,
-        mut ngsw_output: Option<&mut [T]>,
+        nlev_output: Option<&mut [T]>,
+        ngsw_output: Option<&mut [T]>,
         resources: &mut BootstrapResources<'a, T, Table, LM>,
     ) {
-        let ngsw_len = self.ngsw_selector_len();
         self.binding.check(resources);
-        let tfhe = resources.context.parameters();
-        let parameters = self.circuit.parameters;
         assert_eq!(
             input.dimension(),
-            tfhe.external_lwe_dimension().get(),
+            resources
+                .context
+                .parameters()
+                .external_lwe_dimension()
+                .get(),
             "one-hot input dimension mismatch"
         );
-
-        let nlev_len = parameters.output_nlev_len();
-        let selector_count = self.lookup_table.selector_count();
-        if let Some(output) = &nlev_output {
-            assert_eq!(
-                output.len(),
-                selector_count * nlev_len,
-                "one-hot NLEV output length mismatch"
-            );
-        }
-        if let Some(output) = &ngsw_output {
-            assert_eq!(
-                output.len(),
-                (selector_count - first_ngsw_selector) * ngsw_len,
-                "one-hot NGSW output length mismatch"
-            );
-        }
+        self.check_output_lengths(
+            first_ngsw_selector,
+            nlev_output.as_deref(),
+            ngsw_output.as_deref(),
+        );
 
         resources.blind_rotate(
             input,
@@ -257,6 +249,47 @@ where
             self.lookup_table.rotation_step(),
         );
 
+        self.project(first_ngsw_selector, nlev_output, ngsw_output, resources);
+    }
+
+    // Both ordinary and paired projection boundaries require exact output batches.
+    fn check_output_lengths(
+        &self,
+        first_ngsw_selector: usize,
+        nlev: Option<&[T]>,
+        ngsw: Option<&[T]>,
+    ) {
+        if let Some(output) = nlev {
+            assert_eq!(
+                output.len(),
+                self.lookup_table.output_nlev_len(),
+                "one-hot NLEV output length mismatch"
+            );
+        }
+        if let Some(output) = ngsw {
+            assert_eq!(
+                output.len(),
+                (self.lookup_table.selector_count() - first_ngsw_selector)
+                    * self.ngsw_selector_len(),
+                "one-hot NGSW output length mismatch"
+            );
+        }
+    }
+
+    /// Project an already prepared BR result, retaining the shared scratch contract.
+    // Preserve specialization for single-input callers after splitting BR and projection.
+    #[inline]
+    fn project(
+        &mut self,
+        first_ngsw_selector: usize,
+        mut nlev_output: Option<&mut [T]>,
+        mut ngsw_output: Option<&mut [T]>,
+        resources: &mut BootstrapResources<'a, T, Table, LM>,
+    ) {
+        let tfhe = resources.context.parameters();
+        let ngsw_len = self.ngsw_selector_len();
+        let nlev_len = self.circuit.parameters.output_nlev_len();
+        let selector_count = self.lookup_table.selector_count();
         // Without NLEV, omit branch zero before projection as well as conversion.
         let first_selector = if nlev_output.is_some() {
             0

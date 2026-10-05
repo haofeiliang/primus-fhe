@@ -98,7 +98,7 @@ pub use circuit_bootstrap::CircuitBootstrapKey;
 #[doc(inline)]
 pub use circuit_bootstrap::{
     CircuitBootstrapEvaluator, CircuitBootstrapParameters, OneHotBootstrapError,
-    OneHotCircuitBootstrapEvaluator, OneHotLookupTable,
+    OneHotCircuitBootstrapEvaluator, OneHotLookupTable, OneHotProjection,
 };
 
 /// Secret-key or LWE public-key encryptor for the Fourier NTRU backend.

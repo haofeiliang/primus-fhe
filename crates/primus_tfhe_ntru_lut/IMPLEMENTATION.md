@@ -25,8 +25,8 @@ plan for operation counts. It also owns the direct buffer-length calculations
 shared by both evaluator constructors and `estimate_workspace`. NTT counts T
 entries; Fourier counts N/2 complex pairs per transformed polynomial plus its
 coefficient conversion and gadget-one buffers. This describes storage only and
-does not merge numerical kernels. Nested bootstrap/CBS/one-hot/return resources,
-transform engines, keys, public compilation storage, caller buffers, allocator
+does not merge numerical kernels. Bootstrap/CBS/one-hot resources (including
+the extra sparse input state), return buffers, transform engines, keys, public compilation storage, caller buffers, allocator
 overhead and construction temporaries are excluded. The benchmark's retained-heap
 measurement includes resources beyond this partial estimate; the two numbers
 must not be treated as the same metric.
@@ -108,8 +108,9 @@ try_new
   prepare_rotation_constants
 evaluate_to
   validate all input/output shapes before writes
-  prepare_rotation_controls for low d chunks
-  prepare_table_selectors for surviving high-chunk choices
+  prepare_selectors: low d chunks, then surviving high-chunk choices
+    sparse: BR in pairs, then project and consume each chunk in order
+    classic or odd tail: BR/project/consume one chunk
   for each output in ascending order
     if its root matches an earlier output: copy that completed LWE
     otherwise execute its newly needed selection nodes in compiled order
@@ -121,8 +122,7 @@ evaluate_to
 
 Selector requirements are the union of surviving public/encrypted choices.
 Each high chunk needs full NLEV, nonzero NGSW, both, or no CBS. Both representations
-use `one_hot_nlev_and_nonzero_ngsw_to`, sharing one BR and coefficient projection
-per branch; zero is projected for NLEV but not scheme-switched. Each selector
+share one BR and coefficient projection per branch; zero is projected for NLEV but not scheme-switched. Each selector
 batch is generated once and reused by every node needing that chunk. Fourier
 uses one reusable coefficient NLEV batch before storing transformed batches.
 `SelectorBatches::{Unused,Nlev,Ngsw,Both}` makes those four cases explicit.
@@ -139,7 +139,7 @@ backend retains its concrete coefficient-to-NTT/Fourier transformation.
 | `selected_tables` | S*N | S compiled live-result slots, coefficient domain |
 
 A and B may overlap in chunk identity. These counts exclude the embedded one-hot
-workspace (including its return resources), current/product ciphertexts and
+and shared BR/CBS/return workspaces, current/product ciphertexts and
 Fourier gadget constants. `nonzero_selectors` is one scratch batch when d>0.
 
 The compiler schedules children before parents using depth-first traversal in
@@ -199,6 +199,45 @@ independent for each source polynomial.
 Q→q still precedes extraction signs. A singleton tile writes directly to output;
 larger tiles copy switched LWEs from scratch. Neither LUT carries the other return schedule's unused scratch; standalone one-hot
 also omits ordinary return resources. See [workspaces and storage](../../guides/development/workspaces-and-storage.md).
+
+## Fixed sparse input pairs
+
+The LUT alone decides which chunks require one-hot CBS. Their count is
+`d + active high chunks`, independent of the output count. No index list is
+allocated online: an iterator visits low chunks then unpruned high chunks.
+Sparse resources process two consecutive surviving inputs together; an odd
+last input uses the ordinary single-input operation. Classic evaluation remains
+serial, and plans with fewer than two BRs allocate no extra pair state.
+
+The backend's `SparseBlindRotationPairWorkspace` retains only one extra
+coefficient aggregate, current NTRU and exponent vector. For BR level count
+`L_BR`, ring length N, external dimension n and coefficient T, its requested heap
+is `(L_BR+1)*N*sizeof(T) + n*sizeof(usize)`. The two aggregates are filled in
+`bucket -> source-control group -> input` order. NTT keeps its existing pairs;
+Fourier u64 keeps four-way groups and its pair/single tail. Each input's selector
+order and arithmetic remain unchanged. All buckets, encrypted zero controls and
+zero exponents still contribute.
+
+After both aggregates are ready, transform and external product run serially.
+Three N-coefficient buffers suffice: each input's current and the existing shared
+scratch. Swapping owners after each product preserves both current results.
+Fourier also shares its single transformed aggregate and FFT engine. There is
+no second evaluator, full input batch, queue or worker thread. This schedule
+can improve source-key locality, but logical per-input key reads and arithmetic
+counts are unchanged; it does not establish a cache-counter explanation or a
+single-request PBS speedup.
+
+`with_sparse_pair` lends each completed BR through a scoped `OneHotProjection`.
+The callback cannot replace the BR resources and cannot retain the prepared
+state. Borrowed `SelectorBuffers` choose the chunk's output forms and consume them
+before the next callback: low chunks aggregate a rotation control; high chunks
+retain their required selectors. Mixed NLEV/NGSW roles still share projection,
+and branch zero is not scheme-switched. Fourier projection lends the existing
+FFT engine to convert its one reusable coefficient batch immediately. Pairing
+adds no selector scratch and no online allocation.
+
+Measured complete-evaluation results and requested retained/peak memory are in
+the [sparse pair report](../../guides/development/sparse-bootstrap-measurements.md#ntru-lut-paired-blind-rotation).
 
 ## Benchmark fixture
 

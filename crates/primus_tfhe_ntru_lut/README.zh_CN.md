@@ -79,7 +79,7 @@ cargo run --release -p primus_tfhe_ntru_lut --example fourier_lookup --features 
 
 编译各个候选 d 后，`table.stats()` 给出输入/输出位数、逻辑/唯一多项式数、需要 one-hot 的 chunk 数、NLEV/NGSW selector 数、选择节点数、公开提升数和同时存活的结果 slot 数。这些数量反映剪枝及跨输出共享，不预测延迟或噪声；`public_lift_count > 0` 等价于 `needs_public_lift()`。
 
-`table.estimate_workspace(output_levels)?` 接收拟用 CBS 输出的 `DecompositionLevelCount`，返回 `ntt_bytes` 与 `fourier_bytes`，与 evaluator 构造共用缓冲长度计算。它是**部分估算**，只统计 LUT 直接持有的 selectors、旋转 controls/factors、结果 slots、current/product 及 Fourier 转换/gadget-one 缓冲。它不含嵌套 BR/CBS/one-hot 和 LWE 返回工作区、变换引擎、密钥、公开表/计划、调用方输入输出、分配器开销及构造临时空间；比较 d 时仍需实测总内存与时间。
+`table.estimate_workspace(output_levels)?` 接收拟用 CBS 输出的 `DecompositionLevelCount`，返回 `ntt_bytes` 与 `fourier_bytes`，与 evaluator 构造共用缓冲长度计算。它是**部分估算**，只统计 LUT 直接持有的 selectors、旋转 controls/factors、结果 slots、current/product 及 Fourier 转换/gadget-one 缓冲。它不含 BR/CBS/one-hot 工作区（包括 sparse 的额外输入状态）、LWE 返回工作区、变换引擎、密钥、公开表/计划、调用方输入输出、分配器开销及构造临时空间；比较 d 时仍需实测总内存与时间。
 
 ## 求值与工作区
 
@@ -110,6 +110,8 @@ let mut evaluator = NttLookupTableEvaluator::try_new(
 这是同一累加秘密下的独立 one 加密，不对 sparse 首桶求和派生，后者具有不同的误差分布。生成前检查环和秘密，Fourier 使用 context 的 FFT 表。普通 sparse PBS/CBS/one-hot 不承担此材料的生成或存储成本。
 
 每次调用对低位 chunks 及编译计划实际使用的高位 chunks 执行 one-hot CBS。全等分支省去选择，重复子树只计算一次。公开选择用完整 NLEV selectors 同时提升多项式，加密选择用非零 NGSW selectors；同一 chunk 需要两种表示时共享 BR 与投影。完全不依赖高位的输出使用绑定的 NLEV[1] 提升，公密混合选择也可能需要它。因此，全剪枝表和 c=d 仍需要该材料。每个不同的根仍需低位旋转与返回；重复根在同一 evaluator 内的后续操作完全相同，直接复制已完成的输出。
+
+Sparse 求值在单线程内将这些仍需处理的输入 chunks 两两分组，再依次投影并消费结果。单个输入或奇数尾项沿用普通路径。至少需要两个 chunk 时，构造额外保留一个 BR aggregate、累加器和指数向量，共 `(L_BR+1)*N*sizeof(T) + n*sizeof(usize)` 字节；变换、外积和投影 scratch 仍共享。调度不减少 BR 次数，也不新增 selector 批次；公开求值接口不变。
 
 共享节点复用同一密文及其误差，输出误差存在相关性；根相同且后续操作相同时，复用完整输出密文。剪枝保持明文映射，但改变误差传播路径。完整选择、旋转及返回公式见[实现说明](IMPLEMENTATION.md#stage-and-buffer-layout)。
 
