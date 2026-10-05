@@ -11,6 +11,7 @@ The [streaming experiment](#streaming-control-aggregation-and-external-product) 
 The later [layout and batch review](#layout-and-batch-admission-review) records prerequisites, without new timing results.
 The [bounded lazy NTT pair](#bounded-lazy-ntt-pair) is retained for the two u64 NTT backends.
 The subsequent [grouped NTT accumulation](#grouped-ntt-accumulation) is retained only for GLWE u64 buckets that fit in one bounded group.
+[Fourier four-way accumulation](#fourier-four-way-accumulation) is retained for NTRU u64, with both FFT engines.
 
 ## Conditions and workload pairing
 
@@ -1418,3 +1419,137 @@ are `--bench --sample-size 50 --warm-up-time 1 --measurement-time 8 --noplot`;
 CPU 8 uses `--sample-size 30 --warm-up-time 0.5 --measurement-time 2`. Keep any
 fixture capture before `b.iter` and phase probes in a separate binary. The
 ordinary benchmark files are unchanged.
+
+## Fourier four-way accumulation
+
+**2026-10-05; baseline `b6e2fa0f`. Decision: retain four-way accumulation for
+NTRU Fourier u64 with both FFT engines.** NTRU u32 keeps pairs; GLWE and NTT are
+unchanged. This round follows the selected backend/word scope; its positive
+signal makes GLWE Fourier and u32 worth separate experiments, not automatic
+enablement. No public API, key layout, workspace or online allocation changes.
+
+### Exact arithmetic and code size
+
+The private [aggregation kernel](../../crates/primus_tfhe_ntru_fourier/src/sparse/aggregation.rs)
+adds four native coefficient rotations before the existing FFT. Four wrap
+points split each polynomial into at most five contiguous intervals. Within an
+interval, each contribution has a fixed sign, so one dispatch selects a loop
+specialized for those four signs. Each coefficient loads/stores its aggregate
+once and consumes all four sources in their original order. Wrapping addition
+and subtraction are exact in Z/(2^64); the completed aggregate is identical to
+two pair updates. No floating-point addition is moved ahead of coefficient
+aggregation, and no FFT or external-product count changes.
+
+The outer bucket traversal retains `NlevIter`, dummy initialization and all
+selectors, including zero exponents and encrypted zeros. A tail of 1–3 controls
+uses the existing pair/single methods. First-bucket NLEV lifting and subsequent
+NGSW interpretation retain their existing shared external product.
+
+A second candidate encoded negative terms as `(x ^ MAX) + 1`, with four sign
+masks and one aggregate bias. This avoids 16 specialized loops but adds integer
+operations. Both candidates passed the coefficient oracle and complete-output
+comparisons. In separate CPU 4 short runs, mask-version average improvements
+were PBS 2.21%/0.82%, CBS 1.23%/2.13%, and one-hot 4.78%/0.95%
+(rustfft/tfhe_fft); these smaller signals include one-hot baseline variation.
+The specialized version's initial short-run gains were 6.76%–17.28%, prompting
+the longer final comparisons below. The initial TFHE-FFT one-hot result was
+larger than the final confirmation and is not used as the headline gain.
+
+Disassembly of the saved PBS binaries confirms packed `vpaddq`/`vpsubq` and
+YMM/ZMM loops without the workspace SIMD feature. The u64 aggregate function,
+including its tails, occupies 7125 bytes for pairs, 32591 bytes for the retained
+specialization, and 9564 bytes for masks. Thus specialization costs about
+25 KiB of machine code. The private two-function implementation is retained
+because its complete-request benefit exceeds the smaller mask candidate's
+benefit in these comparisons. No public multiway framework or macro-generated
+API is introduced; the mask candidate is removed.
+
+### Complete requests
+
+Machine, compiler and native CPU flags match the preceding experiments.
+Builds enable `rustfft,tfhe-fft`, without the workspace SIMD feature. Fixtures
+remain n728/h32/N1024, r3/B64, native Q=2^64, external q=2^24, BR logB8/L8,
+with the same keys, seeds, LUTs and noise. PBS uses t8 and includes return to
+LWE; CBS uses t4; compact one-hot uses t8/M4 and produces three NGSW controls.
+All 2184 selectors and 64 dummies are consumed. PBS has 519 four-way groups
+and 108 tail selectors; CBS/one-hot have 522 groups and 96 tail selectors.
+These are arithmetic diagnostic profiles, not assessed security parameters.
+
+One iteration performs one complete preallocated request. Setup, keygen,
+encryption, LUT preparation, output capture and validation are outside timing.
+No phase timer is present. Builds and tests run separately from measurements.
+Each saved executable runs in a fresh process and Criterion directory. CPU 4 uses
+baseline/candidate/candidate/baseline order with 50 samples, 1 s warmup and an
+8 s target. CPU 8 uses the reverse order with 30 samples, 0.5 s warmup and a
+2 s target. The targeted CPU 8 PBS confirmation uses the same reverse order
+and longer settings.
+
+Values are milliseconds. Each pair gives both run means; change compares their
+averages. CI envelopes combine the separate 95% intervals, not a pooled CI.
+
+| CPU / engine / request | Pair means | Four-way means | Change | 95% CI envelopes, pair → four-way |
+| --- | ---: | ---: | ---: | --- |
+| 4 / rustfft / PBS | 5.291 / 5.301 | 4.942 / 4.904 | -7.04% | [5.269, 5.349] → [4.899, 4.956] |
+| 4 / rustfft / CBS | 4.183 / 4.149 | 3.750 / 3.728 | -10.24% | [4.112, 4.203] → [3.727, 3.754] |
+| 4 / rustfft / one-hot | 4.602 / 4.595 | 4.371 / 4.243 | -6.34% | [4.589, 4.617] → [4.241, 4.380] |
+| 4 / tfhe_fft / PBS | 5.240 / 5.178 | 4.911 / 4.844 | -6.35% | [5.174, 5.263] → [4.838, 4.976] |
+| 4 / tfhe_fft / CBS | 3.935 / 3.976 | 3.634 / 3.579 | -8.84% | [3.920, 3.985] → [3.578, 3.699] |
+| 4 / tfhe_fft / one-hot | 4.238 / 4.303 | 3.893 / 3.867 | -9.15% | [4.225, 4.305] → [3.866, 3.894] |
+| 8 / rustfft / PBS | 5.796 / 5.804 | 5.644 / 5.634 | -2.78% | [5.793, 5.809] → [5.621, 5.657] |
+| 8 / rustfft / CBS | 4.542 / 4.556 | 4.443 / 4.509 | -1.60% | [4.538, 4.562] → [4.440, 4.585] |
+| 8 / rustfft / one-hot | 4.960 / 4.982 | 4.872 / 4.850 | -2.21% | [4.957, 5.009] → [4.846, 4.903] |
+| 8 / tfhe_fft / PBS | 5.689 / 5.654 | 5.550 / 5.923 | +1.14% | [5.650, 5.693] → [5.545, 6.179] |
+| 8 / tfhe_fft / CBS | 4.361 / 4.358 | 4.232 / 4.246 | -2.77% | [4.356, 4.363] → [4.228, 4.258] |
+| 8 / tfhe_fft / one-hot | 4.726 / 4.668 | 4.526 / 4.528 | -3.61% | [4.656, 4.842] → [4.521, 4.537] |
+| 8 / tfhe_fft / PBS, longer | 5.716 / 5.740 | 5.533 / 5.535 | -3.39% | [5.709, 5.742] → [5.524, 5.552] |
+
+CPU 4's longer comparisons improve by 6.34%–10.24%. CPU 8 generally shows
+smaller gains: 1.60%–3.61%, with overlapping CBS intervals for rustfft. The last
+short TFHE-FFT PBS candidate run is slower and has a wide interval, making
+that pair of means regress by 1.14%. A targeted repeat of the same saved
+binaries with longer sampling improves by 3.39%; both results are retained.
+Frequency and unrelated system activity were not controlled. These comparisons
+do not identify a cache or bandwidth cause or guarantee a gain on every machine.
+
+### Correctness, resources and reproduction
+
+The existing small private bucket oracle was extended, without adding another
+test function. N=32 with three levels covers empty buckets, counts 0–13,
+multiple four-way groups and every tail length, 16 global-sign patterns,
+coincident/distinct wrap points, 0/MAX sources, nonconsecutive input indices and
+dirty-buffer reuse. Independent u128 scatter arithmetic checks u64 four-way
+aggregation and the retained u32 pair path. Existing consumer tests cover
+first-NLEV/later-NGSW phases, PBS, MVB, CBS, one-hot, complete Fourier LUTs and
+allocation-free reuse.
+
+All **100 setup captures across six request IDs** match within each FFT engine
+across baseline, specialized, mask and final builds: coefficient-key fingerprint,
+complete public bucket map, complete input and complete output. Fourier outputs
+are captured in full using round-trip float formatting; decryption and CMux
+assertions run before timing. The exact coefficient aggregation preserves FFT
+inputs; the comparisons verify selected deterministic workloads, not a noise
+or security study.
+
+Source-key reads, dummy/FFT/product counts, key generation and workspace owners
+are unchanged. Only fixed-size stack arrays and existing buffers are used.
+No new retained-key/peak-memory or keygen measurements were made. There is no
+GLWE, u32, SIMD-performance or complete-LUT latency result in this round;
+correctness coverage does not supply those missing measurements.
+
+The final backend and Fourier LUT consumers pass 23 default tests and the same
+23 tests with nightly SIMD. Both packages pass all-targets check/clippy with
+`rustfft,tfhe-fft`; the backend also passes no-default-feature library check,
+strict private-item rustdoc and formatting. Existing sparse PBS/CBS benchmarks
+compile after restoring their original source. Public behavior and recommended
+workflows are unchanged. Temporary capture code, the mask candidate and all
+experiment artifacts are removed; no CI target or permanent benchmark is added.
+
+Build and save baseline/final executables with
+`cargo bench -p primus_tfhe_ntru_fourier --features rustfft,tfhe-fft --bench sparse_pbs --bench circuit_bootstrap --no-run`.
+Run pinned with `taskset -c 4` or `8`, a fresh `CRITERION_HOME` per process and
+filter `u64/.*(sparse/complete|cbs/sparse/.*/complete|one_hot/sparse/.*/nonzero)$`.
+CPU 4 uses `--bench --sample-size 50 --warm-up-time 1 --measurement-time 8 --noplot`;
+the normal CPU 8 comparison uses 30/0.5/2. The targeted longer CPU 8 PBS repeat
+uses `tfhe_fft/u64/.*sparse/complete$` and only the sparse PBS executable.
+Keep optional captures outside `b.iter`, and never compare an instrumented
+stage-timing executable with an uninstrumented baseline.
