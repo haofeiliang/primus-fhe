@@ -5,7 +5,7 @@
 //! extraction pipeline, then returns to q. It does not emulate OpenFHE's Q'
 //! LWE key switch. These are reproducible cost profiles, not security presets.
 
-use primus_decompose::{DecompositionBaseLog, DecompositionConfig};
+use primus_decompose::{DecompositionBaseLog, DecompositionConfig, DecompositionLevelCount};
 use primus_glwe::{GlweDimension, SecretKeyDistr};
 use primus_integer::FheUint;
 use primus_lwe::{LweDimension, LweEncryptionParameters};
@@ -26,6 +26,8 @@ pub(super) struct Case {
     pub br_base_log: u32,
     pub ks_base_log: u32,
     pub plaintext_modulus: u32,
+    // Validated consumer candidate; None keeps the original comparison alone.
+    pub candidate_br_levels: Option<usize>,
 }
 
 /// Largest primes below 2^28 / 2^54 congruent to one modulo 2N.
@@ -42,6 +44,7 @@ pub(super) const CASES: [Case; 3] = [
         br_base_log: 7,
         ks_base_log: 7,
         plaintext_modulus: 4,
+        candidate_br_levels: Some(3),
     },
     Case {
         name: "medium_nand",
@@ -58,6 +61,7 @@ pub(super) const CASES: [Case; 3] = [
         br_base_log: 10,
         ks_base_log: 7,
         plaintext_modulus: 4,
+        candidate_br_levels: None,
     },
     Case {
         name: "std128_padded_func3",
@@ -70,6 +74,7 @@ pub(super) const CASES: [Case; 3] = [
         br_base_log: 27,
         ks_base_log: 5,
         plaintext_modulus: 16,
+        candidate_br_levels: Some(1),
     },
 ];
 
@@ -80,6 +85,7 @@ pub(super) enum Mode {
     DenseClassic,
     FixedWeightClassic,
     Sparse,
+    SparseCandidate,
 }
 
 impl Mode {
@@ -88,6 +94,17 @@ impl Mode {
             Self::DenseClassic => "dense_ternary_classic",
             Self::FixedWeightClassic => "fixed_weight_classic",
             Self::Sparse => "sparse",
+            Self::SparseCandidate => "sparse_candidate_r2",
+        }
+    }
+
+    /// Original paper-shaped map or the separately validated r2/B=2h choice.
+    /// Both retain every encrypted selector and dummy in online evaluation.
+    pub fn sparse_counts(self, case: Case) -> Option<(usize, usize)> {
+        match self {
+            Self::Sparse => Some((3, case.weight + 3)),
+            Self::SparseCandidate => Some((2, 2 * case.weight)),
+            Self::DenseClassic | Self::FixedWeightClassic => None,
         }
     }
 }
@@ -96,7 +113,9 @@ impl Case {
     pub fn dimension(self, mode: Mode) -> usize {
         match mode {
             Mode::DenseClassic => self.dense_dimension,
-            Mode::FixedWeightClassic | Mode::Sparse => self.sparse_dimension,
+            Mode::FixedWeightClassic | Mode::Sparse | Mode::SparseCandidate => {
+                self.sparse_dimension
+            }
         }
     }
 
@@ -104,7 +123,7 @@ impl Case {
     pub fn secret(self, mode: Mode) -> SecretKeyDistr {
         match mode {
             Mode::DenseClassic => SecretKeyDistr::UniformTernary,
-            Mode::FixedWeightClassic | Mode::Sparse => {
+            Mode::FixedWeightClassic | Mode::Sparse | Mode::SparseCandidate => {
                 SecretKeyDistr::fixed_hamming_weight_binary(self.sparse_dimension, self.weight)
             }
         }
@@ -136,7 +155,16 @@ impl Case {
             poly_length: PolyLength::new(self.poly_length),
             accumulator_secret_key_distr: SecretKeyDistr::UniformTernary,
             accumulator_noise_standard_deviation: 3.19,
-            blind_rotation: decomposition(self.br_base_log),
+            blind_rotation: DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(self.br_base_log),
+                level_count: match mode {
+                    Mode::SparseCandidate => Some(DecompositionLevelCount::new(
+                        self.candidate_br_levels
+                            .expect("this profile has no validated sparse candidate"),
+                    )),
+                    _ => None,
+                },
+            },
             key_switching: decomposition(self.ks_base_log),
             pbs_order: PbsOrder::BootstrapKeyswitch,
         })

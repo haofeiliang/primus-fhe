@@ -191,7 +191,10 @@ impl<T: FheUint> Request<T> {
         let controls = match mode {
             Mode::DenseClassic => 2 * case.dense_dimension,
             Mode::FixedWeightClassic => case.sparse_dimension,
-            Mode::Sparse => 3 * case.sparse_dimension + case.weight + 3,
+            Mode::Sparse | Mode::SparseCandidate => {
+                let (copies, buckets) = mode.sparse_counts(case).unwrap();
+                copies * case.sparse_dimension + buckets
+            }
         };
         let key_bytes = controls * gadget.ggsw_len() * size_of::<T>();
         eprintln!(

@@ -5,6 +5,8 @@
 //! `complete_ring_return` includes them, using Primus's ring KS at Q, not the
 //! cited OpenFHE's sampled LWE key switch at Q'. NAND and padded-function IDs
 //! distinguish one-PBS workloads from OpenFHE's full-domain arbitrary functions.
+//! `sparse_candidate_r2` separately changes copies/buckets and retained BR levels;
+//! it is a consumer-validated arithmetic profile, not the paper configuration.
 
 mod parameters;
 mod request;
@@ -27,7 +29,15 @@ use request::Request;
 /// Both words use the identical 28-bit prime; a 54-bit ring requires u64.
 pub(super) fn benchmark(c: &mut Criterion) {
     for case in CASES {
-        for mode in [Mode::DenseClassic, Mode::FixedWeightClassic, Mode::Sparse] {
+        for mode in [
+            Mode::DenseClassic,
+            Mode::FixedWeightClassic,
+            Mode::Sparse,
+            Mode::SparseCandidate,
+        ] {
+            if matches!(mode, Mode::SparseCandidate) && case.candidate_br_levels.is_none() {
+                continue;
+            }
             if case.ring_modulus <= u64::from(u32::MAX) {
                 benchmark_case::<u32, U32NttTable>(c, case, mode);
             }
@@ -50,12 +60,12 @@ impl<T: FheUint, Table: MonomialNttTable<ValueT = T>> Fixture<T, Table> {
     fn new(case: Case, mode: Mode, name: &str) -> Self {
         let context = TfheContext::<T, Table>::try_from_parameters(case.parameters(mode)).unwrap();
         let client = ClientKey::generate(context.parameters(), &mut StdRng::seed_from_u64(42));
-        let choice = match mode {
-            Mode::Sparse => BlindRotationConfig::Sparse {
-                copy_count: 3,
-                bucket_count: case.weight + 3,
+        let choice = match mode.sparse_counts(case) {
+            Some((copy_count, bucket_count)) => BlindRotationConfig::Sparse {
+                copy_count,
+                bucket_count,
             },
-            _ => BlindRotationConfig::Classic,
+            None => BlindRotationConfig::Classic,
         };
         let server = KeyGenerator::new(&context)
             .try_generate_server_key(&client, choice, None, &mut StdRng::seed_from_u64(4242))

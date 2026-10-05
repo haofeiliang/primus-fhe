@@ -87,6 +87,8 @@ Both orders support ordinary/interleaved PBS, MVB and CBS. Pass `Some(cbs_config
 
 The `sparse_pbs` benchmark includes separate `paper_2026_1730` NAND and padded-function comparisons alongside the existing fixed-weight diagnostics. `complete_ring_return` includes this backend's ring KS return; `blind_rotation` excludes it. Parameters, measurements and differences from the paper are recorded in the [comparison guide](../../guides/development/sparse-paper-comparison.md); these are experimental benchmark profiles, not security presets.
 
+The separate `sparse_candidate_r2` IDs use two copies, `2*h` buckets and fewer BR levels for the validated STD128 and three-bit function profiles. The [consumer measurements](../../guides/development/sparse-consumer-measurements.md) cover PBS, ManyLUT, MVB and feedback. CBS needs its own output basis: a working PBS configuration alone does not ensure usable gadget controls or CMux results.
+
 ## Circuit bootstrapping
 
 Generate paired material with `context.try_generate_keys(Some(cbs_config), &mut rng)`; `ServerKey` owns the additional parameters and trace/scheme-switch keys. Obtain `server.circuit_bootstrap_key()` and explicitly pass that material to the CBS constructor above. Use `allocate_output`, `circuit_bootstrap_to` and `cmux_to`, lending common resources to each operation; the [CBS → CMUX example](examples/ntt_circuit_bootstrap.rs) shows independent BR/CBS generation and the complete consumption chain.

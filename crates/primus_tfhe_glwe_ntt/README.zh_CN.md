@@ -87,6 +87,8 @@ let mut evaluator = context.evaluator(&server)?;
 
 `sparse_pbs` 基准在原有固定重量诊断之外，提供独立的 `paper_2026_1730` NAND 和带 padding 函数对比组。`complete_ring_return` 包含本后端的 ring KS 返回，`blind_rotation` 不包含返回。具体参数、测量与论文的差异见[对比记录](../../guides/development/sparse-paper-comparison.md)；这些是实验性基准参数，不是安全参数预设。
 
+独立的 `sparse_candidate_r2` ID 为已验证的 STD128 和三位函数配置选择两个副本、`2*h` 个桶及更少的 BR 层数。[消费者测量](../../guides/development/sparse-consumer-measurements.md)覆盖 PBS、ManyLUT、MVB 和反馈调用。CBS 需要独立选择输出基：PBS 配置能正确工作，不代表其 gadget 控制和后续 CMux 也满足误差要求。
+
 ## 电路自举
 
 `context.try_generate_keys(Some(cbs_config), &mut rng)` 生成配对材料，`ServerKey` 持有附加参数及 trace/scheme-switch 密钥。取得 `server.circuit_bootstrap_key()` 后，显式传给上述 CBS 构造器。使用 `allocate_output`、`circuit_bootstrap_to` 和 `cmux_to`，每次操作借用公共资源；[CBS → CMUX 示例](examples/ntt_circuit_bootstrap.rs)展示独立生成 BR/CBS 材料及完整消费链。
