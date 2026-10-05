@@ -68,8 +68,48 @@ pub(super) fn add_rotated_group_assign<T: FheUint>(
             );
         }
     }
-    for value in acc.iter_mut() {
+    reduce_group_assign(acc, modulus);
+}
+
+/// Canonicalizes the bounded u64 group before the ordinary NTT entry. Keep the
+/// scalar fallback on machines without the measured vector instruction set.
+#[inline]
+fn reduce_group_assign<T: FheUint>(values: &mut [T], modulus: BarrettModulus<T>) {
+    #[cfg(target_arch = "x86_64")]
+    if T::BITS == 64
+        && std::is_x86_feature_detected!("avx512f")
+        && std::is_x86_feature_detected!("avx512dq")
+    {
+        // SAFETY: the required CPU features were checked. The kernel uses safe
+        // slice iteration; the caller established a 64-bit coefficient type.
+        unsafe { reduce_group_u64_assign(values, modulus) };
+        return;
+    }
+    for value in values {
         *value = modulus.reduce(*value);
+    }
+}
+
+/// For B=2^64, ratio[1]=floor(B/q). Its high product estimates floor(x/q)
+/// from below with error at most one. Omitting the low-low 32-bit product loses
+/// at most one more, so x-estimate*q is in [0,3q). Two corrections suffice.
+/// The partial-product sum fits u64, and Barrett's q<B/4 keeps 3q below B.
+/// Expressing the three 32-bit products directly lets LLVM vectorize the loop.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f,avx512dq")]
+unsafe fn reduce_group_u64_assign<T: FheUint>(values: &mut [T], modulus: BarrettModulus<T>) {
+    debug_assert_eq!(T::BITS, 64);
+    let q: u64 = modulus.value().as_into();
+    let reciprocal: u64 = modulus.ratio()[1].as_into();
+    for value in values {
+        let x: u64 = (*value).as_into();
+        let low_high = (x & 0xffff_ffff) * (reciprocal >> 32);
+        let high_low = (x >> 32) * (reciprocal & 0xffff_ffff);
+        let high_high = (x >> 32) * (reciprocal >> 32);
+        let quotient = high_high + (low_high >> 32) + (((low_high & 0xffff_ffff) + high_low) >> 32);
+        let remainder = x - quotient * q;
+        let remainder = remainder.min(remainder.wrapping_sub(2 * q));
+        *value = T::as_from(remainder.min(remainder.wrapping_sub(q)));
     }
 }
 
@@ -77,6 +117,27 @@ pub(super) fn add_rotated_group_assign<T: FheUint>(
 mod tests {
     use super::*;
     use primus_lattice::ggsw::GgswIter;
+
+    // Check reciprocal/correction boundaries independently of the rotation
+    // oracle, including full-word inputs and the last incomplete vector.
+    #[test]
+    fn group_reduction_matches_full_word_remainders() {
+        for q in [
+            3,
+            17,
+            268_369_921,
+            (1u64 << 50) - 1,
+            (1u64 << 50) + 1,
+            18_014_398_509_404_161,
+            (1u64 << 62) - 1,
+        ] {
+            let mut values = vec![0, 1, q - 1, q, q + 1, 2 * q - 1, 2 * q, u64::MAX];
+            values.extend((0..129u64).map(|i| i.wrapping_mul(0x9e37_79b9_7f4a_7c15)));
+            let expected: Vec<_> = values.iter().map(|&x| x % q).collect();
+            reduce_group_assign(&mut values, BarrettModulus::new(q));
+            assert_eq!(values, expected, "q={q}");
+        }
+    }
 
     // Scatter coefficients directly in Z_q, independently of split intervals.
     // Moduli around the four/six-term bounds exercise the last safe group

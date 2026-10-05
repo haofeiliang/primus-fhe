@@ -677,6 +677,12 @@ there is no new production API, Cargo feature or C++ dependency.
 After removal, formatting, all-targets compilation, strict all-targets Clippy
 and the five ordinary paper-profile sparse-BR smoke cases pass.
 
+The subsequent [compact-layout reduction study](sparse-compact-reduction-measurements.md)
+isolates bucket-final arithmetic while keeping Primus NTT and pointwise products
+unchanged. A local Rust u64 vector reduction improves complete PBS means by
+1.5%–6.0% on the measured CPU/profile pairs, without extra scratch or a HEXL
+dependency; its applicability and exact-ciphertext checks are recorded separately.
+
 ### OpenFHE with the complete historical HEXL backend
 
 The same OpenFHE commit `122f470e0dbf94688051ab852131ccc5d26be934` was rebuilt
