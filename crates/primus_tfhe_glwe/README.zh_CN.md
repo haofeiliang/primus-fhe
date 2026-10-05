@@ -17,11 +17,13 @@
 
 `TfheParameters<T, M>` 和客户端使用同一个密文模数类型 `M`；两后端的类型别名固定各自的模数实现。
 
-推荐使用 `TfheParameters::try_from_config(TfheConfig { .. })`：在 `small_lwe` 中传入不含 codec 的 `LweEncryptionParameters`，只指定一次 `q`，具名字段选择 accumulator 的维数、长度、秘密分布和噪声，以及 blind rotation、key switching 的 `DecompositionConfig { log_basis, level_count }` 和 PBS order。`level_count: None` 选择支持的最大层数，仍可能丢弃低位（见[分解精度](../primus_decompose/README.zh_CN.md)）；各 basis 自动绑定同一模数。 普通 BR/KS 密钥沿用 accumulator 噪声。补零的 KS 目标直接由 GLWE 布局、采样状态和 basis 构造，无需消息 codec；CBS trace 和 scheme-switch 密钥沿用这一独立构造方式，分别使用各自配置的噪声。已持有环参数或预计算 basis 时，使用下述直接入口。
+推荐使用 `TfheParameters::try_from_config(TfheConfig { .. })`：在 `small_lwe` 中传入不含 codec 的 `LweEncryptionParameters`，只指定一次 `q`，具名字段选择 accumulator 的维数、长度、秘密分布和噪声，以及 blind rotation、key switching 的 `DecompositionConfig { log_basis, level_count }` 和 PBS order。`level_count: None` 选择支持的最大层数，仍可能丢弃低位（见[分解精度](../primus_decompose/README.zh_CN.md)）；各 basis 自动绑定同一模数。 BR 密钥使用 accumulator 噪声；`key_switching_noise_standard_deviation` 独立选择环 KS 噪声。补零的 KS 目标直接由 GLWE 布局、采样状态和 basis 构造，无需消息 codec；CBS trace 和 scheme-switch 密钥沿用这一独立构造方式，分别使用各自配置的噪声。已持有环参数或预计算 basis 时，使用下述直接入口。
+
+调整 KS 噪声只影响环 KS 密钥生成，两种 PBS order 均如此。Accumulator 噪声也用于 KS→BR 的新鲜外部加密；新鲜 small-LWE 噪声和 CBS trace/scheme-switch 噪声仍可分别配置。所有标准差均以系数单位表示。非法 KS 采样参数在构造时返回 `TfheParameterError::KeySwitchingEncryption`。
 
 维数选择使用 `LweDimension`，GLWE 另用 `GlweDimension`；分解选择使用 `DecompositionBaseLog` 和 `Option<DecompositionLevelCount>`。这些单位只构造一次，参数访问器返回的值直接传给工作区。在原始存储或内核边界用 `.get()` 提取整数；组合长度和 basis/模数兼容性仍由构造器检查。
 
-`TfheParameters::try_new(small_lwe, blind_rotation_ggsw, key_switching_basis, order)` 接收 small LWE 采样域与已构造的 GGSW 参数，再派生补零的密钥切换目标。密文模数必须匹配，small secret 支持 binary 或 ternary 家族，且 `n <= kN`。 旋转域 `2N` 必须能由输入系数类型 `T` 表示。 Ternary LWE 密钥按 `0/1/q-1` 保存；构造补零 GLWE 密钥时将 `q-1` 还原为 signed `-1`。 均匀、自定义概率及固定重量/正负计数分布复用同一流程，Gaussian small secret 不支持。
+`TfheParameters::try_new(small_lwe, blind_rotation_ggsw, key_switching_basis, key_switching_noise_standard_deviation, order)` 接收 small LWE 采样域、已构造的 GGSW 参数和独立 KS 噪声，再派生补零的密钥切换目标。密文模数必须匹配，small secret 支持 binary 或 ternary 家族，且 `n <= kN`。 旋转域 `2N` 必须能由输入系数类型 `T` 表示。 Ternary LWE 密钥按 `0/1/q-1` 保存；构造补零 GLWE 密钥时将 `q-1` 还原为 signed `-1`。 均匀、自定义概率及固定重量/正负计数分布复用同一流程，Gaussian small secret 不支持。
 
 | `PbsOrder` | 完整 PBS 链 | 外部 LWE 秘密 / 维数 |
 | --- | --- | --- |

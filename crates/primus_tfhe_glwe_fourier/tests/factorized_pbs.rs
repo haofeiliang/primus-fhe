@@ -62,6 +62,7 @@ fn context<T: TorusFftValue, Table: FftTable>(
                 DecompositionBaseLog::new(4),
                 Some(DecompositionLevelCount::new(6)),
             ),
+            0.7,
             order,
         )
         .unwrap(),

@@ -44,6 +44,7 @@ fn context(order: PbsOrder, distribution: SecretKeyDistr) -> TfheContext<u32, U3
         )
         .unwrap(),
         ApproxSignedBasis::new(Some(Q), DecompositionBaseLog::new(8), None),
+        0.7,
         order,
     )
     .unwrap();

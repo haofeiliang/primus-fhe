@@ -40,6 +40,7 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
             lwe.into_encryption_parameters(),
             primus_glwe::GgswParameters::try_with_basis(&glwe, bsk).unwrap(),
             ApproxSignedBasis::new(None, DecompositionBaseLog::new(8), None),
+            glwe.noise_distribution().standard_deviation(),
             PbsOrder::BootstrapKeyswitch,
         )
         .unwrap();

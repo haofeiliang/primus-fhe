@@ -93,6 +93,7 @@ where
         accumulator_noise_standard_deviation: (q * GLWE_STD_DEV).max(6.4),
         blind_rotation: decomposition(blind_rotation.0, Some(blind_rotation.1)),
         key_switching: decomposition(key_switching.0, Some(key_switching.1)),
+        key_switching_noise_standard_deviation: (q * GLWE_STD_DEV).max(6.4),
         pbs_order: order,
     })
     .unwrap()
@@ -127,6 +128,7 @@ where
         accumulator_noise_standard_deviation: 6.4,
         blind_rotation: decomposition(if T::BITS == 32 { 2 } else { 8 }, None),
         key_switching: decomposition(if T::BITS == 32 { 2 } else { 8 }, None),
+        key_switching_noise_standard_deviation: 6.4,
         pbs_order: order,
     })
     .unwrap()
@@ -180,6 +182,7 @@ where
         accumulator_noise_standard_deviation: 6.4,
         blind_rotation: decomposition(if T::BITS == 32 { 2 } else { 8 }, None),
         key_switching: decomposition(if T::BITS == 32 { 2 } else { 8 }, None),
+        key_switching_noise_standard_deviation: 6.4,
         pbs_order: order,
     })
     .unwrap()

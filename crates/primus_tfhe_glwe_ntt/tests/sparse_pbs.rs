@@ -58,6 +58,7 @@ fn context(
         )
         .unwrap(),
         ApproxSignedBasis::new(Some(Q), DecompositionBaseLog::new(9), None),
+        1.25, // Independent KS noise also reaches complete sparse server-key generation.
         order,
     )
     .unwrap();

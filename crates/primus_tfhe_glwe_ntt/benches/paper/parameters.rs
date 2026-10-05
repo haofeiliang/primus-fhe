@@ -166,6 +166,7 @@ impl Case {
                 },
             },
             key_switching: decomposition(self.ks_base_log),
+            key_switching_noise_standard_deviation: 3.19,
             pbs_order: PbsOrder::BootstrapKeyswitch,
         })
         .unwrap()

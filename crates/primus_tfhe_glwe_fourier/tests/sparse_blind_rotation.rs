@@ -105,6 +105,7 @@ fn check_raw<Table: FftTable>() {
             )
             .unwrap(),
             basis,
+            0.7,
             PbsOrder::BootstrapKeyswitch,
         )
         .unwrap();

@@ -65,6 +65,7 @@ fn parameters() -> TfheParameters<Word> {
         accumulator_noise_standard_deviation: 6.4,
         blind_rotation: full,
         key_switching: full,
+        key_switching_noise_standard_deviation: 6.4,
         pbs_order: ORDER,
     })
     .unwrap()

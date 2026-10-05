@@ -46,6 +46,10 @@ pub enum TfheParameterError {
     /// The GLWE key-switching basis or output gadget layout is incompatible.
     #[error("invalid GLWE key-switching parameters")]
     KeySwitchingParameters(#[source] GlevParameterError),
+
+    /// The ring key-switching encryption samplers are invalid.
+    #[error("invalid GLWE key-switching encryption parameters")]
+    KeySwitchingEncryption(#[source] primus_glwe::GlweParameterError),
 }
 
 /// An incompatibility between secret keys and TFHE parameters.

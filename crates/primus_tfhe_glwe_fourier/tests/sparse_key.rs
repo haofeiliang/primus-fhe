@@ -39,6 +39,7 @@ fn context<Table: FftTable>(distribution: SecretKeyDistr) -> TfheContext<u64, Ta
         lwe.into_encryption_parameters(),
         primus_glwe::GgswParameters::try_with_basis(&glwe, basis.clone()).unwrap(),
         basis,
+        glwe.noise_distribution().standard_deviation(),
         PbsOrder::KeyswitchBootstrap,
     )
     .unwrap();

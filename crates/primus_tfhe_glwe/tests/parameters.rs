@@ -67,6 +67,7 @@ fn derives_bootstrapping_and_key_switching_for_both_orders() {
                 log_basis: DecompositionBaseLog::new(4),
                 level_count: Some(DecompositionLevelCount::new(4)),
             },
+            key_switching_noise_standard_deviation: 1.25,
             pbs_order: order,
         })
         .unwrap();
@@ -97,10 +98,42 @@ fn derives_bootstrapping_and_key_switching_for_both_orders() {
                 .glwe_key_switching()
                 .output()
                 .noise_standard_deviation(),
+            1.25
+        );
+        assert_eq!(
             parameters
-                .blind_rotation_ggsw()
+                .small_lwe()
                 .noise_distribution()
-                .standard_deviation()
+                .standard_deviation(),
+            0.7
+        );
+        // Changing only KS noise through the direct constructor preserves the
+        // BR and fresh LWE sampling domains, in either execution order.
+        let changed = TfheParameters::try_new(
+            parameters.small_lwe().clone(),
+            parameters.blind_rotation_ggsw().clone(),
+            basis.clone(),
+            2.5,
+            order,
+        )
+        .unwrap();
+        assert_eq!(
+            changed
+                .small_lwe()
+                .noise_distribution()
+                .standard_deviation(),
+            0.7
+        );
+        assert!(
+            changed.blind_rotation_ggsw().encryption_parameters()
+                == parameters.blind_rotation_ggsw().encryption_parameters()
+        );
+        assert_eq!(
+            changed
+                .glwe_key_switching()
+                .output()
+                .noise_standard_deviation(),
+            2.5
         );
         assert_eq!(
             parameters.glwe_key_switching().input_dimension(),
@@ -142,6 +175,7 @@ fn rejects_key_switching_basis_from_another_modulus() {
             DecompositionBaseLog::new(4),
             Some(DecompositionLevelCount::new(2)),
         ),
+        glwe.noise_distribution().standard_deviation(),
         PbsOrder::BootstrapKeyswitch,
     );
     let error = result.err().unwrap();
@@ -189,6 +223,7 @@ fn rotation_domain_must_be_representable_by_input_coefficients() {
                 small_lwe.into_encryption_parameters(),
                 primus_glwe::GgswParameters::try_with_basis(&glwe, basis.clone()).unwrap(),
                 basis,
+                glwe.noise_distribution().standard_deviation(),
                 PbsOrder::BootstrapKeyswitch
             )
             .err(),
@@ -226,6 +261,7 @@ fn check_ternary_padding<M: primus_reduce::RingContext<u32>>(modulus: M) {
                 .into_encryption_parameters(),
             primus_glwe::GgswParameters::try_with_basis(&glwe, basis.clone()).unwrap(),
             basis.clone(),
+            glwe.noise_distribution().standard_deviation(),
             PbsOrder::BootstrapKeyswitch,
         );
         if !distribution.is_ternary() {
@@ -292,6 +328,7 @@ fn check_circuit_parameters<M: primus_reduce::RingContext<u64>>(modulus: M, fore
         .into_encryption_parameters(),
         primus_glwe::GgswParameters::try_with_basis(&glwe, basis.clone()).unwrap(),
         basis,
+        glwe.noise_distribution().standard_deviation(),
         PbsOrder::BootstrapKeyswitch,
     )
     .unwrap();
@@ -442,7 +479,7 @@ fn circuit_parameters_bind_bases_layout_noise_and_capacity() {
 }
 
 #[test]
-fn configs_return_accumulator_and_cbs_construction_errors() {
+fn configs_return_role_specific_sampling_errors() {
     use primus_glwe::GlweParameterError;
     use primus_tfhe_glwe::{
         CircuitBootstrapConfig, CircuitBootstrapParameterError, CircuitBootstrapParameters,
@@ -465,9 +502,32 @@ fn configs_return_accumulator_and_cbs_construction_errors() {
         accumulator_noise_standard_deviation: 0.7,
         blind_rotation: basis,
         key_switching: basis,
+        key_switching_noise_standard_deviation: 0.7,
         pbs_order: PbsOrder::BootstrapKeyswitch,
     };
     let tfhe = TfheParameters::try_from_config(config.clone()).unwrap();
+    // Both TFHE constructors reject invalid independent KS noise at setup.
+    for sigma in [0.0, -1.0, f64::NAN, f64::INFINITY, f64::MAX] {
+        let mut invalid = config.clone();
+        invalid.key_switching_noise_standard_deviation = sigma;
+        for result in [
+            TfheParameters::try_from_config(invalid),
+            TfheParameters::try_new(
+                tfhe.small_lwe().clone(),
+                tfhe.blind_rotation_ggsw().clone(),
+                tfhe.glwe_key_switching().output().basis().clone(),
+                sigma,
+                tfhe.pbs_order(),
+            ),
+        ] {
+            assert!(matches!(
+                result,
+                Err(TfheParameterError::KeySwitchingEncryption(
+                    GlweParameterError::Noise(_)
+                ))
+            ));
+        }
+    }
     let mut invalid = config.clone();
     invalid.accumulator_noise_standard_deviation = f64::NAN;
     assert!(matches!(

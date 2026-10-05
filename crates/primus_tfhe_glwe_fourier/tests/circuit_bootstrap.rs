@@ -57,6 +57,7 @@ fn parameters_with_order_and_distribution(
         accumulator_noise_standard_deviation: 0.7,
         blind_rotation: decomposition,
         key_switching: decomposition,
+        key_switching_noise_standard_deviation: 0.7,
         pbs_order: order,
     })
     .unwrap()

@@ -45,6 +45,7 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
             small.into_encryption_parameters(),
             primus_glwe::GgswParameters::try_with_basis(&glwe, bsk).unwrap(),
             ApproxSignedBasis::new(modulus.explicit_value(), DecompositionBaseLog::new(8), None),
+            glwe.noise_distribution().standard_deviation(),
             order,
         )
         .unwrap();
@@ -284,6 +285,7 @@ fn boolean_clients_reject_other_plaintext_moduli() {
             )
             .unwrap(),
             ApproxSignedBasis::new(None, DecompositionBaseLog::new(8), None),
+            0.7,
             PbsOrder::BootstrapKeyswitch,
         )
         .unwrap();
@@ -343,6 +345,7 @@ fn external_binding_checks_small_secret_coefficients_without_an_accumulator() {
                     DecompositionBaseLog::new(8),
                     None,
                 ),
+                0.7,
                 PbsOrder::BootstrapKeyswitch,
             )
             .unwrap();
@@ -488,6 +491,7 @@ fn message_codec_must_match_the_key_ciphertext_modulus() {
             log_basis: DecompositionBaseLog::new(8),
             level_count: None,
         },
+        key_switching_noise_standard_deviation: 0.7,
         pbs_order: PbsOrder::BootstrapKeyswitch,
     })
     .unwrap();

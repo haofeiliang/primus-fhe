@@ -3,7 +3,10 @@
 
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
-use primus_glwe::{GlweParameters, SecretKeyDistr};
+use primus_glwe::{
+    GlevParameters, GlweEncryptionParameters, GlweParameters, NttGlweGadgetEncryptWorkspace,
+    NttGlweKeySwitchingKey, NttGlweSecretKey, SecretKeyDistr,
+};
 use primus_lattice::{GlweDimension, LweDimension};
 use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
@@ -14,9 +17,12 @@ use primus_tfhe_glwe_ntt::{
     TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
+use std::sync::Arc;
 
 const POLY_LENGTH: usize = 32;
 const MODULUS: u32 = 132_120_577;
+// Distinct from BR and fresh LWE sigma=0.7 to expose accidental role coupling.
+const KS_SIGMA: f64 = 1.25;
 
 fn parameters(order: PbsOrder) -> TfheParameters<u32> {
     parameters_with_bases(order, 8, 4, SecretKeyDistr::UniformBinary)
@@ -51,6 +57,7 @@ fn parameters_with_bases(
             DecompositionBaseLog::new(key_switching_log_basis),
             Some(DecompositionLevelCount::new(4)),
         ),
+        KS_SIGMA,
         order,
     )
     .unwrap()
@@ -150,9 +157,12 @@ fn split_keys_support_both_pbs_orders() {
                 .try_generate_classic_blind_rotation_key(&client, &mut rng)
                 .unwrap(),
         );
+        let mut key_rng = StdRng::seed_from_u64(44);
+        let mut reference_rng = StdRng::seed_from_u64(44);
         let key_switching = generator
-            .try_generate_glwe_key_switching_key(&client, &mut rng)
+            .try_generate_glwe_key_switching_key(&client, &mut key_rng)
             .unwrap();
+        check_key_switching_noise(&context, &client, &key_switching, &mut reference_rng);
         let server = primus_tfhe_glwe_ntt::ServerKey::new(blind_rotation, key_switching, None);
         let lookup_table = context
             .parameters()
@@ -200,4 +210,37 @@ fn split_keys_support_both_pbs_orders() {
                 .unwrap()
         );
     }
+}
+
+/// Rebuilds KS rows with an independently specified sampler and the same coins.
+/// Exact key equality detects using BR/fresh-LWE noise even when PBS still decodes.
+fn check_key_switching_noise(
+    context: &TfheContext<u32, U32NttTable>,
+    client: &ClientKey<u32>,
+    actual: &NttGlweKeySwitchingKey<u32>,
+    rng: &mut StdRng,
+) {
+    let output = context.parameters().glwe_key_switching().output();
+    let expected_parameters = GlevParameters::try_from_parts(
+        output.glwe_size(),
+        Arc::new(GlweEncryptionParameters::new(
+            context.parameters().cipher_modulus(),
+            output.secret_key_distr(),
+            KS_SIGMA,
+        )),
+        output.basis().clone(),
+    )
+    .unwrap();
+    let secret = client.padded_small_glwe_secret_key(context.parameters());
+    let secret = NttGlweSecretKey::from_coeff_secret_key(&secret, context.table());
+    let mut workspace = NttGlweGadgetEncryptWorkspace::new(expected_parameters.size());
+    let expected = NttGlweKeySwitchingKey::generate(
+        client.glwe_secret_key(),
+        &secret,
+        &expected_parameters,
+        context.table(),
+        rng,
+        &mut workspace,
+    );
+    assert_eq!(actual.as_slice(), expected.as_slice());
 }

@@ -59,6 +59,7 @@ fn context<Table: FftTable>(
             DecompositionBaseLog::new(8),
             Some(DecompositionLevelCount::new(6)),
         ),
+        1.25, // Independent KS noise also reaches complete sparse server-key generation.
         order,
     )
     .unwrap();

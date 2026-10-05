@@ -47,6 +47,7 @@ fn parameters(pbs_order: PbsOrder) -> TfheParameters<u32> {
             DecompositionBaseLog::new(4),
             Some(DecompositionLevelCount::new(4)),
         ),
+        glwe.noise_distribution().standard_deviation(),
         pbs_order,
     )
     .unwrap()

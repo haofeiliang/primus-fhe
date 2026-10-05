@@ -88,6 +88,7 @@ fn sparse_rotation_matches_direct_phase_and_classic_with_reused_scratch() {
             lwe.into_encryption_parameters(),
             primus_glwe::GgswParameters::try_with_basis(&glwe, basis.clone()).unwrap(),
             basis,
+            glwe.noise_distribution().standard_deviation(),
             PbsOrder::KeyswitchBootstrap,
         )
         .unwrap();

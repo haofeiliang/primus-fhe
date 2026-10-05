@@ -26,8 +26,8 @@ pub enum PbsOrder {
 /// GLWE-TFHE key-generation choices with one ciphertext modulus domain.
 ///
 /// The accumulator inherits `q` from `small_lwe`. Message codecs are selected
-/// when constructing clients or compiling programs. BR and KS use accumulator noise,
-/// as in [`TfheParameters::try_new`].
+/// when constructing clients or compiling programs. BR and ring-KS noise are
+/// selected independently, as in [`TfheParameters::try_new`].
 #[derive(Clone)]
 pub struct TfheConfig<T: FheUint, M: RingContext<T>> {
     /// Small BR-control secret, dimension, ciphertext modulus and fresh LWE noise.
@@ -39,13 +39,16 @@ pub struct TfheConfig<T: FheUint, M: RingContext<T>> {
     pub poly_length: PolyLength,
     /// Coefficient distribution of the accumulator secret.
     pub accumulator_secret_key_distr: SecretKeyDistr,
-    /// Coefficient-unit standard deviation for accumulator, BR and return-KS encryption.
+    /// Coefficient-unit standard deviation for accumulator encryption and BR rows.
     /// Also used by external encryption for [`PbsOrder::KeyswitchBootstrap`].
     pub accumulator_noise_standard_deviation: f64,
     /// GGSW decomposition for blind rotation.
     pub blind_rotation: DecompositionConfig,
     /// Decomposition for the GLWE key switch.
     pub key_switching: DecompositionConfig,
+    /// Coefficient-unit standard deviation for ring-KS row encryption in both
+    /// PBS orders, independent of accumulator and fresh small-LWE noise.
+    pub key_switching_noise_standard_deviation: f64,
     /// Order determining the external LWE secret domain.
     pub pbs_order: PbsOrder,
 }
@@ -53,7 +56,7 @@ pub struct TfheConfig<T: FheUint, M: RingContext<T>> {
 impl<T: FheUint, M: RingContext<T>> TfheParameters<T, M> {
     /// Derives accumulator and gadget parameters from named independent choices.
     ///
-    /// Returns accumulator construction errors and the compatibility/basis
+    /// Returns accumulator/KS construction errors and the compatibility/basis
     /// errors of [`Self::try_new`]. This does not validate a noise/security budget.
     pub fn try_from_config(config: TfheConfig<T, M>) -> Result<Self, TfheParameterError> {
         let modulus = config.small_lwe.cipher_modulus();
@@ -79,6 +82,7 @@ impl<T: FheUint, M: RingContext<T>> TfheParameters<T, M> {
             config.small_lwe,
             blind_rotation,
             key_switching,
+            config.key_switching_noise_standard_deviation,
             config.pbs_order,
         )
     }
@@ -110,18 +114,21 @@ where
     /// Binds the small secret and blind-rotation gadget, deriving the padded KS target.
     ///
     /// Both gadget bases must belong to the accumulator modulus. Bootstrapping
-    /// uses its layout, secret distribution and noise; key switching inherits
-    /// its noise while targeting the padded binary or ternary `small_lwe` secret.
+    /// uses its layout, secret distribution and noise. Key switching targets
+    /// the padded binary or ternary `small_lwe` secret and uses the independent
+    /// `key_switching_noise_standard_deviation`, in coefficient units at the
+    /// common ciphertext modulus. This choice does not change fresh LWE noise.
     ///
     /// # Errors
     ///
     /// Returns an error for incompatible secrets, ciphertext moduli,
     /// dimensions or decomposition bases, a rotation domain `2N` not representable
-    /// by `T`, or a derived gadget layout overflow.
+    /// by `T`, a derived gadget layout overflow, or invalid KS noise.
     pub fn try_new(
         small_lwe: LweEncryptionParameters<T, M>,
         blind_rotation_ggsw: GgswParameters<T, M>,
         key_switching_basis: ApproxSignedBasis<T>,
+        key_switching_noise_standard_deviation: f64,
         pbs_order: PbsOrder,
     ) -> Result<Self, TfheParameterError> {
         let distribution = small_lwe.secret_key_distr();
@@ -148,6 +155,7 @@ where
             small_lwe.secret_key_distr(),
             &blind_rotation_ggsw,
             key_switching_basis,
+            key_switching_noise_standard_deviation,
         )?;
         Ok(Self {
             small_lwe,
@@ -159,13 +167,14 @@ where
 
     /// Pads the already validated small secret to whole ring components.
     /// Since n <= kN, the derived layout fits within the accumulator; its
-    /// modulus/noise are inherited, while the KS basis remains independent.
+    /// modulus is inherited, while the KS basis and noise are independent.
     /// The target encrypts gadget rows and needs no ordinary plaintext codec.
     fn derive_glwe_key_switching(
         small_lwe_dimension: LweDimension,
         small_lwe_distr: SecretKeyDistr,
         accumulator: &GgswParameters<T, M>,
         basis: ApproxSignedBasis<T>,
+        noise_standard_deviation: f64,
     ) -> Result<GlweKeySwitchingParameters<T, M>, TfheParameterError> {
         let output_dimension = small_lwe_dimension
             .get()
@@ -174,14 +183,15 @@ where
             GlweDimension::new(output_dimension),
             accumulator.poly_length(),
         );
-        // These samplers were validated in the source parameters at the same q;
-        // combine the small-secret distribution with the accumulator's KS noise.
-        let inner = Arc::new(GlweEncryptionParameters::new(
+        // The small-secret distribution is already checked at this q; the
+        // independent KS noise must be validated before preparing its sampler.
+        let inner = GlweEncryptionParameters::try_new(
             accumulator.cipher_modulus(),
             small_lwe_distr,
-            accumulator.noise_distribution().standard_deviation(),
-        ));
-        let output = GlevParameters::try_from_parts(output_size, inner, basis)
+            noise_standard_deviation,
+        )
+        .map_err(TfheParameterError::KeySwitchingEncryption)?;
+        let output = GlevParameters::try_from_parts(output_size, Arc::new(inner), basis)
             .map_err(TfheParameterError::KeySwitchingParameters)?;
         GlweKeySwitchingParameters::try_new(accumulator.dimension(), output)
             .map_err(|error| TfheParameterError::KeySwitchingParameters(error.into()))

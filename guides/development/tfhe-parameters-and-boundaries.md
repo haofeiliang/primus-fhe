@@ -24,7 +24,7 @@
 
 入口：[LWE](../../crates/primus_lwe/src/parameter.rs)、[GLWE](../../crates/primus_glwe/src/parameter/ordinary.rs)、[NTRU](../../crates/primus_ntru/src/parameter/ordinary.rs)、[分解](../../crates/primus_decompose/src/parameters.rs)、[GLWE TFHE](../../crates/primus_tfhe_glwe/src/parameters.rs)、[NTRU TFHE](../../crates/primus_tfhe_ntru/src/parameters.rs)。
 
-所有这些配置的噪声标准差均以对应模数下的**系数单位**表示；Fourier 内部将环系数转为归一化 torus，不改变配置输入的单位。BR、返回 KS、trace、scheme switch 的误差来源不同。GLWE 普通 BR/KS 当前继承 accumulator 噪声；NTRU 的返回 KS 单独选择 q 下的噪声。CBS 的 trace 和 scheme-switch 噪声独立于普通 PBS。
+所有这些配置的噪声标准差均以对应模数下的**系数单位**表示；Fourier 内部将环系数转为归一化 torus，不改变配置输入的单位。BR、返回 KS、trace、scheme switch 的误差来源不同。GLWE 的 BR 使用 accumulator 噪声，环 KS 独立选择共同密文模数下的噪声；NTRU 的返回 KS 单独选择 q 下的噪声。CBS 的 trace 和 scheme-switch 噪声独立于普通 PBS。
 
 ## GLWE 普通与 gadget 参数组合
 
@@ -38,7 +38,18 @@
 
 `GlevParameters::try_from_parts(size, Arc<GlweEncryptionParameters>, basis)` 可直接构造 GLev/GGSW 参数。`GlweParameters::try_from_parts(size, shared_encryption, codec)` 只在需要普通消息编码时组合 codec。两种入口都消费已经准备好的部件，不复制采样表、不重建 basis；独立布局与采样状态之间的固定重量检查仍由组合入口负责。既有 `try_with_basis` / `try_with_glwe_params` 适用于从已有普通参数派生 gadget，继续共享同一 Arc。
 
-TFHE 的 BSK 共享 accumulator 的布局和采样状态。KS 目标直接组合补零后的布局、small-secret 分布、accumulator 噪声与 KS basis；不创建临时普通 GLWE codec。CBS trace 和 scheme-switch 同样直接组合 gadget 参数，分别准备各自噪声的状态。普通 GLWE 加密、client Rounded 编码与 LUT 几何各自的检查仍保留在原有边界。
+TFHE 的 BSK 共享 accumulator 的布局和采样状态。KS 目标直接组合补零后的布局、small-secret 分布、独立 KS 噪声与 KS basis；不创建临时普通 GLWE codec。CBS trace 和 scheme-switch 同样直接组合 gadget 参数，分别准备各自噪声的状态。普通 GLWE 加密、client Rounded 编码与 LUT 几何各自的检查仍保留在原有边界。
+
+GLWE-TFHE 的 NTT/Fourier、classic/sparse 路径遵循相同的噪声来源：
+
+| 加密角色 | 噪声来源 |
+| --- | --- |
+| BR→KS 的新鲜外部 LWE 密文 | `small_lwe().noise_distribution()` |
+| 累加环加密、BR 密钥行、KS→BR 的新鲜外部 LWE 密文 | `blind_rotation_ggsw().noise_distribution()` |
+| 两种 order 的环 KS 密钥行 | `glwe_key_switching().output().noise_distribution()`；由独立 `key_switching_noise_standard_deviation` 构造，KS basis 也独立 |
+| CBS trace 与 scheme-switch 密钥行 | `CircuitBootstrapConfig` 中各自的噪声字段 |
+
+这里的新鲜密文噪声指私钥加密直接采样的误差；公钥加密还包含公钥自身及组合误差，不能只用一个 sampler 标准差描述总噪声。GLWE-TFHE 的 `TfheConfig` 和直接 `TfheParameters::try_new` 均显式接收独立 KS 标准差；构造输出 GLev 的采样状态时验证该值，失败返回 `TfheParameterError::KeySwitchingEncryption`。完整 server key 与独立 KS 材料生成均消费这组输出参数，在线求值无需额外分派。调整 KS 噪声不改变 BR、新鲜 LWE 或 CBS 的采样状态；入口只验证采样器支持条件，不认证参数的安全等级。
 
 ## NTRU 普通与 gadget 参数组合
 
@@ -117,7 +128,7 @@ PBS trait、四后端、Boolean 门、双输入打包、CBS、one-hot 与 MVB �
 | 数据或检查 | 唯一归属与使用时机 |
 | --- | --- |
 | small LWE 的 n、q、秘密分布、fresh noise；累加环 k、N、q 和采样状态 | codec-free 参数构造；检查 n≤kN、binary/ternary 控制秘密和模数配对 |
-| BR/返回 KS basis 与密钥噪声 | TFHE 密钥参数；BR 和返回 KS 沿用 accumulator noise |
+| BR/环 KS basis 与密钥噪声 | TFHE 密钥参数；BR 使用 accumulator noise，环 KS 使用独立 key-switching noise |
 | CBS output/trace/SS basis、布局、trace/SS noise | `CircuitBootstrapParameters`；不依赖输入明文模数 |
 | Rounded 消息编码及 external fresh noise | client 工厂接收 `&RoundedCodec`，检查 codec 的 q；BR→KS 使用 small noise，KS→BR 使用 accumulator noise |
 | 普通环消息 Scaled 编码 | `accumulator_client(client, codec)` 一次绑定；复用 gadget 共享采样状态，不复制 Gaussian 预计算 |

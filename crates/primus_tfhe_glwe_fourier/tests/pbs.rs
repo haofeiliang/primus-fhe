@@ -49,6 +49,7 @@ fn parameters<T: TorusFftValue>(order: PbsOrder) -> TfheParameters<T> {
         lwe.into_encryption_parameters(),
         primus_glwe::GgswParameters::try_with_basis(&glwe, bsk).unwrap(),
         ApproxSignedBasis::new(None, DecompositionBaseLog::new(8), None),
+        glwe.noise_distribution().standard_deviation(),
         order,
     )
     .unwrap()

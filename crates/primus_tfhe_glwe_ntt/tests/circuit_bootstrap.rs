@@ -46,6 +46,7 @@ fn parameters(order: PbsOrder, distribution: SecretKeyDistr) -> TfheParameters<u
             log_basis: DecompositionBaseLog::new(10),
             level_count: Some(DecompositionLevelCount::new(4)),
         },
+        key_switching_noise_standard_deviation: 0.7,
         pbs_order: order,
     })
     .unwrap()

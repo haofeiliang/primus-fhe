@@ -60,6 +60,7 @@ fn parameters() -> TfheParameters<Word> {
             log_basis: DecompositionBaseLog::new(ks_log),
             level_count: Some(DecompositionLevelCount::new(ks_levels)),
         },
+        key_switching_noise_standard_deviation: (q * 2.845267479601915e-15).max(6.4),
         pbs_order: ORDER,
     })
     .unwrap()
