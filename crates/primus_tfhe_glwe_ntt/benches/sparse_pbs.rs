@@ -4,6 +4,8 @@
 //! Parameters: primus_tfhe_test_support::parameters (arithmetic cost profiles).
 //! Fixtures are initialized only for selected IDs, then reused across samples.
 //! Run: cargo bench -p primus_tfhe_glwe_ntt --bench sparse_pbs
+//! The additional `paper_2026_1730` IDs use the paper's geometry and small-q
+//! inputs; their GLWE return adaptation is documented in `paper/parameters.rs`.
 
 use std::hint::black_box;
 
@@ -14,6 +16,12 @@ use primus_tfhe_glwe_ntt::{BlindRotationConfig, ClientKey, KeyGenerator, PbsOrde
 use primus_tfhe_test_support::parameters::glwe;
 use primus_tfhe_test_support::parameters::ntt_modulus;
 use rand::{SeedableRng, rngs::StdRng};
+
+mod paper;
+
+#[global_allocator]
+static ALLOCATOR: primus_test_allocations::CountingAllocator =
+    primus_test_allocations::CountingAllocator;
 
 fn backend<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     c: &mut Criterion,
@@ -127,6 +135,7 @@ fn backend<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
 }
 
 fn bench_sparse(c: &mut Criterion) {
+    paper::benchmark(c);
     for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
         backend::<u32, U32NttTable>(c, "ntt", order);
         backend::<u64, U64NttTable>(c, "ntt", order);

@@ -85,6 +85,8 @@ let mut evaluator = context.evaluator(&server)?;
 
 Both orders support ordinary/interleaved PBS, MVB and CBS. Pass `Some(cbs_config)` to include sparse CBS material. `ServerKey::blind_rotation_key()` exposes `BlindRotationKey::{Classic,Sparse}`.
 
+The `sparse_pbs` benchmark includes separate `paper_2026_1730` NAND and padded-function comparisons alongside the existing fixed-weight diagnostics. `complete_ring_return` includes this backend's ring KS return; `blind_rotation` excludes it. Parameters, measurements and differences from the paper are recorded in the [comparison guide](../../guides/development/sparse-paper-comparison.md); these are experimental benchmark profiles, not security presets.
+
 ## Circuit bootstrapping
 
 Generate paired material with `context.try_generate_keys(Some(cbs_config), &mut rng)`; `ServerKey` owns the additional parameters and trace/scheme-switch keys. Obtain `server.circuit_bootstrap_key()` and explicitly pass that material to the CBS constructor above. Use `allocate_output`, `circuit_bootstrap_to` and `cmux_to`, lending common resources to each operation; the [CBS → CMUX example](examples/ntt_circuit_bootstrap.rs) shows independent BR/CBS generation and the complete consumption chain.

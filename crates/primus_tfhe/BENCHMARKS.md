@@ -14,6 +14,7 @@ fixtures, not assessed security parameters or equal-security comparisons.
 | Four backends' `pbs` | One complete dense binary PBS at n800/N1024/t4 or n866/N2048/t32; ternary at n800/N1024/t4; one server-key generation per dense secret/word/backend |
 | GLWE `pbs` stage IDs | One BR or one GLWE key switch at binary n800/N1024; excludes extraction and prerequisite operations |
 | Four backends' `sparse_pbs` | One complete classic or bucket-sparse PBS, or one server-key generation, for the same n728/h32/N1024/t8 secret profile |
+| GLWE NTT `sparse_pbs` paper IDs | Table-3-shaped NAND and padded 3-bit PBS: dense ternary classic, fixed-weight classic and sparse; complete q-to-q request with ring KS and raw BR, with explicit return/decomposition adaptations |
 | Four backends' `mvb` | Produce k Scaled threshold bits from one input: D8/k3 compares independent PBS, interleaved ManyLUT and factorized MVB; D64/k17 compares independent and factorized because interleaving does not fit |
 | Four backends' `circuit_bootstrap` | One ordinary CBS into a reused gadget ciphertext; all backends pair classic/sparse at n728/h32/N1024/t4; NTRU also pairs full M4 / compact M-1 one-hot batches at t8 |
 | `primus_tfhe_ntru_lut/pipeline` | `create_lut_and_drop`: create/drop one public high-precision LUT; `evaluate`: homomorphically evaluate all eight outputs at c8/d5/o8 (16 input/output bits), paired classic/sparse n800/h32/N1024, excluding public LUT creation |
@@ -22,6 +23,17 @@ CBS and NTRU one-hot fix the client seed and give input encryption its own seed,
 BR variants receive identical fixed-weight secrets, input ciphertexts and LUTs.
 The current [sparse measurement report](../../guides/development/sparse-bootstrap-measurements.md)
 records paired latency, stage costs, setup and memory accounting.
+
+GLWE NTT additionally provides `paper_2026_1730` IDs. These use q=512/4096,
+N=1024/2048, fixed weights 43/31/70 and three copies with h+3 buckets. Gate
+cases measure one NAND on two fresh Boolean inputs and compare u32/u64 at the
+same 28-bit prime. The 54-bit `padded_func3` case uses u64 and one padded PBS,
+not full-domain arbitrary-function evaluation. `complete_ring_return` includes
+Primus's ring KS return at Q; `blind_rotation` excludes that return. The original
+fixed-weight IDs remain regression diagnostics. See the
+[paper comparison](../../guides/development/sparse-paper-comparison.md) for
+exact parameters, the benchmark-only q-to-Q adapter, full measurement commands,
+and the limits of comparison with OpenFHE. No paper safety claim is inherited.
 
 MVB compares classic and sparse keys in all four backends. D8/k3 compares
 independent PBS, interleaved ManyLUT and factorized MVB; D64/k17 compares

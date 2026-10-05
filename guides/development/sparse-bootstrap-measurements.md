@@ -14,6 +14,8 @@ The subsequent [grouped NTT accumulation](#grouped-ntt-accumulation) is retained
 [Fourier four-way accumulation](#fourier-four-way-accumulation) is retained for NTRU u64, with both FFT engines.
 The [GLWE NTT tile-major key experiment](#glwe-ntt-tile-major-source-key) retains the existing entry-major layout.
 [NTRU LUT input pairs](#ntru-lut-paired-blind-rotation) are retained for both words and NTT/Fourier backends.
+The separate [paper-parameter comparison](sparse-paper-comparison.md) measures
+GLWE NTT gate/function profiles and explains their differences from ePrint 2026/1730.
 
 ## Conditions and workload pairing
 

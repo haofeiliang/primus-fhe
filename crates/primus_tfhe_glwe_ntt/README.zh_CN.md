@@ -85,6 +85,8 @@ let mut evaluator = context.evaluator(&server)?;
 
 两种 order 支持普通/交错 PBS、MVB 和 CBS。传入 `Some(cbs_config)` 添加稀疏 CBS 材料。 `ServerKey::blind_rotation_key()` 提供 `BlindRotationKey::{Classic,Sparse}`。
 
+`sparse_pbs` 基准在原有固定重量诊断之外，提供独立的 `paper_2026_1730` NAND 和带 padding 函数对比组。`complete_ring_return` 包含本后端的 ring KS 返回，`blind_rotation` 不包含返回。具体参数、测量与论文的差异见[对比记录](../../guides/development/sparse-paper-comparison.md)；这些是实验性基准参数，不是安全参数预设。
+
 ## 电路自举
 
 `context.try_generate_keys(Some(cbs_config), &mut rng)` 生成配对材料，`ServerKey` 持有附加参数及 trace/scheme-switch 密钥。取得 `server.circuit_bootstrap_key()` 后，显式传给上述 CBS 构造器。使用 `allocate_output`、`circuit_bootstrap_to` 和 `cmux_to`，每次操作借用公共资源；[CBS → CMUX 示例](examples/ntt_circuit_bootstrap.rs)展示独立生成 BR/CBS 材料及完整消费链。

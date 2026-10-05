@@ -4,6 +4,11 @@ These profiles are reproducible functional and performance fixtures. They have n
 
 Validation and benchmark constructors live in [test-support parameters](../../test-support/tfhe/src/parameters/mod.rs), split into [GLWE](../../test-support/tfhe/src/parameters/glwe.rs) and [NTRU](../../test-support/tfhe/src/parameters/ntru.rs). They use the existing family parameter types; no backend abstraction or production preset registry is added. Ordinary integration tests keep small parameters. The [validation executable](../../test-support/tfhe/examples/validate_parameters.rs) is an explicitly invoked numerical diagnostic.
 
+The opt-in GLWE NTT [paper comparison](sparse-paper-comparison.md) defines its
+Table-3-shaped profiles beside that benchmark. It supplies real small-q inputs
+through a benchmark-only adapter and does not replace these shared profiles,
+the parameter-validation matrix, or ordinary test parameters.
+
 ## Moduli, geometry and secret domains
 
 | Symbol | Representation and value | Use |
