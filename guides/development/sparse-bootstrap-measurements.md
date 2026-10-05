@@ -10,6 +10,7 @@ The [tile experiment](#coefficient-aggregation-tiles) and
 The [streaming experiment](#streaming-control-aggregation-and-external-product) likewise retains the existing pipeline.
 The later [layout and batch review](#layout-and-batch-admission-review) records prerequisites, without new timing results.
 The [bounded lazy NTT pair](#bounded-lazy-ntt-pair) is retained for the two u64 NTT backends.
+The subsequent [grouped NTT accumulation](#grouped-ntt-accumulation) is retained only for GLWE u64 buckets that fit in one bounded group.
 
 ## Conditions and workload pairing
 
@@ -1280,3 +1281,140 @@ Use `u64/.*sparse.*complete$` for GLWE, and
 use the longer settings above for the one-hot confirmation. Capture full outputs
 only in setup. All temporary probes, duplicate kernels and experiment artifacts
 were removed; the existing benchmarks remain unchanged.
+
+## Grouped NTT accumulation
+
+**2026-10-05; baseline `1c4ffd97`. Decision: retain a whole-bucket group for
+GLWE NTT u64 when at least four selectors fit the word's headroom.** Other
+GLWE buckets keep the bounded lazy pair; NTRU keeps that pair for all buckets.
+The measured GLWE gains are modest and variable, particularly for CPU 4 PBS.
+No public API, key layout, tile size, workspace or online allocation changes.
+
+### Bound and implementation choice
+
+For `m` canonical sources, initialize each canonical aggregate coefficient with
+an additional `m*q`. Each rotated source then contributes a value in
+`[-(q-1), q-1]`. After any prefix of at most `m` contributions, every coefficient
+is nonnegative and less than `(2m+1)*q`. A conservative capacity is therefore:
+
+```text
+max_group_len = floor((floor(T::MAX / q) - 1) / 2)
+```
+
+The calculation divides before multiplying and caps the result to `usize::MAX`.
+The u64 Barrett modulus contract makes the subtraction safe; the chosen bound
+also makes `m*q` representable. Other word widths return zero capacity. For the
+measured Q=1125899906826241, capacity is 8191; all fixture buckets fit (PBS has
+25–48 selectors per bucket, CBS 23–45; each request consumes 2184 selectors).
+
+The private [GLWE aggregation helper](../../crates/primus_tfhe_glwe_ntt/src/sparse/aggregation.rs)
+reuses the existing monomial pair and single kernels with `NativeModulus`.
+Here native addition/subtraction performs the unreduced signed accumulation;
+the bound prevents actual word overflow or underflow. Full Barrett reduction
+at the end of each tile restores `[0,q)` before the ordinary NTT. Bias is a
+multiple of q, so the canonical aggregate is exactly unchanged. The same pairs,
+odd tail, dummy, zero exponents and encrypted zeros are processed.
+
+Initial prototypes also supported several groups with a reduction between
+them and copied the coefficient loops locally. The retained implementation
+uses existing kernels and `GadgetSize`, and requires the entire bucket to fit.
+Buckets shorter than four selectors or exceeding capacity retain the pair
+path, avoiding repeated full reductions for short groups without performance
+evidence. Group selection uses only public size and modulus. No generic
+reduction policy or wider accumulator is introduced.
+
+### Complete requests
+
+Hardware, toolchain, profiles, seeds and request boundaries match the preceding
+experiment: n728/h32/N1024, r3/B64, u64 Q1125899906826241, BR logB8/L6 and GLWE k1.
+PBS uses t8, CBS t4; NTRU nonzero one-hot uses t8/M4. The complete request includes
+bias initialization and final full reductions. Setup, captures and correctness
+checks are outside timing; phase timers are absent. Builds/tests and timing
+runs are separate, with no workspace SIMD feature.
+
+CPU 4 uses baseline/candidate/candidate/baseline order, 50 samples, 1 s warmup
+and an 8 s measurement target. CPU 8 reverses the order and uses 30 samples,
+0.5 s warmup and a 2 s target. Each process has a fresh Criterion directory.
+The table gives both run means in milliseconds, their average change, and the
+envelope of separate 95% CIs; the envelope is not a pooled confidence interval.
+BK means BR→KS; KB means KS→BR.
+
+| CPU / GLWE request | Baseline means | Grouped means | Change | 95% CI envelopes, baseline → grouped |
+| --- | ---: | ---: | ---: | --- |
+| 4 / PBS BK | 15.462 / 15.428 | 15.557 / 14.913 | -1.36% | [15.380, 15.511] → [14.859, 15.641] |
+| 4 / PBS KB | 15.577 / 15.566 | 15.811 / 15.080 | -0.81% | [15.522, 15.626] → [15.035, 15.902] |
+| 4 / CBS BK | 15.491 / 15.649 | 15.144 / 14.986 | -3.24% | [15.447, 15.719] → [14.948, 15.213] |
+| 4 / CBS KB | 15.655 / 15.766 | 15.244 / 15.513 | -2.12% | [15.611, 15.824] → [15.197, 15.716] |
+| 8 / PBS BK | 16.556 / 16.358 | 15.679 / 16.194 | -3.17% | [16.215, 16.659] → [15.592, 16.605] |
+| 8 / PBS KB | 16.868 / 16.323 | 15.776 / 15.577 | -5.54% | [16.179, 16.993] → [15.458, 15.864] |
+| 8 / CBS BK | 17.114 / 16.311 | 15.608 / 15.545 | -6.80% | [16.151, 17.754] → [15.447, 15.687] |
+| 8 / CBS KB | 16.980 / 16.369 | 15.848 / 15.902 | -4.79% | [16.224, 17.225] → [15.757, 16.018] |
+
+Early short GLWE runs varied widely and did not establish a gain. Longer
+comparisons of both the copied-kernel and reused-kernel prototypes showed
+positive average trends, leading to the final restricted implementation above.
+One final CPU 4 PBS candidate run is slower in each order and the CI envelopes
+overlap. Retention rests on the repeated average trend, CBS and CPU 8 results;
+it does not establish a reliable improvement on every invocation, modulus,
+machine or feature. Frequency and unrelated activity were not controlled,
+so differences between CPU groups do not identify a cache mechanism.
+
+The reused-kernel NTRU prototype was tested independently on CPU 4 with the
+same longer settings and order:
+
+| NTRU request | Baseline means | Grouped means | Change | 95% CI envelopes, baseline → grouped |
+| --- | ---: | ---: | ---: | --- |
+| PBS | 4.550 / 4.593 | 4.484 / 4.470 | -2.07% | [4.531, 4.674] → [4.457, 4.501] |
+| CBS | 3.302 / 3.216 | 3.273 / 3.275 | +0.47% | [3.205, 3.315] → [3.258, 3.297] |
+| Nonzero one-hot | 3.591 / 3.603 | 3.619 / 3.582 | +0.10% | [3.571, 3.654] → [3.566, 3.635] |
+
+PBS improves slightly, but CBS and one-hot do not show a repeatable gain.
+The NTRU prototype is removed, without adding a consumer-specific strategy.
+Its CPU 8 or full LUT performance was not measured in this experiment.
+
+### Reduction cost, correctness and limits
+
+A separate GLWE PBS BK diagnostic build timed bias initialization and final
+full Barrett reduction around each tile, printing only after BR. There are
+64 buckets × 12 tiles per request. On CPU 4, excluding the first five requests,
+the medians of 147 per-request sums were **86.299 µs for bias** and
+**806.594 µs for reduction**. Settings were 15 samples, 0.3 s warmup and a 1 s
+target. Timer overhead is included; this binary is excluded from acceptance
+latency. The preceding experiment timed one normalization call per bucket,
+so subtracting the two differently instrumented measurements would not give
+an isolated reduction-cost difference.
+
+The permanent private oracle uses small N=32 controls and independent u128
+negacyclic scatter arithmetic. It covers capacity boundaries, source endpoints,
+both signs, zero/equal/wrapping exponents, empty/odd groups, nonconsecutive
+indices, short final tiles, row/level crossings and dirty-buffer reuse. The
+discarded general prototypes also exercised multiple groups and fallback.
+Existing sparse PBS/CBS tests verify consumers and allocation-free reuse;
+NTRU PBS/CBS/one-hot regression tests pass after restoring its source.
+All **120 setup captures across seven request IDs** match exactly across
+baseline, prototypes and final builds: coefficient-key fingerprint, full public
+bucket map, complete input and complete output. Decryption and CMux checks run
+outside timing. This is deterministic numerical verification, not a noise study.
+
+Key generation, retained key arrays and workspace owners are unchanged;
+the bias and reduction passes use the existing aggregate. No new retained/peak
+memory or keygen timings were measured, and logical source-key reads are not
+reduced. Cache/TLB counters remain unavailable. No u32, SIMD or high-precision
+LUT latency claim follows from this experiment.
+
+After removing instrumentation, both NTT backends pass all-targets check and
+32 default tests. GLWE passes 17 nightly SIMD tests, all-targets clippy with
+`-D warnings`, strict private-item rustdoc and formatting. Both backends'
+existing PBS/CBS benchmarks compile. There is one new small oracle test, with
+no benchmark/CI expansion; temporary probes, duplicate kernels and experiment
+files are removed. Public contracts and recommended workflows are unchanged.
+
+Reproduce with saved baseline and candidate binaries built by
+`cargo bench -p primus_tfhe_glwe_ntt --bench sparse_pbs --bench circuit_bootstrap --no-run`;
+repeat for `primus_tfhe_ntru_ntt` when evaluating its rejected candidate.
+Rebuild restored files with fresh timestamps. Use `taskset -c 4` or `8`, a fresh
+`CRITERION_HOME`, and the filters from the preceding section. CPU 4 arguments
+are `--bench --sample-size 50 --warm-up-time 1 --measurement-time 8 --noplot`;
+CPU 8 uses `--sample-size 30 --warm-up-time 0.5 --measurement-time 2`. Keep any
+fixture capture before `b.iter` and phase probes in a separate binary. The
+ordinary benchmark files are unchanged.

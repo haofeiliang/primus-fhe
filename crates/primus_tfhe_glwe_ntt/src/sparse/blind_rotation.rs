@@ -125,6 +125,7 @@ impl<T: FheUint> SparseGlweBootstrappingKey<T> {
         // Bound the aggregation working set while keeping complete polynomials.
         // Small GGSWs fit in one tile; larger ones reuse each tile across entries.
         let tile_length = (16 * 1024 / size_of::<T>() / poly_length).max(1) * poly_length;
+        let group_capacity = super::aggregation::max_group_len(modulus.value());
         let mut output_is_current = true;
         for bucket_index in 0..self.bucket_count() {
             let (indices, ciphertexts) = self.bucket_data(bucket_index);
@@ -132,6 +133,9 @@ impl<T: FheUint> SparseGlweBootstrappingKey<T> {
             // Every bucket has a dummy, even if publicly empty. It overwrites the
             // previous bucket's NTT values before adding the rotated selections.
             aggregate.copy_from_slice(dummy);
+            // Use at least two pairs and keep the whole bucket in one group.
+            // Insufficient headroom retains the bounded pair kernel below.
+            let use_groups = indices.len() >= 4 && indices.len() <= group_capacity;
             for (tile_index, tile) in aggregate.chunks_mut(tile_length).enumerate() {
                 let start = tile_index * tile_length;
                 let end = start + tile.len();
@@ -156,6 +160,18 @@ impl<T: FheUint> SparseGlweBootstrappingKey<T> {
                     continue;
                 }
                 let ggsw_len = size.ggsw_len();
+                if use_groups {
+                    super::aggregation::add_rotated_group_assign(
+                        indices,
+                        selections,
+                        input_exponents,
+                        tile,
+                        start,
+                        size,
+                        modulus,
+                    );
+                    continue;
+                }
                 // Fuse two rotations and correct once per pair, retaining [0,2q)
                 // residues until the complete bucket is normalized before NTT.
                 let (index_pairs, index_tail) = indices.as_chunks::<2>();
@@ -185,7 +201,7 @@ impl<T: FheUint> SparseGlweBootstrappingKey<T> {
                     );
                 }
             }
-            if T::BITS == 64 {
+            if T::BITS == 64 && !use_groups {
                 // The ordinary NTT entry requires canonical coefficients.
                 modulus.reduce_once_slice_assign(aggregate);
             }

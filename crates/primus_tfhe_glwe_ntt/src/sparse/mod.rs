@@ -1,5 +1,6 @@
 //! Sparse bootstrapping keys and reference blind rotation for the NTT backend.
 
+mod aggregation;
 mod blind_rotation;
 mod key;
 
