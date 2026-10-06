@@ -493,10 +493,12 @@ fn message_codec_must_match_the_key_ciphertext_modulus() {
         accumulator_dimension: GlweDimension::new(1),
         poly_length: PolyLength::new(32),
         accumulator_secret_key_distr: SecretKeyDistr::UniformTernary,
-        accumulator_noise_standard_deviation: 0.7,
-        blind_rotation: DecompositionConfig {
-            log_basis: DecompositionBaseLog::new(8),
-            level_count: None,
+        blind_rotation: GadgetEncryptionConfig {
+            decomposition: DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(8),
+                level_count: None,
+            },
+            noise_standard_deviation: 0.7,
         },
         key_switching: GadgetEncryptionConfig {
             decomposition: DecompositionConfig {

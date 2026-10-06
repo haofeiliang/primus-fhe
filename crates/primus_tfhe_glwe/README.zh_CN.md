@@ -17,7 +17,7 @@
 
 `TfheParameters<T, M>` 和客户端使用同一个密文模数类型 `M`；两后端的类型别名固定各自的模数实现。
 
-推荐使用 `TfheParameters::try_from_config(TfheConfig { .. })`：在 `small_lwe` 中传入不含 codec 的 `LweEncryptionParameters`，只指定一次 `q`，具名字段选择 accumulator 的维数、长度、秘密分布和噪声，以及盲旋转分解、密钥切换配置和 PBS order。`blind_rotation` 使用 `DecompositionConfig { log_basis, level_count }`；`key_switching` 使用 `GadgetEncryptionConfig { decomposition, noise_standard_deviation }`。`level_count: None` 选择支持的最大层数，仍可能丢弃低位（见[分解精度](../primus_decompose/README.zh_CN.md)）；各 basis 自动绑定同一模数。BR 密钥使用 accumulator 噪声；`key_switching.noise_standard_deviation` 独立选择环 KS 噪声。补零的 KS 目标直接由 GLWE 布局、采样状态和 basis 构造，无需消息 codec。CBS 的 `trace` 和 `scheme_switch` 各自使用一个 `GadgetEncryptionConfig`；`output` 仍为 `DecompositionConfig`。已持有环参数或预计算 basis 时，使用下述直接入口。
+推荐使用 `TfheParameters::try_from_config(TfheConfig { .. })`：在 `small_lwe` 中传入不含 codec 的 `LweEncryptionParameters`，只指定一次 `q`，具名字段选择 accumulator 的维数、长度和秘密分布，以及盲旋转、密钥切换配置和 PBS order。`blind_rotation` 和 `key_switching` 均使用 `GadgetEncryptionConfig { decomposition, noise_standard_deviation }`，其中 `decomposition` 为 `DecompositionConfig { log_basis, level_count }`。`level_count: None` 选择支持的最大层数，仍可能丢弃低位（见[分解精度](../primus_decompose/README.zh_CN.md)）；各 basis 自动绑定同一模数。`blind_rotation.noise_standard_deviation` 指定 BR 与累加环加密噪声；`key_switching.noise_standard_deviation` 独立选择环 KS 噪声。补零的 KS 目标直接由 GLWE 布局、采样状态和 basis 构造，无需消息 codec。CBS 的 `trace` 和 `scheme_switch` 各自使用一个 `GadgetEncryptionConfig`；`output` 仍为 `DecompositionConfig`。已持有环参数或预计算 basis 时，使用下述直接入口。
 
 调整 KS 噪声只影响环 KS 密钥生成，两种 PBS order 均如此。Accumulator 噪声也用于 KS→BR 的新鲜外部加密；新鲜 small-LWE 噪声和 CBS trace/scheme-switch 噪声仍可分别配置。所有标准差均以系数单位表示。非法 KS 采样参数在构造时返回 `TfheParameterError::KeySwitchingEncryption`。
 

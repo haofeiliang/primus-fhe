@@ -14,7 +14,7 @@ pub struct GadgetEncryptionConfig<D = DecompositionConfig> {
     /// Decomposition choices or an already prepared basis, as required by the constructor.
     pub decomposition: D,
     /// Encryption noise standard deviation in coefficient units at the key's modulus.
-    /// Each key role selects its noise independently of fresh ciphertext encryption.
+    /// The consuming parameters specify whether ordinary encryption shares this noise.
     pub noise_standard_deviation: f64,
 }
 

@@ -138,8 +138,10 @@ fn codec_binding_checks_input_q_and_default_output_encoding() {
         accumulator_modulus: BarrettModulus::new(41),
         poly_length: PolyLength::new(N),
         accumulator_secret_key_distr: SecretKeyDistr::gaussian(3.2),
-        accumulator_noise_standard_deviation: 0.7,
-        blind_rotation: basis,
+        blind_rotation: GadgetEncryptionConfig {
+            decomposition: basis,
+            noise_standard_deviation: 0.7,
+        },
         key_switching: GadgetEncryptionConfig {
             decomposition: basis,
             noise_standard_deviation: 0.7,

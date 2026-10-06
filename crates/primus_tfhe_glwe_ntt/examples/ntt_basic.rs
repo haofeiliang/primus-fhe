@@ -91,10 +91,12 @@ fn parameters() -> TfheParameters<Word> {
         accumulator_dimension: GlweDimension::new(1),
         poly_length: PolyLength::new(N),
         accumulator_secret_key_distr: SecretKeyDistr::UniformBinary,
-        accumulator_noise_standard_deviation: (q * 2.845267479601915e-15).max(6.4),
-        blind_rotation: DecompositionConfig {
-            log_basis: DecompositionBaseLog::new(23),
-            level_count: Some(DecompositionLevelCount::new(1)),
+        blind_rotation: GadgetEncryptionConfig {
+            decomposition: DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(23),
+                level_count: Some(DecompositionLevelCount::new(1)),
+            },
+            noise_standard_deviation: (q * 2.845267479601915e-15).max(6.4),
         },
         key_switching: GadgetEncryptionConfig {
             decomposition: DecompositionConfig {

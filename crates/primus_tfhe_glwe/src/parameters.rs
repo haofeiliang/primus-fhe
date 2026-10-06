@@ -1,7 +1,7 @@
 //! Parameters for GLWE-based TFHE.
 
 use crate::{GadgetEncryptionConfig, TfheParameterError};
-use primus_decompose::{DecompositionConfig, primitive::ApproxSignedBasis};
+use primus_decompose::primitive::ApproxSignedBasis;
 use primus_glwe::{GlweEncryptionParameters, GlweSize};
 use primus_integer::FheUint;
 use primus_lattice::{GlweDimension, LweDimension};
@@ -39,11 +39,10 @@ pub struct TfheConfig<T: FheUint, M: RingContext<T>> {
     pub poly_length: PolyLength,
     /// Coefficient distribution of the accumulator secret.
     pub accumulator_secret_key_distr: SecretKeyDistr,
-    /// Coefficient-unit standard deviation for accumulator encryption and BR rows.
-    /// Also used by external encryption for [`PbsOrder::KeyswitchBootstrap`].
-    pub accumulator_noise_standard_deviation: f64,
-    /// GGSW decomposition for blind rotation.
-    pub blind_rotation: DecompositionConfig,
+    /// Blind-rotation GGSW decomposition and row noise at the common ciphertext modulus.
+    /// The coefficient-unit noise also serves accumulator encryption and fresh
+    /// external LWE encryption for [`PbsOrder::KeyswitchBootstrap`].
+    pub blind_rotation: GadgetEncryptionConfig,
     /// Ring-KS decomposition and row noise at the common ciphertext modulus in
     /// both PBS orders, independent of accumulator and fresh small-LWE noise.
     pub key_switching: GadgetEncryptionConfig,
@@ -63,11 +62,12 @@ impl<T: FheUint, M: RingContext<T>> TfheParameters<T, M> {
         let inner = GlweEncryptionParameters::try_new(
             modulus,
             config.accumulator_secret_key_distr,
-            config.accumulator_noise_standard_deviation,
+            config.blind_rotation.noise_standard_deviation,
         )
         .map_err(TfheParameterError::AccumulatorParameters)?;
         let blind_rotation = config
             .blind_rotation
+            .decomposition
             .try_build(modulus.explicit_value())
             .map_err(|error| TfheParameterError::BootstrappingParameters(error.into()))?;
         let key_switching_basis = config

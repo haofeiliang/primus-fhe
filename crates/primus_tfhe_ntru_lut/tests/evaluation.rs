@@ -53,10 +53,12 @@ fn parameters<T: FheUint, M: RingContext<T>>(
         accumulator_modulus: modulus,
         poly_length: PolyLength::new(N),
         accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
-        accumulator_noise_standard_deviation: 0.7,
-        blind_rotation: DecompositionConfig {
-            log_basis: DecompositionBaseLog::new(8),
-            level_count: None,
+        blind_rotation: GadgetEncryptionConfig {
+            decomposition: DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(8),
+                level_count: None,
+            },
+            noise_standard_deviation: 0.7,
         },
         key_switching: GadgetEncryptionConfig {
             decomposition: DecompositionConfig {

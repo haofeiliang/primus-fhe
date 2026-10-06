@@ -18,16 +18,16 @@
 | `GadgetEncryptionConfig<D = DecompositionConfig>` | 同一计算密钥角色的 `decomposition` 与 `noise_standard_deviation` | 不自行检查；家族构造入口绑定对应模数和布局；GLWE 直接入口以预计算 `ApproxSignedBasis` 作为 D，无需重建 |
 | `GlevParameters` / `GgswParameters` | `GlweSize`、共享模数/采样状态、该运算的 basis | 固定秘密重量、basis 模数和 gadget 布局；无需普通消息 codec |
 | `NlevParameters` | 共享 NTRU 环/采样状态和该运算的 basis | basis 模数、N*L 布局和层序；无需普通消息 codec |
-| `TfheConfig` → `TfheParameters` | 家族特定的 LWE/环配置、BR 分解、KS 的 `GadgetEncryptionConfig`、PBS order（GLWE） | 同域检查与派生返回布局；消息编码由程序/client 绑定；NTT/Fourier 表由后端 context 绑定 |
+| `TfheConfig` → `TfheParameters` | 家族特定的 LWE/环配置、BR/KS 各自的 `GadgetEncryptionConfig`、PBS order（GLWE） | 同域检查与派生返回布局；消息编码由程序/client 绑定；NTT/Fourier 表由后端 context 绑定 |
 | `CircuitBootstrapConfig` → `CircuitBootstrapParameters` | output 的 `DecompositionConfig`；trace、scheme-switch 各自的 `GadgetEncryptionConfig` | 环大小/模数继承累加环，输出布局由 output basis 派生；interleaved 容量由程序绑定检查 |
 | `HighPrecisionLookupTable::try_new` | PolyLength N、累加模数 Q、输入 Rounded codec 的 q/t、chunk 配置 | 完整枚举、编码/去重/选择计划，无密钥或 TFHE 参数；evaluator 绑定时核对 N/q/Q 和 CBS；`stats()` 与部分工作区估算用于比较分区 |
 | `LookupTableConfig` | 输入 chunk 数 c、输出 chunk 数 o、低位系数 chunk 数 d | `M=t/2`、每个多项式的有效系数数 `M^d`、每输出多项式数 `M^(c-d)`，以及完整存储长度 |
 
 入口：[LWE](../../crates/primus_lwe/src/parameter.rs)、[GLWE](../../crates/primus_glwe/src/parameter/ordinary.rs)、[NTRU](../../crates/primus_ntru/src/parameter/ordinary.rs)、[分解](../../crates/primus_decompose/src/parameters.rs)、[GLWE TFHE](../../crates/primus_tfhe_glwe/src/parameters.rs)、[NTRU TFHE](../../crates/primus_tfhe_ntru/src/parameters.rs)。
 
-所有这些配置的噪声标准差均以对应模数下的**系数单位**表示；Fourier 内部将环系数转为归一化 torus，不改变配置输入的单位。BR、返回 KS、trace、scheme switch 的误差来源不同。GLWE 的 BR 使用 accumulator 噪声，环 KS 独立选择共同密文模数下的噪声；NTRU 的返回 KS 单独选择 q 下的噪声。CBS 的 trace 和 scheme-switch 噪声独立于普通 PBS。
+所有这些配置的噪声标准差均以对应模数下的**系数单位**表示；Fourier 内部将环系数转为归一化 torus，不改变配置输入的单位。BR、返回 KS、trace、scheme switch 的误差来源不同。两家族在 `blind_rotation.noise_standard_deviation` 中选择 BR 与累加环加密共用的噪声；GLWE 环 KS 独立选择共同密文模数下的噪声，NTRU 返回 KS 单独选择 q 下的噪声。CBS 的 trace 和 scheme-switch 噪声独立于普通 PBS。
 
-`GadgetEncryptionConfig` 从 `primus_tfhe`、两个家族和四个具体后端入口导出。它只组合分解与噪声的配置选择；已有完整 GLev/NLev 参数的底层接口继续传递这些参数。Accumulator 噪声也服务普通加密，仍与 BR 分解分别设置；CBS output 没有独立密钥行噪声，仍只设置分解。
+`GadgetEncryptionConfig` 从 `primus_tfhe`、两个家族和四个具体后端入口导出。它只组合分解与噪声的配置选择；已有完整 GLev/NLev 参数的底层接口继续传递这些参数。BR 配置中的噪声也服务累加环普通加密，以及 GLWE KS→BR 的新鲜外部 LWE 加密；配置字段合并不改变这一共享关系。CBS output 没有独立密钥行噪声，仍只设置分解。
 
 ## GLWE 普通与 gadget 参数组合
 
@@ -48,7 +48,7 @@ GLWE-TFHE 的 NTT/Fourier、classic/sparse 路径遵循相同的噪声来源：
 | 加密角色 | 噪声来源 |
 | --- | --- |
 | BR→KS 的新鲜外部 LWE 密文 | `small_lwe().noise_distribution()` |
-| 累加环加密、BR 密钥行、KS→BR 的新鲜外部 LWE 密文 | `blind_rotation_ggsw().noise_distribution()` |
+| 累加环加密、BR 密钥行、KS→BR 的新鲜外部 LWE 密文 | `blind_rotation_ggsw().noise_distribution()`；由 `blind_rotation.noise_standard_deviation` 构造 |
 | 两种 order 的环 KS 密钥行 | `glwe_key_switching().output().noise_distribution()`；由 `key_switching.noise_standard_deviation` 构造，KS basis 也独立 |
 | CBS trace 与 scheme-switch 密钥行 | `CircuitBootstrapConfig` 中 `trace.noise_standard_deviation` 与 `scheme_switch.noise_standard_deviation` |
 

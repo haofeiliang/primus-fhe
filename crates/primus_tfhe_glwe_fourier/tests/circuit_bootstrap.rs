@@ -55,8 +55,10 @@ fn parameters_with_order_and_distribution(
         accumulator_dimension: GlweDimension::new(dimension),
         poly_length: PolyLength::new(poly_length),
         accumulator_secret_key_distr: SecretKeyDistr::UniformTernary,
-        accumulator_noise_standard_deviation: 0.7,
-        blind_rotation: decomposition,
+        blind_rotation: GadgetEncryptionConfig {
+            decomposition,
+            noise_standard_deviation: 0.7,
+        },
         key_switching: GadgetEncryptionConfig {
             decomposition,
             noise_standard_deviation: 0.7,

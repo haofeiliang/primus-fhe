@@ -79,8 +79,10 @@ where
         accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
         // Preserve the existing NTRU ring noise: CBS multiplies errors by f/f².
         // External LWE and return KS use their independent q-domain budgets.
-        accumulator_noise_standard_deviation: 0.7,
-        blind_rotation: full(if T::BITS == 32 { 2 } else { 8 }),
+        blind_rotation: GadgetEncryptionConfig {
+            decomposition: full(if T::BITS == 32 { 2 } else { 8 }),
+            noise_standard_deviation: 0.7,
+        },
         key_switching: GadgetEncryptionConfig {
             decomposition: full(3),
             noise_standard_deviation: 3.2,

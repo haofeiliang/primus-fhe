@@ -116,8 +116,10 @@ fn parameters() -> TfheParameters<Word> {
         accumulator_dimension: GlweDimension::new(1),
         poly_length: PolyLength::new(N),
         accumulator_secret_key_distr: SecretKeyDistr::UniformTernary,
-        accumulator_noise_standard_deviation: 6.4,
-        blind_rotation: full,
+        blind_rotation: GadgetEncryptionConfig {
+            decomposition: full,
+            noise_standard_deviation: 6.4,
+        },
         key_switching: GadgetEncryptionConfig {
             decomposition: full,
             noise_standard_deviation: 6.4,

@@ -1,4 +1,4 @@
-use primus_decompose::{DecompositionConfig, primitive::ApproxSignedBasis};
+use primus_decompose::primitive::ApproxSignedBasis;
 use primus_integer::FheUint;
 use primus_lwe::LweDimension;
 use primus_lwe::LweEncryptionParameters;
@@ -21,10 +21,10 @@ pub struct TfheConfig<T: FheUint, M: RingContext<T>, LM: RingContext<T> = M> {
     pub poly_length: PolyLength,
     /// Coefficient distribution of the accumulator secret.
     pub accumulator_secret_key_distr: SecretKeyDistr,
-    /// Coefficient-unit standard deviation at Q for accumulator and BR-key encryption.
-    pub accumulator_noise_standard_deviation: f64,
-    /// NLev initializer and NGSW control decomposition.
-    pub blind_rotation: DecompositionConfig,
+    /// NLev initializer and NGSW control decomposition and row noise at accumulator Q.
+    /// The coefficient-unit noise also serves accumulator encryption; external
+    /// LWE encryption and the return key switch select their noise independently.
+    pub blind_rotation: GadgetEncryptionConfig,
     /// Post-bootstrap LWE key-switch decomposition and row noise at external q.
     pub key_switching: GadgetEncryptionConfig,
 }
@@ -63,11 +63,12 @@ where
             config.poly_length,
             config.accumulator_modulus,
             config.accumulator_secret_key_distr,
-            config.accumulator_noise_standard_deviation,
+            config.blind_rotation.noise_standard_deviation,
         )
         .map_err(TfheParameterError::AccumulatorParameters)?;
         let basis = config
             .blind_rotation
+            .decomposition
             .try_build(accumulator.cipher_modulus_value())
             .map_err(|source| TfheParameterError::BootstrappingParameters(source.into()))?;
         let blind_rotation = NlevParameters::try_from_parts(Arc::new(accumulator), basis)

@@ -148,8 +148,10 @@ fn parameters() -> TfheParameters<Word, PowOf2Modulus<Word>> {
         accumulator_modulus: modulus, // Ring Q; distinct from the external LWE q.
         poly_length: PolyLength::new(N),
         accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
-        accumulator_noise_standard_deviation: 0.7,
-        blind_rotation: full,
+        blind_rotation: GadgetEncryptionConfig {
+            decomposition: full,
+            noise_standard_deviation: 0.7,
+        },
         // Return key switch in the q domain.
         key_switching: GadgetEncryptionConfig {
             decomposition: DecompositionConfig {

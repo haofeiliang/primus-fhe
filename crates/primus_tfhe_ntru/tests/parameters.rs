@@ -31,10 +31,12 @@ fn independent_domains_and_noise_are_preserved() {
         accumulator_modulus: BarrettModulus::new(Q),
         poly_length: PolyLength::new(N),
         accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
-        accumulator_noise_standard_deviation: 1.25,
-        blind_rotation: DecompositionConfig {
-            log_basis: DecompositionBaseLog::new(9),
-            level_count: Some(DecompositionLevelCount::new(3)),
+        blind_rotation: GadgetEncryptionConfig {
+            decomposition: DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(9),
+                level_count: Some(DecompositionLevelCount::new(3)),
+            },
+            noise_standard_deviation: 1.25,
         },
         key_switching: GadgetEncryptionConfig {
             decomposition: DECOMPOSITION,
@@ -89,7 +91,7 @@ fn independent_domains_and_noise_are_preserved() {
     for blind_rotation in [true, false] {
         let mut invalid = config.clone();
         let decomposition = if blind_rotation {
-            &mut invalid.blind_rotation
+            &mut invalid.blind_rotation.decomposition
         } else {
             &mut invalid.key_switching.decomposition
         };
@@ -231,8 +233,10 @@ fn configs_return_accumulator_return_key_and_cbs_errors() {
         accumulator_modulus: BarrettModulus::new(257),
         poly_length: PolyLength::new(32),
         accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
-        accumulator_noise_standard_deviation: 0.7,
-        blind_rotation: basis,
+        blind_rotation: GadgetEncryptionConfig {
+            decomposition: basis,
+            noise_standard_deviation: 0.7,
+        },
         key_switching: GadgetEncryptionConfig {
             decomposition: basis,
             noise_standard_deviation: 0.7,
@@ -240,7 +244,7 @@ fn configs_return_accumulator_return_key_and_cbs_errors() {
     };
     let tfhe = TfheParameters::try_from_config(config.clone()).unwrap();
     let mut invalid = config.clone();
-    invalid.accumulator_noise_standard_deviation = f64::NAN;
+    invalid.blind_rotation.noise_standard_deviation = f64::NAN;
     assert!(matches!(
         TfheParameters::try_from_config(invalid),
         Err(TfheParameterError::AccumulatorParameters(

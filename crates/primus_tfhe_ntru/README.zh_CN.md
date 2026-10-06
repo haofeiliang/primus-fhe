@@ -13,7 +13,7 @@ NTRU-TFHE 的参数与 LWE 客户端层；[NTT](../primus_tfhe_ntru_ntt/README.z
 
 ## 参数与密钥域
 
-`TfheParameters<T, M, LM=M>` 分离环模数 Q 与外部 LWE 模数 q，共用整数类型 T。通过 `TfheParameters::try_from_config(TfheConfig { .. })` 构造：`external_lwe` 指定外部维数、q、binary/ternary 分布和加密噪声；`accumulator_modulus` 指定 Q；`blind_rotation` 分解在 Q 下，`key_switching` 分解和返回密钥噪声在 q 下。`level_count: None` 选择支持的最大层数，仍须检查[分解精度](../primus_decompose/README.zh_CN.md)。
+`TfheParameters<T, M, LM=M>` 分离环模数 Q 与外部 LWE 模数 q，共用整数类型 T。通过 `TfheParameters::try_from_config(TfheConfig { .. })` 构造：`external_lwe` 指定外部维数、q、binary/ternary 分布和加密噪声；`accumulator_modulus` 指定 Q；`blind_rotation` 和 `key_switching` 各使用 `GadgetEncryptionConfig { decomposition, noise_standard_deviation }`，BR 分解和噪声在 Q 下，返回密钥的分解和噪声在 q 下。BR 噪声也用于累加环加密；外部 LWE 加密仍使用 `external_lwe` 中的独立噪声。`level_count: None` 选择支持的最大层数，仍须检查[分解精度](../primus_decompose/README.zh_CN.md)。
 
 维数选择使用 `LweDimension`；分解选择使用 `DecompositionBaseLog` 和 `Option<DecompositionLevelCount>`。这些单位只构造一次，参数访问器返回的值直接传给工作区。在原始存储或内核边界用 `.get()` 提取整数；组合长度和 basis/模数兼容性仍由构造器检查。
 

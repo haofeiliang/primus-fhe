@@ -91,8 +91,10 @@ where
         accumulator_dimension: GlweDimension::new(1),
         poly_length: PolyLength::new(workload.poly_length),
         accumulator_secret_key_distr: SecretKeyDistr::UniformBinary,
-        accumulator_noise_standard_deviation: (q * GLWE_STD_DEV).max(6.4),
-        blind_rotation: decomposition(blind_rotation.0, Some(blind_rotation.1)),
+        blind_rotation: GadgetEncryptionConfig {
+            decomposition: decomposition(blind_rotation.0, Some(blind_rotation.1)),
+            noise_standard_deviation: (q * GLWE_STD_DEV).max(6.4),
+        },
         key_switching: GadgetEncryptionConfig {
             decomposition: decomposition(key_switching.0, Some(key_switching.1)),
             noise_standard_deviation: (q * GLWE_STD_DEV).max(6.4),
@@ -128,8 +130,10 @@ where
         accumulator_dimension: GlweDimension::new(1),
         poly_length: PolyLength::new(N),
         accumulator_secret_key_distr: SecretKeyDistr::UniformTernary,
-        accumulator_noise_standard_deviation: 6.4,
-        blind_rotation: decomposition(if T::BITS == 32 { 2 } else { 8 }, None),
+        blind_rotation: GadgetEncryptionConfig {
+            decomposition: decomposition(if T::BITS == 32 { 2 } else { 8 }, None),
+            noise_standard_deviation: 6.4,
+        },
         key_switching: GadgetEncryptionConfig {
             decomposition: decomposition(if T::BITS == 32 { 2 } else { 8 }, None),
             noise_standard_deviation: 6.4,
@@ -188,8 +192,10 @@ where
         accumulator_dimension: GlweDimension::new(1),
         poly_length: PolyLength::new(N),
         accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
-        accumulator_noise_standard_deviation: 6.4,
-        blind_rotation: decomposition(if T::BITS == 32 { 2 } else { 8 }, None),
+        blind_rotation: GadgetEncryptionConfig {
+            decomposition: decomposition(if T::BITS == 32 { 2 } else { 8 }, None),
+            noise_standard_deviation: 6.4,
+        },
         key_switching: GadgetEncryptionConfig {
             decomposition: decomposition(if T::BITS == 32 { 2 } else { 8 }, None),
             noise_standard_deviation: 6.4,

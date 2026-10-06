@@ -421,8 +421,10 @@ fn independent_cbs_material_does_not_require_a_return_key() {
         accumulator_modulus: primus_modulus::BarrettModulus::new(65_537u32),
         poly_length: PolyLength::new(32),
         accumulator_secret_key_distr: SecretKeyDistr::gaussian(3.2),
-        accumulator_noise_standard_deviation: 0.7,
-        blind_rotation: full,
+        blind_rotation: GadgetEncryptionConfig {
+            decomposition: full,
+            noise_standard_deviation: 0.7,
+        },
         key_switching: GadgetEncryptionConfig {
             decomposition: DecompositionConfig {
                 log_basis: DecompositionBaseLog::new(2),

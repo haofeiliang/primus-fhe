@@ -154,16 +154,18 @@ impl Case {
             accumulator_dimension: GlweDimension::new(1),
             poly_length: PolyLength::new(self.poly_length),
             accumulator_secret_key_distr: SecretKeyDistr::UniformTernary,
-            accumulator_noise_standard_deviation: 3.19,
-            blind_rotation: DecompositionConfig {
-                log_basis: DecompositionBaseLog::new(self.br_base_log),
-                level_count: match mode {
-                    Mode::SparseCandidate => Some(DecompositionLevelCount::new(
-                        self.candidate_br_levels
-                            .expect("this profile has no validated sparse candidate"),
-                    )),
-                    _ => None,
+            blind_rotation: GadgetEncryptionConfig {
+                decomposition: DecompositionConfig {
+                    log_basis: DecompositionBaseLog::new(self.br_base_log),
+                    level_count: match mode {
+                        Mode::SparseCandidate => Some(DecompositionLevelCount::new(
+                            self.candidate_br_levels
+                                .expect("this profile has no validated sparse candidate"),
+                        )),
+                        _ => None,
+                    },
                 },
+                noise_standard_deviation: 3.19,
             },
             key_switching: GadgetEncryptionConfig {
                 decomposition: decomposition(self.ks_base_log),

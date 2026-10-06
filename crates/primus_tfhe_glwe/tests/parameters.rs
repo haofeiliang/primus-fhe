@@ -60,10 +60,12 @@ fn derives_bootstrapping_and_key_switching_for_both_orders() {
             accumulator_dimension: GlweDimension::new(GLWE_DIMENSION),
             poly_length: PolyLength::new(POLY_LENGTH),
             accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
-            accumulator_noise_standard_deviation: 3.2,
-            blind_rotation: DecompositionConfig {
-                log_basis: DecompositionBaseLog::new(8),
-                level_count: Some(DecompositionLevelCount::new(3)),
+            blind_rotation: GadgetEncryptionConfig {
+                decomposition: DecompositionConfig {
+                    log_basis: DecompositionBaseLog::new(8),
+                    level_count: Some(DecompositionLevelCount::new(3)),
+                },
+                noise_standard_deviation: 3.2,
             },
             key_switching: GadgetEncryptionConfig {
                 decomposition: DecompositionConfig {
@@ -523,8 +525,10 @@ fn configs_return_role_specific_sampling_errors() {
         accumulator_dimension: GlweDimension::new(1),
         poly_length: PolyLength::new(32),
         accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
-        accumulator_noise_standard_deviation: 0.7,
-        blind_rotation: basis,
+        blind_rotation: GadgetEncryptionConfig {
+            decomposition: basis,
+            noise_standard_deviation: 0.7,
+        },
         key_switching: GadgetEncryptionConfig {
             decomposition: basis,
             noise_standard_deviation: 0.7,
@@ -557,7 +561,7 @@ fn configs_return_role_specific_sampling_errors() {
         }
     }
     let mut invalid = config.clone();
-    invalid.accumulator_noise_standard_deviation = f64::NAN;
+    invalid.blind_rotation.noise_standard_deviation = f64::NAN;
     assert!(matches!(
         TfheParameters::try_from_config(invalid),
         Err(TfheParameterError::AccumulatorParameters(

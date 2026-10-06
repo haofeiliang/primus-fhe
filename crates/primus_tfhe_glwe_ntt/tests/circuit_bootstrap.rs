@@ -36,11 +36,13 @@ fn parameters(order: PbsOrder, distribution: SecretKeyDistr) -> TfheParameters<u
         accumulator_dimension: GlweDimension::new(1),
         poly_length: PolyLength::new(POLY_LENGTH),
         accumulator_secret_key_distr: SecretKeyDistr::UniformBinary,
-        accumulator_noise_standard_deviation: 0.7,
-        // Full decomposition keeps phase error below the third output level.
-        blind_rotation: DecompositionConfig {
-            log_basis: DecompositionBaseLog::new(10),
-            level_count: None,
+        blind_rotation: GadgetEncryptionConfig {
+            // Full decomposition keeps phase error below the third output level.
+            decomposition: DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(10),
+                level_count: None,
+            },
+            noise_standard_deviation: 0.7,
         },
         key_switching: GadgetEncryptionConfig {
             decomposition: DecompositionConfig {
