@@ -4,6 +4,7 @@
 mod fourier;
 #[cfg(feature = "ntt")]
 mod ntt;
+
 #[cfg(feature = "fourier")]
 pub use fourier::{FourierGlweAutomorphismKey, FourierGlweAutomorphismWorkspace};
 #[cfg(feature = "ntt")]

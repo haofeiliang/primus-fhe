@@ -60,7 +60,7 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
         workspace.assert_glev_compatible(params.size());
         assert_eq!(
             input_secret_key.poly_length(),
-            params.poly_length().get(),
+            params.poly_length(),
             "input secret polynomial length mismatch"
         );
 

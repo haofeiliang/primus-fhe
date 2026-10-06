@@ -229,10 +229,10 @@ impl<T: FheUint, M: RingContext<T>> TfheParameters<T, M> {
                 actual: key.dimension().get(),
             });
         }
-        if key.poly_length() != self.blind_rotation_ggsw().poly_length().get() {
+        if key.poly_length() != self.blind_rotation_ggsw().poly_length() {
             return Err(TfheKeyError::PolynomialLengthMismatch {
                 expected: self.blind_rotation_ggsw().poly_length().get(),
-                actual: key.poly_length(),
+                actual: key.poly_length().get(),
             });
         }
         if key.distr() != self.blind_rotation_ggsw().secret_key_distr() {

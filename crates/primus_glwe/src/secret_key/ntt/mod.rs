@@ -153,7 +153,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     where
         Table: NttTable<ValueT = T>,
     {
-        assert_eq!(ntt_table.poly_length().get(), secret_key.poly_length());
+        assert_eq!(ntt_table.poly_length(), secret_key.poly_length());
         Self::from_coeff_secret_key_kernel(secret_key, ntt_table)
     }
 

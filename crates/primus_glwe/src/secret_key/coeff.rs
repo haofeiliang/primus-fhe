@@ -5,6 +5,7 @@ use primus_distr::SecretKeySampler;
 use primus_integer::FheUint;
 use primus_lattice::GlweDimension;
 use primus_lattice::GlweSize;
+use primus_poly::PolyLength;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::SecretKeyDistr;
@@ -69,8 +70,8 @@ impl<T: FheUint> GlweSecretKey<T> {
     /// Returns the coefficient polynomial length.
     #[inline]
     #[must_use]
-    pub fn poly_length(&self) -> usize {
-        self.glwe_size.poly_length().get()
+    pub fn poly_length(&self) -> PolyLength {
+        self.glwe_size.poly_length()
     }
 
     /// Returns the GLWE dimension.

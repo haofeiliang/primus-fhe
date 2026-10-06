@@ -54,7 +54,7 @@ impl<T: TorusFftValue> FourierGlweKeySwitchingKey<T> {
         R: rand::Rng + rand::CryptoRng,
     {
         let output = parameters;
-        assert_eq!(input_secret_key.poly_length(), output.poly_length().get());
+        assert_eq!(input_secret_key.poly_length(), output.poly_length());
         assert_eq!(output_secret_key.glwe_size(), output.glwe_size());
         assert_eq!(fft.poly_length().get(), output.poly_length().get());
 

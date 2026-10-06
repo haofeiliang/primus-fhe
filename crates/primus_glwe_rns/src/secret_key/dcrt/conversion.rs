@@ -34,7 +34,7 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
     where
         Table: NttTable<ValueT = T>,
     {
-        assert_eq!(secret_key.poly_length(), table.poly_length().get());
+        assert_eq!(secret_key.poly_length(), table.poly_length());
 
         let size = RnsGlweSize::new(secret_key.glwe_size(), table.moduli_count());
         let poly_length = size.poly_length().get();

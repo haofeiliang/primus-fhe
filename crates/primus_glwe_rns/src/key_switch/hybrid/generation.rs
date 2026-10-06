@@ -57,7 +57,7 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
         input_parameters
             .validate_base(hybrid_rns.q_base())
             .expect("hybrid input parameters and Q basis are incompatible");
-        assert_eq!(output_secret_key.poly_length(), poly_length);
+        assert_eq!(output_secret_key.poly_length().get(), poly_length);
         assert_eq!(qp_table.poly_length().get(), poly_length);
 
         let qp_moduli = hybrid_rns.qp_base().moduli();
