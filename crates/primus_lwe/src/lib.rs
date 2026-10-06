@@ -1,8 +1,11 @@
 //! Single-modulus LWE parameters, keys, encryption and key switching.
 //!
-//! [`LweSecretKey`] encodes messages using [`LweParameters`]. Its `encrypt_to`
-//! methods reuse caller-owned ciphertext storage, and decryption accepts both
-//! owned and borrowed [`primus_lattice::lwe::Lwe`] values.
+//! [`LweSecretKey`] encodes messages using [`LweParameters`] and an explicit
+//! [`PlaintextEmbedding`]. Its
+//! `encrypt_message_to` method reuses caller-owned ciphertext storage, and
+//! decryption accepts both owned and borrowed [`primus_lattice::lwe::Lwe`] values.
+//! Owned `encrypt_encoded` / `encrypt_encoded_to` use codec-free
+//! [`LweEncryptionParameters`]; `decrypt_phase` takes only the modulus.
 //!
 //! [`LweSecretKeyRef`] borrows encoded or signed coefficients for raw operations:
 //! `encrypt_encoded` encrypts an already scaled residue (zero gives a randomized
@@ -16,9 +19,9 @@
 //! public-key ciphertexts. Its noise budget differs from secret-key encryption;
 //! see the public key's correctness contract before choosing parameters.
 //!
-//! Both keys provide `encrypt_batch` / `encrypt_batch_to` for independent
-//! samples in a contiguous `Vec<T>`. Explicit embedding variants also support
-//! centered messages. Batch output methods accept `&mut [T]`, and decryption
+//! Both keys provide `encrypt_message_batch` / `encrypt_message_batch_to` for
+//! independent samples in a contiguous `Vec<T>`. Batch output methods accept
+//! `&mut [T]`, and decryption
 //! accepts `&[T]`. Every chunk contains `dimension + 1` coefficients, including
 //! its body. Use [`primus_lattice::lwe::LweIter`] / `LweIterMut` to borrow samples.
 //! Secret-key batch operations, including raw `encrypt_encoded_batch` and
@@ -28,7 +31,9 @@
 //! Batch operations validate the complete length before iteration.
 //! Empty batches consume no randomness. Batch sampling order need not match
 //! repeated single-message calls; public-key batching reuses rows across a small
-//! output tile. The separate packed multi-message methods retain their shared-mask layout.
+//! output tile. Secret-key `*_packed` methods use a separate shared-mask layout:
+//! one length-`n` mask followed by at most `n` bodies. Even an empty packed
+//! message list retains and samples its mask.
 //!
 //! [`LweKeySwitchingKey::key_switch_batch_to`] uses the same contiguous layout,
 //! with separate input/output dimensions. It reuses each key entry across a small
@@ -37,15 +42,14 @@
 //!
 //! | Input / result | Single ciphertext | Independent batch |
 //! |---|---|---|
-//! | Message, unsigned embedding | `encrypt` / `encrypt_to` | `encrypt_batch` / `encrypt_batch_to` |
-//! | Message, selected embedding | `encrypt_with_embedding` / `encrypt_with_embedding_to` | `encrypt_batch_with_embedding` / `encrypt_batch_with_embedding_to` |
+//! | Message, selected embedding | `encrypt_message` / `encrypt_message_to` | `encrypt_message_batch` / `encrypt_message_batch_to` |
 //! | Encoded residue | `encrypt_encoded` / `encrypt_encoded_to` | `encrypt_encoded_batch` / `encrypt_encoded_batch_to` |
-//! | Decoded message | `decrypt` | `decrypt_batch` / `decrypt_batch_to` |
+//! | Decoded message | `decrypt_message` | `decrypt_message_batch` / `decrypt_message_batch_to` |
 //! | Noisy phase | `decrypt_phase` | `decrypt_phase_batch` / `decrypt_phase_batch_to` |
 //!
-//! Select centered encryption with [`primus_encoding::PlaintextEmbedding::Centered`].
-//! [`LweSecretKey::decrypt_with_noise`] also takes an explicit embedding to
-//! measure circular distance from the decoded message's encoding.
+//! For diagnostics, compare `decrypt_phase` with the expected message's encoding
+//! using [`primus_encoding::phase_error_magnitude`]. Decoding then re-encoding
+//! does not provide an independent reference when decryption is wrong.
 
 #![deny(missing_docs)]
 

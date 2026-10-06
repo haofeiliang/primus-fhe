@@ -115,13 +115,9 @@ fn check_batches<T: FheUint, M: RingContext<T>>(modulus: M, dimension: usize) {
                 let mut storage = vec![T::MAX; count * lwe_len + 2];
                 let batch = &mut storage[1..count * lwe_len + 1];
                 if use_public {
-                    public.encrypt_batch_with_embedding_to(
-                        &messages, batch, &params, &mut rng, embedding,
-                    );
+                    public.encrypt_message_batch_to(&messages, batch, &params, embedding, &mut rng);
                 } else {
-                    secret.encrypt_batch_with_embedding_to(
-                        &messages, batch, &params, &mut rng, embedding,
-                    );
+                    secret.encrypt_message_batch_to(&messages, batch, &params, embedding, &mut rng);
                 }
                 let encoded: Vec<T> = messages
                     .iter()
@@ -144,9 +140,9 @@ fn check_batches<T: FheUint, M: RingContext<T>>(modulus: M, dimension: usize) {
                     )
                 };
                 assert_eq!(raw.as_slice(), &*batch);
-                assert_eq!(secret.decrypt_batch(batch, &params), messages);
+                assert_eq!(secret.decrypt_message_batch(batch, &params), messages);
                 let mut decrypted = vec![T::MAX; count];
-                secret.decrypt_batch_to(batch, &mut decrypted, &params);
+                secret.decrypt_message_batch_to(batch, &mut decrypted, &params);
                 assert_eq!(decrypted, messages);
                 let phases = secret.decrypt_phase_batch(batch, modulus);
                 secret.decrypt_phase_batch_to(batch, &mut decrypted, modulus);
@@ -237,9 +233,21 @@ fn batch_boundaries_validate_layout_and_reject_invalid_messages() {
             assert!(
                 catch_unwind(AssertUnwindSafe(|| {
                     if use_public {
-                        public.encrypt_batch_to(&[0u32, 1], &mut storage, &params, &mut rng);
+                        public.encrypt_message_batch_to(
+                            &[0u32, 1],
+                            &mut storage,
+                            &params,
+                            PlaintextEmbedding::Unsigned,
+                            &mut rng,
+                        );
                     } else {
-                        secret.encrypt_batch_to(&[0u32, 1], &mut storage, &params, &mut rng);
+                        secret.encrypt_message_batch_to(
+                            &[0u32, 1],
+                            &mut storage,
+                            &params,
+                            PlaintextEmbedding::Unsigned,
+                            &mut rng,
+                        );
                     }
                 }))
                 .is_err()
@@ -257,9 +265,21 @@ fn batch_boundaries_validate_layout_and_reject_invalid_messages() {
             assert!(
                 catch_unwind(AssertUnwindSafe(|| {
                     if use_public {
-                        public.encrypt_batch_to(&messages, &mut output, &params, &mut rng);
+                        public.encrypt_message_batch_to(
+                            &messages,
+                            &mut output,
+                            &params,
+                            PlaintextEmbedding::Unsigned,
+                            &mut rng,
+                        );
                     } else {
-                        secret.encrypt_batch_to(&messages, &mut output, &params, &mut rng);
+                        secret.encrypt_message_batch_to(
+                            &messages,
+                            &mut output,
+                            &params,
+                            PlaintextEmbedding::Unsigned,
+                            &mut rng,
+                        );
                     }
                 }))
                 .is_err()
@@ -270,10 +290,11 @@ fn batch_boundaries_validate_layout_and_reject_invalid_messages() {
             }
         }
     }
-    let batch = public.encrypt_batch(&[1u32, 2], &params, &mut rng);
+    let batch =
+        public.encrypt_message_batch(&[1u32, 2], &params, PlaintextEmbedding::Unsigned, &mut rng);
     let mut messages = [17u32; 1];
     assert!(
-        catch_unwind(AssertUnwindSafe(|| secret.decrypt_batch_to(
+        catch_unwind(AssertUnwindSafe(|| secret.decrypt_message_batch_to(
             &batch,
             &mut messages,
             &params
@@ -286,13 +307,13 @@ fn batch_boundaries_validate_layout_and_reject_invalid_messages() {
     // can omit them, including a tail with no complete ciphertext at all.
     for length in [1, 7] {
         let input = vec![0u32; length];
-        assert!(catch_unwind(|| secret.decrypt_batch(&input, &params)).is_err());
+        assert!(catch_unwind(|| secret.decrypt_message_batch(&input, &params)).is_err());
         assert!(
             catch_unwind(|| secret.decrypt_phase_batch(&input, params.cipher_modulus())).is_err()
         );
         let mut output = vec![17u32; length / 4];
         assert!(
-            catch_unwind(AssertUnwindSafe(|| secret.decrypt_batch_to(
+            catch_unwind(AssertUnwindSafe(|| secret.decrypt_message_batch_to(
                 &input,
                 &mut output,
                 &params

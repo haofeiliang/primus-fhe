@@ -6,7 +6,7 @@ use primus_lattice::lwe::MultiMsgLwe;
 use primus_lwe::{LweParameters, LweSecretKey, MultiMsgLweCiphertext, SecretKeyDistr};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_reduce::RingContext;
-use rand::{SeedableRng, rngs::StdRng};
+use rand::{Rng, SeedableRng, rngs::StdRng};
 
 #[test]
 fn packed_capacity_is_enforced() {
@@ -24,20 +24,49 @@ fn packed_capacity_is_enforced() {
 
     // The first disallowed body reuses a mask up to sign.
     let count = params.dimension().ciphertext_len();
+    let seed = rng.next_u64();
+    let mut rng = StdRng::seed_from_u64(seed);
+    let mut untouched = StdRng::seed_from_u64(seed);
     assert!(
         catch_unwind(AssertUnwindSafe(|| {
-            key.encrypt_multi_messages(&vec![0u32; count], &params, &mut rng)
+            key.encrypt_message_packed(
+                &vec![0u32; count],
+                &params,
+                PlaintextEmbedding::Unsigned,
+                &mut rng,
+            )
         }))
         .is_err()
     );
     assert!(
         catch_unwind(AssertUnwindSafe(|| {
-            key.encrypt_multi_zeros(count, &params, &mut rng)
+            key.encrypt_zeros_packed(count, params.encryption_parameters(), &mut rng)
         }))
         .is_err()
     );
-    let malformed = MultiMsgLweCiphertext::new(vec![0u32; params.dimension().get() + count]);
-    assert!(catch_unwind(|| key.decrypt_multi_messages(&malformed, &params)).is_err());
+    assert!(
+        catch_unwind(AssertUnwindSafe(|| {
+            key.encrypt_encoded_packed(&vec![0u32; count], params.encryption_parameters(), &mut rng)
+        }))
+        .is_err()
+    );
+    assert!(
+        catch_unwind(AssertUnwindSafe(|| {
+            key.encrypt_message_packed(&[4], &params, PlaintextEmbedding::Unsigned, &mut rng)
+        }))
+        .is_err()
+    );
+    assert_eq!(rng.next_u64(), untouched.next_u64());
+    for length in [
+        params.dimension().get() - 1,
+        params.dimension().get() + count,
+    ] {
+        let malformed = MultiMsgLweCiphertext::new(vec![0u32; length]);
+        assert!(catch_unwind(|| key.decrypt_message_packed(&malformed, &params)).is_err());
+        assert!(
+            catch_unwind(|| key.decrypt_phase_packed(&malformed, params.cipher_modulus())).is_err()
+        );
+    }
 }
 
 #[test]
@@ -69,30 +98,38 @@ fn check_packed_samples<T: FheUint, M: RingContext<T>>(modulus: M) {
     let check = |ciphertext: MultiMsgLweCiphertext<T>, messages: &[T]| {
         assert_eq!(ciphertext.0.len(), dimension + messages.len());
         let borrowed = MultiMsgLwe::new(ciphertext.0.as_slice());
-        assert_eq!(key.decrypt_multi_messages(&borrowed, &params), messages);
+        assert_eq!(key.decrypt_message_packed(&borrowed, &params), messages);
+        let phases = key.decrypt_phase_packed(&borrowed, modulus);
+        assert_eq!(phases.len(), messages.len());
         // The lattice extractor is independent of the packed phase helper,
         // exposing a rotation/sign error shared by encryption and decryption.
         for (index, &message) in messages.iter().enumerate() {
             let sample = ciphertext.extract_lwe_at(index, dimension, modulus);
-            assert_eq!(key.decrypt(&sample, &params), message);
+            assert_eq!(key.decrypt_message(&sample, &params), message);
+            assert_eq!(key.decrypt_phase(&sample, modulus), phases[index]);
         }
     };
     for count in [0, 3, dimension] {
         for embedding in [PlaintextEmbedding::Unsigned, PlaintextEmbedding::Centered] {
-            check(
-                key.encrypt_multi_messages_with_embedding(
-                    &messages[..count],
-                    &params,
-                    &mut rng,
-                    embedding,
-                ),
-                &messages[..count],
-            );
+            let seed = rng.next_u64();
+            let mut rng = StdRng::seed_from_u64(seed);
+            let mut raw_rng = StdRng::seed_from_u64(seed);
+            let ciphertext =
+                key.encrypt_message_packed(&messages[..count], &params, embedding, &mut rng);
+            let encoded: Vec<T> = messages[..count]
+                .iter()
+                .map(|&m| params.plaintext_codec().encode_value(m, embedding))
+                .collect();
+            let raw =
+                key.encrypt_encoded_packed(&encoded, params.encryption_parameters(), &mut raw_rng);
+            assert_eq!(ciphertext, raw);
+            assert_eq!(rng.next_u64(), raw_rng.next_u64());
+            check(ciphertext, &messages[..count]);
         }
     }
     for count in [0, 3] {
         check(
-            key.encrypt_multi_zeros(count, &params, &mut rng),
+            key.encrypt_zeros_packed(count, params.encryption_parameters(), &mut rng),
             &[T::ZERO; 3][..count],
         );
     }

@@ -169,7 +169,11 @@ phase to the encoded **expected message** with
 [`phase_error_magnitude` / `phase_error_magnitude_slice_to`](../../crates/primus_encoding/README.md#phase-error-diagnostics).
 Do not substitute a re-encoded decoded value or analyze NTT/Fourier storage
 as coefficient phases. Message recovery and phase-error magnitude answer
-different questions.
+different questions. LWE exposes these roles as `encrypt_message*` /
+`decrypt_message*`, `encrypt_encoded*`, and `decrypt_phase*`; message encryption
+always selects `PlaintextEmbedding` explicitly. Independent `*_batch` samples
+and shared-mask `*_packed` samples have distinct layouts; see the
+[LWE workflow](../../crates/primus_lwe/README.md#independent-batches-and-packed-messages).
 
 The [TFHE parameter and boundary guide](tfhe-parameters-and-boundaries.md) maps q/Q, secret domains, PBS/CBS/MVB/one-hot/lookup paths and construction error ownership. The [parameter matrix](tfhe-parameters.md) records representative-size profiles by operation, word width and backend, with an opt-in numerical validator; ordinary tests keep small parameters.
 

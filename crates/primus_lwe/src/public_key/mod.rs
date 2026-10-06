@@ -1,6 +1,7 @@
 //! Square-matrix LWE public-key encryption.
 
 mod batch;
+mod message;
 
 use primus_data::DataMut;
 use primus_distr::{DiscreteGaussian, sample_sparse_ternary_values_to};
@@ -9,9 +10,7 @@ use primus_lattice::LweDimension;
 use primus_lattice::lwe::Lwe;
 use primus_reduce::RingContext;
 
-use crate::{
-    LweCiphertext, LweEncryptionParameters, LweParameters, LweSecretKeyRef, PlaintextEmbedding,
-};
+use crate::{LweCiphertext, LweEncryptionParameters, LweSecretKeyRef};
 
 // A full row block consumes whole random words for any ciphertext tile count.
 const ROWS_PER_BLOCK: usize = 16;
@@ -198,119 +197,6 @@ impl<T: FheUint> LwePublicKey<T> {
             "LWE public-key output length mismatch"
         );
         self.encrypt_encoded_slice(plaintext, output, modulus, noise, rng);
-    }
-
-    /// Encrypts a canonical message in `[0,t)` with unsigned embedding.
-    ///
-    /// See [`Self::encrypt_with_embedding`] for correctness and panic conditions.
-    #[must_use]
-    #[inline]
-    pub fn encrypt<R, M>(
-        &self,
-        message: T,
-        params: &LweParameters<T, M>,
-        rng: &mut R,
-    ) -> LweCiphertext<T>
-    where
-        R: rand::Rng + rand::CryptoRng,
-        M: RingContext<T>,
-    {
-        self.encrypt_with_embedding(message, params, rng, PlaintextEmbedding::Unsigned)
-    }
-
-    /// Overwrites existing storage using unsigned message embedding.
-    ///
-    /// See [`Self::encrypt_with_embedding_to`] for correctness and panic conditions.
-    #[inline]
-    pub fn encrypt_to<R, M>(
-        &self,
-        message: T,
-        output: &mut Lwe<impl DataMut<Elem = T>>,
-        params: &LweParameters<T, M>,
-        rng: &mut R,
-    ) where
-        R: rand::Rng + rand::CryptoRng,
-        M: RingContext<T>,
-    {
-        self.encrypt_with_embedding_to(message, output, params, rng, PlaintextEmbedding::Unsigned);
-    }
-
-    /// Encodes a canonical message, then encrypts the encoded residue.
-    ///
-    /// Both embeddings accept unsigned residues in `[0,t)`; under centered
-    /// embedding, `t - 1` represents `-1`.
-    ///
-    /// # Correctness
-    ///
-    /// The [type's security and noise requirements](Self#correctness) apply.
-    /// The plaintext codec must match the decoder's encoding parameters.
-    ///
-    /// # Panics
-    ///
-    /// Panics before allocating or sampling if the parameter dimension or
-    /// modulus differs from the key's, or the message violates
-    /// [`RoundedCodec::encode_value`](primus_encoding::RoundedCodec::encode_value).
-    #[must_use]
-    pub fn encrypt_with_embedding<R, M>(
-        &self,
-        message: T,
-        params: &LweParameters<T, M>,
-        rng: &mut R,
-        embedding: PlaintextEmbedding,
-    ) -> LweCiphertext<T>
-    where
-        R: rand::Rng + rand::CryptoRng,
-        M: RingContext<T>,
-    {
-        assert_eq!(
-            params.dimension(),
-            self.dimension,
-            "LWE public-key parameter dimension mismatch"
-        );
-        let plaintext = params.plaintext_codec().encode_value(message, embedding);
-        self.encrypt_encoded(
-            plaintext,
-            params.cipher_modulus(),
-            params.noise_distribution(),
-            rng,
-        )
-    }
-
-    /// Encodes a message and overwrites all output coefficients without allocating.
-    ///
-    /// # Correctness
-    ///
-    /// The correctness conditions of [`Self::encrypt_with_embedding`] apply.
-    ///
-    /// # Panics
-    ///
-    /// Panics before writing or sampling under the conditions of
-    /// [`Self::encrypt_with_embedding`], or if the output length is not
-    /// `self.dimension() + 1`. A panicking RNG can leave partial output.
-    pub fn encrypt_with_embedding_to<R, M>(
-        &self,
-        message: T,
-        output: &mut Lwe<impl DataMut<Elem = T>>,
-        params: &LweParameters<T, M>,
-        rng: &mut R,
-        embedding: PlaintextEmbedding,
-    ) where
-        R: rand::Rng + rand::CryptoRng,
-        M: RingContext<T>,
-    {
-        assert_eq!(
-            params.dimension(),
-            self.dimension,
-            "LWE public-key parameter dimension mismatch"
-        );
-        let plaintext = params.plaintext_codec().encode_value(message, embedding);
-        self.encrypt_encoded_to(
-            plaintext,
-            output,
-            params.cipher_modulus(),
-            params.noise_distribution(),
-            rng,
-        );
     }
 
     #[inline]

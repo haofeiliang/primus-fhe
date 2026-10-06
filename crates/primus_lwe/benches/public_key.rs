@@ -3,6 +3,7 @@
 // These are performance fixtures, not evaluated security parameters.
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
+use primus_encoding::PlaintextEmbedding;
 use primus_integer::{AsFrom, FheUint};
 use primus_lattice::LweDimension;
 use primus_lattice::lwe::LweIterMut;
@@ -89,10 +90,11 @@ fn bench_batch_domain<M: RingContext<u32>>(c: &mut Criterion, name: &str, modulu
                     .iter()
                     .zip(LweIterMut::new(black_box(&mut output), dimension + 1))
                 {
-                    black_box(&public).encrypt_to(
+                    black_box(&public).encrypt_message_to(
                         message,
                         &mut ciphertext,
                         black_box(&params),
+                        PlaintextEmbedding::Unsigned,
                         &mut rng,
                     );
                 }
@@ -103,10 +105,11 @@ fn bench_batch_domain<M: RingContext<u32>>(c: &mut Criterion, name: &str, modulu
         if count > 1 {
             group.bench_function("batch_to", |b| {
                 b.iter(|| {
-                    black_box(&public).encrypt_batch_to(
+                    black_box(&public).encrypt_message_batch_to(
                         black_box(&messages),
                         black_box(&mut output),
                         black_box(&params),
+                        PlaintextEmbedding::Unsigned,
                         &mut rng,
                     );
                 })

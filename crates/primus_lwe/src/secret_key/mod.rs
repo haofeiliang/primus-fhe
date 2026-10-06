@@ -2,6 +2,7 @@
 
 mod batch;
 mod borrowed;
+mod message;
 mod owned;
 mod packed;
 mod single;

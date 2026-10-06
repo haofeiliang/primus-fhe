@@ -5,6 +5,7 @@
 use criterion::{
     BenchmarkGroup, Criterion, criterion_group, criterion_main, measurement::WallTime,
 };
+use primus_encoding::PlaintextEmbedding;
 use primus_integer::{AsFrom, FheUint};
 use primus_lattice::LweDimension;
 use primus_lwe::{LweCiphertext, LweParameters, LweSecretKey, LweSecretKeyRef, SecretKeyDistr};
@@ -26,19 +27,27 @@ fn bench_domain<M: RingContext<u32>>(c: &mut Criterion, name: &str, modulus: M, 
     let signed: Vec<i32> = (0..dimension).map(|i| (i % 3) as i32 - 1).collect();
     let plaintext = params
         .plaintext_codec()
-        .encode_value(1u32, primus_encoding::PlaintextEmbedding::Unsigned);
+        .encode_value(1u32, PlaintextEmbedding::Unsigned);
     let mut group = c.benchmark_group(format!("lwe/u32/{name}/n{dimension}"));
     group.bench_function("encrypt_allocating", |b| {
-        b.iter(|| sk.encrypt(black_box(1u32), black_box(&params), &mut rng))
+        b.iter(|| {
+            sk.encrypt_message(
+                black_box(1u32),
+                black_box(&params),
+                PlaintextEmbedding::Unsigned,
+                &mut rng,
+            )
+        })
     });
     bench_phases(&mut group, &params);
     let mut output = LweCiphertext::zero(dimension);
     group.bench_function("encrypt_to", |b| {
         b.iter(|| {
-            sk.encrypt_to(
+            sk.encrypt_message_to(
                 black_box(1u32),
                 black_box(&mut output),
                 black_box(&params),
+                PlaintextEmbedding::Unsigned,
                 &mut rng,
             )
         });
@@ -59,7 +68,14 @@ fn bench_domain<M: RingContext<u32>>(c: &mut Criterion, name: &str, modulus: M, 
     // Full-capacity packed encryption measures the shared mask/rotated-dot kernel.
     let messages: Vec<u32> = (0..dimension).map(|i| (i % 4) as u32).collect();
     group.bench_function("packed_messages_allocating", |b| {
-        b.iter(|| sk.encrypt_multi_messages(black_box(&messages), black_box(&params), &mut rng))
+        b.iter(|| {
+            sk.encrypt_message_packed(
+                black_box(&messages),
+                black_box(&params),
+                PlaintextEmbedding::Unsigned,
+                &mut rng,
+            )
+        })
     });
     group.finish();
 }

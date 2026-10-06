@@ -1,6 +1,5 @@
 use super::{LwePublicKey, ROWS_PER_BLOCK};
 use crate::batch::{batch_len, check_batch};
-use crate::{LweParameters, PlaintextEmbedding};
 use primus_distr::{DiscreteGaussian, sample_sparse_ternary_values_to};
 use primus_integer::FheUint;
 use primus_lattice::lwe::LweIterMut;
@@ -10,116 +9,6 @@ use rand::distr::Distribution;
 // At u32 dimensions 512/1024, 8 outperformed 4, while 16 lost cache
 // locality at 1024. Keep this internal; remeasure with benches/public_key.rs.
 const TILE_COUNT: usize = 8;
-
-impl<T: FheUint> LwePublicKey<T> {
-    /// Encrypts independent messages with unsigned embedding in one allocation.
-    /// See [`Self::encrypt_batch_with_embedding_to`] for contracts.
-    #[must_use]
-    pub fn encrypt_batch<M, R>(
-        &self,
-        messages: &[T],
-        params: &LweParameters<T, M>,
-        rng: &mut R,
-    ) -> Vec<T>
-    where
-        M: RingContext<T>,
-        R: rand::Rng + rand::CryptoRng,
-    {
-        self.encrypt_batch_with_embedding(messages, params, rng, PlaintextEmbedding::Unsigned)
-    }
-
-    /// Encrypts independent messages with unsigned embedding into existing storage.
-    /// See [`Self::encrypt_batch_with_embedding_to`] for contracts.
-    pub fn encrypt_batch_to<M, R>(
-        &self,
-        messages: &[T],
-        output: &mut [T],
-        params: &LweParameters<T, M>,
-        rng: &mut R,
-    ) where
-        M: RingContext<T>,
-        R: rand::Rng + rand::CryptoRng,
-    {
-        self.encrypt_batch_with_embedding_to(
-            messages,
-            output,
-            params,
-            rng,
-            PlaintextEmbedding::Unsigned,
-        );
-    }
-
-    /// Allocates a contiguous batch using unsigned or centered embedding.
-    ///
-    /// See [`Self::encrypt_batch_with_embedding_to`] for contracts. Also panics
-    /// if the total storage length overflows.
-    #[must_use]
-    pub fn encrypt_batch_with_embedding<M, R>(
-        &self,
-        messages: &[T],
-        params: &LweParameters<T, M>,
-        rng: &mut R,
-        embedding: PlaintextEmbedding,
-    ) -> Vec<T>
-    where
-        M: RingContext<T>,
-        R: rand::Rng + rand::CryptoRng,
-    {
-        let mut output = vec![T::ZERO; batch_len(self.dimension().get(), messages.len())];
-        self.encrypt_batch_with_embedding_to(messages, &mut output, params, rng, embedding);
-        output
-    }
-
-    /// Encodes and initializes messages within each tile, then accumulates public-key rows.
-    ///
-    /// No allocation or scratch is needed. Empty batches consume no randomness.
-    /// RNG ordering is not guaranteed to match repeated single-message calls.
-    /// Both embeddings accept canonical residues in `[0,t)`.
-    /// Output contains `messages.len()` consecutive `[mask, body]` chunks of
-    /// length `self.dimension() + 1`; empty output is valid for empty messages.
-    ///
-    /// # Correctness
-    ///
-    /// The key, modulus and noise must satisfy [`Self::encrypt_with_embedding_to`].
-    /// The batch count is unrestricted by the LWE dimension.
-    ///
-    /// # Panics
-    ///
-    /// Parameter dimension, output length, or modulus mismatches, and length
-    /// overflow, panic before writing or sampling.
-    /// Message range or RNG failures may leave partial output
-    /// and consumed randomness. An interrupted tile may contain only noise and
-    /// encoded messages, without the public-key row contributions.
-    pub fn encrypt_batch_with_embedding_to<M, R>(
-        &self,
-        messages: &[T],
-        output: &mut [T],
-        params: &LweParameters<T, M>,
-        rng: &mut R,
-        embedding: PlaintextEmbedding,
-    ) where
-        M: RingContext<T>,
-        R: rand::Rng + rand::CryptoRng,
-    {
-        assert_eq!(
-            params.dimension(),
-            self.dimension(),
-            "LWE batch parameter dimension mismatch"
-        );
-        check_batch(output, self.dimension().get(), messages.len());
-        self.check_modulus(params.cipher_modulus());
-        let plaintexts = messages
-            .iter()
-            .map(|&message| params.plaintext_codec().encode_value(message, embedding));
-        self.encrypt_batch_iter_to(
-            plaintexts,
-            output,
-            params.cipher_modulus(),
-            params.noise_distribution(),
-            rng,
-        );
-    }
-}
 
 impl<T: FheUint> LwePublicKey<T> {
     /// Encrypts canonical encoded residues into one newly allocated batch.
@@ -181,7 +70,7 @@ impl<T: FheUint> LwePublicKey<T> {
     /// one canonical residue per output chunk. Lazy encoding avoids a separate
     /// pass over the full output. Body writes stay local to the current tile,
     /// and each public-key row is reused across it.
-    fn encrypt_batch_iter_to<M, R>(
+    pub(super) fn encrypt_batch_iter_to<M, R>(
         &self,
         mut plaintexts: impl Iterator<Item = T>,
         output: &mut [T],

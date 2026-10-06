@@ -204,10 +204,13 @@ fn check_messages<M: RingContext<u32>>(modulus: M) {
             } else {
                 PlaintextEmbedding::Unsigned
             };
-            key.encrypt_with_embedding_to(message, &mut output, &params, &mut rng, embedding);
-            assert_eq!(secret.decrypt(&output, &params), message);
+            key.encrypt_message_to(message, &mut output, &params, embedding, &mut rng);
+            assert_eq!(secret.decrypt_message(&output, &params), message);
             let switched = switching.key_switch(&output, modulus);
-            assert_eq!(output_secret.decrypt(&switched, &output_params), message);
+            assert_eq!(
+                output_secret.decrypt_message(&switched, &output_params),
+                message
+            );
         }
     }
 }
@@ -253,10 +256,11 @@ fn public_key_boundaries_reject_before_writing_or_sampling() {
         let mut expected_rng = StdRng::seed_from_u64(seed);
         assert!(
             catch_unwind(AssertUnwindSafe(|| {
-                key.encrypt_to(
+                key.encrypt_message_to(
                     message,
                     &mut Lwe::new(storage.as_mut_slice()),
                     &bad_params,
+                    PlaintextEmbedding::Unsigned,
                     &mut rng,
                 );
             }))

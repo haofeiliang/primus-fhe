@@ -1,5 +1,6 @@
 use primus_decompose::DecompositionBaseLog;
 use primus_decompose::primitive::ApproxSignedBasis;
+use primus_encoding::PlaintextEmbedding;
 use primus_lattice::LweDimension;
 use primus_lwe::{
     LweKeySwitchingKey, LweParameters, LweSecretKey, LweSecretKeyRef, SecretKeyDistr,
@@ -81,10 +82,15 @@ fn check_signed_generation<M: RingContext<u32>>(modulus: M) {
         primus_lwe::LweCiphertext::new(vec![17u32; output_parameters.dimension().ciphertext_len()]);
     *output.b_mut() = (q / 2) as u32;
     for message in 0u32..4 {
-        let input = input_secret_key.encrypt(message, &input_parameters, &mut rng);
+        let input = input_secret_key.encrypt_message(
+            message,
+            &input_parameters,
+            PlaintextEmbedding::Unsigned,
+            &mut rng,
+        );
         key_switching_key.key_switch_to(&input, &mut output, modulus);
         assert_eq!(
-            output_secret_key.decrypt(&output, &output_parameters),
+            output_secret_key.decrypt_message(&output, &output_parameters),
             message
         );
     }

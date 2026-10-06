@@ -152,12 +152,19 @@ impl<T: FheUint> Request<T> {
         for seed in [43, 4343] {
             let mut rng = StdRng::seed_from_u64(seed);
             for &(m, rhs, expected) in &messages {
-                secret.encrypt_to(T::as_from(m), &mut self.input, &external, &mut rng);
+                secret.encrypt_message_to(
+                    T::as_from(m),
+                    &mut self.input,
+                    &external,
+                    PlaintextEmbedding::Unsigned,
+                    &mut rng,
+                );
                 if let Some(rhs) = rhs {
-                    secret.encrypt_to(
+                    secret.encrypt_message_to(
                         T::as_from(rhs),
                         self.rhs.as_mut().unwrap(),
                         &external,
+                        PlaintextEmbedding::Unsigned,
                         &mut rng,
                     );
                 }
@@ -165,7 +172,7 @@ impl<T: FheUint> Request<T> {
                 self.check_lifted_exponents(case);
                 let expected = T::as_from(expected);
                 assert_eq!(
-                    secret.decrypt(&self.output, &external),
+                    secret.decrypt_message(&self.output, &external),
                     expected,
                     "{name}, seed={seed}, m={m}, rhs={rhs:?}"
                 );
@@ -179,9 +186,21 @@ impl<T: FheUint> Request<T> {
         }
         // Restore the same nonzero request for every timing stage/algorithm.
         let mut rng = StdRng::seed_from_u64(43);
-        secret.encrypt_to(T::ONE, &mut self.input, &external, &mut rng);
+        secret.encrypt_message_to(
+            T::ONE,
+            &mut self.input,
+            &external,
+            PlaintextEmbedding::Unsigned,
+            &mut rng,
+        );
         if let Some(rhs) = &mut self.rhs {
-            secret.encrypt_to(T::ONE, rhs, &external, &mut rng);
+            secret.encrypt_message_to(
+                T::ONE,
+                rhs,
+                &external,
+                PlaintextEmbedding::Unsigned,
+                &mut rng,
+            );
         }
         let (_, allocation) = primus_test_allocations::measure(|| self.evaluate(&mut evaluator));
         assert_eq!(allocation.count, 0, "{name}: online allocation");

@@ -3,6 +3,7 @@
 //! Run with `cargo run -p primus_lwe --example basic`.
 //! The small dimension keeps the example fast and is not a security recommendation.
 
+use primus_encoding::PlaintextEmbedding;
 use primus_lattice::LweDimension;
 use primus_lattice::lwe::{Lwe, LweIter};
 use primus_lwe::{LweParameters, LwePublicKey, LweSecretKey, SecretKeyDistr};
@@ -25,16 +26,23 @@ fn main() {
     // Applications convert message types before encryption and after decryption.
     let message_byte = 3u8;
     let message = u32::from(message_byte);
-    let ciphertext = secret_key.encrypt(message, &parameters, &mut rng);
-    let decrypted = secret_key.decrypt(&ciphertext, &parameters);
+    let ciphertext =
+        secret_key.encrypt_message(message, &parameters, PlaintextEmbedding::Unsigned, &mut rng);
+    let decrypted = secret_key.decrypt_message(&ciphertext, &parameters);
     let decrypted_byte = u8::try_from(decrypted).unwrap();
     assert_eq!(decrypted_byte, message_byte);
 
     // Reuse caller-owned storage; decryption accepts the borrowed ciphertext too.
     let mut storage = [0u32; LWE_DIMENSION + 1];
     let mut output = Lwe::new(&mut storage[..]);
-    secret_key.encrypt_to(message, &mut output, &parameters, &mut rng);
-    assert_eq!(secret_key.decrypt(&output, &parameters), message);
+    secret_key.encrypt_message_to(
+        message,
+        &mut output,
+        &parameters,
+        PlaintextEmbedding::Unsigned,
+        &mut rng,
+    );
+    assert_eq!(secret_key.decrypt_message(&output, &parameters), message);
 
     // The public key can be given to a sender who does not have the secret.
     // Public-key output noise grows with the secret and ephemeral vector norms;
@@ -44,21 +52,48 @@ fn main() {
         parameters.encryption_parameters(),
         &mut rng,
     );
-    let ciphertext = public_key.encrypt(message, &parameters, &mut rng);
-    assert_eq!(secret_key.decrypt(&ciphertext, &parameters), message);
-    public_key.encrypt_to(message, &mut output, &parameters, &mut rng);
-    assert_eq!(secret_key.decrypt(&output, &parameters), message);
+    let ciphertext =
+        public_key.encrypt_message(message, &parameters, PlaintextEmbedding::Unsigned, &mut rng);
+    assert_eq!(
+        secret_key.decrypt_message(&ciphertext, &parameters),
+        message
+    );
+    public_key.encrypt_message_to(
+        message,
+        &mut output,
+        &parameters,
+        PlaintextEmbedding::Unsigned,
+        &mut rng,
+    );
+    assert_eq!(secret_key.decrypt_message(&output, &parameters), message);
 
     // Independent samples share one allocation and remain usable individually.
     let messages = [0u32, 1, 2, 3];
-    let batch = public_key.encrypt_batch(&messages, &parameters, &mut rng);
-    assert_eq!(secret_key.decrypt_batch(&batch, &parameters), messages);
+    let batch = public_key.encrypt_message_batch(
+        &messages,
+        &parameters,
+        PlaintextEmbedding::Unsigned,
+        &mut rng,
+    );
+    assert_eq!(
+        secret_key.decrypt_message_batch(&batch, &parameters),
+        messages
+    );
     for (ciphertext, &message) in LweIter::new(&batch, ciphertext.lwe_len()).zip(&messages) {
-        assert_eq!(secret_key.decrypt(&ciphertext, &parameters), message);
+        assert_eq!(
+            secret_key.decrypt_message(&ciphertext, &parameters),
+            message
+        );
     }
     let mut storage = [0u32; 4 * (LWE_DIMENSION + 1)];
-    secret_key.encrypt_batch_to(&messages, &mut storage, &parameters, &mut rng);
+    secret_key.encrypt_message_batch_to(
+        &messages,
+        &mut storage,
+        &parameters,
+        PlaintextEmbedding::Unsigned,
+        &mut rng,
+    );
     let mut decoded = [0u32; 4];
-    secret_key.decrypt_batch_to(&storage, &mut decoded, &parameters);
+    secret_key.decrypt_message_batch_to(&storage, &mut decoded, &parameters);
     assert_eq!(decoded, messages);
 }

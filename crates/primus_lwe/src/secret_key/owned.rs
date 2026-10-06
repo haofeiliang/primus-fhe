@@ -9,8 +9,11 @@ use super::LweSecretKeyRef;
 /// Represents a secret key for the Learning with Errors (LWE) cryptographic scheme.
 ///
 /// Secret coefficients are erased when the key (including each clone) is dropped.
-/// Message operations use [`crate::LweParameters`] for encoding and sampling; use
-/// [`Self::as_view`] to borrow the coefficients for single-ciphertext raw operations.
+/// Message operations use [`crate::LweParameters`] for encoding and sampling.
+/// Single and packed encoded encryption use [`LweEncryptionParameters`]; raw
+/// batches take the modulus and samplers directly, including for zero-dimensional
+/// keys. [`Self::as_view`] borrows the coefficients for single raw operations
+/// without the owner's modulus check.
 /// Batch operations, including raw encoded encryption and phase decryption,
 /// require this owned key, ensuring that reused single-ciphertext operations
 /// always receive encoded coefficients.

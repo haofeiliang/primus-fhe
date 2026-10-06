@@ -4,69 +4,44 @@ use primus_lattice::lwe::MultiMsgLwe;
 use primus_reduce::RingContext;
 use rand::distr::Distribution;
 
-use crate::{LweParameters, MultiMsgLweCiphertext, PlaintextEmbedding};
+use crate::{LweEncryptionParameters, MultiMsgLweCiphertext};
 
 use super::LweSecretKey;
 
 impl<T: FheUint> LweSecretKey<T> {
-    /// Encrypts at most `params.dimension().get()` messages with unsigned embedding.
+    /// Allocates one shared mask and encrypts each already encoded body.
     ///
-    /// See [`Self::encrypt_multi_messages_with_embedding`] for the layout,
-    /// correctness and panic conditions.
-    #[inline]
-    pub fn encrypt_multi_messages<R, M>(
-        &self,
-        messages: &[T],
-        params: &LweParameters<T, M>,
-        rng: &mut R,
-    ) -> MultiMsgLweCiphertext<T>
-    where
-        R: rand::Rng + rand::CryptoRng,
-        M: RingContext<T>,
-    {
-        self.encrypt_multi_messages_with_embedding(
-            messages,
-            params,
-            rng,
-            PlaintextEmbedding::Unsigned,
-        )
-    }
-
-    /// Encrypts multiple messages using the selected plaintext embedding.
-    ///
-    /// Stores a length-`n` mask followed by `messages.len()` bodies, where
-    /// `n = params.dimension().get()`. Body `i` uses the mask rotated right by `i`
-    /// with the first `i` coefficients negated. An empty message slice is allowed.
+    /// Stores `n + plaintexts.len()` coefficients, with at most `n` bodies.
+    /// Body `i` uses the mask rotated right by `i`, negating its first `i` values.
+    /// Even an empty plaintext slice samples and retains the shared mask.
     ///
     /// # Correctness
     ///
     /// The key must satisfy the [type's parameter contract](Self#correctness).
-    /// Both embeddings accept canonical messages in `[0,t)`.
+    /// Plaintexts must be canonical under the parameter modulus; no codec is used.
     ///
     /// # Panics
     ///
-    /// Panics if the recorded key modulus differs from `params`, the message count
-    /// exceeds `n`, the storage length overflows, or a message lies outside `[0,t)`.
-    #[inline]
-    pub fn encrypt_multi_messages_with_embedding<R, M>(
+    /// Panics before sampling on a recorded modulus mismatch, excessive body
+    /// count or storage length overflow. Debug builds check parameter dimension.
+    #[must_use]
+    pub fn encrypt_encoded_packed<M, R>(
         &self,
-        messages: &[T],
-        params: &LweParameters<T, M>,
+        plaintexts: &[T],
+        params: &LweEncryptionParameters<T, M>,
         rng: &mut R,
-        embedding: PlaintextEmbedding,
     ) -> MultiMsgLweCiphertext<T>
     where
-        R: rand::Rng + rand::CryptoRng,
         M: RingContext<T>,
+        R: rand::Rng + rand::CryptoRng,
     {
         self.check_modulus(params.cipher_modulus());
         debug_assert_eq!(self.dimension(), params.dimension().get());
-        let mut output = allocate_packed(params.dimension().get(), messages.len());
-        let (_, bodies) = output.a_b_mut(params.dimension().get());
-        // Bodies start at zero: encode directly into the final storage before sampling.
-        params
-            .plaintext_codec()
-            .add_encode_slice_assign(bodies, messages, embedding);
+        let mut output = allocate_packed(params.dimension().get(), plaintexts.len());
+        output
+            .a_b_mut(params.dimension().get())
+            .1
+            .copy_from_slice(plaintexts);
         self.encrypt_packed_bodies_assign(&mut output, params, rng);
         output
     }
@@ -74,17 +49,18 @@ impl<T: FheUint> LweSecretKey<T> {
     /// Encrypts multiple zeros using the secret key.
     ///
     /// Uses the layout and key contract of
-    /// [`Self::encrypt_multi_messages_with_embedding`]. A zero count is allowed.
+    /// [`Self::encrypt_encoded_packed`]. A zero count is allowed.
     ///
     /// # Panics
     ///
     /// Panics if the recorded key modulus differs from `params`, `zero_count`
     /// exceeds `params.dimension().get()`, or the storage length overflows.
+    #[must_use]
     #[inline]
-    pub fn encrypt_multi_zeros<R, Modulus>(
+    pub fn encrypt_zeros_packed<R, Modulus>(
         &self,
         zero_count: usize,
-        params: &LweParameters<T, Modulus>,
+        params: &LweEncryptionParameters<T, Modulus>,
         rng: &mut R,
     ) -> MultiMsgLweCiphertext<T>
     where
@@ -102,10 +78,10 @@ impl<T: FheUint> LweSecretKey<T> {
     /// the encoded bodies. The caller supplies exactly `n + count` coefficients,
     /// with `count <= n`, canonical bodies, and a key matching the parameters.
     #[inline]
-    fn encrypt_packed_bodies_assign<R, M>(
+    pub(super) fn encrypt_packed_bodies_assign<R, M>(
         &self,
         output: &mut MultiMsgLweCiphertext<T>,
-        params: &LweParameters<T, M>,
+        params: &LweEncryptionParameters<T, M>,
         rng: &mut R,
     ) where
         R: rand::Rng + rand::CryptoRng,
@@ -118,7 +94,7 @@ impl<T: FheUint> LweSecretKey<T> {
             .zip(params.cipher_modulus_uniform_distr().sample_iter(&mut *rng))
             .for_each(|(out, sample)| *out = sample);
         for (index, body) in bodies.iter_mut().enumerate() {
-            let product = self.multi_message_a_mul_s(mask, index, dimension, modulus);
+            let product = self.rotated_mask_product(mask, index, dimension, modulus);
             modulus.reduce_add_assign(body, product);
         }
         // Keep RNG state out of the rotated dot-product loop.
@@ -130,65 +106,50 @@ impl<T: FheUint> LweSecretKey<T> {
         }
     }
 
-    /// Decrypts the [`MultiMsgLweCiphertext<T>`] back to message.
+    /// Allocates the canonical phases of a packed ciphertext, without decoding.
     ///
-    /// Returns canonical residues in `[0,t)` for either embedding, including an
-    /// empty vector when the ciphertext retains no bodies.
+    /// Returns one phase per body, or an empty vector if only the mask is retained.
     ///
     /// # Correctness
     ///
-    /// The key must satisfy the [type's parameter contract](Self#correctness).
-    /// The ciphertext must use the mask/body layout of
-    /// [`Self::encrypt_multi_messages_with_embedding`] and canonical coefficients
-    /// under the same modulus. Original messages are recovered only within the
-    /// codec's decoding margin.
+    /// Input coefficients must be canonical under `modulus`, using the rotated
+    /// mask layout of [`Self::encrypt_encoded_packed`]. The key's coefficient
+    /// contract applies to both contiguous dot products in each rotation.
     ///
     /// # Panics
     ///
-    /// Panics if the recorded key modulus differs from `params`, storage is shorter
-    /// than `params.dimension().get()`, the body count exceeds that dimension, or a
-    /// nonempty ciphertext has a mask/key length mismatch.
-    #[inline]
-    pub fn decrypt_multi_messages<M>(
+    /// Panics if the recorded modulus differs, storage is shorter than the key
+    /// dimension, or the number of bodies exceeds that dimension.
+    #[must_use]
+    pub fn decrypt_phase_packed<M: RingContext<T>>(
         &self,
-        cipher_text: &MultiMsgLwe<impl Data<Elem = T>>,
-        params: &LweParameters<T, M>,
-    ) -> Vec<T>
-    where
-        M: RingContext<T>,
-    {
-        let modulus = params.cipher_modulus();
-        let dimension = params.dimension().get();
-
+        input: &MultiMsgLwe<impl Data<Elem = T>>,
+        modulus: M,
+    ) -> Vec<T> {
         self.check_modulus(modulus);
-        debug_assert_eq!(self.dimension(), dimension);
-
-        let (a, b) = cipher_text.a_b(dimension);
-
-        debug_assert_eq!(a.len(), dimension);
+        let dimension = self.dimension();
+        let (mask, bodies) = input.a_b(dimension);
         assert!(
-            b.len() <= dimension,
+            bodies.len() <= dimension,
             "packed LWE message count must not exceed the LWE dimension"
         );
-
-        let mut messages: Vec<T> = b
+        bodies
             .iter()
             .enumerate()
-            .map(|(i, &b)| {
-                let a_mul_s = self.multi_message_a_mul_s(a, i, dimension, modulus);
-                modulus.reduce_sub(b, a_mul_s)
+            .map(|(index, &body)| {
+                modulus.reduce_sub(
+                    body,
+                    self.rotated_mask_product(mask, index, dimension, modulus),
+                )
             })
-            .collect();
-        params.plaintext_codec().decode_slice_assign(&mut messages);
-
-        messages
+            .collect()
     }
 
     /// Computes the phase mask product for body `index`; `index < dimension`
     /// and both the mask and key have exactly `dimension` canonical coefficients.
     /// Negating the wrapped prefix implements the negacyclic extraction layout.
     #[inline]
-    fn multi_message_a_mul_s<M>(&self, a: &[T], index: usize, dimension: usize, modulus: M) -> T
+    fn rotated_mask_product<M>(&self, a: &[T], index: usize, dimension: usize, modulus: M) -> T
     where
         M: RingContext<T>,
     {
@@ -209,7 +170,10 @@ impl<T: FheUint> LweSecretKey<T> {
 
 /// Allocates the packed mask/body layout, enforcing its independent-mask limit.
 #[inline]
-fn allocate_packed<T: FheUint>(dimension: usize, count: usize) -> MultiMsgLweCiphertext<T> {
+pub(super) fn allocate_packed<T: FheUint>(
+    dimension: usize,
+    count: usize,
+) -> MultiMsgLweCiphertext<T> {
     // Beyond n bodies the negacyclic mask repeats up to sign, exposing message
     // sums or differences. Reject this before allocating or sampling output.
     assert!(

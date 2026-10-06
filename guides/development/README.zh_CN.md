@@ -159,7 +159,7 @@ assert_eq!(level_count, 9); // (k+1) 行 * L 层
 
 ## 组合密文工作流
 
-明确区分消息、已编码明文和提取出的系数域 phase。编码选择 codec 与 embedding，加密对已编码数据加入噪声，phase 提取不解码。诊断时用 [`phase_error_magnitude` / `phase_error_magnitude_slice_to`](../../crates/primus_encoding/README.zh_CN.md#相位误差诊断) 比较实际 phase 与**预期消息**的编码；不能用解码后重编码值代替参考，也不能将 NTT/Fourier 存储直接当成系数 phase。消息恢复是否正确与相位误差幅度回答不同的问题。
+明确区分消息、已编码明文和提取出的系数域 phase。编码选择 codec 与 embedding，加密对已编码数据加入噪声，phase 提取不解码。诊断时用 [`phase_error_magnitude` / `phase_error_magnitude_slice_to`](../../crates/primus_encoding/README.zh_CN.md#相位误差诊断) 比较实际 phase 与**预期消息**的编码；不能用解码后重编码值代替参考，也不能将 NTT/Fourier 存储直接当成系数 phase。消息恢复是否正确与相位误差幅度回答不同的问题。LWE 用 `encrypt_message*` / `decrypt_message*`、`encrypt_encoded*` 和 `decrypt_phase*` 区分这三层，消息加密始终显式选择 `PlaintextEmbedding`。独立 `*_batch` 与共享掩码 `*_packed` 的布局不同，见 [LWE 工作流](../../crates/primus_lwe/README.zh_CN.md#独立-batch-与-packed-消息)。
 
 [TFHE 参数与边界指南](tfhe-parameters-and-boundaries.md) 说明 q/Q、秘密域、PBS/CBS/MVB/one-hot/查表链路及构造错误归属。 [参数矩阵](tfhe-parameters.md) 列出按操作、字宽和后端验证的实际尺寸配置，以及独立的大参数验证入口；普通测试仍使用小参数。
 

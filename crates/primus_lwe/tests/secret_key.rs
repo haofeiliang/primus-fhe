@@ -1,9 +1,9 @@
-use primus_encoding::PlaintextEmbedding;
+use primus_encoding::{PlaintextEmbedding, phase_error_magnitude};
 use primus_lattice::LweDimension;
 use primus_lattice::lwe::Lwe;
 use primus_lwe::{LweParameters, LweSecretKey, SecretKeyDistr};
 use primus_modulus::BarrettModulus;
-use rand::{SeedableRng, rngs::StdRng};
+use rand::{Rng, SeedableRng, rngs::StdRng};
 
 // Owning generation must preserve the signed sampler's values and RNG stream,
 // including both Gaussian backends and a whole-key fixed composition.
@@ -57,37 +57,40 @@ fn message_encryption_reuses_storage_for_both_embeddings() {
     let key = LweSecretKey::generate(params.encryption_parameters(), &mut rng);
     let mut storage = [u32::MAX; 8];
     for message in 0..4u32 {
-        for centered in [false, true] {
-            let mut rng = StdRng::seed_from_u64(0x1_ee06);
-            let mut expected_rng = StdRng::seed_from_u64(0x1_ee06);
+        for embedding in [PlaintextEmbedding::Unsigned, PlaintextEmbedding::Centered] {
+            let seed = 0x1_ee06;
+            let mut rng = StdRng::seed_from_u64(seed);
+            let mut raw_rng = StdRng::seed_from_u64(seed);
             let mut output = Lwe::new(&mut storage[..]);
-            let expected = if centered {
-                key.encrypt_with_embedding_to(
-                    message,
-                    &mut output,
-                    &params,
-                    &mut rng,
-                    PlaintextEmbedding::Centered,
-                );
-                key.encrypt_with_embedding(
+            key.encrypt_message_to(message, &mut output, &params, embedding, &mut rng);
+            let encoded = params.plaintext_codec().encode_value(message, embedding);
+            let expected =
+                key.encrypt_encoded(encoded, params.encryption_parameters(), &mut raw_rng);
+            assert_eq!(output.as_ref(), expected.as_ref());
+            assert_eq!(
+                key.encrypt_message(
                     message,
                     &params,
-                    &mut expected_rng,
-                    PlaintextEmbedding::Centered,
-                )
-            } else {
-                key.encrypt_to(message, &mut output, &params, &mut rng);
-                key.encrypt(message, &params, &mut expected_rng)
-            };
-            assert_eq!(output.0, expected.0.as_slice());
-            let input = Lwe::new(&storage[..]);
-            assert_eq!(key.decrypt(&input, &params), message);
+                    embedding,
+                    &mut StdRng::seed_from_u64(seed)
+                ),
+                expected
+            );
+            key.encrypt_encoded_to(
+                encoded,
+                &mut output,
+                params.encryption_parameters(),
+                &mut StdRng::seed_from_u64(seed),
+            );
+            assert_eq!(output.as_ref(), expected.as_ref());
+            assert_eq!(key.decrypt_message(&output, &params), message);
+            assert_eq!(rng.next_u64(), raw_rng.next_u64());
         }
     }
 }
 
 #[test]
-fn noise_is_distance_to_the_decoded_message_embedding() {
+fn phase_error_uses_the_expected_message_embedding() {
     let params = LweParameters::new(
         LweDimension::new(1),
         4u32,
@@ -107,12 +110,22 @@ fn noise_is_distance_to_the_decoded_message_embedding() {
         (PlaintextEmbedding::Unsigned, 49i32),
         (PlaintextEmbedding::Centered, 48),
     ] {
-        for noise in [-2i32, 0, 2] {
+        for noise in [-2i32, 0, 2, 24] {
             let body = (11 + encoded + noise).rem_euclid(97) as u32;
             let storage = [11u32, body];
             let ciphertext = Lwe::new(&storage[..]);
-            let result: (u32, u32) = key.decrypt_with_noise(&ciphertext, &params, embedding);
-            assert_eq!(result, (2, noise.unsigned_abs()));
+            let phase = key.decrypt_phase(&ciphertext, params.cipher_modulus());
+            let reference = params.plaintext_codec().encode_value(2, embedding);
+            assert_eq!(reference, encoded as u32);
+            assert_eq!(
+                phase_error_magnitude(phase, reference, params.cipher_modulus()),
+                noise.unsigned_abs()
+            );
+            // The large error decodes to the wrong message but retains its magnitude.
+            assert_eq!(
+                key.decrypt_message(&ciphertext, &params),
+                if noise == 24 { 3 } else { 2 }
+            );
         }
     }
 }
@@ -142,21 +155,50 @@ fn owning_domain_is_preserved_and_rejected_before_sampling_or_writing() {
         let matching = LweSecretKey::new(vec![T::ONE; 4], SecretKeyDistr::UniformBinary, modulus);
         let foreign = LweSecretKey::new(vec![T::ONE; 4], SecretKeyDistr::UniformBinary, other);
         assert_eq!(foreign.cipher_modulus_minus_one(), other.minus_one());
-        let mut output = matching.encrypt(T::ONE, &params, &mut rng);
-        assert_eq!(matching.decrypt(&output, &params), T::ONE);
+        let mut output =
+            matching.encrypt_message(T::ONE, &params, PlaintextEmbedding::Unsigned, &mut rng);
+        assert_eq!(matching.decrypt_message(&output, &params), T::ONE);
         let original = output.clone();
         let seed = rng.next_u64();
         let mut rng = StdRng::seed_from_u64(seed);
         let mut untouched = StdRng::seed_from_u64(seed);
         assert!(
             catch_unwind(AssertUnwindSafe(|| {
-                foreign.encrypt_to(T::ONE, &mut output, &params, &mut rng);
+                foreign.encrypt_message_to(
+                    T::ONE,
+                    &mut output,
+                    &params,
+                    PlaintextEmbedding::Unsigned,
+                    &mut rng,
+                );
             }))
             .is_err()
         );
         assert_eq!(output, original);
         assert_eq!(rng.next_u64(), untouched.next_u64());
-        assert!(catch_unwind(AssertUnwindSafe(|| foreign.decrypt(&output, &params))).is_err());
+        assert!(
+            catch_unwind(AssertUnwindSafe(
+                || foreign.decrypt_message(&output, &params)
+            ))
+            .is_err()
+        );
+
+        assert!(
+            catch_unwind(AssertUnwindSafe(|| {
+                foreign.encrypt_encoded_to(
+                    T::ONE,
+                    &mut output,
+                    params.encryption_parameters(),
+                    &mut rng,
+                );
+            }))
+            .is_err()
+        );
+        assert_eq!(output, original);
+        assert_eq!(rng.next_u64(), untouched.next_u64());
+        assert!(
+            catch_unwind(AssertUnwindSafe(|| foreign.decrypt_phase(&output, modulus))).is_err()
+        );
 
         // Batch checks precede the first entry, including empty batches.
         let mut batch = vec![T::ONE; 10];
@@ -165,7 +207,13 @@ fn owning_domain_is_preserved_and_rejected_before_sampling_or_writing() {
         let mut untouched = StdRng::seed_from_u64(seed);
         assert!(
             catch_unwind(AssertUnwindSafe(|| {
-                foreign.encrypt_batch_to(&[T::ZERO, T::ONE], &mut batch, &params, &mut rng);
+                foreign.encrypt_message_batch_to(
+                    &[T::ZERO, T::ONE],
+                    &mut batch,
+                    &params,
+                    PlaintextEmbedding::Unsigned,
+                    &mut rng,
+                );
             }))
             .is_err()
         );

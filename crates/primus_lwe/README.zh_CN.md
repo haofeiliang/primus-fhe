@@ -15,21 +15,23 @@ Primus FHE 的单模数 LWE 密钥生成、私钥加密、公钥加密和密钥�
 
 | 类型 | 职责 |
 | --- | --- |
+| `LweEncryptionParameters<T, M>` | 密文域与预计算采样器，不含消息 codec |
 | `LweParameters<T, M>` | 维度、模数、明文 codec、私钥分布及预计算采样器 |
-| `LweSecretKey<T>` | 持有 Encoded 系数；提供消息加解密、raw batch 和 packed 消息接口 |
+| `LweSecretKey<T>` | 持有 Encoded 系数；提供 message、encoded 和 phase 操作 |
 | `LweSecretKeyRef<'a, T>` | 借用 `Encoded` 或 `Signed` 系数；提供单条密文的 raw 操作 |
 | `LwePublicKey<T>` | 方阵 Lindner–Peikert 风格的公钥加密 |
 | `LweKeySwitchingKey<T>` | 在相同密文模数下切换私钥，允许改变维度 |
 | `LweCiphertext<T>` | `primus_lattice::lwe::Lwe<Vec<T>>` 的别名 |
 | `MultiMsgLweCiphertext<T>` | `primus_lattice::lwe::MultiMsgLwe<Vec<T>>` 的别名 |
 
-`encrypt` / `encrypt_batch` 分配输出；对应的 `_to` 接口覆盖调用方提供的存储， 不进行分配。私钥解密接受拥有或借用存储的密文。公钥密文使用相同的解密和密钥切换接口。
+`encrypt_message` / `encrypt_message_batch` 显式接收 `PlaintextEmbedding` 并分配输出；对应的 `_to` 接口覆盖调用方提供的存储， 不进行分配。私钥解密接受拥有或借用存储的密文。公钥密文使用相同的解密和密钥切换接口。
 
 ## 快速开始
 
-下面使用小维度演示存储复用、独立公钥 batch 和密钥切换，参数未经安全性评估。 调用方 crate 需要直接依赖 `primus_lwe`、`primus_lattice`、`primus_modulus`、 `primus_decompose` 和 `rand`，以使用示例中的导入。
+下面使用小维度演示存储复用、独立公钥 batch 和密钥切换，参数未经安全性评估。 调用方 crate 需要直接依赖 `primus_lwe`、`primus_lattice`、`primus_modulus`、 `primus_decompose`、`primus_encoding` 和 `rand`，以使用示例中的导入。
 
 ```rust
+use primus_encoding::PlaintextEmbedding;
 use primus_decompose::{DecompositionBaseLog, primitive::ApproxSignedBasis};
 use primus_lattice::lwe::{Lwe, LweIter};
 use primus_lwe::{LweDimension, LweKeySwitchingKey, LweParameters, LwePublicKey, LweSecretKey, SecretKeyDistr};
@@ -46,22 +48,22 @@ fn main() {
     let mut rng = rand::rng();
     let secret = LweSecretKey::generate(params.encryption_parameters(), &mut rng);
 
-    let ciphertext = secret.encrypt(3u32, &params, &mut rng);
-    assert_eq!(secret.decrypt(&ciphertext, &params), 3);
+    let ciphertext = secret.encrypt_message(3u32, &params, PlaintextEmbedding::Unsigned, &mut rng);
+    assert_eq!(secret.decrypt_message(&ciphertext, &params), 3);
 
     let mut storage = vec![0u32; ciphertext.lwe_len()];
-    secret.encrypt_to(2u32, &mut Lwe::new(&mut storage[..]), &params, &mut rng);
+    secret.encrypt_message_to(2u32, &mut Lwe::new(&mut storage[..]), &params, PlaintextEmbedding::Unsigned, &mut rng);
     assert_eq!(
-        secret.decrypt(&Lwe::new(&storage[..]), &params),
+        secret.decrypt_message(&Lwe::new(&storage[..]), &params),
         2
     );
 
     let public = LwePublicKey::generate(secret.as_view(), params.encryption_parameters(), &mut rng);
     let messages = [0u32, 1, 2, 3];
-    let batch = public.encrypt_batch(&messages, &params, &mut rng);
-    assert_eq!(secret.decrypt_batch(&batch, &params), messages);
+    let batch = public.encrypt_message_batch(&messages, &params, PlaintextEmbedding::Unsigned, &mut rng);
+    assert_eq!(secret.decrypt_message_batch(&batch, &params), messages);
     for (sample, &message) in LweIter::new(&batch, ciphertext.lwe_len()).zip(&messages) {
-        assert_eq!(secret.decrypt(&sample, &params), message);
+        assert_eq!(secret.decrypt_message(&sample, &params), message);
     }
 
     let output_params = LweParameters::new(
@@ -82,7 +84,7 @@ fn main() {
     );
     let switched = switching.key_switch_batch(&batch, params.cipher_modulus());
     assert_eq!(
-        output_secret.decrypt_batch(&switched, &output_params),
+        output_secret.decrypt_message_batch(&switched, &output_params),
         messages
     );
 }
@@ -96,17 +98,21 @@ fn main() {
 
 `LweParameters::new(LweDimension::new(n), t, modulus, secret_distribution, noise_standard_deviation)` 要求满足 codec 和采样器的有效性条件，包括 `t >= 2`、`q > t`。`params.dimension()` 返回 `LweDimension`，用 `.ciphertext_len()` 分配存储，在原始切片边界用 `.get()` 提取整数。原始秘密视图仍返回整数维数，允许零维。`NativeModulus<T>` 表示 `q = 2^T::BITS`； `cipher_modulus_value()` 对 Native 模数返回 `None`，对显式模数返回 `Some(q)`。 噪声标准差以密文系数为单位。
 
-消息接口接受类型 `T`、位于 `[0,t)` 内的规范剩余类，批量及 packed 加密接受 `&[T]`。 `encrypt` 使用 unsigned embedding；`encrypt_with_embedding` 通过 `primus_encoding` 中的 `PlaintextEmbedding::Unsigned` 或 `PlaintextEmbedding::Centered` 选择编码。Centered embedding 仍接受无符号剩余类， 其中 `t - 1` 表示 `-1`。两种编码都使用 `decrypt` 解密，结果使用密文系数类型 `T`， 位于 `[0,t)`。批量和 packed 解密同样返回 `Vec<T>` 或写入 `[T]`；应用在加密前、 解密后按需转换整数类型或有明确语义的消息类型。
+消息接口接受类型 `T`、位于 `[0,t)` 内的规范剩余类，批量及 packed 加密接受 `&[T]`。 `encrypt_message` 通过 `primus_encoding` 中的 `PlaintextEmbedding::Unsigned` 或 `PlaintextEmbedding::Centered` 选择编码。Centered embedding 仍接受无符号剩余类， 其中 `t - 1` 表示 `-1`。两种编码都使用 `decrypt_message` 解密，结果使用密文系数类型 `T`， 位于 `[0,t)`。批量和 packed 解密同样返回 `Vec<T>` 或写入 `[T]`；应用在加密前、 解密后按需转换整数类型或有明确语义的消息类型。
 
 对密文 `[a, b]`，私钥加密计算 `b = <a,s> + e + Encode(message) mod q`。 只有相位噪声处于 codec 的解码余量内时，才能恢复原消息。私钥、密文和参数的维度及模数 必须一致，Encoded 系数必须是规范剩余类。拥有型私钥操作在采样或写入前检查记录的模数；raw view 依赖调用方事先建立模数兼容性。
 
 `LweSecretKey::generate` 在采样前接管秘密缓冲区，采样 panic 导致栈展开时擦除已写入的秘密，并记录参数模数；`LweSecretKey::new(coefficients, distribution, modulus)` 导入时记录显式传入的模数，不扫描系数。导入数据须已是符合声明分布的规范剩余类。`cipher_modulus_minus_one()` 返回 `q - 1`（Native 为 `T::MAX`），用于区分剩余类域，不证明秘密身份或导入来源。`as_view()` 不携带这些元数据：调用 raw 接口前，应先检查拥有型密钥。显式 `zeroize()` 清空系数，保留公开的模数/分布元数据；擦除后应丢弃密钥。
 
-单条私钥 raw 操作通过 `secret.as_view()` 调用：`encrypt_encoded` / `encrypt_encoded_to` 接受已编码的剩余类、模数、均匀采样器、噪声采样器和 RNG； `decrypt_phase` 返回 `b - <a,s>`，不进行解码。向 raw 加密传入零会得到随机化的零密文。 `LweSecretKeyRef::Signed` 直接借用有符号系数，不分配 Encoded 副本。点积调用模数后端的 `ReduceDotProductSigned` 实现，将表示转换与乘法融合。 显式模数下要求 `-q < s_i < q`；Native 模数下允许所有有符号值。 Raw 采样器必须使用相同模数。这些范围及采样器约定是调用方前提。
+拥有型 `secret.encrypt_encoded` / `encrypt_encoded_to` 接收已编码剩余类和 `LweEncryptionParameters`；`secret.decrypt_phase` 接收密文和模数。这些入口保留 owner 的模数检查。
 
-`secret.decrypt_with_noise(input, params, embedding)` 返回解码消息及相位到该消息 所选编码的环形距离；它不估计噪声分布，也不证明解密结果正确。
+借用型单条私钥 raw 操作通过 `secret.as_view()` 直接使用预计算资源：`encrypt_encoded` / `encrypt_encoded_to` 接受已编码的剩余类、模数、均匀采样器、噪声采样器和 RNG； `decrypt_phase` 返回 `b - <a,s>`，不进行解码。向 raw 加密传入零会得到随机化的零密文。 `LweSecretKeyRef::Signed` 直接借用有符号系数，不分配 Encoded 副本。点积调用模数后端的 `ReduceDotProductSigned` 实现，将表示转换与乘法融合。 显式模数下要求 `-q < s_i < q`；Native 模数下允许所有有符号值。 Raw 采样器必须使用相同模数。这些范围及采样器约定是调用方前提。
+
+诊断噪声时，先通过 `phase = secret.decrypt_phase(input, modulus)` 提取相位，用实际 codec 和 embedding 编码**预期消息**，再调用 `primus_encoding::phase_error_magnitude(phase, expected_phase, modulus)`。结果是环形距离，不估计噪声分布，也不证明解密正确。将解码结果重新编码作为参考，可能掩盖错误解密。
 
 ## 公钥加密
+
+消息加密使用 `encrypt_message[_to]`，传入 `LweParameters` 与显式 embedding。Raw `encrypt_encoded[_to]` 直接接收已编码剩余类、模数、噪声采样器和 RNG，让 TFHE 调用方复用已有资源，无需重新构造参数对象。
 
 `LwePublicKey::generate` 是 raw 入口，不能检查拥有型私钥的模数元数据，须先检查再借用。它接收 `LweSecretKeyRef`：owned LWE 私钥传入 `secret.as_view()`，GLWE/NTRU 系数可直接使用 `LweSecretKeyRef::Signed`， 生成过程中无需复制秘密。借用视图仍须满足对应模数下的系数范围契约。
 
@@ -124,14 +130,14 @@ phase = Encode(message) + e^T r + e2 - e1^T s  (mod q)
 
 独立 batch 使用扁平 `Vec<T>` 或切片，连续存放 `count` 个 `[a, b]`， 每条长度为 `n + 1`，条数不受 `n` 限制，没有单独的 batch 容器。`Lwe::lwe_len()` 的长度包含 body。 `LweIter` / `LweIterMut` 可借用其中的单条密文；迭代器本身会忽略不完整尾部， LWE batch 接口则会拒绝这种输入。
 
-- `encrypt_batch_to` 的输出必须恰好包含 `messages.len() * (n + 1)` 个元素。 `decrypt_batch_to` 的输出长度必须等于密文条数。
-- `encrypt_batch_with_embedding` 及其 `_to` 版本用于选择编码。 Raw batch 使用 `encrypt_encoded_batch` / `encrypt_encoded_batch_to` 和 `decrypt_phase_batch` / `decrypt_phase_batch_to`。
-- 所有私钥 batch 方法均要求持有 Encoded 系数的 `LweSecretKey<T>`。 Signed 视图只支持单条密文的 raw 操作。
+- `encrypt_message_batch_to` 的输出必须恰好包含 `messages.len() * (n + 1)` 个元素。 `decrypt_message_batch_to` 的输出长度必须等于密文条数。
+- `encrypt_message_batch` 及其 `_to` 版本显式接收 embedding。 Raw batch 使用 `encrypt_encoded_batch` / `encrypt_encoded_batch_to` 和 `decrypt_phase_batch` / `decrypt_phase_batch_to`。
+- 所有私钥 batch 方法均要求持有 Encoded 系数的 `LweSecretKey<T>`。 Signed 视图只支持单条密文的 raw 操作。Raw 私钥 batch 直接接收模数和预计算采样器，保留零维密钥支持。
 - 私钥 batch 复用单条加密；公钥 batch 分块处理以复用矩阵行，RNG 顺序不保证与逐条加密一致。 空的独立 batch 不消耗随机数。
 - 公钥加密从每个随机字提取 16 个临时三元系数，在单条密文或 batch 分块结束时丢弃未用的 bit。 固定 seed 不保证跨库版本生成相同的密文字节。
 - Batch 入口在处理前检查完整缓冲区长度；非法消息或 RNG 失败可能留下部分输出并消耗随机数。
 
-Packed 加密使用不同布局：`encrypt_multi_messages` 存储一个长度为 `n` 的共享 mask 及 `count <= n` 个 body，共 `n + count` 个系数。第 `i` 个 body 使用 mask 右移 `i` 位、并将前 `i` 个系数取负后的掩码。这些样本共享掩码结构。 使用 `decrypt_multi_messages` 或 `MultiMsgLwe::extract_lwe_at` 处理该表示， 不能在其存储上直接用 `LweIter` 遍历单条样本。`encrypt_multi_zeros` 构造 packed 零消息； 即使消息列表为空，packed 加密仍保留并采样共享 mask。
+Packed 加密使用不同布局：`encrypt_message_packed` 存储一个长度为 `n` 的共享 mask 及 `count <= n` 个 body，共 `n + count` 个系数。第 `i` 个 body 使用 mask 右移 `i` 位、并将前 `i` 个系数取负后的掩码。这些样本共享掩码结构。 使用 `decrypt_message_packed` 或 `MultiMsgLwe::extract_lwe_at` 处理该表示， 不能在其存储上直接用 `LweIter` 遍历单条样本。`encrypt_encoded_packed` 和 `decrypt_phase_packed` 在同一布局下处理已编码剩余类和相位。`encrypt_zeros_packed` 构造 packed 零消息； 即使消息列表为空，packed 加密仍保留并采样共享 mask。
 
 ## 密钥切换
 
@@ -142,8 +148,8 @@ Packed 加密使用不同布局：`encrypt_multi_messages` 存储一个长度为
 ## 源码布局
 
 - [src/parameter.rs](src/parameter.rs)：参数校验、codec 和采样器。
-- [src/secret_key/](src/secret_key/)：存储与生成（`owned.rs`）、raw 视图（`borrowed.rs`）、 消息接口（`single.rs`）、独立 batch（`batch.rs`）及共享掩码消息（`packed.rs`）。
-- [src/public_key/](src/public_key/)：`mod.rs` 实现生成及单条加密，`batch.rs` 实现分块加密。
+- [src/secret_key/](src/secret_key/)：存储与生成（`owned.rs`）、raw 视图（`borrowed.rs`）、 encoded 标量原语（`single.rs`）、raw 独立 batch（`batch.rs`）、raw 共享掩码操作（`packed.rs`）及消息适配（`message.rs`）。
+- [src/public_key/](src/public_key/)：`mod.rs` 实现生成及 raw 单条加密，`batch.rs` 实现 raw 分块加密，`message.rs` 提供消息适配。
 - [src/key_switch/](src/key_switch/)：`mod.rs` 实现生成及单条切换，`batch.rs` 实现分块切换。
 - [src/batch.rs](src/batch.rs)：私有 batch 长度及布局辅助函数。
 

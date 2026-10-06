@@ -653,7 +653,7 @@ fn check_encrypted_return<T: FheUint, Q: Modulus<ValueT = T>>(
             measure(|| key.key_switch_at_to(input, index, &mut output, target, &mut workspace));
         assert_eq!(allocations.count, 0);
         assert_eq!(
-            output_secret.decrypt(&output, &params),
+            output_secret.decrypt_message(&output, &params),
             T::as_from((3 * index + 1) % 8)
         );
     }

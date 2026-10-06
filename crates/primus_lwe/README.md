@@ -15,22 +15,24 @@ Public types are exported at the crate root; implementation modules are private.
 
 | Type | Role |
 | --- | --- |
+| `LweEncryptionParameters<T, M>` | Ciphertext domain and prepared samplers, without a message codec |
 | `LweParameters<T, M>` | Dimension, moduli, plaintext codec, secret distribution and precomputed samplers |
-| `LweSecretKey<T>` | Owned encoded coefficients; message encryption/decryption, raw batches and packed messages |
+| `LweSecretKey<T>` | Owned encoded coefficients; message, encoded and phase operations |
 | `LweSecretKeyRef<'a, T>` | Borrowed `Encoded` or `Signed` coefficients; raw single-ciphertext operations |
 | `LwePublicKey<T>` | Square-matrix Lindner–Peikert-style public-key encryption |
 | `LweKeySwitchingKey<T>` | Switches the secret key and optionally the dimension, under the same ciphertext modulus |
 | `LweCiphertext<T>` | Alias for `primus_lattice::lwe::Lwe<Vec<T>>` |
 | `MultiMsgLweCiphertext<T>` | Alias for `primus_lattice::lwe::MultiMsgLwe<Vec<T>>` |
 
-`encrypt` / `encrypt_batch` allocate output. Their `_to` variants overwrite caller-owned storage without allocating. Secret-key decryption accepts owned or borrowed ciphertexts. Public-key ciphertexts use the same decoder and key switch.
+`encrypt_message` / `encrypt_message_batch` take an explicit `PlaintextEmbedding` and allocate output. Their `_to` variants overwrite caller-owned storage without allocating. Secret-key decryption accepts owned or borrowed ciphertexts. Public-key ciphertexts use the same decoder and key switch.
 
 ## Quick start
 
-This example uses small dimensions to demonstrate storage reuse, independent public-key batches and key switching. These are not evaluated security parameters. The imports require `primus_lwe`, `primus_lattice`, `primus_modulus`, `primus_decompose` and `rand` as direct dependencies of the calling crate.
+This example uses small dimensions to demonstrate storage reuse, independent public-key batches and key switching. These are not evaluated security parameters. The imports require `primus_lwe`, `primus_lattice`, `primus_modulus`, `primus_decompose`, `primus_encoding` and `rand` as direct dependencies of the calling crate.
 
 ```rust
 use primus_decompose::{DecompositionBaseLog, primitive::ApproxSignedBasis};
+use primus_encoding::PlaintextEmbedding;
 use primus_lattice::lwe::{Lwe, LweIter};
 use primus_lwe::{LweDimension, LweKeySwitchingKey, LweParameters, LwePublicKey, LweSecretKey, SecretKeyDistr};
 use primus_modulus::NativeModulus;
@@ -46,22 +48,22 @@ fn main() {
     let mut rng = rand::rng();
     let secret = LweSecretKey::generate(params.encryption_parameters(), &mut rng);
 
-    let ciphertext = secret.encrypt(3u32, &params, &mut rng);
-    assert_eq!(secret.decrypt(&ciphertext, &params), 3);
+    let ciphertext = secret.encrypt_message(3u32, &params, PlaintextEmbedding::Unsigned, &mut rng);
+    assert_eq!(secret.decrypt_message(&ciphertext, &params), 3);
 
     let mut storage = vec![0u32; ciphertext.lwe_len()];
-    secret.encrypt_to(2u32, &mut Lwe::new(&mut storage[..]), &params, &mut rng);
+    secret.encrypt_message_to(2u32, &mut Lwe::new(&mut storage[..]), &params, PlaintextEmbedding::Unsigned, &mut rng);
     assert_eq!(
-        secret.decrypt(&Lwe::new(&storage[..]), &params),
+        secret.decrypt_message(&Lwe::new(&storage[..]), &params),
         2
     );
 
     let public = LwePublicKey::generate(secret.as_view(), params.encryption_parameters(), &mut rng);
     let messages = [0u32, 1, 2, 3];
-    let batch = public.encrypt_batch(&messages, &params, &mut rng);
-    assert_eq!(secret.decrypt_batch(&batch, &params), messages);
+    let batch = public.encrypt_message_batch(&messages, &params, PlaintextEmbedding::Unsigned, &mut rng);
+    assert_eq!(secret.decrypt_message_batch(&batch, &params), messages);
     for (sample, &message) in LweIter::new(&batch, ciphertext.lwe_len()).zip(&messages) {
-        assert_eq!(secret.decrypt(&sample, &params), message);
+        assert_eq!(secret.decrypt_message(&sample, &params), message);
     }
 
     let output_params = LweParameters::new(
@@ -82,7 +84,7 @@ fn main() {
     );
     let switched = switching.key_switch_batch(&batch, params.cipher_modulus());
     assert_eq!(
-        output_secret.decrypt_batch(&switched, &output_params),
+        output_secret.decrypt_message_batch(&switched, &output_params),
         messages
     );
 }
@@ -96,17 +98,21 @@ Construct `LweDimension` with `try_new` for external configuration input: it che
 
 `LweParameters::new(LweDimension::new(n), t, modulus, secret_distribution, noise_standard_deviation)` requires the validity conditions of its codec and samplers. `params.dimension()` returns `LweDimension`; use `.ciphertext_len()` for allocation and `.get()` at raw slice boundaries. Raw secret-key views retain integer dimensions, including zero. In particular, `t >= 2` and `q > t`. `NativeModulus<T>` denotes `q = 2^T::BITS`; `cipher_modulus_value()` returns `None` for that modulus and `Some(q)` for an explicit modulus. The noise standard deviation is measured in ciphertext coefficient units.
 
-Message APIs take canonical residues of type `T` in `[0,t)`; batch and packed encryption take `&[T]`. `encrypt` uses unsigned embedding; `encrypt_with_embedding` selects `PlaintextEmbedding::Unsigned` or `PlaintextEmbedding::Centered` from `primus_encoding`. Centered embedding still takes unsigned residues: `t - 1` represents `-1`. Both embeddings use the same `decrypt` and return residues in `[0,t)` using the ciphertext coefficient type `T`. Batch and packed decryption likewise return `Vec<T>` or write to `[T]`. Applications convert message types before encryption and after decryption.
+Message APIs take canonical residues of type `T` in `[0,t)`; batch and packed encryption take `&[T]`. `encrypt_message` selects `PlaintextEmbedding::Unsigned` or `PlaintextEmbedding::Centered` from `primus_encoding`. Centered embedding still takes unsigned residues: `t - 1` represents `-1`. Both embeddings use the same `decrypt_message` and return residues in `[0,t)` using the ciphertext coefficient type `T`. Batch and packed decryption likewise return `Vec<T>` or write to `[T]`. Applications convert message types before encryption and after decryption.
 
 For an LWE ciphertext `[a, b]`, secret-key encryption sets `b = <a,s> + e + Encode(message) mod q`. Decoding recovers the message only while the phase noise stays within the codec's decoding margin. The key, ciphertext and parameters must agree on dimension and modulus; encoded coefficients must be canonical residues. Owning secret-key operations check their recorded modulus before sampling or writing; raw views rely on caller-established compatibility.
 
 `LweSecretKey::generate` owns the secret buffer before sampling, erases partial samples on unwinding, and records the parameter modulus; importing with `LweSecretKey::new(coefficients, distribution, modulus)` records the supplied modulus without scanning the coefficients. Imports must already contain canonical residues satisfying the declared distribution. `cipher_modulus_minus_one()` returns `q - 1` (`T::MAX` for Native), which distinguishes residue domains but does not prove secret identity or import provenance. `as_view()` discards this metadata: check the owner before borrowing it for raw APIs. Explicit `zeroize()` clears the coefficients; public modulus/distribution metadata remains, and the key must be discarded.
 
-Raw single-secret operations are available through `secret.as_view()`: `encrypt_encoded` / `encrypt_encoded_to` take an already encoded residue, the modulus, uniform sampler, noise sampler and RNG; `decrypt_phase` returns `b - <a,s>` without decoding. Passing zero to raw encryption produces a randomized encryption of zero. `LweSecretKeyRef::Signed` borrows signed coefficients without allocating an encoded copy. Its dot product uses the modulus backend's `ReduceDotProductSigned` implementation, which fuses encoding and multiplication. For explicit `q` they must satisfy `-q < s_i < q`; all signed values are valid under the native modulus. Raw samplers must use the same modulus. These range and sampler contracts are caller preconditions.
+Owned `secret.encrypt_encoded` / `encrypt_encoded_to` take an encoded residue and `LweEncryptionParameters`; `secret.decrypt_phase` takes the ciphertext and modulus. They retain the owner’s modulus check.
 
-`secret.decrypt_with_noise(input, params, embedding)` returns the decoded message and circular distance from its selected encoding; it does not estimate a noise distribution or certify decryption correctness.
+Borrowed single-secret operations through `secret.as_view()` accept prepared resources directly: `encrypt_encoded` / `encrypt_encoded_to` take an already encoded residue, the modulus, uniform sampler, noise sampler and RNG; `decrypt_phase` returns `b - <a,s>` without decoding. Passing zero to raw encryption produces a randomized encryption of zero. `LweSecretKeyRef::Signed` borrows signed coefficients without allocating an encoded copy. Its dot product uses the modulus backend's `ReduceDotProductSigned` implementation, which fuses encoding and multiplication. For explicit `q` they must satisfy `-q < s_i < q`; all signed values are valid under the native modulus. Raw samplers must use the same modulus. These range and sampler contracts are caller preconditions.
+
+For noise diagnostics, obtain `phase = secret.decrypt_phase(input, modulus)`, encode the **expected message** with the actual codec and embedding, then call `primus_encoding::phase_error_magnitude(phase, expected_phase, modulus)`. The result is a circular distance, not a noise-distribution estimate or a correctness certificate. Re-encoding the decoded message can hide an incorrect decryption.
 
 ## Public-key encryption
+
+Message encryption uses `encrypt_message[_to]` with `LweParameters` and an explicit embedding. Raw `encrypt_encoded[_to]` accepts the encoded residue, modulus, noise sampler and RNG directly, so TFHE callers can reuse their prepared resources without constructing another parameter object.
 
 `LwePublicKey::generate` accepts `LweSecretKeyRef`: pass `secret.as_view()` for an owned LWE secret, or `LweSecretKeyRef::Signed` for GLWE/NTRU coefficients. Generation does not copy the secret. The borrowed coefficients must satisfy the view's range contract for the supplied modulus. This raw entry point cannot check an owning key's modulus metadata; check it before taking `as_view()`.
 
@@ -124,14 +130,14 @@ The fresh-noise sampler describes `e1` and `e2`, not the total output noise. Par
 
 An independent batch is a flat `Vec<T>` or slice containing `count` consecutive `[a, b]` samples, each of length `n + 1`. The count is not limited by `n`. There is no separate batch container. `Lwe::lwe_len()` includes the body. `LweIter` / `LweIterMut` borrow individual samples from this layout; the iterators themselves omit incomplete tails, while LWE batch APIs reject them.
 
-- `encrypt_batch_to` requires exactly `messages.len() * (n + 1)` output elements. `decrypt_batch_to` requires one output message per sample.
-- `encrypt_batch_with_embedding` and its `_to` variant select the embedding. Raw batches use `encrypt_encoded_batch` / `encrypt_encoded_batch_to` and `decrypt_phase_batch` / `decrypt_phase_batch_to`.
-- All secret-key batch methods require owned `LweSecretKey<T>` with encoded coefficients. Signed views support single-ciphertext raw operations only.
+- `encrypt_message_batch_to` requires exactly `messages.len() * (n + 1)` output elements. `decrypt_message_batch_to` requires one output message per sample.
+- `encrypt_message_batch` and its `_to` variant take an explicit embedding. Raw batches use `encrypt_encoded_batch` / `encrypt_encoded_batch_to` and `decrypt_phase_batch` / `decrypt_phase_batch_to`.
+- All secret-key batch methods require owned `LweSecretKey<T>` with encoded coefficients. Signed views support single-ciphertext raw operations only. Raw secret-key batches take the modulus and prepared samplers directly, retaining support for zero-dimensional keys.
 - Secret-key batching reuses single-message encryption. Public-key batching processes small tiles to reuse matrix rows; its RNG order need not match a loop of single encryptions. Empty independent batches consume no randomness.
 - Public-key encryption packs 16 ephemeral ternary coefficients per random word and discards unused bits after each ciphertext or batch tile. Fixed seeds do not guarantee identical ciphertext bytes across library versions.
 - Batch boundaries validate complete buffer lengths before processing. Invalid messages or RNG failures can leave partial output and consume randomness.
 
-Packed encryption has a different layout: `encrypt_multi_messages` stores one length-`n` mask and `count <= n` bodies, using `n + count` coefficients. Body `i` uses the mask rotated right by `i`, with the first `i` coefficients negated. These samples share a mask structure. Use `decrypt_multi_messages` or `MultiMsgLwe::extract_lwe_at` for this representation, not `LweIter` over its storage. `encrypt_multi_zeros` constructs packed zero messages; an empty packed message list still retains and samples the shared mask.
+Packed encryption has a different layout: `encrypt_message_packed` stores one length-`n` mask and `count <= n` bodies, using `n + count` coefficients. Body `i` uses the mask rotated right by `i`, with the first `i` coefficients negated. These samples share a mask structure. Use `decrypt_message_packed` or `MultiMsgLwe::extract_lwe_at` for this representation, not `LweIter` over its storage. `encrypt_encoded_packed` and `decrypt_phase_packed` process already encoded residues and phases with the same layout. `encrypt_zeros_packed` constructs packed zero messages; an empty packed message list still retains and samples the shared mask.
 
 ## Key switching
 
@@ -142,8 +148,8 @@ Packed encryption has a different layout: `encrypt_multi_messages` stores one le
 ## Source layout
 
 - [src/parameter.rs](src/parameter.rs): parameter validation, codec and samplers.
-- [src/secret_key/](src/secret_key/): owned storage and generation (`owned.rs`), raw views (`borrowed.rs`), message APIs (`single.rs`), independent batches (`batch.rs`) and shared-mask messages (`packed.rs`).
-- [src/public_key/](src/public_key/): key generation and single encryption in `mod.rs`, tiled encryption in `batch.rs`.
+- [src/secret_key/](src/secret_key/): owned storage and generation (`owned.rs`), raw views (`borrowed.rs`), encoded scalar primitives (`single.rs`), raw independent batches (`batch.rs`), raw shared-mask operations (`packed.rs`) and message adapters (`message.rs`).
+- [src/public_key/](src/public_key/): key generation and raw single encryption in `mod.rs`, raw tiled encryption in `batch.rs`, and message adapters in `message.rs`.
 - [src/key_switch/](src/key_switch/): key generation and single switching in `mod.rs`, tiled switching in `batch.rs`.
 - [src/batch.rs](src/batch.rs): private batch length and layout helpers.
 
