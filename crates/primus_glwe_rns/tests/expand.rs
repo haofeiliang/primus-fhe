@@ -13,6 +13,7 @@ use primus_modulus::BarrettModulus;
 use primus_ntt::UintDcrtTable;
 use primus_poly::{PolyLength, Polynomial};
 use rand::{SeedableRng, rngs::StdRng};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 
 /// Test coefficient expansion in the coefficient (CRT) domain.
 ///
@@ -85,23 +86,47 @@ fn crt_expansion_matches_parallel_and_plaintext() {
     // Requires conversion to coefficient domain first.
     let c1 = c1.into_coeff_form(&table);
 
-    // Rejected output counts must not write any ciphertext or acquire scratch.
-    for count in [0, 3] {
-        let before = c_expand.clone();
-        assert!(
-            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                evaluator.expand_partial_coefficients_to(&c1, &mut c_expand[..count]);
-            }))
-            .is_err()
-        );
-        assert!(
-            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                parallel_evaluator.expand_partial_coefficients_to(&c1, &mut c_expand[..count]);
-            }))
-            .is_err()
-        );
-        for (actual, expected) in c_expand.iter().zip(&before) {
-            assert_eq!(actual.as_ref(), expected.as_ref());
+    // Full expansion rejects even a valid partial count; partial expansion
+    // rejects zero, non-powers of two and powers of two above N.
+    // Dirty sentinels must survive every rejection before either kernel writes.
+    for full in [true, false] {
+        let invalid_counts = if full {
+            [0, n / 2, n + 1]
+        } else {
+            [0, 3, 2 * n]
+        };
+        for count in invalid_counts {
+            let mut rejected = vec![CrtGlwe::new(vec![1; rns_glwe_len]); count];
+            assert!(
+                catch_unwind(AssertUnwindSafe(|| {
+                    if full {
+                        evaluator.expand_coefficients_to(&c1, &mut rejected);
+                    } else {
+                        evaluator.expand_partial_coefficients_to(&c1, &mut rejected);
+                    }
+                }))
+                .is_err()
+            );
+            assert!(
+                rejected
+                    .iter()
+                    .all(|cipher| cipher.as_ref().iter().all(|&v| v == 1))
+            );
+            assert!(
+                catch_unwind(AssertUnwindSafe(|| {
+                    if full {
+                        parallel_evaluator.expand_coefficients_to(&c1, &mut rejected);
+                    } else {
+                        parallel_evaluator.expand_partial_coefficients_to(&c1, &mut rejected);
+                    }
+                }))
+                .is_err()
+            );
+            assert!(
+                rejected
+                    .iter()
+                    .all(|cipher| cipher.as_ref().iter().all(|&v| v == 1))
+            );
         }
     }
 
@@ -111,6 +136,18 @@ fn crt_expansion_matches_parallel_and_plaintext() {
     });
     for (sequential, parallel) in c_expand.iter().zip(&parallel_output) {
         assert_eq!(sequential.as_ref(), parallel.as_ref());
+    }
+
+    // N is also a valid partial count. Both entry points must use the same
+    // normalization and overwrite dirty outputs with identical ciphertexts.
+    let full_output = c_expand.clone();
+    evaluator.expand_partial_coefficients_to(&c1, &mut c_expand);
+    workers.install(|| {
+        parallel_evaluator.expand_partial_coefficients_to(&c1, &mut parallel_output);
+    });
+    for ((sequential, parallel), full) in c_expand.iter().zip(&parallel_output).zip(&full_output) {
+        assert_eq!(sequential.as_ref(), full.as_ref());
+        assert_eq!(parallel.as_ref(), full.as_ref());
     }
 
     // Each output decrypts to (m_i, 0, …, 0)
@@ -220,23 +257,47 @@ fn dcrt_expansion_matches_parallel_and_plaintext() {
     let dcrt_sk_context = dcrt_sk.try_bind(&glwe_params, &table).unwrap();
     dcrt_sk_context.encrypt_to(&input1, &mut c1, &mut rng);
 
-    // Rejected output counts must not write any ciphertext or acquire scratch.
-    for count in [0, 3] {
-        let before = c_expand.clone();
-        assert!(
-            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                evaluator.expand_partial_coefficients_to(&c1, &mut c_expand[..count]);
-            }))
-            .is_err()
-        );
-        assert!(
-            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                parallel_evaluator.expand_partial_coefficients_to(&c1, &mut c_expand[..count]);
-            }))
-            .is_err()
-        );
-        for (actual, expected) in c_expand.iter().zip(&before) {
-            assert_eq!(actual.as_ref(), expected.as_ref());
+    // Full expansion rejects even a valid partial count; partial expansion
+    // rejects zero, non-powers of two and powers of two above N.
+    // Dirty sentinels must survive every rejection before either kernel writes.
+    for full in [true, false] {
+        let invalid_counts = if full {
+            [0, n / 2, n + 1]
+        } else {
+            [0, 3, 2 * n]
+        };
+        for count in invalid_counts {
+            let mut rejected = vec![DcrtGlweCiphertext::new(vec![1; rns_glwe_len]); count];
+            assert!(
+                catch_unwind(AssertUnwindSafe(|| {
+                    if full {
+                        evaluator.expand_coefficients_to(&c1, &mut rejected);
+                    } else {
+                        evaluator.expand_partial_coefficients_to(&c1, &mut rejected);
+                    }
+                }))
+                .is_err()
+            );
+            assert!(
+                rejected
+                    .iter()
+                    .all(|cipher| cipher.as_ref().iter().all(|&v| v == 1))
+            );
+            assert!(
+                catch_unwind(AssertUnwindSafe(|| {
+                    if full {
+                        parallel_evaluator.expand_coefficients_to(&c1, &mut rejected);
+                    } else {
+                        parallel_evaluator.expand_partial_coefficients_to(&c1, &mut rejected);
+                    }
+                }))
+                .is_err()
+            );
+            assert!(
+                rejected
+                    .iter()
+                    .all(|cipher| cipher.as_ref().iter().all(|&v| v == 1))
+            );
         }
     }
 
@@ -246,6 +307,18 @@ fn dcrt_expansion_matches_parallel_and_plaintext() {
     });
     for (sequential, parallel) in c_expand.iter().zip(&parallel_output) {
         assert_eq!(sequential.as_ref(), parallel.as_ref());
+    }
+
+    // N is also a valid partial count. Both entry points must use the same
+    // normalization and overwrite dirty outputs with identical ciphertexts.
+    let full_output = c_expand.clone();
+    evaluator.expand_partial_coefficients_to(&c1, &mut c_expand);
+    workers.install(|| {
+        parallel_evaluator.expand_partial_coefficients_to(&c1, &mut parallel_output);
+    });
+    for ((sequential, parallel), full) in c_expand.iter().zip(&parallel_output).zip(&full_output) {
+        assert_eq!(sequential.as_ref(), full.as_ref());
+        assert_eq!(parallel.as_ref(), full.as_ref());
     }
 
     // Results are already in NTT domain — decrypt directly.

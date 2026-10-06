@@ -128,6 +128,8 @@ impl<T: FheUint> DcrtGlweExpandCoeffKey<T> {
     }
 
     /// Expands a validated power-of-two prefix with the bound serial scratch.
+    /// Full and partial evaluators each check their output count before entering.
+    /// Ciphertext layouts remain caller preconditions, diagnosed here in debug builds.
     /// Converts each output to a view only when visiting its node; no view list is allocated.
     fn expand_kernel_to<M, Table, B>(
         &self,
@@ -141,6 +143,14 @@ impl<T: FheUint> DcrtGlweExpandCoeffKey<T> {
         B: DataMut<Elem = T>,
     {
         let params = domain.parameters();
+        let len = params.rns_glwe_len();
+        debug_assert_eq!(ciphertext.as_ref().len(), len);
+        debug_assert!(
+            result
+                .iter()
+                .all(|ciphertext| ciphertext.as_ref().len() == len)
+        );
+
         let poly_length = params.poly_length().get();
         let count = result.len();
 
@@ -182,6 +192,7 @@ impl<T: FheUint> DcrtGlweExpandCoeffKey<T> {
 
     /// Parallel traversal of the same expansion tree. Each task exclusively owns
     /// a preallocated workspace guard, which returns scratch on completion or unwind.
+    /// Output-count and ciphertext-layout preconditions match the serial kernel.
     fn expand_parallel_kernel_to<M, Table, B>(
         &self,
         ciphertext: DcrtGlweCiphertext<&[T]>,
@@ -194,6 +205,14 @@ impl<T: FheUint> DcrtGlweExpandCoeffKey<T> {
         Table: NttTable<ValueT = T>,
     {
         let params = domain.parameters();
+        let len = params.rns_glwe_len();
+        debug_assert_eq!(ciphertext.as_ref().len(), len);
+        debug_assert!(
+            result
+                .iter()
+                .all(|ciphertext| ciphertext.as_ref().len() == len)
+        );
+
         let poly_length = params.poly_length().get();
         let count = result.len();
 

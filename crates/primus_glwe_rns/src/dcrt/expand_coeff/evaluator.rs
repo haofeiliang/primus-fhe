@@ -81,7 +81,8 @@ where
             self.domain.parameters().poly_length().get(),
             "full coefficient expansion requires N outputs"
         );
-        self.expand_partial_coefficients_to(input, output);
+        self.key
+            .expand_kernel_to(input.as_view(), output, self.domain, &mut self.workspace);
     }
 
     /// Expands a power-of-two prefix of coefficients, normalized by its count.
@@ -106,13 +107,6 @@ where
         assert!(
             output.len().is_power_of_two() && output.len() <= n,
             "coefficient expansion output count must be a power of two in 1..=N"
-        );
-        let len = self.domain.parameters().rns_glwe_len();
-        debug_assert_eq!(input.as_ref().len(), len);
-        debug_assert!(
-            output
-                .iter()
-                .all(|ciphertext| ciphertext.as_ref().len() == len)
         );
         self.key
             .expand_kernel_to(input.as_view(), output, self.domain, &mut self.workspace);
@@ -213,7 +207,8 @@ where
             self.domain.parameters().poly_length().get(),
             "full coefficient expansion requires N outputs"
         );
-        self.expand_partial_coefficients_to(input, output);
+        self.key
+            .expand_parallel_kernel_to(input.as_view(), output, self.domain, &self.workspace);
     }
 
     /// Expands a power-of-two prefix of coefficients, normalized by its count.
@@ -242,13 +237,6 @@ where
         assert!(
             output.len().is_power_of_two() && output.len() <= n,
             "coefficient expansion output count must be a power of two in 1..=N"
-        );
-        let len = self.domain.parameters().rns_glwe_len();
-        debug_assert_eq!(input.as_ref().len(), len);
-        debug_assert!(
-            output
-                .iter()
-                .all(|ciphertext| ciphertext.as_ref().len() == len)
         );
         self.key
             .expand_parallel_kernel_to(input.as_view(), output, self.domain, &self.workspace);
