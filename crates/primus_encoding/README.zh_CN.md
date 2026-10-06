@@ -41,12 +41,31 @@ RNS 编码输出系数域 `CrtPolynomial`，调用方单独执行 NTT 转换。 
 
 单模数切片方法使用 `_to` 表示独立输出，`_assign` 表示原地更新。RNS 使用 `encode_coeffs_to`、`add_encode_coeffs_assign` 和 `decode_coeffs_to`，从明文 切片推导多项式长度。批量编码在写入前检查消息范围和精确长度。 编码输入与解码输出统一使用系数类型 `T`，值为 `[0,t)` 内的规范剩余类。标量输入为 `T`，切片为 `[T]`；整数类型或语义消息类型的转换由应用在边界处理。
 
+## 相位误差诊断
+
+`phase_error_magnitude(phase, expected_phase, modulus)` 用系数类型返回精确的非负圆周距离，范围为 `[0, floor(q/2)]`。它只需要模减能力，不必显式表示 Native 的 `2^BITS`，不分配，也不转换为浮点数。`phase_error_magnitude_slice_to` 将逐项距离写入调用方切片；三个切片长度必须一致，空切片也遵循此规则。长度不匹配在写入前 panic；规范 residue 由调用方保证。
+
+先通过加密库提取系数域 phase，再用与该 phase 一致的 codec、embedding 和模数编码**预期消息**。例如：
+
+```rust
+use primus_encoding::{PlaintextEmbedding, RoundedCodec, phase_error_magnitude};
+use primus_modulus::PowOf2Modulus;
+
+let modulus = PowOf2Modulus::new(256u64);
+let codec = RoundedCodec::new(4, modulus);
+let expected_phase = codec.encode_value(0, PlaintextEmbedding::Unsigned);
+let phase = 64; // 预期消息是 0，但这个 phase 会解码为 1。
+assert_eq!(phase_error_magnitude(phase, expected_phase, modulus), 64);
+```
+
+如果重编码解码所得的值，这个例子的 residual 为零，会掩盖错误消息。解码是否正确仍须单独判断。圆周距离没有符号，不能恢复已绕模的整数误差，也包含 phase 中已有的变换或求值误差。逐 limb 的 RNS 距离不代表乘积模数下的整体误差。
+
 ## 进一步阅读
 
 [实现说明](IMPLEMENTATION.md)记录算术内核与基准边界；[公开 API 源码](src/lib.rs)和[测试指南](../../guides/development/testing.md)分别说明方法契约与验证范围。
 
 ## Feature
 
-- 默认：仅单模数编码器。
+- 默认：单模数编码器与相位误差诊断。
 - `rns`：启用 `primus_data`、`primus_poly` 和 `primus_rns` 依赖。
 - `simd`：启用 nightly SIMD 算术，不会单独启用 `rns`。

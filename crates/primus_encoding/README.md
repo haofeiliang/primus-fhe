@@ -41,12 +41,43 @@ RNS encoding produces coefficient-domain `CrtPolynomial` data; callers perform N
 
 Single-modulus slice methods use `_to` for separate output and `_assign` for in-place updates. RNS uses `encode_coeffs_to`, `add_encode_coeffs_assign`, and `decode_coeffs_to`; polynomial length is inferred from the plaintext slice. Batch encoding validates message ranges and exact lengths before writing. Encoding inputs and decoding outputs use the coefficient type `T`, with canonical values in `[0,t)`. Scalar inputs are `T` and slices are `[T]`; applications handle integer or semantic type conversions at their boundaries.
 
+## Phase error diagnostics
+
+`phase_error_magnitude(phase, expected_phase, modulus)` returns the exact
+nonnegative circular distance in the coefficient type, in `[0, floor(q/2)]`.
+It needs only modular subtraction, handles Native without materializing
+`2^BITS`, and performs no allocation or floating-point conversion.
+`phase_error_magnitude_slice_to` writes these distances into a supplied slice;
+all three lengths must match, including for empty inputs. Length mismatches
+panic before any output is written. Canonical residues are caller preconditions.
+
+Extract the coefficient phase with the encryption library, then encode the
+**expected message** using the same codec, embedding and modulus as that phase.
+For example:
+
+```rust
+use primus_encoding::{PlaintextEmbedding, RoundedCodec, phase_error_magnitude};
+use primus_modulus::PowOf2Modulus;
+
+let modulus = PowOf2Modulus::new(256u64);
+let codec = RoundedCodec::new(4, modulus);
+let expected_phase = codec.encode_value(0, PlaintextEmbedding::Unsigned);
+let phase = 64; // The expected message was 0, but this phase decodes to 1.
+assert_eq!(phase_error_magnitude(phase, expected_phase, modulus), 64);
+```
+
+Re-encoding the decoded value would give a zero residual in this example and
+hide the incorrect message. Decode correctness remains a separate check. The
+distance has no sign, cannot recover an integer error after modular wraparound,
+and includes any transform or evaluation error already present in the phase.
+Per-limb RNS distances do not measure the error under the product modulus.
+
 ## Further reading
 
 [Implementation notes](IMPLEMENTATION.md) record arithmetic kernels and benchmark boundaries. The [public API sources](src/lib.rs) document method contracts; the [testing guide](../../guides/development/testing.md) records validation scope.
 
 ## Features
 
-- Default: single-modulus codecs only.
+- Default: single-modulus codecs and phase error diagnostics.
 - `rns`: enables `primus_data`, `primus_poly`, and `primus_rns` dependencies.
 - `simd`: enables nightly SIMD arithmetic; does not enable `rns` by itself.

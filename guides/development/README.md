@@ -162,6 +162,15 @@ Current feature availability is documented in the [lattice README](../../crates/
 
 ## Compose an encrypted workflow
 
+Keep messages, encoded plaintexts and extracted coefficient phases distinct.
+Encoding chooses the codec and embedding; encryption adds noise to encoded
+data; phase extraction does not decode. For diagnostics, compare the extracted
+phase to the encoded **expected message** with
+[`phase_error_magnitude` / `phase_error_magnitude_slice_to`](../../crates/primus_encoding/README.md#phase-error-diagnostics).
+Do not substitute a re-encoded decoded value or analyze NTT/Fourier storage
+as coefficient phases. Message recovery and phase-error magnitude answer
+different questions.
+
 The [TFHE parameter and boundary guide](tfhe-parameters-and-boundaries.md) maps q/Q, secret domains, PBS/CBS/MVB/one-hot/lookup paths and construction error ownership. The [parameter matrix](tfhe-parameters.md) records representative-size profiles by operation, word width and backend, with an opt-in numerical validator; ordinary tests keep small parameters.
 
 Choose the lowest layer that owns the operation. [LWE](../../crates/primus_lwe/README.md), [GLWE](../../crates/primus_glwe/README.md), [NTRU](../../crates/primus_ntru/README.md) and [RNS GLWE](../../crates/primus_glwe_rns/src/lib.rs) provide encryption, keys and evaluation primitives. [Shared TFHE](../../crates/primus_tfhe/README.md) provides LWE clients, encodings, LUT geometry and common evaluation interfaces; the [GLWE](../../crates/primus_tfhe_glwe/README.md) and [NTRU](../../crates/primus_tfhe_ntru/README.md) families define their own parameter and key contracts.

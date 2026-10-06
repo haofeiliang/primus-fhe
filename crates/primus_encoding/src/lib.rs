@@ -5,6 +5,8 @@
 //! The optional `rns` feature provides BFV coefficient scaling and decoding over
 //! an RNS ciphertext basis. Public types are available at the crate root.
 //! These codecs do not implement integer slot packing or CKKS canonical embedding.
+//! [`phase_error_magnitude`] measures an extracted phase against an explicitly
+//! expected encoded phase, independently of decoding or secret keys.
 //!
 //! The `simd` feature enables nightly SIMD arithmetic in dependencies.
 
@@ -13,9 +15,11 @@
 mod decode;
 mod helpers;
 mod integer_scale;
+mod phase_error;
 mod rounded;
 mod scaled;
 
+pub use phase_error::{phase_error_magnitude, phase_error_magnitude_slice_to};
 pub use rounded::RoundedCodec;
 pub use scaled::ScaledCodec;
 

@@ -159,6 +159,8 @@ assert_eq!(level_count, 9); // (k+1) 行 * L 层
 
 ## 组合密文工作流
 
+明确区分消息、已编码明文和提取出的系数域 phase。编码选择 codec 与 embedding，加密对已编码数据加入噪声，phase 提取不解码。诊断时用 [`phase_error_magnitude` / `phase_error_magnitude_slice_to`](../../crates/primus_encoding/README.zh_CN.md#相位误差诊断) 比较实际 phase 与**预期消息**的编码；不能用解码后重编码值代替参考，也不能将 NTT/Fourier 存储直接当成系数 phase。消息恢复是否正确与相位误差幅度回答不同的问题。
+
 [TFHE 参数与边界指南](tfhe-parameters-and-boundaries.md) 说明 q/Q、秘密域、PBS/CBS/MVB/one-hot/查表链路及构造错误归属。 [参数矩阵](tfhe-parameters.md) 列出按操作、字宽和后端验证的实际尺寸配置，以及独立的大参数验证入口；普通测试仍使用小参数。
 
 从拥有该运算的最低层开始。[LWE](../../crates/primus_lwe/README.zh_CN.md)、[GLWE](../../crates/primus_glwe/README.zh_CN.md)、[NTRU](../../crates/primus_ntru/README.zh_CN.md) 和 [RNS GLWE](../../crates/primus_glwe_rns/src/lib.rs) 提供加密、密钥及求值原语。[共享 TFHE](../../crates/primus_tfhe/README.zh_CN.md) 提供 LWE 客户端、编码、LUT 几何和公共求值接口；[GLWE](../../crates/primus_tfhe_glwe/README.zh_CN.md) 与 [NTRU](../../crates/primus_tfhe_ntru/README.zh_CN.md) 家族分别定义自身参数和密钥契约。
