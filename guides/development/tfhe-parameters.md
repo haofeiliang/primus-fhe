@@ -168,7 +168,7 @@ the c7/d5/o3 parameter diagnostic remains a separate finite validation fixture.
 
 ## Teaching examples
 
-Each example has a concrete `Word = u32` and a concrete `Table` import. To run u64, change `Word` to u64 and, for NTT, import `U64NttTable as Table`. Fourier defaults to `RustFftTable`; change its import to `TfheFftTable as Table` for the other FFT implementation. Each file contains its own explicit `parameters()` function, with word-specific modulus, decomposition and coefficient-noise choices; CBS adds a local `circuit_config()`. GLWE's `ORDER` constant selects one order per run. These choices keep the main function readable without generic or CLI matrix dispatch.
+All 22 TFHE examples fix `Word = u64`, with `U64NttTable` for NTT and `RustFftTable` for Fourier. They retain the existing u64 profiles: Barrett Q50 for TFHE NTT, Native64 for Fourier, and independent PowOf2 q24 for NTRU returns. Each file contains its own explicit `parameters()` function with one set of modulus, decomposition and coefficient-noise choices; CBS adds a local `circuit_config()`. GLWE's `ORDER` constant selects one order per run. Word-width comparisons remain in tests, benchmarks and parameter diagnostics. The LWE basic and NTRU automorphism examples also use u64; the latter retains its small Q27 prime and `log_basis=3` decomposition. Application bytes, indexes and floating-point values keep their own types.
 
 Examples do not import the test-support factories. Their local configuration functions make every numerical choice inspectable without leaving the file. Keys, codecs, encrypted inputs, evaluators, outputs and client/server handoffs remain in each example's main function. Each workload makes two requests with reused buffers. No example imports code from `benches/` or `tests/`.
 
@@ -206,23 +206,25 @@ The 6/8/10 comparison used NTT and RustFFT, u32/u64, seeds 42 and 4242, and inpu
 
 ### Example smoke checklist
 
-Run from the repository root, using release for the representative dimensions:
+Compile the teaching targets, then run representative workflows from the changed
+families in release mode. Select coverage for the change; these large examples do
+not form a mandatory CI matrix.
 
-```bash
-for package in primus_tfhe_glwe_ntt primus_tfhe_glwe_fourier primus_tfhe_ntru_ntt primus_tfhe_ntru_fourier primus_tfhe_ntru_lut; do
-    for source in crates/"$package"/examples/*.rs; do
-        example=${source##*/}
-        cargo run --release -p "$package" --example "${example%.rs}" || exit
-    done
-done
+```sh
+cargo check -p 'primus_tfhe*' -p primus_lwe -p primus_ntru --examples --features ntt,rustfft
+cargo run --release -p primus_tfhe_glwe_ntt --example ntt_basic
+cargo run --release -p primus_tfhe_glwe_fourier --example fourier_circuit_bootstrap --features rustfft
+cargo run --release -p primus_tfhe_ntru_ntt --example ntru_ntt_one_hot
+cargo run --release -p primus_tfhe_ntru_fourier --example ntru_fourier_mvb_thresholds --features rustfft
+cargo run --release -p primus_tfhe_ntru_lut --example ntt_lookup --features ntt
 ```
 
-When modifying workflows or profiles, exercise these concrete choices, restoring the documented defaults afterward:
-
-- All 22 examples with their u32/default table/order.
-- All 22 with u64 and its matching NTT table.
-- The ten GLWE examples with the other `ORDER`; the eleven Fourier examples with `TfheFftTable`. These checks may share runs for the five GLWE Fourier examples.
-- All four `*_sparse` ManyLUT examples with `BlindRotationConfig::Classic`, and both GLWE MVB examples with `BlindRotationConfig::Sparse { copy_count: 3, bucket_count: 64 }`, for both word widths.
-- Compile/lint all targets with default features and nightly SIMD. Run selected examples with `cargo +nightly run --release -p <package> --example <name> --features simd` when validating that configuration; do not put an extra backend/order loop in the teaching main function.
+The source's known-result checks validate both requests and reused buffers. Use
+small integration tests and `validate_parameters` for other words, engines,
+orders or algorithm comparisons; do not add a matrix dispatcher to teaching
+examples or mechanically rerun every combination after a local edit. When a
+change specifically concerns the other FFT engine, change the example's table
+import and `required-features` together, then restore the documented defaults.
+Nightly SIMD and large parameter diagnostics remain explicit validation choices.
 
 The public examples retain distinct GLWE/NTRU parameter, key and return contracts and distinct NTT/Fourier table types. Within a crate there is one entry per task. Configuration is intentionally local to each file so that users can read and change it directly; there is no example support layer hiding parameters or the workflow.

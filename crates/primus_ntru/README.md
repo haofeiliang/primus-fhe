@@ -41,7 +41,7 @@ General NTRU supports nonbinary ring secrets. The NTRU TFHE layer uses an indepe
 
 Secret keys and private encryption/generation/decryption workspaces erase owned buffers on drop. Explicit workspace zeroization preserves reusable storage; explicit secret-key zeroization destroys the key. For NTT keys, public distribution and q metadata remain, but the erased key must be discarded. The built-in FFT backends also erase scratch on drop, and `FftEngine::zeroize_workspace()` supports a phase boundary for long-lived engines. Caller-owned plaintext and phase outputs retain their own lifetimes.
 
-The [automorphism example](examples/automorphism.rs) shows paired key generation, evaluation-key setup and reusable NTT evaluation under the original secret:
+The [automorphism example](examples/automorphism.rs) uses u64 coefficients with an explicit NTT prime. It shows paired key generation, evaluation-key setup and reusable NTT evaluation under the original secret:
 
 ```sh
 cargo run -p primus_ntru --example automorphism --features ntt

@@ -1,7 +1,7 @@
 //! Evaluate (x*x + 3*x + 7) mod 65536 on eight two-bit chunks: 16-bit input and output.
 //!
 //! Run: `cargo run --release -p primus_tfhe_ntru_lut --example fourier_lookup --features rustfft`
-//! For u64, change Word to u64. To use TfheFftTable, also switch this target's
+//! To use TfheFftTable, switch the Table import, this target's
 //! required-features and the command above to tfhe-fft.
 //! Arithmetic profiles: guides/development/tfhe-parameters.md (not security presets).
 
@@ -26,8 +26,8 @@ use rand::{SeedableRng, rngs::StdRng};
 // use BlindRotationConfig::Sparse { copy_count: 3, bucket_count: 64 }.
 const BLIND_ROTATION: BlindRotationConfig = BlindRotationConfig::Classic;
 
-// The explicit parameters below select bases and moduli for this coefficient word.
-type Word = u32;
+// This example uses u64 coefficients with the explicit parameters below.
+type Word = u64;
 const N: usize = 1024;
 
 // M=4: eight input chunks represent 16 bits. Five low chunks fill N=1024
@@ -57,11 +57,7 @@ fn parameters() -> TfheParameters<Word, PowOf2Modulus<Word>> {
 
     // None retains floor(modulus_bits / log_basis) levels; it need not cover every low bit.
     let full = DecompositionConfig {
-        log_basis: if Word::BITS == 32 {
-            DecompositionBaseLog::new(2)
-        } else {
-            DecompositionBaseLog::new(8)
-        },
+        log_basis: DecompositionBaseLog::new(8),
         level_count: None,
     };
 
@@ -89,25 +85,13 @@ fn parameters() -> TfheParameters<Word, PowOf2Modulus<Word>> {
 // CBS emits a gadget ciphertext; its output basis is separate from the two evaluation-key bases.
 fn circuit_config() -> CircuitBootstrapConfig {
     let internal = DecompositionConfig {
-        log_basis: if Word::BITS == 32 {
-            DecompositionBaseLog::new(2)
-        } else {
-            DecompositionBaseLog::new(8)
-        },
+        log_basis: DecompositionBaseLog::new(8),
         level_count: None,
     };
     CircuitBootstrapConfig {
         output: DecompositionConfig {
-            log_basis: if Word::BITS == 32 {
-                DecompositionBaseLog::new(3)
-            } else {
-                DecompositionBaseLog::new(8)
-            },
-            level_count: Some(if Word::BITS == 32 {
-                DecompositionLevelCount::new(4)
-            } else {
-                DecompositionLevelCount::new(3)
-            }),
+            log_basis: DecompositionBaseLog::new(8),
+            level_count: Some(DecompositionLevelCount::new(3)),
         },
         trace: internal,
         trace_noise_standard_deviation: 0.7,

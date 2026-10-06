@@ -20,7 +20,7 @@ use primus_tfhe_ntru_lut::{
     HighPrecisionLookupTable, LookupTableConfig, NttLookupTableEvaluator,
 };
 
-let input_codec = primus_encoding::RoundedCodec::new(8u32, context.parameters().external_lwe().cipher_modulus());
+let input_codec = primus_encoding::RoundedCodec::new(8u64, context.parameters().external_lwe().cipher_modulus());
 let table = HighPrecisionLookupTable::try_new(
     context.parameters().poly_length(),
     context.parameters().accumulator_ntru().cipher_modulus(),
@@ -33,7 +33,7 @@ let table = HighPrecisionLookupTable::try_new(
     |x, output| {
         let x = x as u64; // 明文中间结果可能超出 u32。
         let value = (x * x + 3 * x + 7) % 65536;
-        ((value >> (2 * output)) & 3) as u32
+        (value >> (2 * output)) & 3
     },
 )?;
 let mut evaluator = NttLookupTableEvaluator::try_new(&context, &server, None, &table)?;
@@ -43,7 +43,7 @@ evaluator.evaluate_to(&encrypted_chunks, &mut output);
 
 完整可运行工作流见 [ntt_lookup.rs](examples/ntt_lookup.rs) 和 [fourier_lookup.rs](examples/fourier_lookup.rs)。它们使用 n=800/N=1024，以八个两位 chunks 加密 16 位输入，并返回八个 chunks 的 16 位结果。低五个输入 chunks 选择系数，高三个选择 64 个候选多项式之一；输出 chunk 数仍可独立设置。输入 `0b10_10_10_11_11_00_11_01` 返回 `0b10_00_01_01_10_01_01_11`，随后零输入返回 7，两次请求复用同一个 evaluator 和缓冲。
 
-两个示例默认使用 `type Word = u32`；改为 u64 时修改此别名，NTT 示例还需将 `U32NttTable as Table` 导入改为 `U64NttTable as Table`。Fourier 示例默认 RustFFT，改用 `TfheFftTable as Table` 可选择 TFHE-FFT；切换 FFT 引擎时也要修改示例 target 的 `required-features`，并使用 `--features tfhe-fft`。每个文件的本地 `parameters()` 与 `circuit_config()` 直接构造 `TfheConfig` / `CircuitBootstrapConfig`，展示尺寸、噪声、对应字宽的分解、prime/native 环模数和独立的 PowOf2 q=2^24，数值选择见[参数矩阵](../../guides/development/tfhe-parameters.md)。
+两个示例均使用 `Word = u64`，NTT 使用 `U64NttTable`；每条工作流保留一套显式参数，库测试与诊断继续覆盖 u32。Fourier 示例默认 RustFFT，改用 `TfheFftTable as Table` 可选择 TFHE-FFT；切换 FFT 引擎时也要修改示例 target 的 `required-features`，并使用 `--features tfhe-fft`。每个文件的本地 `parameters()` 与 `circuit_config()` 直接构造 `TfheConfig` / `CircuitBootstrapConfig`，展示尺寸、噪声、u64 分解、prime/native 环模数和独立的 PowOf2 q=2^24，数值选择见[参数矩阵](../../guides/development/tfhe-parameters.md)。
 
 ```sh
 cargo run --release -p primus_tfhe_ntru_lut --example ntt_lookup --features ntt

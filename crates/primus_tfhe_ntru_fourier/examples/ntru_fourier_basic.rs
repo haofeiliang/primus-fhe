@@ -1,7 +1,7 @@
 //! Compute x % 4 with one LUT and reuse the PBS evaluator for a second request.
 //!
 //! Run: `cargo run --release -p primus_tfhe_ntru_fourier --example ntru_fourier_basic --features rustfft`
-//! For u64, change Word to u64. To use TfheFftTable, also switch this target's
+//! To use TfheFftTable, switch the Table import, this target's
 //! required-features and the command above to tfhe-fft.
 //! Arithmetic profiles: guides/development/tfhe-parameters.md (not security presets).
 
@@ -16,8 +16,8 @@ use primus_poly::PolyLength;
 use primus_tfhe_ntru_fourier::{DecompositionConfig, TfheConfig, TfheContext, TfheParameters};
 use rand::{SeedableRng, rngs::StdRng};
 
-// The explicit parameters below select bases and moduli for this coefficient word.
-type Word = u32;
+// This example uses u64 coefficients with the explicit parameters below.
+type Word = u64;
 const N: usize = 2048;
 
 // Key parameters: n=866, N=2048; independent external LWE q=2^24.
@@ -28,11 +28,7 @@ fn parameters() -> TfheParameters<Word, PowOf2Modulus<Word>> {
 
     // None retains floor(modulus_bits / log_basis) levels; it need not cover every low bit.
     let full = DecompositionConfig {
-        log_basis: if Word::BITS == 32 {
-            DecompositionBaseLog::new(2)
-        } else {
-            DecompositionBaseLog::new(8)
-        },
+        log_basis: DecompositionBaseLog::new(8),
         level_count: None,
     };
 
@@ -82,7 +78,7 @@ fn main() {
     let mut evaluator = context.evaluator(&server_key).unwrap();
     let mut output = context.allocate_lwe_ciphertext();
 
-    for message in [7 as Word, 2] {
+    for message in [7, 2] {
         // Client -> server: send one encrypted, padded input.
         encryptor
             .encrypt_padded_to(message, input.as_mut_view(), &mut rng)

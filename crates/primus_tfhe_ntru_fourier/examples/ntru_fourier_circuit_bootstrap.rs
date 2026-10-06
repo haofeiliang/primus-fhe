@@ -1,7 +1,7 @@
 //! Use an encrypted LWE bit to select between two encrypted ring messages via CBS and CMux.
 //!
 //! Run: `cargo run --release -p primus_tfhe_ntru_fourier --example ntru_fourier_circuit_bootstrap --features rustfft`
-//! For u64, change Word to u64. To use TfheFftTable, also switch this target's
+//! To use TfheFftTable, switch the Table import, this target's
 //! required-features and the command above to tfhe-fft.
 //! Arithmetic profiles: guides/development/tfhe-parameters.md (not security presets).
 
@@ -24,8 +24,8 @@ use rand::{SeedableRng, rngs::StdRng};
 // Set true to use fixed-weight binary sparse BR with the same CBS pipeline.
 const SPARSE: bool = false;
 
-// The explicit parameters below select bases and moduli for this coefficient word.
-type Word = u32;
+// This example uses u64 coefficients with the explicit parameters below.
+type Word = u64;
 const N: usize = 1024;
 
 // Key parameters: n=800, N=1024; independent external LWE q=2^24.
@@ -36,11 +36,7 @@ fn parameters() -> TfheParameters<Word, PowOf2Modulus<Word>> {
 
     // None retains floor(modulus_bits / log_basis) levels; it need not cover every low bit.
     let full = DecompositionConfig {
-        log_basis: if Word::BITS == 32 {
-            DecompositionBaseLog::new(2)
-        } else {
-            DecompositionBaseLog::new(8)
-        },
+        log_basis: DecompositionBaseLog::new(8),
         level_count: None,
     };
 
@@ -72,25 +68,13 @@ fn parameters() -> TfheParameters<Word, PowOf2Modulus<Word>> {
 // CBS emits a gadget ciphertext; its output basis is separate from the two evaluation-key bases.
 fn circuit_config() -> CircuitBootstrapConfig {
     let internal = DecompositionConfig {
-        log_basis: if Word::BITS == 32 {
-            DecompositionBaseLog::new(2)
-        } else {
-            DecompositionBaseLog::new(8)
-        },
+        log_basis: DecompositionBaseLog::new(8),
         level_count: None,
     };
     CircuitBootstrapConfig {
         output: DecompositionConfig {
-            log_basis: if Word::BITS == 32 {
-                DecompositionBaseLog::new(3)
-            } else {
-                DecompositionBaseLog::new(8)
-            },
-            level_count: Some(if Word::BITS == 32 {
-                DecompositionLevelCount::new(4)
-            } else {
-                DecompositionLevelCount::new(3)
-            }),
+            log_basis: DecompositionBaseLog::new(8),
+            level_count: Some(DecompositionLevelCount::new(3)),
         },
         trace: internal,
         trace_noise_standard_deviation: 0.7,
@@ -141,8 +125,8 @@ fn main() {
         .accumulator_client(client_key.accumulator_ntru_secret_key(), ring_codec)
         .unwrap();
     // Encrypt both candidates with the accumulator secret used by the CBS output.
-    let lhs_message = vec![1 as Word; N];
-    let rhs_message = vec![3 as Word; N];
+    let lhs_message = vec![1; N];
+    let rhs_message = vec![3; N];
     let lhs = ring_client.encrypt(&lhs_message, &mut rng);
     let rhs = ring_client.encrypt(&rhs_message, &mut rng);
     let mut input = context.allocate_lwe_ciphertext();
@@ -155,7 +139,7 @@ fn main() {
     let mut control = cbs.allocate_output();
     let mut selected = context.allocate_accumulator_ciphertext();
 
-    for bit in [1 as Word, 0] {
+    for bit in [1, 0] {
         // Client -> server: send the encrypted selection bit.
         encryptor
             .encrypt_padded_to(bit, input.as_mut_view(), &mut rng)

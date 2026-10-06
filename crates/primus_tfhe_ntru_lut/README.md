@@ -20,7 +20,7 @@ use primus_tfhe_ntru_lut::{
     HighPrecisionLookupTable, LookupTableConfig, NttLookupTableEvaluator,
 };
 
-let input_codec = primus_encoding::RoundedCodec::new(8u32, context.parameters().external_lwe().cipher_modulus());
+let input_codec = primus_encoding::RoundedCodec::new(8u64, context.parameters().external_lwe().cipher_modulus());
 let table = HighPrecisionLookupTable::try_new(
     context.parameters().poly_length(),
     context.parameters().accumulator_ntru().cipher_modulus(),
@@ -33,7 +33,7 @@ let table = HighPrecisionLookupTable::try_new(
     |x, output| {
         let x = x as u64; // The cleartext intermediate can exceed u32.
         let value = (x * x + 3 * x + 7) % 65536;
-        ((value >> (2 * output)) & 3) as u32
+        (value >> (2 * output)) & 3
     },
 )?;
 let mut evaluator = NttLookupTableEvaluator::try_new(&context, &server, None, &table)?;
@@ -43,7 +43,7 @@ evaluator.evaluate_to(&encrypted_chunks, &mut output);
 
 Complete runnable workflows are in [ntt_lookup.rs](examples/ntt_lookup.rs) and [fourier_lookup.rs](examples/fourier_lookup.rs). They use n=800/N=1024 and eight two-bit chunks for both the 16-bit input and 16-bit result. Five low input chunks select coefficients; three high chunks select one of 64 candidate polynomials. The output chunk count remains independently configurable. Input `0b10_10_10_11_11_00_11_01` returns `0b10_00_01_01_10_01_01_11`, then zero returns 7, reusing the same evaluator and buffers.
 
-Both examples default to `type Word = u32`. For u64, change that alias; in the NTT example also replace the `U32NttTable as Table` import with `U64NttTable as Table`. The Fourier example selects RustFFT; use `TfheFftTable as Table` for TFHE-FFT. When switching FFT engines, also update the example target’s `required-features` and use `--features tfhe-fft`. Each file explicitly builds `TfheConfig` and `CircuitBootstrapConfig` in local `parameters()` and `circuit_config()` functions, showing dimensions, noise, word-specific bases, prime/native ring modulus and independent PowOf2 q=2^24; see the [arithmetic profiles](../../guides/development/tfhe-parameters.md).
+Both examples use `Word = u64`; NTT uses `U64NttTable`. Each workflow keeps one explicit parameter set; library tests and diagnostics retain u32 coverage. The Fourier example selects RustFFT; use `TfheFftTable as Table` for TFHE-FFT. When switching FFT engines, also update the example target’s `required-features` and use `--features tfhe-fft`. Each file explicitly builds `TfheConfig` and `CircuitBootstrapConfig` in local `parameters()` and `circuit_config()` functions, showing dimensions, noise, u64 decomposition bases, prime/native ring modulus and independent PowOf2 q=2^24; see the [arithmetic profiles](../../guides/development/tfhe-parameters.md).
 
 ```sh
 cargo run --release -p primus_tfhe_ntru_lut --example ntt_lookup --features ntt

@@ -1,7 +1,7 @@
 //! Use sparse GLWE PBS to return message, carry and parity from one encrypted input.
 //!
 //! Run: `cargo run --release -p primus_tfhe_glwe_fourier --example fourier_sparse --features rustfft`
-//! For u64, change Word to u64. To use TfheFftTable, also switch this target's
+//! To use TfheFftTable, switch the Table import, this target's
 //! required-features and the command above to tfhe-fft.
 //! Arithmetic profiles: guides/development/tfhe-parameters.md (not security presets).
 
@@ -25,8 +25,8 @@ const BLIND_ROTATION: BlindRotationConfig = BlindRotationConfig::Sparse {
     bucket_count: 64,
 };
 
-// The explicit parameters below select bases and moduli for this coefficient word.
-type Word = u32;
+// This example uses u64 coefficients with the explicit parameters below.
+type Word = u64;
 const N: usize = 1024;
 const ORDER: PbsOrder = PbsOrder::BootstrapKeyswitch;
 
@@ -34,15 +34,11 @@ const ORDER: PbsOrder = PbsOrder::BootstrapKeyswitch;
 // Noise sigmas below are in coefficient units; these are arithmetic examples, not security presets.
 fn parameters() -> TfheParameters<Word> {
     let modulus = NativeModulus::<Word>::new();
-    let q = 2f64.powi(Word::BITS as i32);
+    let q = 2f64.powi(64); // Native u64 modulus, represented only for noise scaling.
 
     // None retains floor(modulus_bits / log_basis) levels; it need not cover every low bit.
     let full = DecompositionConfig {
-        log_basis: if Word::BITS == 32 {
-            DecompositionBaseLog::new(2)
-        } else {
-            DecompositionBaseLog::new(8)
-        },
+        log_basis: DecompositionBaseLog::new(8),
         level_count: None,
     };
 
@@ -72,7 +68,7 @@ fn main() {
     let output_codec = RoundedCodec::new(8, context.parameters().small_lwe().cipher_modulus());
 
     // Public message encoding is independent of the evaluation keys.
-    let input_codec = RoundedCodec::new(16 as Word, context.parameters().cipher_modulus());
+    let input_codec = RoundedCodec::new(16, context.parameters().cipher_modulus());
 
     // Client: generate the selected BR algorithm from the fixed-weight secret.
     let mut rng = StdRng::seed_from_u64(42);
@@ -105,7 +101,7 @@ fn main() {
     let mut evaluator = context.evaluator(&server_key).unwrap();
     let mut outputs = vec![context.allocate_lwe_ciphertext(); 3];
 
-    for message in [7 as Word, 2] {
+    for message in [7, 2] {
         // Client -> server: send an encrypted padded input in 0..8.
         encryptor
             .encrypt_padded_to(message, input.as_mut_view(), &mut rng)

@@ -15,7 +15,7 @@ cargo run -p primus_tfhe_ntru_fourier --release --example ntru_fourier_basic --f
 
 [basic 示例](examples/ntru_fourier_basic.rs)展示参数 → context → 配对密钥 → 客户端 → 单个 LUT → 复用 evaluator 和密文缓冲。它计算 `x % 4`，输入和输出均采用 `t=32` 编码，直接用 `decrypt` 解码。 `parameters.lookup_table_compiler(&input_codec)?` 创建可复用编译器，`compiler.compile_fn(function)` 默认按输入 codec 的明文模数在 Q 下编码；用 `compiler.try_with_output_codec(&output_codec)?` 选择其他输出编码，见[选择输出编码](../primus_tfhe/README.zh_CN.md#选择输出编码)。 公钥加密通过 `context.public_encryptor(&public, &input_codec)` 创建客户端，见[家族说明](../primus_tfhe_ntru/README.zh_CN.md#客户端与-lut)。 示例的外部 `q=2^24` 与环 `Q` 不同，LUT 编译在 `Q` 下，返回 LWE 在 `q` 下。
 
-示例默认使用 u32；将 `type Word = u32` 改为 `u64`；需要 TFHE-FFT 时，将 `RustFftTable as Table` 导入改为 `TfheFftTable as Table`；切换引擎时也要修改示例 target 的 `required-features`，并使用 `--features tfhe-fft`。每个文件内的 `parameters()` 直接构造 `TfheConfig`，集中列出尺寸、模数类型、秘密分布、噪声和 BR/KS 分解；CBS 示例还用 `circuit_config()` 明确输出、trace 和 scheme-switch 的分解。[数值配置与验证](../../guides/development/tfhe-parameters.md)集中记录参数选择；每例复用同一组缓冲处理两次请求。
+示例使用 `Word = u64` 和 Native64，每条工作流只保留一套显式参数；库与数值诊断仍支持 u32/u64。需要 TFHE-FFT 时，将 `RustFftTable as Table` 导入改为 `TfheFftTable as Table`；切换引擎时也要修改示例 target 的 `required-features`，并使用 `--features tfhe-fft`。每个文件内的 `parameters()` 直接构造 `TfheConfig`，集中列出尺寸、模数类型、秘密分布、噪声和 BR/KS 分解；CBS 示例还用 `circuit_config()` 明确输出、trace 和 scheme-switch 的分解。[数值配置与验证](../../guides/development/tfhe-parameters.md)集中记录参数选择；每例复用同一组缓冲处理两次请求。
 
 示例区分客户端加密、服务端求值与客户端解密，见[双方职责与缓冲分配](../primus_tfhe/README.zh_CN.md#客户端与服务端边界)。
 

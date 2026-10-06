@@ -10,7 +10,7 @@ use primus_lwe::{LweParameters, LwePublicKey, LweSecretKey, SecretKeyDistr};
 use primus_modulus::NativeModulus;
 
 const LWE_DIMENSION: usize = 64;
-const PLAINTEXT_MODULUS: u32 = 4;
+const PLAINTEXT_MODULUS: u64 = 4;
 
 fn main() {
     let parameters = LweParameters::new(
@@ -25,7 +25,7 @@ fn main() {
 
     // Applications convert message types before encryption and after decryption.
     let message_byte = 3u8;
-    let message = u32::from(message_byte);
+    let message = u64::from(message_byte);
     let ciphertext =
         secret_key.encrypt_message(message, &parameters, PlaintextEmbedding::Unsigned, &mut rng);
     let decrypted = secret_key.decrypt_message(&ciphertext, &parameters);
@@ -33,7 +33,7 @@ fn main() {
     assert_eq!(decrypted_byte, message_byte);
 
     // Reuse caller-owned storage; decryption accepts the borrowed ciphertext too.
-    let mut storage = [0u32; LWE_DIMENSION + 1];
+    let mut storage = [0u64; LWE_DIMENSION + 1];
     let mut output = Lwe::new(&mut storage[..]);
     secret_key.encrypt_message_to(
         message,
@@ -68,7 +68,7 @@ fn main() {
     assert_eq!(secret_key.decrypt_message(&output, &parameters), message);
 
     // Independent samples share one allocation and remain usable individually.
-    let messages = [0u32, 1, 2, 3];
+    let messages = [0u64, 1, 2, 3];
     let batch = public_key.encrypt_message_batch(
         &messages,
         &parameters,
@@ -85,7 +85,7 @@ fn main() {
             message
         );
     }
-    let mut storage = [0u32; 4 * (LWE_DIMENSION + 1)];
+    let mut storage = [0u64; 4 * (LWE_DIMENSION + 1)];
     secret_key.encrypt_message_batch_to(
         &messages,
         &mut storage,
@@ -93,7 +93,7 @@ fn main() {
         PlaintextEmbedding::Unsigned,
         &mut rng,
     );
-    let mut decoded = [0u32; 4];
+    let mut decoded = [0u64; 4];
     secret_key.decrypt_message_batch_to(&storage, &mut decoded, &parameters);
     assert_eq!(decoded, messages);
 }

@@ -1,5 +1,7 @@
 //! Coefficient/NTT key pair and an automorphism under the original secret.
+//! Uses u64 coefficients at a small NTT prime; the modulus need not fill the word.
 //! These are functional example parameters, not a security recommendation.
+//! Run: `cargo run --release -p primus_ntru --example automorphism --features ntt`.
 
 use primus_decompose::DecompositionBaseLog;
 use primus_encoding::PlaintextEmbedding;
@@ -8,15 +10,15 @@ use primus_ntru::{
     NlevParameters, NtruParameters, NttNtruAutomorphismKey, NttNtruAutomorphismWorkspace,
     NttNtruCiphertext, NttNtruGadgetEncryptWorkspace, NttNtruSecretKey, SecretKeyDistr,
 };
-use primus_ntt::{NttTable, UintNttTable};
+use primus_ntt::{NttTable, U64NttTable};
 use primus_poly::{PolyLength, Polynomial};
 use rand::{SeedableRng, rngs::StdRng};
 
 fn main() {
     const N: usize = 1024;
-    let modulus = BarrettModulus::new(132_120_577u32);
+    let modulus = BarrettModulus::new(132_120_577u64);
     let poly_length = PolyLength::new(N);
-    let table = UintNttTable::new(poly_length, modulus).unwrap();
+    let table = U64NttTable::new(poly_length, modulus).unwrap();
     let parameters =
         NtruParameters::new(poly_length, 16, modulus, SecretKeyDistr::SparseTernary, 0.7);
     let mut rng = StdRng::seed_from_u64(42);
@@ -35,7 +37,7 @@ fn main() {
         &mut NttNtruGadgetEncryptWorkspace::new(parameters.poly_length()),
     );
 
-    let mut message = Polynomial::<Vec<u32>>::zero(N);
+    let mut message = Polynomial::<Vec<u64>>::zero(N);
     message.as_mut()[0] = 1;
     message.as_mut()[1] = 2;
     message.as_mut()[N / 2] = 3;
@@ -46,7 +48,7 @@ fn main() {
         &table,
         &mut rng,
     );
-    let mut output = NttNtruCiphertext::<Vec<u32>>::zero(N);
+    let mut output = NttNtruCiphertext::<Vec<u64>>::zero(N);
     let mut workspace = NttNtruAutomorphismWorkspace::new(parameters.poly_length());
     auto.apply_ntt_to(&input, &mut output, modulus, &table, &mut workspace);
 

@@ -40,7 +40,7 @@ use primus_modulus::NativeModulus;
 fn main() {
     let params = LweParameters::new(
         LweDimension::new(64),
-        4u32,
+        4u64,
         NativeModulus::new(),
         SecretKeyDistr::UniformBinary,
         0.7,
@@ -48,18 +48,18 @@ fn main() {
     let mut rng = rand::rng();
     let secret = LweSecretKey::generate(params.encryption_parameters(), &mut rng);
 
-    let ciphertext = secret.encrypt_message(3u32, &params, PlaintextEmbedding::Unsigned, &mut rng);
+    let ciphertext = secret.encrypt_message(3u64, &params, PlaintextEmbedding::Unsigned, &mut rng);
     assert_eq!(secret.decrypt_message(&ciphertext, &params), 3);
 
-    let mut storage = vec![0u32; ciphertext.lwe_len()];
-    secret.encrypt_message_to(2u32, &mut Lwe::new(&mut storage[..]), &params, PlaintextEmbedding::Unsigned, &mut rng);
+    let mut storage = vec![0u64; ciphertext.lwe_len()];
+    secret.encrypt_message_to(2u64, &mut Lwe::new(&mut storage[..]), &params, PlaintextEmbedding::Unsigned, &mut rng);
     assert_eq!(
         secret.decrypt_message(&Lwe::new(&storage[..]), &params),
         2
     );
 
     let public = LwePublicKey::generate(secret.as_view(), params.encryption_parameters(), &mut rng);
-    let messages = [0u32, 1, 2, 3];
+    let messages = [0u64, 1, 2, 3];
     let batch = public.encrypt_message_batch(&messages, &params, PlaintextEmbedding::Unsigned, &mut rng);
     assert_eq!(secret.decrypt_message_batch(&batch, &params), messages);
     for (sample, &message) in LweIter::new(&batch, ciphertext.lwe_len()).zip(&messages) {
@@ -68,7 +68,7 @@ fn main() {
 
     let output_params = LweParameters::new(
         LweDimension::new(32),
-        4u32,
+        4u64,
         NativeModulus::new(),
         SecretKeyDistr::UniformBinary,
         0.7,

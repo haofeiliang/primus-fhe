@@ -1,7 +1,6 @@
 //! Use an encrypted LWE bit to select between two encrypted ring messages via CBS and CMux.
 //!
 //! Run: `cargo run --release -p primus_tfhe_glwe_ntt --example ntt_circuit_bootstrap`
-//! For u64, change Word to u64 and U32NttTable to U64NttTable.
 //! Arithmetic profiles: guides/development/tfhe-parameters.md (not security presets).
 
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
@@ -10,7 +9,7 @@ use primus_glwe::SecretKeyDistr;
 use primus_lattice::{GlweDimension, LweDimension};
 use primus_lwe::LweEncryptionParameters;
 use primus_modulus::BarrettModulus;
-use primus_ntt::U32NttTable as Table;
+use primus_ntt::U64NttTable as Table;
 use primus_poly::PolyLength;
 use primus_tfhe_glwe_ntt::{
     BlindRotationConfig, CircuitBootstrapConfig, CircuitBootstrapEvaluator,
@@ -19,8 +18,8 @@ use primus_tfhe_glwe_ntt::{
 };
 use rand::{SeedableRng, rngs::StdRng};
 
-// The explicit parameters below select bases and moduli for this coefficient word.
-type Word = u32;
+// This example uses u64 coefficients with the explicit parameters below.
+type Word = u64;
 const N: usize = 1024;
 const ORDER: PbsOrder = PbsOrder::BootstrapKeyswitch;
 
@@ -28,21 +27,13 @@ const ORDER: PbsOrder = PbsOrder::BootstrapKeyswitch;
 // Noise sigmas below are in coefficient units; these are arithmetic examples, not security presets.
 fn parameters() -> TfheParameters<Word> {
     // NTT requires a prime admitting a 2N-th root, rather than a power-of-two modulus.
-    let ring_modulus = if Word::BITS == 32 {
-        998_244_353
-    } else {
-        1_125_899_906_826_241u64
-    } as Word;
+    let ring_modulus: Word = 1_125_899_906_826_241;
     let modulus = BarrettModulus::new(ring_modulus);
     let q = ring_modulus as f64;
 
     // None retains floor(modulus_bits / log_basis) levels; it need not cover every low bit.
     let full = DecompositionConfig {
-        log_basis: if Word::BITS == 32 {
-            DecompositionBaseLog::new(2)
-        } else {
-            DecompositionBaseLog::new(8)
-        },
+        log_basis: DecompositionBaseLog::new(8),
         level_count: None,
     };
 
@@ -68,25 +59,13 @@ fn parameters() -> TfheParameters<Word> {
 // CBS emits a gadget ciphertext; its output basis is separate from the two evaluation-key bases.
 fn circuit_config() -> CircuitBootstrapConfig {
     let internal = DecompositionConfig {
-        log_basis: if Word::BITS == 32 {
-            DecompositionBaseLog::new(2)
-        } else {
-            DecompositionBaseLog::new(8)
-        },
+        log_basis: DecompositionBaseLog::new(8),
         level_count: None,
     };
     CircuitBootstrapConfig {
         output: DecompositionConfig {
-            log_basis: if Word::BITS == 32 {
-                DecompositionBaseLog::new(3)
-            } else {
-                DecompositionBaseLog::new(8)
-            },
-            level_count: Some(if Word::BITS == 32 {
-                DecompositionLevelCount::new(3)
-            } else {
-                DecompositionLevelCount::new(2)
-            }),
+            log_basis: DecompositionBaseLog::new(8),
+            level_count: Some(DecompositionLevelCount::new(2)),
         },
         trace: internal,
         trace_noise_standard_deviation: 6.4,
@@ -100,7 +79,7 @@ fn main() {
     let context = TfheContext::<Word, Table>::try_from_parameters(parameters).unwrap();
 
     // Public message encoding is independent of the evaluation keys.
-    let input_codec = RoundedCodec::new(4 as Word, context.parameters().cipher_modulus());
+    let input_codec = RoundedCodec::new(4, context.parameters().cipher_modulus());
 
     // Client: generate BR and CBS material from the same accumulator secret.
     // BR→KS CBS needs no return key; KS→BR still needs the input KS key.
@@ -138,8 +117,8 @@ fn main() {
         )
         .unwrap();
     // Encrypt both candidates with the accumulator secret used by the CBS output.
-    let lhs_message = vec![1 as Word; N];
-    let rhs_message = vec![3 as Word; N];
+    let lhs_message = vec![1; N];
+    let rhs_message = vec![3; N];
     let lhs = ring_client.encrypt(&lhs_message, &mut rng);
     let rhs = ring_client.encrypt(&rhs_message, &mut rng);
     let mut input = context.allocate_lwe_ciphertext();
@@ -154,7 +133,7 @@ fn main() {
     let mut control = cbs.allocate_output();
     let mut selected = context.allocate_accumulator_ciphertext();
 
-    for bit in [1 as Word, 0] {
+    for bit in [1, 0] {
         // Client -> server: send the encrypted selection bit.
         encryptor
             .encrypt_padded_to(bit, input.as_mut_view(), &mut rng)

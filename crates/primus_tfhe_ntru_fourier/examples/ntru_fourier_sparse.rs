@@ -1,7 +1,7 @@
 //! Use sparse NTRU PBS to return message, carry and parity from one encrypted input.
 //!
 //! Run: `cargo run --release -p primus_tfhe_ntru_fourier --example ntru_fourier_sparse --features rustfft`
-//! For u64, change Word to u64. To use TfheFftTable, also switch this target's
+//! To use TfheFftTable, switch the Table import, this target's
 //! required-features and the command above to tfhe-fft.
 //! Arithmetic profiles: guides/development/tfhe-parameters.md (not security presets).
 
@@ -24,8 +24,8 @@ const BLIND_ROTATION: BlindRotationConfig = BlindRotationConfig::Sparse {
     bucket_count: 64,
 };
 
-// The explicit parameters below select bases and moduli for this coefficient word.
-type Word = u32;
+// This example uses u64 coefficients with the explicit parameters below.
+type Word = u64;
 const N: usize = 1024;
 
 // Key parameters: n=728, N=1024; independent external LWE q=2^24.
@@ -36,11 +36,7 @@ fn parameters() -> TfheParameters<Word, PowOf2Modulus<Word>> {
 
     // None retains floor(modulus_bits / log_basis) levels; it need not cover every low bit.
     let full = DecompositionConfig {
-        log_basis: if Word::BITS == 32 {
-            DecompositionBaseLog::new(2)
-        } else {
-            DecompositionBaseLog::new(8)
-        },
+        log_basis: DecompositionBaseLog::new(8),
         level_count: None,
     };
 
@@ -106,7 +102,7 @@ fn main() {
     let mut evaluator = context.evaluator(&server_key).unwrap();
     let mut outputs = vec![context.allocate_lwe_ciphertext(); 3];
 
-    for message in [7 as Word, 2] {
+    for message in [7, 2] {
         // Client -> server: send an encrypted padded input in 0..8.
         encryptor
             .encrypt_padded_to(message, input.as_mut_view(), &mut rng)

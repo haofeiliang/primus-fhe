@@ -1,7 +1,6 @@
 //! Build four one-hot gadget controls from a two-bit input; use delta_2 in a CMux.
 //!
 //! Run: `cargo run --release -p primus_tfhe_ntru_ntt --example ntru_ntt_one_hot`
-//! For u64, change Word to u64 and U32NttTable to U64NttTable.
 //! Arithmetic profiles: guides/development/tfhe-parameters.md (not security presets).
 
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
@@ -12,7 +11,7 @@ use primus_lattice::ngsw::NttNgswIter;
 use primus_lwe::LweEncryptionParameters;
 use primus_modulus::{BarrettModulus, PowOf2Modulus};
 use primus_ntru::SecretKeyDistr;
-use primus_ntt::U32NttTable as Table;
+use primus_ntt::U64NttTable as Table;
 use primus_poly::PolyLength;
 use primus_tfhe_ntru_ntt::{
     BlindRotationConfig, CircuitBootstrapConfig, DecompositionConfig, KeyGenerator,
@@ -24,8 +23,8 @@ use rand::{SeedableRng, rngs::StdRng};
 // use BlindRotationConfig::Sparse { copy_count: 3, bucket_count: 64 }.
 const BLIND_ROTATION: BlindRotationConfig = BlindRotationConfig::Classic;
 
-// The explicit parameters below select bases and moduli for this coefficient word.
-type Word = u32;
+// This example uses u64 coefficients with the explicit parameters below.
+type Word = u64;
 const N: usize = 1024;
 const TARGET: usize = 2; // Public selector r in 0..4; delta_r encrypts [input == r].
 
@@ -33,21 +32,13 @@ const TARGET: usize = 2; // Public selector r in 0..4; delta_r encrypts [input =
 // Noise sigmas below are in coefficient units; these are arithmetic examples, not security presets.
 fn parameters() -> TfheParameters<Word, PowOf2Modulus<Word>> {
     // NTT requires a prime admitting a 2N-th root, rather than a power-of-two modulus.
-    let ring_modulus = if Word::BITS == 32 {
-        998_244_353
-    } else {
-        1_125_899_906_826_241u64
-    } as Word;
+    let ring_modulus: Word = 1_125_899_906_826_241;
     let modulus = BarrettModulus::new(ring_modulus);
     let lwe_modulus: Word = 1 << 24;
 
     // None retains floor(modulus_bits / log_basis) levels; it need not cover every low bit.
     let full = DecompositionConfig {
-        log_basis: if Word::BITS == 32 {
-            DecompositionBaseLog::new(2)
-        } else {
-            DecompositionBaseLog::new(8)
-        },
+        log_basis: DecompositionBaseLog::new(8),
         level_count: None,
     };
 
@@ -75,25 +66,13 @@ fn parameters() -> TfheParameters<Word, PowOf2Modulus<Word>> {
 // CBS emits a gadget ciphertext; its output basis is separate from the two evaluation-key bases.
 fn circuit_config() -> CircuitBootstrapConfig {
     let internal = DecompositionConfig {
-        log_basis: if Word::BITS == 32 {
-            DecompositionBaseLog::new(2)
-        } else {
-            DecompositionBaseLog::new(8)
-        },
+        log_basis: DecompositionBaseLog::new(8),
         level_count: None,
     };
     CircuitBootstrapConfig {
         output: DecompositionConfig {
-            log_basis: if Word::BITS == 32 {
-                DecompositionBaseLog::new(3)
-            } else {
-                DecompositionBaseLog::new(8)
-            },
-            level_count: Some(if Word::BITS == 32 {
-                DecompositionLevelCount::new(4)
-            } else {
-                DecompositionLevelCount::new(3)
-            }),
+            log_basis: DecompositionBaseLog::new(8),
+            level_count: Some(DecompositionLevelCount::new(3)),
         },
         trace: internal,
         trace_noise_standard_deviation: 0.7,

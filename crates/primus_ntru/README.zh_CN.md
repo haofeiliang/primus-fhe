@@ -41,7 +41,7 @@ NTT 生成拒绝含零点值的私钥。Fourier 生成检查原生环可逆性�
 
 私钥和私有加密、生成、解密工作区会在析构时擦除自身缓冲区。显式工作区清零保留 可复用存储；显式私钥清零会销毁私钥。NTT 私钥的公开分布和 q 元数据仍保留，但擦除后应丢弃私钥。内置 FFT 后端也在析构时擦除 scratch；长寿命 engine 可在处理阶段结束后调用 `FftEngine::zeroize_workspace()`。调用方持有的明文及 相位输出有各自的生命周期。
 
-[automorphism 示例](examples/automorphism.rs) 展示配对私钥生成、求值密钥构造， 以及复用工作区、在原私钥下完成 NTT 自同构：
+[automorphism 示例](examples/automorphism.rs) 使用 u64 系数和显式 NTT 素数，展示配对私钥生成、求值密钥构造，以及复用工作区、在原私钥下完成 NTT 自同构：
 
 ```sh
 cargo run -p primus_ntru --example automorphism --features ntt

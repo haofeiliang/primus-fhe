@@ -1,7 +1,7 @@
 //! Turn an encrypted score in 0..64 into 17 numeric threshold flags with one MVB.
 //!
 //! Run: `cargo run --release -p primus_tfhe_glwe_fourier --example fourier_mvb_thresholds --features rustfft`
-//! For u64, change Word to u64. To use TfheFftTable, also switch this target's
+//! To use TfheFftTable, switch the Table import, this target's
 //! required-features and the command above to tfhe-fft.
 //! Arithmetic profiles: guides/development/tfhe-parameters.md (not security presets).
 
@@ -23,8 +23,8 @@ use rand::{SeedableRng, rngs::StdRng};
 // To use sparse BR, choose BlindRotationConfig::Sparse { copy_count: 3, bucket_count: 64 }.
 const BLIND_ROTATION: BlindRotationConfig = BlindRotationConfig::Classic;
 
-// The explicit parameters below select bases and moduli for this coefficient word.
-type Word = u32;
+// This example uses u64 coefficients with the explicit parameters below.
+type Word = u64;
 const N: usize = 1024;
 const ORDER: PbsOrder = PbsOrder::KeyswitchBootstrap;
 
@@ -35,15 +35,11 @@ const OUTPUTS: usize = 17;
 // Noise sigmas below are in coefficient units; these are arithmetic examples, not security presets.
 fn parameters() -> TfheParameters<Word> {
     let modulus = NativeModulus::<Word>::new();
-    let q = 2f64.powi(Word::BITS as i32);
+    let q = 2f64.powi(64); // Native u64 modulus, represented only for noise scaling.
 
     // None retains floor(modulus_bits / log_basis) levels; it need not cover every low bit.
     let full = DecompositionConfig {
-        log_basis: if Word::BITS == 32 {
-            DecompositionBaseLog::new(2)
-        } else {
-            DecompositionBaseLog::new(8)
-        },
+        log_basis: DecompositionBaseLog::new(8),
         level_count: None,
     };
 
@@ -74,7 +70,7 @@ fn main() {
     let output_codec = ScaledCodec::new(2, context.parameters().small_lwe().cipher_modulus());
 
     // Public message encoding is independent of the evaluation keys.
-    let input_codec = RoundedCodec::new(128 as Word, context.parameters().cipher_modulus());
+    let input_codec = RoundedCodec::new(128, context.parameters().cipher_modulus());
 
     // Client: keep client_key and the decryptor; give server_key to the server.
     let mut rng = StdRng::seed_from_u64(42);
@@ -104,7 +100,7 @@ fn main() {
     let mut evaluator = FactorizedEvaluator::new(&pbs);
     let mut outputs = vec![context.allocate_lwe_ciphertext(); OUTPUTS];
 
-    for score in [12 as Word, 45] {
+    for score in [12, 45] {
         // Client -> server: send the encrypted score.
         encryptor
             .encrypt_padded_to(score, input.as_mut_view(), &mut rng)
