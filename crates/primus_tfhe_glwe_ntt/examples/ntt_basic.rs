@@ -12,8 +12,8 @@ use primus_modulus::BarrettModulus;
 use primus_ntt::U64NttTable as Table;
 use primus_poly::PolyLength;
 use primus_tfhe_glwe_ntt::{
-    DecompositionConfig, Evaluator, LookupTable, PbsOrder, ServerKey, TfheConfig, TfheContext,
-    TfheParameters,
+    DecompositionConfig, Evaluator, GadgetEncryptionConfig, LookupTable, PbsOrder, ServerKey,
+    TfheConfig, TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -96,11 +96,13 @@ fn parameters() -> TfheParameters<Word> {
             log_basis: DecompositionBaseLog::new(23),
             level_count: Some(DecompositionLevelCount::new(1)),
         },
-        key_switching: DecompositionConfig {
-            log_basis: DecompositionBaseLog::new(3),
-            level_count: Some(DecompositionLevelCount::new(5)),
+        key_switching: GadgetEncryptionConfig {
+            decomposition: DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(3),
+                level_count: Some(DecompositionLevelCount::new(5)),
+            },
+            noise_standard_deviation: (q * 2.845267479601915e-15).max(6.4),
         },
-        key_switching_noise_standard_deviation: (q * 2.845267479601915e-15).max(6.4),
         pbs_order: PbsOrder::BootstrapKeyswitch,
     })
     .unwrap()

@@ -13,8 +13,8 @@ use primus_poly::PolyLength;
 use primus_test_allocations as allocations;
 use primus_tfhe::{BivariateLookupTable, ProgrammableBootstrap, ProgrammableBootstrapInterleaved};
 use primus_tfhe_glwe_ntt::{
-    BlindRotationConfig, ClientKey, KeyGenerator, PbsOrder, TfheContext, TfheEvaluationError,
-    TfheParameters,
+    BlindRotationConfig, ClientKey, GadgetEncryptionConfig, KeyGenerator, PbsOrder, TfheContext,
+    TfheEvaluationError, TfheParameters,
 };
 use primus_tfhe_test_support::boolean;
 use rand::{SeedableRng, rngs::StdRng};
@@ -57,8 +57,10 @@ fn context(
             ),
         )
         .unwrap(),
-        ApproxSignedBasis::new(Some(Q), DecompositionBaseLog::new(9), None),
-        1.25, // Independent KS noise also reaches complete sparse server-key generation.
+        GadgetEncryptionConfig {
+            decomposition: ApproxSignedBasis::new(Some(Q), DecompositionBaseLog::new(9), None),
+            noise_standard_deviation: 1.25,
+        }, // Independent KS noise also reaches complete sparse server-key generation.
         order,
     )
     .unwrap();

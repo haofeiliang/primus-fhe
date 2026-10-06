@@ -65,9 +65,9 @@ pub use primus_ntru::{NlevParameters, NtruParameters, NtruSecretKey};
 pub use primus_tfhe::{
     BOOLEAN_PLAINTEXT_BITS, BivariateLookupTable, BooleanDecryptor, BooleanEncryptor, BooleanError,
     BooleanEvaluator, BooleanGate, CircuitBootstrapConfig, ClientError, DecompositionConfig,
-    Decryptor, EncryptionKey, Encryptor, InterleavedLookupTable, LookupTable, LookupTableCompiler,
-    LookupTableError, Lwe, LweCiphertext, LweSecretKeyRef, ProgrammableBootstrap,
-    ProgrammableBootstrapInterleaved, TfheEvaluationError,
+    Decryptor, EncryptionKey, Encryptor, GadgetEncryptionConfig, InterleavedLookupTable,
+    LookupTable, LookupTableCompiler, LookupTableError, Lwe, LweCiphertext, LweSecretKeyRef,
+    ProgrammableBootstrap, ProgrammableBootstrapInterleaved, TfheEvaluationError,
 };
 
 /// LWE public key used by the public-key client encryptor.

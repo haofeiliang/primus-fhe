@@ -17,7 +17,8 @@ use primus_ntru::{
 use primus_poly::{PolyLength, Polynomial};
 use primus_test_allocations::{CountingAllocator, measure};
 use primus_tfhe_ntru_fourier::{
-    BlindRotationConfig, ClientKey, KeyGenerator, TfheContext, TfheParameters,
+    BlindRotationConfig, ClientKey, GadgetEncryptionConfig, KeyGenerator, TfheContext,
+    TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -132,11 +133,13 @@ fn check<T: TorusFftValue, Table: FftTable>(level_count: Option<usize>) {
                 0.7,
             ),
             NlevParameters::try_with_basis(&params, gadget.basis().clone()).unwrap(),
-            primus_tfhe_ntru::DecompositionConfig {
-                log_basis: DecompositionBaseLog::new(8),
-                level_count: None,
+            GadgetEncryptionConfig {
+                decomposition: primus_tfhe_ntru::DecompositionConfig {
+                    log_basis: DecompositionBaseLog::new(8),
+                    level_count: None,
+                },
+                noise_standard_deviation: client_params.noise_distribution().standard_deviation(),
             },
-            client_params.noise_distribution().standard_deviation(),
         )
         .unwrap(),
         table,

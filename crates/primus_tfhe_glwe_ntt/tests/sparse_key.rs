@@ -13,8 +13,8 @@ use primus_ntt::{NttTable, U32NttTable};
 use primus_poly::{PolyLength, PolynomialOwned};
 use primus_tfhe::sparse::BucketMapError;
 use primus_tfhe_glwe_ntt::{
-    BlindRotationConfig, BlindRotationKey, ClientKey, KeyGenerator, PbsOrder,
-    SparseBootstrappingKeyError as Error, TfheContext, TfheParameters,
+    BlindRotationConfig, BlindRotationKey, ClientKey, GadgetEncryptionConfig, KeyGenerator,
+    PbsOrder, SparseBootstrappingKeyError as Error, TfheContext, TfheParameters,
 };
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
@@ -36,8 +36,10 @@ fn context(distribution: SecretKeyDistr) -> TfheContext<u32, U32NttTable> {
     let parameters = TfheParameters::try_new(
         lwe.into_encryption_parameters(),
         primus_glwe::GgswParameters::try_with_basis(&glwe, basis.clone()).unwrap(),
-        basis,
-        glwe.noise_distribution().standard_deviation(),
+        GadgetEncryptionConfig {
+            decomposition: basis,
+            noise_standard_deviation: glwe.noise_distribution().standard_deviation(),
+        },
         PbsOrder::KeyswitchBootstrap,
     )
     .unwrap();
@@ -194,16 +196,20 @@ fn sparse_key_rejects_invalid_parameters_and_actual_secret_before_sampling() {
             log_basis: DecompositionBaseLog::new(8),
             level_count: Some(DecompositionLevelCount::new(usize::MAX)),
         },
-        trace: primus_tfhe_glwe_ntt::DecompositionConfig {
-            log_basis: DecompositionBaseLog::new(8),
-            level_count: None,
+        trace: GadgetEncryptionConfig {
+            decomposition: primus_tfhe_glwe_ntt::DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(8),
+                level_count: None,
+            },
+            noise_standard_deviation: 0.7,
         },
-        trace_noise_standard_deviation: 0.7,
-        scheme_switch: primus_tfhe_glwe_ntt::DecompositionConfig {
-            log_basis: DecompositionBaseLog::new(8),
-            level_count: None,
+        scheme_switch: GadgetEncryptionConfig {
+            decomposition: primus_tfhe_glwe_ntt::DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(8),
+                level_count: None,
+            },
+            noise_standard_deviation: 0.7,
         },
-        scheme_switch_noise_standard_deviation: 0.7,
     };
     let mut rng = StdRng::seed_from_u64(43);
     assert!(matches!(

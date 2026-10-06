@@ -9,7 +9,7 @@ use primus_tfhe::rotation::RotationModulusSwitch;
 
 use std::sync::Arc;
 
-use crate::TfheParameterError;
+use crate::{GadgetEncryptionConfig, TfheParameterError};
 /// NTRU-TFHE choices with independent accumulator Q and external LWE q domains.
 #[derive(Clone)]
 pub struct TfheConfig<T: FheUint, M: RingContext<T>, LM: RingContext<T> = M> {
@@ -25,10 +25,8 @@ pub struct TfheConfig<T: FheUint, M: RingContext<T>, LM: RingContext<T> = M> {
     pub accumulator_noise_standard_deviation: f64,
     /// NLev initializer and NGSW control decomposition.
     pub blind_rotation: DecompositionConfig,
-    /// Decomposition at q for the post-bootstrap LWE key switch.
-    pub key_switching: DecompositionConfig,
-    /// Coefficient-unit standard deviation at q for return-key LWE encryption.
-    pub key_switching_noise_standard_deviation: f64,
+    /// Post-bootstrap LWE key-switch decomposition and row noise at external q.
+    pub key_switching: GadgetEncryptionConfig,
 }
 
 /// Mathematical parameters for NTRU-based TFHE.
@@ -74,12 +72,7 @@ where
             .map_err(|source| TfheParameterError::BootstrappingParameters(source.into()))?;
         let blind_rotation = NlevParameters::try_from_parts(Arc::new(accumulator), basis)
             .map_err(TfheParameterError::BootstrappingParameters)?;
-        Self::try_new(
-            config.external_lwe,
-            blind_rotation,
-            config.key_switching,
-            config.key_switching_noise_standard_deviation,
-        )
+        Self::try_new(config.external_lwe, blind_rotation, config.key_switching)
     }
 
     /// Binds independent external LWE and accumulator domains with a return decomposition at q.
@@ -87,12 +80,13 @@ where
     /// The rotation domain 2N must fit in T; message codecs are bound separately.
     ///
     /// The BR gadget owns the accumulator ring/sampling state without a codec.
+    /// The return key uses its own decomposition and coefficient-unit noise at
+    /// external q, independently of fresh LWE noise and accumulator noise at Q.
     /// Returns domain, decomposition or return-key noise-sampler errors.
     pub fn try_new(
         external_lwe: LweEncryptionParameters<T, LM>,
         blind_rotation: NlevParameters<T, M>,
-        key_switching: DecompositionConfig,
-        key_switching_noise_standard_deviation: f64,
+        key_switching: GadgetEncryptionConfig,
     ) -> Result<Self, TfheParameterError> {
         let distr = external_lwe.secret_key_distr();
         if !(distr.is_binary() || distr.is_ternary()) {
@@ -101,13 +95,14 @@ where
         let two_n = 2 * blind_rotation.poly_length().get();
         T::try_from(two_n).map_err(|_| TfheParameterError::RotationDomainTooLarge)?;
         let key_switching_basis = key_switching
+            .decomposition
             .try_build(external_lwe.cipher_modulus_value())
             .map_err(TfheParameterError::KeySwitchingParameters)?;
         let key_switching_lwe = LweEncryptionParameters::try_new(
             external_lwe.dimension(),
             external_lwe.cipher_modulus(),
             distr,
-            key_switching_noise_standard_deviation,
+            key_switching.noise_standard_deviation,
         )
         .map_err(TfheParameterError::KeySwitchingEncryption)?;
         let rotation_modulus_switch =

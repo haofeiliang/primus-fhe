@@ -12,7 +12,7 @@ use primus_reduce::RingContext;
 use primus_test_allocations as allocations;
 use primus_tfhe_ntru::{
     BooleanDecryptor, BooleanEncryptor, BooleanError, ClientError, ClientKey, EncryptionKey,
-    Encryptor, Lwe, TfheKeyError, TfheParameters,
+    Encryptor, GadgetEncryptionConfig, Lwe, TfheKeyError, TfheParameters,
 };
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
@@ -44,11 +44,13 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
             ),
         )
         .unwrap(),
-        primus_tfhe_ntru::DecompositionConfig {
-            log_basis: DecompositionBaseLog::new(8),
-            level_count: None,
+        GadgetEncryptionConfig {
+            decomposition: primus_tfhe_ntru::DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(8),
+                level_count: None,
+            },
+            noise_standard_deviation: ring.noise_distribution().standard_deviation(),
         },
-        ring.noise_distribution().standard_deviation(),
     )
     .unwrap();
     let mut accumulator = vec![0; ring.poly_length().get()];

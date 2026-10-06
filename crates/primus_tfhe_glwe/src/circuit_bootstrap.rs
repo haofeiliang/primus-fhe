@@ -6,7 +6,9 @@ use primus_integer::FheUint;
 use primus_reduce::RingContext;
 use std::sync::Arc;
 
-use crate::{CircuitBootstrapConfig, CircuitBootstrapParameterError, TfheParameters};
+use crate::{
+    CircuitBootstrapConfig, CircuitBootstrapParameterError, GadgetEncryptionConfig, TfheParameters,
+};
 
 /// Independent parameters for GLWE circuit bootstrapping.
 ///
@@ -45,18 +47,19 @@ impl<T: FheUint, M: RingContext<T>> CircuitBootstrapParameters<T, M> {
         let output_basis = config
             .output
             .try_build(accumulator.cipher_modulus().explicit_value())?;
-        let key_parameters = |role, decomposition: crate::DecompositionConfig, noise| {
+        let key_parameters = |role, config: GadgetEncryptionConfig| {
             // Trace and scheme-switch rows have independent noise roles. Reuse
             // the accumulator layout, without constructing a message codec.
             let inner = GlweEncryptionParameters::try_new(
                 accumulator.cipher_modulus(),
                 accumulator.secret_key_distr(),
-                noise,
+                config.noise_standard_deviation,
             )
             .map_err(|source| {
                 CircuitBootstrapParameterError::EncryptionParameters { role, source }
             })?;
-            let basis = decomposition
+            let basis = config
+                .decomposition
                 .try_build(accumulator.cipher_modulus().explicit_value())
                 .map_err(|source| CircuitBootstrapParameterError::GadgetParameters {
                     role,
@@ -65,12 +68,8 @@ impl<T: FheUint, M: RingContext<T>> CircuitBootstrapParameters<T, M> {
             GlevParameters::try_from_parts(accumulator.glwe_size(), Arc::new(inner), basis)
                 .map_err(|source| CircuitBootstrapParameterError::GadgetParameters { role, source })
         };
-        let trace = key_parameters("trace", config.trace, config.trace_noise_standard_deviation)?;
-        let scheme_switch = key_parameters(
-            "scheme-switch",
-            config.scheme_switch,
-            config.scheme_switch_noise_standard_deviation,
-        )?;
+        let trace = key_parameters("trace", config.trace)?;
+        let scheme_switch = key_parameters("scheme-switch", config.scheme_switch)?;
         Self::try_new(tfhe, output_basis, trace, scheme_switch)
     }
 

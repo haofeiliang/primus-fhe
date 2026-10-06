@@ -9,7 +9,9 @@ use primus_ntru::NlevParameters;
 use primus_ntru::{NtruParameters, SecretKeyDistr};
 use primus_ntt::{NttTable, U32NttTable};
 use primus_poly::PolyLength;
-use primus_tfhe_ntru_ntt::{BlindRotationConfig, TfheContext, TfheEvaluationError, TfheParameters};
+use primus_tfhe_ntru_ntt::{
+    BlindRotationConfig, GadgetEncryptionConfig, TfheContext, TfheEvaluationError, TfheParameters,
+};
 use rand::{SeedableRng, rngs::StdRng};
 use std::error::Error;
 
@@ -47,11 +49,13 @@ fn parameters(
     TfheParameters::try_new(
         external_lwe.into_encryption_parameters(),
         NlevParameters::try_with_basis(&accumulator, blind_rotation_basis).unwrap(),
-        primus_tfhe_ntru::DecompositionConfig {
-            log_basis: DecompositionBaseLog::new(key_switching_log_basis),
-            level_count: None,
+        GadgetEncryptionConfig {
+            decomposition: primus_tfhe_ntru::DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(key_switching_log_basis),
+                level_count: None,
+            },
+            noise_standard_deviation: 0.7,
         },
-        0.7,
     )
     .unwrap()
 }

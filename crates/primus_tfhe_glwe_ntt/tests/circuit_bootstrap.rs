@@ -14,8 +14,8 @@ use primus_poly::Polynomial;
 use primus_test_allocations as allocations;
 use primus_tfhe_glwe_ntt::{
     BlindRotationConfig, CircuitBootstrapConfig, CircuitBootstrapEvaluator,
-    CircuitBootstrapParameters, DecompositionConfig, KeyGenerator, PbsOrder, TfheConfig,
-    TfheContext, TfheEvaluationError, TfheParameters,
+    CircuitBootstrapParameters, DecompositionConfig, GadgetEncryptionConfig, KeyGenerator,
+    PbsOrder, TfheConfig, TfheContext, TfheEvaluationError, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -42,11 +42,13 @@ fn parameters(order: PbsOrder, distribution: SecretKeyDistr) -> TfheParameters<u
             log_basis: DecompositionBaseLog::new(10),
             level_count: None,
         },
-        key_switching: DecompositionConfig {
-            log_basis: DecompositionBaseLog::new(10),
-            level_count: Some(DecompositionLevelCount::new(4)),
+        key_switching: GadgetEncryptionConfig {
+            decomposition: DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(10),
+                level_count: Some(DecompositionLevelCount::new(4)),
+            },
+            noise_standard_deviation: 0.7,
         },
-        key_switching_noise_standard_deviation: 0.7,
         pbs_order: order,
     })
     .unwrap()
@@ -94,16 +96,20 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
                 log_basis: DecompositionBaseLog::new(8),
                 level_count: Some(DecompositionLevelCount::new(levels)),
             },
-            trace: DecompositionConfig {
-                log_basis: DecompositionBaseLog::new(10),
-                level_count: None,
+            trace: GadgetEncryptionConfig {
+                decomposition: DecompositionConfig {
+                    log_basis: DecompositionBaseLog::new(10),
+                    level_count: None,
+                },
+                noise_standard_deviation: 0.7,
             },
-            trace_noise_standard_deviation: 0.7,
-            scheme_switch: DecompositionConfig {
-                log_basis: DecompositionBaseLog::new(10),
-                level_count: None,
+            scheme_switch: GadgetEncryptionConfig {
+                decomposition: DecompositionConfig {
+                    log_basis: DecompositionBaseLog::new(10),
+                    level_count: None,
+                },
+                noise_standard_deviation: 0.7,
             },
-            scheme_switch_noise_standard_deviation: 0.7,
         };
         let (client_key, classic_server_key) = context
             .try_generate_keys(Some(cbs_config), &mut rng)

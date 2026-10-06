@@ -11,7 +11,7 @@ use primus_integer::FheUint;
 use primus_lwe::{LweDimension, LweEncryptionParameters};
 use primus_modulus::BarrettModulus;
 use primus_poly::PolyLength;
-use primus_tfhe_glwe::{PbsOrder, TfheConfig, TfheParameters};
+use primus_tfhe_glwe::{GadgetEncryptionConfig, PbsOrder, TfheConfig, TfheParameters};
 
 /// Geometry quoted by the paper and arithmetic choices resolved for this backend.
 #[derive(Clone, Copy)]
@@ -165,8 +165,10 @@ impl Case {
                     _ => None,
                 },
             },
-            key_switching: decomposition(self.ks_base_log),
-            key_switching_noise_standard_deviation: 3.19,
+            key_switching: GadgetEncryptionConfig {
+                decomposition: decomposition(self.ks_base_log),
+                noise_standard_deviation: 3.19,
+            },
             pbs_order: PbsOrder::BootstrapKeyswitch,
         })
         .unwrap()

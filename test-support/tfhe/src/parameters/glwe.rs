@@ -12,7 +12,8 @@ use primus_reduce::RingContext;
 use primus_tfhe::PolyLength;
 use primus_tfhe::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_tfhe_glwe::{
-    CircuitBootstrapConfig, DecompositionConfig, PbsOrder, TfheConfig, TfheParameters,
+    CircuitBootstrapConfig, DecompositionConfig, GadgetEncryptionConfig, PbsOrder, TfheConfig,
+    TfheParameters,
 };
 
 use super::{DIMENSION, N, SPARSE_DIMENSION, SPARSE_WEIGHT, ntt_modulus};
@@ -92,8 +93,10 @@ where
         accumulator_secret_key_distr: SecretKeyDistr::UniformBinary,
         accumulator_noise_standard_deviation: (q * GLWE_STD_DEV).max(6.4),
         blind_rotation: decomposition(blind_rotation.0, Some(blind_rotation.1)),
-        key_switching: decomposition(key_switching.0, Some(key_switching.1)),
-        key_switching_noise_standard_deviation: (q * GLWE_STD_DEV).max(6.4),
+        key_switching: GadgetEncryptionConfig {
+            decomposition: decomposition(key_switching.0, Some(key_switching.1)),
+            noise_standard_deviation: (q * GLWE_STD_DEV).max(6.4),
+        },
         pbs_order: order,
     })
     .unwrap()
@@ -127,8 +130,10 @@ where
         accumulator_secret_key_distr: SecretKeyDistr::UniformTernary,
         accumulator_noise_standard_deviation: 6.4,
         blind_rotation: decomposition(if T::BITS == 32 { 2 } else { 8 }, None),
-        key_switching: decomposition(if T::BITS == 32 { 2 } else { 8 }, None),
-        key_switching_noise_standard_deviation: 6.4,
+        key_switching: GadgetEncryptionConfig {
+            decomposition: decomposition(if T::BITS == 32 { 2 } else { 8 }, None),
+            noise_standard_deviation: 6.4,
+        },
         pbs_order: order,
     })
     .unwrap()
@@ -147,10 +152,14 @@ pub fn cbs<T: FheUint>() -> CircuitBootstrapConfig {
             if T::BITS == 32 { 3 } else { 8 },
             Some(if T::BITS == 32 { 3 } else { 2 }),
         ),
-        trace: internal,
-        trace_noise_standard_deviation: 6.4,
-        scheme_switch: internal,
-        scheme_switch_noise_standard_deviation: 6.4,
+        trace: GadgetEncryptionConfig {
+            decomposition: internal,
+            noise_standard_deviation: 6.4,
+        },
+        scheme_switch: GadgetEncryptionConfig {
+            decomposition: internal,
+            noise_standard_deviation: 6.4,
+        },
     }
 }
 
@@ -181,8 +190,10 @@ where
         accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
         accumulator_noise_standard_deviation: 6.4,
         blind_rotation: decomposition(if T::BITS == 32 { 2 } else { 8 }, None),
-        key_switching: decomposition(if T::BITS == 32 { 2 } else { 8 }, None),
-        key_switching_noise_standard_deviation: 6.4,
+        key_switching: GadgetEncryptionConfig {
+            decomposition: decomposition(if T::BITS == 32 { 2 } else { 8 }, None),
+            noise_standard_deviation: 6.4,
+        },
         pbs_order: order,
     })
     .unwrap()

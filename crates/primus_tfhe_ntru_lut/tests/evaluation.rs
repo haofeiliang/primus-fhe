@@ -22,7 +22,9 @@ use primus_reduce::RingContext;
 use primus_test_allocations as allocations;
 use primus_tfhe::LweCiphertext;
 use primus_tfhe::{BlindRotationConfig, DecompositionBaseLog, DecompositionLevelCount};
-use primus_tfhe_ntru::{CircuitBootstrapConfig, DecompositionConfig, TfheParameters};
+use primus_tfhe_ntru::{
+    CircuitBootstrapConfig, DecompositionConfig, GadgetEncryptionConfig, TfheParameters,
+};
 #[cfg(any(feature = "rustfft", feature = "tfhe-fft"))]
 use primus_tfhe_ntru_lut::FourierLookupTableEvaluator;
 #[cfg(feature = "ntt")]
@@ -56,11 +58,13 @@ fn parameters<T: FheUint, M: RingContext<T>>(
             log_basis: DecompositionBaseLog::new(8),
             level_count: None,
         },
-        key_switching: DecompositionConfig {
-            log_basis: DecompositionBaseLog::new(8),
-            level_count: None,
+        key_switching: GadgetEncryptionConfig {
+            decomposition: DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(8),
+                level_count: None,
+            },
+            noise_standard_deviation: 0.7,
         },
-        key_switching_noise_standard_deviation: 0.7,
     })
     .unwrap()
 }
@@ -104,10 +108,14 @@ fn cbs<T: FheUint>() -> CircuitBootstrapConfig {
             },
             level_count: Some(DecompositionLevelCount::new(3)),
         },
-        trace: full,
-        trace_noise_standard_deviation: 0.7,
-        scheme_switch: full,
-        scheme_switch_noise_standard_deviation: 0.7,
+        trace: GadgetEncryptionConfig {
+            decomposition: full,
+            noise_standard_deviation: 0.7,
+        },
+        scheme_switch: GadgetEncryptionConfig {
+            decomposition: full,
+            noise_standard_deviation: 0.7,
+        },
     }
 }
 

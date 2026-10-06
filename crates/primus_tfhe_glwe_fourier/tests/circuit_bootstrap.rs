@@ -13,8 +13,9 @@ use primus_poly::PolyLength;
 use primus_test_allocations as allocations;
 use primus_tfhe_glwe_fourier::{
     BlindRotationConfig, CircuitBootstrapConfig, CircuitBootstrapEvaluator,
-    CircuitBootstrapParameters, ClientKey, DecompositionConfig, KeyGenerationError, KeyGenerator,
-    PbsOrder, TfheConfig, TfheContext, TfheEvaluationError, TfheParameters,
+    CircuitBootstrapParameters, ClientKey, DecompositionConfig, GadgetEncryptionConfig,
+    KeyGenerationError, KeyGenerator, PbsOrder, TfheConfig, TfheContext, TfheEvaluationError,
+    TfheParameters,
 };
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 
@@ -56,8 +57,10 @@ fn parameters_with_order_and_distribution(
         accumulator_secret_key_distr: SecretKeyDistr::UniformTernary,
         accumulator_noise_standard_deviation: 0.7,
         blind_rotation: decomposition,
-        key_switching: decomposition,
-        key_switching_noise_standard_deviation: 0.7,
+        key_switching: GadgetEncryptionConfig {
+            decomposition,
+            noise_standard_deviation: 0.7,
+        },
         pbs_order: order,
     })
     .unwrap()
@@ -69,16 +72,20 @@ fn circuit_config() -> CircuitBootstrapConfig {
             log_basis: DecompositionBaseLog::new(8),
             level_count: Some(DecompositionLevelCount::new(3)),
         },
-        trace: DecompositionConfig {
-            log_basis: DecompositionBaseLog::new(8),
-            level_count: Some(DecompositionLevelCount::new(7)),
+        trace: GadgetEncryptionConfig {
+            decomposition: DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(8),
+                level_count: Some(DecompositionLevelCount::new(7)),
+            },
+            noise_standard_deviation: 0.7,
         },
-        trace_noise_standard_deviation: 0.7,
-        scheme_switch: DecompositionConfig {
-            log_basis: DecompositionBaseLog::new(10),
-            level_count: Some(DecompositionLevelCount::new(5)),
+        scheme_switch: GadgetEncryptionConfig {
+            decomposition: DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(10),
+                level_count: Some(DecompositionLevelCount::new(5)),
+            },
+            noise_standard_deviation: 0.7,
         },
-        scheme_switch_noise_standard_deviation: 0.7,
     }
 }
 

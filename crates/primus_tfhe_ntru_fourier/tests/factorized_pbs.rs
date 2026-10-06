@@ -11,8 +11,8 @@ use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::SecretKeyDistr;
 use primus_test_allocations as allocations;
 use primus_tfhe_ntru_fourier::{
-    DecompositionConfig, FactorizedLookupTable, FourierFactorizedLookupTable, LookupTable,
-    LookupTableError, TfheConfig, TfheContext, TfheParameters,
+    DecompositionConfig, FactorizedLookupTable, FourierFactorizedLookupTable,
+    GadgetEncryptionConfig, LookupTable, LookupTableError, TfheConfig, TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -39,11 +39,13 @@ fn context<T: TorusFftValue, Table: FftTable>(distr: SecretKeyDistr) -> TfheCont
             log_basis: DecompositionBaseLog::new(8),
             level_count: Some(DecompositionLevelCount::new(3)),
         },
-        key_switching: DecompositionConfig {
-            log_basis: DecompositionBaseLog::new(8),
-            level_count: Some(DecompositionLevelCount::new(3)),
+        key_switching: GadgetEncryptionConfig {
+            decomposition: DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(8),
+                level_count: Some(DecompositionLevelCount::new(3)),
+            },
+            noise_standard_deviation: 0.7,
         },
-        key_switching_noise_standard_deviation: 0.7,
     })
     .unwrap();
     TfheContext::from_parameters(parameters)

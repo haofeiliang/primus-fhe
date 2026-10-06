@@ -7,7 +7,7 @@ use primus_modulus::NativeModulus;
 use primus_ntru::NlevParameters;
 use primus_ntru::{NtruParameters, NtruSecretKey, SecretKeyDistr};
 use primus_poly::PolyLength;
-use primus_tfhe_ntru::{ClientError, ClientKey, TfheParameters};
+use primus_tfhe_ntru::{ClientError, ClientKey, GadgetEncryptionConfig, TfheParameters};
 
 const N: usize = 32;
 const LWE_DIMENSION: usize = 4;
@@ -35,11 +35,13 @@ fn parameters_with_plaintext(t: u32) -> TfheParameters<u32, NativeModulus<u32>> 
             0.7,
         ),
         NlevParameters::try_with_basis(&accumulator, blind_rotation_basis).unwrap(),
-        primus_tfhe_ntru::DecompositionConfig {
-            log_basis: DecompositionBaseLog::new(8),
-            level_count: None,
+        GadgetEncryptionConfig {
+            decomposition: primus_tfhe_ntru::DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(8),
+                level_count: None,
+            },
+            noise_standard_deviation: 0.7,
         },
-        0.7,
     )
     .unwrap()
 }
@@ -138,8 +140,10 @@ fn codec_binding_checks_input_q_and_default_output_encoding() {
         accumulator_secret_key_distr: SecretKeyDistr::gaussian(3.2),
         accumulator_noise_standard_deviation: 0.7,
         blind_rotation: basis,
-        key_switching: basis,
-        key_switching_noise_standard_deviation: 0.7,
+        key_switching: GadgetEncryptionConfig {
+            decomposition: basis,
+            noise_standard_deviation: 0.7,
+        },
     })
     .unwrap();
     let key = imported_key([1, 0, 1, 1], parameters.external_lwe().cipher_modulus());

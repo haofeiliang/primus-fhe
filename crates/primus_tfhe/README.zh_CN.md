@@ -150,7 +150,9 @@ GLWE 两后端同样使用短借用。独立 CBS 可用 `context.bootstrap_resou
 
 ## LUT 与资源生命周期
 
-后端接受具名 `TfheConfig` 并派生公共环参数，`TfheContext::try_from_parameters` 自动创建选定类型的变换表。本 crate 从 [`primus_decompose`](../primus_decompose/README.zh_CN.md) 重新导出 `DecompositionConfig`（分解基与保留层数）， 并定义 `CircuitBootstrapConfig`（独立的 output/trace/scheme-switch 配置）， 由各后端绑定自己的模数、布局与表示。`Option<CircuitBootstrapConfig>` 在配套密钥生成时选择是否启用 CBS； server key 持有对应参数和材料，各 evaluator 只持有自身工作区。
+后端接受具名 `TfheConfig` 并派生公共环参数，`TfheContext::try_from_parameters` 自动创建选定类型的变换表。本 crate 从 [`primus_decompose`](../primus_decompose/README.zh_CN.md) 重新导出 `DecompositionConfig`（分解基与保留层数）。`GadgetEncryptionConfig { decomposition, noise_standard_deviation }` 集中同一个计算密钥角色的独立选择，用于 PBS key switching、CBS trace 或 CBS scheme switching。`CircuitBootstrapConfig::output` 只选择输出 gadget 标量，仍为 `DecompositionConfig`。各后端绑定自己的模数、布局与表示。`Option<CircuitBootstrapConfig>` 在配套密钥生成时选择是否启用 CBS；server key 持有对应参数和材料，各 evaluator 只持有自身工作区。
+
+`GadgetEncryptionConfig<D = DecompositionConfig>` 默认接收分解配置；GLWE 的直接构造入口用已准备的 `ApproxSignedBasis<T>` 作为 D，移动其所有权而不重新构造。噪声标准差使用密钥模数下的系数单位：GLWE KS 使用共同 q，NTRU 返回 KS 使用外部 q，CBS trace/scheme switching 使用累加 Q。Config 本身不校验，由原有参数构造边界验证。Accumulator 噪声仍单独设置，因为它也用于普通加密。
 
 1. Family 参数描述外部 LWE 和 accumulator 环。
 2. 后端 context 绑定参数与 NTT/FFT table，并生成配套的 client/server key。

@@ -87,8 +87,8 @@ pub use key::BlindRotationKey;
 pub use key::{KeyGenerator, ServerKey};
 pub use primus_tfhe::{
     BivariateLookupTable, BlindRotationConfig, CircuitBootstrapConfig, ClientError,
-    DecompositionConfig, FactorizedLookupTable, InterleavedLookupTable, LookupTable,
-    LookupTableCompiler, Lwe, LweCiphertext, LweSecretKeyRef,
+    DecompositionConfig, FactorizedLookupTable, GadgetEncryptionConfig, InterleavedLookupTable,
+    LookupTable, LookupTableCompiler, Lwe, LweCiphertext, LweSecretKeyRef,
 };
 pub use primus_tfhe_glwe::SparseGlweBootstrappingKey;
 pub use primus_tfhe_glwe::{ClientKey, EncryptionKey, ExternalLweSecretKey, PbsOrder};

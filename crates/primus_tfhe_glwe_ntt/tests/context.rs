@@ -13,8 +13,8 @@ use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
 use primus_poly::PolyLength;
 use primus_tfhe_glwe_ntt::{
-    ClientKey, KeyGenerator, PbsOrder, TfheContext, TfheContextError, TfheEvaluationError,
-    TfheParameters,
+    ClientKey, GadgetEncryptionConfig, KeyGenerator, PbsOrder, TfheContext, TfheContextError,
+    TfheEvaluationError, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 use std::sync::Arc;
@@ -52,12 +52,14 @@ fn parameters_with_bases(
     TfheParameters::try_new(
         lwe.into_encryption_parameters(),
         primus_glwe::GgswParameters::try_with_basis(&glwe, bootstrapping).unwrap(),
-        ApproxSignedBasis::new(
-            Some(MODULUS),
-            DecompositionBaseLog::new(key_switching_log_basis),
-            Some(DecompositionLevelCount::new(4)),
-        ),
-        KS_SIGMA,
+        GadgetEncryptionConfig {
+            decomposition: ApproxSignedBasis::new(
+                Some(MODULUS),
+                DecompositionBaseLog::new(key_switching_log_basis),
+                Some(DecompositionLevelCount::new(4)),
+            ),
+            noise_standard_deviation: KS_SIGMA,
+        },
         order,
     )
     .unwrap()

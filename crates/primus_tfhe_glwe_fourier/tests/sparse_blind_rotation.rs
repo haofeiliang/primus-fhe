@@ -11,7 +11,8 @@ use primus_poly::{PolyLength, Polynomial};
 use primus_test_allocations as allocations;
 use primus_tfhe_glwe_fourier::{
     BlindRotationConfig, BlindRotationKey, ClientKey, FourierGlweBlindRotationWorkspace,
-    KeyGenerator, PbsOrder, SparseGlweBlindRotationWorkspace, TfheContext, TfheParameters,
+    GadgetEncryptionConfig, KeyGenerator, PbsOrder, SparseGlweBlindRotationWorkspace, TfheContext,
+    TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -104,8 +105,10 @@ fn check_raw<Table: FftTable>() {
                 basis.clone(),
             )
             .unwrap(),
-            basis,
-            0.7,
+            GadgetEncryptionConfig {
+                decomposition: basis,
+                noise_standard_deviation: 0.7,
+            },
             PbsOrder::BootstrapKeyswitch,
         )
         .unwrap();

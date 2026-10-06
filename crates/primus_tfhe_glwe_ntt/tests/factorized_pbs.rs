@@ -11,8 +11,9 @@ use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
 use primus_test_allocations as allocations;
 use primus_tfhe_glwe_ntt::{
-    BlindRotationConfig, ClientKey, FactorizedLookupTable, InterleavedLookupTable, KeyGenerator,
-    LookupTable, LookupTableError, NttFactorizedLookupTable, PbsOrder, TfheContext, TfheParameters,
+    BlindRotationConfig, ClientKey, FactorizedLookupTable, GadgetEncryptionConfig,
+    InterleavedLookupTable, KeyGenerator, LookupTable, LookupTableError, NttFactorizedLookupTable,
+    PbsOrder, TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -43,8 +44,10 @@ fn context(order: PbsOrder, distribution: SecretKeyDistr) -> TfheContext<u32, U3
             ApproxSignedBasis::new(Some(Q), DecompositionBaseLog::new(8), None),
         )
         .unwrap(),
-        ApproxSignedBasis::new(Some(Q), DecompositionBaseLog::new(8), None),
-        0.7,
+        GadgetEncryptionConfig {
+            decomposition: ApproxSignedBasis::new(Some(Q), DecompositionBaseLog::new(8), None),
+            noise_standard_deviation: 0.7,
+        },
         order,
     )
     .unwrap();

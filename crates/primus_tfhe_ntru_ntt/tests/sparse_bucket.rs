@@ -15,7 +15,8 @@ use primus_ntt::{MonomialNttTable, U32NttTable, U64NttTable};
 use primus_poly::{PolyLength, Polynomial};
 use primus_test_allocations::{CountingAllocator, measure};
 use primus_tfhe_ntru_ntt::{
-    BlindRotationConfig, ClientKey, KeyGenerator, TfheContext, TfheParameters,
+    BlindRotationConfig, ClientKey, GadgetEncryptionConfig, KeyGenerator, TfheContext,
+    TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 use zeroize::Zeroizing;
@@ -115,11 +116,13 @@ fn check_bucket<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, level_cou
                 0.7,
             ),
             NlevParameters::try_with_basis(&params, gadget.basis().clone()).unwrap(),
-            primus_tfhe_ntru::DecompositionConfig {
-                log_basis: DecompositionBaseLog::new(8),
-                level_count: None,
+            GadgetEncryptionConfig {
+                decomposition: primus_tfhe_ntru::DecompositionConfig {
+                    log_basis: DecompositionBaseLog::new(8),
+                    level_count: None,
+                },
+                noise_standard_deviation: client_params.noise_distribution().standard_deviation(),
             },
-            client_params.noise_distribution().standard_deviation(),
         )
         .unwrap(),
         ntt,

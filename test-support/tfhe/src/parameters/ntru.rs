@@ -11,7 +11,9 @@ use primus_modulus::PowOf2Modulus;
 use primus_reduce::RingContext;
 use primus_tfhe::PolyLength;
 use primus_tfhe::{DecompositionBaseLog, DecompositionLevelCount};
-use primus_tfhe_ntru::{CircuitBootstrapConfig, DecompositionConfig, TfheConfig, TfheParameters};
+use primus_tfhe_ntru::{
+    CircuitBootstrapConfig, DecompositionConfig, GadgetEncryptionConfig, TfheConfig, TfheParameters,
+};
 
 use super::{DIMENSION, N, SPARSE_DIMENSION, SPARSE_WEIGHT};
 use crate::benchmark::{LWE_STD_DEV, PbsWorkload};
@@ -79,8 +81,10 @@ where
         // External LWE and return KS use their independent q-domain budgets.
         accumulator_noise_standard_deviation: 0.7,
         blind_rotation: full(if T::BITS == 32 { 2 } else { 8 }),
-        key_switching: full(3),
-        key_switching_noise_standard_deviation: 3.2,
+        key_switching: GadgetEncryptionConfig {
+            decomposition: full(3),
+            noise_standard_deviation: 3.2,
+        },
     })
     .unwrap()
 }
@@ -127,10 +131,14 @@ pub fn cbs<T: FheUint>() -> CircuitBootstrapConfig {
                 DecompositionLevelCount::new(3)
             }),
         },
-        trace: internal,
-        trace_noise_standard_deviation: 0.7,
-        scheme_switch: internal,
-        scheme_switch_noise_standard_deviation: 0.7,
+        trace: GadgetEncryptionConfig {
+            decomposition: internal,
+            noise_standard_deviation: 0.7,
+        },
+        scheme_switch: GadgetEncryptionConfig {
+            decomposition: internal,
+            noise_standard_deviation: 0.7,
+        },
     }
 }
 

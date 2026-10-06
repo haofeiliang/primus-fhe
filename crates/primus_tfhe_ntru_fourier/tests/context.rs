@@ -8,7 +8,9 @@ use primus_modulus::NativeModulus;
 use primus_ntru::NlevParameters;
 use primus_ntru::{NtruParameters, SecretKeyDistr};
 use primus_poly::PolyLength;
-use primus_tfhe_ntru_fourier::{TfheContext, TfheEvaluationError, TfheParameters};
+use primus_tfhe_ntru_fourier::{
+    GadgetEncryptionConfig, TfheContext, TfheEvaluationError, TfheParameters,
+};
 use rand::{SeedableRng, rngs::StdRng};
 
 const POLY_LENGTH: usize = 32;
@@ -40,11 +42,13 @@ fn parameters(bootstrapping_log_basis: u32, key_switching_log_basis: u32) -> Tfh
     TfheParameters::try_new(
         external_lwe.into_encryption_parameters(),
         NlevParameters::try_with_basis(&accumulator, blind_rotation_basis).unwrap(),
-        primus_tfhe_ntru::DecompositionConfig {
-            log_basis: DecompositionBaseLog::new(key_switching_log_basis),
-            level_count: Some(DecompositionLevelCount::new(4)),
+        GadgetEncryptionConfig {
+            decomposition: primus_tfhe_ntru::DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(key_switching_log_basis),
+                level_count: Some(DecompositionLevelCount::new(4)),
+            },
+            noise_standard_deviation: 0.7,
         },
-        0.7,
     )
     .unwrap()
 }

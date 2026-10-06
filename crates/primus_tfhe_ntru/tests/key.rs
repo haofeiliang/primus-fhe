@@ -9,7 +9,8 @@ use primus_ntru::NlevParameters;
 use primus_ntru::{NtruParameters, NtruSecretKey, SecretKeyDistr};
 use primus_poly::PolyLength;
 use primus_tfhe_ntru::{
-    ClientKey, DecompositionConfig, TfheClientError, TfheKeyError, TfheParameters,
+    ClientKey, DecompositionConfig, GadgetEncryptionConfig, TfheClientError, TfheKeyError,
+    TfheParameters,
 };
 use rand::{RngExt, SeedableRng};
 
@@ -39,11 +40,13 @@ fn imported_external_residues_must_match_the_control_domain() {
                 ),
             )
             .unwrap(),
-            DecompositionConfig {
-                log_basis: DecompositionBaseLog::new(8),
-                level_count: None,
+            GadgetEncryptionConfig {
+                decomposition: DecompositionConfig {
+                    log_basis: DecompositionBaseLog::new(8),
+                    level_count: None,
+                },
+                noise_standard_deviation: 0.7,
             },
-            0.7,
         )
         .unwrap();
         for (coefficients, error) in [
@@ -120,11 +123,13 @@ fn return_key_rejects_accumulator_magnitudes_outside_external_modulus() {
             ),
         )
         .unwrap(),
-        DecompositionConfig {
-            log_basis: DecompositionBaseLog::new(2),
-            level_count: None,
+        GadgetEncryptionConfig {
+            decomposition: DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(2),
+                level_count: None,
+            },
+            noise_standard_deviation: 0.7,
         },
-        0.7,
     )
     .unwrap();
     for (coefficient, expected) in [

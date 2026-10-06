@@ -9,8 +9,8 @@ use primus_ntru::{NtruParameters, SecretKeyDistr};
 use primus_poly::PolyLength;
 use primus_reduce::RingContext;
 use primus_tfhe_ntru::{
-    CircuitBootstrapConfig, CircuitBootstrapParameters, DecompositionConfig, OneHotBootstrapError,
-    OneHotLookupTable, TfheParameters,
+    CircuitBootstrapConfig, CircuitBootstrapParameters, DecompositionConfig,
+    GadgetEncryptionConfig, OneHotBootstrapError, OneHotLookupTable, TfheParameters,
 };
 
 fn parameters<M: RingContext<u64>>(
@@ -45,8 +45,10 @@ fn parameters<M: RingContext<u64>>(
             0.7,
         ),
         NlevParameters::try_with_basis(&ring, blind_rotation_basis).unwrap(),
-        full,
-        0.7,
+        GadgetEncryptionConfig {
+            decomposition: full,
+            noise_standard_deviation: 0.7,
+        },
     )
     .unwrap();
     let cbs = CircuitBootstrapParameters::try_from_config(
@@ -56,10 +58,14 @@ fn parameters<M: RingContext<u64>>(
                 log_basis: DecompositionBaseLog::new(3),
                 level_count: Some(DecompositionLevelCount::new(levels)),
             },
-            trace: full,
-            trace_noise_standard_deviation: 0.7,
-            scheme_switch: full,
-            scheme_switch_noise_standard_deviation: 0.7,
+            trace: GadgetEncryptionConfig {
+                decomposition: full,
+                noise_standard_deviation: 0.7,
+            },
+            scheme_switch: GadgetEncryptionConfig {
+                decomposition: full,
+                noise_standard_deviation: 0.7,
+            },
         },
     )
     .unwrap();

@@ -14,8 +14,8 @@ use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::NativeModulus;
 use primus_poly::{PolyLength, Polynomial};
 use primus_tfhe_glwe_fourier::{
-    BlindRotationKey, ClientKey, FourierGlweBlindRotationWorkspace, KeyGenerator, PbsOrder,
-    TfheContext, TfheContextError, TfheEvaluationError, TfheParameters,
+    BlindRotationKey, ClientKey, FourierGlweBlindRotationWorkspace, GadgetEncryptionConfig,
+    KeyGenerator, PbsOrder, TfheContext, TfheContextError, TfheEvaluationError, TfheParameters,
 };
 
 use rand::{SeedableRng, rngs::StdRng};
@@ -58,12 +58,14 @@ fn parameters_with_bases(
     TfheParameters::try_new(
         lwe.into_encryption_parameters(),
         primus_glwe::GgswParameters::try_with_basis(&glwe, bootstrapping).unwrap(),
-        ApproxSignedBasis::new(
-            None,
-            DecompositionBaseLog::new(key_switching_log_basis),
-            Some(DecompositionLevelCount::new(4)),
-        ),
-        KS_SIGMA,
+        GadgetEncryptionConfig {
+            decomposition: ApproxSignedBasis::new(
+                None,
+                DecompositionBaseLog::new(key_switching_log_basis),
+                Some(DecompositionLevelCount::new(4)),
+            ),
+            noise_standard_deviation: KS_SIGMA,
+        },
         order,
     )
     .unwrap()

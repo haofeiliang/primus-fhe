@@ -15,7 +15,7 @@ use primus_poly::{PolyLength, Polynomial};
 use primus_test_allocations as allocations;
 use primus_tfhe_ntru_fourier::{
     BlindRotationConfig, CircuitBootstrapConfig, CircuitBootstrapEvaluator, DecompositionConfig,
-    TfheContext, TfheParameters,
+    GadgetEncryptionConfig, TfheContext, TfheParameters,
 };
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 
@@ -50,11 +50,13 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr, sparse: bool) {
     let tfhe = TfheParameters::try_new(
         lwe.into_encryption_parameters(),
         NlevParameters::try_with_basis(&accumulator, blind_rotation_basis).unwrap(),
-        primus_tfhe_ntru::DecompositionConfig {
-            log_basis: DecompositionBaseLog::new(10),
-            level_count: None,
+        GadgetEncryptionConfig {
+            decomposition: primus_tfhe_ntru::DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(10),
+                level_count: None,
+            },
+            noise_standard_deviation: 0.7,
         },
-        0.7,
     )
     .unwrap();
     let context = TfheContext::<_, Table, _>::from_parameters(tfhe);
@@ -67,16 +69,20 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr, sparse: bool) {
             log_basis: DecompositionBaseLog::new(8),
             level_count: Some(DecompositionLevelCount::new(levels)),
         },
-        trace: DecompositionConfig {
-            log_basis: DecompositionBaseLog::new(10),
-            level_count: None,
+        trace: GadgetEncryptionConfig {
+            decomposition: DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(10),
+                level_count: None,
+            },
+            noise_standard_deviation: 0.7,
         },
-        trace_noise_standard_deviation: 0.7,
-        scheme_switch: DecompositionConfig {
-            log_basis: DecompositionBaseLog::new(10),
-            level_count: None,
+        scheme_switch: GadgetEncryptionConfig {
+            decomposition: DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(10),
+                level_count: None,
+            },
+            noise_standard_deviation: 0.7,
         },
-        scheme_switch_noise_standard_deviation: 0.7,
     };
     // CBS-only material can be generated and bound before any return key exists.
     let mut generator = primus_tfhe_ntru_fourier::KeyGenerator::new(&context);
@@ -398,11 +404,13 @@ fn independent_cbs_material_does_not_require_a_return_key() {
         accumulator_secret_key_distr: SecretKeyDistr::gaussian(3.2),
         accumulator_noise_standard_deviation: 0.7,
         blind_rotation: full,
-        key_switching: DecompositionConfig {
-            log_basis: DecompositionBaseLog::new(2),
-            level_count: None,
+        key_switching: GadgetEncryptionConfig {
+            decomposition: DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(2),
+                level_count: None,
+            },
+            noise_standard_deviation: 0.7,
         },
-        key_switching_noise_standard_deviation: 0.7,
     })
     .unwrap();
     let context = TfheContext::<_, primus_fft::RustFftTable, _>::from_parameters(parameters);
@@ -438,10 +446,14 @@ fn independent_cbs_material_does_not_require_a_return_key() {
                 log_basis: DecompositionBaseLog::new(4),
                 level_count: Some(DecompositionLevelCount::new(1)),
             },
-            trace: full,
-            trace_noise_standard_deviation: 0.7,
-            scheme_switch: full,
-            scheme_switch_noise_standard_deviation: 0.7,
+            trace: GadgetEncryptionConfig {
+                decomposition: full,
+                noise_standard_deviation: 0.7,
+            },
+            scheme_switch: GadgetEncryptionConfig {
+                decomposition: full,
+                noise_standard_deviation: 0.7,
+            },
         },
     )
     .unwrap();

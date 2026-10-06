@@ -12,8 +12,8 @@ use primus_modulus::NativeModulus;
 use primus_poly::PolyLength;
 use primus_tfhe::sparse::BucketMapError;
 use primus_tfhe_glwe_fourier::{
-    BlindRotationConfig, BlindRotationKey, ClientKey, KeyGenerator, PbsOrder,
-    SparseBootstrappingKeyError as Error, TfheContext, TfheParameters,
+    BlindRotationConfig, BlindRotationKey, ClientKey, GadgetEncryptionConfig, KeyGenerator,
+    PbsOrder, SparseBootstrappingKeyError as Error, TfheContext, TfheParameters,
 };
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
@@ -38,8 +38,10 @@ fn context<Table: FftTable>(distribution: SecretKeyDistr) -> TfheContext<u64, Ta
     let parameters = TfheParameters::try_new(
         lwe.into_encryption_parameters(),
         primus_glwe::GgswParameters::try_with_basis(&glwe, basis.clone()).unwrap(),
-        basis,
-        glwe.noise_distribution().standard_deviation(),
+        GadgetEncryptionConfig {
+            decomposition: basis,
+            noise_standard_deviation: glwe.noise_distribution().standard_deviation(),
+        },
         PbsOrder::KeyswitchBootstrap,
     )
     .unwrap();

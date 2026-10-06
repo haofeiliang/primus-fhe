@@ -88,8 +88,8 @@ pub use primus_tfhe_ntru::SparseNtruBootstrappingKey;
 
 pub use primus_tfhe::{
     BivariateLookupTable, BlindRotationConfig, CircuitBootstrapConfig, ClientError,
-    DecompositionConfig, FactorizedLookupTable, InterleavedLookupTable, LookupTable,
-    LookupTableCompiler, Lwe, LweCiphertext, LweSecretKeyRef,
+    DecompositionConfig, FactorizedLookupTable, GadgetEncryptionConfig, InterleavedLookupTable,
+    LookupTable, LookupTableCompiler, Lwe, LweCiphertext, LweSecretKeyRef,
 };
 pub use primus_tfhe_ntru::{
     ClientKey, EncryptionKey, LwePublicKey, LweReturnBatchWorkspace, LweReturnEvaluator,

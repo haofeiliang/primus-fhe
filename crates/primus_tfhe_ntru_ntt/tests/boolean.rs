@@ -10,7 +10,8 @@ use primus_ntt::U32NttTable;
 use primus_poly::PolyLength;
 use primus_test_allocations as allocations;
 use primus_tfhe_ntru_ntt::{
-    BooleanGate, DecompositionConfig, LweCiphertext, TfheConfig, TfheContext, TfheParameters,
+    BooleanGate, DecompositionConfig, GadgetEncryptionConfig, LweCiphertext, TfheConfig,
+    TfheContext, TfheParameters,
 };
 use primus_tfhe_test_support::boolean;
 use rand::{SeedableRng, rngs::StdRng};
@@ -36,11 +37,13 @@ fn check_context(distr: SecretKeyDistr) {
             log_basis: DecompositionBaseLog::new(8),
             level_count: None,
         },
-        key_switching: DecompositionConfig {
-            log_basis: DecompositionBaseLog::new(8),
-            level_count: None,
+        key_switching: GadgetEncryptionConfig {
+            decomposition: DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(8),
+                level_count: None,
+            },
+            noise_standard_deviation: 0.7,
         },
-        key_switching_noise_standard_deviation: 0.7,
     })
     .unwrap();
     let context = TfheContext::<_, U32NttTable>::try_from_parameters(parameters).unwrap();

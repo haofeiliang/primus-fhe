@@ -13,8 +13,8 @@ use primus_poly::PolyLength;
 use primus_test_allocations as allocations;
 use primus_tfhe::{ProgrammableBootstrap, ProgrammableBootstrapInterleaved};
 use primus_tfhe_glwe_fourier::{
-    BlindRotationConfig, ClientKey, KeyGenerator, PbsOrder, TfheContext, TfheEvaluationError,
-    TfheParameters,
+    BlindRotationConfig, ClientKey, GadgetEncryptionConfig, KeyGenerator, PbsOrder, TfheContext,
+    TfheEvaluationError, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -54,12 +54,14 @@ fn context<Table: FftTable>(
             ),
         )
         .unwrap(),
-        ApproxSignedBasis::new(
-            None,
-            DecompositionBaseLog::new(8),
-            Some(DecompositionLevelCount::new(6)),
-        ),
-        1.25, // Independent KS noise also reaches complete sparse server-key generation.
+        GadgetEncryptionConfig {
+            decomposition: ApproxSignedBasis::new(
+                None,
+                DecompositionBaseLog::new(8),
+                Some(DecompositionLevelCount::new(6)),
+            ),
+            noise_standard_deviation: 1.25,
+        }, // Independent KS noise also reaches complete sparse server-key generation.
         order,
     )
     .unwrap();

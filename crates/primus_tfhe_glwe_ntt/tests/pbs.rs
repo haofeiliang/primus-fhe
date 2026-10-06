@@ -13,7 +13,7 @@ use primus_tfhe::{
     BivariateLookupTable, InterleavedLookupTable, LookupTable, Lwe, ProgrammableBootstrap,
     ProgrammableBootstrapInterleaved,
 };
-use primus_tfhe_glwe_ntt::{PbsOrder, TfheContext, TfheParameters};
+use primus_tfhe_glwe_ntt::{GadgetEncryptionConfig, PbsOrder, TfheContext, TfheParameters};
 use rand::{SeedableRng, rngs::StdRng};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
@@ -49,8 +49,10 @@ fn parameters<T: FheUint>(q: T, order: PbsOrder) -> TfheParameters<T> {
     TfheParameters::try_new(
         lwe.into_encryption_parameters(),
         primus_glwe::GgswParameters::try_with_basis(&glwe, bsk).unwrap(),
-        ApproxSignedBasis::new(Some(q), DecompositionBaseLog::new(8), None),
-        glwe.noise_distribution().standard_deviation(),
+        GadgetEncryptionConfig {
+            decomposition: ApproxSignedBasis::new(Some(q), DecompositionBaseLog::new(8), None),
+            noise_standard_deviation: glwe.noise_distribution().standard_deviation(),
+        },
         order,
     )
     .unwrap()

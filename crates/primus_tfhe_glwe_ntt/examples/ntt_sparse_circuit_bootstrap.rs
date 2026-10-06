@@ -13,7 +13,8 @@ use primus_ntt::U64NttTable as Table;
 use primus_poly::PolyLength;
 use primus_tfhe_glwe_ntt::{
     BlindRotationConfig, CircuitBootstrapConfig, CircuitBootstrapEvaluator, ClientKey,
-    DecompositionConfig, KeyGenerator, PbsOrder, TfheConfig, TfheContext, TfheParameters,
+    DecompositionConfig, GadgetEncryptionConfig, KeyGenerator, PbsOrder, TfheConfig, TfheContext,
+    TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -118,8 +119,10 @@ fn parameters() -> TfheParameters<Word> {
         accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
         accumulator_noise_standard_deviation: 6.4,
         blind_rotation: full,
-        key_switching: full,
-        key_switching_noise_standard_deviation: 6.4,
+        key_switching: GadgetEncryptionConfig {
+            decomposition: full,
+            noise_standard_deviation: 6.4,
+        },
         pbs_order: PbsOrder::BootstrapKeyswitch,
     })
     .unwrap()
@@ -136,9 +139,13 @@ fn circuit_config() -> CircuitBootstrapConfig {
             log_basis: DecompositionBaseLog::new(8),
             level_count: Some(DecompositionLevelCount::new(2)),
         },
-        trace: internal,
-        trace_noise_standard_deviation: 6.4,
-        scheme_switch: internal,
-        scheme_switch_noise_standard_deviation: 6.4,
+        trace: GadgetEncryptionConfig {
+            decomposition: internal,
+            noise_standard_deviation: 6.4,
+        },
+        scheme_switch: GadgetEncryptionConfig {
+            decomposition: internal,
+            noise_standard_deviation: 6.4,
+        },
     }
 }

@@ -15,7 +15,9 @@ use primus_tfhe::{
     BivariateLookupTable, InterleavedLookupTable, LookupTable, Lwe, ProgrammableBootstrap,
     ProgrammableBootstrapInterleaved,
 };
-use primus_tfhe_ntru_ntt::{BlindRotationConfig, TfheContext, TfheParameters};
+use primus_tfhe_ntru_ntt::{
+    BlindRotationConfig, GadgetEncryptionConfig, TfheContext, TfheParameters,
+};
 use rand::{SeedableRng, rngs::StdRng};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
@@ -49,11 +51,13 @@ fn parameters<T: FheUint>(q: T, distr: SecretKeyDistr, dimension: usize) -> Tfhe
     TfheParameters::try_new(
         lwe.into_encryption_parameters(),
         NlevParameters::try_with_basis(&acc, blind_rotation_basis).unwrap(),
-        primus_tfhe_ntru::DecompositionConfig {
-            log_basis: DecompositionBaseLog::new(8),
-            level_count: None,
+        GadgetEncryptionConfig {
+            decomposition: primus_tfhe_ntru::DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(8),
+                level_count: None,
+            },
+            noise_standard_deviation: 0.7,
         },
-        0.7,
     )
     .unwrap()
 }

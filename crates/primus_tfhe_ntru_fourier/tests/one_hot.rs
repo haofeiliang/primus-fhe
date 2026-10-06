@@ -15,7 +15,8 @@ use primus_poly::PolyLength;
 use primus_test_allocations as allocations;
 use primus_tfhe_ntru_fourier::{
     BlindRotationConfig, CircuitBootstrapConfig, CircuitBootstrapEvaluator, DecompositionConfig,
-    LweReturnEvaluator, OneHotCircuitBootstrapEvaluator, TfheContext, TfheParameters,
+    GadgetEncryptionConfig, LweReturnEvaluator, OneHotCircuitBootstrapEvaluator, TfheContext,
+    TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -83,8 +84,10 @@ fn selectors<Table: FftTable>(distr: SecretKeyDistr, sparse: bool) {
             0.7,
         ),
         NlevParameters::try_with_basis(&ring, blind_rotation_basis).unwrap(),
-        full,
-        0.7,
+        GadgetEncryptionConfig {
+            decomposition: full,
+            noise_standard_deviation: 0.7,
+        },
     )
     .unwrap();
     let context = TfheContext::<_, Table, _>::from_parameters(tfhe);
@@ -95,10 +98,14 @@ fn selectors<Table: FftTable>(distr: SecretKeyDistr, sparse: bool) {
             log_basis: DecompositionBaseLog::new(8),
             level_count: Some(DecompositionLevelCount::new(L)),
         },
-        trace: full,
-        trace_noise_standard_deviation: 0.7,
-        scheme_switch: full,
-        scheme_switch_noise_standard_deviation: 0.7,
+        trace: GadgetEncryptionConfig {
+            decomposition: full,
+            noise_standard_deviation: 0.7,
+        },
+        scheme_switch: GadgetEncryptionConfig {
+            decomposition: full,
+            noise_standard_deviation: 0.7,
+        },
     };
     let mut generator = primus_tfhe_ntru_fourier::KeyGenerator::new(&context);
     let client = generator.try_generate_client_key(&mut rng).unwrap();

@@ -10,7 +10,8 @@ use primus_reduce::RingContext;
 use primus_test_allocations as allocations;
 use primus_tfhe_glwe::{
     BooleanDecryptor, BooleanEncryptor, BooleanError, ClientError, ClientKey, EncryptionKey,
-    Encryptor, Lwe, PbsOrder, TfheClientError, TfheKeyError, TfheParameters,
+    Encryptor, GadgetEncryptionConfig, Lwe, PbsOrder, TfheClientError, TfheKeyError,
+    TfheParameters,
 };
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
@@ -44,8 +45,14 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
         let params = TfheParameters::try_new(
             small.into_encryption_parameters(),
             primus_glwe::GgswParameters::try_with_basis(&glwe, bsk).unwrap(),
-            ApproxSignedBasis::new(modulus.explicit_value(), DecompositionBaseLog::new(8), None),
-            glwe.noise_distribution().standard_deviation(),
+            GadgetEncryptionConfig {
+                decomposition: ApproxSignedBasis::new(
+                    modulus.explicit_value(),
+                    DecompositionBaseLog::new(8),
+                    None,
+                ),
+                noise_standard_deviation: glwe.noise_distribution().standard_deviation(),
+            },
             order,
         )
         .unwrap();
@@ -284,8 +291,10 @@ fn boolean_clients_reject_other_plaintext_moduli() {
                 ApproxSignedBasis::new(None, DecompositionBaseLog::new(8), None),
             )
             .unwrap(),
-            ApproxSignedBasis::new(None, DecompositionBaseLog::new(8), None),
-            0.7,
+            GadgetEncryptionConfig {
+                decomposition: ApproxSignedBasis::new(None, DecompositionBaseLog::new(8), None),
+                noise_standard_deviation: 0.7,
+            },
             PbsOrder::BootstrapKeyswitch,
         )
         .unwrap();
@@ -340,12 +349,14 @@ fn external_binding_checks_small_secret_coefficients_without_an_accumulator() {
                     ),
                 )
                 .unwrap(),
-                ApproxSignedBasis::new(
-                    modulus.explicit_value(),
-                    DecompositionBaseLog::new(8),
-                    None,
-                ),
-                0.7,
+                GadgetEncryptionConfig {
+                    decomposition: ApproxSignedBasis::new(
+                        modulus.explicit_value(),
+                        DecompositionBaseLog::new(8),
+                        None,
+                    ),
+                    noise_standard_deviation: 0.7,
+                },
                 PbsOrder::BootstrapKeyswitch,
             )
             .unwrap();
@@ -487,11 +498,13 @@ fn message_codec_must_match_the_key_ciphertext_modulus() {
             log_basis: DecompositionBaseLog::new(8),
             level_count: None,
         },
-        key_switching: DecompositionConfig {
-            log_basis: DecompositionBaseLog::new(8),
-            level_count: None,
+        key_switching: GadgetEncryptionConfig {
+            decomposition: DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(8),
+                level_count: None,
+            },
+            noise_standard_deviation: 0.7,
         },
-        key_switching_noise_standard_deviation: 0.7,
         pbs_order: PbsOrder::BootstrapKeyswitch,
     })
     .unwrap();

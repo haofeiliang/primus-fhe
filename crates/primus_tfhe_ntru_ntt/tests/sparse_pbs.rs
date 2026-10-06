@@ -14,7 +14,9 @@ use primus_ntt::{MonomialNttTable, U32NttTable, U64NttTable};
 use primus_poly::PolyLength;
 use primus_test_allocations::{CountingAllocator, measure};
 use primus_tfhe::rotation::RotationModulusSwitch;
-use primus_tfhe_ntru_ntt::{BlindRotationConfig, KeyGenerator, TfheContext, TfheParameters};
+use primus_tfhe_ntru_ntt::{
+    BlindRotationConfig, GadgetEncryptionConfig, KeyGenerator, TfheContext, TfheParameters,
+};
 use rand::{SeedableRng, rngs::StdRng};
 
 #[global_allocator]
@@ -54,11 +56,13 @@ fn context<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
         TfheParameters::try_new(
             lwe.into_encryption_parameters(),
             NlevParameters::try_with_basis(&acc, blind_rotation_basis).unwrap(),
-            primus_tfhe_ntru::DecompositionConfig {
-                log_basis: DecompositionBaseLog::new(8),
-                level_count: None,
+            GadgetEncryptionConfig {
+                decomposition: primus_tfhe_ntru::DecompositionConfig {
+                    log_basis: DecompositionBaseLog::new(8),
+                    level_count: None,
+                },
+                noise_standard_deviation: 0.7,
             },
-            0.7,
         )
         .unwrap(),
     )
@@ -428,10 +432,14 @@ fn sparse_generation_rejects_invalid_secrets_buckets_and_cbs_before_sampling() {
             log_basis: DecompositionBaseLog::new(8),
             level_count: Some(DecompositionLevelCount::new(1)),
         },
-        trace: decomposition,
-        trace_noise_standard_deviation: -1.0,
-        scheme_switch: decomposition,
-        scheme_switch_noise_standard_deviation: 0.7,
+        trace: GadgetEncryptionConfig {
+            decomposition,
+            noise_standard_deviation: -1.0,
+        },
+        scheme_switch: GadgetEncryptionConfig {
+            decomposition,
+            noise_standard_deviation: 0.7,
+        },
     };
     rng = StdRng::seed_from_u64(0xBAD);
     let mut untouched = StdRng::seed_from_u64(0xBAD);

@@ -14,8 +14,8 @@ use primus_lwe::LweEncryptionParameters;
 use primus_modulus::NativeModulus;
 use primus_poly::PolyLength;
 use primus_tfhe_glwe_fourier::{
-    BlindRotationConfig, ClientKey, DecompositionConfig, KeyGenerator, PbsOrder, TfheConfig,
-    TfheContext, TfheParameters,
+    BlindRotationConfig, ClientKey, DecompositionConfig, GadgetEncryptionConfig, KeyGenerator,
+    PbsOrder, TfheConfig, TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -114,8 +114,10 @@ fn parameters() -> TfheParameters<Word> {
         accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
         accumulator_noise_standard_deviation: 6.4,
         blind_rotation: full,
-        key_switching: full,
-        key_switching_noise_standard_deviation: 6.4,
+        key_switching: GadgetEncryptionConfig {
+            decomposition: full,
+            noise_standard_deviation: 6.4,
+        },
         pbs_order: PbsOrder::BootstrapKeyswitch,
     })
     .unwrap()

@@ -63,9 +63,9 @@ pub use sparse::SparseGlweBootstrappingKey;
 pub use primus_tfhe::{
     BOOLEAN_PLAINTEXT_BITS, BivariateLookupTable, BooleanDecryptor, BooleanEncryptor, BooleanError,
     BooleanEvaluator, BooleanGate, CircuitBootstrapConfig, ClientError, DecompositionConfig,
-    Decryptor, EncryptionKey, Encryptor, InterleavedLookupTable, LookupTable, LookupTableCompiler,
-    LookupTableError, Lwe, LweCiphertext, LweSecretKeyRef, ProgrammableBootstrap,
-    ProgrammableBootstrapInterleaved, TfheEvaluationError,
+    Decryptor, EncryptionKey, Encryptor, GadgetEncryptionConfig, InterleavedLookupTable,
+    LookupTable, LookupTableCompiler, LookupTableError, Lwe, LweCiphertext, LweSecretKeyRef,
+    ProgrammableBootstrap, ProgrammableBootstrapInterleaved, TfheEvaluationError,
 };
 
 pub use primus_glwe::SecretKeyDistr;

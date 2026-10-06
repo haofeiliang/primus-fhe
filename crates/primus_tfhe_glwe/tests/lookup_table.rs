@@ -9,7 +9,9 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
     use primus_decompose::primitive::ApproxSignedBasis;
     use primus_glwe::{GlweParameters, GlweSecretKey, GlweSize, SecretKeyDistr};
     use primus_lwe::{LweParameters, LweSecretKey};
-    use primus_tfhe_glwe::{ClientError, ClientKey, PbsOrder, TfheParameters};
+    use primus_tfhe_glwe::{
+        ClientError, ClientKey, GadgetEncryptionConfig, PbsOrder, TfheParameters,
+    };
     use rand::{SeedableRng, rngs::StdRng};
 
     let mut rng = StdRng::seed_from_u64(0x5041_4444_4544);
@@ -39,8 +41,10 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
         let parameters = TfheParameters::try_new(
             lwe.into_encryption_parameters(),
             primus_glwe::GgswParameters::try_with_basis(&glwe, bsk).unwrap(),
-            ApproxSignedBasis::new(None, DecompositionBaseLog::new(8), None),
-            glwe.noise_distribution().standard_deviation(),
+            GadgetEncryptionConfig {
+                decomposition: ApproxSignedBasis::new(None, DecompositionBaseLog::new(8), None),
+                noise_standard_deviation: glwe.noise_distribution().standard_deviation(),
+            },
             PbsOrder::BootstrapKeyswitch,
         )
         .unwrap();

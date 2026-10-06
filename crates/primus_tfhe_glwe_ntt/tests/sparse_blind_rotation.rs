@@ -12,8 +12,9 @@ use primus_ntt::{NttTable, U32NttTable};
 use primus_poly::{PolyLength, Polynomial};
 use primus_test_allocations as allocations;
 use primus_tfhe_glwe_ntt::{
-    ClientKey, KeyGenerator, NttGlweBlindRotationWorkspace, NttGlweBootstrappingKey, PbsOrder,
-    SparseGlweBlindRotationWorkspace, TfheContext, TfheParameters,
+    ClientKey, GadgetEncryptionConfig, KeyGenerator, NttGlweBlindRotationWorkspace,
+    NttGlweBootstrappingKey, PbsOrder, SparseGlweBlindRotationWorkspace, TfheContext,
+    TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -87,8 +88,10 @@ fn sparse_rotation_matches_direct_phase_and_classic_with_reused_scratch() {
         let parameters = TfheParameters::try_new(
             lwe.into_encryption_parameters(),
             primus_glwe::GgswParameters::try_with_basis(&glwe, basis.clone()).unwrap(),
-            basis,
-            glwe.noise_distribution().standard_deviation(),
+            GadgetEncryptionConfig {
+                decomposition: basis,
+                noise_standard_deviation: glwe.noise_distribution().standard_deviation(),
+            },
             PbsOrder::KeyswitchBootstrap,
         )
         .unwrap();

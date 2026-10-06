@@ -1,6 +1,22 @@
-//! Independent choices for blind rotation and circuit bootstrapping.
+//! Independent choices for evaluation keys and bootstrapping.
 
 use primus_decompose::DecompositionConfig;
+
+/// Gadget decomposition and row-encryption noise for one evaluation-key role.
+///
+/// By default, `D` is [`DecompositionConfig`], resolved at parameter construction.
+/// Constructors that accept a prepared basis use it as `D` and take ownership
+/// without rebuilding it.
+/// The consuming constructor supplies the key's layout and modulus and validates
+/// the choices; this configuration alone does not establish a noise/security budget.
+#[derive(Debug, Clone, Copy)]
+pub struct GadgetEncryptionConfig<D = DecompositionConfig> {
+    /// Decomposition choices or an already prepared basis, as required by the constructor.
+    pub decomposition: D,
+    /// Encryption noise standard deviation in coefficient units at the key's modulus.
+    /// Each key role selects its noise independently of fresh ciphertext encryption.
+    pub noise_standard_deviation: f64,
+}
 
 /// Blind-rotation algorithm used to generate evaluation material for an existing client.
 ///
@@ -31,13 +47,10 @@ pub enum BlindRotationConfig {
 #[derive(Debug, Clone, Copy)]
 pub struct CircuitBootstrapConfig {
     /// Gadget scalars encoded by the output GGSW/NGSW.
+    /// This selects the output encoding, not a separate key's encryption noise.
     pub output: DecompositionConfig,
-    /// Decomposition used by reverse-trace key switching.
-    pub trace: DecompositionConfig,
-    /// Standard deviation for trace-key encryption.
-    pub trace_noise_standard_deviation: f64,
-    /// Decomposition used by scheme switching.
-    pub scheme_switch: DecompositionConfig,
-    /// Standard deviation for scheme-switch-key encryption.
-    pub scheme_switch_noise_standard_deviation: f64,
+    /// Reverse-trace key decomposition and noise at the accumulator modulus.
+    pub trace: GadgetEncryptionConfig,
+    /// Scheme-switch key decomposition and noise at the accumulator modulus.
+    pub scheme_switch: GadgetEncryptionConfig,
 }

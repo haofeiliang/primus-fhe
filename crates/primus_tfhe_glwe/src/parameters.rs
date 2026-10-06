@@ -1,6 +1,6 @@
 //! Parameters for GLWE-based TFHE.
 
-use crate::TfheParameterError;
+use crate::{GadgetEncryptionConfig, TfheParameterError};
 use primus_decompose::{DecompositionConfig, primitive::ApproxSignedBasis};
 use primus_glwe::{GlweEncryptionParameters, GlweSize};
 use primus_integer::FheUint;
@@ -44,11 +44,9 @@ pub struct TfheConfig<T: FheUint, M: RingContext<T>> {
     pub accumulator_noise_standard_deviation: f64,
     /// GGSW decomposition for blind rotation.
     pub blind_rotation: DecompositionConfig,
-    /// Decomposition for the GLWE key switch.
-    pub key_switching: DecompositionConfig,
-    /// Coefficient-unit standard deviation for ring-KS row encryption in both
-    /// PBS orders, independent of accumulator and fresh small-LWE noise.
-    pub key_switching_noise_standard_deviation: f64,
+    /// Ring-KS decomposition and row noise at the common ciphertext modulus in
+    /// both PBS orders, independent of accumulator and fresh small-LWE noise.
+    pub key_switching: GadgetEncryptionConfig,
     /// Order determining the external LWE secret domain.
     pub pbs_order: PbsOrder,
 }
@@ -72,8 +70,9 @@ impl<T: FheUint, M: RingContext<T>> TfheParameters<T, M> {
             .blind_rotation
             .try_build(modulus.explicit_value())
             .map_err(|error| TfheParameterError::BootstrappingParameters(error.into()))?;
-        let key_switching = config
+        let key_switching_basis = config
             .key_switching
+            .decomposition
             .try_build(modulus.explicit_value())
             .map_err(|error| TfheParameterError::KeySwitchingParameters(error.into()))?;
         let blind_rotation = GgswParameters::try_from_parts(size, Arc::new(inner), blind_rotation)
@@ -81,8 +80,10 @@ impl<T: FheUint, M: RingContext<T>> TfheParameters<T, M> {
         Self::try_new(
             config.small_lwe,
             blind_rotation,
-            key_switching,
-            config.key_switching_noise_standard_deviation,
+            GadgetEncryptionConfig {
+                decomposition: key_switching_basis,
+                noise_standard_deviation: config.key_switching.noise_standard_deviation,
+            },
             config.pbs_order,
         )
     }
@@ -116,8 +117,9 @@ where
     /// Both gadget bases must belong to the accumulator modulus. Bootstrapping
     /// uses its layout, secret distribution and noise. Key switching targets
     /// the padded binary or ternary `small_lwe` secret and uses the independent
-    /// `key_switching_noise_standard_deviation`, in coefficient units at the
+    /// `key_switching.noise_standard_deviation`, in coefficient units at the
     /// common ciphertext modulus. This choice does not change fresh LWE noise.
+    /// The prepared key-switch basis is moved into the derived parameters.
     ///
     /// # Errors
     ///
@@ -127,8 +129,7 @@ where
     pub fn try_new(
         small_lwe: LweEncryptionParameters<T, M>,
         blind_rotation_ggsw: GgswParameters<T, M>,
-        key_switching_basis: ApproxSignedBasis<T>,
-        key_switching_noise_standard_deviation: f64,
+        key_switching: GadgetEncryptionConfig<ApproxSignedBasis<T>>,
         pbs_order: PbsOrder,
     ) -> Result<Self, TfheParameterError> {
         let distribution = small_lwe.secret_key_distr();
@@ -154,8 +155,7 @@ where
             small_lwe.dimension(),
             small_lwe.secret_key_distr(),
             &blind_rotation_ggsw,
-            key_switching_basis,
-            key_switching_noise_standard_deviation,
+            key_switching,
         )?;
         Ok(Self {
             small_lwe,
@@ -173,8 +173,7 @@ where
         small_lwe_dimension: LweDimension,
         small_lwe_distr: SecretKeyDistr,
         accumulator: &GgswParameters<T, M>,
-        basis: ApproxSignedBasis<T>,
-        noise_standard_deviation: f64,
+        key_switching: GadgetEncryptionConfig<ApproxSignedBasis<T>>,
     ) -> Result<GlweKeySwitchingParameters<T, M>, TfheParameterError> {
         let output_dimension = small_lwe_dimension
             .get()
@@ -188,11 +187,15 @@ where
         let inner = GlweEncryptionParameters::try_new(
             accumulator.cipher_modulus(),
             small_lwe_distr,
-            noise_standard_deviation,
+            key_switching.noise_standard_deviation,
         )
         .map_err(TfheParameterError::KeySwitchingEncryption)?;
-        let output = GlevParameters::try_from_parts(output_size, Arc::new(inner), basis)
-            .map_err(TfheParameterError::KeySwitchingParameters)?;
+        let output = GlevParameters::try_from_parts(
+            output_size,
+            Arc::new(inner),
+            key_switching.decomposition,
+        )
+        .map_err(TfheParameterError::KeySwitchingParameters)?;
         GlweKeySwitchingParameters::try_new(accumulator.dimension(), output)
             .map_err(|error| TfheParameterError::KeySwitchingParameters(error.into()))
     }

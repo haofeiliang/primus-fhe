@@ -15,7 +15,8 @@ use primus_modulus::{NativeModulus, PowOf2Modulus};
 use primus_ntru::SecretKeyDistr;
 use primus_poly::PolyLength;
 use primus_tfhe_ntru_fourier::{
-    BlindRotationConfig, DecompositionConfig, KeyGenerator, TfheConfig, TfheContext, TfheParameters,
+    BlindRotationConfig, DecompositionConfig, GadgetEncryptionConfig, KeyGenerator, TfheConfig,
+    TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -108,11 +109,14 @@ fn parameters() -> TfheParameters<Word, PowOf2Modulus<Word>> {
         accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
         accumulator_noise_standard_deviation: 0.7,
         blind_rotation: full,
-        key_switching: DecompositionConfig {
-            log_basis: DecompositionBaseLog::new(3),
-            level_count: None,
+        // Return key switch in the q domain.
+        key_switching: GadgetEncryptionConfig {
+            decomposition: DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(3),
+                level_count: None,
+            },
+            noise_standard_deviation: 3.2,
         },
-        key_switching_noise_standard_deviation: 3.2, // Return key switch in the q domain.
     })
     .unwrap()
 }

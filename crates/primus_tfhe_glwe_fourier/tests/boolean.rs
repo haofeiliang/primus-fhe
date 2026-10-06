@@ -9,7 +9,8 @@ use primus_lwe::LweParameters;
 use primus_modulus::NativeModulus;
 use primus_poly::PolyLength;
 use primus_tfhe_glwe_fourier::{
-    BooleanError, BooleanGate, LweCiphertext, PbsOrder, TfheContext, TfheParameters,
+    BooleanError, BooleanGate, GadgetEncryptionConfig, LweCiphertext, PbsOrder, TfheContext,
+    TfheParameters,
 };
 use primus_tfhe_test_support::boolean;
 use rand::{SeedableRng, rngs::StdRng};
@@ -42,12 +43,14 @@ fn parameters(pbs_order: PbsOrder) -> TfheParameters<u32> {
     TfheParameters::try_new(
         lwe.into_encryption_parameters(),
         primus_glwe::GgswParameters::try_with_basis(&glwe, bootstrapping).unwrap(),
-        ApproxSignedBasis::new(
-            None,
-            DecompositionBaseLog::new(4),
-            Some(DecompositionLevelCount::new(4)),
-        ),
-        glwe.noise_distribution().standard_deviation(),
+        GadgetEncryptionConfig {
+            decomposition: ApproxSignedBasis::new(
+                None,
+                DecompositionBaseLog::new(4),
+                Some(DecompositionLevelCount::new(4)),
+            ),
+            noise_standard_deviation: glwe.noise_distribution().standard_deviation(),
+        },
         pbs_order,
     )
     .unwrap()

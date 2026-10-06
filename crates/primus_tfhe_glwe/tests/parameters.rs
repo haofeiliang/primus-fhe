@@ -5,7 +5,9 @@ use primus_lattice::{GlweDimension, LweDimension};
 use primus_lwe::LweParameters;
 use primus_modulus::NativeModulus;
 use primus_poly::PolyLength;
-use primus_tfhe_glwe::{DecompositionConfig, PbsOrder, TfheConfig, TfheParameters};
+use primus_tfhe_glwe::{
+    DecompositionConfig, GadgetEncryptionConfig, PbsOrder, TfheConfig, TfheParameters,
+};
 use std::error::Error;
 
 const LWE_DIMENSION: usize = 8;
@@ -63,11 +65,13 @@ fn derives_bootstrapping_and_key_switching_for_both_orders() {
                 log_basis: DecompositionBaseLog::new(8),
                 level_count: Some(DecompositionLevelCount::new(3)),
             },
-            key_switching: DecompositionConfig {
-                log_basis: DecompositionBaseLog::new(4),
-                level_count: Some(DecompositionLevelCount::new(4)),
+            key_switching: GadgetEncryptionConfig {
+                decomposition: DecompositionConfig {
+                    log_basis: DecompositionBaseLog::new(4),
+                    level_count: Some(DecompositionLevelCount::new(4)),
+                },
+                noise_standard_deviation: 1.25,
             },
-            key_switching_noise_standard_deviation: 1.25,
             pbs_order: order,
         })
         .unwrap();
@@ -112,8 +116,10 @@ fn derives_bootstrapping_and_key_switching_for_both_orders() {
         let changed = TfheParameters::try_new(
             parameters.small_lwe().clone(),
             parameters.blind_rotation_ggsw().clone(),
-            basis.clone(),
-            2.5,
+            GadgetEncryptionConfig {
+                decomposition: basis.clone(),
+                noise_standard_deviation: 2.5,
+            },
             order,
         )
         .unwrap();
@@ -170,12 +176,14 @@ fn rejects_key_switching_basis_from_another_modulus() {
     let result = TfheParameters::try_new(
         small_lwe.into_encryption_parameters(),
         GgswParameters::try_with_basis(&glwe, basis).unwrap(),
-        ApproxSignedBasis::new(
-            Some(257),
-            DecompositionBaseLog::new(4),
-            Some(DecompositionLevelCount::new(2)),
-        ),
-        glwe.noise_distribution().standard_deviation(),
+        GadgetEncryptionConfig {
+            decomposition: ApproxSignedBasis::new(
+                Some(257),
+                DecompositionBaseLog::new(4),
+                Some(DecompositionLevelCount::new(2)),
+            ),
+            noise_standard_deviation: glwe.noise_distribution().standard_deviation(),
+        },
         PbsOrder::BootstrapKeyswitch,
     );
     let error = result.err().unwrap();
@@ -222,8 +230,10 @@ fn rotation_domain_must_be_representable_by_input_coefficients() {
             TfheParameters::try_new(
                 small_lwe.into_encryption_parameters(),
                 primus_glwe::GgswParameters::try_with_basis(&glwe, basis.clone()).unwrap(),
-                basis,
-                glwe.noise_distribution().standard_deviation(),
+                GadgetEncryptionConfig {
+                    decomposition: basis,
+                    noise_standard_deviation: glwe.noise_distribution().standard_deviation(),
+                },
                 PbsOrder::BootstrapKeyswitch
             )
             .err(),
@@ -260,8 +270,10 @@ fn check_ternary_padding<M: primus_reduce::RingContext<u32>>(modulus: M) {
             (LweParameters::new(LweDimension::new(33), 2, modulus, distribution, 0.7))
                 .into_encryption_parameters(),
             primus_glwe::GgswParameters::try_with_basis(&glwe, basis.clone()).unwrap(),
-            basis.clone(),
-            glwe.noise_distribution().standard_deviation(),
+            GadgetEncryptionConfig {
+                decomposition: basis.clone(),
+                noise_standard_deviation: glwe.noise_distribution().standard_deviation(),
+            },
             PbsOrder::BootstrapKeyswitch,
         );
         if !distribution.is_ternary() {
@@ -327,8 +339,10 @@ fn check_circuit_parameters<M: primus_reduce::RingContext<u64>>(modulus: M, fore
         ))
         .into_encryption_parameters(),
         primus_glwe::GgswParameters::try_with_basis(&glwe, basis.clone()).unwrap(),
-        basis,
-        glwe.noise_distribution().standard_deviation(),
+        GadgetEncryptionConfig {
+            decomposition: basis,
+            noise_standard_deviation: glwe.noise_distribution().standard_deviation(),
+        },
         PbsOrder::BootstrapKeyswitch,
     )
     .unwrap();
@@ -337,16 +351,20 @@ fn check_circuit_parameters<M: primus_reduce::RingContext<u64>>(modulus: M, fore
             log_basis: DecompositionBaseLog::new(8),
             level_count: Some(DecompositionLevelCount::new(2)),
         },
-        trace: DecompositionConfig {
-            log_basis: DecompositionBaseLog::new(9),
-            level_count: Some(DecompositionLevelCount::new(3)),
+        trace: GadgetEncryptionConfig {
+            decomposition: DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(9),
+                level_count: Some(DecompositionLevelCount::new(3)),
+            },
+            noise_standard_deviation: 1.25,
         },
-        trace_noise_standard_deviation: 1.25,
-        scheme_switch: DecompositionConfig {
-            log_basis: DecompositionBaseLog::new(10),
-            level_count: Some(DecompositionLevelCount::new(4)),
+        scheme_switch: GadgetEncryptionConfig {
+            decomposition: DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(10),
+                level_count: Some(DecompositionLevelCount::new(4)),
+            },
+            noise_standard_deviation: 2.5,
         },
-        scheme_switch_noise_standard_deviation: 2.5,
     };
     let configured = CircuitBootstrapParameters::try_from_config(&tfhe, config).unwrap();
     assert_eq!(configured.output_size().glwe_size(), glwe.size());
@@ -363,8 +381,14 @@ fn check_circuit_parameters<M: primus_reduce::RingContext<u64>>(modulus: M, fore
         let mut invalid = config;
         match role {
             "output" => invalid.output.level_count = Some(DecompositionLevelCount::new(usize::MAX)),
-            "trace" => invalid.trace.level_count = Some(DecompositionLevelCount::new(usize::MAX)),
-            _ => invalid.scheme_switch.level_count = Some(DecompositionLevelCount::new(usize::MAX)),
+            "trace" => {
+                invalid.trace.decomposition.level_count =
+                    Some(DecompositionLevelCount::new(usize::MAX))
+            }
+            _ => {
+                invalid.scheme_switch.decomposition.level_count =
+                    Some(DecompositionLevelCount::new(usize::MAX))
+            }
         }
         let error = CircuitBootstrapParameters::try_from_config(&tfhe, invalid)
             .err()
@@ -501,22 +525,26 @@ fn configs_return_role_specific_sampling_errors() {
         accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
         accumulator_noise_standard_deviation: 0.7,
         blind_rotation: basis,
-        key_switching: basis,
-        key_switching_noise_standard_deviation: 0.7,
+        key_switching: GadgetEncryptionConfig {
+            decomposition: basis,
+            noise_standard_deviation: 0.7,
+        },
         pbs_order: PbsOrder::BootstrapKeyswitch,
     };
     let tfhe = TfheParameters::try_from_config(config.clone()).unwrap();
     // Both TFHE constructors reject invalid independent KS noise at setup.
     for sigma in [0.0, -1.0, f64::NAN, f64::INFINITY, f64::MAX] {
         let mut invalid = config.clone();
-        invalid.key_switching_noise_standard_deviation = sigma;
+        invalid.key_switching.noise_standard_deviation = sigma;
         for result in [
             TfheParameters::try_from_config(invalid),
             TfheParameters::try_new(
                 tfhe.small_lwe().clone(),
                 tfhe.blind_rotation_ggsw().clone(),
-                tfhe.glwe_key_switching().output().basis().clone(),
-                sigma,
+                GadgetEncryptionConfig {
+                    decomposition: tfhe.glwe_key_switching().output().basis().clone(),
+                    noise_standard_deviation: sigma,
+                },
                 tfhe.pbs_order(),
             ),
         ] {
@@ -550,18 +578,22 @@ fn configs_return_role_specific_sampling_errors() {
 
     let cbs = CircuitBootstrapConfig {
         output: basis,
-        trace: basis,
-        trace_noise_standard_deviation: 0.7,
-        scheme_switch: basis,
-        scheme_switch_noise_standard_deviation: 0.7,
+        trace: GadgetEncryptionConfig {
+            decomposition: basis,
+            noise_standard_deviation: 0.7,
+        },
+        scheme_switch: GadgetEncryptionConfig {
+            decomposition: basis,
+            noise_standard_deviation: 0.7,
+        },
     };
     assert!(CircuitBootstrapParameters::try_from_config(&tfhe, cbs).is_ok());
     for role in ["trace", "scheme-switch"] {
         let mut invalid = cbs;
         if role == "trace" {
-            invalid.trace_noise_standard_deviation = 0.0;
+            invalid.trace.noise_standard_deviation = 0.0;
         } else {
-            invalid.scheme_switch_noise_standard_deviation = f64::INFINITY;
+            invalid.scheme_switch.noise_standard_deviation = f64::INFINITY;
         }
         let error = CircuitBootstrapParameters::try_from_config(&tfhe, invalid)
             .err()

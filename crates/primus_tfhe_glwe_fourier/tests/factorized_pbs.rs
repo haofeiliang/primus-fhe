@@ -11,8 +11,9 @@ use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_test_allocations as allocations;
 use primus_tfhe_glwe_fourier::{
-    BlindRotationConfig, FactorizedLookupTable, FourierFactorizedLookupTable, KeyGenerator,
-    LookupTable, LookupTableError, PbsOrder, TfheContext, TfheParameters,
+    BlindRotationConfig, FactorizedLookupTable, FourierFactorizedLookupTable,
+    GadgetEncryptionConfig, KeyGenerator, LookupTable, LookupTableError, PbsOrder, TfheContext,
+    TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -57,12 +58,14 @@ fn context<T: TorusFftValue, Table: FftTable>(
                 ),
             )
             .unwrap(),
-            ApproxSignedBasis::new(
-                None,
-                DecompositionBaseLog::new(4),
-                Some(DecompositionLevelCount::new(6)),
-            ),
-            0.7,
+            GadgetEncryptionConfig {
+                decomposition: ApproxSignedBasis::new(
+                    None,
+                    DecompositionBaseLog::new(4),
+                    Some(DecompositionLevelCount::new(6)),
+                ),
+                noise_standard_deviation: 0.7,
+            },
             order,
         )
         .unwrap(),

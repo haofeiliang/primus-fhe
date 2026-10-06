@@ -8,9 +8,9 @@ use primus_ntt::U32NttTable;
 use primus_poly::PolyLength;
 use primus_test_allocations as allocations;
 use primus_tfhe_ntru_ntt::{
-    DecompositionConfig, FactorizedLookupTable, InterleavedLookupTable, LookupTable,
-    LookupTableError, LweCiphertext, NttFactorizedLookupTable, TfheConfig, TfheContext,
-    TfheParameters,
+    DecompositionConfig, FactorizedLookupTable, GadgetEncryptionConfig, InterleavedLookupTable,
+    LookupTable, LookupTableError, LweCiphertext, NttFactorizedLookupTable, TfheConfig,
+    TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -38,11 +38,13 @@ fn context(distr: SecretKeyDistr) -> TfheContext<u32, U32NttTable> {
             log_basis: DecompositionBaseLog::new(8),
             level_count: None,
         },
-        key_switching: DecompositionConfig {
-            log_basis: DecompositionBaseLog::new(8),
-            level_count: None,
+        key_switching: GadgetEncryptionConfig {
+            decomposition: DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(8),
+                level_count: None,
+            },
+            noise_standard_deviation: 0.7,
         },
-        key_switching_noise_standard_deviation: 0.7,
     })
     .unwrap();
     TfheContext::try_from_parameters(parameters).unwrap()

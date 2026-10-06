@@ -6,8 +6,8 @@ use primus_lwe::LweEncryptionParameters;
 use primus_modulus::NativeModulus;
 use primus_poly::PolyLength;
 use primus_tfhe_ntru_fourier::{
-    BlindRotationConfig, DecompositionConfig, TfheConfig, TfheContext, TfheEvaluationError,
-    TfheParameters,
+    BlindRotationConfig, DecompositionConfig, GadgetEncryptionConfig, TfheConfig, TfheContext,
+    TfheEvaluationError, TfheParameters,
 };
 
 use primus_encoding::RoundedCodec;
@@ -47,8 +47,10 @@ fn check<T: TorusFftValue, Table: FftTable>() {
                 log_basis: DecompositionBaseLog::new(8),
                 level_count: None,
             },
-            key_switching: decomposition,
-            key_switching_noise_standard_deviation: 0.7,
+            key_switching: GadgetEncryptionConfig {
+                decomposition,
+                noise_standard_deviation: 0.7,
+            },
         };
         let context = TfheContext::<_, Table, _>::from_parameters(
             TfheParameters::try_from_config(config.clone()).unwrap(),
