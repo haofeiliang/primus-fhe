@@ -64,7 +64,7 @@ cargo tree --manifest-path /tmp/primus-consumer/Cargo.toml -e normal,features
 
 | 消费者 | 正常依赖中应保留 / 排除的能力 |
 | --- | --- |
-| 纯 LWE、公共高精 LUT 编译 | 无 NTT、FFT 或具体 TFHE 后端；LUT 编译保留 family 参数层 |
+| 纯 LWE、公共高精 LUT 编译 | 无 NTT、FFT 或具体 TFHE 后端；纯 LUT 编译也不依赖 TFHE family 参数层 |
 | GLWE/NTRU NTT PBS、NTT 高精 LUT、RNS GLWE | 有 NTT，无 FFT |
 | GLWE/NTRU Fourier PBS、Fourier 高精 LUT | 无 NTT，只有显式选定的 RustFFT 或 TFHE-FFT |
 

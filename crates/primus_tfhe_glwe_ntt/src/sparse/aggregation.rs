@@ -90,7 +90,7 @@ fn reduce_group_assign<T: FheUint>(values: &mut [T], modulus: BarrettModulus<T>)
     }
 }
 
-/// For B=2^64, ratio[1]=floor(B/q). Its high product estimates floor(x/q)
+/// For `B=2^64`, `ratio[1]=floor(B/q)`. Its high product estimates `floor(x/q)`
 /// from below with error at most one. Omitting the low-low 32-bit product loses
 /// at most one more, so x-estimate*q is in [0,3q). Two corrections suffice.
 /// The partial-product sum fits u64, and Barrett's q<B/4 keeps 3q below B.
