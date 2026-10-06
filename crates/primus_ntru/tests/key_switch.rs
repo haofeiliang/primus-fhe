@@ -1,6 +1,7 @@
 //! Independent NTRU key switching and validation before output mutation.
 
 use primus_decompose::DecompositionBaseLog;
+use primus_encoding::PlaintextEmbedding;
 use primus_poly::PolyLength;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
@@ -65,9 +66,10 @@ fn ntt_key_switch_preserves_plaintext() {
 
     let message = message();
     let input = input_key
-        .encrypt(
+        .encrypt_message(
             &Polynomial::new(message.as_slice()),
             &parameters,
+            PlaintextEmbedding::Unsigned,
             &ntt,
             &mut rng,
         )
@@ -77,7 +79,9 @@ fn ntt_key_switch_preserves_plaintext() {
     let switched = switched.into_ntt_form(&ntt);
 
     assert_eq!(
-        output_key.decrypt(&switched, &parameters, &ntt).as_ref(),
+        output_key
+            .decrypt_message(&switched, &parameters, &ntt)
+            .as_ref(),
         message
     );
 }
@@ -124,9 +128,10 @@ fn check_fourier_key_switch<Table: FftTable>() {
 
     let message = message();
     let mut encrypt_workspace = FourierNtruEncryptWorkspace::new(PolyLength::new(POLY_LENGTH));
-    let input = input_key.encrypt(
+    let input = input_key.encrypt_message(
         &Polynomial::new(message.as_slice()),
         &parameters,
+        PlaintextEmbedding::Unsigned,
         &mut fft,
         &mut rng,
         &mut encrypt_workspace,
@@ -144,7 +149,7 @@ fn check_fourier_key_switch<Table: FftTable>() {
 
     assert_eq!(
         output_key
-            .decrypt(&transformed, &parameters, &mut fft, &mut decrypt_workspace,)
+            .decrypt_message(&transformed, &parameters, &mut fft, &mut decrypt_workspace,)
             .as_ref(),
         message
     );

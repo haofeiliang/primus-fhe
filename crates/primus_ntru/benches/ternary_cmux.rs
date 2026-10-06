@@ -4,6 +4,7 @@
 //! SIMD comparison: cargo +nightly bench -p primus_ntru --bench ternary_cmux --features ntt,simd,rustfft,tfhe-fft
 
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_encoding::PlaintextEmbedding;
 use primus_poly::PolyLength;
 use std::{hint::black_box, time::Duration};
 
@@ -51,7 +52,13 @@ fn ntt<T: FheUint + PrimitiveRoot>(c: &mut Criterion, q: T, levels: usize) {
             .collect::<Vec<_>>(),
     );
     let input = key
-        .encrypt(&message, &params, &table, &mut rng)
+        .encrypt_message(
+            &message,
+            &params,
+            PlaintextEmbedding::Unsigned,
+            &table,
+            &mut rng,
+        )
         .into_coeff_form(&table);
     let mut controls = vec![T::ZERO; 2 * gadget.nlev_len()];
     // Independent encryptions of (0,1); both algorithms read the same controls.
@@ -173,9 +180,10 @@ fn fourier<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str, 
             .collect::<Vec<_>>(),
     );
     let mut input = NtruCiphertext::<Vec<T>>::zero(N);
-    key.encrypt(
+    key.encrypt_message(
         &message,
         &params,
+        PlaintextEmbedding::Unsigned,
         &mut fft,
         &mut rng,
         &mut FourierNtruEncryptWorkspace::new(poly_length),

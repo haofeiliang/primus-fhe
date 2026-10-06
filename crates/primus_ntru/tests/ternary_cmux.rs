@@ -1,5 +1,6 @@
 use num_traits::{ConstOne, ConstZero};
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_encoding::PlaintextEmbedding;
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable, TorusFftValue};
 use primus_integer::SignedInteger;
 use primus_modulus::{BarrettModulus, NativeModulus};
@@ -79,7 +80,13 @@ fn encrypted_ternary_step_matches_phase_oracle_and_two_binary_cmuxes_without_all
         NttNtruSecretKey::generate_pair(params.encryption_parameters(), &ntt, &mut rng).unwrap();
     let message = Polynomial::new((0..N as u64).map(|i| i % 16).collect::<Vec<_>>());
     let input = key
-        .encrypt(&message, &params, &ntt, &mut rng)
+        .encrypt_message(
+            &message,
+            &params,
+            PlaintextEmbedding::Unsigned,
+            &ntt,
+            &mut rng,
+        )
         .into_coeff_form(&ntt);
     let input_phase = phase(input.as_ref(), coeff.as_slice());
     let secret_norm: u64 = coeff.as_slice().iter().map(|v| v.unsigned_abs()).sum();
@@ -226,9 +233,10 @@ fn check_fourier_step<T: TorusFftValue, Table: FftTable>() {
             .collect::<Vec<_>>(),
     );
     let mut input = NtruCiphertext::<Vec<T>>::zero(N);
-    key.encrypt(
+    key.encrypt_message(
         &message,
         &params,
+        PlaintextEmbedding::Unsigned,
         &mut fft,
         &mut rng,
         &mut FourierNtruEncryptWorkspace::new(PolyLength::new(N)),

@@ -1,7 +1,7 @@
 //! Client-side coefficient-ring encryption and decryption under the accumulator secret.
 
 use primus_data::{Data, DataMut};
-use primus_encoding::ScaledCodec;
+use primus_encoding::{PlaintextEmbedding, ScaledCodec};
 use primus_integer::FheUint;
 use primus_ntru::{
     NtruCiphertext, NtruParameters, NtruSecretKey, NttNtruCiphertext, NttNtruSecretKey,
@@ -88,7 +88,7 @@ where
     /// Panics before sampling if message or output length is wrong. A plaintext-range
     /// or RNG panic may consume randomness and modify scratch; transform panics may
     /// partially write output. See
-    /// [`NttNtruSecretKey::encrypt_to`].
+    /// [`NttNtruSecretKey::encrypt_message_to`].
     pub fn encrypt_to<R, S>(&mut self, message: &[T], output: &mut NtruCiphertext<S>, rng: &mut R)
     where
         R: rand::Rng + rand::CryptoRng,
@@ -101,10 +101,11 @@ where
             (n, n),
             "accumulator encryption layout mismatch"
         );
-        self.secret.encrypt_to(
+        self.secret.encrypt_message_to(
             &Polynomial::new(message),
             &mut self.transformed,
             parameters,
+            PlaintextEmbedding::Unsigned,
             self.context.table(),
             rng,
         );
@@ -144,7 +145,7 @@ where
             "accumulator decryption layout mismatch"
         );
         input.write_ntt_form(&mut self.transformed, self.context.table());
-        self.secret.decrypt_to(
+        self.secret.decrypt_message_to(
             &self.transformed,
             &mut Polynomial::new(output),
             parameters,

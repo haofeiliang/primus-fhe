@@ -92,9 +92,10 @@ fn ntt_padded_ternary_has_exact_coefficient_phase() {
             message.as_ref(),
             PlaintextEmbedding::Unsigned,
         );
-        let cipher = key.encrypt(
+        let cipher = key.encrypt_message(
             &message,
             &params,
+            PlaintextEmbedding::Unsigned,
             &table,
             &mut StdRng::seed_from_u64(0xB711),
         );
@@ -142,10 +143,17 @@ fn assert_fourier_prefix<Table: FftTable>(table: &Table) {
         // Reimport the returned signed key to check the pair's identity, rather
         // than decrypting with the same opaque key that encrypted the message.
         let check_key = FourierNtruSecretKey::try_from_coeff_secret_key(&coeff, &mut fft).unwrap();
-        let cipher = key.encrypt(&message, &params, &mut fft, &mut rng, &mut encrypt);
+        let cipher = key.encrypt_message(
+            &message,
+            &params,
+            PlaintextEmbedding::Unsigned,
+            &mut fft,
+            &mut rng,
+            &mut encrypt,
+        );
         assert_eq!(
             check_key
-                .decrypt(&cipher, &params, &mut fft, &mut decrypt)
+                .decrypt_message(&cipher, &params, &mut fft, &mut decrypt)
                 .as_ref(),
             message.as_ref(),
         );

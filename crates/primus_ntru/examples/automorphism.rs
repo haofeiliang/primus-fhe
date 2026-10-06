@@ -2,6 +2,7 @@
 //! These are functional example parameters, not a security recommendation.
 
 use primus_decompose::DecompositionBaseLog;
+use primus_encoding::PlaintextEmbedding;
 use primus_modulus::BarrettModulus;
 use primus_ntru::{
     NlevParameters, NtruParameters, NttNtruAutomorphismKey, NttNtruAutomorphismWorkspace,
@@ -38,7 +39,13 @@ fn main() {
     message.as_mut()[0] = 1;
     message.as_mut()[1] = 2;
     message.as_mut()[N / 2] = 3;
-    let input = secret.encrypt(&message, &parameters, &table, &mut rng);
+    let input = secret.encrypt_message(
+        &message,
+        &parameters,
+        PlaintextEmbedding::Unsigned,
+        &table,
+        &mut rng,
+    );
     let mut output = NttNtruCiphertext::<Vec<u32>>::zero(N);
     let mut workspace = NttNtruAutomorphismWorkspace::new(parameters.poly_length());
     auto.apply_ntt_to(&input, &mut output, modulus, &table, &mut workspace);
@@ -49,7 +56,9 @@ fn main() {
     expected[3] = 2;
     expected[N / 2] = 16 - 3;
     assert_eq!(
-        secret.decrypt(&output, &parameters, &table).as_ref(),
+        secret
+            .decrypt_message(&output, &parameters, &table)
+            .as_ref(),
         expected
     );
 }

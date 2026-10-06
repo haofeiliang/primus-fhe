@@ -260,7 +260,7 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr, sparse: bool) {
             .scalar_iter()
             .zip(control.iter_ntru(N / 2))
         {
-            key.phase_to(&level, &mut phase, &mut fft, &mut decrypt);
+            key.decrypt_phase_to(&level, &mut phase, &mut fft, &mut decrypt);
             for (&actual, &f) in phase
                 .as_ref()
                 .iter()

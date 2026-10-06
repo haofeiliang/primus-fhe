@@ -5,6 +5,7 @@
 //! Setup is excluded; these parameters do not establish cryptographic security.
 
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_encoding::PlaintextEmbedding;
 use primus_poly::PolyLength;
 use std::{hint::black_box, time::Duration};
 
@@ -43,7 +44,13 @@ fn ntt(c: &mut Criterion, n: usize) {
             .map(|i| if i < 8 { i as u64 } else { 0 })
             .collect::<Vec<_>>(),
     );
-    let transformed = key.encrypt(&message, &parameters, &table, &mut rng);
+    let transformed = key.encrypt_message(
+        &message,
+        &parameters,
+        PlaintextEmbedding::Unsigned,
+        &table,
+        &mut rng,
+    );
     let mut input = NtruCiphertext::<Vec<u64>>::zero(n);
     transformed.write_coeff_form(&mut input, &table);
     let mut output = NtruCiphertext::<Vec<u64>>::zero(n);
@@ -239,9 +246,10 @@ fn fourier<Table: FftTable>(c: &mut Criterion, n: usize, backend: &str) {
             .map(|i| if i < 8 { i as u64 } else { 0 })
             .collect::<Vec<_>>(),
     );
-    let transformed = key.encrypt(
+    let transformed = key.encrypt_message(
         &message,
         &parameters,
+        PlaintextEmbedding::Unsigned,
         &mut fft,
         &mut rng,
         &mut FourierNtruEncryptWorkspace::new(poly_length),

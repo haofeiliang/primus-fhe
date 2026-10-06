@@ -1,6 +1,7 @@
 //! Observe sensitive allocations before deallocation, without reading freed memory.
 
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_encoding::PlaintextEmbedding;
 use primus_poly::PolyLength;
 use std::{
     alloc::{GlobalAlloc, Layout, System},
@@ -216,10 +217,11 @@ fn secret_buffers_are_reused_and_erased() {
         |workspace| {
             for _ in 0..2 {
                 workspace.zeroize();
-                fourier_key.encrypt_to(
+                fourier_key.encrypt_message_to(
                     &message,
                     &mut cipher,
                     &fourier_params,
+                    PlaintextEmbedding::Unsigned,
                     &mut fft,
                     &mut rng,
                     workspace,
@@ -233,7 +235,7 @@ fn secret_buffers_are_reused_and_erased() {
         |workspace| {
             for _ in 0..2 {
                 workspace.zeroize();
-                fourier_key.phase_to(&cipher, &mut phase, &mut fft, workspace);
+                fourier_key.decrypt_phase_to(&cipher, &mut phase, &mut fft, workspace);
             }
         },
     );
@@ -282,9 +284,15 @@ fn secret_buffers_are_reused_and_erased() {
                 let (coeff, key) = result.as_ref().unwrap();
                 assert_eq!(coeff.as_slice(), coefficient_key.as_slice());
                 assert_eq!(key.cipher_modulus(), 132_120_577);
-                let cipher = key.encrypt(&message, &ntt_params, &ntt, &mut rng);
+                let cipher = key.encrypt_message(
+                    &message,
+                    &ntt_params,
+                    PlaintextEmbedding::Unsigned,
+                    &ntt,
+                    &mut rng,
+                );
                 assert_eq!(
-                    key.decrypt(&cipher, &ntt_params, &ntt).as_ref(),
+                    key.decrypt_message(&cipher, &ntt_params, &ntt).as_ref(),
                     message.as_ref()
                 );
             },
@@ -316,15 +324,16 @@ fn secret_buffers_are_reused_and_erased() {
                 let mut check_fft = FftEngine::new(&table);
                 let mut encrypt = FourierNtruEncryptWorkspace::new(PolyLength::new(N));
                 let mut decrypt = FourierNtruDecryptWorkspace::new(PolyLength::new(N));
-                let cipher = key.encrypt(
+                let cipher = key.encrypt_message(
                     &message,
                     &fourier_params,
+                    PlaintextEmbedding::Unsigned,
                     &mut check_fft,
                     &mut rng,
                     &mut encrypt,
                 );
                 assert_eq!(
-                    key.decrypt(&cipher, &fourier_params, &mut check_fft, &mut decrypt)
+                    key.decrypt_message(&cipher, &fourier_params, &mut check_fft, &mut decrypt)
                         .as_ref(),
                     message.as_ref(),
                 );
@@ -379,10 +388,11 @@ fn secret_buffers_are_reused_and_erased() {
     let mut workspace = FourierNtruEncryptWorkspace::new(PolyLength::new(N));
     assert!(
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            fourier_key.encrypt_to(
+            fourier_key.encrypt_message_to(
                 &message,
                 &mut cipher,
                 &fourier_params,
+                PlaintextEmbedding::Unsigned,
                 &mut fft,
                 &mut rng,
                 &mut workspace,

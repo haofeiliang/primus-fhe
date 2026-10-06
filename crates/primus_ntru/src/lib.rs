@@ -4,12 +4,16 @@
 //! `c = f^(-1) * (e + Delta * m)`.  Coefficient-domain parameters and
 //! secret keys are shared by the exact NTT and native-torus Fourier backends.
 //!
-//! Ordinary encryption provides `encrypt` / `encrypt_to`, `encrypt_centered_to`,
+//! Message encryption provides `encrypt_message` / `encrypt_message_to` with explicit
+//! [`primus_encoding::PlaintextEmbedding`]. Raw encryption provides
 //! `encrypt_encoded_to` and `encrypt_zeros` / `encrypt_zeros_to`. The `_to` methods
 //! reuse output storage; Fourier operations also reuse an encryption workspace.
-//! Phase extraction returns undecoded coefficients: NTT takes a modulus and
-//! table, while Fourier takes an FFT engine and decryption workspace. Decoding
-//! methods additionally take [`NtruParameters`] for the plaintext codec.
+//! `decrypt_phase_to` returns undecoded coefficients: NTT takes a modulus and
+//! table, while Fourier takes an FFT engine and decryption workspace.
+//! `decrypt_message` / `decrypt_message_to` additionally take [`NtruParameters`]
+//! for the plaintext codec. Both embeddings use the same decoder. Diagnostics
+//! compare the phase with the expected message's encoding using
+//! [`primus_encoding::phase_error_magnitude_slice_to`].
 //! Key generation and encoded/zero encryption take [`NtruEncryptionParameters`],
 //! the codec-free ring/sampling state shared by ordinary and [`NlevParameters`].
 //!

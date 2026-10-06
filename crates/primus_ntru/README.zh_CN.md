@@ -27,7 +27,7 @@ NLev 与 NGSW 存储的行数相同，但数学角色不同。`NLev[1]` 可通�
 
 `NtruEncryptionParameters::try_new(poly_length, modulus, secret_distribution, noise)` 不依赖明文域，直接准备环和采样器。仅使用 gadget 时，将它放入 `Arc`，调用 `NlevParameters::try_from_parts(shared_encryption, basis)`；需要普通加密时才调用 `NtruParameters::try_from_parts(shared_encryption, codec)`。组合入口检查 basis 或 codec 的模数与加密参数一致。已有 `NlevParameters::with_ntru_params` / `try_with_basis` 同样共享普通参数的加密状态，不保留其 codec。
 
-两种参数均通过 `encryption_parameters()` 为密钥生成、raw/零加密提供采样状态。普通 `encrypt_to`、`encrypt_centered_to` 和解密仍接收 `NtruParameters`。克隆普通或 gadget 参数共享不可变采样表，gadget basis 仍独立拥有。不同密钥噪声角色应使用独立的加密参数。共享内容是分布预计算，不包含秘密系数或可变 RNG 状态。
+两种参数均通过 `encryption_parameters()` 为密钥生成、raw/零加密提供采样状态。消息加密与解密接收 `NtruParameters`；`encrypt_message` / `encrypt_message_to` 显式选择 `PlaintextEmbedding`。克隆普通或 gadget 参数共享不可变采样表，gadget basis 仍独立拥有。不同密钥噪声角色应使用独立的加密参数。共享内容是分布预计算，不包含秘密系数或可变 RNG 状态。
 
 将 `params.encryption_parameters()` 传给 `NttNtruSecretKey::generate_pair` 或 `FourierNtruSecretKey::generate_pair`，同时保留有符号系数私钥和变换表示。系数私钥用于生成求值密钥；变换私钥及其缓存 逆元用于加密和相位提取。
 
@@ -51,9 +51,9 @@ cargo run -p primus_ntru --example automorphism --features ntt
 
 | 操作 | 输入与输出 |
 | --- | --- |
-| `encrypt_to`、`encrypt_centered_to` | 明文系数经 codec 缩放后写出变换域 NTRU |
+| `encrypt_message`、`encrypt_message_to` | 消息系数经 codec 缩放后写出变换域 NTRU，显式选择 embedding |
 | `encrypt_encoded_to`、`encrypt_zeros_to` | 编码环系数或零写出变换域 NTRU |
-| `phase_to`、`decrypt_to` | 变换域 NTRU 写出系数相位或解码明文 |
+| `decrypt_phase_to`、`decrypt_message`、`decrypt_message_to` | 变换域 NTRU 写出系数相位或解码消息 |
 | `encrypt_nlev_to`、`encrypt_ngsw_to` | 编码多项式写出变换域 gadget 行，不进行明文 codec 缩放 |
 | `encrypt_nlev_constant_to` | 常数环元素写出变换域 NLev |
 | `encrypt_ngsw_signed_constant_batch_to` | 有符号常数写出连续的变换域 NGSW |
@@ -65,6 +65,12 @@ cargo run -p primus_ntru --example automorphism --features ntt
 `NttNlev::lift_monomial_to` / `FourierNlev::lift_monomial_to` 将公开多项式提升与首次 binary/ternary 旋转融合。传入 NLEV[1]、正向 NLEV 比特及可选的负向 NLEV 比特；只分解公开多项式，指数为零仍执行提升。`NttNtruCmuxWorkspace` / `FourierNtruCmuxWorkspace` 与后续三元 CMUX 共用一块组合控制缓冲。
 
 Ternary 旋转取得 `poly_length = params.poly_length()` 和 `levels = params.decompose_length()`（`DecompositionLevelCount`）后，一次构造 `NttNtruCmuxWorkspace::new(poly_length, levels)` 或 `FourierNtruCmuxWorkspace::new(poly_length, levels)`，随后复用工作区，传入互斥的正负 NGSW 比特控制。Fourier 使用 Native basis，两份控制必须使用 engine 对应的同一个 FFT 表实例 和 torus 缩放。指数已量化到 `0..2N`，负指数由内部派生。 NTRU TFHE 后端使用此原语执行经典 ternary blind rotation。
+
+`encrypt_message(input, params, embedding, table, rng)` 分配 NTT 输出；`encrypt_message_to(input, output, params, embedding, table, rng)` 复用输出。Fourier 使用 `(input, [output,] params, embedding, fft, rng, workspace)`。两种 embedding 都接收 `[0,t)` 内的规范消息 residue；centered 的 `t-1` 表示 `-1`。`decrypt_message` / `decrypt_message_to` 共用解码器，返回规范 residue，不需要 embedding 参数。
+
+消息适配位于各私钥后端的 `message.rs`。加密先在输出或已有 Fourier 系数 scratch 中采样噪声，原地累加编码，再变换一次并乘逆密钥。Raw encoded 与零加密不需要 codec，也不分配中间消息缓冲。NLev 在乘逆密钥**之前**加入 gadget 缩放消息；NGSW 在零加密**之后**注入。
+
+`decrypt_phase_to` 计算系数域 `f*c`，不做解码：NTT 参数为 `(input, output, modulus, table)`；Fourier 为 `(input, output, fft, workspace)`。诊断时用实际 codec 与 embedding 编码**预期消息**，再通过 [`phase_error_magnitude_slice_to`](../primus_encoding/README.zh_CN.md#相位误差诊断) 与该相位比较。解码后重新编码不是独立参考；Fourier 的相位误差还包含变换舍入。
 
 解密返回系数域多项式，使用密文系数类型 `T`；输出类型转换由应用按需处理。
 

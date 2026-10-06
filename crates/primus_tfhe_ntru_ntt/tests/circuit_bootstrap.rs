@@ -291,7 +291,7 @@ fn circuit_bootstrap(distr: SecretKeyDistr, sparse: bool) {
             .scalar_iter()
             .zip(control.iter_ntt_ntru(N))
         {
-            key.phase_to(&level, &mut phase, modulus, context.table());
+            key.decrypt_phase_to(&level, &mut phase, modulus, context.table());
             for (&actual, &f) in phase
                 .as_ref()
                 .iter()

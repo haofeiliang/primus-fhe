@@ -27,7 +27,7 @@ Ordinary `NtruParameters::new` / `try_new` construction takes the checked [primu
 
 `NtruEncryptionParameters::try_new(poly_length, modulus, secret_distribution, noise)` prepares the ring and samplers without a plaintext domain. For gadget-only work, wrap it in `Arc` and call `NlevParameters::try_from_parts(shared_encryption, basis)`. Only ordinary encryption needs `NtruParameters::try_from_parts(shared_encryption, codec)`. Each constructor checks that the basis or codec uses the encryption state's modulus. Existing `NlevParameters::with_ntru_params` / `try_with_basis` also share the ordinary parameters' encryption state, without retaining their codec.
 
-Both parameter types expose `encryption_parameters()` for key generation and raw/zero encryption. Ordinary `encrypt_to`, `encrypt_centered_to` and decryption still take `NtruParameters`. Cloning ordinary or gadget parameters shares immutable sampler tables; the gadget basis remains owned. Use separate encryption states for different key-noise roles. Shared state contains distribution precomputation, not secret coefficients or mutable RNG state.
+Both parameter types expose `encryption_parameters()` for key generation and raw/zero encryption. Message encryption and decryption take `NtruParameters`; `encrypt_message` / `encrypt_message_to` explicitly select `PlaintextEmbedding`. Cloning ordinary or gadget parameters shares immutable sampler tables; the gadget basis remains owned. Use separate encryption states for different key-noise roles. Shared state contains distribution precomputation, not secret coefficients or mutable RNG state.
 
 Pass `params.encryption_parameters()` to `NttNtruSecretKey::generate_pair` or `FourierNtruSecretKey::generate_pair` to retain both the signed coefficient secret and its transform representation. The coefficient secret generates evaluation keys; the transformed key and its cached inverse support encryption and phase extraction.
 
@@ -51,9 +51,9 @@ cargo run -p primus_ntru --example automorphism --features ntt
 
 | Operation | Inputs and outputs |
 | --- | --- |
-| `encrypt_to`, `encrypt_centered_to` | Plaintext coefficients to transformed NTRU, with codec scaling |
+| `encrypt_message`, `encrypt_message_to` | Message coefficients to transformed NTRU, with codec scaling and explicit embedding |
 | `encrypt_encoded_to`, `encrypt_zeros_to` | Encoded ring coefficients or zero to transformed NTRU |
-| `phase_to`, `decrypt_to` | Transformed NTRU to coefficient phase or decoded plaintext |
+| `decrypt_phase_to`, `decrypt_message`, `decrypt_message_to` | Transformed NTRU to coefficient phase or decoded message |
 | `encrypt_nlev_to`, `encrypt_ngsw_to` | Encoded polynomial to transformed gadget rows, without plaintext codec scaling |
 | `encrypt_nlev_constant_to` | Constant ring element to transformed NLev |
 | `encrypt_ngsw_signed_constant_batch_to` | Signed constants to contiguous transformed NGSWs |
@@ -65,6 +65,12 @@ cargo run -p primus_ntru --example automorphism --features ntt
 `NttNlev::lift_monomial_to` / `FourierNlev::lift_monomial_to` fuse public-polynomial lifting with the first binary/ternary rotation. Supply NLEV[1], a positive NLEV bit and an optional negative NLEV bit; only the public polynomial is decomposed, and a zero exponent still performs the lift. Their `NttNtruCmuxWorkspace` / `FourierNtruCmuxWorkspace` shares one combined-control buffer with subsequent ternary CMUXes.
 
 For ternary rotation, take `poly_length = params.poly_length()` and `levels = params.decompose_length()` (`DecompositionLevelCount`) and allocate `NttNtruCmuxWorkspace::new(poly_length, levels)` or `FourierNtruCmuxWorkspace::new(poly_length, levels)` once, and reuse it with mutually exclusive positive/negative NGSW controls. Fourier uses a native basis and both controls must use the engine's exact FFT table instance and torus scale. The exponent is already quantized into `0..2N`; its negative is derived internally. The NTRU TFHE backends use this primitive for classic ternary blind rotation.
+
+`encrypt_message(input, params, embedding, table, rng)` allocates NTT output; `encrypt_message_to(input, output, params, embedding, table, rng)` reuses it. Fourier uses `(input, [output,] params, embedding, fft, rng, workspace)`. Both embeddings accept canonical message residues in `[0,t)`; centered `t-1` represents `-1`. `decrypt_message` / `decrypt_message_to` return canonical residues with the same decoder and need no embedding argument.
+
+Message adapters live in each secret-key backend's `message.rs`. Encryption samples noise into the output or existing Fourier coefficient scratch, adds the encoding in place, then transforms once and multiplies by the inverse secret. Raw encoded and zero encryption need no codec or intermediate message allocation. NLev retains its scaled message **before** inverse-key multiplication; NGSW injects it **after** zero encryption.
+
+`decrypt_phase_to` computes coefficient-domain `f*c` without decoding: NTT takes `(input, output, modulus, table)`; Fourier takes `(input, output, fft, workspace)`. For diagnostics, encode the **expected message** with the actual codec and embedding, then compare it with this phase using [`phase_error_magnitude_slice_to`](../primus_encoding/README.md#phase-error-diagnostics). Decoding and re-encoding is not an independent reference; Fourier phase errors also include transform rounding.
 
 Decryption returns coefficient polynomials with the ciphertext coefficient type `T`; applications handle any output type conversion.
 

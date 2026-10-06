@@ -1,6 +1,7 @@
 //! NLev/NGSW gadget encryption checked through row phases and encrypted selection.
 
 use primus_decompose::DecompositionBaseLog;
+use primus_encoding::PlaintextEmbedding;
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable};
 use primus_lattice::{
     ngsw::{FourierNgswIter, NttNgswIter},
@@ -54,7 +55,7 @@ fn decrypt_ntt_output(
     let mut transformed: NttNtru<Vec<u32>> = NttNtru::zero(POLY_LENGTH);
     cipher.write_ntt_form(&mut transformed, ntt);
     secret_key
-        .decrypt(&transformed, params, ntt)
+        .decrypt_message(&transformed, params, ntt)
         .as_ref()
         .to_vec()
 }
@@ -69,7 +70,7 @@ fn decrypt_fourier_output(
     let mut transformed = FourierNtruOwned::zero(fft.fourier_length());
     cipher.write_fourier_form(&mut transformed, fft);
     secret_key
-        .decrypt(&transformed, params, fft, workspace)
+        .decrypt_message(&transformed, params, fft, workspace)
         .as_ref()
         .to_vec()
 }
@@ -105,7 +106,7 @@ fn ntt_nlev_generation_and_ngsw_cmux() {
 
     for (scalar, level) in basis.scalar_iter().zip(nlev.iter_ntt_ntru(POLY_LENGTH)) {
         let mut phase = PolynomialOwned::zero(POLY_LENGTH);
-        secret_key.phase_to(&level, &mut phase, modulus, &ntt);
+        secret_key.decrypt_phase_to(&level, &mut phase, modulus, &ntt);
         assert!(explicit_distance(phase.as_ref()[0], scalar) <= 8);
         assert!(
             phase.as_ref()[1..]
@@ -129,9 +130,10 @@ fn ntt_nlev_generation_and_ngsw_cmux() {
         .iter()
         .map(|message| {
             secret_key
-                .encrypt(
+                .encrypt_message(
                     &Polynomial::new(message.as_slice()),
                     &params,
+                    PlaintextEmbedding::Unsigned,
                     &ntt,
                     &mut rng,
                 )
@@ -255,7 +257,7 @@ fn fourier_nlev_generation_and_ngsw_cmux() {
         .zip(nlev.iter_ntru(fft.fourier_length()))
     {
         let mut phase = PolynomialOwned::zero(POLY_LENGTH);
-        secret_key.phase_to(&level, &mut phase, &mut fft, &mut decrypt_workspace);
+        secret_key.decrypt_phase_to(&level, &mut phase, &mut fft, &mut decrypt_workspace);
         assert!(native_distance(phase.as_ref()[0], scalar) <= 8);
         assert!(
             phase.as_ref()[1..]
@@ -279,9 +281,10 @@ fn fourier_nlev_generation_and_ngsw_cmux() {
     let mut encrypt_workspace = FourierNtruEncryptWorkspace::new(PolyLength::new(POLY_LENGTH));
     let mut candidates = Vec::with_capacity(messages.len());
     for message in &messages {
-        let input_fourier = secret_key.encrypt(
+        let input_fourier = secret_key.encrypt_message(
             &Polynomial::new(message.as_slice()),
             &params,
+            PlaintextEmbedding::Unsigned,
             &mut fft,
             &mut rng,
             &mut encrypt_workspace,

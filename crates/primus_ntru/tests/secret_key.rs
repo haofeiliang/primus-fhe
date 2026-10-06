@@ -2,7 +2,7 @@
 //! Arithmetic kernels and fused-lift phase identities have separate oracles.
 
 use primus_distr::sample_gaussian_values_to;
-use primus_encoding::PlaintextEmbedding;
+use primus_encoding::{PlaintextEmbedding, phase_error_magnitude_slice_to};
 use primus_fft::{FftEngine, FftTable, RustFftTable, TorusFftValue};
 use primus_integer::FheUint;
 use primus_modulus::{BarrettModulus, NativeModulus};
@@ -46,55 +46,59 @@ where
     let messages = messages::<T>();
     let message = Polynomial::new(messages.as_slice());
 
-    let mut rng = StdRng::seed_from_u64(43);
-    let mut noise_rng = StdRng::seed_from_u64(43);
-    let mut cipher = secret_key.encrypt(&message, &params, &ntt, &mut rng);
-    assert_eq!(
-        secret_key.decrypt(&cipher, &params, &ntt).as_ref(),
-        messages
-    );
-
-    let (decrypted, noise) = secret_key.decrypt_with_noise(&cipher, &params, &ntt);
-    assert_eq!(decrypted.as_ref(), messages);
+    let mut cipher = primus_ntru::NttNtruCiphertext::new(vec![T::ONE; POLY_LENGTH]);
+    let mut raw = cipher.clone();
+    let mut encoded = Polynomial::new(vec![T::ZERO; POLY_LENGTH]);
+    let mut phase = Polynomial::new(vec![T::ZERO; POLY_LENGTH]);
+    let mut noise = vec![T::ZERO; POLY_LENGTH];
     let mut expected_noise = vec![T::ZERO; POLY_LENGTH];
-    sample_gaussian_values_to(
-        &mut expected_noise,
-        params.noise_distribution(),
-        &mut noise_rng,
-    );
-    // The diagnostic returns absolute circular distance, not a signed residue.
-    for value in &mut expected_noise {
-        *value = (*value).min(cipher_modulus - *value);
+    for embedding in [PlaintextEmbedding::Unsigned, PlaintextEmbedding::Centered] {
+        let mut message_rng = StdRng::seed_from_u64(43);
+        let mut raw_rng = StdRng::seed_from_u64(43);
+        let mut noise_rng = StdRng::seed_from_u64(43);
+        params
+            .plaintext_codec()
+            .encode_slice_to(&messages, encoded.as_mut(), embedding);
+        secret_key.encrypt_message_to(
+            &message,
+            &mut cipher,
+            &params,
+            embedding,
+            &ntt,
+            &mut message_rng,
+        );
+        secret_key.encrypt_encoded_to(
+            &encoded,
+            &mut raw,
+            params.encryption_parameters(),
+            &ntt,
+            &mut raw_rng,
+        );
+        assert_eq!(cipher.as_ref(), raw.as_ref());
+        assert_eq!(message_rng.next_u64(), raw_rng.next_u64());
+        assert_eq!(
+            secret_key.decrypt_message(&cipher, &params, &ntt).as_ref(),
+            messages
+        );
+
+        // Reference the original message and actual embedding, not a re-encoded
+        // decoder output. The exact NTT phase error must match sampled noise.
+        secret_key.decrypt_phase_to(&cipher, &mut phase, modulus, &ntt);
+        phase_error_magnitude_slice_to(phase.as_ref(), encoded.as_ref(), &mut noise, modulus);
+        sample_gaussian_values_to(
+            &mut expected_noise,
+            params.noise_distribution(),
+            &mut noise_rng,
+        );
+        for value in &mut expected_noise {
+            *value = (*value).min(cipher_modulus - *value);
+        }
+        assert_eq!(noise, expected_noise);
     }
-    assert_eq!(noise.as_ref(), expected_noise);
-
-    secret_key.encrypt_centered_to(&message, &mut cipher, &params, &ntt, &mut rng);
-    assert_eq!(
-        secret_key.decrypt(&cipher, &params, &ntt).as_ref(),
-        messages
-    );
-
-    let mut encoded = vec![T::ZERO; POLY_LENGTH];
-    params.plaintext_codec().add_encode_slice_assign(
-        &mut encoded,
-        &messages,
-        PlaintextEmbedding::Unsigned,
-    );
-    secret_key.encrypt_encoded_to(
-        &Polynomial::new(encoded),
-        &mut cipher,
-        params.encryption_parameters(),
-        &ntt,
-        &mut rng,
-    );
-    assert_eq!(
-        secret_key.decrypt(&cipher, &params, &ntt).as_ref(),
-        messages
-    );
 
     secret_key.encrypt_zeros_to(&mut cipher, params.encryption_parameters(), &ntt, &mut rng);
     assert_eq!(
-        secret_key.decrypt(&cipher, &params, &ntt).as_ref(),
+        secret_key.decrypt_message(&cipher, &params, &ntt).as_ref(),
         vec![T::ZERO; POLY_LENGTH]
     );
 }
@@ -106,12 +110,12 @@ fn ntt_secret_key_encodings_reuse_ciphertext_storage() {
 }
 
 // Native torus encryption reuses both ciphertext and FFT workspaces.
-fn assert_fourier_roundtrip<T>()
+fn assert_fourier_roundtrip<T, Table>(table: &Table)
 where
     T: FheUint + TorusFftValue,
+    Table: FftTable,
 {
-    let table = RustFftTable::new(PolyLength::new(POLY_LENGTH));
-    let mut fft = FftEngine::new(&table);
+    let mut fft = FftEngine::new(table);
     let params = NtruParameters::new(
         PolyLength::new(POLY_LENGTH),
         T::try_from(PLAIN_MODULUS).unwrap(),
@@ -127,55 +131,43 @@ where
     let messages = messages::<T>();
     let message = Polynomial::new(messages.as_slice());
 
-    let mut cipher = secret_key.encrypt(
-        &message,
-        &params,
-        &mut fft,
-        &mut rng,
-        &mut encrypt_workspace,
-    );
-    assert_eq!(
-        secret_key
-            .decrypt(&cipher, &params, &mut fft, &mut decrypt_workspace,)
-            .as_ref(),
-        messages
-    );
-
-    secret_key.encrypt_centered_to(
-        &message,
-        &mut cipher,
-        &params,
-        &mut fft,
-        &mut rng,
-        &mut encrypt_workspace,
-    );
-    assert_eq!(
-        secret_key
-            .decrypt(&cipher, &params, &mut fft, &mut decrypt_workspace,)
-            .as_ref(),
-        messages
-    );
-
-    let mut encoded = vec![T::ZERO; POLY_LENGTH];
-    params.plaintext_codec().add_encode_slice_assign(
-        &mut encoded,
-        &messages,
-        PlaintextEmbedding::Unsigned,
-    );
-    secret_key.encrypt_encoded_to(
-        &Polynomial::new(encoded),
-        &mut cipher,
-        params.encryption_parameters(),
-        &mut fft,
-        &mut rng,
-        &mut encrypt_workspace,
-    );
-    assert_eq!(
-        secret_key
-            .decrypt(&cipher, &params, &mut fft, &mut decrypt_workspace,)
-            .as_ref(),
-        messages
-    );
+    let mut cipher = primus_ntru::FourierNtruCiphertext::<Vec<_>>::zero(table.fourier_length());
+    let mut raw = cipher.clone();
+    let mut encoded = Polynomial::new(vec![T::ZERO; POLY_LENGTH]);
+    for embedding in [PlaintextEmbedding::Unsigned, PlaintextEmbedding::Centered] {
+        let mut message_rng = StdRng::seed_from_u64(43);
+        let mut raw_rng = StdRng::seed_from_u64(43);
+        params
+            .plaintext_codec()
+            .encode_slice_to(&messages, encoded.as_mut(), embedding);
+        // Reuse dirty output and scratch for the second embedding. Both entry
+        // points must produce identical Fourier values and consume the same RNG.
+        secret_key.encrypt_message_to(
+            &message,
+            &mut cipher,
+            &params,
+            embedding,
+            &mut fft,
+            &mut message_rng,
+            &mut encrypt_workspace,
+        );
+        secret_key.encrypt_encoded_to(
+            &encoded,
+            &mut raw,
+            params.encryption_parameters(),
+            &mut fft,
+            &mut raw_rng,
+            &mut encrypt_workspace,
+        );
+        assert_eq!(cipher.as_ref(), raw.as_ref());
+        assert_eq!(message_rng.next_u64(), raw_rng.next_u64());
+        assert_eq!(
+            secret_key
+                .decrypt_message(&cipher, &params, &mut fft, &mut decrypt_workspace)
+                .as_ref(),
+            messages
+        );
+    }
 
     secret_key.encrypt_zeros_to(
         &mut cipher,
@@ -186,7 +178,7 @@ where
     );
     assert_eq!(
         secret_key
-            .decrypt(&cipher, &params, &mut fft, &mut decrypt_workspace,)
+            .decrypt_message(&cipher, &params, &mut fft, &mut decrypt_workspace,)
             .as_ref(),
         vec![T::ZERO; POLY_LENGTH]
     );
@@ -194,8 +186,16 @@ where
 
 #[test]
 fn fourier_secret_key_encodings_reuse_ciphertext_storage() {
-    assert_fourier_roundtrip::<u32>();
-    assert_fourier_roundtrip::<u64>();
+    let poly_length = PolyLength::new(POLY_LENGTH);
+    let table = RustFftTable::new(poly_length);
+    assert_fourier_roundtrip::<u32, _>(&table);
+    assert_fourier_roundtrip::<u64, _>(&table);
+    #[cfg(feature = "tfhe-fft")]
+    {
+        let table = primus_fft::TfheFftTable::new(poly_length);
+        assert_fourier_roundtrip::<u32, _>(&table);
+        assert_fourier_roundtrip::<u64, _>(&table);
+    }
 }
 
 #[test]
@@ -434,7 +434,7 @@ fn ordinary_operations_validate_before_sampling_or_writing() {
     let input = key.encrypt_zeros(params.encryption_parameters(), &ntt, &mut rng);
     let mut output = Polynomial::new(vec![7; POLY_LENGTH]);
     assert!(
-        catch_unwind(AssertUnwindSafe(|| key.decrypt_to(
+        catch_unwind(AssertUnwindSafe(|| key.decrypt_message_to(
             &input,
             &mut output,
             &short_params,
@@ -486,7 +486,7 @@ fn ordinary_operations_validate_before_sampling_or_writing() {
     assert_eq!(rng.next_u64(), expected_rng.next_u64());
     assert!(cipher.as_ref().iter().all(|&value| value == 7));
     assert!(
-        catch_unwind(AssertUnwindSafe(|| foreign_key.phase_to(
+        catch_unwind(AssertUnwindSafe(|| foreign_key.decrypt_phase_to(
             &input,
             &mut output,
             modulus,
@@ -523,7 +523,7 @@ fn ordinary_operations_validate_before_sampling_or_writing() {
         &mut encrypt,
     );
     assert!(
-        catch_unwind(AssertUnwindSafe(|| key.decrypt_to(
+        catch_unwind(AssertUnwindSafe(|| key.decrypt_message_to(
             &input,
             &mut output,
             &short_params,

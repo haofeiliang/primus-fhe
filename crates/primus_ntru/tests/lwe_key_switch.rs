@@ -1,6 +1,7 @@
 //! Independent coefficient phases, rounding and key-entry noise for NTRU -> LWE.
 
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_encoding::PlaintextEmbedding;
 use primus_lattice::LweDimension;
 use primus_poly::PolyLength;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -681,7 +682,13 @@ fn check_ntt_encryption<T: FheUint, Table: primus_ntt::MonomialNttTable<ValueT =
             .collect::<Vec<_>>(),
     );
     let input = transformed
-        .encrypt(&message, &params, &ntt, &mut rng)
+        .encrypt_message(
+            &message,
+            &params,
+            PlaintextEmbedding::Unsigned,
+            &ntt,
+            &mut rng,
+        )
         .into_coeff_form(&ntt);
     check_encrypted_return(&input, &secret, modulus);
 }
@@ -712,9 +719,10 @@ fn check_fourier_encryption<T: primus_fft::TorusFftValue, Table: primus_fft::Fft
     );
     let mut input = NtruCiphertext::zero(32);
     transformed
-        .encrypt(
+        .encrypt_message(
             &message,
             &params,
+            PlaintextEmbedding::Unsigned,
             &mut fft,
             &mut rng,
             &mut FourierNtruEncryptWorkspace::new(PolyLength::new(32)),

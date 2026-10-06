@@ -190,7 +190,7 @@ fn one_hot<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
         // phase is f*gadget_scalar for the selected index and zero otherwise.
         for (j, row) in primus_poly::NttPolynomialIter::new(&selectors, N).enumerate() {
             let scalar: i128 = scalars[j % scalars.len()].as_into();
-            ring_secret.phase_to(
+            ring_secret.decrypt_phase_to(
                 &primus_ntru::NttNtruCiphertext::new(row.as_ref()),
                 &mut phase,
                 modulus,
@@ -625,7 +625,7 @@ fn circuit<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
             .scalar_iter()
             .zip(control.iter_ntt_ntru(N))
         {
-            ring_secret.phase_to(&row, &mut phase, modulus, context.table());
+            ring_secret.decrypt_phase_to(&row, &mut phase, modulus, context.table());
             let scalar: i128 = scalar.as_into();
             for (&actual, &f) in phase
                 .as_ref()

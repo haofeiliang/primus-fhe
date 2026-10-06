@@ -1,6 +1,7 @@
 //! Automorphism under the original NTRU secret in NTT and Fourier representations.
 
 use primus_decompose::DecompositionBaseLog;
+use primus_encoding::PlaintextEmbedding;
 use primus_poly::PolyLength;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
@@ -51,9 +52,10 @@ fn fourier_automorphism<Table: FftTable>() {
             .unwrap();
     assert!(secret.as_slice().contains(&-1));
     let message: Vec<u32> = (0..N).map(|i| (3 * i as u32 + 1) % P).collect();
-    let input = key.encrypt(
+    let input = key.encrypt_message(
         &Polynomial(message.as_slice()),
         &parameters,
+        PlaintextEmbedding::Unsigned,
         &mut fft,
         &mut rng,
         &mut FourierNtruEncryptWorkspace::new(PolyLength::new(N)),
@@ -99,7 +101,7 @@ fn fourier_automorphism<Table: FftTable>() {
             // Both must decrypt the independently substituted target message.
             for output in [&transformed_output, &transformed_coeff_output] {
                 assert_eq!(
-                    key.decrypt(output, &parameters, &mut fft, &mut decrypt)
+                    key.decrypt_message(output, &parameters, &mut fft, &mut decrypt)
                         .as_ref(),
                     substitute(&message, degree),
                     "degree={degree}, log_basis={log_basis}",
@@ -219,9 +221,10 @@ fn ntt_automorphism_preserves_the_original_nonbinary_secret() {
             .unwrap();
     assert!(secret.as_slice().contains(&-1));
     let message: Vec<u32> = (0..N).map(|i| (3 * i as u32 + 1) % P).collect();
-    let input = key.encrypt(
+    let input = key.encrypt_message(
         &Polynomial(message.as_slice()),
         &parameters,
+        PlaintextEmbedding::Unsigned,
         &table,
         &mut rng,
     );
@@ -265,7 +268,7 @@ fn ntt_automorphism_preserves_the_original_nonbinary_secret() {
                 transformed_coeff_output.as_ref()
             );
             assert_eq!(
-                key.decrypt(&transformed_output, &parameters, &table)
+                key.decrypt_message(&transformed_output, &parameters, &table)
                     .as_ref(),
                 substitute(&message, degree),
                 "degree={degree}, log_basis={log_basis}",

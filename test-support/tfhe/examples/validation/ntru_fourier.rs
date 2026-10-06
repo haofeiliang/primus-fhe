@@ -177,7 +177,7 @@ fn one_hot<T: TorusFftValue, Table: FftTable>(
         // phase is f*gadget_scalar for the selected index and zero otherwise.
         for (j, row) in primus_poly::FourierPolynomialIter::new(&selectors, N / 2).enumerate() {
             let scalar: i128 = scalars[j % scalars.len()].as_into();
-            ring_secret.phase_to(
+            ring_secret.decrypt_phase_to(
                 &primus_ntru::FourierNtruCiphertext::new(row.as_ref()),
                 &mut phase,
                 &mut fft,
@@ -611,7 +611,7 @@ fn circuit<T: TorusFftValue, Table: FftTable>(
             .scalar_iter()
             .zip(control.iter_ntru(N / 2))
         {
-            ring_secret.phase_to(&row, &mut phase, &mut fft, &mut decrypt);
+            ring_secret.decrypt_phase_to(&row, &mut phase, &mut fft, &mut decrypt);
             let scalar: i128 = scalar.as_into();
             for (&actual, &f) in phase
                 .as_ref()
