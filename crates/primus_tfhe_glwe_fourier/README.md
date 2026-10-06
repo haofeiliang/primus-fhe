@@ -105,8 +105,10 @@ The [shared coefficient key](../primus_tfhe_glwe/README.md#sparse-coefficient-ke
 
 Rustdoc groups server material in `key`, CBS in `circuit_bootstrap`, MVB programs/execution in `factorized`, and sparse key generation/rotation in `sparse`. Common workflow types remain root imports. Raw GLWE controls and BR workspace are documented in `bootstrapping_key` and `blind_rotation`.
 
+Ordinary timings use `pbs`, `sparse_pbs`, `mvb` and `circuit_bootstrap`. Select `--bench setup` explicitly for u64 key generation and raw BR/KS timings. Supply `--features rustfft` or `--features tfhe-fft`; no engine means a feature hint and no benchmark IDs.
+
 ## Further reading
 
-This crate enables `fourier` on its normal dependencies; no extra backend flag is needed, and standalone use does not pull in NTT. Default features are empty. Select an FFT engine explicitly with `rustfft` or `tfhe-fft`, or enable both; generic APIs do not force an engine. Examples use `rustfft`; tests and benchmarks comparing both engines require `rustfft,tfhe-fft`. Optional `simd` enables only nightly SIMD arithmetic in dependencies, without selecting an FFT engine.
+This crate enables `fourier` on its normal dependencies; no extra backend flag is needed, and standalone use does not pull in NTT. Default features are empty. Select an FFT engine explicitly with `rustfft` or `tfhe-fft`, or enable both; generic APIs do not force an engine. Examples use `rustfft`; tests that explicitly compare both engines still require `rustfft,tfhe-fft`. Benchmarks accept either engine independently; with both enabled, RustFFT is primary and `pbs` adds one TFHE-FFT shortint comparison. Optional `simd` enables only nightly SIMD arithmetic in dependencies, without selecting an FFT engine.
 
 [Boolean gates](../primus_tfhe/README.md#boolean-gates) · [Error boundaries](../primus_tfhe/README.md#error-boundaries) · [Implementation notes](../primus_tfhe/IMPLEMENTATION.md) · [Benchmark guide](../primus_tfhe/BENCHMARKS.md)

@@ -7,11 +7,13 @@ use criterion::Criterion;
 use primus_encoding::RoundedCodec;
 use primus_integer::FheUint;
 use primus_reduce::RingContext;
-use primus_test_allocations::Allocations;
 use primus_tfhe_ntru::TfheParameters;
 use primus_tfhe_ntru_lut::{HighPrecisionLookupTable, LookupTableConfig};
 
+mod diagnostics;
+#[cfg(any(feature = "rustfft", feature = "tfhe-fft"))]
 pub mod fourier;
+#[cfg(feature = "ntt")]
 pub mod ntt;
 
 pub const CONFIG: LookupTableConfig = LookupTableConfig {
@@ -84,19 +86,6 @@ pub fn check_repetition<T: FheUint>(table: &HighPrecisionLookupTable<T>, workloa
         }
         assert_eq!(unique.len(), count);
     }
-    eprintln!(
-        "unique_polynomials,{},{}",
-        workload.suffix(),
-        table.unique_polynomial_count()
-    );
-}
-
-// Report retained requested heap, not temporary allocation volume or RSS.
-pub fn heap(name: &str, allocation: Allocations) {
-    eprintln!(
-        "memory,{name},{}",
-        allocation.allocated_bytes - allocation.released_bytes
-    );
 }
 
 // Public LUT creation is independent of the transform engine; Native is registered

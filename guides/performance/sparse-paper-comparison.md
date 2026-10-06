@@ -2,7 +2,7 @@
 
 [Performance decisions and measurement method](README.md)
 
-The GLWE NTT `sparse_pbs` benchmark has separate `paper_2026_1730` IDs.
+The GLWE NTT `sparse_paper` benchmark has `paper_2026_1730` IDs.
 They compare the current implementation using the geometry of Table 3 in
 [New Techniques for Fast and Shallow FHE Bootstrapping and Beyond](https://eprint.iacr.org/2026/1730).
 They are an explicit adaptation, not a reproduction of the authors' executable
@@ -740,19 +740,19 @@ system-wide install was performed.
 ## Reproduction and validation
 
 ```bash
-cargo bench -p primus_tfhe_glwe_ntt --bench sparse_pbs -- \
+cargo bench -p primus_tfhe_glwe_ntt --bench sparse_paper -- \
   'paper_2026_1730/' --test
 
 CRITERION_HOME=/tmp/primus-paper-cpu4 taskset -c 4 \
-  cargo bench -p primus_tfhe_glwe_ntt --bench sparse_pbs -- \
+  cargo bench -p primus_tfhe_glwe_ntt --bench sparse_paper -- \
   'paper_2026_1730/.*_nand/.*/complete_ring_return$' \
   --sample-size 40 --warm-up-time 1 --measurement-time 4 --noplot
 ```
 
 Use CPU 8 with a separate Criterion directory to check cache-topology
 sensitivity; run sequentially. Omit the final `/complete_ring_return$` filter to include
-raw BR. `--list` performs no key generation for paper IDs. The default old
-diagnostic/keygen cases can still be selected by `fixed_weight/n728_h32_N1024`.
+raw BR. `--list` performs no key generation for paper IDs. The ordinary fixed-weight comparison remains in `sparse_pbs`; retained u64
+keygen cases are now in `setup`, selected by `fixed_weight/n728_h32_N1024`.
 The command runs the selected groups in registration order. To reproduce the
 NAND comparison order, build once with `--no-run`, list the executable's NAND
 complete IDs with `--list`, sort ascending for CPU 4 or descending for CPU 8,

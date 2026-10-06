@@ -1,6 +1,6 @@
 //! Paper-shaped GLWE NTT comparison using only existing public kernels.
 //! Run only complete requests with:
-//! `cargo bench -p primus_tfhe_glwe_ntt --bench sparse_pbs -- 'paper_2026_1730/.*/complete_ring_return$'`
+//! `cargo bench -p primus_tfhe_glwe_ntt --bench sparse_paper -- 'paper_2026_1730/.*/complete_ring_return$'`
 //! `blind_rotation` excludes gate preprocessing, input lifting and return.
 //! `complete_ring_return` includes them, using Primus's ring KS at Q, not the
 //! cited OpenFHE's sampled LWE key switch at Q'. NAND and padded-function IDs

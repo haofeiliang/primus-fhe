@@ -29,6 +29,10 @@ primus_tfhe_test_support = { path = "../../test-support/tfhe" }
 criterion = { workspace = true }
 
 [[bench]]
+name = "setup"
+harness = false
+
+[[bench]]
 name = "pbs"
 harness = false
 

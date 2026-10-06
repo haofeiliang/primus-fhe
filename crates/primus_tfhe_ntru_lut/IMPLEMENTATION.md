@@ -243,7 +243,7 @@ the [sparse pair report](../../guides/performance/sparse-layout-and-batching.md#
 
 The [pipeline benchmark](benches/pipeline.rs) calls the public evaluators.
 [Support](benches/support/mod.rs) holds only the public layout, cleartext function,
-creation timing and heap reporting; its NTT/Fourier modules keep concrete
+creation timing and opt-in diagnostic reporting; its NTT/Fourier modules keep concrete
 backend types. It neither includes production source files nor exposes scratch.
 The 18 IDs comprise six public-table creation/drop cases and twelve complete
 evaluations: three table structures, NTT/primary Fourier and classic/sparse.
@@ -294,7 +294,8 @@ output. Four polynomials, one public choice on chunk 6 and one result slot suffi
 chunks 5 and 7 require no CBS. All eight outputs share the complete result, so
 only one set of low rotations and one return remain. This deliberately repetitive
 function isolates cross-output sharing and a moved public layer. Its oracle and
-zero-allocation checks run outside timing like those of the other fixtures.
+result checks run outside timing like those of the other fixtures. Online allocation
+checks are enabled by the explicit diagnostic mode.
 
 For these mixed/dense fixtures, one `evaluate` iteration generates selectors for eight input chunks, selects or lifts,
 rotates and returns all eight output ciphertexts. Keys, public LUT compilation,
@@ -306,7 +307,8 @@ of one deduplicated public high-precision LUT; only classic IDs register creatio
 and Fourier registers it once for Native64 because neither BR choice nor the
 FFT engine affects coefficient compilation.
 
-The selected evaluation fixture reports retained requested heap for combined
+With `PRIMUS_LUT_DIAGNOSTICS=1`, the selected evaluation fixture reports retained
+requested heap for combined
 client/server keys, independent public-lift material, the public LUT, evaluator
 workspace and caller outputs.
 Context/tables, allocator metadata, stack and peak transient generation storage
@@ -314,7 +316,12 @@ are excluded. An untimed evaluation asserts zero online allocations and checks
 every decoded output digit, then reports maximum circular q-domain phase error
 over the output chunks (q=2^24, t=8, decoding half-gap 2^20). Counting and phase
 checks are disabled during latency sampling.
-These are finite functional observations, not a failure-probability estimate.
+Use this mode with `--test` for a one-shot report. Without the environment switch,
+setup executes directly and the ordinary result probe neither counts allocations
+nor decrypts extra phases. The same fixture is used in both modes, avoiding a
+second copy of key generation and evaluation. Broader intermediate-phase and
+input-margin checks remain in `validate_parameters`. These are finite functional
+observations, not a failure-probability estimate.
 
 Ordinary CBS and full/nonzero one-hot costs now belong to their NTRU backend's
 `circuit_bootstrap` benchmark. Private selection/rotation states, fused lift,
@@ -324,14 +331,16 @@ contracts remain covered by library tests and lower-level primitive benchmarks.
 ## Reproducing measurements
 
 ```sh
-cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features ntt,rustfft,tfhe-fft -- --list
-cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features ntt,rustfft,tfhe-fft -- --test
-taskset -c 0 cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features ntt,rustfft,tfhe-fft -- \
+cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features ntt,rustfft -- --list
+cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features tfhe-fft -- --list
+PRIMUS_LUT_DIAGNOSTICS=1 cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features ntt -- \
+  'lookup/ntt/u64/sparse/.*/shared_middle_chunk/evaluate$' --test
+taskset -c 0 cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features ntt,rustfft -- \
   '/create_lut_and_drop$' --sample-size 20 --warm-up-time 0.5 --measurement-time 2 --noplot
-taskset -c 0 cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features ntt,rustfft,tfhe-fft -- \
+taskset -c 0 cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features ntt,rustfft -- \
   '/evaluate$' --sample-size 20 --warm-up-time 0.5 --measurement-time 2 --noplot
 # SIMD configuration; use the same nightly compiler for both sides of a feature comparison.
-taskset -c 0 cargo +nightly bench -p primus_tfhe_ntru_lut --bench pipeline --features ntt,simd,rustfft,tfhe-fft -- \
+taskset -c 0 cargo +nightly bench -p primus_tfhe_ntru_lut --bench pipeline --features ntt,simd,rustfft -- \
   '/evaluate$' --sample-size 20 --warm-up-time 0.5 --measurement-time 2 --noplot
 ```
 

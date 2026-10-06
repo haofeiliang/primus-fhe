@@ -142,7 +142,7 @@ Default features are empty: public table compilation, inspection, `LookupTableCo
 
 All features are additive. `LookupTableError::OneHot` / `Evaluation` are available only with `ntt` or `fourier`.
 
-The NTT example requires `ntt`; the Fourier example requires its chosen engine. Evaluation tests run for each selected NTT/FFT implementation, retaining the existing cases at both word widths. `pipeline` compares u64 NTT and the primary Fourier engine (RustFFT when enabled). Its current target declaration still requires `ntt,rustfft,tfhe-fft`; Cargo skips it when requirements are missing. Use `just tfhe` for complete validation, or run compiler-only and individual backends separately:
+The NTT example requires `ntt`; the Fourier example requires its chosen engine. Evaluation tests run for each selected NTT/FFT implementation, retaining the existing cases at both word widths. `pipeline` compares u64 NTT and the primary Fourier engine (RustFFT when enabled). Enable any of `ntt`, `rustfft` or `tfhe-fft` independently; combining NTT and one FFT engine registers all 18 workloads. With no applicable backend, the target prints a feature hint and registers no IDs. Use `just tfhe` for complete validation, or run compiler-only and individual backends separately:
 
 ```sh
 cargo test -p primus_tfhe_ntru_lut
@@ -155,12 +155,12 @@ cargo test -p primus_tfhe_ntru_lut --features tfhe-fft
 
 ```sh
 # Create and drop one public high-precision LUT.
-cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features ntt,rustfft,tfhe-fft -- '/create_lut_and_drop$'
+cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features ntt,rustfft -- '/create_lut_and_drop$'
 # Homomorphically evaluate all output chunks using a prepared LUT and workspace.
-cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features ntt,rustfft,tfhe-fft -- '/evaluate$'
+cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features ntt,rustfft -- '/evaluate$'
 ```
 
-The 18 workloads retain polynomial, dense and shared tables, paired classic/sparse evaluation, and separate creation for Q50/Native64. Creation includes allocation, coefficient filling and destruction. Evaluation excludes key generation, public LUT creation, input encryption and workspace allocation. See the [benchmark fixture](IMPLEMENTATION.md#benchmark-fixture) for workloads and resource measurements.
+The 18 workloads retain polynomial, dense and shared tables, paired classic/sparse evaluation, and separate creation for Q50/Native64. Creation includes allocation, coefficient filling and destruction. Evaluation excludes key generation, public LUT creation, input encryption and workspace allocation. Set `PRIMUS_LUT_DIAGNOSTICS=1` and use `--test` for an explicit heap/allocation/phase report from the same fixture; ordinary timing keeps only result checks. See the [benchmark fixture](IMPLEMENTATION.md#benchmark-fixture) for details.
 
 Original IDs use the polynomial example; IDs containing `/dense_seed42/` use a fixed dense mapping with the same parameters. Filter by `dense_seed42` to run only that workload, or by `c8_d5_o8/evaluate$` to evaluate only the polynomial example.
 

@@ -116,6 +116,8 @@ independently usable. See the [family return contract](../primus_tfhe_ntru/READM
 
 Rustdoc groups server material in `key`, CBS in `circuit_bootstrap`, MVB programs/execution in `factorized`, and bucket material in `sparse`. Common workflow types remain root imports.
 
+Ordinary timings use `pbs`, `sparse_pbs`, `mvb` and `circuit_bootstrap`. Select `--bench setup` explicitly for u64 key generation.
+
 ## Further reading
 
 This crate enables `ntt` on its normal dependencies; no extra backend flag is needed, and standalone use does not pull in Fourier/FFT. Default features are empty; optional `simd` enables nightly SIMD arithmetic in dependencies.

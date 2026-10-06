@@ -1,6 +1,6 @@
 # TFHE benchmark workloads
 
-The 18 targets below measure independent operations using the shared
+The 18 ordinary targets and five explicit setup/paper targets use the shared
 [parameter profiles](../../guides/development/tfhe-parameters.md).
 The suite retains representative u32/u64, FFT-engine and GLWE PBS-order
 comparisons without crossing those axes for every operation. These are arithmetic
@@ -8,18 +8,19 @@ cost fixtures, not assessed security parameters or equal-security comparisons.
 
 ## Reduced suite specification
 
-The ordinary registrations follow the matrix below. Setup, stage and paper
-diagnostics still reside in the existing targets and are counted separately;
-use an ID filter to select the operation to measure. Numerical profiles, key
+The ordinary registrations follow the matrix below. Setup and stage timings
+live in each backend's `setup` target; GLWE NTT paper comparisons live in
+`sparse_paper`. Neither is registered by ordinary `pbs` or `sparse_pbs`. Numerical profiles, key
 layouts, aggregation windows and workspace layouts are unchanged.
 
 Use one primary Fourier engine per build: RustFFT when available, otherwise
 TFHE-FFT. This follows the teaching workflow, not a measured engine ranking.
 With both features enabled, retain an explicit engine comparison only for u64
-binary shortint PBS in each family. The registration code also selects TFHE-FFT
-as the primary engine when RustFFT is disabled. Cargo target declarations currently still require both FFT features
-(and `ntt` for the lookup pipeline); independent target discovery is a separate
-feature-cleanup task. GLWE uses `KeyswitchBootstrap` unless a row says otherwise;
+binary shortint PBS in each family. Enable `rustfft` or `tfhe-fft` independently;
+the LUT pipeline also accepts `ntt` alone or combined with either engine.
+Cargo's `required-features` cannot express an OR: these targets select their
+cases with cfg and print a feature hint, with no IDs, if no applicable backend
+is enabled. GLWE uses `KeyswitchBootstrap` unless a row says otherwise;
 `BootstrapKeyswitch` retains an explicit complete-request comparison in `pbs`.
 
 | Target / retained cases | IDs across all four backends | Reason |
@@ -49,21 +50,34 @@ lookup pipeline keeps c8/d5/o8 and n800/h32/N1024. Ternary and binary profiles
 still differ, so those IDs do not isolate the cost of the secret distribution.
 No claim of equal security follows from choosing these cases.
 
-The remaining target separation concerns diagnostics, outside the counts above:
+## Explicit diagnostics
 
-- Keep server-key generation and the existing GLWE BR/KS stage probes in one
-  explicit setup/diagnostic target per backend. Do not move discarded Cartesian
-  combinations into another large default matrix.
-- Move GLWE NTT's existing paper module into a dedicated paper target. Preserve
-  the original and candidate parameters and the distinct raw-BR and complete
-  return boundaries; do not register these through ordinary `sparse_pbs`.
-- Keep detailed phase and resource reports in explicit diagnostics, reusing
-  `validate_parameters` where its public-API consumers fit. Retain known-result
-  checks outside each ordinary timing and the independent zero-allocation
-  regression tests. Do not reproduce a private evaluator inside a diagnostic.
-- Match target features to their actual dependencies. Keep lazy fixture setup
-  inside the selected callback and outside `b.iter`; listing/filtering must not
-  generate unused keys. Update executable commands when the targets change.
+| Entry | Retained work |
+| --- | --- |
+| Four backends' `setup` | u64 dense binary/ternary and fixed-weight classic/sparse keygen; GLWE also keeps binary raw BR/KS at n800/N1024. Primary FFT engine only: six GLWE / four NTRU IDs per backend, 20 total |
+| GLWE NTT `sparse_paper` | The 36 original/candidate paper IDs, including u32/u64 at the same small prime and raw-BR versus complete-return boundaries |
+| LUT `pipeline`, `PRIMUS_LUT_DIAGNOSTICS=1` with `--test` | Existing fixture's requested retained heap, online allocations and final phase error; no extra workload matrix |
+| `validate_parameters` example | Numerical profiles and detailed intermediate phase checks; `--list` discovers profiles without keys, NTT is always available and FFT profiles follow enabled engine features |
+
+Setup keeps the existing numerical profiles and IDs for the retained cases.
+u32 and secondary-engine setup timings are no longer default registrations;
+the numerical diagnostic retains their parameter coverage. Historical measurements
+remain in the performance guides; use their pinned revisions for removed IDs.
+Listing and filtering stay lazy: unselected cases do not generate keys.
+
+```sh
+cargo bench -p primus_tfhe_glwe_ntt --bench setup -- --list
+cargo bench -p primus_tfhe_ntru_fourier --bench setup --features tfhe-fft -- --list
+cargo bench -p primus_tfhe_glwe_ntt --bench sparse_paper -- 'paper_2026_1730/' --list
+PRIMUS_LUT_DIAGNOSTICS=1 cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features ntt -- \
+  'lookup/ntt/u64/sparse/.*/shared_middle_chunk/evaluate$' --test
+cargo run --release -p primus_tfhe_test_support --example validate_parameters -- --list
+cargo run --release -p primus_tfhe_test_support --example validate_parameters --features tfhe-fft -- --list
+```
+
+Named ordinary targets do not include setup or paper timings. Cargo `--benches`
+selects all bench targets, including diagnostics; prefer a named target/filter
+for an ordinary timing or smoke run. These are not CI execution requirements.
 
 Lower-level arithmetic benchmarks and historical measurement records are
 outside this registration reduction.
@@ -73,10 +87,10 @@ outside this registration reduction.
 | Target | Question answered / one iteration |
 | --- | --- |
 | `primus_tfhe/lookup_table` | Compile and drop one public LUT: ordinary t32/k1, padded interleaving t16/k3, or tight cells t255/k4; N1024, Native/PowOf2 q24/Barrett |
-| Four backends' `pbs` | One complete dense binary PBS at u32 n800/N1024/t4 or u64 n866/N2048/t32; u64 ternary at n800/N1024/t4; setup diagnostics retain server-key generation per dense secret/word/engine |
-| GLWE `pbs` stage IDs | One BR or one GLWE key switch at binary n800/N1024; excludes extraction and prerequisite operations |
-| Four backends' `sparse_pbs` | One complete classic or bucket-sparse PBS, or one server-key generation, for the same n728/h32/N1024/t8 secret profile |
-| GLWE NTT `sparse_pbs` paper IDs | Table-3-shaped NAND and padded 3-bit PBS: dense ternary classic, fixed-weight classic and sparse; complete q-to-q request with ring KS and raw BR, with explicit return/decomposition adaptations |
+| Four backends' `pbs` | One complete dense binary PBS at u32 n800/N1024/t4 or u64 n866/N2048/t32; u64 ternary at n800/N1024/t4 |
+| GLWE `setup` stage IDs | One BR or one GLWE key switch at binary n800/N1024; excludes extraction and prerequisite operations |
+| Four backends' `sparse_pbs` | One complete classic or bucket-sparse PBS for the same n728/h32/N1024/t8 secret profile |
+| GLWE NTT `sparse_paper` | Table-3-shaped NAND and padded 3-bit PBS: dense ternary classic, fixed-weight classic and sparse; complete q-to-q request with ring KS and raw BR, with explicit return/decomposition adaptations |
 | Four backends' `mvb` | Produce k Scaled threshold bits from one input: D8/k3 compares independent PBS, interleaved ManyLUT and factorized MVB; D64/k17 compares independent and factorized because interleaving does not fit |
 | Four backends' `circuit_bootstrap` | One ordinary CBS into a reused gadget ciphertext; all backends pair classic/sparse at n728/h32/N1024/t4; NTRU also pairs full M4 / compact M-1 one-hot batches at t8 |
 | `primus_tfhe_ntru_lut/pipeline` | `create_lut_and_drop`: create/drop one public high-precision LUT; `evaluate`: homomorphically evaluate all eight outputs at c8/d5/o8 (16 input/output bits), paired classic/sparse n800/h32/N1024, excluding public LUT creation |
@@ -86,7 +100,7 @@ BR variants receive identical fixed-weight secrets, input ciphertexts and LUTs.
 The current [sparse measurement report](../../guides/performance/sparse-baseline.md)
 records paired latency, stage costs, setup and memory accounting.
 
-GLWE NTT additionally provides `paper_2026_1730` IDs. These use q=512/4096,
+GLWE NTT's separate `sparse_paper` target provides `paper_2026_1730` IDs. These use q=512/4096,
 N=1024/2048, fixed weights 43/31/70 and three copies with h+3 buckets. Gate
 cases measure one NAND on two fresh Boolean inputs and compare u32/u64 at the
 same 28-bit prime. The 54-bit `padded_func3` case uses u64 and one padded PBS,
@@ -217,10 +231,10 @@ outputs/scratch are overwritten. Seed 42 establishes the client fixture; sparse
 keygen uses seed 4242. A known-result probe checks the measured operation, while
 exhaustive/phase-margin diagnostics remain in `validate_parameters` and tests.
 
-Only the high-precision `evaluate` IDs report retained requested heap and
-assert zero online allocations. Resource probes are untimed and allocation
-counting is disabled during samples; heap does not mean RSS or peak generation
-memory. See the [pipeline boundaries](../primus_tfhe_ntru_lut/IMPLEMENTATION.md#benchmark-fixture).
+High-precision `evaluate` IDs report retained requested heap and assert zero
+online allocations only with `PRIMUS_LUT_DIAGNOSTICS=1`. Ordinary runs retain
+known-result checks; dedicated tests still protect zero online allocations.
+Resource probes are untimed; heap does not mean RSS or peak generation memory. See the [pipeline boundaries](../primus_tfhe_ntru_lut/IMPLEMENTATION.md#benchmark-fixture).
 
 Build before timing and avoid concurrent compilation or benchmarks. Record CPU,
 affinity, compiler, features, profile and exact ID. The repository already uses
@@ -230,7 +244,7 @@ the workspace `simd` feature is a distinct configuration.
 For the SIMD benchmark configuration only:
 
 ```sh
-taskset -c 0 cargo +nightly bench -p primus_tfhe_ntru_lut --bench pipeline --features ntt,simd,rustfft,tfhe-fft -- \
+taskset -c 0 cargo +nightly bench -p primus_tfhe_ntru_lut --bench pipeline --features ntt,simd,rustfft -- \
   '/evaluate$' --sample-size 20 --warm-up-time 0.5 --measurement-time 2 --noplot
 ```
 

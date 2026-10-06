@@ -85,7 +85,7 @@ let mut evaluator = context.evaluator(&server)?;
 
 Both orders support ordinary/interleaved PBS, MVB and CBS. Pass `Some(cbs_config)` to include sparse CBS material. `ServerKey::blind_rotation_key()` exposes `BlindRotationKey::{Classic,Sparse}`.
 
-The `sparse_pbs` benchmark includes separate `paper_2026_1730` NAND and padded-function comparisons alongside the existing fixed-weight diagnostics. `complete_ring_return` includes this backend's ring KS return; `blind_rotation` excludes it. Parameters, measurements and differences from the paper are recorded in the [comparison guide](../../guides/performance/sparse-paper-comparison.md); these are experimental benchmark profiles, not security presets.
+The separate `sparse_paper` benchmark provides the `paper_2026_1730` NAND and padded-function comparisons; ordinary `sparse_pbs` retains the fixed-weight comparison only. `complete_ring_return` includes this backend's ring KS return; `blind_rotation` excludes it. Parameters, measurements and differences from the paper are recorded in the [comparison guide](../../guides/performance/sparse-paper-comparison.md); these are experimental benchmark profiles, not security presets.
 
 The separate `sparse_candidate_r2` IDs use two copies, `2*h` buckets and fewer BR levels for the validated STD128 and three-bit function profiles. The [consumer measurements](../../guides/performance/sparse-consumer-measurements.md) cover PBS, ManyLUT, MVB and feedback. CBS needs its own output basis: a working PBS configuration alone does not ensure usable gadget controls or CMux results.
 
@@ -106,6 +106,8 @@ Standalone component generation must use paired secrets and the same transform r
 The [shared coefficient key](../primus_tfhe_glwe/README.md#sparse-coefficient-keys) is re-exported as `SparseGlweBootstrappingKey<T, BarrettModulus<T>>`. Raw sparse BR uses `workspace.blind_rotate_lookup_table_to(&key, input, lut, output, ntt)`; the workspace owns scratch and borrows the key only for the call.
 
 Rustdoc groups server material in `key`, CBS in `circuit_bootstrap`, MVB programs/execution in `factorized`, and sparse key generation/rotation in `sparse`. Common workflow types remain root imports. Raw GLWE controls and BR workspace are documented in `bootstrapping_key` and `blind_rotation`.
+
+Ordinary timings use `pbs`, `sparse_pbs`, `mvb` and `circuit_bootstrap`. Select `--bench setup` explicitly for u64 key generation and raw BR/KS timings.
 
 ## Further reading
 

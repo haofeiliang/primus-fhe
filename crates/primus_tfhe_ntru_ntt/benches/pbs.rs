@@ -1,19 +1,18 @@
-//! Dense binary/ternary PBS and server-key generation. One iteration is one operation.
-//! LUTs, encryption, output allocation and validation are excluded; keygen includes
-//! its allocations, with returned-key destruction outside the timer.
+//! Dense binary/ternary PBS. One iteration is one complete request.
+//! LUTs, encryption, workspace/output allocation and validation are untimed.
 //! Parameters: primus_tfhe_test_support::parameters (arithmetic cost profiles).
 //! Fixtures are initialized only for selected IDs, then reused across samples.
 //! Run: cargo bench -p primus_tfhe_ntru_ntt --bench pbs
 
 use std::hint::black_box;
 
-use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
+use criterion::{Criterion, criterion_group, criterion_main};
 use primus_encoding::RoundedCodec;
 use primus_integer::FheUint;
 use primus_modulus::PowOf2Modulus;
 use primus_ntru::SecretKeyDistr;
 use primus_ntt::{MonomialNttTable, U32NttTable, U64NttTable};
-use primus_tfhe_ntru_ntt::{BlindRotationConfig, KeyGenerator, TfheContext};
+use primus_tfhe_ntru_ntt::TfheContext;
 use primus_tfhe_test_support::parameters::ntt_modulus;
 use primus_tfhe_test_support::{
     benchmark::{PBS_WORKLOADS, PbsWorkload},
@@ -96,69 +95,11 @@ fn pbs<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     });
 }
 
-// Keygen keeps one Boolean-sized fixture per word and secret distribution.
-fn keygen<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
-    c: &mut Criterion,
-    backend: &str,
-    ternary: bool,
-) {
-    let workload = PBS_WORKLOADS[0];
-    let secret = if ternary {
-        SecretKeyDistr::UniformTernary
-    } else {
-        SecretKeyDistr::UniformBinary
-    };
-    let kind = if ternary { "ternary" } else { "binary" };
-    let name = format!(
-        "ntru/{backend}/u{}/{kind}/{}/n{}_N{}",
-        T::BITS,
-        workload.name,
-        workload.lwe_dimension,
-        workload.poly_length
-    );
-    let parameters = ntru::pbs(ntt_modulus::<T>(), workload, secret);
-    let mut fixture = None;
-    c.bench_function(&format!("{name}/server_keygen"), |b| {
-        let (context, client) = fixture.get_or_insert_with(|| {
-            let context =
-                TfheContext::<T, Table, PowOf2Modulus<T>>::try_from_parameters(parameters.clone())
-                    .unwrap();
-            let mut rng = StdRng::seed_from_u64(42);
-            let client = KeyGenerator::new(&context)
-                .try_generate_client_key(&mut rng)
-                .unwrap();
-            (context, client)
-        });
-        let mut generator = KeyGenerator::new(context);
-        let mut rng = StdRng::seed_from_u64(4242);
-        b.iter_batched(
-            || (),
-            |()| {
-                generator
-                    .try_generate_server_key(
-                        black_box(client),
-                        BlindRotationConfig::Classic,
-                        None,
-                        &mut rng,
-                    )
-                    .unwrap()
-            },
-            BatchSize::PerIteration,
-        );
-    });
-}
-
 fn bench_pbs(c: &mut Criterion) {
     let [boolean, shortint] = PBS_WORKLOADS;
     pbs::<u32, U32NttTable>(c, "ntt", boolean, false);
     pbs::<u64, U64NttTable>(c, "ntt", shortint, false);
     pbs::<u64, U64NttTable>(c, "ntt", boolean, true);
-
-    // Register setup diagnostics independently of the online workloads.
-    for ternary in [false, true] {
-        keygen::<u32, U32NttTable>(c, "ntt", ternary);
-        keygen::<u64, U64NttTable>(c, "ntt", ternary);
-    }
 }
 
 criterion_group!(benches, bench_pbs);

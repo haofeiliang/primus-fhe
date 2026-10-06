@@ -1,27 +1,19 @@
 //! Classic versus sparse PBS for the same fixed-weight secret: n728/h32/N1024.
-//! One iteration is a complete PBS or one server-key generation. PBS reuses
-//! buffers; encryption/setup/validation and returned-key drop are not timed.
+//! One iteration is a complete PBS into reused output/workspace buffers.
+//! Key generation, encryption and validation are outside timing.
 //! Parameters: primus_tfhe_test_support::parameters (arithmetic cost profiles).
 //! Fixtures are initialized only for selected IDs, then reused across samples.
 //! Run: cargo bench -p primus_tfhe_glwe_ntt --bench sparse_pbs
-//! The additional `paper_2026_1730` IDs use the paper's geometry and small-q
-//! inputs; their GLWE return adaptation is documented in `paper/parameters.rs`.
 
 use std::hint::black_box;
 
-use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
+use criterion::{Criterion, criterion_group, criterion_main};
 use primus_integer::FheUint;
 use primus_ntt::{MonomialNttTable, U32NttTable, U64NttTable};
 use primus_tfhe_glwe_ntt::{BlindRotationConfig, ClientKey, KeyGenerator, PbsOrder, TfheContext};
 use primus_tfhe_test_support::parameters::glwe;
 use primus_tfhe_test_support::parameters::ntt_modulus;
 use rand::{SeedableRng, rngs::StdRng};
-
-mod paper;
-
-#[global_allocator]
-static ALLOCATOR: primus_test_allocations::CountingAllocator =
-    primus_test_allocations::CountingAllocator;
 
 fn pbs_pair<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     c: &mut Criterion,
@@ -101,59 +93,9 @@ fn pbs_pair<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     }
 }
 
-// Keygen pairs share a fixed client and separately seeded key-generation RNG.
-fn keygen<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
-    c: &mut Criterion,
-    backend: &str,
-    order: PbsOrder,
-) {
-    let parameters = glwe::diagnostic(ntt_modulus::<T>(), order);
-    let name = format!(
-        "glwe/{backend}/u{}/fixed_weight/n728_h32_N1024/{order:?}",
-        T::BITS
-    );
-    let mut fixture = None;
-    for sparse in [false, true] {
-        let kind = if sparse { "sparse" } else { "classic" };
-        c.bench_function(&format!("{name}/{kind}/server_keygen"), |b| {
-            let (context, client) = fixture.get_or_insert_with(|| {
-                let context =
-                    TfheContext::<T, Table>::try_from_parameters(parameters.clone()).unwrap();
-                let mut rng = StdRng::seed_from_u64(42);
-                let client = ClientKey::generate(context.parameters(), &mut rng);
-                (context, client)
-            });
-            let mut generator = KeyGenerator::new(context);
-            let mut rng = StdRng::seed_from_u64(4242);
-            let blind_rotation = if sparse {
-                BlindRotationConfig::Sparse {
-                    copy_count: 3,
-                    bucket_count: 64,
-                }
-            } else {
-                BlindRotationConfig::Classic
-            };
-            b.iter_batched(
-                || (),
-                |()| {
-                    generator
-                        .try_generate_server_key(black_box(client), blind_rotation, None, &mut rng)
-                        .unwrap()
-                },
-                BatchSize::PerIteration,
-            );
-        });
-    }
-}
-
 fn bench_sparse(c: &mut Criterion) {
     pbs_pair::<u32, U32NttTable>(c, "ntt", PbsOrder::KeyswitchBootstrap);
     pbs_pair::<u64, U64NttTable>(c, "ntt", PbsOrder::KeyswitchBootstrap);
-
-    // Register research/setup diagnostics independently of the online workloads.
-    paper::benchmark(c);
-    keygen::<u32, U32NttTable>(c, "ntt", PbsOrder::BootstrapKeyswitch);
-    keygen::<u64, U64NttTable>(c, "ntt", PbsOrder::BootstrapKeyswitch);
 }
 
 criterion_group!(benches, bench_sparse);

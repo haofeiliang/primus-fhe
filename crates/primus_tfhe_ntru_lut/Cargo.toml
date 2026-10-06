@@ -32,7 +32,6 @@ rand = { workspace = true }
 [[bench]]
 name = "pipeline"
 harness = false
-required-features = ["ntt", "rustfft", "tfhe-fft"]
 
 # Examples select one backend; pipeline compares NTT and the primary FFT engine.
 [[example]]

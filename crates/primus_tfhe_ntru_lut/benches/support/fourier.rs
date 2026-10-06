@@ -7,14 +7,15 @@ use primus_encoding::RoundedCodec;
 use primus_fft::{FftTable, TorusFftValue};
 use primus_modulus::{NativeModulus, PowOf2Modulus};
 use primus_ntru::SecretKeyDistr;
-use primus_test_allocations::measure;
 use primus_tfhe::BlindRotationConfig;
 use primus_tfhe_ntru_fourier::{KeyGenerator, TfheContext};
 use primus_tfhe_ntru_lut::{FourierLookupTableEvaluator, HighPrecisionLookupTable};
 use primus_tfhe_test_support::parameters::ntru;
 use rand::{SeedableRng, rngs::StdRng};
 
-use super::{CONFIG, INPUT, Workload, benchmark_lut_creation, check_repetition, heap};
+use super::{
+    CONFIG, INPUT, Workload, benchmark_lut_creation, check_repetition, diagnostics::Diagnostics,
+};
 
 // Registers repeated, dense and cross-output shared LUT workloads for this backend and word width.
 pub fn benchmark<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) {
@@ -48,8 +49,9 @@ fn benchmark_workload<T: TorusFftValue, Table: FftTable>(
     if !sparse {
         benchmark_lut_creation(c, &name, &parameters, workload);
     }
+    let diagnostics = Diagnostics::new(&name);
     let mut fixture = None;
-    let mut reported = false;
+    let mut verified = false;
     let mut group = c.benchmark_group(&name);
     group.sampling_mode(SamplingMode::Flat);
     group.throughput(Throughput::Elements(CONFIG.output_chunk_count as u64));
@@ -58,7 +60,7 @@ fn benchmark_workload<T: TorusFftValue, Table: FftTable>(
             let context =
                 TfheContext::<T, Table, PowOf2Modulus<T>>::from_parameters(parameters.clone());
             let mut rng = StdRng::seed_from_u64(42);
-            let ((client, server), keys) = measure(|| {
+            let (client, server) = diagnostics.setup("client_and_server_keys", || {
                 let mut generator = KeyGenerator::new(&context);
                 let client = generator.try_generate_client_key(&mut rng).unwrap();
                 let blind_rotation = if sparse {
@@ -79,8 +81,7 @@ fn benchmark_workload<T: TorusFftValue, Table: FftTable>(
                     .unwrap();
                 (client, server)
             });
-            heap(&format!("{name}/client_and_server_keys"), keys);
-            let (table, storage) = measure(|| {
+            let table = diagnostics.setup("public_lut", || {
                 HighPrecisionLookupTable::try_new(
                     context.parameters().poly_length(),
                     context.parameters().accumulator_ntru().cipher_modulus(),
@@ -90,11 +91,10 @@ fn benchmark_workload<T: TorusFftValue, Table: FftTable>(
                 )
                 .unwrap()
             });
-            heap(&format!("{name}/public_lut"), storage);
             check_repetition(&table, workload);
             // Lift generation is independent of sparse buckets and only paid by
             // plans that need it. This fixture selects BR's basis and sigma=0.7.
-            let (lift, storage) = measure(|| {
+            let lift = diagnostics.setup("public_lift", || {
                 if sparse && table.needs_public_lift() {
                     Some(
                         KeyGenerator::new(&context)
@@ -109,7 +109,6 @@ fn benchmark_workload<T: TorusFftValue, Table: FftTable>(
                     None
                 }
             });
-            heap(&format!("{name}/public_lift"), storage);
             // Identical encrypted input for classic/sparse over the same fixed client.
             let mut rng = StdRng::seed_from_u64(43);
             let encryptor = context
@@ -124,7 +123,7 @@ fn benchmark_workload<T: TorusFftValue, Table: FftTable>(
                 .collect();
             (context, client, server, table, lift, input)
         });
-        let (mut evaluator, workspace) = measure(|| {
+        let mut evaluator = diagnostics.setup("workspace", || {
             FourierLookupTableEvaluator::try_new(
                 context,
                 server,
@@ -134,31 +133,25 @@ fn benchmark_workload<T: TorusFftValue, Table: FftTable>(
             )
             .unwrap()
         });
-        let (mut output, output_memory) = measure(|| evaluator.allocate_output());
-        if !reported {
-            heap(&format!("{name}/workspace"), workspace);
-            heap(&format!("{name}/outputs"), output_memory);
-            // Instrument only this untimed call. Keep decryption outside the
-            // allocation probe so its client workspace is not charged to lookup.
-            let (_, online) = measure(|| evaluator.evaluate_to(input, &mut output));
-            assert_eq!(online.count, 0);
-            eprintln!("online_allocations,{name},{}", online.count);
+        let mut output = diagnostics.setup("outputs", || evaluator.allocate_output());
+        if !verified {
+            diagnostics.evaluate(|| evaluator.evaluate_to(input, &mut output));
             let decryptor = context
                 .decryptor(client.external_lwe_secret_key(), &input_codec)
                 .unwrap();
-            let mut max_phase_error = 0u64;
             for (i, chunk) in output.iter().enumerate() {
                 assert_eq!(
                     decryptor.decrypt(chunk.as_view()).unwrap(),
                     workload.digit::<T>(INPUT, i)
                 );
-                let phase: u64 = decryptor.decrypt_phase(chunk.as_view()).unwrap().as_into();
-                let expected: u64 = workload.digit::<T>(INPUT, i).as_into();
-                let distance = phase.abs_diff(expected * (1u64 << 21)); // q/t, q=2^24 and t=8.
-                max_phase_error = max_phase_error.max(distance.min((1u64 << 24) - distance));
             }
-            eprintln!("phase_error_max,{name},{max_phase_error}");
-            reported = true;
+            diagnostics.phases(output.iter().enumerate().map(|(i, chunk)| {
+                (
+                    decryptor.decrypt_phase(chunk.as_view()).unwrap().as_into(),
+                    workload.digit::<T>(INPUT, i).as_into(),
+                )
+            }));
+            verified = true;
         }
         b.iter(|| evaluator.evaluate_to(black_box(input), black_box(&mut output)));
     });

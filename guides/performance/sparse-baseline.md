@@ -227,7 +227,8 @@ pre-existing context, client and generator buffers are outside the scope.
 The server includes ordinary return material; CBS fixtures additionally include
 trace/scheme-switch keys. These server totals should not be confused with the
 BR-only source arrays. Allocator reuse and first-plan construction affect setup
-latency; use the existing `server_keygen` Criterion IDs for sustained timing.
+latency; use the retained u64 `server_keygen` Criterion IDs in each backend's `setup` target for sustained timing. Historical word/engine combinations
+remain available at the recorded revisions.
 
 ## Implications and limits
 

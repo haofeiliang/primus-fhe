@@ -22,8 +22,10 @@
 //! `compilation` owns public LUT geometry without encryption.
 
 pub(super) mod compilation;
+#[cfg(any(feature = "rustfft", feature = "tfhe-fft"))]
 pub(super) mod glwe_fourier;
 pub(super) mod glwe_ntt;
 mod metrics;
+#[cfg(any(feature = "rustfft", feature = "tfhe-fft"))]
 pub(super) mod ntru_fourier;
 pub(super) mod ntru_ntt;

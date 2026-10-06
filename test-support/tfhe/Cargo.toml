@@ -28,10 +28,9 @@ primus_tfhe_ntru_fourier = { path = "../../crates/primus_tfhe_ntru_fourier" }
 primus_tfhe_ntru_lut = { path = "../../crates/primus_tfhe_ntru_lut", features = ["ntt", "fourier"] }
 rand = { workspace = true }
 
-# Targets instantiate these FFT engines explicitly; generic library APIs need neither.
+# The diagnostic always offers NTT; FFT profiles follow the selected engine features.
 [[example]]
 name = "validate_parameters"
-required-features = ["rustfft", "tfhe-fft"]
 
 [features]
 default = []

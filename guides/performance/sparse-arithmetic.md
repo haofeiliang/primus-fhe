@@ -871,7 +871,7 @@ other backend's performance is inferred from these numbers.
 Run the maintained workload with:
 
 ```sh
-cargo bench -p primus_tfhe_glwe_ntt --bench sparse_pbs -- \
+cargo bench -p primus_tfhe_glwe_ntt --bench sparse_paper -- \
   'glwe/ntt/u64/paper_2026_1730/std128[^/]*/sparse(_candidate_r2)?/' \
   --sample-size 40 --warm-up-time 0.3 --measurement-time 1.5 --noplot
 ```
@@ -984,7 +984,9 @@ own complete-request comparison; there is no new parameter recommendation.
 
 ### Reproduction and scope
 
-Use the maintained `sparse_pbs` and `circuit_bootstrap` targets at `09e5f1b8`.
+Use the `sparse_pbs` and `circuit_bootstrap` targets at the recorded revision
+`09e5f1b8`. At current HEAD the paper IDs moved to `sparse_paper`; the commands
+below retain the historical target for that pinned comparison.
 For the pair counterfactual, remove only `group_capacity`, `use_groups`, the
 `add_rotated_group_assign` branch and the `aggregation` module, then change the
 post-bucket condition from `T::BITS == 64 && !use_groups` to `T::BITS == 64`.

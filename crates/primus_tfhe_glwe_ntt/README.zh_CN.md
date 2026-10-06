@@ -85,7 +85,7 @@ let mut evaluator = context.evaluator(&server)?;
 
 两种 order 支持普通/交错 PBS、MVB 和 CBS。传入 `Some(cbs_config)` 添加稀疏 CBS 材料。 `ServerKey::blind_rotation_key()` 提供 `BlindRotationKey::{Classic,Sparse}`。
 
-`sparse_pbs` 基准在原有固定重量诊断之外，提供独立的 `paper_2026_1730` NAND 和带 padding 函数对比组。`complete_ring_return` 包含本后端的 ring KS 返回，`blind_rotation` 不包含返回。具体参数、测量与论文的差异见[对比记录](../../guides/performance/sparse-paper-comparison.md)；这些是实验性基准参数，不是安全参数预设。
+独立的 `sparse_paper` 基准提供 `paper_2026_1730` NAND 和带 padding 函数对比组；普通 `sparse_pbs` 只保留固定重量对照。`complete_ring_return` 包含本后端的 ring KS 返回，`blind_rotation` 不包含返回。具体参数、测量与论文的差异见[对比记录](../../guides/performance/sparse-paper-comparison.md)；这些是实验性基准参数，不是安全参数预设。
 
 独立的 `sparse_candidate_r2` ID 为已验证的 STD128 和三位函数配置选择两个副本、`2*h` 个桶及更少的 BR 层数。[消费者测量](../../guides/performance/sparse-consumer-measurements.md)覆盖 PBS、ManyLUT、MVB 和反馈调用。CBS 需要独立选择输出基：PBS 配置能正确工作，不代表其 gadget 控制和后续 CMux 也满足误差要求。
 
@@ -106,6 +106,8 @@ let mut evaluator = context.evaluator(&server)?;
 本后端重导出[共享系数密钥](../primus_tfhe_glwe/README.zh_CN.md#sparse-系数密钥)，使用 `SparseGlweBootstrappingKey<T, BarrettModulus<T>>`。Raw sparse BR 使用 `workspace.blind_rotate_lookup_table_to(&key, input, lut, output, ntt)`；工作区持有 scratch，仅在调用时借用密钥。
 
 Rustdoc 按职责组织 `key`（服务端材料）、`circuit_bootstrap`（CBS）、 `factorized`（MVB 程序和执行）与 `sparse`（稀疏生成与旋转）；常用工作流类型仍从 crate 根导入。 原始 GLWE 控制材料和 BR 工作区见 `bootstrapping_key` 与 `blind_rotation`。
+
+普通计时使用 `pbs`、`sparse_pbs`、`mvb` 和 `circuit_bootstrap`；u64 密钥生成和原始 BR/KS 阶段计时需显式选择 `--bench setup`。
 
 ## 进一步阅读
 

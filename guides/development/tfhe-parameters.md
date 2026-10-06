@@ -149,10 +149,12 @@ These are maxima of finite observations under explicitly selected bounds. They d
 
 ## Benchmark inventory
 
-All 18 declared benchmark targets now use the profiles above; the four backend
+The 18 ordinary benchmark targets use selected profiles above; the four backend
 families each have `pbs`, `sparse_pbs`, `mvb` and `circuit_bootstrap`, alongside
-public LUT compilation and the complete high-precision pipeline. Each retained
-workflow covers both words; Fourier covers both FFT engines and GLWE both orders.
+public LUT compilation and the complete high-precision pipeline. The reduced suite retains representative word, FFT-engine and GLWE-order
+comparisons instead of crossing every axis for every operation. Four explicit
+`setup` targets keep u64 keygen and GLWE stage diagnostics, and GLWE NTT
+`sparse_paper` keeps the paper/candidate comparisons.
 The [benchmark guide](../../crates/primus_tfhe/BENCHMARKS.md) maps targets to
 operations, geometry and timing boundaries. The [measurement record](../performance/tfhe-baseline.md)
 tracks the current baseline and the effect of removing eager fixture setup.
@@ -160,7 +162,7 @@ tracks the current baseline and the effect of removing eager fixture setup.
 The ternary targets were merged into dense PBS; duplicate ManyLUT comparisons
 now live in MVB, including sparse NTRU's independent/interleaved/factorized paths.
 Ordinary CBS and NTRU full/compact one-hot share the CBS target. The public LUT
-compiler covers Native, explicit PowOf2 q24, and Barrett primes for both words.
+compiler covers u64 Native and explicit PowOf2 q24, plus u32/u64 Barrett primes.
 The lookup benchmark now matches the c8/d5/o8 teaching workload at n800/N1024;
 the c7/d5/o3 parameter diagnostic remains a separate finite validation fixture.
 

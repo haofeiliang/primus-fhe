@@ -27,24 +27,24 @@ primus_tfhe_test_support = { path = "../../test-support/tfhe" }
 criterion = { workspace = true }
 
 [[bench]]
+name = "setup"
+harness = false
+
+[[bench]]
 name = "pbs"
 harness = false
-required-features = ["rustfft", "tfhe-fft"]
 
 [[bench]]
 name = "circuit_bootstrap"
 harness = false
-required-features = ["rustfft", "tfhe-fft"]
 
 [[bench]]
 name = "sparse_pbs"
 harness = false
-required-features = ["rustfft", "tfhe-fft"]
 
 [[bench]]
 name = "mvb"
 harness = false
-required-features = ["rustfft", "tfhe-fft"]
 
 # Targets instantiate these FFT engines explicitly; generic library APIs need neither.
 [[example]]

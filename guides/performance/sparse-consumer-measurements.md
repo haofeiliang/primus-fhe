@@ -374,7 +374,7 @@ convention; its new candidate IDs reproduce the configuration, not identical key
 bytes or all consumer workloads from this experiment.
 
 ```sh
-cargo bench -p primus_tfhe_glwe_ntt --bench sparse_pbs -- 'paper_2026_1730/.*/sparse_candidate_r2/'
+cargo bench -p primus_tfhe_glwe_ntt --bench sparse_paper -- 'paper_2026_1730/.*/sparse_candidate_r2/'
 ```
 
 This adds only three candidate parameter instances (STD128 u32/u64 and function
@@ -392,7 +392,7 @@ cargo fmt --all -- --check
 cargo check -p primus_tfhe_glwe_ntt --all-targets
 cargo test -p primus_tfhe_glwe_ntt --test sparse_pbs --test circuit_bootstrap --test factorized_pbs
 cargo clippy -p primus_tfhe_glwe_ntt --all-targets -- -D warnings
-cargo bench -p primus_tfhe_glwe_ntt --bench sparse_pbs -- 'paper_2026_1730/.*/sparse_candidate_r2/' --test
+cargo bench -p primus_tfhe_glwe_ntt --bench sparse_paper -- 'paper_2026_1730/.*/sparse_candidate_r2/' --test
 ```
 
 The temporary consumer and diagnostic/timing assets are removed after recording

@@ -7,25 +7,36 @@
 //! mapping to distinguish general evaluation costs from repeated-subtable gains.
 //! `shared_middle_chunk` exercises cross-output sharing and skipped selectors.
 //! No production-source copies or private-stage hooks are used.
-//! Run: cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features ntt,rustfft,tfhe-fft
+//! Run: cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features ntt,rustfft
 
+// The Cargo target accepts NTT or either FFT engine independently.
+#[cfg(any(feature = "ntt", feature = "rustfft", feature = "tfhe-fft"))]
 use criterion::{Criterion, criterion_group, criterion_main};
 
 #[global_allocator]
 static ALLOCATOR: primus_test_allocations::CountingAllocator =
     primus_test_allocations::CountingAllocator;
 
+#[cfg(any(feature = "ntt", feature = "rustfft", feature = "tfhe-fft"))]
 mod support;
-use support::{fourier, ntt};
 
 // Keep u64 NTT and one primary FFT engine; creation is measured once per modulus.
+#[cfg(any(feature = "ntt", feature = "rustfft", feature = "tfhe-fft"))]
 fn pipeline(c: &mut Criterion) {
-    ntt::benchmark::<u64, primus_ntt::U64NttTable>(c);
+    #[cfg(feature = "ntt")]
+    support::ntt::benchmark::<u64, primus_ntt::U64NttTable>(c);
     #[cfg(feature = "rustfft")]
-    fourier::benchmark::<u64, primus_fft::RustFftTable>(c, "rustfft");
+    support::fourier::benchmark::<u64, primus_fft::RustFftTable>(c, "rustfft");
     #[cfg(all(not(feature = "rustfft"), feature = "tfhe-fft"))]
-    fourier::benchmark::<u64, primus_fft::TfheFftTable>(c, "tfhe_fft");
+    support::fourier::benchmark::<u64, primus_fft::TfheFftTable>(c, "tfhe_fft");
 }
 
+#[cfg(any(feature = "ntt", feature = "rustfft", feature = "tfhe-fft"))]
 criterion_group!(benches, pipeline);
+#[cfg(any(feature = "ntt", feature = "rustfft", feature = "tfhe-fft"))]
 criterion_main!(benches);
+
+#[cfg(not(any(feature = "ntt", feature = "rustfft", feature = "tfhe-fft")))]
+fn main() {
+    eprintln!("Enable ntt, rustfft or tfhe-fft to run this benchmark.");
+}
