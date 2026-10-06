@@ -21,67 +21,9 @@ use primus_tfhe_ntru_fourier::{
 };
 use rand::{SeedableRng, rngs::StdRng};
 
-// Set true to use fixed-weight binary sparse BR with the same CBS pipeline.
-const SPARSE: bool = false;
-
 // This example uses u64 coefficients with the explicit parameters below.
 type Word = u64;
 const N: usize = 1024;
-
-// Key parameters: n=800, N=1024; independent external LWE q=2^24.
-// Noise sigmas below are in coefficient units; these are arithmetic examples, not security presets.
-fn parameters() -> TfheParameters<Word, PowOf2Modulus<Word>> {
-    let modulus = NativeModulus::<Word>::new();
-    let lwe_modulus: Word = 1 << 24;
-
-    // None retains floor(modulus_bits / log_basis) levels; it need not cover every low bit.
-    let full = DecompositionConfig {
-        log_basis: DecompositionBaseLog::new(8),
-        level_count: None,
-    };
-
-    TfheParameters::try_from_config(TfheConfig {
-        external_lwe: LweEncryptionParameters::new(
-            LweDimension::new(800),
-            PowOf2Modulus::new(lwe_modulus),
-            if SPARSE {
-                SecretKeyDistr::fixed_hamming_weight_binary(800, 32)
-            } else {
-                SecretKeyDistr::UniformBinary
-            },
-            lwe_modulus as f64 * 2.046151696979124e-6,
-        ),
-        accumulator_modulus: modulus, // Ring Q; distinct from the external LWE q.
-        poly_length: PolyLength::new(N),
-        accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
-        accumulator_noise_standard_deviation: 0.7,
-        blind_rotation: full,
-        key_switching: DecompositionConfig {
-            log_basis: DecompositionBaseLog::new(3),
-            level_count: None,
-        },
-        key_switching_noise_standard_deviation: 3.2, // Return key switch in the q domain.
-    })
-    .unwrap()
-}
-
-// CBS emits a gadget ciphertext; its output basis is separate from the two evaluation-key bases.
-fn circuit_config() -> CircuitBootstrapConfig {
-    let internal = DecompositionConfig {
-        log_basis: DecompositionBaseLog::new(8),
-        level_count: None,
-    };
-    CircuitBootstrapConfig {
-        output: DecompositionConfig {
-            log_basis: DecompositionBaseLog::new(8),
-            level_count: Some(DecompositionLevelCount::new(3)),
-        },
-        trace: internal,
-        trace_noise_standard_deviation: 0.7,
-        scheme_switch: internal,
-        scheme_switch_noise_standard_deviation: 0.7,
-    }
-}
 
 fn main() {
     let parameters = parameters();
@@ -93,16 +35,8 @@ fn main() {
     let mut rng = StdRng::seed_from_u64(42);
     let mut generator = KeyGenerator::new(&context);
     let client_key = generator.try_generate_client_key(&mut rng).unwrap();
-    let blind_rotation = if SPARSE {
-        BlindRotationConfig::Sparse {
-            copy_count: 3,
-            bucket_count: 64,
-        }
-    } else {
-        BlindRotationConfig::Classic
-    };
     let blind_rotation_key = generator
-        .try_generate_blind_rotation_key(&client_key, blind_rotation, &mut rng)
+        .try_generate_blind_rotation_key(&client_key, BlindRotationConfig::Classic, &mut rng)
         .unwrap();
     let circuit_parameters =
         CircuitBootstrapParameters::try_from_config(context.parameters(), circuit_config())
@@ -154,5 +88,56 @@ fn main() {
         let expected = if bit == 0 { &lhs_message } else { &rhs_message };
         assert_eq!(&decoded, expected);
         println!("bit {bit}: selected coefficients {}", decoded[0]);
+    }
+}
+
+// Key parameters: n=800, N=1024; independent external LWE q=2^24.
+// Noise sigmas below are in coefficient units; these are arithmetic examples, not security presets.
+fn parameters() -> TfheParameters<Word, PowOf2Modulus<Word>> {
+    let modulus = NativeModulus::<Word>::new();
+    let lwe_modulus: Word = 1 << 24;
+
+    // None retains floor(modulus_bits / log_basis) levels; it need not cover every low bit.
+    let full = DecompositionConfig {
+        log_basis: DecompositionBaseLog::new(8),
+        level_count: None,
+    };
+
+    TfheParameters::try_from_config(TfheConfig {
+        external_lwe: LweEncryptionParameters::new(
+            LweDimension::new(800),
+            PowOf2Modulus::new(lwe_modulus),
+            SecretKeyDistr::UniformBinary,
+            lwe_modulus as f64 * 2.046151696979124e-6,
+        ),
+        accumulator_modulus: modulus, // Ring Q; distinct from the external LWE q.
+        poly_length: PolyLength::new(N),
+        accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
+        accumulator_noise_standard_deviation: 0.7,
+        blind_rotation: full,
+        key_switching: DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(3),
+            level_count: None,
+        },
+        key_switching_noise_standard_deviation: 3.2, // Return key switch in the q domain.
+    })
+    .unwrap()
+}
+
+// CBS emits a gadget ciphertext; its output basis is separate from the two evaluation-key bases.
+fn circuit_config() -> CircuitBootstrapConfig {
+    let internal = DecompositionConfig {
+        log_basis: DecompositionBaseLog::new(8),
+        level_count: None,
+    };
+    CircuitBootstrapConfig {
+        output: DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(8),
+            level_count: Some(DecompositionLevelCount::new(3)),
+        },
+        trace: internal,
+        trace_noise_standard_deviation: 0.7,
+        scheme_switch: internal,
+        scheme_switch_noise_standard_deviation: 0.7,
     }
 }

@@ -20,58 +20,6 @@ use rand::{SeedableRng, rngs::StdRng};
 // This example uses u64 coefficients with the explicit parameters below.
 type Word = u64;
 const N: usize = 1024;
-const ORDER: PbsOrder = PbsOrder::BootstrapKeyswitch;
-
-// Key parameters: n=728, N=1024; LWE and GLWE share the ciphertext modulus.
-// Noise sigmas below are in coefficient units; these are arithmetic examples, not security presets.
-fn parameters() -> TfheParameters<Word> {
-    // NTT requires a prime admitting a 2N-th root, rather than a power-of-two modulus.
-    let ring_modulus: Word = 1_125_899_906_826_241;
-    let modulus = BarrettModulus::new(ring_modulus);
-    let q = ring_modulus as f64;
-
-    // None retains floor(modulus_bits / log_basis) levels; it need not cover every low bit.
-    let full = DecompositionConfig {
-        log_basis: DecompositionBaseLog::new(8),
-        level_count: None,
-    };
-
-    TfheParameters::try_from_config(TfheConfig {
-        small_lwe: LweEncryptionParameters::new(
-            LweDimension::new(728),
-            modulus,
-            SecretKeyDistr::fixed_hamming_weight_binary(728, 32),
-            3.2 * q / 16384.0,
-        ),
-        accumulator_dimension: GlweDimension::new(1),
-        poly_length: PolyLength::new(N),
-        accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
-        accumulator_noise_standard_deviation: 6.4,
-        blind_rotation: full,
-        key_switching: full,
-        key_switching_noise_standard_deviation: 6.4,
-        pbs_order: ORDER,
-    })
-    .unwrap()
-}
-
-// CBS emits a gadget ciphertext; its output basis is separate from the two evaluation-key bases.
-fn circuit_config() -> CircuitBootstrapConfig {
-    let internal = DecompositionConfig {
-        log_basis: DecompositionBaseLog::new(8),
-        level_count: None,
-    };
-    CircuitBootstrapConfig {
-        output: DecompositionConfig {
-            log_basis: DecompositionBaseLog::new(8),
-            level_count: Some(DecompositionLevelCount::new(2)),
-        },
-        trace: internal,
-        trace_noise_standard_deviation: 6.4,
-        scheme_switch: internal,
-        scheme_switch_noise_standard_deviation: 6.4,
-    }
-}
 
 fn main() {
     let parameters = parameters();
@@ -141,5 +89,56 @@ fn main() {
         let expected = if bit == 0 { &lhs_message } else { &rhs_message };
         assert_eq!(&decoded, expected);
         println!("bit {bit}: selected coefficients {}", decoded[0]);
+    }
+}
+
+// Key parameters: n=728, N=1024; LWE and GLWE share the ciphertext modulus.
+// Noise sigmas below are in coefficient units; these are arithmetic examples, not security presets.
+fn parameters() -> TfheParameters<Word> {
+    // NTT requires a prime admitting a 2N-th root, rather than a power-of-two modulus.
+    let ring_modulus: Word = 1_125_899_906_826_241;
+    let modulus = BarrettModulus::new(ring_modulus);
+    let q = ring_modulus as f64;
+
+    // None retains floor(modulus_bits / log_basis) levels; it need not cover every low bit.
+    let full = DecompositionConfig {
+        log_basis: DecompositionBaseLog::new(8),
+        level_count: None,
+    };
+
+    TfheParameters::try_from_config(TfheConfig {
+        small_lwe: LweEncryptionParameters::new(
+            LweDimension::new(728),
+            modulus,
+            SecretKeyDistr::fixed_hamming_weight_binary(728, 32),
+            3.2 * q / 16384.0,
+        ),
+        accumulator_dimension: GlweDimension::new(1),
+        poly_length: PolyLength::new(N),
+        accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
+        accumulator_noise_standard_deviation: 6.4,
+        blind_rotation: full,
+        key_switching: full,
+        key_switching_noise_standard_deviation: 6.4,
+        pbs_order: PbsOrder::BootstrapKeyswitch,
+    })
+    .unwrap()
+}
+
+// CBS emits a gadget ciphertext; its output basis is separate from the two evaluation-key bases.
+fn circuit_config() -> CircuitBootstrapConfig {
+    let internal = DecompositionConfig {
+        log_basis: DecompositionBaseLog::new(8),
+        level_count: None,
+    };
+    CircuitBootstrapConfig {
+        output: DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(8),
+            level_count: Some(DecompositionLevelCount::new(2)),
+        },
+        trace: internal,
+        trace_noise_standard_deviation: 6.4,
+        scheme_switch: internal,
+        scheme_switch_noise_standard_deviation: 6.4,
     }
 }

@@ -1,6 +1,7 @@
 //! Evaluate (x*x + 3*x + 7) mod 65536 on eight two-bit chunks: 16-bit input and output.
 //!
 //! Run: `cargo run --release -p primus_tfhe_ntru_lut --example ntt_lookup --features ntt`
+//! Sparse BR and public-lift setup: see the crate README.
 //! Arithmetic profiles: guides/development/tfhe-parameters.md (not security presets).
 
 use primus_encoding::RoundedCodec;
@@ -18,10 +19,6 @@ use primus_tfhe_ntru_ntt::{
 };
 use rand::{SeedableRng, rngs::StdRng};
 
-// The same fixed-weight binary secret supports both choices. To select sparse BR,
-// use BlindRotationConfig::Sparse { copy_count: 3, bucket_count: 64 }.
-const BLIND_ROTATION: BlindRotationConfig = BlindRotationConfig::Classic;
-
 // This example uses u64 coefficients with the explicit parameters below.
 type Word = u64;
 const N: usize = 1024;
@@ -36,6 +33,88 @@ const CONFIG: LookupTableConfig = LookupTableConfig {
 const CHUNK_BITS: usize = 2;
 const INPUT_BITS: usize = CHUNK_BITS * CONFIG.input_chunk_count;
 const OUTPUT_BITS: usize = CHUNK_BITS * CONFIG.output_chunk_count;
+
+fn main() {
+    println!("f(x) = (x*x + 3*x + 7) mod {}", 1u64 << OUTPUT_BITS);
+    println!("Input: {INPUT_BITS} bits; output: {OUTPUT_BITS} bits");
+
+    let parameters = parameters();
+    let context = TfheContext::<Word, Table, _>::try_from_parameters(parameters).unwrap();
+    // Public message encoding at external q, chosen independently of key generation.
+    let input_codec = RoundedCodec::new(8, context.parameters().external_lwe().cipher_modulus());
+
+    // Client: generate independent LWE/NTRU secrets plus CBS-enabled server material.
+    let mut rng = StdRng::seed_from_u64(42);
+    let mut generator = KeyGenerator::new(&context);
+    let client_key = generator.try_generate_client_key(&mut rng).unwrap();
+    let server_key = generator
+        .try_generate_server_key(
+            &client_key,
+            BlindRotationConfig::Classic,
+            Some(circuit_config()),
+            &mut rng,
+        )
+        .unwrap();
+    // Ordinary messages borrow only the external secret from the setup bundle.
+    let external_secret = client_key.external_lwe_secret_key();
+    let encryptor = context.encryptor(external_secret, &input_codec).unwrap();
+    let decryptor = context.decryptor(external_secret, &input_codec).unwrap();
+    let mut input: Vec<_> = (0..CONFIG.input_chunk_count)
+        .map(|_| context.allocate_lwe_ciphertext())
+        .collect();
+
+    // Server: compile the public function independently of client secrets.
+    let table = compile_table(context.parameters(), &input_codec);
+
+    // Server: bind public material once and reuse all online buffers.
+    let mut evaluator = NttLookupTableEvaluator::try_new(
+        &context,
+        &server_key,
+        None, // Classic BR supplies the initializer for public polynomial lifts.
+        &table,
+    )
+    .unwrap();
+    let mut output = evaluator.allocate_output();
+
+    // Eight two-bit chunks, written most-significant first.
+    for x in [0b10_10_10_11_11_00_11_01, 0] {
+        // Client -> server: split before encryption, least-significant chunk first.
+        for (i, chunk) in input.iter_mut().enumerate() {
+            let digit = ((x >> (CHUNK_BITS * i)) & 3) as Word;
+            encryptor
+                .encrypt_padded_to(digit, chunk.as_mut_view(), &mut rng)
+                .unwrap();
+        }
+
+        // Server -> client: select, rotate and return encrypted output chunks.
+        evaluator.evaluate_to(&input, &mut output);
+
+        // Client: decode and join chunks in the same least-significant-first order.
+        let mut result = 0usize;
+        for (i, chunk) in output.iter().enumerate() {
+            let digit = decryptor.decrypt(chunk.as_view()).unwrap() as usize;
+            result |= digit << (CHUNK_BITS * i);
+        }
+        assert_eq!(result, function(x));
+        println!("f({x}) = {result}");
+    }
+}
+
+// Public table compilation needs parameters and the agreed encoding, not a secret.
+// The callback returns one output chunk for each complete input value.
+fn compile_table(
+    parameters: &TfheParameters<Word, PowOf2Modulus<Word>>,
+    input_codec: &RoundedCodec<Word, PowOf2Modulus<Word>>,
+) -> HighPrecisionLookupTable<Word> {
+    HighPrecisionLookupTable::try_new(
+        parameters.poly_length(),
+        parameters.accumulator_ntru().cipher_modulus(),
+        input_codec,
+        CONFIG,
+        |x, output| ((function(x) >> (CHUNK_BITS * output)) & 3) as Word,
+    )
+    .unwrap()
+}
 
 // Return 16 bits and retain dependence on the high input chunks. Input and output
 // chunk counts are independent; this example chooses eight for both.
@@ -95,99 +174,5 @@ fn circuit_config() -> CircuitBootstrapConfig {
         trace_noise_standard_deviation: 0.7,
         scheme_switch: internal,
         scheme_switch_noise_standard_deviation: 0.7,
-    }
-}
-
-// Demonstrates client setup and repeated server lookups with one reusable evaluator.
-fn main() {
-    println!("f(x) = (x*x + 3*x + 7) mod {}", 1u64 << OUTPUT_BITS);
-    println!("Input: {INPUT_BITS} bits; output: {OUTPUT_BITS} bits");
-
-    let parameters = parameters();
-    let context = TfheContext::<Word, Table, _>::try_from_parameters(parameters).unwrap();
-    // Public message encoding at external q, chosen independently of key generation.
-    let input_codec = RoundedCodec::new(8, context.parameters().external_lwe().cipher_modulus());
-
-    // Client: generate independent LWE/NTRU secrets plus CBS-enabled server material.
-    let mut rng = StdRng::seed_from_u64(42);
-    let mut generator = KeyGenerator::new(&context);
-    let client_key = generator.try_generate_client_key(&mut rng).unwrap();
-    let server_key = generator
-        .try_generate_server_key(
-            &client_key,
-            BLIND_ROTATION,
-            Some(circuit_config()),
-            &mut rng,
-        )
-        .unwrap();
-    // Ordinary messages borrow only the external secret from the setup bundle.
-    let external_secret = client_key.external_lwe_secret_key();
-    let encryptor = context.encryptor(external_secret, &input_codec).unwrap();
-    let decryptor = context.decryptor(external_secret, &input_codec).unwrap();
-    let mut input: Vec<_> = (0..CONFIG.input_chunk_count)
-        .map(|_| context.allocate_lwe_ciphertext())
-        .collect();
-
-    // Public preprocessing: the callback returns one output digit for a complete input x.
-    let table = HighPrecisionLookupTable::try_new(
-        context.parameters().poly_length(),
-        context.parameters().accumulator_ntru().cipher_modulus(),
-        &input_codec,
-        CONFIG,
-        |x, output| ((function(x) >> (CHUNK_BITS * output)) & 3) as Word,
-    )
-    .unwrap();
-
-    // Client: generate NLEV[1] only for sparse plans with public lifts. Here its
-    // basis/noise match BR (above, sigma=0.7); the ciphertext uses fresh randomness.
-    // A separate NlevParameters value can select another lift basis or noise.
-    let lift_parameters = context.parameters().blind_rotation();
-    let lift = if matches!(BLIND_ROTATION, BlindRotationConfig::Sparse { .. })
-        && table.needs_public_lift()
-    {
-        Some(
-            generator
-                .try_generate_public_lift_key(
-                    client_key.accumulator_ntru_secret_key(),
-                    lift_parameters,
-                    &mut rng,
-                )
-                .unwrap(),
-        )
-    } else {
-        None // Classic reuses its initializer; no-Lift plans need neither.
-    };
-
-    // Server: bind public material once and reuse all online buffers.
-    let mut evaluator = NttLookupTableEvaluator::try_new(
-        &context,
-        &server_key,
-        lift.as_ref().map(|key| (key.as_view(), lift_parameters)),
-        &table,
-    )
-    .unwrap();
-    let mut output = evaluator.allocate_output();
-
-    // Eight two-bit chunks, written most-significant first.
-    for x in [0b10_10_10_11_11_00_11_01, 0] {
-        // Client -> server: split before encryption, least-significant chunk first.
-        for (i, chunk) in input.iter_mut().enumerate() {
-            let digit = ((x >> (CHUNK_BITS * i)) & 3) as Word;
-            encryptor
-                .encrypt_padded_to(digit, chunk.as_mut_view(), &mut rng)
-                .unwrap();
-        }
-
-        // Server -> client: select, rotate and return encrypted output chunks.
-        evaluator.evaluate_to(&input, &mut output);
-
-        // Client: decode and join chunks in the same least-significant-first order.
-        let mut result = 0usize;
-        for (i, chunk) in output.iter().enumerate() {
-            let digit = decryptor.decrypt(chunk.as_view()).unwrap() as usize;
-            result |= digit << (CHUNK_BITS * i);
-        }
-        assert_eq!(result, function(x));
-        println!("f({x}) = {result}");
     }
 }

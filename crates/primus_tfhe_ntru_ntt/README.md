@@ -17,15 +17,15 @@ The [basic example](examples/ntru_ntt_basic.rs) shows parameters → context →
 
 Examples use `Word = u64` and `U64NttTable`, with one explicit parameter set per workflow. The library and numerical diagnostics still support both u32 and u64. Each file defines its own `parameters()` using an explicit `TfheConfig`: dimensions, modulus types, secret distributions, noise and BR/KS decompositions are visible together. Message codecs are chosen separately in `main`; key generation does not depend on t. CBS examples also define `circuit_config()` for the output, trace and scheme-switch bases. The [parameter and validation guide](../../guides/development/tfhe-parameters.md) records numerical choices; each example handles two requests with the same buffers.
 
-Examples separate client encryption, server evaluation and client decryption; see [client/server roles and buffer allocation](../primus_tfhe/README.md#client-and-server-roles).
+Examples start with `main`, followed by local parameters. Each fixes one workflow: classic PBS/CBS/one-hot/MVB, or sparse ManyLUT in the dedicated sparse file. Basic `prepare_server` accepts public context, encoding and evaluation keys only; the two requests reuse the same LUT, evaluator and output buffer. Client encryption and decryption stay in `main`; see [client/server roles and buffer allocation](../primus_tfhe/README.md#client-and-server-roles).
 
 | Operation | Complete example |
 | --- | --- |
 | Classic PBS | [basic](examples/ntru_ntt_basic.rs) |
-| Sparse PBS / interleaved ManyLUT | [sparse](examples/ntru_ntt_sparse.rs); `BLIND_ROTATION` selects classic/sparse |
-| CBS → CMux | [circuit_bootstrap](examples/ntru_ntt_circuit_bootstrap.rs); `SPARSE=true` selects sparse BR |
-| Factorized MVB | [thresholds](examples/ntru_ntt_mvb_thresholds.rs); `BLIND_ROTATION` selects classic/sparse |
-| One-hot CBS → CMux | [one_hot](examples/ntru_ntt_one_hot.rs); `BLIND_ROTATION` selects classic/sparse |
+| Sparse PBS / interleaved ManyLUT | [sparse](examples/ntru_ntt_sparse.rs) |
+| CBS → CMux | [circuit_bootstrap](examples/ntru_ntt_circuit_bootstrap.rs) |
+| Factorized MVB | [thresholds](examples/ntru_ntt_mvb_thresholds.rs) |
+| One-hot CBS → CMux | [one_hot](examples/ntru_ntt_one_hot.rs) |
 | High-precision lookup | [lookup](../primus_tfhe_ntru_lut/examples/ntt_lookup.rs) |
 
 ManyLUT interleaves outputs within one blind rotation, shares one Q→q conversion across multiple outputs, and batches their LWE key switches; factorized MVB uses public factors and a different evaluation interface. NTRU sparse supports ordinary/interleaved PBS, factorized MVB, CBS and one-hot. Sparse BR requires a fixed-weight binary external secret.

@@ -9,7 +9,7 @@
 
 ## 工作流
 
-[NTT](../primus_tfhe_ntru_ntt/README.zh_CN.md) 和 [Fourier](../primus_tfhe_ntru_fourier/README.zh_CN.md) 均支持 classic binary/ternary 和 sparse fixed-weight binary 查表。使用 `generator.try_generate_server_key(&client, blind_rotation, Some(cbs_config), rng)` 生成求值材料，算法选择 `BlindRotationConfig::Classic` 或 `Sparse { copy_count, bucket_count }`；CBS 材料为必需项。客户端生成 chunks，再用 `encrypt_padded` 分别加密。示例对两种算法均使用 fixed-weight binary 秘密，只需修改 `BLIND_ROTATION` 即可切换算法，无需改变秘密分布。
+[NTT](../primus_tfhe_ntru_ntt/README.zh_CN.md) 和 [Fourier](../primus_tfhe_ntru_fourier/README.zh_CN.md) 均支持 classic binary/ternary 和 sparse fixed-weight binary 查表。使用 `generator.try_generate_server_key(&client, blind_rotation, Some(cbs_config), rng)` 生成求值材料，算法选择 `BlindRotationConfig::Classic` 或 `Sparse { copy_count, bucket_count }`；CBS 材料为必需项。客户端生成 chunks，再用 `encrypt_padded` 分别加密。基础示例固定 classic BR，保留一条八 chunk 工作流；sparse/public-lift 用法见下文[求值与工作区](#求值与工作区)。
 
 `HighPrecisionLookupTable::try_new(poly_length, ring_modulus, &input_codec, config, function)` 仅用 N、Q 和 codec 的 q/t 编译公开表，不需要 TFHE 参数、秘密或变换。回调接收 `(完整输入索引, 输出 chunk 索引)`，返回一个 digit。用 `NttLookupTableEvaluator::try_new(context, server_key, None, table)` 或 `FourierLookupTableEvaluator::try_new(context, server_key, None, table)` 绑定资源，调用一次 `allocate_output()`，随后重复调用 `evaluate_to(input_chunks, output_chunks)`。输出逐个使用 `context.decryptor(client.external_lwe_secret_key(), &input_codec)` 解码。表拥有 chunk 编码，密钥不依赖 t。Evaluator 借用 context、服务端密钥和表，求值不需要客户端秘密。
 
@@ -91,21 +91,57 @@ cargo run --release -p primus_tfhe_ntru_lut --example fourier_lookup --features 
 
 `public_lift=None` 时，`try_new` 按需借用 classic initializer 及其 BR 参数。显式材料优先，因此 classic 也可使用独立的 lift basis/噪声。Sparse 计划含 `Lift` 且未提供独立材料时返回 `MissingPublicLiftKey`；无 `Lift` 则无需提供。One-hot evaluator 不暴露 BR controls。
 
-Sparse setup 在公开表确认需要提升后才生成材料。两个后端的 `KeyGenerator::try_generate_public_lift_key` 返回已有的变换域 NLEV 类型，不增加新的密钥 owner 或 ServerKey 字段：
+Sparse 要求固定重量 binary 外部秘密与匹配的 CBS 参数，可沿用查表示例的 n=800、h=32、N=1024、q24。调用方使用同一 context/编码编译公开表并加密输入 chunks。以下 NTT 片段接收这些已准备的值，避免复制整套参数：client 生成计算密钥，并按表的实际需要生成 NLEV[1]；server 绑定材料并返回密文。
 
-```rust,ignore
-// 此处选择 BR 的 basis 和行噪声；也可用独立 NlevParameters 选择其他值。
-let lift_parameters = context.parameters().blind_rotation();
-let lift = table.needs_public_lift().then(|| {
-    generator.try_generate_public_lift_key(
-        client.accumulator_ntru_secret_key(), lift_parameters, &mut rng,
-    )
-}).transpose()?;
-let mut evaluator = NttLookupTableEvaluator::try_new(
-    &context, &server,
-    lift.as_ref().map(|key| (key.as_view(), lift_parameters)), &table,
-)?;
+```rust,no_run
+use primus_modulus::PowOf2Modulus;
+use primus_ntt::U64NttTable as Table;
+use primus_tfhe::{BlindRotationConfig, CircuitBootstrapConfig, LweCiphertext};
+use primus_tfhe_ntru::ClientKey;
+use primus_tfhe_ntru_ntt::{KeyGenerator, TfheContext};
+use primus_tfhe_ntru_lut::{HighPrecisionLookupTable, NttLookupTableEvaluator as LookupEvaluator};
+use rand::rngs::StdRng;
+
+// 完整展示 setup 和一次密文请求；后续请求继续复用
+// server 段创建的 evaluator 与输出缓冲。
+fn sparse_setup_and_request(
+    context: &TfheContext<u64, Table, PowOf2Modulus<u64>>,
+    client: &ClientKey<u64>,
+    cbs_config: CircuitBootstrapConfig,
+    table: &HighPrecisionLookupTable<u64>,
+    inputs: &[LweCiphertext<u64>],
+    rng: &mut StdRng,
+) -> Vec<LweCiphertext<u64>> {
+    // Client：为自己的固定重量 binary LWE 秘密生成计算材料。
+    let mut generator = KeyGenerator::new(context);
+    let server_key = generator.try_generate_server_key(
+        client,
+        BlindRotationConfig::Sparse { copy_count: 3, bucket_count: 64 },
+        Some(cbs_config),
+        rng,
+    ).unwrap();
+    // 这里使用 BR 的 basis 和行噪声（查表示例中 sigma=0.7）。
+    // 独立的 NlevParameters 可以选择其他提升 basis/噪声预算。
+    let lift_parameters = context.parameters().blind_rotation();
+    let lift = table.needs_public_lift().then(|| {
+        generator.try_generate_public_lift_key(
+            client.accumulator_ntru_secret_key(), lift_parameters, rng,
+        ).unwrap()
+    });
+
+    // Server：接收计算密钥/提升密文、公开参数/表，以及输入密文 chunks。
+    let mut evaluator = LookupEvaluator::try_new(
+        context, &server_key,
+        lift.as_ref().map(|key| (key.as_view(), lift_parameters)), table,
+    ).unwrap();
+    let mut outputs = evaluator.allocate_output();
+    evaluator.evaluate_to(inputs, &mut outputs);
+    // 后续请求复用此 evaluator，并覆盖同一输出缓冲。
+    outputs // 只将结果密文交回 client 解密。
+}
 ```
+
+Fourier 对应替换为 `primus_fft::RustFftTable as Table`、`primus_tfhe_ntru_fourier::{KeyGenerator, TfheContext}` 和 `FourierLookupTableEvaluator as LookupEvaluator`。使用 Fourier 的 Native64 环参数，外部仍为 `PowOf2Modulus<u64>`，全部材料由同一 FFT 表实例生成。Evaluator 借用期间须保留 key/lift 的 owner；重复请求不应重新调用整个 setup 函数。
 
 这是同一累加秘密下的独立 one 加密，不对 sparse 首桶求和派生，后者具有不同的误差分布。生成前检查环和秘密，Fourier 使用 context 的 FFT 表。普通 sparse PBS/CBS/one-hot 不承担此材料的生成或存储成本。
 

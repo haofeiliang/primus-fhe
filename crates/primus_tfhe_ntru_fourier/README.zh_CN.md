@@ -17,15 +17,15 @@ cargo run -p primus_tfhe_ntru_fourier --release --example ntru_fourier_basic --f
 
 示例使用 `Word = u64` 和 Native64，每条工作流只保留一套显式参数；库与数值诊断仍支持 u32/u64。需要 TFHE-FFT 时，将 `RustFftTable as Table` 导入改为 `TfheFftTable as Table`；切换引擎时也要修改示例 target 的 `required-features`，并使用 `--features tfhe-fft`。每个文件内的 `parameters()` 直接构造 `TfheConfig`，集中列出尺寸、模数类型、秘密分布、噪声和 BR/KS 分解；CBS 示例还用 `circuit_config()` 明确输出、trace 和 scheme-switch 的分解。[数值配置与验证](../../guides/development/tfhe-parameters.md)集中记录参数选择；每例复用同一组缓冲处理两次请求。
 
-示例区分客户端加密、服务端求值与客户端解密，见[双方职责与缓冲分配](../primus_tfhe/README.zh_CN.md#客户端与服务端边界)。
+示例先展示 `main`，后列本地参数。每例固定一条流程：classic PBS/CBS/one-hot/MVB，或专用 sparse 文件中的 ManyLUT。基础例的 `prepare_server` 只接收公开 context、编码和计算密钥；两次请求复用 LUT、evaluator 和输出缓冲，加密与解密留在 `main`。见[双方职责与缓冲分配](../primus_tfhe/README.zh_CN.md#客户端与服务端边界)。
 
 | 操作 | 完整示例 |
 | --- | --- |
 | Classic PBS | [basic](examples/ntru_fourier_basic.rs) |
-| Sparse PBS / 交错多输出 ManyLUT | [sparse](examples/ntru_fourier_sparse.rs)；`BLIND_ROTATION` 选择 classic/sparse |
-| CBS → CMux | [circuit_bootstrap](examples/ntru_fourier_circuit_bootstrap.rs)；`SPARSE=true` 选择 sparse BR |
-| 分解式 MVB | [thresholds](examples/ntru_fourier_mvb_thresholds.rs)；`BLIND_ROTATION` 选择 classic/sparse |
-| One-hot CBS → CMux | [one_hot](examples/ntru_fourier_one_hot.rs)；`BLIND_ROTATION` 选择 classic/sparse |
+| Sparse PBS / 交错多输出 ManyLUT | [sparse](examples/ntru_fourier_sparse.rs) |
+| CBS → CMux | [circuit_bootstrap](examples/ntru_fourier_circuit_bootstrap.rs) |
+| 分解式 MVB | [thresholds](examples/ntru_fourier_mvb_thresholds.rs) |
+| One-hot CBS → CMux | [one_hot](examples/ntru_fourier_one_hot.rs) |
 | 高精度查表 | [lookup](../primus_tfhe_ntru_lut/examples/fourier_lookup.rs) |
 
 ManyLUT 通过交错共享一次盲旋转，多输出返回还共享一次 Q→q 转换并分块进行 LWE key switch；分解式 MVB 通过公共因子生成多输出，是不同的求值接口。 NTRU sparse 支持普通/交错 PBS、分解式 MVB、CBS 和 one-hot；稀疏 BR 要求 fixed-weight binary 外部秘密。

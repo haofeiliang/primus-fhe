@@ -17,15 +17,15 @@ The [basic example](examples/ntt_basic.rs) shows parameters → context → pair
 
 Examples use `Word = u64` and `U64NttTable`, with one explicit parameter set per workflow. The library and numerical diagnostics still support both u32 and u64. Each file defines its own `parameters()` using an explicit `TfheConfig`: dimensions, modulus types, secret distributions, noise and BR/KS decompositions are visible together. CBS examples also define `circuit_config()` for the output, trace and scheme-switch bases. The [parameter and validation guide](../../guides/development/tfhe-parameters.md) records numerical choices; each example handles two requests with the same buffers.
 
-Examples separate client encryption, server evaluation and client decryption; see [client/server roles and buffer allocation](../primus_tfhe/README.md#client-and-server-roles).
+Examples start with `main`, followed by local parameters. Each fixes one workflow: classic PBS/CBS/MVB, or sparse ManyLUT/CBS in the dedicated sparse files. Basic `prepare_server` accepts public context, encoding and evaluation keys only; the two requests reuse the same LUT, evaluator and output buffer. Client encryption and decryption stay in `main`; see [client/server roles and buffer allocation](../primus_tfhe/README.md#client-and-server-roles).
 
 | Operation | Complete example |
 | --- | --- |
 | Classic PBS | [basic](examples/ntt_basic.rs) |
-| Sparse PBS / interleaved ManyLUT | [sparse](examples/ntt_sparse.rs); `BLIND_ROTATION` selects classic/sparse |
+| Sparse PBS / interleaved ManyLUT | [sparse](examples/ntt_sparse.rs) |
 | Classic CBS → CMux | [circuit_bootstrap](examples/ntt_circuit_bootstrap.rs) |
 | Sparse CBS → CMux | [sparse_circuit_bootstrap](examples/ntt_sparse_circuit_bootstrap.rs) |
-| Factorized MVB | [thresholds](examples/mvb_thresholds.rs); `BLIND_ROTATION` selects classic/sparse |
+| Factorized MVB | [thresholds](examples/mvb_thresholds.rs) |
 
 ManyLUT interleaves outputs within one blind rotation; factorized MVB uses public factors and a different evaluation interface.
 
@@ -37,7 +37,7 @@ Client factories take only the relevant secret: pass `client_key.external_lwe_se
 
 NTT tables must implement `MonomialNttTable`; built-in tables support it. Context construction checks length and modulus. All transformed keys/values must follow the supplied table's representation. Owning `NttGlweSecretKey` records q; ordinary and evaluation-key generation reject a different key modulus before sampling. Imports use `new(values, size, distribution, modulus)`. Equal q/N does not prove roots/order or secret identity; see the [GLWE key contracts](../primus_glwe/README.md).
 
-Choose `PbsOrder::BootstrapKeyswitch` for external dimension n or `KeyswitchBootstrap` for dimension dN. Use `context.allocate_lwe_ciphertext()` to allocate the selected layout. The basic example selects binary secrets and `BootstrapKeyswitch`; change its `ORDER` constant to use `KeyswitchBootstrap`.
+Choose `PbsOrder::BootstrapKeyswitch` for external dimension n or `KeyswitchBootstrap` for dimension dN. Use `context.allocate_lwe_ciphertext()` to allocate the selected layout. The basic example selects binary secrets and `BootstrapKeyswitch`; MVB examples use `KeyswitchBootstrap`.
 
 ## Reusing evaluators
 

@@ -11,12 +11,68 @@ use primus_modulus::{BarrettModulus, PowOf2Modulus};
 use primus_ntru::SecretKeyDistr;
 use primus_ntt::U64NttTable as Table;
 use primus_poly::PolyLength;
-use primus_tfhe_ntru_ntt::{DecompositionConfig, TfheConfig, TfheContext, TfheParameters};
+use primus_tfhe_ntru_ntt::{
+    DecompositionConfig, Evaluator, LookupTable, ServerKey, TfheConfig, TfheContext, TfheParameters,
+};
 use rand::{SeedableRng, rngs::StdRng};
 
 // This example uses u64 coefficients with the explicit parameters below.
 type Word = u64;
 const N: usize = 2048;
+
+fn main() {
+    let parameters = parameters();
+    let context = TfheContext::<Word, Table, _>::try_from_parameters(parameters).unwrap();
+    // Public message encoding at external q, chosen independently of key generation.
+    let input_codec = RoundedCodec::new(32, context.parameters().external_lwe().cipher_modulus());
+
+    // Client: keep client_key secret; send only server_key to the server.
+    let mut rng = StdRng::seed_from_u64(42);
+    let (client_key, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
+    // Ordinary messages borrow only the external secret from the setup bundle.
+    let external_secret = client_key.external_lwe_secret_key();
+    let encryptor = context.encryptor(external_secret, &input_codec).unwrap();
+    let decryptor = context.decryptor(external_secret, &input_codec).unwrap();
+    let mut input = context.allocate_lwe_ciphertext();
+
+    // Server: prepare public LUT and reusable buffers without the client secret.
+    let (lut, mut evaluator) = prepare_server(&context, &server_key, &input_codec);
+    let mut output = context.allocate_lwe_ciphertext();
+
+    for message in [7, 2] {
+        // Client -> server: send one encrypted, padded input.
+        encryptor
+            .encrypt_padded_to(message, input.as_mut_view(), &mut rng)
+            .unwrap();
+
+        // Server -> client: return the result, reusing the LUT and buffers.
+        evaluator.apply_lookup_table_to(input.as_view(), &lut, output.as_mut_view());
+
+        // Client: decrypt with the original external LWE secret.
+        let result = decryptor.decrypt(output.as_view()).unwrap();
+        assert_eq!(result, message % 4);
+        println!("f({message}) = {result}");
+    }
+}
+
+// Server setup receives only public context, encoding and evaluation keys.
+// The LUT and workspace are prepared once, then reused for both requests.
+fn prepare_server<'a>(
+    context: &'a TfheContext<Word, Table, PowOf2Modulus<Word>>,
+    server_key: &'a ServerKey<Word>,
+    input_codec: &RoundedCodec<Word, PowOf2Modulus<Word>>,
+) -> (
+    LookupTable<Word>,
+    Evaluator<'a, Word, Table, PowOf2Modulus<Word>>,
+) {
+    let compiler = context
+        .parameters()
+        .lookup_table_compiler(input_codec)
+        .unwrap();
+    let lut = compiler.compile_fn(|x| (x % 4) as Word).unwrap();
+    let evaluator = context.evaluator(server_key).unwrap();
+    (lut, evaluator)
+}
 
 // Key parameters: n=866, N=2048; independent external LWE q=2^24.
 // Noise sigmas below are in coefficient units; these are arithmetic examples, not security presets.
@@ -51,45 +107,4 @@ fn parameters() -> TfheParameters<Word, PowOf2Modulus<Word>> {
         key_switching_noise_standard_deviation: 3.2, // Return key switch in the q domain.
     })
     .unwrap()
-}
-
-fn main() {
-    let parameters = parameters();
-    let context = TfheContext::<Word, Table, _>::try_from_parameters(parameters).unwrap();
-    // Public message encoding at external q, chosen independently of key generation.
-    let input_codec = RoundedCodec::new(32, context.parameters().external_lwe().cipher_modulus());
-
-    // Client: keep client_key secret; send only server_key to the server.
-    let mut rng = StdRng::seed_from_u64(42);
-    let (client_key, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
-    // Ordinary messages borrow only the external secret from the setup bundle.
-    let external_secret = client_key.external_lwe_secret_key();
-    let encryptor = context.encryptor(external_secret, &input_codec).unwrap();
-    let decryptor = context.decryptor(external_secret, &input_codec).unwrap();
-    let mut input = context.allocate_lwe_ciphertext();
-
-    // Server: compile the public function and allocate reusable evaluation state.
-    // Outputs keep t=32; ordinary decrypt uses the returned ciphertext's q codec.
-    let compiler = context
-        .parameters()
-        .lookup_table_compiler(&input_codec)
-        .unwrap();
-    let lut = compiler.compile_fn(|x| (x % 4) as Word).unwrap();
-    let mut evaluator = context.evaluator(&server_key).unwrap();
-    let mut output = context.allocate_lwe_ciphertext();
-
-    for message in [7, 2] {
-        // Client -> server: send one encrypted, padded input.
-        encryptor
-            .encrypt_padded_to(message, input.as_mut_view(), &mut rng)
-            .unwrap();
-
-        // Server -> client: return the result, reusing the LUT and buffers.
-        evaluator.apply_lookup_table_to(input.as_view(), &lut, output.as_mut_view());
-
-        // Client: decrypt with the original external LWE secret.
-        let result = decryptor.decrypt(output.as_view()).unwrap();
-        assert_eq!(result, message % 4);
-        println!("f({message}) = {result}");
-    }
 }

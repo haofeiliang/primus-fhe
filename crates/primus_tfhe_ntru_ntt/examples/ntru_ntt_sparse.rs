@@ -16,50 +16,9 @@ use primus_tfhe_ntru_ntt::{
 };
 use rand::{SeedableRng, rngs::StdRng};
 
-// Use BlindRotationConfig::Classic to run the same program with classic BR.
-const BLIND_ROTATION: BlindRotationConfig = BlindRotationConfig::Sparse {
-    copy_count: 3,
-    bucket_count: 64,
-};
-
 // This example uses u64 coefficients with the explicit parameters below.
 type Word = u64;
 const N: usize = 1024;
-
-// Key parameters: n=728, N=1024; independent external LWE q=2^24.
-// Noise sigmas below are in coefficient units; these are arithmetic examples, not security presets.
-fn parameters() -> TfheParameters<Word, PowOf2Modulus<Word>> {
-    // NTT requires a prime admitting a 2N-th root, rather than a power-of-two modulus.
-    let ring_modulus: Word = 1_125_899_906_826_241;
-    let modulus = BarrettModulus::new(ring_modulus);
-    let lwe_modulus: Word = 1 << 24;
-
-    // None retains floor(modulus_bits / log_basis) levels; it need not cover every low bit.
-    let full = DecompositionConfig {
-        log_basis: DecompositionBaseLog::new(8),
-        level_count: None,
-    };
-
-    TfheParameters::try_from_config(TfheConfig {
-        external_lwe: LweEncryptionParameters::new(
-            LweDimension::new(728),
-            PowOf2Modulus::new(lwe_modulus),
-            SecretKeyDistr::fixed_hamming_weight_binary(728, 32),
-            3.2 * lwe_modulus as f64 / 16384.0,
-        ),
-        accumulator_modulus: modulus, // Ring Q; distinct from the external LWE q.
-        poly_length: PolyLength::new(N),
-        accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
-        accumulator_noise_standard_deviation: 0.7,
-        blind_rotation: full,
-        key_switching: DecompositionConfig {
-            log_basis: DecompositionBaseLog::new(3),
-            level_count: None,
-        },
-        key_switching_noise_standard_deviation: 3.2, // Return key switch in the q domain.
-    })
-    .unwrap()
-}
 
 fn main() {
     let parameters = parameters();
@@ -71,13 +30,21 @@ fn main() {
         RoundedCodec::new(8, context.parameters().accumulator_ntru().cipher_modulus());
     let output_codec = RoundedCodec::new(8, context.parameters().external_lwe().cipher_modulus());
 
-    // Client: generate the selected BR algorithm from the fixed-weight secret.
+    // Client: generate sparse BR material from the fixed-weight secret.
     let mut rng = StdRng::seed_from_u64(42);
     let mut generator = KeyGenerator::new(&context);
     let client_key = generator.try_generate_client_key(&mut rng).unwrap();
     // Three copies, 64 buckets. Map retries retain the same client secret.
     let server_key = generator
-        .try_generate_server_key(&client_key, BLIND_ROTATION, None, &mut rng)
+        .try_generate_server_key(
+            &client_key,
+            BlindRotationConfig::Sparse {
+                copy_count: 3,
+                bucket_count: 64,
+            },
+            None,
+            &mut rng,
+        )
         .unwrap();
     // Ordinary messages borrow only the external secret from the setup bundle.
     let external_secret = client_key.external_lwe_secret_key();
@@ -119,4 +86,39 @@ fn main() {
         }
         println!("input {message}: message/carry/parity decoded correctly");
     }
+}
+
+// Key parameters: n=728, N=1024; independent external LWE q=2^24.
+// Noise sigmas below are in coefficient units; these are arithmetic examples, not security presets.
+fn parameters() -> TfheParameters<Word, PowOf2Modulus<Word>> {
+    // NTT requires a prime admitting a 2N-th root, rather than a power-of-two modulus.
+    let ring_modulus: Word = 1_125_899_906_826_241;
+    let modulus = BarrettModulus::new(ring_modulus);
+    let lwe_modulus: Word = 1 << 24;
+
+    // None retains floor(modulus_bits / log_basis) levels; it need not cover every low bit.
+    let full = DecompositionConfig {
+        log_basis: DecompositionBaseLog::new(8),
+        level_count: None,
+    };
+
+    TfheParameters::try_from_config(TfheConfig {
+        external_lwe: LweEncryptionParameters::new(
+            LweDimension::new(728),
+            PowOf2Modulus::new(lwe_modulus),
+            SecretKeyDistr::fixed_hamming_weight_binary(728, 32),
+            3.2 * lwe_modulus as f64 / 16384.0,
+        ),
+        accumulator_modulus: modulus, // Ring Q; distinct from the external LWE q.
+        poly_length: PolyLength::new(N),
+        accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
+        accumulator_noise_standard_deviation: 0.7,
+        blind_rotation: full,
+        key_switching: DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(3),
+            level_count: None,
+        },
+        key_switching_noise_standard_deviation: 3.2, // Return key switch in the q domain.
+    })
+    .unwrap()
 }

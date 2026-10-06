@@ -17,15 +17,15 @@ The [basic example](examples/fourier_basic.rs) shows parameters → context → 
 
 Examples use `Word = u64` and Native64, with one explicit parameter set per workflow. The library and numerical diagnostics still support both u32 and u64. Select TFHE-FFT by replacing the `RustFftTable as Table` import with `TfheFftTable as Table`. When changing engines, also update the example target’s `required-features` and use `--features tfhe-fft`. Each file defines its own `parameters()` using an explicit `TfheConfig`: dimensions, modulus types, secret distributions, noise and BR/KS decompositions are visible together. CBS examples also define `circuit_config()` for the output, trace and scheme-switch bases. The [parameter and validation guide](../../guides/development/tfhe-parameters.md) records numerical choices; each example handles two requests with the same buffers.
 
-Examples separate client encryption, server evaluation and client decryption; see [client/server roles and buffer allocation](../primus_tfhe/README.md#client-and-server-roles).
+Examples start with `main`, followed by local parameters. Each fixes one workflow: classic PBS/CBS/MVB, or sparse ManyLUT/CBS in the dedicated sparse files. Basic `prepare_server` accepts public context, encoding and evaluation keys only; the two requests reuse the same LUT, evaluator and output buffer. Client encryption and decryption stay in `main`; see [client/server roles and buffer allocation](../primus_tfhe/README.md#client-and-server-roles).
 
 | Operation | Complete example |
 | --- | --- |
 | Classic PBS | [basic](examples/fourier_basic.rs) |
-| Sparse PBS / interleaved ManyLUT | [sparse](examples/fourier_sparse.rs); `BLIND_ROTATION` selects classic/sparse |
+| Sparse PBS / interleaved ManyLUT | [sparse](examples/fourier_sparse.rs) |
 | Classic CBS → CMux | [circuit_bootstrap](examples/fourier_circuit_bootstrap.rs) |
 | Sparse CBS → CMux | [sparse_circuit_bootstrap](examples/fourier_sparse_circuit_bootstrap.rs) |
-| Factorized MVB | [thresholds](examples/fourier_mvb_thresholds.rs); `BLIND_ROTATION` selects classic/sparse |
+| Factorized MVB | [thresholds](examples/fourier_mvb_thresholds.rs) |
 
 ManyLUT interleaves outputs within one blind rotation; factorized MVB uses public factors and a different evaluation interface.
 
@@ -39,7 +39,7 @@ The Fourier ring supports only `NativeModulus`; `PowOf2Modulus` rings are unsupp
 
 Both `RustFftTable` and `TfheFftTable` support u32/u64. Keys, values and evaluators must use the same FFT table instance; equal length does not prove representation identity.
 
-Choose `PbsOrder::BootstrapKeyswitch` for external dimension n or `KeyswitchBootstrap` for dimension dN. Use `context.allocate_lwe_ciphertext()` to allocate the selected layout. The basic example selects binary secrets and `BootstrapKeyswitch`; change its `ORDER` constant to use `KeyswitchBootstrap`.
+Choose `PbsOrder::BootstrapKeyswitch` for external dimension n or `KeyswitchBootstrap` for dimension dN. Use `context.allocate_lwe_ciphertext()` to allocate the selected layout. The basic example selects binary secrets and `BootstrapKeyswitch`; MVB examples use `KeyswitchBootstrap`.
 
 ## Reusing evaluators
 

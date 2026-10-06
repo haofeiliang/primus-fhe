@@ -9,7 +9,7 @@ High-precision lookup over already encrypted NTRU-TFHE chunks, using one-hot CBS
 
 ## Workflow
 
-Both [NTT](../primus_tfhe_ntru_ntt/README.md) and [Fourier](../primus_tfhe_ntru_fourier/README.md) support classic binary/ternary and sparse fixed-weight binary lookup. Generate evaluation material with `generator.try_generate_server_key(&client, blind_rotation, Some(cbs_config), rng)`, choosing `BlindRotationConfig::Classic` or `Sparse { copy_count, bucket_count }`. CBS material is required. Generate and encrypt input chunks on the client with `encrypt_padded`. The examples use a fixed-weight binary secret for either algorithm; change `BLIND_ROTATION` to select sparse without changing that distribution.
+Both [NTT](../primus_tfhe_ntru_ntt/README.md) and [Fourier](../primus_tfhe_ntru_fourier/README.md) support classic binary/ternary and sparse fixed-weight binary lookup. Generate evaluation material with `generator.try_generate_server_key(&client, blind_rotation, Some(cbs_config), rng)`, choosing `BlindRotationConfig::Classic` or `Sparse { copy_count, bucket_count }`. CBS material is required. Generate and encrypt input chunks on the client with `encrypt_padded`. The basic examples fix classic BR and keep one eight-chunk workflow. Sparse/public-lift setup is shown below under [Evaluation and workspace](#evaluation-and-workspace).
 
 `HighPrecisionLookupTable::try_new(poly_length, ring_modulus, &input_codec, config, function)` compiles the public table using only N, Q and the codec’s q/t, without TFHE parameters, secrets or transforms. The callback receives `(full_input_index, output_chunk_index)` and returns one digit. Bind `NttLookupTableEvaluator::try_new(context, server_key, None, table)` or `FourierLookupTableEvaluator::try_new(context, server_key, None, table)`, call `allocate_output()` once, then reuse `evaluate_to(input_chunks, output_chunks)`. Decode each result with `context.decryptor(client.external_lwe_secret_key(), &input_codec)`. The table owns its chunk encoding; keys are independent of t. The evaluator borrows its context, server key and table; no client secret is needed for evaluation.
 
@@ -91,21 +91,57 @@ Both evaluators accept a complete `ServerKey` through `try_new(context, server_k
 
 With `public_lift=None`, `try_new` borrows the classic initializer and its BR parameters when needed. Explicit material takes precedence, allowing a separate lift basis/noise even with classic BR. A sparse plan with `Lift` returns `MissingPublicLiftKey` unless independent material is supplied; plans without `Lift` require none. One-hot evaluators do not expose BR controls.
 
-For sparse setup, generate the material only after the public table reports its requirement. Both backend `KeyGenerator`s expose `try_generate_public_lift_key`, returning the existing transformed NLEV type; no additional key owner or server-key field is needed:
+For sparse setup, use a fixed-weight binary external secret and matched CBS parameters, as in the lookup examples (n=800, h=32, N=1024, q24). The caller compiles the public table and encrypts its chunks with the same context/encoding. This typed NTT snippet takes those prepared inputs rather than duplicating the full parameter fixture. Client setup produces keys and, only when required by the table, NLEV[1]; the server block binds them and returns ciphertexts:
 
-```rust,ignore
-// Here the lift uses BR's basis and row sigma; a separate NlevParameters can select others.
-let lift_parameters = context.parameters().blind_rotation();
-let lift = table.needs_public_lift().then(|| {
-    generator.try_generate_public_lift_key(
-        client.accumulator_ntru_secret_key(), lift_parameters, &mut rng,
-    )
-}).transpose()?;
-let mut evaluator = NttLookupTableEvaluator::try_new(
-    &context, &server,
-    lift.as_ref().map(|key| (key.as_view(), lift_parameters)), &table,
-)?;
+```rust,no_run
+use primus_modulus::PowOf2Modulus;
+use primus_ntt::U64NttTable as Table;
+use primus_tfhe::{BlindRotationConfig, CircuitBootstrapConfig, LweCiphertext};
+use primus_tfhe_ntru::ClientKey;
+use primus_tfhe_ntru_ntt::{KeyGenerator, TfheContext};
+use primus_tfhe_ntru_lut::{HighPrecisionLookupTable, NttLookupTableEvaluator as LookupEvaluator};
+use rand::rngs::StdRng;
+
+// Complete setup and one encrypted request; keep the final server block alive
+// to reuse its evaluator/output for further requests.
+fn sparse_setup_and_request(
+    context: &TfheContext<u64, Table, PowOf2Modulus<u64>>,
+    client: &ClientKey<u64>,
+    cbs_config: CircuitBootstrapConfig,
+    table: &HighPrecisionLookupTable<u64>,
+    inputs: &[LweCiphertext<u64>],
+    rng: &mut StdRng,
+) -> Vec<LweCiphertext<u64>> {
+    // Client: generate evaluation material for its fixed-weight binary LWE secret.
+    let mut generator = KeyGenerator::new(context);
+    let server_key = generator.try_generate_server_key(
+        client,
+        BlindRotationConfig::Sparse { copy_count: 3, bucket_count: 64 },
+        Some(cbs_config),
+        rng,
+    ).unwrap();
+    // BR's basis and row noise are used here (sigma=0.7 in the lookup examples).
+    // A separate NlevParameters can select another lift basis/noise budget.
+    let lift_parameters = context.parameters().blind_rotation();
+    let lift = table.needs_public_lift().then(|| {
+        generator.try_generate_public_lift_key(
+            client.accumulator_ntru_secret_key(), lift_parameters, rng,
+        ).unwrap()
+    });
+
+    // Server: receive the keys/lift, public parameters/table and encrypted chunks.
+    let mut evaluator = LookupEvaluator::try_new(
+        context, &server_key,
+        lift.as_ref().map(|key| (key.as_view(), lift_parameters)), table,
+    ).unwrap();
+    let mut outputs = evaluator.allocate_output();
+    evaluator.evaluate_to(inputs, &mut outputs);
+    // Further requests reuse this evaluator and overwrite the same output buffer.
+    outputs // Only result ciphertexts return to the client for decryption.
+}
 ```
+
+For Fourier, the same flow uses `primus_fft::RustFftTable as Table`, `primus_tfhe_ntru_fourier::{KeyGenerator, TfheContext}` and `FourierLookupTableEvaluator as LookupEvaluator`. Use its Native64 ring parameters, keep external `PowOf2Modulus<u64>`, and generate all material with the same FFT table instance. Keep key/lift owners alive while the evaluator borrows them; do not call the whole setup function for every request.
 
 This is an independent encryption of one under the same accumulator secret. It does not sum the first sparse bucket, whose error would have a different distribution. Generation checks the ring and secret before sampling; Fourier uses the context's FFT table. Ordinary sparse PBS/CBS/one-hot pays no lift-generation or storage cost.
 

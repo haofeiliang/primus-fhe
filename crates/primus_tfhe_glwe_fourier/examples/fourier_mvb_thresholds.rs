@@ -20,47 +20,12 @@ use primus_tfhe_glwe_fourier::{
 };
 use rand::{SeedableRng, rngs::StdRng};
 
-// To use sparse BR, choose BlindRotationConfig::Sparse { copy_count: 3, bucket_count: 64 }.
-const BLIND_ROTATION: BlindRotationConfig = BlindRotationConfig::Classic;
-
 // This example uses u64 coefficients with the explicit parameters below.
 type Word = u64;
 const N: usize = 1024;
-const ORDER: PbsOrder = PbsOrder::KeyswitchBootstrap;
 
 const DOMAIN: usize = 64;
 const OUTPUTS: usize = 17;
-
-// Key parameters: n=728, N=1024; LWE and GLWE share the ciphertext modulus.
-// Noise sigmas below are in coefficient units; these are arithmetic examples, not security presets.
-fn parameters() -> TfheParameters<Word> {
-    let modulus = NativeModulus::<Word>::new();
-    let q = 2f64.powi(64); // Native u64 modulus, represented only for noise scaling.
-
-    // None retains floor(modulus_bits / log_basis) levels; it need not cover every low bit.
-    let full = DecompositionConfig {
-        log_basis: DecompositionBaseLog::new(8),
-        level_count: None,
-    };
-
-    TfheParameters::try_from_config(TfheConfig {
-        small_lwe: LweEncryptionParameters::new(
-            LweDimension::new(728),
-            modulus,
-            SecretKeyDistr::fixed_hamming_weight_binary(728, 32),
-            3.2 * q / 16384.0,
-        ),
-        accumulator_dimension: GlweDimension::new(1),
-        poly_length: PolyLength::new(N),
-        accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
-        accumulator_noise_standard_deviation: 6.4,
-        blind_rotation: full,
-        key_switching: full,
-        key_switching_noise_standard_deviation: 6.4,
-        pbs_order: ORDER,
-    })
-    .unwrap()
-}
 
 fn main() {
     let parameters = parameters();
@@ -77,7 +42,7 @@ fn main() {
     let client_key = ClientKey::generate(context.parameters(), &mut rng);
     let mut generator = KeyGenerator::new(&context);
     let server_key = generator
-        .try_generate_server_key(&client_key, BLIND_ROTATION, None, &mut rng)
+        .try_generate_server_key(&client_key, BlindRotationConfig::Classic, None, &mut rng)
         .unwrap();
     // Ordinary messages borrow only the external secret from the setup bundle.
     let external_secret = client_key.external_lwe_secret_key();
@@ -118,4 +83,35 @@ fn main() {
         }
         println!("score={score}, thresholds={thresholds:?}, flags={flags:?}");
     }
+}
+
+// Key parameters: n=728, N=1024; LWE and GLWE share the ciphertext modulus.
+// Noise sigmas below are in coefficient units; these are arithmetic examples, not security presets.
+fn parameters() -> TfheParameters<Word> {
+    let modulus = NativeModulus::<Word>::new();
+    let q = 2f64.powi(64); // Native u64 modulus, represented only for noise scaling.
+
+    // None retains floor(modulus_bits / log_basis) levels; it need not cover every low bit.
+    let full = DecompositionConfig {
+        log_basis: DecompositionBaseLog::new(8),
+        level_count: None,
+    };
+
+    TfheParameters::try_from_config(TfheConfig {
+        small_lwe: LweEncryptionParameters::new(
+            LweDimension::new(728),
+            modulus,
+            SecretKeyDistr::fixed_hamming_weight_binary(728, 32),
+            3.2 * q / 16384.0,
+        ),
+        accumulator_dimension: GlweDimension::new(1),
+        poly_length: PolyLength::new(N),
+        accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
+        accumulator_noise_standard_deviation: 6.4,
+        blind_rotation: full,
+        key_switching: full,
+        key_switching_noise_standard_deviation: 6.4,
+        pbs_order: PbsOrder::KeyswitchBootstrap,
+    })
+    .unwrap()
 }

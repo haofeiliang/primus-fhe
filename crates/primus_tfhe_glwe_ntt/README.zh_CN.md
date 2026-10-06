@@ -17,15 +17,15 @@ cargo run -p primus_tfhe_glwe_ntt --release --example ntt_basic
 
 示例使用 `Word = u64` 和 `U64NttTable`，每条工作流只保留一套显式参数；库与数值诊断仍支持 u32/u64。每个文件内的 `parameters()` 直接构造 `TfheConfig`，集中列出尺寸、模数类型、秘密分布、噪声和 BR/KS 分解；CBS 示例还用 `circuit_config()` 明确输出、trace 和 scheme-switch 的分解。[数值配置与验证](../../guides/development/tfhe-parameters.md)集中记录参数选择；每例复用同一组缓冲处理两次请求。
 
-示例区分客户端加密、服务端求值与客户端解密，见[双方职责与缓冲分配](../primus_tfhe/README.zh_CN.md#客户端与服务端边界)。
+示例先展示 `main`，后列本地参数。每例固定一条流程：classic PBS/CBS/MVB，或专用 sparse 文件中的 ManyLUT/CBS。基础例的 `prepare_server` 只接收公开 context、编码和计算密钥；两次请求复用 LUT、evaluator 和输出缓冲，加密与解密留在 `main`。见[双方职责与缓冲分配](../primus_tfhe/README.zh_CN.md#客户端与服务端边界)。
 
 | 操作 | 完整示例 |
 | --- | --- |
 | Classic PBS | [basic](examples/ntt_basic.rs) |
-| Sparse PBS / 交错多输出 ManyLUT | [sparse](examples/ntt_sparse.rs)；`BLIND_ROTATION` 选择 classic/sparse |
+| Sparse PBS / 交错多输出 ManyLUT | [sparse](examples/ntt_sparse.rs) |
 | Classic CBS → CMux | [circuit_bootstrap](examples/ntt_circuit_bootstrap.rs) |
 | Sparse CBS → CMux | [sparse_circuit_bootstrap](examples/ntt_sparse_circuit_bootstrap.rs) |
-| 分解式 MVB | [thresholds](examples/mvb_thresholds.rs)；`BLIND_ROTATION` 选择 classic/sparse |
+| 分解式 MVB | [thresholds](examples/mvb_thresholds.rs) |
 
 ManyLUT 通过交错共享一次盲旋转；分解式 MVB 通过公共因子生成多输出，是不同的求值接口。
 
@@ -37,7 +37,7 @@ ManyLUT 通过交错共享一次盲旋转；分解式 MVB 通过公共因子生�
 
 NTT 表需要实现 `MonomialNttTable`，内置表均支持。Context 检查长度和模数； 所有变换域密钥及数据须遵循该表的表示约定。 拥有型 `NttGlweSecretKey` 保存 q，普通加密及求值密钥生成在采样前拒绝异模数密钥；导入使用 `new(values, size, distribution, modulus)`。相同 q/N 不证明 roots/order 或秘密身份，见 [GLWE 密钥契约](../primus_glwe/README.zh_CN.md)。
 
-`PbsOrder::BootstrapKeyswitch` 的外部维数为 n，`KeyswitchBootstrap` 为 dN。 用 `context.allocate_lwe_ciphertext()` 按当前 order 分配。 Basic 示例使用 binary 秘密和 `BootstrapKeyswitch`；修改 `ORDER` 常量即可选择 `KeyswitchBootstrap`。
+`PbsOrder::BootstrapKeyswitch` 的外部维数为 n，`KeyswitchBootstrap` 为 dN。 用 `context.allocate_lwe_ciphertext()` 按当前 order 分配。 Basic 示例使用 binary 秘密和 `BootstrapKeyswitch`；MVB 示例使用 `KeyswitchBootstrap`。
 
 ## 复用 evaluator
 
