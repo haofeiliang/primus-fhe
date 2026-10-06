@@ -45,8 +45,31 @@ required-features = ["rustfft"]
 
 [features]
 default = []
-ntt = ["dep:primus_modulus", "dep:primus_tfhe", "dep:primus_tfhe_ntru", "dep:primus_ntt", "dep:primus_tfhe_ntru_ntt", "primus_lattice/ntt", "primus_ntru/ntt"]
-fourier = ["dep:primus_modulus", "dep:primus_tfhe", "dep:primus_tfhe_ntru", "dep:primus_fft", "dep:primus_tfhe_ntru_fourier", "primus_lattice/fourier", "primus_ntru/fourier"]
+ntt = [
+    "dep:primus_modulus",
+    "dep:primus_tfhe",
+    "dep:primus_tfhe_ntru",
+    "dep:primus_ntt",
+    "dep:primus_tfhe_ntru_ntt",
+    "primus_lattice/ntt",
+    "primus_ntru/ntt",
+]
+fourier = [
+    "dep:primus_modulus",
+    "dep:primus_tfhe",
+    "dep:primus_tfhe_ntru",
+    "dep:primus_fft",
+    "dep:primus_tfhe_ntru_fourier",
+    "primus_lattice/fourier",
+    "primus_ntru/fourier",
+]
 rustfft = ["fourier", "primus_fft/rustfft"]
 tfhe-fft = ["fourier", "primus_fft/tfhe-fft"]
-simd = ["primus_decompose/simd", "primus_encoding/simd", "primus_poly/simd", "primus_tfhe_ntru?/simd", "primus_tfhe_ntru_ntt?/simd", "primus_tfhe_ntru_fourier?/simd"]
+simd = [
+    "primus_decompose/simd",
+    "primus_encoding/simd",
+    "primus_poly/simd",
+    "primus_tfhe_ntru?/simd",
+    "primus_tfhe_ntru_ntt?/simd",
+    "primus_tfhe_ntru_fourier?/simd",
+]

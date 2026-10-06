@@ -6,6 +6,66 @@ All retained workflows cover u32/u64; Fourier covers RustFFT and TFHE-FFT,
 and complete GLWE workflows cover both PBS orders. These are arithmetic cost
 fixtures, not assessed security parameters or equal-security comparisons.
 
+## Reduced suite specification
+
+The following is the agreed target for simplifying registrations, **not the
+current executable matrix**. The sections below still describe the existing
+targets. No numerical profile, key layout, aggregation window or workspace
+layout changes are part of this reduction.
+
+Use one primary Fourier engine per build: RustFFT when available, otherwise
+TFHE-FFT. This follows the teaching workflow, not a measured engine ranking.
+With both features enabled, retain an explicit engine comparison only for u64
+binary shortint PBS in each family. Single-engine builds must still provide the
+primary workloads. GLWE uses `KeyswitchBootstrap` unless a row says otherwise;
+`BootstrapKeyswitch` retains an explicit complete-request comparison in `pbs`.
+
+| Target / retained cases | IDs across all four backends | Reason |
+| --- | ---: | --- |
+| Dense `pbs`: each backend keeps u32 binary Boolean, u64 binary shortint, and u64 ternary Boolean; each GLWE backend also keeps u64 binary shortint with the other order | 14 | Retain both words, both secret distributions and both orders without crossing every axis |
+| Fourier `pbs`: secondary engine, u64 binary shortint, one per family | 2 when both engines are enabled | Compare engines using the same workload as the primary-engine case |
+| `sparse_pbs`: u64 classic/sparse fixed-weight pairs in every backend; u32 pairs in GLWE NTT and NTRU Fourier | 12 | Retain all four BR comparisons plus representative prime/native u32 arithmetic |
+| Ordinary `circuit_bootstrap`: u64 classic/sparse pair in each backend | 8 | Measure the complete gadget-producing operation |
+| NTRU one-hot: u64, classic/sparse, full M4 and compact M-1 in both backends | 8 | Measure the real saving from omitting selector zero |
+| `mvb`: each backend keeps u64 D8/k3 classic/sparse with independent/interleaved/factorized; D64/k17 classic with independent/factorized | 32 | Preserve capacity-inside/outside comparisons and sparse factorized consumption |
+| LUT `pipeline`: u64 NTT and primary Fourier; polynomial, dense_seed42 and shared_middle_chunk; classic/sparse evaluation | 12 | Distinguish general evaluation, polynomial structure and cross-output sharing |
+| LUT `pipeline`: the same three public tables, u64 Q50 Barrett and Native64 construction/drop | 6 | Construction depends on the coefficient modulus, not the BR variant or FFT engine |
+| `lookup_table`: u64 Native for all three geometries; t32/k1 additionally at u64 PowOf2 q24, u64 Barrett Q50, and u32 Barrett Q27 | 6 | Retain each packing shape and modulus family without their full cross-product |
+
+This specifies 98 ordinary IDs, or 100 with the two secondary-engine PBS IDs,
+across the existing 18 ordinary targets. It is a selection of benchmark
+workloads, not a CI run list or a restriction on supported APIs. Other word,
+order and engine combinations remain covered by focused correctness tests and
+independent feature compilation. D64/k17 sparse remains supported; it is not a
+second default timing matrix. Each MVB target has eight primary IDs; the lookup
+pipeline has eighteen with NTT and one Fourier engine enabled.
+
+Keep the existing dense, circuit and fixed-weight parameter constructors,
+including modulus types, noise units, decomposition and seeds. In particular,
+ordinary sparse pairs keep n728/h32/N1024, three copies and 64 buckets; the
+lookup pipeline keeps c8/d5/o8 and n800/h32/N1024. Ternary and binary profiles
+still differ, so those IDs do not isolate the cost of the secret distribution.
+No claim of equal security follows from choosing these cases.
+
+Separate the remaining roles when implementing the reduction:
+
+- Keep server-key generation and the existing GLWE BR/KS stage probes in one
+  explicit setup/diagnostic target per backend. Do not move discarded Cartesian
+  combinations into another large default matrix.
+- Move GLWE NTT's existing paper module into a dedicated paper target. Preserve
+  the original and candidate parameters and the distinct raw-BR and complete
+  return boundaries; do not register these through ordinary `sparse_pbs`.
+- Keep detailed phase and resource reports in explicit diagnostics, reusing
+  `validate_parameters` where its public-API consumers fit. Retain known-result
+  checks outside each ordinary timing and the independent zero-allocation
+  regression tests. Do not reproduce a private evaluator inside a diagnostic.
+- Match target features to their actual dependencies. Keep lazy fixture setup
+  inside the selected callback and outside `b.iter`; listing/filtering must not
+  generate unused keys. Update executable commands when the targets change.
+
+Lower-level arithmetic benchmarks and historical measurement records are
+outside this registration reduction.
+
 ## Targets and measurement boundaries
 
 | Target | Question answered / one iteration |

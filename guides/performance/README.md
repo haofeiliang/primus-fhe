@@ -55,6 +55,16 @@ results are not current validation or security guarantees.
    speedup or smaller allocation count alone is insufficient. There is no blanket
    percentage threshold; state why the concrete tradeoff is worthwhile.
 
+The historical CPU 4/8 runs use two cache groups on the **same** Ryzen 9 9955HX3D
+machine (96 MiB and 32 MiB L3 respectively), not two independent platforms.
+Small gains on one group and losses on the other are mixed evidence, not proof
+of a universal regression or a cache-writeback cause. Preserve unchanged-path
+controls and confirmation runs; do not attribute their movement to a kernel
+they do not execute. A decision not to adopt a prototype can reflect insufficient
+repeatable benefit relative to storage and maintenance costs, even when some
+means improve. The retained arithmetic decisions keep the narrower workload
+and numerical bounds in their linked reassessments.
+
 Counters measure their stated scope: allocation traffic is not retained heap or
 peak, requested heap is not RSS, and wall time alone does not identify cache
 writeback or bandwidth. Keep stage probes separate from acceptance timings.
