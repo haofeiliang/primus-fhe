@@ -1,5 +1,5 @@
 //! Coefficient/NTT encryption equivalence, encoding paths and exact noise diagnostics.
-use primus_encoding::PlaintextEmbedding;
+use primus_encoding::{PlaintextEmbedding, phase_error_magnitude_slice_to};
 use primus_glwe::{
     GlweCiphertext, GlweParameters, GlweSecretKey, NttGlweCiphertext, NttGlweSecretKey,
     SecretKeyDistr,
@@ -74,63 +74,80 @@ where
         let mut reference_rng = StdRng::seed_from_u64(17);
         // Exact ciphertext/phase equality also checks noise and mask sampling order.
         // Reuse dirty output and scratch for a zero message after a nonzero one.
-        for input in [&message, &PolynomialOwned::zero(POLY_LENGTH)] {
-            secret_key.encrypt_to(input, &mut cipher, &params, &ntt, &mut reference_rng);
-            cipher.write_coeff_form(&mut expected_coefficients, &ntt);
-            secret_key.encrypt_coeff_to(
-                input,
-                &mut coefficients,
-                &params,
-                &ntt,
-                &mut direct_rng,
-                &mut scratch,
-            );
-            assert_eq!(coefficients.as_ref(), expected_coefficients.as_ref());
-            secret_key.phase_to(&cipher, &mut expected_phase, modulus, &ntt);
-            secret_key.phase_coeff_to(&coefficients, &mut phase, modulus, &ntt, &mut scratch);
-            assert_eq!(phase.as_ref(), expected_phase.as_ref());
-            secret_key.decrypt_coeff_to(&coefficients, &mut phase, &params, &ntt, &mut scratch);
-            assert_eq!(phase.as_ref(), input.as_ref());
+        for embedding in [PlaintextEmbedding::Unsigned, PlaintextEmbedding::Centered] {
+            for input in [&message, &PolynomialOwned::zero(POLY_LENGTH)] {
+                secret_key.encrypt_message_to(
+                    input,
+                    &mut cipher,
+                    &params,
+                    embedding,
+                    &ntt,
+                    &mut reference_rng,
+                );
+                cipher.write_coeff_form(&mut expected_coefficients, &ntt);
+                secret_key.encrypt_message_coeff_to(
+                    input,
+                    &mut coefficients,
+                    &params,
+                    embedding,
+                    &ntt,
+                    &mut direct_rng,
+                    &mut scratch,
+                );
+                assert_eq!(coefficients.as_ref(), expected_coefficients.as_ref());
+                secret_key.decrypt_phase_to(&cipher, &mut expected_phase, modulus, &ntt);
+                secret_key.decrypt_phase_coeff_to(
+                    &coefficients,
+                    &mut phase,
+                    modulus,
+                    &ntt,
+                    &mut scratch,
+                );
+                assert_eq!(phase.as_ref(), expected_phase.as_ref());
+                secret_key.decrypt_message_coeff_to(
+                    &coefficients,
+                    &mut phase,
+                    &params,
+                    &ntt,
+                    &mut scratch,
+                );
+                assert_eq!(phase.as_ref(), input.as_ref());
+            }
         }
         assert_eq!(direct_rng.next_u64(), reference_rng.next_u64());
 
-        secret_key.encrypt_centered_to(&message, &mut cipher, &params, &ntt, &mut rng);
-        assert_eq!(
-            secret_key.decrypt(&cipher, &params, &ntt).as_ref(),
-            messages
-        );
-
         secret_key.encrypt_zeros_to(&mut cipher, params.encryption_parameters(), &ntt, &mut rng);
         assert_eq!(
-            secret_key.decrypt(&cipher, &params, &ntt).as_ref(),
+            secret_key.decrypt_message(&cipher, &params, &ntt).as_ref(),
             vec![T::ZERO; POLY_LENGTH]
         );
 
-        let mut encoded = vec![T::ZERO; POLY_LENGTH];
-        params.plaintext_codec().add_encode_slice_assign(
-            &mut encoded,
-            &messages,
-            PlaintextEmbedding::Unsigned,
-        );
-        // Raw encoded encryption must equal ordinary encryption with the same
-        // coins; this also checks that the codec is applied exactly once.
-        let seed = rng.next_u64();
-        rng = StdRng::seed_from_u64(seed);
-        let mut expected_rng = StdRng::seed_from_u64(seed);
-        let expected = secret_key.encrypt(&message, &params, &ntt, &mut expected_rng);
-        secret_key.encrypt_encoded_to(
-            &Polynomial::new(encoded),
-            &mut cipher,
-            params.encryption_parameters(),
-            &ntt,
-            &mut rng,
-        );
-        assert_eq!(cipher.as_ref(), expected.as_ref());
-        assert_eq!(rng.next_u64(), expected_rng.next_u64());
+        for embedding in [PlaintextEmbedding::Unsigned, PlaintextEmbedding::Centered] {
+            let mut encoded = vec![T::ZERO; POLY_LENGTH];
+            params
+                .plaintext_codec()
+                .add_encode_slice_assign(&mut encoded, &messages, embedding);
+            // Raw encoded encryption must equal ordinary encryption with the same
+            // coins; this also checks that the codec is applied exactly once.
+            let seed = rng.next_u64();
+            rng = StdRng::seed_from_u64(seed);
+            let mut expected_rng = StdRng::seed_from_u64(seed);
+            let expected =
+                secret_key.encrypt_message(&message, &params, embedding, &ntt, &mut expected_rng);
+            secret_key.encrypt_encoded_to(
+                &Polynomial::new(encoded),
+                &mut cipher,
+                params.encryption_parameters(),
+                &ntt,
+                &mut rng,
+            );
+            assert_eq!(cipher.as_ref(), expected.as_ref());
+            assert_eq!(rng.next_u64(), expected_rng.next_u64());
 
-        let mut reused_output = PolynomialOwned::new(vec![T::MAX; POLY_LENGTH]);
-        secret_key.decrypt_to(&cipher, &mut reused_output, &params, &ntt);
-        assert_eq!(reused_output.as_ref(), messages);
+            let mut reused_output = PolynomialOwned::new(vec![T::MAX; POLY_LENGTH]);
+            secret_key.decrypt_message_to(&cipher, &mut reused_output, &params, &ntt);
+            assert_eq!(reused_output.as_ref(), messages);
+        }
     }
 }
 
@@ -145,7 +162,7 @@ fn ntt_glwe_secret_key_roundtrip_u64() {
 }
 
 #[test]
-fn noise_diagnostics_report_signed_phase_distance() {
+fn phase_error_uses_the_expected_message_embedding() {
     let modulus = BarrettModulus::new(1_125_899_906_826_241u64);
     let params = GlweParameters::new(
         GlweDimension::new(DIMENSION),
@@ -165,23 +182,36 @@ fn noise_diagnostics_report_signed_phase_distance() {
     let message: Vec<u64> = (0..POLY_LENGTH)
         .map(|i| (i % PLAIN_MODULUS) as u64)
         .collect();
-    let expected_noise: Vec<u64> = (0..POLY_LENGTH).map(|i| [0, 3, 5][i % 3]).collect();
+    let step = params
+        .plaintext_codec()
+        .encode_value(1, PlaintextEmbedding::Unsigned);
+    let mut expected_noise: Vec<u64> = (0..POLY_LENGTH).map(|i| [0, 3, 5][i % 3]).collect();
+    expected_noise[0] = step;
+    let mut expected_decoded = message.clone();
+    expected_decoded[0] = 1; // The original message at this coefficient was zero.
+    let mut reference = vec![0; POLY_LENGTH];
+    let mut phase = PolynomialOwned::zero(POLY_LENGTH);
+    let mut noise = vec![0; POLY_LENGTH];
     let mut ciphertext = NttGlweCiphertext::<Vec<u64>>::zero(params.glwe_len());
     for embedding in [PlaintextEmbedding::Unsigned, PlaintextEmbedding::Centered] {
         // A zero mask lets us specify exact positive/negative phase errors.
         let (_, body) = ciphertext.a_b_mut_slices(POLY_LENGTH);
         params
             .plaintext_codec()
-            .encode_slice_to(&message, body, embedding);
+            .encode_slice_to(&message, &mut reference, embedding);
+        body.copy_from_slice(&reference);
         for (index, value) in body.iter_mut().enumerate() {
             let error = [0, 3, 1_125_899_906_826_241 - 5][index % 3];
             *value = modulus.reduce_add(*value, error);
         }
+        body[0] = modulus.reduce_add(body[0], step);
         table.transform_slice(body);
-        let (decoded, noise) =
-            secret_key.decrypt_with_noise_and_embedding(&ciphertext, &params, &table, embedding);
-        assert_eq!(decoded.as_ref(), message);
-        assert_eq!(noise.as_ref(), expected_noise);
+        secret_key.decrypt_phase_to(&ciphertext, &mut phase, modulus, &table);
+        phase_error_magnitude_slice_to(phase.as_ref(), &reference, &mut noise, modulus);
+        assert_eq!(noise, expected_noise);
+        // Wrong decoding must not erase the error against the original message.
+        params.plaintext_codec().decode_slice_assign(phase.as_mut());
+        assert_eq!(phase.as_ref(), expected_decoded);
     }
 }
 
@@ -205,7 +235,7 @@ fn truncated_decryption_returns_only_retained_coefficients() {
         &mut rng,
     );
     for count in [0, 3, POLY_LENGTH] {
-        let mut ciphertext = secret_key.encrypt_truncated_zeros(
+        let mut ciphertext = secret_key.encrypt_zeros_truncated(
             count,
             params.encryption_parameters(),
             &table,
@@ -221,7 +251,7 @@ fn truncated_decryption_returns_only_retained_coefficients() {
             PlaintextEmbedding::Unsigned,
         );
         assert_eq!(
-            secret_key.decrypt_truncated(&ciphertext, &params, &table),
+            secret_key.decrypt_message_truncated(&ciphertext, &params, &table),
             message
         );
     }

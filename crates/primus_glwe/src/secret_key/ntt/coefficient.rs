@@ -1,7 +1,7 @@
 //! Coefficient-domain GLWE operations using an already transformed secret.
 
 use super::NttGlweSecretKey;
-use crate::{GlweCiphertext, GlweEncryptionParameters, GlweParameters, PlaintextEmbedding};
+use crate::{GlweCiphertext, GlweEncryptionParameters};
 use primus_data::{Data, DataMut};
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
@@ -9,89 +9,6 @@ use primus_poly::{NttPolynomial, Polynomial};
 use primus_reduce::FieldContext;
 
 impl<T: FheUint> NttGlweSecretKey<T> {
-    /// Encrypts N unsigned coefficients in `[0, t)` into a coefficient GLWE.
-    /// Overwrites the entire output without allocating or transforming the body
-    /// forward. With the same RNG state, this produces exactly the ciphertext
-    /// obtained by [`Self::encrypt_to`] followed by an inverse NTT.
-    ///
-    /// `scratch` has exactly N elements and needs no initialization. It retains
-    /// secret-dependent products; its owner is responsible for erasure, e.g. by
-    /// storing it in a [`zeroize::Zeroizing`] buffer.
-    ///
-    /// # Correctness
-    ///
-    /// The table must use this key's NTT roots and evaluation order.
-    ///
-    /// # Panics
-    ///
-    /// Layout, key/parameter/table moduli, table length and scratch length are checked
-    /// before sampling or writes. An out-of-range plaintext, RNG or transform panic
-    /// may consume randomness and leave partial output or scratch.
-    pub fn encrypt_coeff_to<M, Table, R, A, B>(
-        &self,
-        input: &Polynomial<A>,
-        output: &mut GlweCiphertext<B>,
-        params: &GlweParameters<T, M>,
-        ntt_table: &Table,
-        rng: &mut R,
-        scratch: &mut [T],
-    ) where
-        M: FieldContext<T>,
-        Table: NttTable<ValueT = T>,
-        R: rand::Rng + rand::CryptoRng,
-        A: Data<Elem = T>,
-        B: DataMut<Elem = T>,
-    {
-        assert_eq!(self.size, params.size(), "GLWE parameter layout mismatch");
-        let modulus = params.cipher_modulus();
-        self.assert_coeff_compatible(
-            input.as_ref().len(),
-            output.as_ref().len(),
-            scratch.len(),
-            modulus,
-            ntt_table,
-        );
-        self.encrypt_coeff_plaintext_kernel_to(
-            input.as_view(),
-            output.as_mut_view(),
-            params,
-            ntt_table,
-            rng,
-            scratch,
-        );
-    }
-
-    /// Constructs the unsigned-message closure with concrete views after the public
-    /// boundary validates key/table/layouts and the exact N-coefficient scratch.
-    fn encrypt_coeff_plaintext_kernel_to<M, Table, R>(
-        &self,
-        input: Polynomial<&[T]>,
-        output: GlweCiphertext<&mut [T]>,
-        params: &GlweParameters<T, M>,
-        ntt_table: &Table,
-        rng: &mut R,
-        scratch: &mut [T],
-    ) where
-        M: FieldContext<T>,
-        Table: NttTable<ValueT = T>,
-        R: rand::Rng + rand::CryptoRng,
-    {
-        self.encrypt_coeff_kernel_to(
-            output,
-            params.encryption_parameters(),
-            ntt_table,
-            rng,
-            scratch,
-            |body| {
-                params.plaintext_codec().add_encode_slice_assign(
-                    body,
-                    input.as_ref(),
-                    PlaintextEmbedding::Unsigned,
-                );
-            },
-        );
-    }
-
     /// Encrypts after layout/table/scratch validation. Message and noise stay in
     /// coefficient form; the closure adds a message to the sampled body noise.
     pub(super) fn encrypt_coeff_kernel_to<M, Table, R>(
@@ -141,7 +58,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     /// Panics before writes if ciphertext, output or scratch lengths differ from
     /// the key layout, or the key/arithmetic/table moduli or table length differ.
     /// A transform panic may leave partial output or scratch.
-    pub fn phase_coeff_to<M, Table, A, B>(
+    pub fn decrypt_phase_coeff_to<M, Table, A, B>(
         &self,
         input: &GlweCiphertext<A>,
         output: &mut Polynomial<B>,
@@ -173,39 +90,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         body.sub_rev_assign(output, modulus);
     }
 
-    /// Decodes a coefficient GLWE into N unsigned coefficients in `[0, t)`.
-    /// Reuses `output` and the N-element `scratch` without allocating.
-    ///
-    /// # Correctness
-    ///
-    /// Inherits [`Self::phase_coeff_to`]'s requirements. The ciphertext must use
-    /// the parameter codec and this secret, with noise within the decoding margin.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the parameter layout differs from this key; otherwise inherits
-    /// [`Self::phase_coeff_to`]'s panic conditions.
-    pub fn decrypt_coeff_to<M, Table, A, B>(
-        &self,
-        input: &GlweCiphertext<A>,
-        output: &mut Polynomial<B>,
-        params: &GlweParameters<T, M>,
-        ntt_table: &Table,
-        scratch: &mut [T],
-    ) where
-        M: FieldContext<T>,
-        Table: NttTable<ValueT = T>,
-        A: Data<Elem = T>,
-        B: DataMut<Elem = T>,
-    {
-        assert_eq!(self.size, params.size(), "GLWE parameter layout mismatch");
-        self.phase_coeff_to(input, output, params.cipher_modulus(), ntt_table, scratch);
-        params
-            .plaintext_codec()
-            .decode_slice_assign(output.as_mut());
-    }
-
-    fn assert_coeff_compatible<M, Table>(
+    pub(super) fn assert_coeff_compatible<M, Table>(
         &self,
         polynomial_len: usize,
         ciphertext_len: usize,

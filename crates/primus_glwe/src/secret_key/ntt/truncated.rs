@@ -1,7 +1,7 @@
 //! Coefficient-domain GLWE ciphertexts with a truncated body.
 
 use super::NttGlweSecretKey;
-use crate::{GlweEncryptionParameters, GlweParameters, TruncatedGlweCiphertext};
+use crate::{GlweEncryptionParameters, TruncatedGlweCiphertext};
 use primus_data::Data;
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
@@ -21,7 +21,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     /// Panics before sampling if the key/parameter/table moduli or table length differ,
     /// or `message_count` exceeds the polynomial length.
     #[must_use]
-    pub fn encrypt_truncated_zeros<M, Table, R>(
+    pub fn encrypt_zeros_truncated<M, Table, R>(
         &self,
         message_count: usize,
         params: &GlweEncryptionParameters<T, M>,
@@ -92,7 +92,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     /// Panics if the key/arithmetic/table moduli or table length differ, or the ciphertext
     /// does not contain a full mask and at most one polynomial of body values.
     #[must_use]
-    pub fn phase_truncated<M, Table, A>(
+    pub fn decrypt_phase_truncated<M, Table, A>(
         &self,
         input: &TruncatedGlweCiphertext<A>,
         modulus: M,
@@ -138,33 +138,5 @@ impl<T: FheUint> NttGlweSecretKey<T> {
             .zip(phase_mask)
             .map(|(&body, mask)| modulus.reduce_sub(body, mask))
             .collect()
-    }
-
-    /// Decrypts all retained messages in a truncated GLWE ciphertext.
-    ///
-    /// Returns coefficients in the key's integer type, as with [`Self::decrypt`].
-    /// Inherits [`Self::phase_truncated`]'s representation and scratch requirements.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the parameter layout differs from this key or the inputs
-    /// violate [`Self::phase_truncated`]'s compatibility checks.
-    #[must_use]
-    pub fn decrypt_truncated<M, Table, A>(
-        &self,
-        input: &TruncatedGlweCiphertext<A>,
-        params: &GlweParameters<T, M>,
-        ntt_table: &Table,
-    ) -> Vec<T>
-    where
-        M: FieldContext<T>,
-        Table: NttTable<ValueT = T>,
-        A: Data<Elem = T>,
-    {
-        assert_eq!(self.size, params.size(), "GLWE parameter layout mismatch");
-        let mut messages = self.phase_truncated(input, params.cipher_modulus(), ntt_table);
-        params.plaintext_codec().decode_slice_assign(&mut messages);
-
-        messages
     }
 }

@@ -401,7 +401,7 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
                     .scalar_iter()
                     .zip(glev.iter_ntt_glwe(glwe.glwe_len()))
                 {
-                    main_secret.phase_to(&level, &mut phase, modulus, context.table());
+                    main_secret.decrypt_phase_to(&level, &mut phase, modulus, context.table());
                     for (index, &actual) in phase.as_ref().iter().enumerate() {
                         // Mask rows encrypt -g_l * bit * s_r; the body row
                         // encrypts the constant g_l * bit, with a zero tail.

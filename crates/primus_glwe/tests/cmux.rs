@@ -1,6 +1,7 @@
 //! Encrypted CMux controls checked against selected messages and signed phase rotations.
 
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_encoding::PlaintextEmbedding;
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable};
 use primus_glwe::{
     FourierGlweDecryptWorkspace, FourierGlweEncryptWorkspace, FourierGlweGadgetEncryptWorkspace,
@@ -61,10 +62,11 @@ fn fourier_cmux_selects_requested_glwe() {
         core::array::from_fn(|_| TorusGlwe::zero(params.glwe_len()));
     for (message, ciphertext) in messages.iter().zip(&mut ciphertexts) {
         let mut fourier = FourierGlweOwned::zero(params.fourier_glwe_len());
-        secret_key.encrypt_to(
+        secret_key.encrypt_message_to(
             &Polynomial::new(message.as_slice()),
             &mut fourier,
             &glwe_params,
+            PlaintextEmbedding::Unsigned,
             &mut fft,
             &mut rng,
             &mut encrypt_workspace,
@@ -112,7 +114,7 @@ fn fourier_cmux_selects_requested_glwe() {
         output.write_fourier_form(&mut output_fourier, &mut fft);
         assert_eq!(
             secret_key
-                .decrypt(
+                .decrypt_message(
                     &output_fourier,
                     &glwe_params,
                     &mut fft,
@@ -154,10 +156,11 @@ fn ntt_cmux_selects_requested_glwe() {
         core::array::from_fn(|_| Glwe::zero(params.glwe_len()));
     for (message, ciphertext) in messages.iter().zip(&mut ciphertexts) {
         let mut ntt_ciphertext: NttGlwe<Vec<u32>> = NttGlwe::zero(params.glwe_len());
-        secret_key.encrypt_to(
+        secret_key.encrypt_message_to(
             &Polynomial::new(message.as_slice()),
             &mut ntt_ciphertext,
             &glwe_params,
+            PlaintextEmbedding::Unsigned,
             &ntt,
             &mut rng,
         );
@@ -204,7 +207,9 @@ fn ntt_cmux_selects_requested_glwe() {
         let mut output_ntt: NttGlwe<Vec<u32>> = NttGlwe::zero(params.glwe_len());
         output.write_ntt_form(&mut output_ntt, &ntt);
         assert_eq!(
-            secret_key.decrypt(&output_ntt, &glwe_params, &ntt).as_ref(),
+            secret_key
+                .decrypt_message(&output_ntt, &glwe_params, &ntt)
+                .as_ref(),
             messages[selected].as_slice()
         );
     }

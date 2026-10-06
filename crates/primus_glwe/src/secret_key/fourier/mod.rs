@@ -16,6 +16,7 @@ mod batch;
 mod decrypt;
 mod encrypt;
 mod gadget;
+mod message;
 mod workspace;
 pub use workspace::{
     FourierGlweDecryptWorkspace, FourierGlweEncryptWorkspace, FourierGlweGadgetEncryptWorkspace,

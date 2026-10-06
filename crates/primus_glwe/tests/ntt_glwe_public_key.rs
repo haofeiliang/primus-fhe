@@ -66,27 +66,14 @@ fn public_key_encoding_modes_reuse_workspace() {
         let mut actual_rng = StdRng::seed_from_u64(seed);
         let mut expected_rng = StdRng::seed_from_u64(seed);
         let mut fresh_workspace = NttGlwePublicEncryptWorkspace::new(PolyLength::new(POLY_LENGTH));
-        let expected = match embedding {
-            PlaintextEmbedding::Unsigned => public_key.encrypt(
-                &message,
-                &params,
-                &table,
-                &mut expected_rng,
-                &mut fresh_workspace,
-            ),
-            PlaintextEmbedding::Centered => {
-                let mut output = NttGlweCiphertext::<Vec<u64>>::zero(params.glwe_len());
-                public_key.encrypt_centered_to(
-                    &message,
-                    &mut output,
-                    &params,
-                    &table,
-                    &mut expected_rng,
-                    &mut fresh_workspace,
-                );
-                output
-            }
-        };
+        let expected = public_key.encrypt_message(
+            &message,
+            &params,
+            embedding,
+            &table,
+            &mut expected_rng,
+            &mut fresh_workspace,
+        );
         let mut encoded = Polynomial::new(vec![0; POLY_LENGTH]);
         params.plaintext_codec().add_encode_slice_assign(
             encoded.as_mut(),
@@ -107,7 +94,9 @@ fn public_key_encoding_modes_reuse_workspace() {
         assert_eq!(ciphertext.as_ref(), expected.as_ref());
         assert_eq!(actual_rng.next_u64(), expected_rng.next_u64());
         assert_eq!(
-            secret_key.decrypt(&ciphertext, &params, &table).as_ref(),
+            secret_key
+                .decrypt_message(&ciphertext, &params, &table)
+                .as_ref(),
             message.as_ref()
         );
     }
@@ -120,7 +109,7 @@ fn public_key_encoding_modes_reuse_workspace() {
     );
     assert_eq!(
         secret_key
-            .decrypt(&encrypted_zero, &params, &table)
+            .decrypt_message(&encrypted_zero, &params, &table)
             .as_ref(),
         vec![0; POLY_LENGTH]
     );

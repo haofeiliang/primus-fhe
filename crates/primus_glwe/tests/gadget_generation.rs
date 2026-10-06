@@ -1,6 +1,7 @@
 //! Encrypted GLev/GGSW rows and their external-product semantics.
 
 use primus_decompose::{DecompositionBaseLog, primitive::ApproxSignedBasis};
+use primus_encoding::PlaintextEmbedding;
 use primus_encoding::ScaledCodec;
 use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_glwe::{
@@ -96,7 +97,7 @@ fn fourier_gadget_phases_and_external_product() {
         .zip(glev.iter_glwe(params.fourier_glwe_len()))
     {
         let mut phase = PolynomialOwned::zero(POLY_LENGTH);
-        secret_key.phase_to(&glwe, &mut phase, &mut fft, &mut decrypt_workspace);
+        secret_key.decrypt_phase_to(&glwe, &mut phase, &mut fft, &mut decrypt_workspace);
         assert!(native_distance(phase.as_ref()[0], scalar) <= 8);
         assert!(
             phase.as_ref()[1..]
@@ -126,7 +127,7 @@ fn fourier_gadget_phases_and_external_product() {
             .zip(glev.iter_glwe(params.fourier_glwe_len()))
         {
             let mut phase = PolynomialOwned::zero(POLY_LENGTH);
-            secret_key.phase_to(&glwe, &mut phase, &mut fft, &mut decrypt_workspace);
+            secret_key.decrypt_phase_to(&glwe, &mut phase, &mut fft, &mut decrypt_workspace);
             let expected = expected_ggsw_phase(
                 ring_message.as_ref(),
                 coeff_secret_key.iter().nth(row),
@@ -163,10 +164,11 @@ fn fourier_gadget_phases_and_external_product() {
     let glwe_params =
         GlweParameters::try_from_parts(size, inner, ScaledCodec::new(16u32, NativeModulus::new()))
             .unwrap();
-    secret_key.encrypt_to(
+    secret_key.encrypt_message_to(
         &plaintext,
         &mut input_fourier,
         &glwe_params,
+        PlaintextEmbedding::Unsigned,
         &mut fft,
         &mut rng,
         &mut glwe_workspace,
@@ -191,7 +193,7 @@ fn fourier_gadget_phases_and_external_product() {
     expected[1..].copy_from_slice(&plaintext_values[..POLY_LENGTH - 1]);
     assert_eq!(
         secret_key
-            .decrypt(
+            .decrypt_message(
                 &output_fourier,
                 &glwe_params,
                 &mut fft,
@@ -242,7 +244,7 @@ fn ntt_gadget_phases_and_external_product() {
         .zip(glev.iter_ntt_glwe(params.glwe_len()))
     {
         let mut phase = PolynomialOwned::zero(POLY_LENGTH);
-        secret_key.phase_to(&glwe, &mut phase, modulus, &ntt);
+        secret_key.decrypt_phase_to(&glwe, &mut phase, modulus, &ntt);
         assert!(explicit_distance(phase.as_ref()[0], scalar, MODULUS) <= 8);
         assert!(
             phase.as_ref()[1..]
@@ -273,7 +275,7 @@ fn ntt_gadget_phases_and_external_product() {
             .zip(glev.iter_ntt_glwe(params.glwe_len()))
         {
             let mut phase = PolynomialOwned::zero(POLY_LENGTH);
-            secret_key.phase_to(&glwe, &mut phase, modulus, &ntt);
+            secret_key.decrypt_phase_to(&glwe, &mut phase, modulus, &ntt);
             let expected = expected_ggsw_phase(
                 ring_message.as_ref(),
                 coeff_secret_key.iter().nth(row),
@@ -309,7 +311,14 @@ fn ntt_gadget_phases_and_external_product() {
     // Only the ordinary ciphertext in the external product needs t = 16.
     let glwe_params =
         GlweParameters::try_from_parts(size, inner, ScaledCodec::new(16u32, modulus)).unwrap();
-    secret_key.encrypt_to(&plaintext, &mut input_ntt, &glwe_params, &ntt, &mut rng);
+    secret_key.encrypt_message_to(
+        &plaintext,
+        &mut input_ntt,
+        &glwe_params,
+        PlaintextEmbedding::Unsigned,
+        &ntt,
+        &mut rng,
+    );
     let input = input_ntt.into_coeff_form(&ntt);
     let mut output: Glwe<Vec<u32>> = Glwe::zero(params.glwe_len());
     let mut external_product_workspace = NttGlweExternalProductWorkspace::new(params.size());
@@ -326,7 +335,9 @@ fn ntt_gadget_phases_and_external_product() {
     expected[0] = (16 - plaintext_values[POLY_LENGTH - 1]) % 16;
     expected[1..].copy_from_slice(&plaintext_values[..POLY_LENGTH - 1]);
     assert_eq!(
-        secret_key.decrypt(&output_ntt, &glwe_params, &ntt).as_ref(),
+        secret_key
+            .decrypt_message(&output_ntt, &glwe_params, &ntt)
+            .as_ref(),
         expected
     );
 }

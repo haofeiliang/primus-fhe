@@ -1,11 +1,10 @@
-//! Fourier GLWE phase extraction and decoding.
+//! Fourier GLWE phase extraction without message decoding.
 
 use super::{FourierGlweDecryptWorkspace, FourierGlweSecretKey};
-use crate::{FourierGlweCiphertext, GlweParameters};
+use crate::FourierGlweCiphertext;
 use primus_data::{Data, DataMut};
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
-use primus_modulus::NativeModulus;
-use primus_poly::{Polynomial, PolynomialOwned};
+use primus_poly::Polynomial;
 
 impl FourierGlweSecretKey {
     /// Computes `b - sum(a_i * s_i)` and writes the encoded torus phase in
@@ -20,7 +19,7 @@ impl FourierGlweSecretKey {
     ///
     /// Panics if ciphertext/output, FFT, or workspace lengths do not match
     /// the key layout. Checks precede output writes.
-    pub fn phase_to<T, Table, A, B>(
+    pub fn decrypt_phase_to<T, Table, A, B>(
         &self,
         input: &FourierGlweCiphertext<A>,
         output: &mut Polynomial<B>,
@@ -71,57 +70,5 @@ impl FourierGlweSecretKey {
         body.sub_rev_assign(phase);
 
         fft.backward_as_torus(phase.as_ref(), output.as_mut());
-    }
-
-    /// Decrypts a native-torus Fourier-domain GLWE ciphertext.
-    /// Inherits [`Self::phase_to`]'s representation requirements.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the parameter layout differs from this key or the inputs
-    /// violate [`Self::phase_to`]'s compatibility checks.
-    #[must_use]
-    pub fn decrypt<T, Table, A>(
-        &self,
-        input: &FourierGlweCiphertext<A>,
-        params: &GlweParameters<T, NativeModulus<T>>,
-        fft: &mut FftEngine<'_, Table>,
-        workspace: &mut FourierGlweDecryptWorkspace,
-    ) -> PolynomialOwned<T>
-    where
-        Table: FftTable,
-        A: Data<Elem = Complex64>,
-        T: TorusFftValue,
-    {
-        let mut output = PolynomialOwned::zero(self.size.poly_length().get());
-        self.decrypt_to(input, &mut output, params, fft, workspace);
-        output
-    }
-
-    /// Decrypts into an existing plaintext polynomial.
-    /// Inherits [`Self::phase_to`]'s representation requirements.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the parameter layout differs from this key or the inputs
-    /// violate [`Self::phase_to`]'s compatibility checks.
-    pub fn decrypt_to<T, Table, A, B>(
-        &self,
-        input: &FourierGlweCiphertext<A>,
-        output: &mut Polynomial<B>,
-        params: &GlweParameters<T, NativeModulus<T>>,
-        fft: &mut FftEngine<'_, Table>,
-        workspace: &mut FourierGlweDecryptWorkspace,
-    ) where
-        Table: FftTable,
-        A: Data<Elem = Complex64>,
-        B: DataMut<Elem = T>,
-        T: TorusFftValue,
-    {
-        assert_eq!(self.size, params.size(), "GLWE parameter layout mismatch");
-        self.phase_to(input, output, fft, workspace);
-        params
-            .plaintext_codec()
-            .decode_slice_assign(output.as_mut());
     }
 }

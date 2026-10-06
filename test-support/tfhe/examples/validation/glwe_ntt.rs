@@ -386,7 +386,7 @@ fn circuit<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
                 .scalar_iter()
                 .zip(glev.iter_ntt_glwe(size.glwe_size().glwe_len()))
             {
-                secret.phase_to(&level, &mut phase, modulus, context.table());
+                secret.decrypt_phase_to(&level, &mut phase, modulus, context.table());
                 let scalar: i128 = scalar.as_into();
                 for (i, &actual) in phase.as_ref().iter().enumerate() {
                     let coefficient = row_secret.map_or(i128::from(i == 0), |s| {

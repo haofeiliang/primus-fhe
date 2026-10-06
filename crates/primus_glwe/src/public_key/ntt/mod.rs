@@ -83,5 +83,6 @@ impl<T: FheUint> NttGlwePublicKey<Vec<T>> {
 
 mod bytes;
 mod encrypt;
+mod message;
 mod workspace;
 pub use workspace::NttGlwePublicEncryptWorkspace;

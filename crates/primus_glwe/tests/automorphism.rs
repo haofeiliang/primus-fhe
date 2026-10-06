@@ -1,6 +1,7 @@
 //! Original-secret phases after automorphism, including nonbinary Fourier keys.
 
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_encoding::PlaintextEmbedding;
 use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_glwe::{
     FourierGlweAutomorphismKey, FourierGlweAutomorphismWorkspace,
@@ -76,10 +77,11 @@ fn ntt_and_coefficient_inputs_reuse_the_automorphism_key() {
         .map(|index| (3 * index as u64 + 1) % PLAINTEXT_MODULUS)
         .collect();
     let mut encrypted: NttGlwe<Vec<u64>> = NttGlwe::zero(glwe_parameters.glwe_len());
-    secret.encrypt_to(
+    secret.encrypt_message_to(
         &Polynomial::new(message.as_slice()),
         &mut encrypted,
         &glwe_parameters,
+        PlaintextEmbedding::Unsigned,
         &ntt,
         &mut rng,
     );
@@ -96,7 +98,9 @@ fn ntt_and_coefficient_inputs_reuse_the_automorphism_key() {
     let automated = automated.into_ntt_form(&ntt);
     let expected_automorphism = automorphism_plaintext(&message, 3);
     assert_eq!(
-        secret.decrypt(&automated, &glwe_parameters, &ntt).as_ref(),
+        secret
+            .decrypt_message(&automated, &glwe_parameters, &ntt)
+            .as_ref(),
         expected_automorphism
     );
 

@@ -2,6 +2,7 @@
 //! raw LUT and workspace failures must precede accumulator writes.
 
 use primus_decompose::DecompositionBaseLog;
+use primus_encoding::PlaintextEmbedding;
 use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_glwe::{
     FourierGlweDecryptWorkspace, FourierGlweEncryptWorkspace, FourierGlweGadgetEncryptWorkspace,
@@ -140,10 +141,11 @@ fn functional_bootstrapping_key_blind_rotates() {
     let message = accumulator_message();
     let mut accumulator_fourier = FourierGlweOwned::zero(ggsw_params.fourier_glwe_len());
     let mut encrypt_workspace = FourierGlweEncryptWorkspace::new(PolyLength::new(POLY_LENGTH));
-    output_secret_key.encrypt_to(
+    output_secret_key.encrypt_message_to(
         &Polynomial::new(message.as_slice()),
         &mut accumulator_fourier,
         &glwe_params,
+        PlaintextEmbedding::Unsigned,
         &mut fft,
         &mut rng,
         &mut encrypt_workspace,
@@ -167,7 +169,7 @@ fn functional_bootstrapping_key_blind_rotates() {
     let mut decrypt_workspace = FourierGlweDecryptWorkspace::new(PolyLength::new(POLY_LENGTH));
     assert_eq!(
         output_secret_key
-            .decrypt(
+            .decrypt_message(
                 &output_fourier,
                 &glwe_params,
                 &mut fft,
@@ -188,7 +190,7 @@ fn functional_bootstrapping_key_blind_rotates() {
     output.write_fourier_form(&mut output_fourier, &mut fft);
     assert_eq!(
         output_secret_key
-            .decrypt(
+            .decrypt_message(
                 &output_fourier,
                 &glwe_params,
                 &mut fft,

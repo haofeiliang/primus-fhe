@@ -44,28 +44,31 @@ NTT secret, Fourier secret and NTT public keys share these ordinary encryption m
 
 | Method | Input | Output storage |
 | --- | --- | --- |
-| `encrypt` / `encrypt_to` | Plaintext in `[0, t)`, unsigned embedding | Allocate / overwrite |
-| `encrypt_centered_to` | Plaintext in `[0, t)`, centered embedding | Overwrite |
+| `encrypt_message` / `encrypt_message_to` | Message in `[0, t)`, explicit `PlaintextEmbedding` | Allocate / overwrite |
 | `encrypt_encoded_to` | Already encoded ciphertext-ring coefficients | Overwrite; no plaintext scaling |
 | `encrypt_zeros` / `encrypt_zeros_to` | Zero polynomial | Allocate / overwrite |
 
-`encrypt_encoded_to`, `encrypt_zeros` / `encrypt_zeros_to`, and `NttGlwePublicKey::generate` take `&GlweEncryptionParameters` directly. Ordinary message methods take `&GlweParameters`, which also supplies the codec. Secret keys supply their own layout. Raw public keys derive N from the NTT table and k from complete mask/body storage; output must have the same length as the key. Matching lengths do not establish transform provenance.
+`encrypt_encoded_to`, `encrypt_zeros` / `encrypt_zeros_to`, and `NttGlwePublicKey::generate` take `&GlweEncryptionParameters` directly. Ordinary message methods take `&GlweParameters`, which also supplies the codec, and `primus_encoding::PlaintextEmbedding::{Unsigned, Centered}`. Both embeddings take canonical residues in `[0, t)`; centered `t - 1` represents `-1`. Secret keys supply their own layout. Raw public keys derive N from the NTT table and k from complete mask/body storage; output must have the same length as the key. Matching lengths do not establish transform provenance.
 
-Secret keys provide `decrypt`, `decrypt_to` and `phase_to`. Phase extraction returns noisy coefficient-domain values without decoding; both plaintext embeddings use the same decoder. Decrypted polynomials use the ciphertext coefficient type `T`; applications handle output type conversion.
+Secret keys provide `decrypt_message`, `decrypt_message_to` and `decrypt_phase_to`. Phase extraction returns noisy coefficient-domain values without decoding; both plaintext embeddings use the same decoder. Decrypted polynomials use the ciphertext coefficient type `T`; applications handle output type conversion.
 
 ```text
-ntt_sk.encrypt_to(input, output, params, ntt_table, rng)
-ntt_pk.encrypt_to(input, output, params, ntt_table, rng, workspace)
-fourier_sk.encrypt_to(input, output, params, fft, rng, workspace)
-ntt_sk.phase_to(input, output, modulus, ntt_table)
-fourier_sk.phase_to(input, output, fft, workspace)
+ntt_sk.encrypt_message_to(input, output, params, embedding, ntt_table, rng)
+ntt_pk.encrypt_message_to(input, output, params, embedding, ntt_table, rng, workspace)
+fourier_sk.encrypt_message_to(input, output, params, embedding, fft, rng, workspace)
+ntt_sk.decrypt_phase_to(input, output, modulus, ntt_table)
+fourier_sk.decrypt_phase_to(input, output, fft, workspace)
 ```
 
 NTT-domain secret-key operations need no workspace. Fourier operations use `FourierGlweEncryptWorkspace<T>` / `FourierGlweDecryptWorkspace`; NTT public encryption uses `NttGlwePublicEncryptWorkspace<T>`. Construct these with `N` and reuse them at that length. Workspaces hold scratch, not parameters, and erase secret intermediates on drop.
 
-For coefficient ciphertexts, `NttGlweSecretKey` provides `encrypt_coeff_to`, `phase_coeff_to` and `decrypt_coeff_to`. They take an additional N-element scratch slice as the last argument, reuse all buffers, and save the body's forward NTT. Encryption accepts unsigned plaintexts and matches `encrypt_to` followed by inverse NTT exactly for the same RNG state. Scratch needs no initialization and retains secret-dependent products after encryption; use an erasing owner such as `zeroize::Zeroizing<Vec<T>>`.
+For coefficient ciphertexts, `NttGlweSecretKey` provides `encrypt_message_coeff_to`, `decrypt_phase_coeff_to` and `decrypt_message_coeff_to`. They take an additional N-element scratch slice as the last argument, reuse all buffers, and save the body's forward NTT. Encryption selects the same explicit embedding and matches `encrypt_message_to` followed by inverse NTT exactly for the same RNG state. Scratch needs no initialization and retains secret-dependent products after encryption; use an erasing owner such as `zeroize::Zeroizing<Vec<T>>`.
 
 `_to` paths reuse output and scratch. Checked layout and transform-length mismatches fail before output writes; matching lengths do not establish transform representation compatibility. Invalid plaintext values may panic after partial writes or randomness consumption. Encoded NTT inputs must be canonical residues in `[0, q)`; callers guarantee this range.
+
+For diagnostics, extract the phase with `decrypt_phase_to`, encode the **expected message** using the actual codec and embedding, and compare the two coefficient slices with [`primus_encoding::phase_error_magnitude_slice_to`](../primus_encoding/README.md#phase-error-diagnostics). Decoding and re-encoding is not an independent reference: a wrong message may have zero residual against its own encoding.
+
+Message adapters live in the secret/public key's `message.rs`; raw encryption and phase extraction need no codec. For transform-domain output, encoding adds directly to the sampled body noise (or the existing Fourier coefficient scratch), before a single body transform. GLev/GGSW generation uses the raw/zero cores and retains its own gadget scaling and injection order.
 
 ## Gadget and truncated ciphertexts
 
@@ -94,7 +97,7 @@ When ordinary parameters already exist, `GlevParameters::try_with_basis(&glwe_pa
 
 `FourierGlweSecretKey::encrypt_ggsw_constant_batch_coeff_to` writes coefficient GGSWs using the same encryption followed by inverse FFT. It takes an additional `params.fourier_ggsw_len()` scratch slice, reuses one transformed GGSW, and preserves the Fourier path's rounding and RNG consumption.
 
-NTT `encrypt_truncated_zeros` also takes `&GlweEncryptionParameters`. Together with `phase_truncated` and `decrypt_truncated`, it operates on coefficient ciphertexts with a full mask and at most `N` body coefficients. Phase extraction and decryption return only the retained coefficients, while their internal scratch still holds full polynomials.
+NTT `encrypt_zeros_truncated` also takes `&GlweEncryptionParameters`. Together with `decrypt_phase_truncated` and `decrypt_message_truncated`, it operates on coefficient ciphertexts with a full mask and at most `N` body coefficients. Phase extraction and decryption return only the retained coefficients, while their internal scratch still holds full polynomials.
 
 ## Evaluation primitives
 

@@ -147,7 +147,7 @@ fn sparse_rotation_matches_direct_phase_and_classic_with_reused_scratch() {
             for output in [&sparse_output, &classic_output] {
                 let output_ntt = output.clone().into_ntt_form(ntt);
                 let mut phase = Polynomial::<Vec<u32>>::zero(n);
-                output_key.phase_to(&output_ntt, &mut phase, modulus, ntt);
+                output_key.decrypt_phase_to(&output_ntt, &mut phase, modulus, ntt);
                 for (&actual, &expected) in phase.as_ref().iter().zip(&expected) {
                     let distance = actual.abs_diff(expected);
                     let error = distance.min(Q - distance);

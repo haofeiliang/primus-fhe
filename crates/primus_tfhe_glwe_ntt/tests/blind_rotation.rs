@@ -2,6 +2,7 @@
 //! raw LUT and workspace failures must precede accumulator writes.
 
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_encoding::PlaintextEmbedding;
 use primus_glwe::{
     GlevParameters, GlweParameters, GlweSecretKey, NttGlweGadgetEncryptWorkspace, NttGlweSecretKey,
     SecretKeyDistr,
@@ -155,10 +156,11 @@ fn functional_bootstrapping_key_blind_rotates() {
 
     let message = accumulator_message();
     let mut accumulator_ntt: NttGlwe<Vec<u32>> = NttGlwe::zero(ggsw_params.glwe_len());
-    output_secret_key.encrypt_to(
+    output_secret_key.encrypt_message_to(
         &Polynomial::new(message.as_slice()),
         &mut accumulator_ntt,
         &glwe_params,
+        PlaintextEmbedding::Unsigned,
         &ntt,
         &mut rng,
     );
@@ -179,7 +181,7 @@ fn functional_bootstrapping_key_blind_rotates() {
     let output_ntt = output.into_ntt_form(&ntt);
     assert_eq!(
         output_secret_key
-            .decrypt(&output_ntt, &glwe_params, &ntt)
+            .decrypt_message(&output_ntt, &glwe_params, &ntt)
             .as_ref(),
         rotate_plaintext(&message, expected_exponent)
     );
@@ -197,7 +199,7 @@ fn functional_bootstrapping_key_blind_rotates() {
     let direct_output_ntt = direct_output.into_ntt_form(&ntt);
     assert_eq!(
         output_secret_key
-            .decrypt(&direct_output_ntt, &glwe_params, &ntt)
+            .decrypt_message(&direct_output_ntt, &glwe_params, &ntt)
             .as_ref(),
         rotate_plaintext(&message, expected_exponent)
     );

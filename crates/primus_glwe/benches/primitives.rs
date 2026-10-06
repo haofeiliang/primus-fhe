@@ -9,6 +9,7 @@
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_encoding::PlaintextEmbedding;
 use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_glwe::{
     FourierGlweAutomorphismKey, FourierGlweAutomorphismWorkspace, FourierGlweEncryptWorkspace,
@@ -59,7 +60,13 @@ fn ntt_primitives(c: &mut Criterion) {
         let mut trace = NttGlweTraceWorkspace::new(size);
         let message = Polynomial::new((0..n).map(|i| (i % 16) as u64).collect::<Vec<_>>());
         let input = sk
-            .encrypt(&message, &params, &table, &mut rng)
+            .encrypt_message(
+                &message,
+                &params,
+                PlaintextEmbedding::Unsigned,
+                &table,
+                &mut rng,
+            )
             .into_coeff_form(&table);
         let mut encoded_message = vec![0u64; n];
         params.plaintext_codec().add_encode_slice_assign(
@@ -86,7 +93,13 @@ fn ntt_primitives(c: &mut Criterion) {
             let mut partial_message = Polynomial::new(message.as_ref().to_vec());
             partial_message.as_mut()[count..].fill(0);
             let partial_input = sk
-                .encrypt(&partial_message, &params, &table, &mut rng)
+                .encrypt_message(
+                    &partial_message,
+                    &params,
+                    PlaintextEmbedding::Unsigned,
+                    &table,
+                    &mut rng,
+                )
                 .into_coeff_form(&table);
             let mut selected = vec![0; count * size.glwe_len()];
             group.throughput(Throughput::Elements(count as u64));
@@ -199,7 +212,14 @@ fn fourier_primitives(c: &mut Criterion) {
         let mut trace = FourierGlweTraceWorkspace::new(size);
         let message = Polynomial::new((0..n).map(|i| (i % 16) as u64).collect::<Vec<_>>());
         let mut encryption = FourierGlweEncryptWorkspace::new(poly_length);
-        let encrypted = sk.encrypt(&message, &params, &mut fft, &mut rng, &mut encryption);
+        let encrypted = sk.encrypt_message(
+            &message,
+            &params,
+            PlaintextEmbedding::Unsigned,
+            &mut fft,
+            &mut rng,
+            &mut encryption,
+        );
         let mut input = Glwe::new(vec![0u64; size.glwe_len()]);
         encrypted.write_torus_form(&mut input, &mut fft);
         let mut encoded_message = vec![0u64; n];
@@ -226,9 +246,10 @@ fn fourier_primitives(c: &mut Criterion) {
         for count in [8, n / 8] {
             let mut partial_message = Polynomial::new(message.as_ref().to_vec());
             partial_message.as_mut()[count..].fill(0);
-            let encrypted = sk.encrypt(
+            let encrypted = sk.encrypt_message(
                 &partial_message,
                 &params,
+                PlaintextEmbedding::Unsigned,
                 &mut fft,
                 &mut rng,
                 &mut encryption,
@@ -337,7 +358,14 @@ fn fourier_automorphism_backend<Table: FftTable>(c: &mut Criterion, backend: &st
         let mut workspace = FourierGlweAutomorphismWorkspace::new(params.size());
         let message = Polynomial::new((0..n).map(|i| (i % 16) as u64).collect::<Vec<_>>());
         let mut encryption = FourierGlweEncryptWorkspace::new(poly_length);
-        let input = sk.encrypt(&message, &params, &mut fft, &mut rng, &mut encryption);
+        let input = sk.encrypt_message(
+            &message,
+            &params,
+            PlaintextEmbedding::Unsigned,
+            &mut fft,
+            &mut rng,
+            &mut encryption,
+        );
         let mut output = input.clone();
         let mut group = c.benchmark_group(format!("glwe/automorphism/{backend}/k{k}_n{n}"));
         group.bench_function("fourier_to", |b| {

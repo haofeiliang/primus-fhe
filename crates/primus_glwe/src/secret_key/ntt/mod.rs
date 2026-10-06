@@ -18,6 +18,7 @@ mod coefficient;
 mod decrypt;
 mod encrypt;
 mod gadget;
+mod message;
 mod truncated;
 mod workspace;
 pub use workspace::NttGlweGadgetEncryptWorkspace;

@@ -11,6 +11,7 @@
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_encoding::PlaintextEmbedding;
 use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_glwe::{
     FourierGgswCiphertext, FourierGlevCiphertext, FourierGlweDecryptWorkspace,
@@ -55,8 +56,14 @@ fn ntt_encryption(c: &mut Criterion) {
         );
         let pk = NttGlwePublicKey::generate(&sk, params.encryption_parameters(), &ntt, &mut rng);
         let mut public_workspace = NttGlwePublicEncryptWorkspace::new(poly_length);
-        let mut ciphertext = sk.encrypt(&message, &params, &ntt, &mut rng);
-        sk.decrypt_to(&ciphertext, &mut plaintext, &params, &ntt);
+        let mut ciphertext = sk.encrypt_message(
+            &message,
+            &params,
+            PlaintextEmbedding::Unsigned,
+            &ntt,
+            &mut rng,
+        );
+        sk.decrypt_message_to(&ciphertext, &mut plaintext, &params, &ntt);
         assert_eq!(plaintext.as_ref(), message.as_ref());
         let decrypt_input = ciphertext.clone();
         let gadget = GlevParameters::with_glwe_params(
@@ -70,10 +77,11 @@ fn ntt_encryption(c: &mut Criterion) {
         let mut group = c.benchmark_group(format!("glwe/ntt/k{dimension}_n{n}"));
         group.bench_function("encrypt_sk_to", |b| {
             b.iter(|| {
-                sk.encrypt_to(
+                sk.encrypt_message_to(
                     black_box(&message),
                     &mut ciphertext,
                     black_box(&params),
+                    PlaintextEmbedding::Unsigned,
                     &ntt,
                     &mut rng,
                 );
@@ -82,10 +90,11 @@ fn ntt_encryption(c: &mut Criterion) {
         });
         group.bench_function("encrypt_pk_to", |b| {
             b.iter(|| {
-                pk.encrypt_to(
+                pk.encrypt_message_to(
                     black_box(&message),
                     &mut ciphertext,
                     black_box(&params),
+                    PlaintextEmbedding::Unsigned,
                     &ntt,
                     &mut rng,
                     &mut public_workspace,
@@ -95,7 +104,7 @@ fn ntt_encryption(c: &mut Criterion) {
         });
         group.bench_function("decrypt_to", |b| {
             b.iter(|| {
-                sk.decrypt_to(
+                sk.decrypt_message_to(
                     black_box(&decrypt_input),
                     &mut plaintext,
                     black_box(&params),
@@ -106,15 +115,16 @@ fn ntt_encryption(c: &mut Criterion) {
         });
         let mut coefficients = GlweCiphertext::<Vec<u64>>::zero(params.glwe_len());
         let mut coefficient_scratch = Zeroizing::new(vec![0; n]);
-        sk.encrypt_coeff_to(
+        sk.encrypt_message_coeff_to(
             &message,
             &mut coefficients,
             &params,
+            PlaintextEmbedding::Unsigned,
             &ntt,
             &mut rng,
             &mut coefficient_scratch,
         );
-        sk.decrypt_coeff_to(
+        sk.decrypt_message_coeff_to(
             &coefficients,
             &mut plaintext,
             &params,
@@ -125,10 +135,11 @@ fn ntt_encryption(c: &mut Criterion) {
         let coefficient_decrypt_input = coefficients.clone();
         group.bench_function("encrypt_coeff_to", |b| {
             b.iter(|| {
-                sk.encrypt_coeff_to(
+                sk.encrypt_message_coeff_to(
                     black_box(&message),
                     &mut coefficients,
                     black_box(&params),
+                    PlaintextEmbedding::Unsigned,
                     &ntt,
                     &mut rng,
                     &mut coefficient_scratch,
@@ -138,7 +149,7 @@ fn ntt_encryption(c: &mut Criterion) {
         });
         group.bench_function("decrypt_coeff_to", |b| {
             b.iter(|| {
-                sk.decrypt_coeff_to(
+                sk.decrypt_message_coeff_to(
                     black_box(&coefficient_decrypt_input),
                     &mut plaintext,
                     black_box(&params),
@@ -226,14 +237,15 @@ fn fourier_encryption(c: &mut Criterion) {
         );
         let mut encrypt_workspace = FourierGlweEncryptWorkspace::new(poly_length);
         let mut decrypt_workspace = FourierGlweDecryptWorkspace::new(poly_length);
-        let mut ciphertext = sk.encrypt(
+        let mut ciphertext = sk.encrypt_message(
             &message,
             &params,
+            PlaintextEmbedding::Unsigned,
             &mut fft,
             &mut rng,
             &mut encrypt_workspace,
         );
-        sk.decrypt_to(
+        sk.decrypt_message_to(
             &ciphertext,
             &mut plaintext,
             &params,
@@ -253,10 +265,11 @@ fn fourier_encryption(c: &mut Criterion) {
         let mut group = c.benchmark_group(format!("glwe/fourier/k{dimension}_n{n}"));
         group.bench_function("encrypt_sk_to", |b| {
             b.iter(|| {
-                sk.encrypt_to(
+                sk.encrypt_message_to(
                     black_box(&message),
                     &mut ciphertext,
                     black_box(&params),
+                    PlaintextEmbedding::Unsigned,
                     &mut fft,
                     &mut rng,
                     &mut encrypt_workspace,
@@ -266,7 +279,7 @@ fn fourier_encryption(c: &mut Criterion) {
         });
         group.bench_function("decrypt_to", |b| {
             b.iter(|| {
-                sk.decrypt_to(
+                sk.decrypt_message_to(
                     black_box(&decrypt_input),
                     &mut plaintext,
                     black_box(&params),

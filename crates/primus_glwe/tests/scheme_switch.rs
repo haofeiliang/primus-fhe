@@ -1,6 +1,7 @@
 //! GLev-to-GGSW conversion checked through gadget phases and external products.
 
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_encoding::PlaintextEmbedding;
 use primus_glwe::{
     GlevParameters, GlweParameters, GlweSecretKey, NttGlweGadgetEncryptWorkspace,
     NttGlweSchemeSwitchKey, NttGlweSecretKey, SecretKeyDistr,
@@ -90,10 +91,11 @@ fn ntt_scheme_switch_produces_an_external_product_control() {
 
     let selected_message = vec![5; POLY_LENGTH];
     let mut selected: NttGlwe<Vec<u64>> = NttGlwe::zero(glwe_parameters.glwe_len());
-    secret.encrypt_to(
+    secret.encrypt_message_to(
         &Polynomial::new(selected_message.as_slice()),
         &mut selected,
         &glwe_parameters,
+        PlaintextEmbedding::Unsigned,
         &ntt,
         &mut rng,
     );
@@ -110,7 +112,9 @@ fn ntt_scheme_switch_produces_an_external_product_control() {
     );
     let product = product.into_ntt_form(&ntt);
     assert_eq!(
-        secret.decrypt(&product, &glwe_parameters, &ntt).as_ref(),
+        secret
+            .decrypt_message(&product, &glwe_parameters, &ntt)
+            .as_ref(),
         selected_message
     );
 

@@ -1,7 +1,7 @@
 //! Client-side coefficient-ring encryption and decryption under the accumulator secret.
 
 use primus_data::{Data, DataMut};
-use primus_encoding::ScaledCodec;
+use primus_encoding::{PlaintextEmbedding, ScaledCodec};
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
 use primus_glwe::{
     FourierGlweCiphertext, FourierGlweDecryptWorkspace, FourierGlweEncryptWorkspace,
@@ -84,7 +84,7 @@ where
     /// Panics before sampling if message or output length is wrong. A plaintext-range
     /// or RNG panic may consume randomness and modify scratch; transform panics may
     /// partially write output. See
-    /// [`FourierGlweSecretKey::encrypt_to`].
+    /// [`FourierGlweSecretKey::encrypt_message_to`].
     pub fn encrypt_to<R, S>(&mut self, message: &[T], output: &mut GlweCiphertext<S>, rng: &mut R)
     where
         R: rand::Rng + rand::CryptoRng,
@@ -96,10 +96,11 @@ where
             (parameters.poly_length().get(), parameters.glwe_len()),
             "accumulator encryption layout mismatch"
         );
-        self.secret.encrypt_to(
+        self.secret.encrypt_message_to(
             &Polynomial::new(message),
             &mut self.transformed,
             parameters,
+            PlaintextEmbedding::Unsigned,
             &mut self.fft,
             rng,
             &mut self.encrypt,
@@ -137,7 +138,7 @@ where
             "accumulator decryption layout mismatch"
         );
         input.write_fourier_form(&mut self.transformed, &mut self.fft);
-        self.secret.decrypt_to(
+        self.secret.decrypt_message_to(
             &self.transformed,
             &mut Polynomial::new(output),
             parameters,

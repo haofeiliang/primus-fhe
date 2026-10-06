@@ -1,7 +1,7 @@
 //! Client-side coefficient-ring encryption and decryption under the accumulator secret.
 
 use primus_data::{Data, DataMut};
-use primus_encoding::ScaledCodec;
+use primus_encoding::{PlaintextEmbedding, ScaledCodec};
 use primus_glwe::{GlweCiphertext, GlweParameters, GlweSecretKey, NttGlweSecretKey};
 use primus_integer::FheUint;
 use primus_modulus::BarrettModulus;
@@ -79,17 +79,18 @@ where
     /// # Panics
     /// Panics before sampling if message or output length is wrong. A plaintext-range
     /// or RNG/transform panic may consume randomness and partially write output
-    /// or scratch. See [`NttGlweSecretKey::encrypt_coeff_to`].
+    /// or scratch. See [`NttGlweSecretKey::encrypt_message_coeff_to`].
     pub fn encrypt_to<R, S>(&mut self, message: &[T], output: &mut GlweCiphertext<S>, rng: &mut R)
     where
         R: rand::Rng + rand::CryptoRng,
         S: DataMut<Elem = T>,
     {
         let parameters = &self.parameters;
-        self.secret.encrypt_coeff_to(
+        self.secret.encrypt_message_coeff_to(
             &Polynomial::new(message),
             output,
             parameters,
+            PlaintextEmbedding::Unsigned,
             self.context.table(),
             rng,
             &mut self.scratch,
@@ -121,7 +122,7 @@ where
     /// Panics before output writes if ciphertext or plaintext length is wrong.
     pub fn decrypt_to<S: Data<Elem = T>>(&mut self, input: &GlweCiphertext<S>, output: &mut [T]) {
         let parameters = &self.parameters;
-        self.secret.decrypt_coeff_to(
+        self.secret.decrypt_message_coeff_to(
             input,
             &mut Polynomial::new(output),
             parameters,

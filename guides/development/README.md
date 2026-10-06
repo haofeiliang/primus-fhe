@@ -169,9 +169,9 @@ phase to the encoded **expected message** with
 [`phase_error_magnitude` / `phase_error_magnitude_slice_to`](../../crates/primus_encoding/README.md#phase-error-diagnostics).
 Do not substitute a re-encoded decoded value or analyze NTT/Fourier storage
 as coefficient phases. Message recovery and phase-error magnitude answer
-different questions. LWE exposes these roles as `encrypt_message*` /
+different questions. LWE and single-modulus GLWE expose these roles as `encrypt_message*` /
 `decrypt_message*`, `encrypt_encoded*`, and `decrypt_phase*`; message encryption
-always selects `PlaintextEmbedding` explicitly. Independent `*_batch` samples
+always selects `PlaintextEmbedding` explicitly. LWE independent `*_batch` samples
 and shared-mask `*_packed` samples have distinct layouts; see the
 [LWE workflow](../../crates/primus_lwe/README.md#independent-batches-and-packed-messages).
 

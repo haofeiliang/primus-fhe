@@ -1,6 +1,7 @@
 //! Switch between independent keys, including a change in GLWE mask count.
 
 use primus_decompose::DecompositionBaseLog;
+use primus_encoding::PlaintextEmbedding;
 use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_glwe::{
     FourierGlweDecryptWorkspace, FourierGlweEncryptWorkspace, FourierGlweGadgetEncryptWorkspace,
@@ -51,7 +52,14 @@ fn ntt_glwe_key_switches_for_equal_and_smaller_output_dimensions() {
     let message_values = plaintext();
     let message = Polynomial::new(message_values.clone());
     let mut encrypted: NttGlwe<Vec<u32>> = NttGlwe::zero(input_params.glwe_len());
-    input_key.encrypt_to(&message, &mut encrypted, &input_params, &ntt, &mut rng);
+    input_key.encrypt_message_to(
+        &message,
+        &mut encrypted,
+        &input_params,
+        PlaintextEmbedding::Unsigned,
+        &ntt,
+        &mut rng,
+    );
     let input = encrypted.into_coeff_form(&ntt);
 
     for output_dimension in [INPUT_DIMENSION, 1] {
@@ -99,7 +107,7 @@ fn ntt_glwe_key_switches_for_equal_and_smaller_output_dimensions() {
         let switched_ntt = switched.into_ntt_form(&ntt);
         assert_eq!(
             output_key
-                .decrypt(&switched_ntt, &output_params, &ntt)
+                .decrypt_message(&switched_ntt, &output_params, &ntt)
                 .as_ref(),
             message_values
         );
@@ -129,10 +137,11 @@ fn fourier_glwe_key_switches_for_equal_and_smaller_output_dimensions() {
     let message = Polynomial::new(message_values.clone());
     let mut encrypted = FourierGlweOwned::zero(input_params.fourier_glwe_len());
     let mut glwe_encrypt_workspace = FourierGlweEncryptWorkspace::new(PolyLength::new(POLY_LENGTH));
-    input_key.encrypt_to(
+    input_key.encrypt_message_to(
         &message,
         &mut encrypted,
         &input_params,
+        PlaintextEmbedding::Unsigned,
         &mut fft,
         &mut rng,
         &mut glwe_encrypt_workspace,
@@ -185,7 +194,7 @@ fn fourier_glwe_key_switches_for_equal_and_smaller_output_dimensions() {
         let mut decrypt_workspace = FourierGlweDecryptWorkspace::new(PolyLength::new(POLY_LENGTH));
         assert_eq!(
             output_key
-                .decrypt(
+                .decrypt_message(
                     &switched_fourier,
                     &output_params,
                     &mut fft,

@@ -1,7 +1,7 @@
 //! Public encryption boundaries reject incompatible domains and storage before writes.
 
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
-use primus_encoding::ScaledCodec;
+use primus_encoding::{PlaintextEmbedding, ScaledCodec};
 use primus_lattice::GlweDimension;
 use primus_poly::PolyLength;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -244,10 +244,11 @@ fn fourier_encryption_rejects_incomplete_and_excess_masks_before_writes() {
         let mut output = FourierGlweCiphertext::new(vec![sentinel; len]);
         assert!(
             catch_unwind(AssertUnwindSafe(|| {
-                key.encrypt_to(
+                key.encrypt_message_to(
                     &message,
                     &mut output,
                     &params,
+                    PlaintextEmbedding::Unsigned,
                     &mut fft,
                     &mut rng,
                     &mut workspace,
@@ -368,16 +369,24 @@ fn ntt_operations_reject_incompatible_domains_and_workspace_before_writes() {
         assert!(
             catch_unwind(AssertUnwindSafe(|| {
                 if public {
-                    public_key.encrypt_to(
+                    public_key.encrypt_message_to(
                         &message,
                         &mut output,
                         &params,
+                        PlaintextEmbedding::Unsigned,
                         &wrong_table,
                         &mut rng,
                         &mut workspace,
                     );
                 } else {
-                    key.encrypt_to(&message, &mut output, &params, &wrong_table, &mut rng);
+                    key.encrypt_message_to(
+                        &message,
+                        &mut output,
+                        &params,
+                        PlaintextEmbedding::Unsigned,
+                        &wrong_table,
+                        &mut rng,
+                    );
                 }
             }))
             .is_err()
@@ -389,7 +398,14 @@ fn ntt_operations_reject_incompatible_domains_and_workspace_before_writes() {
     let mut rejected_rng = StdRng::seed_from_u64(43);
     assert!(
         catch_unwind(AssertUnwindSafe(|| {
-            foreign_key.encrypt_to(&message, &mut output, &params, &table, &mut rejected_rng);
+            foreign_key.encrypt_message_to(
+                &message,
+                &mut output,
+                &params,
+                PlaintextEmbedding::Unsigned,
+                &table,
+                &mut rejected_rng,
+            );
         }))
         .is_err()
     );
@@ -406,10 +422,11 @@ fn ntt_operations_reject_incompatible_domains_and_workspace_before_writes() {
         let mut expected_rng = StdRng::seed_from_u64(43);
         assert!(
             catch_unwind(AssertUnwindSafe(|| {
-                public_key.encrypt_to(
+                public_key.encrypt_message_to(
                     &message,
                     &mut output,
                     &params,
+                    PlaintextEmbedding::Unsigned,
                     &table,
                     &mut rng,
                     &mut wrong_workspace,
@@ -425,7 +442,7 @@ fn ntt_operations_reject_incompatible_domains_and_workspace_before_writes() {
     for (key, ntt) in [(&key, &wrong_table), (&foreign_key, &table)] {
         assert!(
             catch_unwind(AssertUnwindSafe(|| {
-                key.phase_to(&input, &mut phase, modulus, ntt);
+                key.decrypt_phase_to(&input, &mut phase, modulus, ntt);
             }))
             .is_err()
         );
@@ -451,10 +468,11 @@ fn ntt_operations_reject_incompatible_domains_and_workspace_before_writes() {
         let mut expected_rng = StdRng::seed_from_u64(43);
         assert!(
             catch_unwind(AssertUnwindSafe(|| {
-                key.encrypt_coeff_to(
+                key.encrypt_message_coeff_to(
                     &polynomial,
                     &mut ciphertext,
                     &params,
+                    PlaintextEmbedding::Unsigned,
                     ntt,
                     &mut rng,
                     &mut scratch,
@@ -467,7 +485,13 @@ fn ntt_operations_reject_incompatible_domains_and_workspace_before_writes() {
         assert_eq!(rng.next_u64(), expected_rng.next_u64());
         assert!(
             catch_unwind(AssertUnwindSafe(|| {
-                key.decrypt_coeff_to(&ciphertext, &mut polynomial, &params, ntt, &mut scratch);
+                key.decrypt_message_coeff_to(
+                    &ciphertext,
+                    &mut polynomial,
+                    &params,
+                    ntt,
+                    &mut scratch,
+                );
             }))
             .is_err()
         );

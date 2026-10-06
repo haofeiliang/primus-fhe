@@ -6,6 +6,17 @@
 //! `fourier` is generic over an FFT table; `rustfft` / `tfhe-fft` also enable
 //! `fourier` and select a concrete engine. These features can be combined.
 //! `simd` propagates to active arithmetic dependencies without enabling a backend.
+//!
+//! Message operations use `encrypt_message[_to]` / `decrypt_message[_to]` and
+//! ordinary parameters. Encryption explicitly selects
+//! [`primus_encoding::PlaintextEmbedding`]. `encrypt_encoded_to` / `encrypt_zeros_to`
+//! need only codec-free encryption parameters; `decrypt_phase_to` extracts the
+//! noisy coefficient phase without decoding. Message adapters encode in place
+//! into the body or existing coefficient scratch, sharing the raw numerical cores.
+//!
+//! For diagnostics, compare the phase against the expected message's encoding
+//! with [`primus_encoding::phase_error_magnitude_slice_to`], keeping the reference
+//! independent of the decoded result.
 
 #![deny(missing_docs)]
 

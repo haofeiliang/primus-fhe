@@ -385,7 +385,7 @@ where
                 .scalar_iter()
                 .zip(glev.iter_glwe(size.glwe_size().fourier_glwe_len()))
             {
-                secret.phase_to(&level, &mut phase, &mut fft, &mut decrypt);
+                secret.decrypt_phase_to(&level, &mut phase, &mut fft, &mut decrypt);
                 let scalar: i128 = scalar.as_into();
                 for (i, &actual) in phase.as_ref().iter().enumerate() {
                     let coefficient = row_secret.map_or(i128::from(i == 0), |s| {

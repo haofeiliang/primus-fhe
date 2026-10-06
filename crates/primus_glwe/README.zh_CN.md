@@ -44,28 +44,31 @@ NTT 私钥、Fourier 私钥和 NTT 公钥共享以下普通加密接口：
 
 | 方法 | 输入 | 输出存储 |
 | --- | --- | --- |
-| `encrypt` / `encrypt_to` | `[0, t)` 中的明文，使用无符号嵌入 | 分配 / 覆盖 |
-| `encrypt_centered_to` | `[0, t)` 中的明文，使用居中嵌入 | 覆盖 |
+| `encrypt_message` / `encrypt_message_to` | `[0, t)` 中的消息，显式选择 `PlaintextEmbedding` | 分配 / 覆盖 |
 | `encrypt_encoded_to` | 已编码的密文环系数 | 覆盖；不做明文缩放 |
 | `encrypt_zeros` / `encrypt_zeros_to` | 零多项式 | 分配 / 覆盖 |
 
-`encrypt_encoded_to`、`encrypt_zeros` / `encrypt_zeros_to` 和 `NttGlwePublicKey::generate` 直接接收 `&GlweEncryptionParameters`。普通消息方法接收同时提供 codec 的 `&GlweParameters`。私钥使用自身布局；raw 公钥由 NTT 表确定 N、完整 mask/body 存储确定 k，输出须与公钥长度一致。长度一致不能证明变换来源兼容。
+`encrypt_encoded_to`、`encrypt_zeros` / `encrypt_zeros_to` 和 `NttGlwePublicKey::generate` 直接接收 `&GlweEncryptionParameters`。普通消息方法接收同时提供 codec 的 `&GlweParameters`，并显式选择 `primus_encoding::PlaintextEmbedding::{Unsigned, Centered}`。两种嵌入都接受 `[0, t)` 中的规范剩余类，居中嵌入的 `t - 1` 表示 `-1`。私钥使用自身布局；raw 公钥由 NTT 表确定 N、完整 mask/body 存储确定 k，输出须与公钥长度一致。长度一致不能证明变换来源兼容。
 
-私钥提供 `decrypt`、`decrypt_to` 和 `phase_to`。Phase 提取返回带噪声的系数域值，不做解码；两种明文嵌入使用同一解码器。解密多项式使用密文系数类型 `T`，输出类型转换由应用处理。
+私钥提供 `decrypt_message`、`decrypt_message_to` 和 `decrypt_phase_to`。Phase 提取返回带噪声的系数域值，不做解码；两种明文嵌入使用同一解码器。解密多项式使用密文系数类型 `T`，输出类型转换由应用处理。
 
 ```text
-ntt_sk.encrypt_to(input, output, params, ntt_table, rng)
-ntt_pk.encrypt_to(input, output, params, ntt_table, rng, workspace)
-fourier_sk.encrypt_to(input, output, params, fft, rng, workspace)
-ntt_sk.phase_to(input, output, modulus, ntt_table)
-fourier_sk.phase_to(input, output, fft, workspace)
+ntt_sk.encrypt_message_to(input, output, params, embedding, ntt_table, rng)
+ntt_pk.encrypt_message_to(input, output, params, embedding, ntt_table, rng, workspace)
+fourier_sk.encrypt_message_to(input, output, params, embedding, fft, rng, workspace)
+ntt_sk.decrypt_phase_to(input, output, modulus, ntt_table)
+fourier_sk.decrypt_phase_to(input, output, fft, workspace)
 ```
 
 NTT 域私钥运算无需 workspace。Fourier 运算使用 `FourierGlweEncryptWorkspace<T>` / `FourierGlweDecryptWorkspace`；NTT 公钥加密使用 `NttGlwePublicEncryptWorkspace<T>`。这些 workspace 按 `N` 构造，并在相同长度下复用。Workspace 保存工作区而非参数，析构时擦除私密中间值。
 
-对于系数域密文，`NttGlweSecretKey` 提供 `encrypt_coeff_to`、`phase_coeff_to` 和 `decrypt_coeff_to`，最后一个参数是长度为 N 的 scratch 切片。 它们复用所有缓冲，省去 body 的正 NTT。加密接收无符号明文；相同 RNG 状态下， 结果与 `encrypt_to` 后逆 NTT 精确一致。Scratch 无需初始化，加密后保留依赖私钥的乘积， 应由 `zeroize::Zeroizing<Vec<T>>` 等负责擦除的类型持有。
+对于系数域密文，`NttGlweSecretKey` 提供 `encrypt_message_coeff_to`、`decrypt_phase_coeff_to` 和 `decrypt_message_coeff_to`，最后一个参数是长度为 N 的 scratch 切片。 它们复用所有缓冲，省去 body 的正 NTT。加密显式选择相同 embedding；相同 RNG 状态下，结果与 `encrypt_message_to` 后逆 NTT 精确一致。Scratch 无需初始化，加密后保留依赖私钥的乘积， 应由 `zeroize::Zeroizing<Vec<T>>` 等负责擦除的类型持有。
 
 `_to` 路径复用输出和工作区。布局和变换长度检查失败会在写输出前报错；长度相同并不代表变换表示兼容。无效明文值可能在部分写入或消耗随机数后触发 panic。已编码的 NTT 输入必须是 `[0, q)` 中的规范剩余类，该范围由调用方保证。
+
+诊断时先用 `decrypt_phase_to` 提取相位，再用实际 codec 和 embedding 编码**预期消息**，最后通过 [`primus_encoding::phase_error_magnitude_slice_to`](../primus_encoding/README.zh_CN.md#相位误差诊断) 比较两组系数。解码后重新编码不能作为独立参考：错误消息相对自身编码的残差也可能为零。
+
+消息适配放在私钥/公钥的 `message.rs`；raw 加密与 phase 提取不依赖 codec。输出为变换域密文时，编码直接加到已采样的 body 噪声或已有 Fourier 系数 scratch，随后对 body 变换一次。GLev/GGSW 生成继续使用 raw/zero 核心，保留各自的 gadget 缩放及注入顺序。
 
 ## Gadget 与截断密文
 
@@ -94,7 +97,7 @@ let ordinary = GlweParameters::try_from_parts(size, encryption, codec)?;
 
 `FourierGlweSecretKey::encrypt_ggsw_constant_batch_coeff_to` 通过相同加密后逆 FFT，输出系数域 GGSW。它额外接收长度为 `params.fourier_ggsw_len()` 的 scratch 切片，只复用一份变换域 GGSW，保持原 Fourier 路径的舍入与 RNG 消费。
 
-NTT 的 `encrypt_truncated_zeros` 同样接收 `&GlweEncryptionParameters`。它和 `phase_truncated`、`decrypt_truncated` 操作系数域密文，其 mask 完整，body 最多包含 `N` 个系数。Phase 提取和解密只返回保留的系数，内部工作区仍保存完整多项式。
+NTT 的 `encrypt_zeros_truncated` 同样接收 `&GlweEncryptionParameters`。它和 `decrypt_phase_truncated`、`decrypt_message_truncated` 操作系数域密文，其 mask 完整，body 最多包含 `N` 个系数。Phase 提取和解密只返回保留的系数，内部工作区仍保存完整多项式。
 
 ## 求值原语
 

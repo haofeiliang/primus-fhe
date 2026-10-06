@@ -3,8 +3,8 @@
 use primus_encoding::PlaintextEmbedding;
 use primus_fft::{FftEngine, FftTable, RustFftTable, TorusFftValue};
 use primus_glwe::{
-    FourierGlweDecryptWorkspace, FourierGlweEncryptWorkspace, FourierGlweSecretKey, GlweParameters,
-    GlweSecretKey, SecretKeyDistr,
+    FourierGlweCiphertext, FourierGlweDecryptWorkspace, FourierGlweEncryptWorkspace,
+    FourierGlweSecretKey, GlweParameters, GlweSecretKey, SecretKeyDistr,
 };
 use primus_integer::FheUint;
 use primus_lattice::GlweDimension;
@@ -66,34 +66,7 @@ where
         let mut encrypt_workspace = FourierGlweEncryptWorkspace::new(PolyLength::new(POLY_LENGTH));
         let mut decrypt_workspace = FourierGlweDecryptWorkspace::new(PolyLength::new(POLY_LENGTH));
 
-        let mut cipher = secret_key.encrypt(
-            &message,
-            &params,
-            &mut fft,
-            &mut rng,
-            &mut encrypt_workspace,
-        );
-        assert_eq!(
-            secret_key
-                .decrypt(&cipher, &params, &mut fft, &mut decrypt_workspace)
-                .as_ref(),
-            messages
-        );
-
-        secret_key.encrypt_centered_to(
-            &message,
-            &mut cipher,
-            &params,
-            &mut fft,
-            &mut rng,
-            &mut encrypt_workspace,
-        );
-        assert_eq!(
-            secret_key
-                .decrypt(&cipher, &params, &mut fft, &mut decrypt_workspace)
-                .as_ref(),
-            messages
-        );
+        let mut cipher = FourierGlweCiphertext::<Vec<_>>::zero(params.fourier_glwe_len());
 
         secret_key.encrypt_zeros_to(
             &mut cipher,
@@ -104,45 +77,46 @@ where
         );
         assert_eq!(
             secret_key
-                .decrypt(&cipher, &params, &mut fft, &mut decrypt_workspace)
+                .decrypt_message(&cipher, &params, &mut fft, &mut decrypt_workspace)
                 .as_ref(),
             vec![T::ZERO; POLY_LENGTH]
         );
 
-        let mut encoded = vec![T::ZERO; POLY_LENGTH];
-        params.plaintext_codec().add_encode_slice_assign(
-            &mut encoded,
-            &messages,
-            PlaintextEmbedding::Unsigned,
-        );
-        // Raw encoded encryption must equal ordinary encryption with the same
-        // coins; this also checks that the codec is applied exactly once.
-        let seed = rng.next_u64();
-        rng = StdRng::seed_from_u64(seed);
-        let mut expected_rng = StdRng::seed_from_u64(seed);
-        let expected = secret_key.encrypt(
-            &message,
-            &params,
-            &mut fft,
-            &mut expected_rng,
-            &mut encrypt_workspace,
-        );
-        secret_key.encrypt_encoded_to(
-            &Polynomial::new(encoded),
-            &mut cipher,
-            params.encryption_parameters(),
-            &mut fft,
-            &mut rng,
-            &mut encrypt_workspace,
-        );
-        assert_eq!(cipher.as_ref(), expected.as_ref());
-        assert_eq!(rng.next_u64(), expected_rng.next_u64());
-        assert_eq!(
-            secret_key
-                .decrypt(&cipher, &params, &mut fft, &mut decrypt_workspace)
-                .as_ref(),
-            messages
-        );
+        for embedding in [PlaintextEmbedding::Unsigned, PlaintextEmbedding::Centered] {
+            let mut encoded = vec![T::ZERO; POLY_LENGTH];
+            params
+                .plaintext_codec()
+                .add_encode_slice_assign(&mut encoded, &messages, embedding);
+            // Raw encoded encryption must equal ordinary encryption with the same
+            // coins; this also checks that the codec is applied exactly once.
+            let seed = rng.next_u64();
+            rng = StdRng::seed_from_u64(seed);
+            let mut expected_rng = StdRng::seed_from_u64(seed);
+            let expected = secret_key.encrypt_message(
+                &message,
+                &params,
+                embedding,
+                &mut fft,
+                &mut expected_rng,
+                &mut encrypt_workspace,
+            );
+            secret_key.encrypt_encoded_to(
+                &Polynomial::new(encoded),
+                &mut cipher,
+                params.encryption_parameters(),
+                &mut fft,
+                &mut rng,
+                &mut encrypt_workspace,
+            );
+            assert_eq!(cipher.as_ref(), expected.as_ref());
+            assert_eq!(rng.next_u64(), expected_rng.next_u64());
+            assert_eq!(
+                secret_key
+                    .decrypt_message(&cipher, &params, &mut fft, &mut decrypt_workspace)
+                    .as_ref(),
+                messages
+            );
+        }
     }
 }
 

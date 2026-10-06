@@ -3,6 +3,7 @@
 
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_encoding::PlaintextEmbedding;
 use primus_glwe::{GlweCiphertext, GlweParameters, NttGlweSecretKey, SecretKeyDistr};
 use primus_lattice::{GlweDimension, LweDimension};
 use primus_lattice::{ggsw::NttGgsw, glwe::NttGlwe, workspace::NttGlweExternalProductWorkspace};
@@ -63,7 +64,7 @@ fn encrypted_selections_cover_the_support_once_with_dummy_per_bucket() {
     message.as_mut()[N - 1] = 2;
     // A nontrivial encrypted mask exercises all GGSW rows through external product.
     let input = output_key
-        .encrypt(&message, &glwe, ntt, &mut rng)
+        .encrypt_message(&message, &glwe, PlaintextEmbedding::Unsigned, ntt, &mut rng)
         .into_coeff_form(ntt);
     let size = context.parameters().blind_rotation_ggsw().size();
     let mut external_product = NttGlweExternalProductWorkspace::new(size);
@@ -112,7 +113,7 @@ fn encrypted_selections_cover_the_support_once_with_dummy_per_bucket() {
                     &mut external_product,
                 );
                 product.write_ntt_form(&mut product_ntt, ntt);
-                output_key.decrypt_to(&product_ntt, &mut decoded, &glwe, ntt);
+                output_key.decrypt_message_to(&product_ntt, &mut decoded, &glwe, ntt);
                 let bit = decoded.as_ref()[0];
                 assert!(bit <= 1);
                 for (&actual, &expected) in decoded.as_ref().iter().zip(message.as_ref()) {
