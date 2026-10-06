@@ -29,6 +29,8 @@
 
 实现长算法时，公开入口通过 `Data` / `DataMut` 接受不同容器，再将 `Glwe<&[T]>`、`Glwe<&mut [T]>` 等借用视图传入内部内核。密钥接收者若也带存储泛型，同样通过 `as_view()` 转换。这样使算法与拥有型容器无关，同时保留特化所需的数值类型、模数和变换泛型。负责持有或交换复用缓冲区的代码继续使用这些所有者。
 
+公开入口检查自己拥有的契约：参数和表构造建立数值域，资源绑定核对相容性，单项/批量边界验证完整布局。私有内核依赖这些不变量，不逐层重复验证。借用视图只去掉存储所有权泛型，不替代检查；会丢失模数等元数据的视图应在 owner 检查后取得。具体 panic、未检查前提和可能的部分写入以操作的 rustdoc 为准。
+
 Raw 多项式/密文构造器不建立模数、秘密身份、表示或完整布局。`Polynomial<S>` 不另存环长度：包装 `batch_count*N` 个元素，不会自动把单多项式运算变成批量运算。只有接口契约明确接受批次时才直接传入；否则先迭代出完整对象。
 
 Raw 系数、NTT、Fourier 和 CRT/DCRT 多项式的 `len()` / `is_empty()` 统计其存储元素。这些计数与 checked table/size 的 `poly_length()`（`N`）、Fourier 表的 `fourier_length()`（`N/2`）以及 DCRT 表的 `rns_poly_len()`（`moduli_count*N`）不同。DCRT 表在构造时拒绝空模数列表。变换调用方须按表的模数顺序提供完整布局；原有 debug 诊断不构成 release 拒绝保证。Raw wrapper 仍允许空和 packed 存储。
@@ -163,9 +165,17 @@ assert_eq!(level_count, 9); // (k+1) 行 * L 层
 
 [TFHE 参数与边界指南](tfhe-parameters-and-boundaries.md) 说明 q/Q、秘密域、PBS/CBS/MVB/one-hot/查表链路及构造错误归属。 [参数矩阵](tfhe-parameters.md) 列出按操作、字宽和后端验证的实际尺寸配置，以及独立的大参数验证入口；普通测试仍使用小参数。
 
-从拥有该运算的最低层开始。[LWE](../../crates/primus_lwe/README.zh_CN.md)、[GLWE](../../crates/primus_glwe/README.zh_CN.md)、[NTRU](../../crates/primus_ntru/README.zh_CN.md) 和 [RNS GLWE](../../crates/primus_glwe_rns/src/lib.rs) 提供加密、密钥及求值原语。[共享 TFHE](../../crates/primus_tfhe/README.zh_CN.md) 提供 LWE 客户端、编码、LUT 几何和公共求值接口；[GLWE](../../crates/primus_tfhe_glwe/README.zh_CN.md) 与 [NTRU](../../crates/primus_tfhe_ntru/README.zh_CN.md) 家族分别定义自身参数和密钥契约。
+从拥有该运算的最低层开始。下面的快速开始均包含 message 加密/解密和 encoded/phase 原语，无需从 gadget 或 TFHE 入手。
 
-按后端示例顺序阅读：参数 → 验证后的 context/table → client/server key → 公开 LUT → evaluator 和输出分配 → 重复 `*_to` 求值 → 客户端解密。四个具体入口是 [GLWE NTT](../../crates/primus_tfhe_glwe_ntt/examples/ntt_basic.rs)、[GLWE Fourier](../../crates/primus_tfhe_glwe_fourier/examples/fourier_basic.rs)、[NTRU NTT](../../crates/primus_tfhe_ntru_ntt/examples/ntru_ntt_basic.rs) 和 [NTRU Fourier](../../crates/primus_tfhe_ntru_fourier/examples/ntru_fourier_basic.rs)。其中参数是功能 fixture，须按目标操作选择并验证。
+| 需求 | 最短入口 | 进一步使用 |
+| --- | --- | --- |
+| 独立 LWE | [快速开始](../../crates/primus_lwe/README.zh_CN.md#快速开始) | [公钥/batch/key switch 示例](../../crates/primus_lwe/examples/basic.rs)、[packed 布局](../../crates/primus_lwe/README.zh_CN.md#独立-batch-与-packed-消息) |
+| 单模 GLWE | [快速开始](../../crates/primus_glwe/README.zh_CN.md#快速开始) | [NTT/Fourier 工作区与系数路径](../../crates/primus_glwe/README.zh_CN.md#加密与解密) |
+| NTRU | [快速开始](../../crates/primus_ntru/README.zh_CN.md#快速开始) | [自同构示例](../../crates/primus_ntru/examples/automorphism.rs)、[独立 LWE 返回](../../crates/primus_ntru/README.zh_CN.md#独立-lwe-返回) |
+| TFHE PBS/ManyLUT | [GLWE NTT](../../crates/primus_tfhe_glwe_ntt/examples/ntt_basic.rs)、[GLWE Fourier](../../crates/primus_tfhe_glwe_fourier/examples/fourier_basic.rs)、[NTRU NTT](../../crates/primus_tfhe_ntru_ntt/examples/ntru_ntt_basic.rs)、[NTRU Fourier](../../crates/primus_tfhe_ntru_fourier/examples/ntru_fourier_basic.rs) | [sparse/CBS/one-hot/MVB 支持与示例](../../crates/primus_tfhe/README.zh_CN.md#crate-分工与能力) |
+| 高精度 chunk 查表 | [NTT](../../crates/primus_tfhe_ntru_lut/examples/ntt_lookup.rs)、[Fourier](../../crates/primus_tfhe_ntru_lut/examples/fourier_lookup.rs) | [sparse/public lift 与 evaluator 绑定](../../crates/primus_tfhe_ntru_lut/README.zh_CN.md#求值与工作区) |
+
+TFHE 示例固定 u64，按参数 → context/table → client/server key → 公开 LUT → evaluator 和输出分配 → 重复 `*_to` 求值 → 客户端解密的顺序展示。参数是功能 fixture，须按目标操作选择并验证。公开 context/codec/LUT 可由双方持有；client 提供计算密钥、请求密文及必要的 public lift，server 构造并复用 evaluator 和输出，无需客户端私钥。
 
 NTRU 将外部 LWE 的秘密/模数/维数与累加 NTRU 环的秘密/模数/长度分开；GLWE 的 PBS order 有自身输入输出域契约。缓冲区尺寸相同不代表密钥可以互换。保留后端参数检查，并明确调用方仍需保证的秘密和表身份。
 

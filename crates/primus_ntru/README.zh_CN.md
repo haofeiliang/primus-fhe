@@ -7,6 +7,54 @@
 
 在 `Z_q[X]/(X^N + 1)` 上提供单多项式私钥 NTRU 加密与求值。NTT 使用显式域模数， Fourier 使用原生 wrapping 模数 `2^T::BITS`，两种表示保留独立数值契约。
 
+## 快速开始
+
+下面使用 u64 和 NTT 展示普通消息与 encoded/phase 两条路径。调用方直接依赖 `primus_ntru`（启用 `ntt`）、`primus_ntt`、`primus_poly`、`primus_modulus`、`primus_encoding` 和 `rand`。N=32 仅用于简短的功能示例，不是安全参数。
+
+```rust
+use primus_encoding::PlaintextEmbedding;
+use primus_modulus::BarrettModulus;
+use primus_ntru::{NtruParameters, NttNtruSecretKey, SecretKeyDistr};
+use primus_ntt::{NttTable, U64NttTable};
+use primus_poly::{PolyLength, Polynomial};
+
+let poly_length = PolyLength::new(32);
+let modulus = BarrettModulus::new(132_120_577u64);
+let table = U64NttTable::new(poly_length, modulus).unwrap();
+let params = NtruParameters::new(poly_length, 16, modulus, SecretKeyDistr::SparseTernary, 0.7);
+let mut rng = rand::rng();
+let (_coeff_secret, secret) =
+    NttNtruSecretKey::generate_pair(params.encryption_parameters(), &table, &mut rng).unwrap();
+let message = Polynomial::new(vec![3u64; poly_length.get()]);
+let embedding = PlaintextEmbedding::Unsigned;
+
+// 普通消息：适配层使用参数中的 codec。
+let mut ciphertext = secret.encrypt_message(&message, &params, embedding, &table, &mut rng);
+assert_eq!(
+    secret.decrypt_message(&ciphertext, &params, &table),
+    message
+);
+
+// 已编码输入和提取出的 phase 都是系数多项式。
+let codec = params.plaintext_codec();
+let mut encoded = Polynomial::new(vec![0; poly_length.get()]);
+codec.encode_slice_to(message.as_ref(), encoded.as_mut(), embedding);
+secret.encrypt_encoded_to(
+    &encoded,
+    &mut ciphertext,
+    params.encryption_parameters(),
+    &table,
+    &mut rng,
+);
+let mut phase = Polynomial::new(vec![0; poly_length.get()]);
+secret.decrypt_phase_to(&ciphertext, &mut phase, modulus, &table);
+let mut decoded = vec![0; poly_length.get()];
+codec.decode_slice_to(phase.as_ref(), &mut decoded);
+assert_eq!(decoded, message.as_ref());
+```
+
+普通调用用 `encrypt_message_to` 复用密文，不必先分配 encoded 多项式。需要直接操作编码时使用 `encrypt_encoded_to`；其输入和 `decrypt_phase_to` 的输出都是系数域，密文是 NTT 域。重复请求保留参数、表、密钥和输出；Fourier 路径还需复用对应 FFT engine 与工作区，见下文。
+
 ## 密文语义
 
 设 `f` 是可逆私钥，`mu` 是编码消息，`g_l` 是 gadget scalar。下表省略应用层的明文 codec：

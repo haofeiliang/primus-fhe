@@ -7,6 +7,54 @@ English | [简体中文](README.zh_CN.md)
 
 Scalar secret-key NTRU encryption and evaluation over `Z_q[X]/(X^N + 1)`. NTT uses an explicit field modulus; Fourier uses the native wrapping modulus `2^T::BITS`. These representations retain separate numerical contracts.
 
+## Quick start
+
+This u64 NTT example shows both ordinary messages and encoded/phase primitives. The calling crate directly depends on `primus_ntru` with `ntt` enabled, plus `primus_ntt`, `primus_poly`, `primus_modulus`, `primus_encoding` and `rand`. N=32 is a small functional fixture, not a security parameter.
+
+```rust
+use primus_encoding::PlaintextEmbedding;
+use primus_modulus::BarrettModulus;
+use primus_ntru::{NtruParameters, NttNtruSecretKey, SecretKeyDistr};
+use primus_ntt::{NttTable, U64NttTable};
+use primus_poly::{PolyLength, Polynomial};
+
+let poly_length = PolyLength::new(32);
+let modulus = BarrettModulus::new(132_120_577u64);
+let table = U64NttTable::new(poly_length, modulus).unwrap();
+let params = NtruParameters::new(poly_length, 16, modulus, SecretKeyDistr::SparseTernary, 0.7);
+let mut rng = rand::rng();
+let (_coeff_secret, secret) =
+    NttNtruSecretKey::generate_pair(params.encryption_parameters(), &table, &mut rng).unwrap();
+let message = Polynomial::new(vec![3u64; poly_length.get()]);
+let embedding = PlaintextEmbedding::Unsigned;
+
+// Ordinary messages: the adapter uses the parameter codec.
+let mut ciphertext = secret.encrypt_message(&message, &params, embedding, &table, &mut rng);
+assert_eq!(
+    secret.decrypt_message(&ciphertext, &params, &table),
+    message
+);
+
+// Both the encoded input and the extracted phase are coefficient polynomials.
+let codec = params.plaintext_codec();
+let mut encoded = Polynomial::new(vec![0; poly_length.get()]);
+codec.encode_slice_to(message.as_ref(), encoded.as_mut(), embedding);
+secret.encrypt_encoded_to(
+    &encoded,
+    &mut ciphertext,
+    params.encryption_parameters(),
+    &table,
+    &mut rng,
+);
+let mut phase = Polynomial::new(vec![0; poly_length.get()]);
+secret.decrypt_phase_to(&ciphertext, &mut phase, modulus, &table);
+let mut decoded = vec![0; poly_length.get()];
+codec.decode_slice_to(phase.as_ref(), &mut decoded);
+assert_eq!(decoded, message.as_ref());
+```
+
+For ordinary requests, `encrypt_message_to` reuses ciphertext storage without allocating a separate encoded polynomial. Use `encrypt_encoded_to` when controlling the encoding directly: its input and the `decrypt_phase_to` output are coefficients, while the ciphertext is in NTT form. Keep parameters, table, keys and output across requests; Fourier also reuses an FFT engine and workspaces, as described below.
+
 ## Ciphertext semantics
 
 Let `f` be the invertible secret, `mu` an encoded message and `g_l` a gadget scalar. The following phases omit any application-specific plaintext codec:

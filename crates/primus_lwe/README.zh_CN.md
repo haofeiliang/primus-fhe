@@ -28,69 +28,43 @@ Primus FHE 的单模数 LWE 密钥生成、私钥加密、公钥加密和密钥�
 
 ## 快速开始
 
-下面使用小维度演示存储复用、独立公钥 batch 和密钥切换，参数未经安全性评估。 调用方 crate 需要直接依赖 `primus_lwe`、`primus_lattice`、`primus_modulus`、 `primus_decompose`、`primus_encoding` 和 `rand`，以使用示例中的导入。
+先使用 message 接口完成加密/解密；只有需要自行控制编码或读取 phase 时才使用原语接口。以下小参数仅展示用法，不是安全参数。调用方直接依赖 `primus_lwe`、`primus_modulus`、`primus_encoding` 和 `rand`。
 
 ```rust
 use primus_encoding::PlaintextEmbedding;
-use primus_decompose::{DecompositionBaseLog, primitive::ApproxSignedBasis};
-use primus_lattice::lwe::{Lwe, LweIter};
-use primus_lwe::{LweDimension, LweKeySwitchingKey, LweParameters, LwePublicKey, LweSecretKey, SecretKeyDistr};
+use primus_lwe::{LweDimension, LweParameters, LweSecretKey, SecretKeyDistr};
 use primus_modulus::NativeModulus;
 
-fn main() {
-    let params = LweParameters::new(
-        LweDimension::new(64),
-        4u64,
-        NativeModulus::new(),
-        SecretKeyDistr::UniformBinary,
-        0.7,
-    );
-    let mut rng = rand::rng();
-    let secret = LweSecretKey::generate(params.encryption_parameters(), &mut rng);
+let params = LweParameters::new(
+    LweDimension::new(64),
+    4u64,
+    NativeModulus::new(),
+    SecretKeyDistr::UniformBinary,
+    0.7,
+);
+let mut rng = rand::rng();
+let secret = LweSecretKey::generate(params.encryption_parameters(), &mut rng);
+let embedding = PlaintextEmbedding::Unsigned;
+let message = 3;
 
-    let ciphertext = secret.encrypt_message(3u64, &params, PlaintextEmbedding::Unsigned, &mut rng);
-    assert_eq!(secret.decrypt_message(&ciphertext, &params), 3);
+// 普通消息：适配层使用参数中的 codec。
+let mut ciphertext = secret.encrypt_message(message, &params, embedding, &mut rng);
+assert_eq!(secret.decrypt_message(&ciphertext, &params), message);
 
-    let mut storage = vec![0u64; ciphertext.lwe_len()];
-    secret.encrypt_message_to(2u64, &mut Lwe::new(&mut storage[..]), &params, PlaintextEmbedding::Unsigned, &mut rng);
-    assert_eq!(
-        secret.decrypt_message(&Lwe::new(&storage[..]), &params),
-        2
-    );
-
-    let public = LwePublicKey::generate(secret.as_view(), params.encryption_parameters(), &mut rng);
-    let messages = [0u64, 1, 2, 3];
-    let batch = public.encrypt_message_batch(&messages, &params, PlaintextEmbedding::Unsigned, &mut rng);
-    assert_eq!(secret.decrypt_message_batch(&batch, &params), messages);
-    for (sample, &message) in LweIter::new(&batch, ciphertext.lwe_len()).zip(&messages) {
-        assert_eq!(secret.decrypt_message(&sample, &params), message);
-    }
-
-    let output_params = LweParameters::new(
-        LweDimension::new(32),
-        4u64,
-        NativeModulus::new(),
-        SecretKeyDistr::UniformBinary,
-        0.7,
-    );
-    let output_secret = LweSecretKey::generate(output_params.encryption_parameters(), &mut rng);
-    let basis = ApproxSignedBasis::new(params.cipher_modulus_value(), DecompositionBaseLog::new(4), None);
-    let switching = LweKeySwitchingKey::generate(
-        secret.as_view(),
-        &output_secret,
-        output_params.encryption_parameters(),
-        basis,
-        &mut rng,
-    );
-    let switched = switching.key_switch_batch(&batch, params.cipher_modulus());
-    assert_eq!(
-        output_secret.decrypt_message_batch(&switched, &output_params),
-        messages
-    );
-}
+// 编码原语：单独选择编码，并复用密文存储。
+let codec = params.plaintext_codec();
+let encoded = codec.encode_value(message, embedding);
+secret.encrypt_encoded_to(
+    encoded,
+    &mut ciphertext,
+    params.encryption_parameters(),
+    &mut rng,
+);
+let phase = secret.decrypt_phase(&ciphertext, params.cipher_modulus());
+assert_eq!(codec.decode_value(phase), message);
 ```
 
-[examples/basic.rs](examples/basic.rs) 提供可运行的私钥、公钥和 batch 工作流： `cargo run -p primus_lwe --example basic`。
+[examples/basic.rs](examples/basic.rs) 展示公钥、独立 batch 与密钥切换：`cargo run -p primus_lwe --example basic`。重复请求复用密钥与参数，使用 `encrypt_message_to` / `encrypt_encoded_to` 复用输出。
 
 ## 参数与编码
 

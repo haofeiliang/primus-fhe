@@ -28,69 +28,43 @@ Public types are exported at the crate root; implementation modules are private.
 
 ## Quick start
 
-This example uses small dimensions to demonstrate storage reuse, independent public-key batches and key switching. These are not evaluated security parameters. The imports require `primus_lwe`, `primus_lattice`, `primus_modulus`, `primus_decompose`, `primus_encoding` and `rand` as direct dependencies of the calling crate.
+Start with message encryption/decryption; use the primitives when choosing the encoding separately or inspecting phases. These small parameters demonstrate the API, not security. The calling crate directly depends on `primus_lwe`, `primus_modulus`, `primus_encoding` and `rand`.
 
 ```rust
-use primus_decompose::{DecompositionBaseLog, primitive::ApproxSignedBasis};
 use primus_encoding::PlaintextEmbedding;
-use primus_lattice::lwe::{Lwe, LweIter};
-use primus_lwe::{LweDimension, LweKeySwitchingKey, LweParameters, LwePublicKey, LweSecretKey, SecretKeyDistr};
+use primus_lwe::{LweDimension, LweParameters, LweSecretKey, SecretKeyDistr};
 use primus_modulus::NativeModulus;
 
-fn main() {
-    let params = LweParameters::new(
-        LweDimension::new(64),
-        4u64,
-        NativeModulus::new(),
-        SecretKeyDistr::UniformBinary,
-        0.7,
-    );
-    let mut rng = rand::rng();
-    let secret = LweSecretKey::generate(params.encryption_parameters(), &mut rng);
+let params = LweParameters::new(
+    LweDimension::new(64),
+    4u64,
+    NativeModulus::new(),
+    SecretKeyDistr::UniformBinary,
+    0.7,
+);
+let mut rng = rand::rng();
+let secret = LweSecretKey::generate(params.encryption_parameters(), &mut rng);
+let embedding = PlaintextEmbedding::Unsigned;
+let message = 3;
 
-    let ciphertext = secret.encrypt_message(3u64, &params, PlaintextEmbedding::Unsigned, &mut rng);
-    assert_eq!(secret.decrypt_message(&ciphertext, &params), 3);
+// Ordinary messages: the adapter uses the parameter codec.
+let mut ciphertext = secret.encrypt_message(message, &params, embedding, &mut rng);
+assert_eq!(secret.decrypt_message(&ciphertext, &params), message);
 
-    let mut storage = vec![0u64; ciphertext.lwe_len()];
-    secret.encrypt_message_to(2u64, &mut Lwe::new(&mut storage[..]), &params, PlaintextEmbedding::Unsigned, &mut rng);
-    assert_eq!(
-        secret.decrypt_message(&Lwe::new(&storage[..]), &params),
-        2
-    );
-
-    let public = LwePublicKey::generate(secret.as_view(), params.encryption_parameters(), &mut rng);
-    let messages = [0u64, 1, 2, 3];
-    let batch = public.encrypt_message_batch(&messages, &params, PlaintextEmbedding::Unsigned, &mut rng);
-    assert_eq!(secret.decrypt_message_batch(&batch, &params), messages);
-    for (sample, &message) in LweIter::new(&batch, ciphertext.lwe_len()).zip(&messages) {
-        assert_eq!(secret.decrypt_message(&sample, &params), message);
-    }
-
-    let output_params = LweParameters::new(
-        LweDimension::new(32),
-        4u64,
-        NativeModulus::new(),
-        SecretKeyDistr::UniformBinary,
-        0.7,
-    );
-    let output_secret = LweSecretKey::generate(output_params.encryption_parameters(), &mut rng);
-    let basis = ApproxSignedBasis::new(params.cipher_modulus_value(), DecompositionBaseLog::new(4), None);
-    let switching = LweKeySwitchingKey::generate(
-        secret.as_view(),
-        &output_secret,
-        output_params.encryption_parameters(),
-        basis,
-        &mut rng,
-    );
-    let switched = switching.key_switch_batch(&batch, params.cipher_modulus());
-    assert_eq!(
-        output_secret.decrypt_message_batch(&switched, &output_params),
-        messages
-    );
-}
+// Encoded primitives: choose the encoding separately and reuse the ciphertext.
+let codec = params.plaintext_codec();
+let encoded = codec.encode_value(message, embedding);
+secret.encrypt_encoded_to(
+    encoded,
+    &mut ciphertext,
+    params.encryption_parameters(),
+    &mut rng,
+);
+let phase = secret.decrypt_phase(&ciphertext, params.cipher_modulus());
+assert_eq!(codec.decode_value(phase), message);
 ```
 
-[examples/basic.rs](examples/basic.rs) provides a runnable secret/public-key and batch workflow: `cargo run -p primus_lwe --example basic`.
+[examples/basic.rs](examples/basic.rs) extends this to public keys, independent batches and key switching: `cargo run -p primus_lwe --example basic`. Reuse keys and parameters across requests, and use `encrypt_message_to` / `encrypt_encoded_to` to reuse output.
 
 ## Parameters and encoding
 

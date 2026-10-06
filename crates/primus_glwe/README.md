@@ -7,11 +7,68 @@
 
 Single-modulus GLWE keys and operations, with separate NTT and native-torus Fourier representations. Here `k` is the GLWE dimension and `N` the polynomial length.
 
-`GlweParameters::try_from_glev(&gadget, codec)` binds an ordinary `ScaledCodec` to an existing gadget domain. It shares the prepared sampling state and checks the codec modulus, without retaining or copying the gadget basis.
+## Quick start
 
-`GlweParameters::new` / `try_new` takes `primus_poly::PolyLength`. Construct it once with `PolyLength::try_new(n)?` (or `new` for known constants) and reuse it for parameters, sizes and transform tables. Invalid integers are reported by `PolyLengthError`; parameter construction retains its combined-layout, modulus and sampler checks.
+This u64 NTT example shows both ordinary messages and encoded/phase primitives. The calling crate directly depends on `primus_glwe` with `ntt` enabled, plus `primus_ntt`, `primus_poly`, `primus_modulus`, `primus_encoding` and `rand`. N=32 is a small functional fixture, not a security parameter.
+
+```rust
+use primus_encoding::PlaintextEmbedding;
+use primus_glwe::{GlweDimension, GlweParameters, NttGlweSecretKey, SecretKeyDistr};
+use primus_modulus::BarrettModulus;
+use primus_ntt::{NttTable, U64NttTable};
+use primus_poly::{PolyLength, Polynomial};
+
+let poly_length = PolyLength::new(32);
+let modulus = BarrettModulus::new(132_120_577u64);
+let table = U64NttTable::new(poly_length, modulus).unwrap();
+let params = GlweParameters::new(
+    GlweDimension::new(1),
+    poly_length,
+    16,
+    modulus,
+    SecretKeyDistr::UniformBinary,
+    0.7,
+);
+let mut rng = rand::rng();
+let (_coeff_secret, secret) = NttGlweSecretKey::generate_pair(
+    params.size(),
+    params.encryption_parameters(),
+    &table,
+    &mut rng,
+);
+let message = Polynomial::new(vec![3u64; poly_length.get()]);
+let embedding = PlaintextEmbedding::Unsigned;
+
+// Ordinary messages: the adapter uses the parameter codec.
+let mut ciphertext = secret.encrypt_message(&message, &params, embedding, &table, &mut rng);
+assert_eq!(
+    secret.decrypt_message(&ciphertext, &params, &table),
+    message
+);
+
+// Both the encoded input and the extracted phase are coefficient polynomials.
+let codec = params.plaintext_codec();
+let mut encoded = Polynomial::new(vec![0; poly_length.get()]);
+codec.encode_slice_to(message.as_ref(), encoded.as_mut(), embedding);
+secret.encrypt_encoded_to(
+    &encoded,
+    &mut ciphertext,
+    params.encryption_parameters(),
+    &table,
+    &mut rng,
+);
+let mut phase = Polynomial::new(vec![0; poly_length.get()]);
+secret.decrypt_phase_to(&ciphertext, &mut phase, modulus, &table);
+let mut decoded = vec![0; poly_length.get()];
+codec.decode_slice_to(phase.as_ref(), &mut decoded);
+assert_eq!(decoded, message.as_ref());
+```
+
+For ordinary requests, `encrypt_message_to` reuses ciphertext storage without allocating a separate encoded polynomial. Use `encrypt_encoded_to` when controlling the encoding directly: its input and the `decrypt_phase_to` output are coefficients, while the ciphertext is in NTT form. Keep parameters, table, keys and output across requests; Fourier also reuses an FFT engine and workspaces, as described below.
 
 ## Keys and representation
+
+`GlweParameters::new` / `try_new` takes `primus_poly::PolyLength`. Construct it once with `PolyLength::try_new(n)?` (or `new` for known constants) and reuse it for parameters, sizes and transform tables. Invalid integers are reported by `PolyLengthError`; parameter construction retains its combined-layout, modulus and sampler checks.
 
 `GlweParameters::try_new` returns `GlweParameterError` for layout, fixed-scale encoding and sampler errors, including fixed weights exceeding the complete kN secret length. `GlweEncryptionParameters::try_new` checks only modulus/samplers because it has no layout. The corresponding `new` constructors panic on invalid parameters; transform availability and noise/security budgets remain separate. `GlweParameterError::SecretKey` preserves the sampling/weight/modulus cause as `SecretKeySamplerError`; `Noise` preserves `GaussianError`.
 
@@ -64,7 +121,7 @@ NTT-domain secret-key operations need no workspace. Fourier operations use `Four
 
 For coefficient ciphertexts, `NttGlweSecretKey` provides `encrypt_message_coeff_to`, `decrypt_phase_coeff_to` and `decrypt_message_coeff_to`. They take an additional N-element scratch slice as the last argument, reuse all buffers, and save the body's forward NTT. Encryption selects the same explicit embedding and matches `encrypt_message_to` followed by inverse NTT exactly for the same RNG state. Scratch needs no initialization and retains secret-dependent products after encryption; use an erasing owner such as `zeroize::Zeroizing<Vec<T>>`.
 
-`_to` paths reuse output and scratch. Checked layout and transform-length mismatches fail before output writes; matching lengths do not establish transform representation compatibility. Invalid plaintext values may panic after partial writes or randomness consumption. Encoded NTT inputs must be canonical residues in `[0, q)`; callers guarantee this range.
+`_to` paths reuse output and scratch. Checked layout and transform-length mismatches fail before output writes; matching lengths do not establish transform representation compatibility. Invalid plaintext values may panic after partial writes or randomness consumption. Encoded inputs to NTT encryption are coefficient polynomials with canonical residues in `[0, q)`; callers guarantee this range.
 
 For diagnostics, extract the phase with `decrypt_phase_to`, encode the **expected message** using the actual codec and embedding, and compare the two coefficient slices with [`primus_encoding::phase_error_magnitude_slice_to`](../primus_encoding/README.md#phase-error-diagnostics). Decoding and re-encoding is not an independent reference: a wrong message may have zero residual against its own encoding.
 
@@ -75,6 +132,8 @@ Message adapters live in the secret/public key's `message.rs`; raw encryption an
 `encrypt_glev_to` and `encrypt_ggsw_to` apply the gadget basis to a coefficient-domain ring polynomial without plaintext scaling. A GGSW control bit is therefore the constant polynomial `0` or `1`. Both use a gadget workspace constructed from `GadgetSize`: GLev requires a matching polynomial length; GGSW also requires a matching level count.
 
 Use `GlevParameters::try_from_parts(size, encryption, basis)` for gadget-only parameters: `size` is a checked `GlweSize`, `encryption` is an `Arc<GlweEncryptionParameters<T, M>>`, and `basis` is a prepared `ApproxSignedBasis<T>`. No plaintext modulus or codec is required. The constructor checks the basis modulus, fixed secret weight against the complete `kN` length, and gadget layout. It returns `GlevParameterError` and takes ownership without copying sampler tables or rebuilding the basis.
+
+`GlweParameters::try_from_glev(&gadget, codec)` binds an ordinary `ScaledCodec` to an existing gadget domain. It shares the prepared sampling state and checks the codec modulus, without retaining or copying the gadget basis.
 
 ```rust,ignore
 // Prepare the ring sampling state and gadget basis, without ordinary encoding.
@@ -109,7 +168,7 @@ layout. Ordinary and gadget parameters retain the checked
 [PolyLength](../primus_poly/README.md#ring-polynomial-length) through `GlweSize`;
 their `poly_length()` accessors return this checked value. Pass it directly to
 workspace and NTT/FFT table constructors, and use `.get()` at raw storage or scalar kernels. The shared FHE power-of-two range `32..=2^17` is checked centrally by `PolyLength`.
-Dimension arguments and accessors use `GlweDimension`, re-exported from `primus_lattice`; `.get()` returns `k`. `primus_lattice::LweDimension::from(glwe_size)` explicitly derives the checked extracted LWE dimension `kN` from a GLWE size. Gadget constructors use `DecompositionBaseLog` and `Option<DecompositionLevelCount>` from `primus_decompose`. The top-level encryption parameter constructors still accept an integer `N`.
+Dimension arguments and accessors use `GlweDimension`, re-exported from `primus_lattice`; `.get()` returns `k`. `primus_lattice::LweDimension::from(glwe_size)` explicitly derives the checked extracted LWE dimension `kN` from a GLWE size. Gadget constructors use `DecompositionBaseLog` and `Option<DecompositionLevelCount>` from `primus_decompose`.
 
 Evaluation keys own their layouts and decomposition bases. NTT evaluation takes `input, output, modulus, ntt, workspace`; Fourier evaluation omits `modulus`. Workspaces are reusable workspaces. Preserve the key's transform representation: matching lengths and moduli alone do not prove compatibility.
 

@@ -7,11 +7,68 @@
 
 单模数 GLWE 密钥和运算，分别提供 NTT 与原生环面 Fourier 表示。下文 `k` 为 GLWE 维数，`N` 为多项式长度。
 
-`GlweParameters::try_from_glev(&gadget, codec)` 为已有 gadget 域绑定普通 `ScaledCodec`，共享预计算采样状态并检查 codec 模数，不保留或复制 gadget basis。
+## 快速开始
 
-`GlweParameters::new` / `try_new` 接收 `primus_poly::PolyLength`。用 `PolyLength::try_new(n)?`（已知常量可用 `new`）构造一次，供参数、尺寸与变换表复用。无效整数由 `PolyLengthError` 报告；参数构造仍负责组合布局、模数及采样器检查。
+下面使用 u64 和 NTT 展示普通消息与 encoded/phase 两条路径。调用方直接依赖 `primus_glwe`（启用 `ntt`）、`primus_ntt`、`primus_poly`、`primus_modulus`、`primus_encoding` 和 `rand`。N=32 仅用于简短的功能示例，不是安全参数。
+
+```rust
+use primus_encoding::PlaintextEmbedding;
+use primus_glwe::{GlweDimension, GlweParameters, NttGlweSecretKey, SecretKeyDistr};
+use primus_modulus::BarrettModulus;
+use primus_ntt::{NttTable, U64NttTable};
+use primus_poly::{PolyLength, Polynomial};
+
+let poly_length = PolyLength::new(32);
+let modulus = BarrettModulus::new(132_120_577u64);
+let table = U64NttTable::new(poly_length, modulus).unwrap();
+let params = GlweParameters::new(
+    GlweDimension::new(1),
+    poly_length,
+    16,
+    modulus,
+    SecretKeyDistr::UniformBinary,
+    0.7,
+);
+let mut rng = rand::rng();
+let (_coeff_secret, secret) = NttGlweSecretKey::generate_pair(
+    params.size(),
+    params.encryption_parameters(),
+    &table,
+    &mut rng,
+);
+let message = Polynomial::new(vec![3u64; poly_length.get()]);
+let embedding = PlaintextEmbedding::Unsigned;
+
+// 普通消息：适配层使用参数中的 codec。
+let mut ciphertext = secret.encrypt_message(&message, &params, embedding, &table, &mut rng);
+assert_eq!(
+    secret.decrypt_message(&ciphertext, &params, &table),
+    message
+);
+
+// 已编码输入和提取出的 phase 都是系数多项式。
+let codec = params.plaintext_codec();
+let mut encoded = Polynomial::new(vec![0; poly_length.get()]);
+codec.encode_slice_to(message.as_ref(), encoded.as_mut(), embedding);
+secret.encrypt_encoded_to(
+    &encoded,
+    &mut ciphertext,
+    params.encryption_parameters(),
+    &table,
+    &mut rng,
+);
+let mut phase = Polynomial::new(vec![0; poly_length.get()]);
+secret.decrypt_phase_to(&ciphertext, &mut phase, modulus, &table);
+let mut decoded = vec![0; poly_length.get()];
+codec.decode_slice_to(phase.as_ref(), &mut decoded);
+assert_eq!(decoded, message.as_ref());
+```
+
+普通调用用 `encrypt_message_to` 复用密文，不必先分配 encoded 多项式。需要直接操作编码时使用 `encrypt_encoded_to`；其输入和 `decrypt_phase_to` 的输出都是系数域，密文是 NTT 域。重复请求保留参数、表、密钥和输出；Fourier 路径还需复用对应 FFT engine 与工作区，见下文。
 
 ## 密钥与表示
+
+`GlweParameters::new` / `try_new` 接收 `primus_poly::PolyLength`。用 `PolyLength::try_new(n)?`（已知常量可用 `new`）构造一次，供参数、尺寸与变换表复用。无效整数由 `PolyLengthError` 报告；参数构造仍负责组合布局、模数及采样器检查。
 
 `GlweParameters::try_new` 对布局、固定尺度编码和采样错误返回 `GlweParameterError`，包括固定重量超过完整 kN 密钥长度。`GlweEncryptionParameters::try_new` 不持有布局，只检查模数/采样。对应 `new` 构造器在非法参数下 panic；变换可用性及噪声/安全预算仍需另外验证。 `GlweParameterError::SecretKey` 以 `SecretKeySamplerError` 保留采样配置、重量或模数适配的具体原因；`Noise` 保留 `GaussianError`。
 
@@ -64,7 +121,7 @@ NTT 域私钥运算无需 workspace。Fourier 运算使用 `FourierGlweEncryptWo
 
 对于系数域密文，`NttGlweSecretKey` 提供 `encrypt_message_coeff_to`、`decrypt_phase_coeff_to` 和 `decrypt_message_coeff_to`，最后一个参数是长度为 N 的 scratch 切片。 它们复用所有缓冲，省去 body 的正 NTT。加密显式选择相同 embedding；相同 RNG 状态下，结果与 `encrypt_message_to` 后逆 NTT 精确一致。Scratch 无需初始化，加密后保留依赖私钥的乘积， 应由 `zeroize::Zeroizing<Vec<T>>` 等负责擦除的类型持有。
 
-`_to` 路径复用输出和工作区。布局和变换长度检查失败会在写输出前报错；长度相同并不代表变换表示兼容。无效明文值可能在部分写入或消耗随机数后触发 panic。已编码的 NTT 输入必须是 `[0, q)` 中的规范剩余类，该范围由调用方保证。
+`_to` 路径复用输出和工作区。布局和变换长度检查失败会在写输出前报错；长度相同并不代表变换表示兼容。无效明文值可能在部分写入或消耗随机数后触发 panic。NTT 加密的已编码输入是系数多项式，系数必须是 `[0, q)` 中的规范剩余类，该范围由调用方保证。
 
 诊断时先用 `decrypt_phase_to` 提取相位，再用实际 codec 和 embedding 编码**预期消息**，最后通过 [`primus_encoding::phase_error_magnitude_slice_to`](../primus_encoding/README.zh_CN.md#相位误差诊断) 比较两组系数。解码后重新编码不能作为独立参考：错误消息相对自身编码的残差也可能为零。
 
@@ -75,6 +132,8 @@ NTT 域私钥运算无需 workspace。Fourier 运算使用 `FourierGlweEncryptWo
 `encrypt_glev_to` 和 `encrypt_ggsw_to` 对系数域环多项式应用 gadget 基，不做明文缩放。因此 GGSW 控制位使用常数多项式 `0` 或 `1`。两者使用由 `GadgetSize` 构造的 gadget workspace：GLev 要求多项式长度匹配；GGSW 还要求 level 数量匹配。
 
 仅需 gadget 参数时，使用 `GlevParameters::try_from_parts(size, encryption, basis)`：`size` 是经过验证的 `GlweSize`，`encryption` 是 `Arc<GlweEncryptionParameters<T, M>>`，`basis` 是预计算的 `ApproxSignedBasis<T>`。无需明文模数或 codec。构造器检查 basis 模数、固定秘密重量是否适合完整 `kN` 长度，以及 gadget 布局，返回 `GlevParameterError`；接收所有权时不复制采样表或重建 basis。
+
+`GlweParameters::try_from_glev(&gadget, codec)` 为已有 gadget 域绑定普通 `ScaledCodec`，共享预计算采样状态并检查 codec 模数，不保留或复制 gadget basis。
 
 ```rust,ignore
 // 准备环采样状态和 gadget basis，无需普通消息编码。
@@ -107,7 +166,7 @@ panic。输入与输出共用 `output` 的环几何，`input_size()` 返回保�
 普通与 gadget 参数通过 `GlweSize` 保存经过检查的
 [PolyLength](../primus_poly/README.zh_CN.md#环多项式长度)，`poly_length()` 访问器返回经过检查的值，直接传给
 工作区和 NTT/FFT 表构造器，在 raw 存储或数值内核处再用 `.get()` 提取整数。FHE 共用的 `32..=2^17` 二次幂范围由 `PolyLength` 集中检查。
-维数入参与访问器使用从 `primus_lattice` 重新导出的 `GlweDimension`，`.get()` 返回 `k`。`primus_lattice::LweDimension::from(glwe_size)` 从 GLWE size 显式派生经过验证的提取 LWE 维数 `kN`。Gadget 构造器接收 `primus_decompose` 的 `DecompositionBaseLog` 和 `Option<DecompositionLevelCount>`。顶层加密参数构造器仍接受整数 `N`。
+维数入参与访问器使用从 `primus_lattice` 重新导出的 `GlweDimension`，`.get()` 返回 `k`。`primus_lattice::LweDimension::from(glwe_size)` 从 GLWE size 显式派生经过验证的提取 LWE 维数 `kN`。Gadget 构造器接收 `primus_decompose` 的 `DecompositionBaseLog` 和 `Option<DecompositionLevelCount>`。
 
 求值密钥保存自己的布局和分解基。NTT 求值参数为 `input, output, modulus, ntt, workspace`；Fourier 求值省略 `modulus`。Workspace 是可复用的工作区。必须保持密钥的变换表示，仅长度和模数匹配不能证明表示兼容。
 
