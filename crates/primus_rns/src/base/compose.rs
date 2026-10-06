@@ -26,18 +26,17 @@ where
 
         let value_len = self.big_uint_value_len();
         let mut value = BigUint(vec![T::ZERO; value_len]);
-        self.compose_to_kernel(residues, &mut value);
+        self.compose_to_kernel(residues, value.view_mut());
         value
     }
 
-    // CRT sum of (a_i * (Q/q_i)^-1 mod q_i) * (Q/q_i). Each term and the
-    // running sum are below Q, so one subtraction suffices after every add;
-    // a carry also requires subtraction when the stored limbs have wrapped.
+    /// Reconstructs into a fixed-width borrowed output after the entry point
+    /// establishes the residue and limb counts. Clears all output limbs first.
+    /// Each CRT term `(a_i * (Q/q_i)^-1 mod q_i) * (Q/q_i)` and the running sum
+    /// are below Q, so one subtraction suffices after every add; a carry also
+    /// requires subtraction when the stored limbs have wrapped.
     #[inline]
-    fn compose_to_kernel<A>(&self, residues: &[T], value: &mut BigUint<A>)
-    where
-        A: DataMut<Elem = T>,
-    {
+    fn compose_to_kernel(&self, residues: &[T], mut value: BigUint<&mut [T]>) {
         let moduli_product = &self.moduli_product();
 
         value.set_zero();
@@ -50,7 +49,7 @@ where
         )
         .for_each(|(&ai, &inv_q_div_qi_mod_qi, q_div_qi, qi_val)| {
             let product = inv_q_div_qi_mod_qi.factor_mul_modulo(ai, qi_val);
-            let carry = q_div_qi.mul_value_add_to(product, value);
+            let carry = q_div_qi.mul_value_add_to(product, &mut value);
             if !carry.is_zero() || value.cmp(moduli_product).is_ge() {
                 let _ = value.sub_assign(moduli_product);
             }
@@ -72,7 +71,7 @@ where
         let residues = residues.as_ref();
         assert_eq!(self.moduli_count(), residues.len());
         assert_eq!(self.big_uint_value_len(), value.len());
-        self.compose_to_kernel(residues, value);
+        self.compose_to_kernel(residues, value.view_mut());
     }
 
     /// Reconstructs many values from a flattened multi-residue layout.
@@ -104,7 +103,7 @@ where
 
         let big_uint_value_len = self.big_uint_value_len();
 
-        for (value_index, mut value) in
+        for (value_index, value) in
             BigUintIterMut::new(big_uint_values, big_uint_value_len).enumerate()
         {
             let mut input_index = value_index;
@@ -112,7 +111,7 @@ where
                 *residue = multi_residues[input_index];
                 input_index += value_count;
             }
-            self.compose_to_kernel(scratch, &mut value);
+            self.compose_to_kernel(scratch, value);
         }
     }
 

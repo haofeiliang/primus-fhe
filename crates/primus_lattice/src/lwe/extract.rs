@@ -50,22 +50,37 @@ where
             self.dimension().next_multiple_of(poly_length)
         );
 
-        let output_slice = output.as_mut();
-        output_slice.fill(T::ZERO);
+        self.as_view()
+            .inverse_extract_glwe_to_kernel(output.as_mut_view(), poly_length, modulus);
+    }
+}
+
+impl<T: FheUint> Lwe<&[T]> {
+    /// Inverts constant-term extraction block by block into the caller's GLWE
+    /// layout. Clear first so unused mask slots and nonconstant body slots stay
+    /// zero; a short final input block is placed at the ends of a full mask.
+    fn inverse_extract_glwe_to_kernel<M>(
+        &self,
+        mut output: Glwe<&mut [T]>,
+        poly_length: usize,
+        modulus: M,
+    ) where
+        M: RingContext<T>,
+    {
+        output.as_mut().fill(T::ZERO);
 
         let (input_mask, input_body) = self.a_b();
-        let (output_mask, output_body) = output_slice.split_at_mut(output_mask_len);
+        let (output_mask, mut output_body) = output.a_b_mut(poly_length);
 
-        for (input, mask) in input_mask
-            .chunks(poly_length)
-            .zip(output_mask.chunks_exact_mut(poly_length))
-        {
+        // The input mask can end mid-polynomial; the output mask cannot.
+        for (input, mut mask) in input_mask.chunks(poly_length).zip(output_mask) {
+            let mask = mask.as_mut();
             mask[0] = input[0];
             for (output, &input) in mask[1..].iter_mut().rev().zip(&input[1..]) {
                 *output = modulus.reduce_neg(input);
             }
         }
 
-        output_body[0] = input_body;
+        output_body.as_mut()[0] = input_body;
     }
 }

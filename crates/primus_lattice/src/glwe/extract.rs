@@ -63,7 +63,8 @@ where
             mask_len,
             "LWE output dimension does not match the extracted GLWE key"
         );
-        self.extract_lwe_prefix_at_to(index, output, poly_length, modulus);
+        self.as_view()
+            .extract_lwe_prefix_at_to(index, output.as_mut_view(), poly_length, modulus);
     }
 
     /// Extracts the constant coefficient as an LWE sample while omitting mask
@@ -122,29 +123,33 @@ where
             (1..=mask_len).contains(&output.dimension()),
             "compact LWE output dimension exceeds the GLWE mask"
         );
-        self.extract_lwe_prefix_at_to(index, output, poly_length, modulus);
+        self.as_view()
+            .extract_lwe_prefix_at_to(index, output.as_mut_view(), poly_length, modulus);
     }
+}
 
+impl<T: FheUint> Glwe<&[T]> {
     /// Writes the selected mask prefix and body. The caller supplies valid index
-    /// and output dimensions; entry points only debug-assert these conditions. Each polynomial uses the negacyclic extraction order.
+    /// and output dimensions; entry points only debug-assert these conditions.
+    /// Each mask is read as `a[index], ..., a[0]` followed by
+    /// `-a[N-1], ..., -a[index+1]`, truncated to the active secret prefix.
     #[inline]
-    fn extract_lwe_prefix_at_to<M, B>(
+    fn extract_lwe_prefix_at_to<M>(
         &self,
         index: usize,
-        output: &mut Lwe<B>,
+        mut output: Lwe<&mut [T]>,
         poly_length: usize,
         modulus: M,
     ) where
         M: RingContext<T>,
-        B: DataMut<Elem = T>,
     {
-        let (input_mask, input_body) = self.a_b_slices(poly_length);
+        let (input_mask, input_body) = self.a_b(poly_length);
         let (output_mask, output_body) = output.a_b_mut();
 
-        for (mask, extracted) in input_mask
-            .chunks_exact(poly_length)
-            .zip(output_mask.chunks_mut(poly_length))
-        {
+        // Compact extraction may end inside a mask polynomial: retain the
+        // short final output chunk instead of using chunks_exact_mut here.
+        for (mask, extracted) in input_mask.zip(output_mask.chunks_mut(poly_length)) {
+            let mask = mask.as_ref();
             let positive_len = (index + 1).min(extracted.len());
             let (positive, negacyclic) = extracted.split_at_mut(positive_len);
 

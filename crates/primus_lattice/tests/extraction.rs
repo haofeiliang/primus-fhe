@@ -34,11 +34,16 @@ fn indexed_extraction_matches_negacyclic_rotation_and_compact_prefix() {
         assert_eq!(full.0.as_slice(), expected);
 
         for active_key_len in [1, 3, 4, 5, 7, 8] {
-            let mut compact: Lwe<Vec<u32>> = Lwe::zero(active_key_len);
-            glwe.extract_compact_lwe_at_to(index, &mut compact, 4, modulus);
+            // Borrow a dirty, offset output; its final mask chunk may be partial.
+            let mut storage = [u32::MAX; 11];
+            let mut compact = Lwe::new(&mut storage[1..active_key_len + 2]);
+            glwe.as_view()
+                .extract_compact_lwe_at_to(index, &mut compact, 4, modulus);
 
             assert_eq!(compact.a(), &expected[..active_key_len]);
             assert_eq!(compact.b(), expected[8]);
+            assert_eq!(storage[0], u32::MAX);
+            assert!(storage[active_key_len + 2..].iter().all(|&v| v == u32::MAX));
         }
     }
 }
@@ -65,17 +70,20 @@ fn inverse_extraction_is_the_exact_inverse_of_sample_extraction() {
 fn inverse_extraction_round_trips_with_an_explicit_modulus() {
     // A partial final mask additionally requires zero padding. Explicit q
     // has different negation semantics from the native case above.
-    let modulus = BarrettModulus::new(257u32);
-    let lwe = Lwe(vec![1u32, 2, 128, 256, 5, 17, 42]);
-    let mut glwe = Glwe::new(vec![u32::MAX; 12]);
+    let modulus = BarrettModulus::new(257u64);
+    let lwe = Lwe::new(&[1u64, 2, 128, 256, 5, 17, 42][..]);
+    let mut storage = [u64::MAX; 14];
+    let mut glwe = Glwe::new(&mut storage[1..13]);
 
     lwe.inverse_extract_glwe_to(&mut glwe, 4, modulus);
 
-    assert_eq!(glwe.0, vec![1, 1, 129, 255, 5, 0, 0, 240, 42, 0, 0, 0]);
+    assert_eq!(glwe.as_ref(), [1, 1, 129, 255, 5, 0, 0, 240, 42, 0, 0, 0]);
 
-    let mut extracted = Lwe::zero(6);
+    let mut extracted: Lwe<Vec<u64>> = Lwe::zero(6);
     glwe.extract_compact_lwe_to(&mut extracted, 4, modulus);
-    assert_eq!(extracted, lwe);
+    assert_eq!(extracted.as_ref(), lwe.as_ref());
+    assert_eq!(storage[0], u64::MAX);
+    assert_eq!(storage[13], u64::MAX);
 }
 
 #[test]

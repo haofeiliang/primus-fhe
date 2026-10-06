@@ -330,34 +330,7 @@ where
     where
         A: DataMut<Elem = T>,
     {
-        debug_assert!(!self.0.as_slice().is_empty());
-        debug_assert_eq!(self.len(), output.len());
-
-        let mut carry;
-
-        let mut a_iter = self.iter();
-        let mut b_iter = output.iter_mut();
-
-        let a_first = a_iter.next().unwrap();
-        let b_first = b_iter.next().unwrap();
-
-        (*b_first, carry) = a_first.overflowing_add(value);
-
-        while carry {
-            if let Some(a_next) = a_iter.next()
-                && let Some(b_next) = b_iter.next()
-            {
-                (*b_next, carry) = a_next.overflowing_add(T::ONE);
-            } else {
-                return carry;
-            }
-        }
-
-        for (a, b) in a_iter.zip(b_iter) {
-            *b = *a;
-        }
-
-        carry
+        self.view().add_value_to_kernel(value, output.view_mut())
     }
 
     /// Writes `self - value` to `output` and returns the final borrow.
@@ -367,34 +340,7 @@ where
     where
         A: DataMut<Elem = T>,
     {
-        debug_assert!(!self.0.as_slice().is_empty());
-        debug_assert_eq!(self.len(), output.len());
-
-        let mut borrow;
-
-        let mut a_iter = self.iter();
-        let mut b_iter = output.iter_mut();
-
-        let a_first = a_iter.next().unwrap();
-        let b_first = b_iter.next().unwrap();
-
-        (*b_first, borrow) = a_first.overflowing_sub(value);
-
-        while borrow {
-            if let Some(a_next) = a_iter.next()
-                && let Some(b_next) = b_iter.next()
-            {
-                (*b_next, borrow) = a_next.overflowing_sub(T::ONE);
-            } else {
-                return borrow;
-            }
-        }
-
-        for (a, b) in a_iter.zip(b_iter) {
-            *b = *a;
-        }
-
-        borrow
+        self.view().sub_value_to_kernel(value, output.view_mut())
     }
 
     /// Writes the low limbs of `self * value` to `output` and returns the high limb.
@@ -567,6 +513,78 @@ where
                 (*zs, borrow) = ys.borrowing_sub(*xs, borrow);
             }
         }
+    }
+}
+
+impl<T: UnsignedInteger> BigUint<&[T]> {
+    /// Propagates the scalar carry, then copies the remaining high limbs unchanged.
+    /// Input and output must have equal, nonzero fixed widths; only their storage
+    /// is borrowed, so the same kernel serves owned and slice-backed callers.
+    #[inline]
+    fn add_value_to_kernel(&self, value: T, mut output: BigUint<&mut [T]>) -> bool {
+        debug_assert!(!self.0.is_empty());
+        debug_assert_eq!(self.len(), output.len());
+
+        let mut carry;
+
+        let mut a_iter = self.iter();
+        let mut b_iter = output.iter_mut();
+
+        let a_first = a_iter.next().unwrap();
+        let b_first = b_iter.next().unwrap();
+
+        (*b_first, carry) = a_first.overflowing_add(value);
+
+        while carry {
+            if let Some(a_next) = a_iter.next()
+                && let Some(b_next) = b_iter.next()
+            {
+                (*b_next, carry) = a_next.overflowing_add(T::ONE);
+            } else {
+                return carry;
+            }
+        }
+
+        for (a, b) in a_iter.zip(b_iter) {
+            *b = *a;
+        }
+
+        carry
+    }
+
+    /// Propagates the scalar borrow, then copies the remaining high limbs unchanged.
+    /// Like the carry kernel, this preserves the caller's complete fixed width,
+    /// including any leading zero limbs, and requires equal nonempty storage.
+    #[inline]
+    fn sub_value_to_kernel(&self, value: T, mut output: BigUint<&mut [T]>) -> bool {
+        debug_assert!(!self.0.is_empty());
+        debug_assert_eq!(self.len(), output.len());
+
+        let mut borrow;
+
+        let mut a_iter = self.iter();
+        let mut b_iter = output.iter_mut();
+
+        let a_first = a_iter.next().unwrap();
+        let b_first = b_iter.next().unwrap();
+
+        (*b_first, borrow) = a_first.overflowing_sub(value);
+
+        while borrow {
+            if let Some(a_next) = a_iter.next()
+                && let Some(b_next) = b_iter.next()
+            {
+                (*b_next, borrow) = a_next.overflowing_sub(T::ONE);
+            } else {
+                return borrow;
+            }
+        }
+
+        for (a, b) in a_iter.zip(b_iter) {
+            *b = *a;
+        }
+
+        borrow
     }
 }
 
