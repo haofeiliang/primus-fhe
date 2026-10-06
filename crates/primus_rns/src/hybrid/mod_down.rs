@@ -29,17 +29,7 @@ where
         poly_length: usize,
         scratch: &mut [T],
     ) {
-        let p_len = self
-            .p_moduli_count()
-            .checked_mul(poly_length)
-            .expect("hybrid P polynomial length overflow");
-        let q_len = self
-            .q_moduli_count()
-            .checked_mul(poly_length)
-            .expect("hybrid Q polynomial length overflow");
-        assert_eq!(polynomial_mod_p.len(), p_len);
-        assert_eq!(polynomial_mod_q.len(), q_len);
-
+        // The converter owns exactly the P -> Q bases and checks both layouts.
         self.mod_down_converter.fast_convert_array(
             polynomial_mod_p,
             polynomial_mod_q,
@@ -83,12 +73,15 @@ where
         assert_eq!(correction_mod_q.len(), q_len);
 
         let (polynomial_mod_q, polynomial_mod_p) = polynomial_mod_qp.split_at_mut(q_len);
-        self.approx_convert_p_to_q_to(polynomial_mod_p, correction_mod_q, poly_length, scratch);
-        self.approx_mod_down_from_correction_q_assign(
-            polynomial_mod_q,
+        // Splitting the checked QP layout proves the converter's P input size;
+        // its Q output was checked above. Only scratch remains to be checked.
+        self.mod_down_converter.fast_convert_array_kernel(
+            polynomial_mod_p,
             correction_mod_q,
             poly_length,
+            scratch,
         );
+        self.mod_down_from_correction_q_kernel(polynomial_mod_q, correction_mod_q, poly_length);
     }
 
     /// Applies a prepared ModDown correction to a coefficient-domain `Q`
@@ -117,6 +110,19 @@ where
         assert_eq!(polynomial_mod_q.len(), q_len);
         assert_eq!(correction_mod_q.len(), q_len);
 
+        self.mod_down_from_correction_q_kernel(polynomial_mod_q, correction_mod_q, poly_length);
+    }
+
+    /// Applies `(x_Q - lift_P) * P^-1` after either public ModDown entry checks
+    /// both complete Q layouts. The ordered correction and inverse factors use
+    /// this hybrid instance's Q basis; no conversion or allocation is needed.
+    fn mod_down_from_correction_q_kernel(
+        &self,
+        polynomial_mod_q: &mut [T],
+        correction_mod_q: &[T],
+        poly_length: usize,
+    ) {
+        debug_assert_eq!(polynomial_mod_q.len(), correction_mod_q.len());
         izip!(
             polynomial_mod_q.chunks_exact_mut(poly_length),
             correction_mod_q.chunks_exact(poly_length),

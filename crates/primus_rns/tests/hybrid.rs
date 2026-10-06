@@ -2,6 +2,7 @@ use core::range::Range;
 
 use primus_modulus::BarrettModulus;
 use primus_rns::{HybridRNS, HybridRNSPartitioning, RnsError};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 
 type ValueT = u64;
 type ModulusT = BarrettModulus<ValueT>;
@@ -119,45 +120,143 @@ fn mod_up_full_and_streaming_outputs_match() {
             },
         );
         assert_eq!(streamed, expected);
+
+        // Streaming writes one caller-owned limb repeatedly. Reject a malformed
+        // limb before the private writer or callback can consume a partial one.
+        for output_len in [poly_length - 1, poly_length + 1] {
+            let mut output = vec![ValueT::MAX; output_len];
+            let mut consumed = false;
+            assert!(
+                catch_unwind(AssertUnwindSafe(|| {
+                    partition.for_each_approx_mod_up_complement_limb(
+                        &polynomial_q,
+                        &mut output,
+                        poly_length,
+                        &mut scratch,
+                        |_, _| consumed = true,
+                    );
+                }))
+                .is_err()
+            );
+            assert!(!consumed);
+            assert!(output.iter().all(|&value| value == ValueT::MAX));
+        }
     }
 }
 
 #[test]
-fn mod_down_matches_expected_output_with_multiple_p_moduli() {
-    let hybrid = make_hybrid(&[17, 41, 73], &[89, 97], 2);
-    let poly_length = 5;
-    let mut polynomial_qp = vec![0; hybrid.qp_moduli_count() * poly_length];
-    let qp_moduli = [17, 41, 73, 89, 97];
+fn mod_down_matches_expected_output() {
+    // Lift P without reducing modulo its product, then compute (x_Q-lift)/P.
+    // Column 0 lifts to 24 for P=[89], and to 3*97 + 81*89 = 7500 for P=[89,97].
+    let cases = [
+        (
+            &[89][..],
+            [16, 16, 16, 16, 16, 39, 39, 39, 39, 39, 68, 68, 68, 68, 68],
+        ),
+        (
+            &[89, 97][..],
+            [0, 0, 0, 16, 0, 38, 38, 38, 37, 38, 48, 48, 48, 47, 48],
+        ),
+    ];
+    for (p_moduli, expected_q) in cases {
+        let hybrid = make_hybrid(&[17, 41, 73], p_moduli, 2);
+        let poly_length = 5;
+        let mut polynomial_qp = vec![0; hybrid.qp_moduli_count() * poly_length];
+        let qp_moduli = [17, 41, 73].iter().chain(p_moduli);
 
-    for (modulus_index, (limb, &modulus)) in polynomial_qp
-        .chunks_exact_mut(poly_length)
-        .zip(&qp_moduli)
-        .enumerate()
-    {
-        for (coefficient, value) in limb.iter_mut().enumerate() {
-            *value = (7 * modulus_index + 11 * coefficient + 3) as u64 % modulus;
+        for (modulus_index, (limb, &modulus)) in polynomial_qp
+            .chunks_exact_mut(poly_length)
+            .zip(qp_moduli)
+            .enumerate()
+        {
+            for (coefficient, value) in limb.iter_mut().enumerate() {
+                *value = (7 * modulus_index + 11 * coefficient + 3) as u64 % modulus;
+            }
         }
+
+        let original = polynomial_qp.clone();
+        let q_len = hybrid.q_moduli_count() * poly_length;
+        let mut converted_p = vec![0; hybrid.q_moduli_count() * poly_length];
+        let scratch_len = hybrid.mod_down_scratch_len(poly_length);
+        let mut scratch = vec![ValueT::MAX; scratch_len + 3];
+        hybrid.approx_mod_down_q_assign(
+            &mut polynomial_qp,
+            poly_length,
+            &mut converted_p,
+            &mut scratch,
+        );
+
+        assert_eq!(&polynomial_qp[..q_len], expected_q);
+        assert_eq!(&polynomial_qp[q_len..], &original[q_len..]);
+
+        // The independently callable conversion and correction must also reproduce
+        // the complete ModDown, with no hidden state from its internal kernels.
+        let mut separate_q = original[..q_len].to_vec();
+        hybrid.approx_convert_p_to_q_to(
+            &original[q_len..],
+            &mut converted_p,
+            poly_length,
+            &mut scratch,
+        );
+        hybrid.approx_mod_down_from_correction_q_assign(&mut separate_q, &converted_p, poly_length);
+        assert_eq!(separate_q, expected_q);
+        // A single P limb ignores scratch entirely; general conversion only writes its prefix.
+        assert_eq!(&scratch[scratch_len..], &[ValueT::MAX; 3]);
+    }
+}
+
+#[test]
+fn mod_down_validates_public_buffers_before_writes() {
+    let hybrid = make_hybrid(&[17, 41], &[89, 97], 1);
+    // Q and P each contain two limbs. Exercise each public entry directly:
+    // none may depend on validation performed by a previous operation.
+    for (n, q_len, p_len, scratch_len) in [
+        (2, 3, 4, 4),
+        (2, 5, 4, 4),
+        (2, 4, 3, 4),
+        (2, 4, 5, 4),
+        (2, 4, 4, 3),
+        (usize::MAX, 0, 0, 0),
+    ] {
+        let mut qp = vec![0; q_len + p_len];
+        let mut correction = vec![ValueT::MAX; q_len];
+        let mut scratch = vec![ValueT::MAX; scratch_len];
+        assert!(
+            catch_unwind(AssertUnwindSafe(|| hybrid.approx_mod_down_q_assign(
+                &mut qp,
+                n,
+                &mut correction,
+                &mut scratch,
+            )))
+            .is_err()
+        );
+        assert!(qp.iter().all(|&value| value == 0));
+        assert!(correction.iter().all(|&value| value == ValueT::MAX));
+        assert!(scratch.iter().all(|&value| value == ValueT::MAX));
+
+        assert!(
+            catch_unwind(AssertUnwindSafe(|| hybrid.approx_convert_p_to_q_to(
+                &qp[q_len..],
+                &mut correction,
+                n,
+                &mut scratch,
+            )))
+            .is_err()
+        );
+        assert!(correction.iter().all(|&value| value == ValueT::MAX));
+        assert!(scratch.iter().all(|&value| value == ValueT::MAX));
     }
 
-    let original = polynomial_qp.clone();
-    let q_len = hybrid.q_moduli_count() * poly_length;
-    // Lift the P residues without reducing modulo P, then compute (x_Q-lift)/P.
-    // For column 0 the P lift is 3*97 + 81*89 = 7500. The P limbs themselves
-    // must remain untouched when writing (x_Q - lift_P) / P modulo Q.
-    let expected_q = [
-        0, 0, 0, 16, 0, // q_0
-        38, 38, 38, 37, 38, // q_1
-        48, 48, 48, 47, 48, // q_2
-    ];
-    let mut converted_p = vec![0; hybrid.q_moduli_count() * poly_length];
-    let mut scratch = vec![0; hybrid.mod_down_scratch_len(poly_length)];
-    hybrid.approx_mod_down_q_assign(
-        &mut polynomial_qp,
-        poly_length,
-        &mut converted_p,
-        &mut scratch,
-    );
-
-    assert_eq!(&polynomial_qp[..q_len], expected_q);
-    assert_eq!(&polynomial_qp[q_len..], &original[q_len..]);
+    // A caller may supply correction directly, without calling P -> Q first.
+    for (n, q_len, correction_len) in [(2, 3, 4), (2, 4, 3), (2, 4, 5), (usize::MAX, 0, 0)] {
+        let mut q = vec![0; q_len];
+        let correction = vec![0; correction_len];
+        assert!(
+            catch_unwind(AssertUnwindSafe(|| {
+                hybrid.approx_mod_down_from_correction_q_assign(&mut q, &correction, n);
+            }))
+            .is_err()
+        );
+        assert!(q.iter().all(|&value| value == 0));
+    }
 }

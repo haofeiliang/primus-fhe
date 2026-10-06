@@ -31,12 +31,14 @@ impl<T: FheUint, M: FieldContext<T>> FastConversionLimb<'_, T, M> {
     /// # Correctness
     ///
     /// A general limb requires the cross-modulus dot-product range described
-    /// by [`BaseConverter::fast_convert`].
+    /// by [`BaseConverter::fast_convert`]. The caller must provide exactly one
+    /// `poly_length` output limb. Array conversion and full ModUp obtain it by
+    /// slicing validated output; streaming ModUp checks its reusable limb once.
     #[inline]
     pub(crate) fn write_to(self, output: &mut [T]) {
         match self {
             Self::SingleInput { input, modulus } => {
-                assert_eq!(output.len(), input.len());
+                debug_assert_eq!(output.len(), input.len());
                 output
                     .iter_mut()
                     .zip(input)
@@ -50,7 +52,7 @@ impl<T: FheUint, M: FieldContext<T>> FastConversionLimb<'_, T, M> {
             } => {
                 debug_assert_eq!(base_change_matrix_row.len(), input_moduli_count);
                 let adjusted_residues = adjusted_residues.chunks_exact(input_moduli_count);
-                assert_eq!(output.len(), adjusted_residues.len());
+                debug_assert_eq!(output.len(), adjusted_residues.len());
                 // Copy the small arithmetic context before the coefficient loop;
                 // it no longer needs to borrow through the shared base table.
                 let modulus = *modulus;
@@ -214,7 +216,9 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
     }
 
     /// Prepares the coefficient-major adjusted residues for the general
-    /// batched conversion kernel.
+    /// batched conversion kernel. The caller has validated the complete input
+    /// length, which is also the required scratch length for this kernel.
+    /// Check scratch before writing and leave any extra suffix untouched.
     #[inline]
     fn prepare_general_fast_convert_array<'a>(
         &self,
@@ -223,7 +227,7 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
         scratch: &'a mut [T],
     ) -> &'a [T] {
         debug_assert!(!self.uses_single_input_kernel());
-        let required_scratch_len = self.fast_convert_array_scratch_len(poly_length);
+        let required_scratch_len = crt_poly_in.len();
         assert!(scratch.len() >= required_scratch_len);
         let scratch = &mut scratch[..required_scratch_len];
         self.fill_fast_convert_array_scratch(crt_poly_in, poly_length, scratch);
@@ -235,6 +239,10 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
     /// Adjusted input residues are computed once. The returned iterator then
     /// yields one independently writable polynomial limb at a time, allowing a
     /// caller to immediately consume that limb before producing the next one.
+    /// The caller must establish `input_moduli_count() * poly_length` input
+    /// elements without overflow. Ordinary conversion and ModDown check their
+    /// full slices; ModUp derives this slice from its checked partition range.
+    /// General conversion validates scratch before preparing any residues.
     #[inline]
     pub(crate) fn fast_convert_array_limbs<'a>(
         &'a self,
@@ -243,12 +251,7 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
         scratch: &'a mut [T],
     ) -> impl ExactSizeIterator<Item = FastConversionLimb<'a, T, M>> + 'a {
         let input_moduli_count = self.input_moduli_count();
-        assert_eq!(
-            crt_poly_in.len(),
-            input_moduli_count
-                .checked_mul(poly_length)
-                .expect("RNS input length overflow")
-        );
+        debug_assert_eq!(crt_poly_in.len(), input_moduli_count * poly_length);
 
         if self.uses_single_input_kernel() {
             Either::Left(self.output_base.moduli().iter().map(move |modulus| {
@@ -313,6 +316,26 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
             .expect("RNS output length overflow");
 
         assert_eq!(crt_poly_out.len(), expected_out_len);
+        let expected_input_len = self
+            .input_moduli_count()
+            .checked_mul(poly_length)
+            .expect("RNS input length overflow");
+        assert_eq!(crt_poly_in.len(), expected_input_len);
+
+        self.fast_convert_array_kernel(crt_poly_in, crt_poly_out, poly_length, scratch);
+    }
+
+    /// Converts full input/output layouts already validated by ordinary
+    /// conversion or ModDown, including their length products. Scratch is still
+    /// checked when preparing the limbs, before scratch or output writes.
+    pub(crate) fn fast_convert_array_kernel(
+        &self,
+        crt_poly_in: &[T],
+        crt_poly_out: &mut [T],
+        poly_length: usize,
+        scratch: &mut [T],
+    ) {
+        debug_assert_eq!(crt_poly_out.len(), self.output_moduli_count() * poly_length);
         crt_poly_out
             .chunks_exact_mut(poly_length)
             .zip(self.fast_convert_array_limbs(crt_poly_in, poly_length, scratch))

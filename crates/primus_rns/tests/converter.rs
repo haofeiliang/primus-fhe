@@ -1,6 +1,7 @@
 use primus_modulus::BarrettModulus;
 use primus_rns::Residues;
 use primus_rns::{BaseConverter, RNSBase};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 
 type Value = u64;
 type Modulus = BarrettModulus<Value>;
@@ -77,6 +78,44 @@ fn fast_conversion_matches_independent_crt_sum() {
     let expected_pairs: Vec<_> = lifts.iter().map(|&lift| (lift % 5, lift % 7)).collect();
     assert_eq!(paired, expected_pairs);
     assert_eq!(&scratch[required_scratch_len..], &[Value::MAX; 3]);
+}
+
+#[test]
+fn fast_conversion_validates_complete_arrays_before_writes() {
+    // The internal limb writer trusts the public array boundary for both kernels.
+    for source in [&[17][..], &[17, 19, 23][..]] {
+        let converter = BaseConverter::new(&base(source), &base(&[5, 7]));
+        let n = 4;
+        let input_len = source.len() * n;
+        let output_len = 2 * n;
+        let scratch_len = converter.fast_convert_array_scratch_len(n);
+        let mut invalid_shapes = vec![
+            (n, input_len - 1, output_len, scratch_len),
+            (n, input_len + 1, output_len, scratch_len),
+            (n, input_len, output_len - 1, scratch_len),
+            (n, input_len, output_len + 1, scratch_len),
+            (usize::MAX, 0, 0, 0),
+        ];
+        if scratch_len != 0 {
+            invalid_shapes.push((n, input_len, output_len, scratch_len - 1));
+        }
+        for (n, input_len, output_len, scratch_len) in invalid_shapes {
+            let input = vec![0; input_len];
+            let mut output = vec![Value::MAX; output_len];
+            let mut scratch = vec![Value::MAX; scratch_len];
+            assert!(
+                catch_unwind(AssertUnwindSafe(|| converter.fast_convert_array(
+                    &input,
+                    &mut output,
+                    n,
+                    &mut scratch,
+                )))
+                .is_err()
+            );
+            assert!(output.iter().all(|&value| value == Value::MAX));
+            assert!(scratch.iter().all(|&value| value == Value::MAX));
+        }
+    }
 }
 
 #[test]
