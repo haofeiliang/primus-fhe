@@ -117,7 +117,7 @@ cargo nextest list --binaries-metadata /tmp/primus-test-binaries.json \
 - `primus_modulus/derive` 启用 `derives` 集成测试和 `derived_mac` 基准；默认 workspace 不启用它。`primus_distr/high_precision` 增加高精度 CDT 覆盖。
 - `primus_integer/serde` 与 `primus_lattice/serde` 默认关闭且互相独立；各自的 `serde` 测试 target 验证 raw 存储的往返，不验证密码参数。可用 `cargo nextest run -p primus_integer -p primus_lattice --lib --tests --features serde` 单独运行；nightly CI 的 all-features 已覆盖它们，无需增加全库测试轮次。依赖隔离须用 workspace 外的普通库消费者检查，不能从含 Criterion/serde_json 的 dev-dependencies 推断。
 - `primus_lattice/rns`、`primus_encoding/rns` 及 `primus_data/aligned-vec` 在默认 workspace 中可由其他成员依赖启用。独立包运行不能假定这种 feature 合并；`rns_glev`、`rns_ggsw`、`bfv_rns` 等基准需要对应的 required-features。
-- 算术、模数、变换和基础同态层具有 u32/u64 及必要的较小字宽、多 limb 验证；每个运算的具体字宽从所属测试入口确认，不能从包内出现某个类型名推断全部路径均被覆盖。普通 PBS 和高精度密文求值有 u32/u64 路径；CBS/one-hot 的专用相位测试侧重 u64，u32 的实际消费由高精度求值和双字宽基准 smoke 补充。FFT 底层谱运算 fixture 使用 u32，u64 转换 oracle 及上层 Fourier 密文消费另行保留，不将转换测试称作完整谱运算覆盖。
+- 算术、模数、变换和基础同态层具有 u32/u64 及必要的较小字宽、多 limb 验证；每个运算的具体字宽从所属测试入口确认，不能从包内出现某个类型名推断全部路径均被覆盖。普通 PBS 和高精度密文求值有 u32/u64 路径；CBS/one-hot 的专用相位测试侧重 u64，u32 的实际消费由高精度求值测试和显式 `validate_parameters` 诊断补充；普通 CBS/one-hot bench 固定 u64，不再承担双字宽验证。FFT 底层谱运算 fixture 使用 u32，u64 转换 oracle 及上层 Fourier 密文消费另行保留，不将转换测试称作完整谱运算覆盖。
 
 ### 变换后端、FFT 引擎与 target 覆盖
 

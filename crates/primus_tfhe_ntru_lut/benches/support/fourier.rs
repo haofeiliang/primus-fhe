@@ -45,7 +45,7 @@ fn benchmark_workload<T: TorusFftValue, Table: FftTable>(
         T::BITS,
         workload.suffix()
     );
-    if backend == "rustfft" && !sparse {
+    if !sparse {
         benchmark_lut_creation(c, &name, &parameters, workload);
     }
     let mut fixture = None;

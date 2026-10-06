@@ -14,7 +14,7 @@ use primus_poly::PolyLength;
 use primus_reduce::RingContext;
 use primus_tfhe::{InterleavedLookupTable, LookupTable};
 
-fn compile<T, M>(c: &mut Criterion, name: &str, modulus: M)
+fn compile<T, M>(c: &mut Criterion, name: &str, modulus: M, geometries: &[(u32, usize)])
 where
     T: FheUint,
     M: RingContext<T>,
@@ -22,7 +22,7 @@ where
     const N: usize = 1024;
     let poly_length = PolyLength::new(N);
     let mut group = c.benchmark_group(format!("lut_compile/u{}/{name}/N{N}", T::BITS));
-    for (t, output_count) in [(32u32, 1), (16, 3), (255, 4)] {
+    for &(t, output_count) in geometries {
         let input_domain_len = t.div_ceil(2) as usize;
         let id = BenchmarkId::new(format!("t{t}"), format!("k{output_count}"));
         if output_count == 1 {
@@ -64,15 +64,30 @@ where
 }
 
 fn lookup_table(c: &mut Criterion) {
-    compile(c, "native", NativeModulus::<u32>::new());
-    compile(c, "native", NativeModulus::<u64>::new());
-    compile(c, "pow2_q24", PowOf2Modulus::<u32>::new(1 << 24));
-    compile(c, "pow2_q24", PowOf2Modulus::<u64>::new(1 << 24));
-    compile(c, "barrett_q27", BarrettModulus::new(132_120_577u32));
+    compile(
+        c,
+        "native",
+        NativeModulus::<u64>::new(),
+        &[(32, 1), (16, 3), (255, 4)],
+    );
+    // Isolate word/modulus arithmetic at the same ordinary t32/k1 geometry.
+    compile(
+        c,
+        "pow2_q24",
+        PowOf2Modulus::<u64>::new(1 << 24),
+        &[(32, 1)],
+    );
+    compile(
+        c,
+        "barrett_q27",
+        BarrettModulus::new(132_120_577u32),
+        &[(32, 1)],
+    );
     compile(
         c,
         "barrett_q50",
         BarrettModulus::new(1_125_899_906_826_241u64),
+        &[(32, 1)],
     );
 }
 

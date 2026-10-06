@@ -24,7 +24,7 @@ use rand::{SeedableRng, rngs::StdRng};
 
 // The ternary profile has its own decomposition/noise budget. Its timing must
 // not be divided by the binary timing to claim a secret-distribution speedup.
-fn backend<T, Table>(
+fn pbs<T, Table>(
     c: &mut Criterion,
     backend: &str,
     order: PbsOrder,
@@ -101,15 +101,34 @@ fn backend<T, Table>(
             )
         });
     });
+}
 
-    // Release the evaluation fixture before measuring generation of new keys.
-    drop(fixture);
-
-    // One keygen geometry per secret/word/backend is enough; changing the PBS
-    // order does not change the generation algorithm.
-    if workload.plaintext_modulus != 4 || order != PbsOrder::BootstrapKeyswitch {
-        return;
-    }
+// Keygen uses the Boolean geometry; PBS order does not change generation.
+fn keygen<T, Table>(c: &mut Criterion, backend: &str, ternary: bool)
+where
+    T: FheUint,
+    Table: MonomialNttTable<ValueT = T>,
+{
+    let workload = PBS_WORKLOADS[0];
+    let order = PbsOrder::BootstrapKeyswitch;
+    let secret = if ternary {
+        SecretKeyDistr::UniformTernary
+    } else {
+        SecretKeyDistr::UniformBinary
+    };
+    let kind = if ternary { "ternary" } else { "binary" };
+    let name = format!(
+        "glwe/{backend}/u{}/{kind}/{}/n{}_N{}/{order:?}",
+        T::BITS,
+        workload.name,
+        workload.lwe_dimension,
+        workload.poly_length
+    );
+    let parameters = if ternary {
+        glwe::circuit(ntt_circuit_modulus::<T>(), order, secret)
+    } else {
+        glwe::ntt_pbs::<T>(order, workload)
+    };
     let mut fixture = None;
     c.bench_function(&format!("{name}/server_keygen"), |b| {
         let (context, client) = fixture.get_or_insert_with(|| {
@@ -248,16 +267,19 @@ fn stages<T: FheUint, Table: MonomialNttTable<ValueT = T>>(c: &mut Criterion, ba
 }
 
 fn bench_pbs(c: &mut Criterion) {
+    use PbsOrder::{BootstrapKeyswitch, KeyswitchBootstrap};
+    let [boolean, shortint] = PBS_WORKLOADS;
+    pbs::<u32, U32NttTable>(c, "ntt", KeyswitchBootstrap, boolean, false);
+    pbs::<u64, U64NttTable>(c, "ntt", KeyswitchBootstrap, shortint, false);
+    pbs::<u64, U64NttTable>(c, "ntt", KeyswitchBootstrap, boolean, true);
+    pbs::<u64, U64NttTable>(c, "ntt", BootstrapKeyswitch, shortint, false);
+
+    // Register setup/stage diagnostics independently of the online workloads.
     stages::<u32, U32NttTable>(c, "ntt");
     stages::<u64, U64NttTable>(c, "ntt");
-
-    for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
-        for workload in PBS_WORKLOADS {
-            backend::<u32, U32NttTable>(c, "ntt", order, workload, false);
-            backend::<u64, U64NttTable>(c, "ntt", order, workload, false);
-        }
-        backend::<u32, U32NttTable>(c, "ntt", order, PBS_WORKLOADS[0], true);
-        backend::<u64, U64NttTable>(c, "ntt", order, PBS_WORKLOADS[0], true);
+    for ternary in [false, true] {
+        keygen::<u32, U32NttTable>(c, "ntt", ternary);
+        keygen::<u64, U64NttTable>(c, "ntt", ternary);
     }
 }
 

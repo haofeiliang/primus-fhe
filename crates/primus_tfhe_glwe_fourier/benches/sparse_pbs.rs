@@ -8,7 +8,11 @@
 use std::hint::black_box;
 
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
-use primus_fft::{FftTable, RustFftTable, TfheFftTable, TorusFftValue};
+#[cfg(feature = "rustfft")]
+use primus_fft::RustFftTable;
+#[cfg(feature = "tfhe-fft")]
+use primus_fft::TfheFftTable;
+use primus_fft::{FftTable, TorusFftValue};
 use primus_modulus::NativeModulus;
 use primus_tfhe_glwe_fourier::{
     BlindRotationConfig, ClientKey, KeyGenerator, PbsOrder, TfheContext,
@@ -16,7 +20,7 @@ use primus_tfhe_glwe_fourier::{
 use primus_tfhe_test_support::parameters::glwe;
 use rand::{SeedableRng, rngs::StdRng};
 
-fn backend<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str, order: PbsOrder) {
+fn pbs_pair<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str, order: PbsOrder) {
     let parameters = glwe::diagnostic(NativeModulus::<T>::new(), order);
     let input_codec =
         primus_encoding::RoundedCodec::new(T::as_from(8u32), parameters.cipher_modulus());
@@ -86,11 +90,19 @@ fn backend<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str, 
                 )
             });
         });
-        if order != PbsOrder::BootstrapKeyswitch {
-            continue;
-        }
-        // Generation reuses the client, but does not need the evaluation key.
-        drop(server);
+    }
+}
+
+// Keygen pairs share a fixed client and separately seeded key-generation RNG.
+fn keygen<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str, order: PbsOrder) {
+    let parameters = glwe::diagnostic(NativeModulus::<T>::new(), order);
+    let name = format!(
+        "glwe/{backend}/u{}/fixed_weight/n728_h32_N1024/{order:?}",
+        T::BITS
+    );
+    let mut fixture = None;
+    for sparse in [false, true] {
+        let kind = if sparse { "sparse" } else { "classic" };
         c.bench_function(&format!("{name}/{kind}/server_keygen"), |b| {
             let (context, client) = fixture.get_or_insert_with(|| {
                 let context = TfheContext::<T, Table>::from_parameters(parameters.clone());
@@ -122,11 +134,25 @@ fn backend<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str, 
 }
 
 fn bench_sparse(c: &mut Criterion) {
-    for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
-        backend::<u32, RustFftTable>(c, "rustfft", order);
-        backend::<u64, RustFftTable>(c, "rustfft", order);
-        backend::<u32, TfheFftTable>(c, "tfhe_fft", order);
-        backend::<u64, TfheFftTable>(c, "tfhe_fft", order);
+    #[cfg(feature = "rustfft")]
+    {
+        pbs_pair::<u64, RustFftTable>(c, "rustfft", PbsOrder::KeyswitchBootstrap);
+    }
+    #[cfg(all(not(feature = "rustfft"), feature = "tfhe-fft"))]
+    {
+        pbs_pair::<u64, TfheFftTable>(c, "tfhe_fft", PbsOrder::KeyswitchBootstrap);
+    }
+
+    // Register research/setup diagnostics independently of the online workloads.
+    #[cfg(feature = "rustfft")]
+    {
+        keygen::<u32, RustFftTable>(c, "rustfft", PbsOrder::BootstrapKeyswitch);
+        keygen::<u64, RustFftTable>(c, "rustfft", PbsOrder::BootstrapKeyswitch);
+    }
+    #[cfg(feature = "tfhe-fft")]
+    {
+        keygen::<u32, TfheFftTable>(c, "tfhe_fft", PbsOrder::BootstrapKeyswitch);
+        keygen::<u64, TfheFftTable>(c, "tfhe_fft", PbsOrder::BootstrapKeyswitch);
     }
 }
 

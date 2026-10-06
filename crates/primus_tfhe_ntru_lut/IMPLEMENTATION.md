@@ -245,12 +245,17 @@ The [pipeline benchmark](benches/pipeline.rs) calls the public evaluators.
 [Support](benches/support/mod.rs) holds only the public layout, cleartext function,
 creation timing and heap reporting; its NTT/Fourier modules keep concrete
 backend types. It neither includes production source files nor exposes scratch.
+The 18 IDs comprise six public-table creation/drop cases and twelve complete
+evaluations: three table structures, NTT/primary Fourier and classic/sparse.
+RustFFT is the primary engine when enabled; engine comparisons live in the
+NTRU `pbs` target. The [suite matrix](../primus_tfhe/BENCHMARKS.md#reduced-suite-specification)
+records the representative word/order/engine comparisons across all targets.
 
 | Parameter | Value |
 | --- | --- |
-| Words / N / external n | u32 and u64 / 1024 / 800 |
+| Word / N / external n | u64 / 1024 / 800 |
 | External q / plaintext t | PowOf2 2^24 / 8; M=4 |
-| Ring Q | NTT Q30=998244353 (u32), Q50=1125899906826241 (u64); Fourier Native32/64 |
+| Ring Q | NTT Q50=1125899906826241; Fourier Native64 |
 | Secrets | Fixed-weight binary external LWE (h32) and independent SparseTernary ring secret |
 | BR algorithms | Paired classic/sparse; sparse r3/B64 |
 | Bases / noise | Shared [NTRU circuit profile](../../guides/development/tfhe-parameters.md#ntru-pbs-cbs-and-lookup), including independent q-domain return KS |
@@ -264,7 +269,7 @@ this polynomial function. IDs containing
 `/dense_seed42/` use the low 16 bits of a fixed SplitMix64 output mixer applied
 to `x + 42 + 0x9e3779b97f4a7c15` with wrapping u64 arithmetic; the exact mapping
 is in `Workload::digit` in the benchmark support module. It is independent of
-the key-generation RNG and identical across word widths and backends. All workloads retain the same geometry, keys, input and measurement boundaries.
+the key-generation RNG and identical across backends. All workloads retain the same geometry, keys, input and measurement boundaries.
 Within each classic/sparse pair the client coefficients and encrypted input are
 identical; server-key generation consumes different randomness.
 The polynomial's distinct public-polynomial counts per output are
@@ -298,7 +303,7 @@ The shape checks inside `evaluate_to` remain timed.
 Throughput counts eight output ciphertexts, not eight independent requests.
 The separate `create_lut_and_drop` IDs include allocation, filling and destruction
 of one deduplicated public high-precision LUT; only classic IDs register creation,
-and Fourier registers it once per word width because neither BR choice nor the
+and Fourier registers it once for Native64 because neither BR choice nor the
 FFT engine affects coefficient compilation.
 
 The selected evaluation fixture reports retained requested heap for combined

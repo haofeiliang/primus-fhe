@@ -14,7 +14,7 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use primus_integer::FheUint;
 use primus_lattice::ngsw::NttNgswIter;
 use primus_modulus::PowOf2Modulus;
-use primus_ntt::{MonomialNttTable, U32NttTable, U64NttTable};
+use primus_ntt::{MonomialNttTable, U64NttTable};
 use primus_tfhe_ntru_ntt::{
     BlindRotationConfig, CircuitBootstrapEvaluator, KeyGenerator, OneHotCircuitBootstrapEvaluator,
     TfheContext,
@@ -257,9 +257,7 @@ fn one_hot<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
 
 fn bench_cbs(c: &mut Criterion) {
     for sparse in [false, true] {
-        ordinary::<u32, U32NttTable>(c, "ntt", sparse);
         ordinary::<u64, U64NttTable>(c, "ntt", sparse);
-        one_hot::<u32, U32NttTable>(c, "ntt", sparse);
         one_hot::<u64, U64NttTable>(c, "ntt", sparse);
     }
 }

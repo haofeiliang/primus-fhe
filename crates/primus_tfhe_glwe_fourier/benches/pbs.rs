@@ -8,7 +8,11 @@
 use std::hint::black_box;
 
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
-use primus_fft::{FftTable, RustFftTable, TfheFftTable, TorusFftValue};
+#[cfg(feature = "rustfft")]
+use primus_fft::RustFftTable;
+#[cfg(feature = "tfhe-fft")]
+use primus_fft::TfheFftTable;
+use primus_fft::{FftTable, TorusFftValue};
 use primus_glwe::SecretKeyDistr;
 use primus_glwe::{FourierGlweKeySwitchingWorkspace, GlweCiphertext};
 use primus_lwe::LweCiphertext;
@@ -25,7 +29,7 @@ use rand::{SeedableRng, rngs::StdRng};
 
 // The ternary profile has its own decomposition/noise budget. Its timing must
 // not be divided by the binary timing to claim a secret-distribution speedup.
-fn backend<T, Table>(
+fn pbs<T, Table>(
     c: &mut Criterion,
     backend: &str,
     order: PbsOrder,
@@ -102,15 +106,34 @@ fn backend<T, Table>(
             )
         });
     });
+}
 
-    // Release the evaluation fixture before measuring generation of new keys.
-    drop(fixture);
-
-    // One keygen geometry per secret/word/backend is enough; changing the PBS
-    // order does not change the generation algorithm.
-    if workload.plaintext_modulus != 4 || order != PbsOrder::BootstrapKeyswitch {
-        return;
-    }
+// Keygen uses the Boolean geometry; PBS order does not change generation.
+fn keygen<T, Table>(c: &mut Criterion, backend: &str, ternary: bool)
+where
+    T: TorusFftValue,
+    Table: FftTable,
+{
+    let workload = PBS_WORKLOADS[0];
+    let order = PbsOrder::BootstrapKeyswitch;
+    let secret = if ternary {
+        SecretKeyDistr::UniformTernary
+    } else {
+        SecretKeyDistr::UniformBinary
+    };
+    let kind = if ternary { "ternary" } else { "binary" };
+    let name = format!(
+        "glwe/{backend}/u{}/{kind}/{}/n{}_N{}/{order:?}",
+        T::BITS,
+        workload.name,
+        workload.lwe_dimension,
+        workload.poly_length
+    );
+    let parameters = if ternary {
+        glwe::circuit(NativeModulus::<T>::new(), order, secret)
+    } else {
+        glwe::fourier_pbs::<T>(order, workload)
+    };
     let mut fixture = None;
     c.bench_function(&format!("{name}/server_keygen"), |b| {
         let (context, client) = fixture.get_or_insert_with(|| {
@@ -245,23 +268,48 @@ fn stages<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) {
     }
 }
 
-fn bench_pbs(c: &mut Criterion) {
-    stages::<u32, RustFftTable>(c, "rustfft");
-    stages::<u32, TfheFftTable>(c, "tfhe_fft");
-    stages::<u64, RustFftTable>(c, "rustfft");
-    stages::<u64, TfheFftTable>(c, "tfhe_fft");
+// Register the primary engine's word, secret and order comparisons once.
+fn primary<Table: FftTable>(c: &mut Criterion, backend: &str) {
+    use PbsOrder::{BootstrapKeyswitch, KeyswitchBootstrap};
+    let [boolean, shortint] = PBS_WORKLOADS;
+    pbs::<u32, Table>(c, backend, KeyswitchBootstrap, boolean, false);
+    pbs::<u64, Table>(c, backend, KeyswitchBootstrap, shortint, false);
+    pbs::<u64, Table>(c, backend, KeyswitchBootstrap, boolean, true);
+    pbs::<u64, Table>(c, backend, BootstrapKeyswitch, shortint, false);
+}
 
-    for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
-        for workload in PBS_WORKLOADS {
-            backend::<u32, RustFftTable>(c, "rustfft", order, workload, false);
-            backend::<u64, RustFftTable>(c, "rustfft", order, workload, false);
-            backend::<u32, TfheFftTable>(c, "tfhe_fft", order, workload, false);
-            backend::<u64, TfheFftTable>(c, "tfhe_fft", order, workload, false);
+fn bench_pbs(c: &mut Criterion) {
+    #[cfg(feature = "rustfft")]
+    primary::<RustFftTable>(c, "rustfft");
+    #[cfg(all(not(feature = "rustfft"), feature = "tfhe-fft"))]
+    primary::<TfheFftTable>(c, "tfhe_fft");
+    #[cfg(all(feature = "rustfft", feature = "tfhe-fft"))]
+    pbs::<u64, TfheFftTable>(
+        c,
+        "tfhe_fft",
+        PbsOrder::KeyswitchBootstrap,
+        PBS_WORKLOADS[1],
+        false,
+    );
+
+    // Register setup/stage diagnostics independently of the online workloads.
+    #[cfg(feature = "rustfft")]
+    {
+        stages::<u32, RustFftTable>(c, "rustfft");
+        stages::<u64, RustFftTable>(c, "rustfft");
+        for ternary in [false, true] {
+            keygen::<u32, RustFftTable>(c, "rustfft", ternary);
+            keygen::<u64, RustFftTable>(c, "rustfft", ternary);
         }
-        backend::<u32, RustFftTable>(c, "rustfft", order, PBS_WORKLOADS[0], true);
-        backend::<u64, RustFftTable>(c, "rustfft", order, PBS_WORKLOADS[0], true);
-        backend::<u32, TfheFftTable>(c, "tfhe_fft", order, PBS_WORKLOADS[0], true);
-        backend::<u64, TfheFftTable>(c, "tfhe_fft", order, PBS_WORKLOADS[0], true);
+    }
+    #[cfg(feature = "tfhe-fft")]
+    {
+        stages::<u32, TfheFftTable>(c, "tfhe_fft");
+        stages::<u64, TfheFftTable>(c, "tfhe_fft");
+        for ternary in [false, true] {
+            keygen::<u32, TfheFftTable>(c, "tfhe_fft", ternary);
+            keygen::<u64, TfheFftTable>(c, "tfhe_fft", ternary);
+        }
     }
 }
 

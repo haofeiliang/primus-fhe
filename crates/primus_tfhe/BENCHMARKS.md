@@ -2,22 +2,24 @@
 
 The 18 targets below measure independent operations using the shared
 [parameter profiles](../../guides/development/tfhe-parameters.md).
-All retained workflows cover u32/u64; Fourier covers RustFFT and TFHE-FFT,
-and complete GLWE workflows cover both PBS orders. These are arithmetic cost
-fixtures, not assessed security parameters or equal-security comparisons.
+The suite retains representative u32/u64, FFT-engine and GLWE PBS-order
+comparisons without crossing those axes for every operation. These are arithmetic
+cost fixtures, not assessed security parameters or equal-security comparisons.
 
 ## Reduced suite specification
 
-The following is the agreed target for simplifying registrations, **not the
-current executable matrix**. The sections below still describe the existing
-targets. No numerical profile, key layout, aggregation window or workspace
-layout changes are part of this reduction.
+The ordinary registrations follow the matrix below. Setup, stage and paper
+diagnostics still reside in the existing targets and are counted separately;
+use an ID filter to select the operation to measure. Numerical profiles, key
+layouts, aggregation windows and workspace layouts are unchanged.
 
 Use one primary Fourier engine per build: RustFFT when available, otherwise
 TFHE-FFT. This follows the teaching workflow, not a measured engine ranking.
 With both features enabled, retain an explicit engine comparison only for u64
-binary shortint PBS in each family. Single-engine builds must still provide the
-primary workloads. GLWE uses `KeyswitchBootstrap` unless a row says otherwise;
+binary shortint PBS in each family. The registration code also selects TFHE-FFT
+as the primary engine when RustFFT is disabled. Cargo target declarations currently still require both FFT features
+(and `ntt` for the lookup pipeline); independent target discovery is a separate
+feature-cleanup task. GLWE uses `KeyswitchBootstrap` unless a row says otherwise;
 `BootstrapKeyswitch` retains an explicit complete-request comparison in `pbs`.
 
 | Target / retained cases | IDs across all four backends | Reason |
@@ -32,7 +34,7 @@ primary workloads. GLWE uses `KeyswitchBootstrap` unless a row says otherwise;
 | LUT `pipeline`: the same three public tables, u64 Q50 Barrett and Native64 construction/drop | 6 | Construction depends on the coefficient modulus, not the BR variant or FFT engine |
 | `lookup_table`: u64 Native for all three geometries; t32/k1 additionally at u64 PowOf2 q24, u64 Barrett Q50, and u32 Barrett Q27 | 6 | Retain each packing shape and modulus family without their full cross-product |
 
-This specifies 98 ordinary IDs, or 100 with the two secondary-engine PBS IDs,
+This selects 98 ordinary IDs, or 100 with the two secondary-engine PBS IDs,
 across the existing 18 ordinary targets. It is a selection of benchmark
 workloads, not a CI run list or a restriction on supported APIs. Other word,
 order and engine combinations remain covered by focused correctness tests and
@@ -47,7 +49,7 @@ lookup pipeline keeps c8/d5/o8 and n800/h32/N1024. Ternary and binary profiles
 still differ, so those IDs do not isolate the cost of the secret distribution.
 No claim of equal security follows from choosing these cases.
 
-Separate the remaining roles when implementing the reduction:
+The remaining target separation concerns diagnostics, outside the counts above:
 
 - Keep server-key generation and the existing GLWE BR/KS stage probes in one
   explicit setup/diagnostic target per backend. Do not move discarded Cartesian
@@ -71,7 +73,7 @@ outside this registration reduction.
 | Target | Question answered / one iteration |
 | --- | --- |
 | `primus_tfhe/lookup_table` | Compile and drop one public LUT: ordinary t32/k1, padded interleaving t16/k3, or tight cells t255/k4; N1024, Native/PowOf2 q24/Barrett |
-| Four backends' `pbs` | One complete dense binary PBS at n800/N1024/t4 or n866/N2048/t32; ternary at n800/N1024/t4; one server-key generation per dense secret/word/backend |
+| Four backends' `pbs` | One complete dense binary PBS at u32 n800/N1024/t4 or u64 n866/N2048/t32; u64 ternary at n800/N1024/t4; setup diagnostics retain server-key generation per dense secret/word/engine |
 | GLWE `pbs` stage IDs | One BR or one GLWE key switch at binary n800/N1024; excludes extraction and prerequisite operations |
 | Four backends' `sparse_pbs` | One complete classic or bucket-sparse PBS, or one server-key generation, for the same n728/h32/N1024/t8 secret profile |
 | GLWE NTT `sparse_pbs` paper IDs | Table-3-shaped NAND and padded 3-bit PBS: dense ternary classic, fixed-weight classic and sparse; complete q-to-q request with ring KS and raw BR, with explicit return/decomposition adaptations |
@@ -96,8 +98,10 @@ exact parameters, the benchmark-only q-to-Q adapter, full measurement commands,
 and the limits of comparison with OpenFHE. No paper safety claim is inherited.
 
 MVB compares classic and sparse keys in all four backends. D8/k3 compares
-independent PBS, interleaved ManyLUT and factorized MVB; D64/k17 compares
-independent PBS and factorized MVB beyond interleaved capacity.
+independent PBS, interleaved ManyLUT and factorized MVB; D64/k17 keeps a classic
+independent/factorized pair beyond interleaved capacity.
+Each backend registers eight u64 MVB IDs; GLWE uses `KeyswitchBootstrap`, and
+Fourier uses the primary engine.
 Throughput for MVB and complete lookup counts **output ciphertexts**; latency
 still measures the whole batch. NTRU output phases are decoded at external q24,
 while their public coefficient tables are encoded at ring Q.
@@ -190,8 +194,9 @@ TFHE-rs timing, and distinguish a workload comparison from matching parameters.
 ```sh
 # Listing does not generate keys, encrypt inputs, or execute correctness probes.
 cargo bench -p primus_tfhe_glwe_ntt --bench pbs -- --list
-# Run each selected ID once, including its untimed known-result checks.
-cargo bench -p primus_tfhe_glwe_ntt --bench pbs -- --test
+# Run one retained workload once, including its untimed known-result check.
+cargo bench -p primus_tfhe_glwe_ntt --bench pbs -- \
+  'glwe/ntt/u32/binary/boolean/.*/KeyswitchBootstrap/complete$' --test
 # Measure one complete workload; pin an available CPU for revision comparisons.
 taskset -c 0 cargo bench -p primus_tfhe_glwe_ntt --bench pbs -- \
   'glwe/ntt/u64/binary/shortint_2_2/.*/BootstrapKeyswitch/complete$' \

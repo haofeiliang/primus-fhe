@@ -8,7 +8,11 @@
 use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use primus_fft::{FftTable, RustFftTable, TfheFftTable, TorusFftValue};
+#[cfg(feature = "rustfft")]
+use primus_fft::RustFftTable;
+#[cfg(all(not(feature = "rustfft"), feature = "tfhe-fft"))]
+use primus_fft::TfheFftTable;
+use primus_fft::{FftTable, TorusFftValue};
 use primus_modulus::NativeModulus;
 use primus_tfhe_glwe_fourier::{
     BlindRotationConfig, CircuitBootstrapEvaluator, ClientKey, KeyGenerator, PbsOrder, TfheContext,
@@ -105,12 +109,14 @@ where
 }
 
 fn bench_cbs(c: &mut Criterion) {
-    for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
-        for sparse in [false, true] {
-            ordinary::<u32, RustFftTable>(c, "rustfft", order, sparse);
-            ordinary::<u64, RustFftTable>(c, "rustfft", order, sparse);
-            ordinary::<u32, TfheFftTable>(c, "tfhe_fft", order, sparse);
-            ordinary::<u64, TfheFftTable>(c, "tfhe_fft", order, sparse);
+    for sparse in [false, true] {
+        #[cfg(feature = "rustfft")]
+        {
+            ordinary::<u64, RustFftTable>(c, "rustfft", PbsOrder::KeyswitchBootstrap, sparse);
+        }
+        #[cfg(all(not(feature = "rustfft"), feature = "tfhe-fft"))]
+        {
+            ordinary::<u64, TfheFftTable>(c, "tfhe_fft", PbsOrder::KeyswitchBootstrap, sparse);
         }
     }
 }

@@ -23,7 +23,7 @@ use rand::{SeedableRng, rngs::StdRng};
 
 // The ternary profile has its own decomposition/noise budget. Its timing must
 // not be divided by the binary timing to claim a secret-distribution speedup.
-fn backend<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
+fn pbs<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     c: &mut Criterion,
     backend: &str,
     workload: PbsWorkload,
@@ -94,15 +94,29 @@ fn backend<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
             )
         });
     });
+}
 
-    // Release the evaluation fixture before measuring generation of new keys.
-    drop(fixture);
-
-    // One keygen geometry per secret/word/backend is enough; changing the PBS
-    // order does not change the generation algorithm.
-    if workload.plaintext_modulus != 4 {
-        return;
-    }
+// Keygen keeps one Boolean-sized fixture per word and secret distribution.
+fn keygen<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
+    c: &mut Criterion,
+    backend: &str,
+    ternary: bool,
+) {
+    let workload = PBS_WORKLOADS[0];
+    let secret = if ternary {
+        SecretKeyDistr::UniformTernary
+    } else {
+        SecretKeyDistr::UniformBinary
+    };
+    let kind = if ternary { "ternary" } else { "binary" };
+    let name = format!(
+        "ntru/{backend}/u{}/{kind}/{}/n{}_N{}",
+        T::BITS,
+        workload.name,
+        workload.lwe_dimension,
+        workload.poly_length
+    );
+    let parameters = ntru::pbs(ntt_modulus::<T>(), workload, secret);
     let mut fixture = None;
     c.bench_function(&format!("{name}/server_keygen"), |b| {
         let (context, client) = fixture.get_or_insert_with(|| {
@@ -135,12 +149,16 @@ fn backend<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
 }
 
 fn bench_pbs(c: &mut Criterion) {
-    for workload in PBS_WORKLOADS {
-        backend::<u32, U32NttTable>(c, "ntt", workload, false);
-        backend::<u64, U64NttTable>(c, "ntt", workload, false);
+    let [boolean, shortint] = PBS_WORKLOADS;
+    pbs::<u32, U32NttTable>(c, "ntt", boolean, false);
+    pbs::<u64, U64NttTable>(c, "ntt", shortint, false);
+    pbs::<u64, U64NttTable>(c, "ntt", boolean, true);
+
+    // Register setup diagnostics independently of the online workloads.
+    for ternary in [false, true] {
+        keygen::<u32, U32NttTable>(c, "ntt", ternary);
+        keygen::<u64, U64NttTable>(c, "ntt", ternary);
     }
-    backend::<u32, U32NttTable>(c, "ntt", PBS_WORKLOADS[0], true);
-    backend::<u64, U64NttTable>(c, "ntt", PBS_WORKLOADS[0], true);
 }
 
 criterion_group!(benches, bench_pbs);

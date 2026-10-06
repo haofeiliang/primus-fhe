@@ -9,14 +9,18 @@ use std::hint::black_box;
 
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use primus_encoding::RoundedCodec;
-use primus_fft::{FftTable, RustFftTable, TfheFftTable, TorusFftValue};
+#[cfg(feature = "rustfft")]
+use primus_fft::RustFftTable;
+#[cfg(feature = "tfhe-fft")]
+use primus_fft::TfheFftTable;
+use primus_fft::{FftTable, TorusFftValue};
 use primus_modulus::NativeModulus;
 use primus_modulus::PowOf2Modulus;
 use primus_tfhe_ntru_fourier::{BlindRotationConfig, KeyGenerator, TfheContext};
 use primus_tfhe_test_support::parameters::ntru;
 use rand::{SeedableRng, rngs::StdRng};
 
-fn backend<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) {
+fn pbs_pair<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) {
     let parameters = ntru::diagnostic(NativeModulus::<T>::new());
     let input_codec =
         RoundedCodec::new(T::as_from(8u32), parameters.external_lwe().cipher_modulus());
@@ -86,8 +90,16 @@ fn backend<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) 
                 )
             });
         });
-        // Generation reuses the client, but does not need the evaluation key.
-        drop(server);
+    }
+}
+
+// Keygen pairs share a fixed client and separately seeded key-generation RNG.
+fn keygen<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) {
+    let parameters = ntru::diagnostic(NativeModulus::<T>::new());
+    let name = format!("ntru/{backend}/u{}/fixed_weight/n728_h32_N1024", T::BITS);
+    let mut fixture = None;
+    for sparse in [false, true] {
+        let kind = if sparse { "sparse" } else { "classic" };
         c.bench_function(&format!("{name}/{kind}/server_keygen"), |b| {
             let (context, client) = fixture.get_or_insert_with(|| {
                 let context =
@@ -122,10 +134,28 @@ fn backend<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) 
 }
 
 fn bench_sparse(c: &mut Criterion) {
-    backend::<u32, RustFftTable>(c, "rustfft");
-    backend::<u64, RustFftTable>(c, "rustfft");
-    backend::<u32, TfheFftTable>(c, "tfhe_fft");
-    backend::<u64, TfheFftTable>(c, "tfhe_fft");
+    #[cfg(feature = "rustfft")]
+    {
+        pbs_pair::<u32, RustFftTable>(c, "rustfft");
+        pbs_pair::<u64, RustFftTable>(c, "rustfft");
+    }
+    #[cfg(all(not(feature = "rustfft"), feature = "tfhe-fft"))]
+    {
+        pbs_pair::<u32, TfheFftTable>(c, "tfhe_fft");
+        pbs_pair::<u64, TfheFftTable>(c, "tfhe_fft");
+    }
+
+    // Register research/setup diagnostics independently of the online workloads.
+    #[cfg(feature = "rustfft")]
+    {
+        keygen::<u32, RustFftTable>(c, "rustfft");
+        keygen::<u64, RustFftTable>(c, "rustfft");
+    }
+    #[cfg(feature = "tfhe-fft")]
+    {
+        keygen::<u32, TfheFftTable>(c, "tfhe_fft");
+        keygen::<u64, TfheFftTable>(c, "tfhe_fft");
+    }
 }
 
 criterion_group!(benches, bench_sparse);

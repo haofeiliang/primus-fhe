@@ -23,7 +23,7 @@ mod paper;
 static ALLOCATOR: primus_test_allocations::CountingAllocator =
     primus_test_allocations::CountingAllocator;
 
-fn backend<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
+fn pbs_pair<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     c: &mut Criterion,
     backend: &str,
     order: PbsOrder,
@@ -98,11 +98,23 @@ fn backend<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
                 )
             });
         });
-        if order != PbsOrder::BootstrapKeyswitch {
-            continue;
-        }
-        // Generation reuses the client, but does not need the evaluation key.
-        drop(server);
+    }
+}
+
+// Keygen pairs share a fixed client and separately seeded key-generation RNG.
+fn keygen<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
+    c: &mut Criterion,
+    backend: &str,
+    order: PbsOrder,
+) {
+    let parameters = glwe::diagnostic(ntt_modulus::<T>(), order);
+    let name = format!(
+        "glwe/{backend}/u{}/fixed_weight/n728_h32_N1024/{order:?}",
+        T::BITS
+    );
+    let mut fixture = None;
+    for sparse in [false, true] {
+        let kind = if sparse { "sparse" } else { "classic" };
         c.bench_function(&format!("{name}/{kind}/server_keygen"), |b| {
             let (context, client) = fixture.get_or_insert_with(|| {
                 let context =
@@ -135,11 +147,13 @@ fn backend<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
 }
 
 fn bench_sparse(c: &mut Criterion) {
+    pbs_pair::<u32, U32NttTable>(c, "ntt", PbsOrder::KeyswitchBootstrap);
+    pbs_pair::<u64, U64NttTable>(c, "ntt", PbsOrder::KeyswitchBootstrap);
+
+    // Register research/setup diagnostics independently of the online workloads.
     paper::benchmark(c);
-    for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
-        backend::<u32, U32NttTable>(c, "ntt", order);
-        backend::<u64, U64NttTable>(c, "ntt", order);
-    }
+    keygen::<u32, U32NttTable>(c, "ntt", PbsOrder::BootstrapKeyswitch);
+    keygen::<u64, U64NttTable>(c, "ntt", PbsOrder::BootstrapKeyswitch);
 }
 
 criterion_group!(benches, bench_sparse);

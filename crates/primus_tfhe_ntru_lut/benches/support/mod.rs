@@ -100,7 +100,7 @@ pub fn heap(name: &str, allocation: Allocations) {
 }
 
 // Public LUT creation is independent of the transform engine; Native is registered
-// only once per word width, even though evaluation covers both FFT engines.
+// only once, alongside evaluation with the primary FFT engine.
 pub fn benchmark_lut_creation<T: FheUint, M: RingContext<T>, LM: RingContext<T>>(
     c: &mut Criterion,
     name: &str,

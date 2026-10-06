@@ -11,7 +11,11 @@ use primus_encoding::ScaledCodec;
 use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use primus_fft::{FftTable, RustFftTable, TfheFftTable, TorusFftValue};
+#[cfg(feature = "rustfft")]
+use primus_fft::RustFftTable;
+#[cfg(all(not(feature = "rustfft"), feature = "tfhe-fft"))]
+use primus_fft::TfheFftTable;
+use primus_fft::{FftTable, TorusFftValue};
 use primus_lattice::ngsw::FourierNgswIter;
 use primus_modulus::NativeModulus;
 use primus_modulus::PowOf2Modulus;
@@ -246,14 +250,16 @@ fn one_hot<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str, 
 
 fn bench_cbs(c: &mut Criterion) {
     for sparse in [false, true] {
-        ordinary::<u32, RustFftTable>(c, "rustfft", sparse);
-        ordinary::<u64, RustFftTable>(c, "rustfft", sparse);
-        ordinary::<u32, TfheFftTable>(c, "tfhe_fft", sparse);
-        ordinary::<u64, TfheFftTable>(c, "tfhe_fft", sparse);
-        one_hot::<u32, RustFftTable>(c, "rustfft", sparse);
-        one_hot::<u64, RustFftTable>(c, "rustfft", sparse);
-        one_hot::<u32, TfheFftTable>(c, "tfhe_fft", sparse);
-        one_hot::<u64, TfheFftTable>(c, "tfhe_fft", sparse);
+        #[cfg(feature = "rustfft")]
+        {
+            ordinary::<u64, RustFftTable>(c, "rustfft", sparse);
+            one_hot::<u64, RustFftTable>(c, "rustfft", sparse);
+        }
+        #[cfg(all(not(feature = "rustfft"), feature = "tfhe-fft"))]
+        {
+            ordinary::<u64, TfheFftTable>(c, "tfhe_fft", sparse);
+            one_hot::<u64, TfheFftTable>(c, "tfhe_fft", sparse);
+        }
     }
 }
 

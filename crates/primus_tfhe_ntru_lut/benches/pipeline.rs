@@ -18,13 +18,12 @@ static ALLOCATOR: primus_test_allocations::CountingAllocator =
 mod support;
 use support::{fourier, ntt};
 
-// Registers the supported transform backends at both u32 and u64 word widths.
+// Keep u64 NTT and one primary FFT engine; creation is measured once per modulus.
 fn pipeline(c: &mut Criterion) {
-    ntt::benchmark::<u32, primus_ntt::U32NttTable>(c);
     ntt::benchmark::<u64, primus_ntt::U64NttTable>(c);
-    fourier::benchmark::<u32, primus_fft::RustFftTable>(c, "rustfft");
+    #[cfg(feature = "rustfft")]
     fourier::benchmark::<u64, primus_fft::RustFftTable>(c, "rustfft");
-    fourier::benchmark::<u32, primus_fft::TfheFftTable>(c, "tfhe_fft");
+    #[cfg(all(not(feature = "rustfft"), feature = "tfhe-fft"))]
     fourier::benchmark::<u64, primus_fft::TfheFftTable>(c, "tfhe_fft");
 }
 

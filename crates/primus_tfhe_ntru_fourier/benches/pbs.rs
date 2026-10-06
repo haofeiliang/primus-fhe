@@ -9,7 +9,11 @@ use std::hint::black_box;
 
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use primus_encoding::RoundedCodec;
-use primus_fft::{FftTable, RustFftTable, TfheFftTable, TorusFftValue};
+#[cfg(feature = "rustfft")]
+use primus_fft::RustFftTable;
+#[cfg(feature = "tfhe-fft")]
+use primus_fft::TfheFftTable;
+use primus_fft::{FftTable, TorusFftValue};
 use primus_modulus::NativeModulus;
 use primus_modulus::PowOf2Modulus;
 use primus_ntru::SecretKeyDistr;
@@ -22,7 +26,7 @@ use rand::{SeedableRng, rngs::StdRng};
 
 // The ternary profile has its own decomposition/noise budget. Its timing must
 // not be divided by the binary timing to claim a secret-distribution speedup.
-fn backend<T: TorusFftValue, Table: FftTable>(
+fn pbs<T: TorusFftValue, Table: FftTable>(
     c: &mut Criterion,
     backend: &str,
     workload: PbsWorkload,
@@ -92,15 +96,25 @@ fn backend<T: TorusFftValue, Table: FftTable>(
             )
         });
     });
+}
 
-    // Release the evaluation fixture before measuring generation of new keys.
-    drop(fixture);
-
-    // One keygen geometry per secret/word/backend is enough; changing the PBS
-    // order does not change the generation algorithm.
-    if workload.plaintext_modulus != 4 {
-        return;
-    }
+// Keygen keeps one Boolean-sized fixture per word and secret distribution.
+fn keygen<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str, ternary: bool) {
+    let workload = PBS_WORKLOADS[0];
+    let secret = if ternary {
+        SecretKeyDistr::UniformTernary
+    } else {
+        SecretKeyDistr::UniformBinary
+    };
+    let kind = if ternary { "ternary" } else { "binary" };
+    let name = format!(
+        "ntru/{backend}/u{}/{kind}/{}/n{}_N{}",
+        T::BITS,
+        workload.name,
+        workload.lwe_dimension,
+        workload.poly_length
+    );
+    let parameters = ntru::pbs(NativeModulus::<T>::new(), workload, secret);
     let mut fixture = None;
     c.bench_function(&format!("{name}/server_keygen"), |b| {
         let (context, client) = fixture.get_or_insert_with(|| {
@@ -131,17 +145,37 @@ fn backend<T: TorusFftValue, Table: FftTable>(
     });
 }
 
+// Register the primary engine's word and secret comparisons once.
+fn primary<Table: FftTable>(c: &mut Criterion, backend: &str) {
+    let [boolean, shortint] = PBS_WORKLOADS;
+    pbs::<u32, Table>(c, backend, boolean, false);
+    pbs::<u64, Table>(c, backend, shortint, false);
+    pbs::<u64, Table>(c, backend, boolean, true);
+}
+
 fn bench_pbs(c: &mut Criterion) {
-    for workload in PBS_WORKLOADS {
-        backend::<u32, RustFftTable>(c, "rustfft", workload, false);
-        backend::<u64, RustFftTable>(c, "rustfft", workload, false);
-        backend::<u32, TfheFftTable>(c, "tfhe_fft", workload, false);
-        backend::<u64, TfheFftTable>(c, "tfhe_fft", workload, false);
+    #[cfg(feature = "rustfft")]
+    primary::<RustFftTable>(c, "rustfft");
+    #[cfg(all(not(feature = "rustfft"), feature = "tfhe-fft"))]
+    primary::<TfheFftTable>(c, "tfhe_fft");
+    #[cfg(all(feature = "rustfft", feature = "tfhe-fft"))]
+    pbs::<u64, TfheFftTable>(c, "tfhe_fft", PBS_WORKLOADS[1], false);
+
+    // Register setup diagnostics independently of the online workloads.
+    #[cfg(feature = "rustfft")]
+    {
+        for ternary in [false, true] {
+            keygen::<u32, RustFftTable>(c, "rustfft", ternary);
+            keygen::<u64, RustFftTable>(c, "rustfft", ternary);
+        }
     }
-    backend::<u32, RustFftTable>(c, "rustfft", PBS_WORKLOADS[0], true);
-    backend::<u64, RustFftTable>(c, "rustfft", PBS_WORKLOADS[0], true);
-    backend::<u32, TfheFftTable>(c, "tfhe_fft", PBS_WORKLOADS[0], true);
-    backend::<u64, TfheFftTable>(c, "tfhe_fft", PBS_WORKLOADS[0], true);
+    #[cfg(feature = "tfhe-fft")]
+    {
+        for ternary in [false, true] {
+            keygen::<u32, TfheFftTable>(c, "tfhe_fft", ternary);
+            keygen::<u64, TfheFftTable>(c, "tfhe_fft", ternary);
+        }
+    }
 }
 
 criterion_group!(benches, bench_pbs);

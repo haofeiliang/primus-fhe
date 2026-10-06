@@ -142,7 +142,7 @@ Evaluator 借用 context、server key 和 table，并在构造时分配全部缓
 
 所有 feature 可以叠加。`LookupTableError::OneHot` / `Evaluation` 只在启用 `ntt` 或 `fourier` 时可用。
 
-NTT 示例要求 `ntt`；Fourier 示例要求其选定引擎。求值测试按实际启用的 NTT/FFT 实现运行，两个字宽的既有用例保持不变；`pipeline` 是全后端对照基准，要求 `ntt,rustfft,tfhe-fft`，缺少要求时 Cargo 跳过该 target。完整验证使用 `just tfhe`，纯编译或单后端可分别运行：
+NTT 示例要求 `ntt`；Fourier 示例要求其选定引擎。求值测试按实际启用的 NTT/FFT 实现运行，两个字宽的既有用例保持不变；`pipeline` 比较 u64 NTT 与主 Fourier 引擎（启用 RustFFT 时优先选它）。当前 target 声明仍要求 `ntt,rustfft,tfhe-fft`，缺少要求时 Cargo 跳过该 target。完整验证使用 `just tfhe`，纯编译或单后端可分别运行：
 
 ```sh
 cargo test -p primus_tfhe_ntru_lut
@@ -160,7 +160,7 @@ cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features ntt,rustfft,tfhe
 cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features ntt,rustfft,tfhe-fft -- '/evaluate$'
 ```
 
-创建计时包含分配、系数填充和释放；求值计时不包含密钥生成、公开 LUT 创建、输入加密和工作区分配。工作负载与资源统计见[基准说明](IMPLEMENTATION.md#benchmark-fixture)。
+18 项工作负载保留 polynomial、dense、shared 三种表、classic/sparse 成对求值，以及 Q50/Native64 各自的创建。创建计时包含分配、系数填充和释放；求值计时不包含密钥生成、公开 LUT 创建、输入加密和工作区分配。工作负载与资源统计见[基准说明](IMPLEMENTATION.md#benchmark-fixture)。
 
 原有 ID 使用多项式示例；包含 `/dense_seed42/` 的 ID 使用相同参数下的固定稠密映射。用 `dense_seed42` 过滤可只运行该负载，用 `c8_d5_o8/evaluate$` 可只测多项式示例的同态求值。
 

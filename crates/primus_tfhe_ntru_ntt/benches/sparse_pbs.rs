@@ -17,7 +17,7 @@ use primus_tfhe_test_support::parameters::ntru;
 use primus_tfhe_test_support::parameters::ntt_modulus;
 use rand::{SeedableRng, rngs::StdRng};
 
-fn backend<T: FheUint, Table: MonomialNttTable<ValueT = T>>(c: &mut Criterion, backend: &str) {
+fn pbs_pair<T: FheUint, Table: MonomialNttTable<ValueT = T>>(c: &mut Criterion, backend: &str) {
     let parameters = ntru::diagnostic(ntt_modulus::<T>());
     let input_codec =
         RoundedCodec::new(T::as_from(8u32), parameters.external_lwe().cipher_modulus());
@@ -89,8 +89,16 @@ fn backend<T: FheUint, Table: MonomialNttTable<ValueT = T>>(c: &mut Criterion, b
                 )
             });
         });
-        // Generation reuses the client, but does not need the evaluation key.
-        drop(server);
+    }
+}
+
+// Keygen pairs share a fixed client and separately seeded key-generation RNG.
+fn keygen<T: FheUint, Table: MonomialNttTable<ValueT = T>>(c: &mut Criterion, backend: &str) {
+    let parameters = ntru::diagnostic(ntt_modulus::<T>());
+    let name = format!("ntru/{backend}/u{}/fixed_weight/n728_h32_N1024", T::BITS);
+    let mut fixture = None;
+    for sparse in [false, true] {
+        let kind = if sparse { "sparse" } else { "classic" };
         c.bench_function(&format!("{name}/{kind}/server_keygen"), |b| {
             let (context, client) = fixture.get_or_insert_with(|| {
                 let context = TfheContext::<T, Table, PowOf2Modulus<T>>::try_from_parameters(
@@ -127,8 +135,11 @@ fn backend<T: FheUint, Table: MonomialNttTable<ValueT = T>>(c: &mut Criterion, b
 }
 
 fn bench_sparse(c: &mut Criterion) {
-    backend::<u32, U32NttTable>(c, "ntt");
-    backend::<u64, U64NttTable>(c, "ntt");
+    pbs_pair::<u64, U64NttTable>(c, "ntt");
+
+    // Register research/setup diagnostics independently of the online workloads.
+    keygen::<u32, U32NttTable>(c, "ntt");
+    keygen::<u64, U64NttTable>(c, "ntt");
 }
 
 criterion_group!(benches, bench_sparse);

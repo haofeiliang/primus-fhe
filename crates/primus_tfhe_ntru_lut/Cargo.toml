@@ -34,7 +34,7 @@ name = "pipeline"
 harness = false
 required-features = ["ntt", "rustfft", "tfhe-fft"]
 
-# Examples select one backend; the pipeline benchmark compares all three transforms.
+# Examples select one backend; pipeline compares NTT and the primary FFT engine.
 [[example]]
 name = "ntt_lookup"
 required-features = ["ntt"]

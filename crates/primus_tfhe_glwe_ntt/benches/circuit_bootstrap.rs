@@ -9,7 +9,7 @@ use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use primus_integer::FheUint;
-use primus_ntt::{MonomialNttTable, U32NttTable, U64NttTable};
+use primus_ntt::{MonomialNttTable, U64NttTable};
 use primus_tfhe_glwe_ntt::{
     BlindRotationConfig, CircuitBootstrapEvaluator, ClientKey, KeyGenerator, PbsOrder, TfheContext,
 };
@@ -107,11 +107,8 @@ fn ordinary<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
 }
 
 fn bench_cbs(c: &mut Criterion) {
-    for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
-        for sparse in [false, true] {
-            ordinary::<u32, U32NttTable>(c, "ntt", order, sparse);
-            ordinary::<u64, U64NttTable>(c, "ntt", order, sparse);
-        }
+    for sparse in [false, true] {
+        ordinary::<u64, U64NttTable>(c, "ntt", PbsOrder::KeyswitchBootstrap, sparse);
     }
 }
 
