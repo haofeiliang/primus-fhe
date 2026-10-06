@@ -105,6 +105,111 @@ where
         NttGgsw::zero(self.circuit.parameters.output_size().ggsw_len())
     }
 
+    /// Circuit-bootstraps into a newly allocated NTT GGSW ciphertext.
+    ///
+    /// The output uses the gadget scalars described by [`Self::circuit_bootstrap_to`].
+    ///
+    /// # Correctness
+    ///
+    /// Inherits [`Self::circuit_bootstrap_to`]'s input encoding, plaintext domain,
+    /// canonical-residue, noise and key/NTT representation requirements.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the input dimension differs from the configured external LWE
+    /// dimension, or resources belong to a different context. The output uses
+    /// the configured GGSW length.
+    #[must_use]
+    pub fn circuit_bootstrap(
+        &mut self,
+        input: Lwe<&[T]>,
+        resources: &mut BootstrapResources<'a, T, Table>,
+    ) -> NttGgsw<Vec<T>> {
+        let mut output = self.allocate_output();
+        self.circuit_bootstrap_to(input, &mut output, resources);
+        output
+    }
+
+    /// Converts an external LWE ciphertext into an NTT GGSW under the main
+    /// GLWE key. Output levels preserve the gadget scalars compiled by this
+    /// evaluator; they do not use the ordinary LWE plaintext scale.
+    ///
+    /// # Correctness
+    ///
+    /// The key/NTT representation requirements of [`Self::try_new`] must hold.
+    /// Input must use the external secret paired with the bound BR/KS material,
+    /// this context's external LWE modulus and unsigned rounded encoding, with a
+    /// plaintext in `0..ceil(t/2)` and canonical residues, where `t` is the selected
+    /// input codec's plaintext modulus. Noise must fit the coarser ManyLUT rotation intervals;
+    /// trace and scheme-switching errors must also fit the independent CBS
+    /// budget described by [`CircuitBootstrapParameters`]. For sparse keys, include
+    /// aggregation noise from every bucket, including zero selections and dummies.
+    /// CMUX consumption requires plaintext 0 or 1. The output remains under the accumulator GLWE
+    /// secret and uses gadget scales, not ordinary LWE or Boolean encoding.
+    ///
+    /// # Panics
+    ///
+    /// Panics before output writes if the input dimension differs from the
+    /// configured external LWE dimension or the output length differs from the
+    /// configured GGSW length, or resources belong to a different context.
+    /// LUT parameters are fixed during construction.
+    pub fn circuit_bootstrap_to<S>(
+        &mut self,
+        input: Lwe<&[T]>,
+        output: &mut NttGgsw<S>,
+        resources: &mut BootstrapResources<'a, T, Table>,
+    ) where
+        S: DataMut<Elem = T>,
+    {
+        resources.check_context(self.context);
+        let parameters = self.circuit.parameters;
+        let circuit_key = self.circuit.key;
+        let context = resources.context;
+        let tfhe = context.parameters();
+        assert_eq!(
+            input.dimension(),
+            tfhe.external_lwe_dimension().get(),
+            "circuit-bootstrap input dimension mismatch"
+        );
+        assert_eq!(
+            output.as_ref().len(),
+            parameters.output_size().ggsw_len(),
+            "circuit-bootstrap output GGSW layout mismatch"
+        );
+
+        let accumulator = resources.blind_rotate(
+            input,
+            self.lookup_table.polynomial(),
+            self.lookup_table.padded_output_count(),
+        );
+
+        circuit_key.trace_key().project_prefix_coefficients_to(
+            accumulator,
+            parameters.output_basis().decompose_length().get(),
+            self.traced.as_mut(),
+            context.parameters().blind_rotation_ggsw().cipher_modulus(),
+            context.table(),
+            &mut self.trace,
+        );
+        // CMUX can bind the same buffers to a different output decomposition.
+        resources.with_external_product(parameters.scheme_switch().size(), |scratch| {
+            circuit_key.scheme_switch_key().apply_to(
+                &self.traced,
+                output,
+                context.parameters().blind_rotation_ggsw().cipher_modulus(),
+                context.table(),
+                scratch,
+            );
+        });
+    }
+}
+
+// Operations that consume a CBS control using the shared product scratch.
+impl<'a, T, Table> CircuitBootstrapEvaluator<'a, T, Table>
+where
+    T: FheUint,
+    Table: MonomialNttTable<ValueT = T>,
+{
     /// Selects `lhs` for an encrypted zero and `rhs` for an encrypted one.
     /// Overwrites the coefficient-domain output without allocating or resetting scratch.
     ///
@@ -201,104 +306,6 @@ where
                 input,
                 output,
                 parameters.output_basis(),
-                context.parameters().blind_rotation_ggsw().cipher_modulus(),
-                context.table(),
-                scratch,
-            );
-        });
-    }
-
-    /// Circuit-bootstraps into a newly allocated NTT GGSW ciphertext.
-    ///
-    /// The output uses the gadget scalars described by [`Self::circuit_bootstrap_to`].
-    ///
-    /// # Correctness
-    ///
-    /// Inherits [`Self::circuit_bootstrap_to`]'s input encoding, plaintext domain,
-    /// canonical-residue, noise and key/NTT representation requirements.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the input dimension differs from the configured external LWE
-    /// dimension, or resources belong to a different context. The output uses
-    /// the configured GGSW length.
-    #[must_use]
-    pub fn circuit_bootstrap(
-        &mut self,
-        input: Lwe<&[T]>,
-        resources: &mut BootstrapResources<'a, T, Table>,
-    ) -> NttGgsw<Vec<T>> {
-        let mut output = self.allocate_output();
-        self.circuit_bootstrap_to(input, &mut output, resources);
-        output
-    }
-
-    /// Converts an external LWE ciphertext into an NTT GGSW under the main
-    /// GLWE key. Output levels preserve the gadget scalars compiled by this
-    /// evaluator; they do not use the ordinary LWE plaintext scale.
-    ///
-    /// # Correctness
-    ///
-    /// The key/NTT representation requirements of [`Self::try_new`] must hold.
-    /// Input must use the external secret paired with the bound BR/KS material,
-    /// this context's external LWE modulus and unsigned rounded encoding, with a
-    /// plaintext in `0..ceil(t/2)` and canonical residues, where `t` is the selected
-    /// input codec's plaintext modulus. Noise must fit the coarser ManyLUT rotation intervals;
-    /// trace and scheme-switching errors must also fit the independent CBS
-    /// budget described by [`CircuitBootstrapParameters`]. For sparse keys, include
-    /// aggregation noise from every bucket, including zero selections and dummies.
-    /// CMUX consumption requires plaintext 0 or 1. The output remains under the accumulator GLWE
-    /// secret and uses gadget scales, not ordinary LWE or Boolean encoding.
-    ///
-    /// # Panics
-    ///
-    /// Panics before output writes if the input dimension differs from the
-    /// configured external LWE dimension or the output length differs from the
-    /// configured GGSW length, or resources belong to a different context.
-    /// LUT parameters are fixed during construction.
-    pub fn circuit_bootstrap_to<S>(
-        &mut self,
-        input: Lwe<&[T]>,
-        output: &mut NttGgsw<S>,
-        resources: &mut BootstrapResources<'a, T, Table>,
-    ) where
-        S: DataMut<Elem = T>,
-    {
-        resources.check_context(self.context);
-        let parameters = self.circuit.parameters;
-        let circuit_key = self.circuit.key;
-        let context = resources.context;
-        let tfhe = context.parameters();
-        assert_eq!(
-            input.dimension(),
-            tfhe.external_lwe_dimension().get(),
-            "circuit-bootstrap input dimension mismatch"
-        );
-        assert_eq!(
-            output.as_ref().len(),
-            parameters.output_size().ggsw_len(),
-            "circuit-bootstrap output GGSW layout mismatch"
-        );
-
-        let accumulator = resources.blind_rotate(
-            input,
-            self.lookup_table.polynomial(),
-            self.lookup_table.padded_output_count(),
-        );
-
-        circuit_key.trace_key().project_prefix_coefficients_to(
-            accumulator,
-            parameters.output_basis().decompose_length().get(),
-            self.traced.as_mut(),
-            context.parameters().blind_rotation_ggsw().cipher_modulus(),
-            context.table(),
-            &mut self.trace,
-        );
-        // CMUX can bind the same buffers to a different output decomposition.
-        resources.with_external_product(parameters.scheme_switch().size(), |scratch| {
-            circuit_key.scheme_switch_key().apply_to(
-                &self.traced,
-                output,
                 context.parameters().blind_rotation_ggsw().cipher_modulus(),
                 context.table(),
                 scratch,

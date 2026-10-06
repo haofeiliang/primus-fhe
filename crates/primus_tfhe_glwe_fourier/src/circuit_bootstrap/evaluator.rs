@@ -100,6 +100,93 @@ where
         FourierGgsw::zero(self.circuit.parameters.output_size().fourier_ggsw_len())
     }
 
+    /// Allocates a Fourier GGSW output. Inherits [`Self::circuit_bootstrap_to`]'s
+    /// encoding, secret, FFT representation, noise and borrowing contracts.
+    #[must_use]
+    pub fn circuit_bootstrap(
+        &mut self,
+        input: Lwe<&[T]>,
+        resources: &mut BootstrapResources<'a, T, Table>,
+    ) -> FourierGgsw<Vec<Complex64>> {
+        let mut output = self.allocate_output();
+        self.circuit_bootstrap_to(input, &mut output, resources);
+        output
+    }
+
+    /// Writes a Fourier GGSW encrypting the input message under the accumulator
+    /// GLWE secret, with the configured output gadget scalars.
+    ///
+    /// # Correctness
+    ///
+    /// Inherits [`Self::try_new`]'s paired-secret and FFT table requirements.
+    /// Input must use the external client secret paired with the bound BR/KS material and
+    /// unsigned rounded encoding with a plaintext in `0..ceil(t/2)`, where `t`
+    /// is the selected input codec's plaintext modulus. Noise must fit the coarser interleaved-LUT
+    /// rotation intervals. Trace and scheme-switch errors, including native
+    /// halving and FFT rounding, must fit the independent CBS error budget;
+    /// see [`CircuitBootstrapParameters`]. Sparse keys also require aggregation
+    /// noise from every bucket, including zero selections and dummies, and the
+    /// aggregate FFT error to fit that budget. CMUX consumption requires message
+    /// 0 or 1. The output uses gadget scales rather than ordinary LWE encoding.
+    ///
+    /// # Panics
+    ///
+    /// Panics before output writes if the input dimension or output Fourier
+    /// GGSW length is wrong, or resources belong to a different context.
+    /// LUT parameters are fixed during construction.
+    pub fn circuit_bootstrap_to<S: DataMut<Elem = Complex64>>(
+        &mut self,
+        input: Lwe<&[T]>,
+        output: &mut FourierGgsw<S>,
+        resources: &mut BootstrapResources<'a, T, Table>,
+    ) {
+        resources.check_context(self.context);
+        let parameters = self.circuit.parameters;
+        let circuit_key = self.circuit.key;
+        assert_eq!(
+            input.dimension(),
+            resources
+                .context
+                .parameters()
+                .external_lwe_dimension()
+                .get(),
+            "circuit-bootstrap input dimension mismatch"
+        );
+        assert_eq!(
+            output.as_ref().len(),
+            parameters.output_size().fourier_ggsw_len(),
+            "circuit-bootstrap output Fourier GGSW layout mismatch"
+        );
+
+        let (accumulator, fft) = resources.blind_rotate(
+            input,
+            self.lookup_table.polynomial(),
+            self.lookup_table.padded_output_count(),
+        );
+        // ManyLUT messages can have nonzero tails, so prefix expansion cannot
+        // replace full coefficient projection here.
+        circuit_key.trace_key().project_prefix_coefficients_to(
+            accumulator,
+            parameters.output_basis().decompose_length().get(),
+            self.projected.as_mut(),
+            fft,
+            &mut self.trace,
+        );
+        // CMUX can bind the same buffers to a different output decomposition.
+        resources.with_external_product(parameters.scheme_switch().size(), |scratch, fft| {
+            circuit_key
+                .scheme_switch_key()
+                .apply_to(&self.projected, output, fft, scratch);
+        });
+    }
+}
+
+// Operations that consume a CBS control using the shared product scratch.
+impl<'a, T, Table> CircuitBootstrapEvaluator<'a, T, Table>
+where
+    T: TorusFftValue,
+    Table: FftTable,
+{
     /// Selects `lhs` for an encrypted zero and `rhs` for an encrypted one.
     /// Overwrites the coefficient-domain output without allocating or resetting scratch.
     ///
@@ -187,86 +274,6 @@ where
         );
         resources.with_external_product(parameters.output_size(), |scratch, fft| {
             control.external_product_to(input, output, parameters.output_basis(), fft, scratch);
-        });
-    }
-
-    /// Allocates a Fourier GGSW output. Inherits [`Self::circuit_bootstrap_to`]'s
-    /// encoding, secret, FFT representation, noise and borrowing contracts.
-    #[must_use]
-    pub fn circuit_bootstrap(
-        &mut self,
-        input: Lwe<&[T]>,
-        resources: &mut BootstrapResources<'a, T, Table>,
-    ) -> FourierGgsw<Vec<Complex64>> {
-        let mut output = self.allocate_output();
-        self.circuit_bootstrap_to(input, &mut output, resources);
-        output
-    }
-
-    /// Writes a Fourier GGSW encrypting the input message under the accumulator
-    /// GLWE secret, with the configured output gadget scalars.
-    ///
-    /// # Correctness
-    ///
-    /// Inherits [`Self::try_new`]'s paired-secret and FFT table requirements.
-    /// Input must use the external client secret paired with the bound BR/KS material and
-    /// unsigned rounded encoding with a plaintext in `0..ceil(t/2)`, where `t`
-    /// is the selected input codec's plaintext modulus. Noise must fit the coarser interleaved-LUT
-    /// rotation intervals. Trace and scheme-switch errors, including native
-    /// halving and FFT rounding, must fit the independent CBS error budget;
-    /// see [`CircuitBootstrapParameters`]. Sparse keys also require aggregation
-    /// noise from every bucket, including zero selections and dummies, and the
-    /// aggregate FFT error to fit that budget. CMUX consumption requires message
-    /// 0 or 1. The output uses gadget scales rather than ordinary LWE encoding.
-    ///
-    /// # Panics
-    ///
-    /// Panics before output writes if the input dimension or output Fourier
-    /// GGSW length is wrong, or resources belong to a different context.
-    /// LUT parameters are fixed during construction.
-    pub fn circuit_bootstrap_to<S: DataMut<Elem = Complex64>>(
-        &mut self,
-        input: Lwe<&[T]>,
-        output: &mut FourierGgsw<S>,
-        resources: &mut BootstrapResources<'a, T, Table>,
-    ) {
-        resources.check_context(self.context);
-        let parameters = self.circuit.parameters;
-        let circuit_key = self.circuit.key;
-        assert_eq!(
-            input.dimension(),
-            resources
-                .context
-                .parameters()
-                .external_lwe_dimension()
-                .get(),
-            "circuit-bootstrap input dimension mismatch"
-        );
-        assert_eq!(
-            output.as_ref().len(),
-            parameters.output_size().fourier_ggsw_len(),
-            "circuit-bootstrap output Fourier GGSW layout mismatch"
-        );
-
-        let (accumulator, fft) = resources.blind_rotate(
-            input,
-            self.lookup_table.polynomial(),
-            self.lookup_table.padded_output_count(),
-        );
-        // ManyLUT messages can have nonzero tails, so prefix expansion cannot
-        // replace full coefficient projection here.
-        circuit_key.trace_key().project_prefix_coefficients_to(
-            accumulator,
-            parameters.output_basis().decompose_length().get(),
-            self.projected.as_mut(),
-            fft,
-            &mut self.trace,
-        );
-        // CMUX can bind the same buffers to a different output decomposition.
-        resources.with_external_product(parameters.scheme_switch().size(), |scratch, fft| {
-            circuit_key
-                .scheme_switch_key()
-                .apply_to(&self.projected, output, fft, scratch);
         });
     }
 }

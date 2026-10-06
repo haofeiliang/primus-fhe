@@ -15,8 +15,8 @@ use primus_poly::PolyLength;
 use primus_poly::Polynomial;
 use primus_test_allocations as allocations;
 use primus_tfhe_ntru_ntt::{
-    CircuitBootstrapConfig, CircuitBootstrapEvaluator, DecompositionConfig, TfheContext,
-    TfheParameters,
+    BlindRotationConfig, CircuitBootstrapConfig, CircuitBootstrapEvaluator, DecompositionConfig,
+    TfheContext, TfheParameters,
 };
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 
@@ -83,12 +83,17 @@ fn circuit_bootstrap(distr: SecretKeyDistr, sparse: bool) {
     // CBS-only material can be generated and bound before any return key exists.
     let mut generator = primus_tfhe_ntru_ntt::KeyGenerator::new(&context);
     let client = generator.try_generate_client_key(&mut rng).unwrap();
-    let br = if sparse {
-        generator.try_generate_sparse_blind_rotation_key(&client, 3, 8, &mut rng)
+    let blind_rotation = if sparse {
+        BlindRotationConfig::Sparse {
+            copy_count: 3,
+            bucket_count: 8,
+        }
     } else {
-        generator.try_generate_classic_blind_rotation_key(&client, &mut rng)
-    }
-    .unwrap();
+        BlindRotationConfig::Classic
+    };
+    let br = generator
+        .try_generate_blind_rotation_key(&client, blind_rotation, &mut rng)
+        .unwrap();
     let circuit = generator
         .try_generate_circuit_bootstrap_key(
             client.accumulator_ntru_secret_key(),

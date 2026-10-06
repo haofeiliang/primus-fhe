@@ -61,7 +61,7 @@ where
         &self,
         resources: &BootstrapResources<'a, T, Table, LM>,
     ) -> Option<crate::sparse::SparseBlindRotationPairWorkspace<T>> {
-        self.binding.check(resources);
+        resources.check_context(self.context);
         resources
             .blind_rotation_key
             .sparse_bootstrapping_key()
@@ -121,7 +121,7 @@ where
     ) {
         use primus_poly::Polynomial;
         use primus_tfhe::rotation::RotationModulusSwitch;
-        self.binding.check(resources);
+        resources.check_context(self.context);
         let parameters = resources.context.parameters();
         let n = parameters.poly_length().get();
         assert!(

@@ -13,8 +13,8 @@ use primus_ntt::{NttTable, U32NttTable};
 use primus_poly::{PolyLength, PolynomialOwned};
 use primus_tfhe::sparse::BucketMapError;
 use primus_tfhe_glwe_ntt::{
-    BlindRotationConfig, ClientKey, KeyGenerator, PbsOrder, SparseBootstrappingKeyError as Error,
-    TfheContext, TfheParameters,
+    BlindRotationConfig, BlindRotationKey, ClientKey, KeyGenerator, PbsOrder,
+    SparseBootstrappingKeyError as Error, TfheContext, TfheParameters,
 };
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
@@ -75,9 +75,19 @@ fn encrypted_selections_cover_the_support_once_with_dummy_per_bucket() {
 
     // The second map must have at least one bucket with no public entries.
     for (copy_count, bucket_count) in [(3, 8), (1, 17)] {
-        let key = generator
-            .try_generate_sparse_blind_rotation_key(&client, copy_count, bucket_count, &mut rng)
-            .unwrap();
+        let BlindRotationKey::Sparse(key) = generator
+            .try_generate_blind_rotation_key(
+                &client,
+                BlindRotationConfig::Sparse {
+                    copy_count,
+                    bucket_count,
+                },
+                &mut rng,
+            )
+            .unwrap()
+        else {
+            panic!("sparse BR configuration must generate sparse material");
+        };
         assert_eq!(key.input_dimension(), LweDimension::new(16));
         assert_eq!(key.hamming_weight(), 4);
         assert_eq!(key.copy_count(), copy_count);

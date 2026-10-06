@@ -236,6 +236,43 @@ where
         ServerKey::new(blind_rotation, key_switching_key, circuit_bootstrap)
     }
 
+    /// Generates only BR material, selecting classic or sparse from the config.
+    /// No return or CBS key is generated. The client's secret distribution is
+    /// unchanged; sparse matching never falls back to classic or resamples it.
+    ///
+    /// # Correctness
+    /// Inherits [`Self::try_generate_classic_blind_rotation_key`] or
+    /// [`Self::try_generate_sparse_blind_rotation_key`]'s requirements for the
+    /// selected algorithm. Independently generated components must share the
+    /// actual secrets and transform representation.
+    ///
+    /// # Errors
+    /// Propagates the selected generator's validation, conversion and matching errors.
+    pub fn try_generate_blind_rotation_key<R>(
+        &mut self,
+        client_key: &ClientKey<T>,
+        blind_rotation: BlindRotationConfig,
+        rng: &mut R,
+    ) -> Result<BlindRotationKey<T>, KeyGenerationError>
+    where
+        R: rand::Rng + rand::CryptoRng,
+    {
+        match blind_rotation {
+            BlindRotationConfig::Classic => {
+                self.try_generate_classic_blind_rotation_key(client_key, rng)
+            }
+            BlindRotationConfig::Sparse {
+                copy_count,
+                bucket_count,
+            } => self.try_generate_sparse_blind_rotation_key(
+                client_key,
+                copy_count,
+                bucket_count,
+                rng,
+            ),
+        }
+    }
+
     /// Generates classic BR material without constructing a return or CBS key.
     /// Checks both secret roles but does not require f to fit external q.
     ///

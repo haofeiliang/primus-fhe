@@ -172,7 +172,7 @@ PBS trait、四后端、Boolean 门、双输入打包、CBS、one-hot 与 MVB �
 
 NTRU `BlindRotationKey` 持有 classic/sparse 材料、BR basis 与输入分布；`ServerKey` 再组合该 owner、返回密钥与可选 CBS 密钥。`BlindRotationKey::classic_controls()` 返回借用的 `ClassicControls`，sparse 返回 `None`。视图集中 NLEV initializer、首坐标 NLEV 的正/可选负 bit，以及后续 NGSW bit 的语义迭代器。BR 构造时选择 binary/ternary/sparse 及其 scratch，在线提升不再重新分派服务端密钥或调用可能在 sparse 下 panic 的 initializer。
 
-NTRU 的 BR、返回和 CBS 材料可分别生成和持有：`KeyGenerator::try_generate_classic_blind_rotation_key` / `try_generate_sparse_blind_rotation_key` 需要两个秘密角色，`TfheParameters::try_generate_lwe_return_key` 需要完整返回配对，`try_generate_circuit_bootstrap_key` 只接收累加秘密。`ServerKey::new` / `into_parts` 移动各组件而不复制密文数组；独立生成可能重复转换累加秘密，完整成对生成仍复用已转换表示。 高精度公开提升另由 `KeyGenerator::try_generate_public_lift_key(secret, &nlev_parameters, rng)` 按需生成 NLEV[1]，只接收累加秘密和独立 basis/噪声参数，不存入普通 ServerKey。查表 `try_new(context, server_key, public_lift, table)` 显式接收这份材料；传 `None` 时可按需复用 classic initializer。
+NTRU 的 BR、返回和 CBS 材料可分别生成和持有：`KeyGenerator::try_generate_blind_rotation_key(client, config, rng)` 需要两个秘密角色，`TfheParameters::try_generate_lwe_return_key` 需要完整返回配对，`try_generate_circuit_bootstrap_key` 只接收累加秘密。`ServerKey::new` / `into_parts` 移动各组件而不复制密文数组；独立生成可能重复转换累加秘密，完整成对生成仍复用已转换表示。 高精度公开提升另由 `KeyGenerator::try_generate_public_lift_key(secret, &nlev_parameters, rng)` 按需生成 NLEV[1]，只接收累加秘密和独立 basis/噪声参数，不存入普通 ServerKey。查表 `try_new(context, server_key, public_lift, table)` 显式接收这份材料；传 `None` 时可按需复用 classic initializer。
 
 | NTRU 求值入口 | 借用材料 | 绑定检查 |
 | --- | --- | --- |
@@ -183,7 +183,7 @@ NTRU 的 BR、返回和 CBS 材料可分别生成和持有：`KeyGenerator::try_
 
 BR 不依赖返回 basis；位控制也不绑定外部 q。外部模数由输入程序和返回材料绑定。独立 BR/CBS 生成不检查 f 在返回 q 下的幅度界，完整 PBS 及返回密钥生成保留该要求。各入口检查一次，在线不再解包可选材料或扫描秘密。相同布局/模数不能证明独立材料的实际秘密身份。
 
-四个后端的 `KeyGenerator::try_generate_server_key(client, blind_rotation, cbs, rng)` 在生成边界按 `BlindRotationConfig::{Classic, Sparse { copy_count, bucket_count }}` 选择材料。配置不改变秘密分布，也不决定 CBS、返回或提升的所有权；不支持的秘密或匹配失败仍返回原有错误，不回退到 classic。独立 BR 入口统一用 `try_generate_classic_blind_rotation_key` / `try_generate_sparse_blind_rotation_key`，GLWE 组合 BR 类型与 NTRU 同名为 `BlindRotationKey`；具体底层密文和环 KS/LWE 返回类型保留不同表示与域。成对生成快捷入口仍生成 classic 并复用转换后的秘密；要选择 sparse，先保留固定客户端再生成服务端材料。现有 `Option<CircuitBootstrapConfig>` 与独立 lift 已能表达实际需求，不引入材料全排列配置或通用 owner。
+四个后端的 `KeyGenerator::try_generate_server_key(client, blind_rotation, cbs, rng)` 在生成边界按 `BlindRotationConfig::{Classic, Sparse { copy_count, bucket_count }}` 选择材料。配置不改变秘密分布，也不决定 CBS、返回或提升的所有权；不支持的秘密或匹配失败仍返回原有错误，不回退到 classic。独立 BR 推荐入口为 `try_generate_blind_rotation_key(client, blind_rotation, rng)`，复用同一配置且不生成返回/CBS 材料；需要具体算法材料时仍可调用 classic/sparse 专用入口。GLWE 组合 BR 类型与 NTRU 同名为 `BlindRotationKey`；具体底层密文和环 KS/LWE 返回类型保留不同表示与域。成对生成快捷入口仍生成 classic 并复用转换后的秘密；要选择 sparse，先保留固定客户端再生成服务端材料。现有 `Option<CircuitBootstrapConfig>` 与独立 lift 已能表达实际需求，不引入材料全排列配置或通用 owner。
 
 GLWE 复用已有独立 `BlindRotationKey::{Classic,Sparse}` 和底层环 KS owner。新增 classic BR、环 KS 独立生成入口；CBS 生成只接收累加器秘密。`ServerKey::new` / `into_parts` 移动组合；完整生成保持原有临时变换复用。GLWE 独立绑定关系如下：
 

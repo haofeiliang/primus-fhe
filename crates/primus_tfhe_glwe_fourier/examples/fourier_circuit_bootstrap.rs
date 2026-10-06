@@ -14,7 +14,7 @@ use primus_lwe::LweEncryptionParameters;
 use primus_modulus::NativeModulus;
 use primus_poly::PolyLength;
 use primus_tfhe_glwe_fourier::{
-    BlindRotationKey, CircuitBootstrapConfig, CircuitBootstrapEvaluator,
+    BlindRotationConfig, CircuitBootstrapConfig, CircuitBootstrapEvaluator,
     CircuitBootstrapParameters, ClientKey, DecompositionConfig, KeyGenerator, PbsOrder, TfheConfig,
     TfheContext, TfheParameters,
 };
@@ -102,11 +102,9 @@ fn main() {
     let mut rng = StdRng::seed_from_u64(42);
     let client_key = ClientKey::generate(context.parameters(), &mut rng);
     let mut generator = KeyGenerator::new(&context);
-    let blind_rotation = BlindRotationKey::Classic(
-        generator
-            .try_generate_classic_blind_rotation_key(&client_key, &mut rng)
-            .unwrap(),
-    );
+    let blind_rotation = generator
+        .try_generate_blind_rotation_key(&client_key, BlindRotationConfig::Classic, &mut rng)
+        .unwrap();
     let circuit_parameters =
         CircuitBootstrapParameters::try_from_config(context.parameters(), circuit_config())
             .unwrap();

@@ -6,14 +6,11 @@ use primus_ntru::{NlevCiphertext, NttNgswCiphertext};
 use primus_ntt::MonomialNttTable;
 pub use primus_tfhe_ntru::{OneHotBootstrapError, OneHotLookupTable};
 
-use super::key::CircuitBootstrapBinding;
-
 mod pair;
 pub use pair::OneHotProjection;
 
 use crate::{
-    CircuitBootstrapKey, CircuitBootstrapParameters, Lwe,
-    bootstrap::{BootstrapBinding, BootstrapResources},
+    BootstrapResources, CircuitBootstrapKey, CircuitBootstrapParameters, Lwe, TfheContext,
 };
 
 /// One-hot extension of CBS for classic binary/ternary and sparse binary BR.
@@ -35,8 +32,8 @@ where
     Table: MonomialNttTable<ValueT = T>,
     LM: primus_reduce::RingContext<T>,
 {
-    binding: BootstrapBinding<'a, T, Table, LM>,
-    circuit: CircuitBootstrapBinding<'a, T>,
+    context: &'a TfheContext<T, Table, LM>,
+    circuit_key: &'a CircuitBootstrapKey<T>,
     lookup_table: OneHotLookupTable<T>,
     trace_scratch: Vec<T>,
     projected: NlevCiphertext<Vec<T>>,
@@ -61,18 +58,17 @@ where
         circuit_key: &'a CircuitBootstrapKey<T>,
         input_codec: &RoundedCodec<T, LM>,
     ) -> Result<Self, OneHotBootstrapError> {
-        let circuit =
-            CircuitBootstrapBinding::try_new(resources.context.parameters(), circuit_key)?;
+        circuit_key.check_parameters(resources.context.parameters())?;
         let lookup_table = OneHotLookupTable::try_new(
             resources.context.parameters(),
-            circuit.parameters,
+            circuit_key.parameters(),
             input_codec,
         )?;
         let n = resources.context.parameters().poly_length().get();
-        let projected = NlevCiphertext::zero(circuit.parameters.output_nlev_len());
+        let projected = NlevCiphertext::zero(circuit_key.parameters().output_nlev_len());
         Ok(Self {
-            binding: resources.binding(),
-            circuit,
+            context: resources.context,
+            circuit_key,
             lookup_table,
             trace_scratch: vec![T::ZERO; 2 * n],
             projected,
@@ -88,7 +84,7 @@ where
     /// Returns the shared CBS bases and accumulator layouts.
     #[must_use]
     pub fn parameters(&self) -> &'a CircuitBootstrapParameters<T> {
-        self.circuit.parameters
+        self.circuit_key.parameters()
     }
 
     /// Returns the storage length of one transformed NGSW selector: L*N NTT ring elements.
@@ -227,7 +223,7 @@ where
         ngsw_output: Option<&mut [T]>,
         resources: &mut BootstrapResources<'a, T, Table, LM>,
     ) {
-        self.binding.check(resources);
+        resources.check_context(self.context);
         assert_eq!(
             input.dimension(),
             resources
@@ -288,7 +284,7 @@ where
     ) {
         let tfhe = resources.context.parameters();
         let ngsw_len = self.ngsw_selector_len();
-        let nlev_len = self.circuit.parameters.output_nlev_len();
+        let nlev_len = self.circuit_key.parameters().output_nlev_len();
         let selector_count = self.lookup_table.selector_count();
         // Without NLEV, omit branch zero before projection as well as conversion.
         let first_selector = if nlev_output.is_some() {
@@ -309,8 +305,7 @@ where
                 Some(output) => &mut output[selector * nlev_len..(selector + 1) * nlev_len],
                 None => self.projected.as_mut(),
             };
-            self.circuit
-                .key
+            self.circuit_key
                 .trace_key()
                 .project_prefix_coefficients_with_scratch_to(
                     &resources.workspace.scratch,
@@ -326,7 +321,7 @@ where
                 .filter(|_| selector >= first_ngsw_selector)
             {
                 let output_index = selector - first_ngsw_selector;
-                self.circuit.key.scheme_switch_key().apply_to(
+                self.circuit_key.scheme_switch_key().apply_to(
                     &NlevCiphertext::new(&*projected),
                     &mut NttNgswCiphertext::new(
                         &mut output[output_index * ngsw_len..(output_index + 1) * ngsw_len],

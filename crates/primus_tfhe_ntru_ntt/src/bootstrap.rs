@@ -70,11 +70,15 @@ where
         self.workspace.rotation.external_product()
     }
 
-    /// Records the context whose geometry and representation prepared the operation.
-    pub(crate) fn binding(&self) -> BootstrapBinding<'a, T, Table, LM> {
-        BootstrapBinding {
-            context: self.context,
-        }
+    /// Rejects a different context before scratch/output writes. Prepared CBS,
+    /// one-hot and MVB state depends on the context, not individual BR controls.
+    /// Classic/sparse resources may be interchanged only when actual secrets
+    /// match; pointer equality does not establish that secret identity.
+    pub(crate) fn check_context(&self, context: &TfheContext<T, Table, LM>) {
+        assert!(
+            core::ptr::eq(self.context, context),
+            "bootstrap resources use a different context binding"
+        );
     }
 
     /// Writes the coefficient-domain BR result under the accumulator secret.
@@ -95,34 +99,6 @@ where
             &mut self.workspace,
             parameters,
             self.context.table(),
-        );
-    }
-}
-
-/// Read-only binding retained by CBS/one-hot/MVB while common buffers are borrowed
-/// only during execution. Prepared LUTs and buffers depend on the context, not
-/// individual BR controls. Classic/sparse resources may therefore be interchanged
-/// when their actual secrets match; the context check cannot prove that identity.
-pub(crate) struct BootstrapBinding<'a, T, Table, LM>
-where
-    T: FheUint,
-    Table: MonomialNttTable<ValueT = T>,
-    LM: primus_reduce::RingContext<T>,
-{
-    pub(crate) context: &'a TfheContext<T, Table, LM>,
-}
-
-impl<T, Table, LM> BootstrapBinding<'_, T, Table, LM>
-where
-    T: FheUint,
-    Table: MonomialNttTable<ValueT = T>,
-    LM: primus_reduce::RingContext<T>,
-{
-    /// Reject a different geometry/transform context before any scratch/output writes.
-    pub(crate) fn check(&self, resources: &BootstrapResources<'_, T, Table, LM>) {
-        assert!(
-            core::ptr::eq(self.context, resources.context),
-            "bootstrap resources use a different context binding"
         );
     }
 }

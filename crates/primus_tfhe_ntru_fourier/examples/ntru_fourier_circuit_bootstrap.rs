@@ -15,8 +15,9 @@ use primus_modulus::{NativeModulus, PowOf2Modulus};
 use primus_ntru::SecretKeyDistr;
 use primus_poly::PolyLength;
 use primus_tfhe_ntru_fourier::{
-    CircuitBootstrapConfig, CircuitBootstrapEvaluator, CircuitBootstrapParameters,
-    DecompositionConfig, KeyGenerator, TfheConfig, TfheContext, TfheParameters,
+    BlindRotationConfig, CircuitBootstrapConfig, CircuitBootstrapEvaluator,
+    CircuitBootstrapParameters, DecompositionConfig, KeyGenerator, TfheConfig, TfheContext,
+    TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -108,12 +109,17 @@ fn main() {
     let mut rng = StdRng::seed_from_u64(42);
     let mut generator = KeyGenerator::new(&context);
     let client_key = generator.try_generate_client_key(&mut rng).unwrap();
-    let blind_rotation_key = if SPARSE {
-        generator.try_generate_sparse_blind_rotation_key(&client_key, 3, 64, &mut rng)
+    let blind_rotation = if SPARSE {
+        BlindRotationConfig::Sparse {
+            copy_count: 3,
+            bucket_count: 64,
+        }
     } else {
-        generator.try_generate_classic_blind_rotation_key(&client_key, &mut rng)
-    }
-    .unwrap();
+        BlindRotationConfig::Classic
+    };
+    let blind_rotation_key = generator
+        .try_generate_blind_rotation_key(&client_key, blind_rotation, &mut rng)
+        .unwrap();
     let circuit_parameters =
         CircuitBootstrapParameters::try_from_config(context.parameters(), circuit_config())
             .unwrap();

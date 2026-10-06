@@ -104,7 +104,7 @@ where
     Table: MonomialNttTable<ValueT = T>,
     LM: primus_reduce::RingContext<T>,
 {
-    binding: crate::bootstrap::BootstrapBinding<'a, T, Table, LM>,
+    context: &'a TfheContext<T, Table, LM>,
     shared_rotation: NttNtru<Vec<T>>,
 }
 
@@ -121,7 +121,7 @@ where
     pub fn new(evaluator: &Evaluator<'a, T, Table, LM>) -> Self {
         let context = evaluator.resources.context;
         Self {
-            binding: evaluator.resources.binding(),
+            context,
             shared_rotation: NttNtru::zero(context.parameters().poly_length().get()),
         }
     }
@@ -137,7 +137,7 @@ where
         lookup_table: &NttFactorizedLookupTable<'_, T, Table, LM>,
         evaluator: &mut Evaluator<'a, T, Table, LM>,
     ) -> Vec<LweCiphertext<T>> {
-        let context = self.binding.context;
+        let context = self.context;
         let dimension = context.parameters().external_lwe_dimension();
         let mut outputs = (0..lookup_table.output_count())
             .map(|_| LweCiphertext::zero(dimension.get()))
@@ -180,11 +180,11 @@ where
         outputs: &mut [LweCiphertext<T>],
         evaluator: &mut Evaluator<'a, T, Table, LM>,
     ) {
-        self.binding.check(&evaluator.resources);
+        evaluator.resources.check_context(self.context);
         self.check_io(input.as_view(), lookup_table, outputs);
         self.prepare_shared_rotation(input, &lookup_table.common_polynomial, evaluator);
 
-        let n = self.binding.context.parameters().poly_length().get();
+        let n = self.context.parameters().poly_length().get();
         let batch_size = evaluator.batch_return.batch_capacity();
         let mut factors = NttPolynomialIter::new(&lookup_table.factors, n);
         for outputs in outputs.chunks_mut(batch_size) {
@@ -207,10 +207,10 @@ where
         outputs: &[LweCiphertext<T>],
     ) {
         assert!(
-            core::ptr::eq(self.binding.context, lookup_table.context),
+            core::ptr::eq(self.context, lookup_table.context),
             "MVB program was prepared by a different context"
         );
-        let parameters = self.binding.context.parameters();
+        let parameters = self.context.parameters();
         let dimension = parameters.external_lwe_dimension();
         assert_eq!(
             input.dimension(),

@@ -16,30 +16,20 @@ pub struct CircuitBootstrapKey<T: FheUint> {
     scheme_switch: NttNtruSchemeSwitchKey<T>,
 }
 
-// Validated CBS material and its complete output basis. BR controls belong to
-// the shared resources; NTRU scheme switching cannot substitute another basis.
-pub(super) struct CircuitBootstrapBinding<'a, T: FheUint> {
-    pub(super) key: &'a CircuitBootstrapKey<T>,
-    pub(super) parameters: &'a CircuitBootstrapParameters<T>,
-}
-
-impl<'a, T: FheUint> CircuitBootstrapBinding<'a, T> {
-    // Check CBS parameters before online use; both BR algorithms produce the
-    // same accumulator representation for trace and scheme switching.
-    // Receiving material and checking its geometry do not prove actual key identity.
-    pub(super) fn try_new<LM: primus_reduce::RingContext<T>>(
+impl<T: FheUint> CircuitBootstrapKey<T> {
+    /// Checks the key's fixed CBS parameters before preparing LUTs or buffers.
+    /// NTRU cannot substitute a different output basis; compatibility does not
+    /// establish actual secret or transform identity.
+    pub(super) fn check_parameters<LM: primus_reduce::RingContext<T>>(
+        &self,
         tfhe: &crate::TfheParameters<T, LM>,
-        key: &'a CircuitBootstrapKey<T>,
-    ) -> Result<Self, crate::TfheEvaluationError> {
-        let parameters = key.parameters();
-        if !parameters.is_compatible(tfhe) {
+    ) -> Result<(), crate::TfheEvaluationError> {
+        if !self.parameters.is_compatible(tfhe) {
             return Err(crate::TfheEvaluationError::IncompatibleCircuitBootstrapParameters);
         }
-        Ok(Self { key, parameters })
+        Ok(())
     }
-}
 
-impl<T: FheUint> CircuitBootstrapKey<T> {
     /// Returns the CBS parameters selected when this material was generated.
     #[must_use]
     pub fn parameters(&self) -> &CircuitBootstrapParameters<T> {
