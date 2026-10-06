@@ -237,7 +237,7 @@ FFT engine to convert its one reusable coefficient batch immediately. Pairing
 adds no selector scratch and no online allocation.
 
 Measured complete-evaluation results and requested retained/peak memory are in
-the [sparse pair report](../../guides/development/sparse-bootstrap-measurements.md#ntru-lut-paired-blind-rotation).
+the [sparse pair report](../../guides/performance/sparse-layout-and-batching.md#ntru-lut-paired-blind-rotation).
 
 ## Benchmark fixture
 
@@ -333,9 +333,9 @@ taskset -c 0 cargo +nightly bench -p primus_tfhe_ntru_lut --bench pipeline --fea
 Criterion defaults apply unless the command overrides them. `--list` performs
 no key generation; filters initialize only matching fixtures. Build before
 measurement, fix affinity and avoid concurrent benchmark/compiler work.
-Record exact IDs and compiler/features. The [earlier measurements](../../guides/development/tfhe-benchmarks.md) use the
+Record exact IDs and compiler/features. The [earlier measurements](../../guides/performance/tfhe-baseline.md) use the
 same public polynomial but uniform-binary classic keys and a different input RNG.
 The fixed-weight classic/sparse measurements are in the
-[sparse report](../../guides/development/sparse-bootstrap-measurements.md#ntru-high-precision-lookup).
+[sparse report](../../guides/performance/sparse-baseline.md#ntru-high-precision-lookup).
 Historical c7/d5/o3, n64, all-sigma0.7 results in Git also have different table
 sizes and key work and are not latency comparison baselines.

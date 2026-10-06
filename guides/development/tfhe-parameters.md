@@ -4,7 +4,7 @@ These profiles are reproducible functional and performance fixtures. They have n
 
 Validation and benchmark constructors live in [test-support parameters](../../test-support/tfhe/src/parameters/mod.rs), split into [GLWE](../../test-support/tfhe/src/parameters/glwe.rs) and [NTRU](../../test-support/tfhe/src/parameters/ntru.rs). They use the existing family parameter types; no backend abstraction or production preset registry is added. Ordinary integration tests keep small parameters. The [validation executable](../../test-support/tfhe/examples/validate_parameters.rs) is an explicitly invoked numerical diagnostic.
 
-The opt-in GLWE NTT [paper comparison](sparse-paper-comparison.md) defines its
+The opt-in GLWE NTT [paper comparison](../performance/sparse-paper-comparison.md) defines its
 Table-3-shaped profiles beside that benchmark. It supplies real small-q inputs
 through a benchmark-only adapter and does not replace these shared profiles,
 the parameter-validation matrix, or ordinary test parameters.
@@ -94,7 +94,7 @@ BR, trace and scheme-switch use full-length base 2^2 for u32 and base 2^8 for u6
 | u64 Q50 | (8,6;2) | (8,3;26) | 2^26 |
 | u64 native | (8,8;0) | (8,3;40) | 2^40 |
 
-The lookup pipeline benchmark also pairs classic/sparse at n800/h32 with this circuit profile, c8/d5/o8 and independently seeded input. A sparse table with public lifts uses independent NLEV[1], selecting BR's basis and sigma 0.7 in that fixture; tables without lifts generate none. Complete-request timings, retained material and returned phase residuals are in the [sparse report](sparse-bootstrap-measurements.md#ntru-high-precision-lookup).
+The lookup pipeline benchmark also pairs classic/sparse at n800/h32 with this circuit profile, c8/d5/o8 and independently seeded input. A sparse table with public lifts uses independent NLEV[1], selecting BR's basis and sigma 0.7 in that fixture; tables without lifts generate none. Complete-request timings, retained material and returned phase residuals are in the [sparse report](../performance/sparse-baseline.md#ntru-high-precision-lookup).
 
 The standalone parameter diagnostic uses M=4, c=7 input chunks, d=5 coefficient chunks, o=3 output chunks. Thus M^d=N=1024 and the 14-bit input selects among 16 public polynomials per output. This exercises public lifting, a further encrypted CMux layer, five aggregate rotations, and Q→q24 return. Output width is independent of input width. The evaluator has no new algorithmic restrictions; these are the dimensions that were numerically validated.
 
@@ -154,7 +154,7 @@ families each have `pbs`, `sparse_pbs`, `mvb` and `circuit_bootstrap`, alongside
 public LUT compilation and the complete high-precision pipeline. Each retained
 workflow covers both words; Fourier covers both FFT engines and GLWE both orders.
 The [benchmark guide](../../crates/primus_tfhe/BENCHMARKS.md) maps targets to
-operations, geometry and timing boundaries. The [measurement record](tfhe-benchmarks.md)
+operations, geometry and timing boundaries. The [measurement record](../performance/tfhe-baseline.md)
 tracks the current baseline and the effect of removing eager fixture setup.
 
 The ternary targets were merged into dense PBS; duplicate ManyLUT comparisons

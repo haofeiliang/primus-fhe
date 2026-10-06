@@ -217,3 +217,7 @@ Concrete storage choices, serial reuse and measured memory/latency tradeoffs are
 ## Validate the relevant contract
 
 Follow [AGENTS.md](../../AGENTS.md) and the [testing guide](testing.md). Ordinary tests, including encrypted end-to-end cases, favor small parameters that preserve the intended contract; keep larger cases only where their path or regression requires them. Compile/lint all targets, execute lib/tests separately from doctests, and run selected Criterion smoke fixtures separately from both ordinary tests and performance sampling.
+
+## Performance decisions
+
+For measured tradeoffs and their limits, use the [performance guide](../performance/README.md). Current API and workspace contracts remain here; historical measurements and rejected candidates have their own evidence reports.

@@ -1,5 +1,7 @@
 # Sparse parameter candidates in complete consumers
 
+[Performance decisions and measurement method](README.md)
+
 Measured on 2026-10-05 with numerical source `55de85cb`, following the
 [copy/bucket](sparse-parameter-measurements.md) and
 [decomposition](sparse-decomposition-measurements.md) studies. This step validates

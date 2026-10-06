@@ -1,5 +1,7 @@
 # Sparse PBS comparison with ePrint 2026/1730
 
+[Performance decisions and measurement method](README.md)
+
 The GLWE NTT `sparse_pbs` benchmark has separate `paper_2026_1730` IDs.
 They compare the current implementation using the geometry of Table 3 in
 [New Techniques for Fast and Shallow FHE Bootstrapping and Beyond](https://eprint.iacr.org/2026/1730).
@@ -677,7 +679,7 @@ there is no new production API, Cargo feature or C++ dependency.
 After removal, formatting, all-targets compilation, strict all-targets Clippy
 and the five ordinary paper-profile sparse-BR smoke cases pass.
 
-The subsequent [compact-layout reduction study](sparse-compact-reduction-measurements.md)
+The subsequent [compact-layout reduction study](sparse-arithmetic.md#compact-sparse-bucket-reduction)
 isolates bucket-final arithmetic while keeping Primus NTT and pointwise products
 unchanged. A local Rust u64 vector reduction improves complete PBS means by
 1.5%–6.0% on the measured CPU/profile pairs, without extra scratch or a HEXL

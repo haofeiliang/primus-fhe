@@ -1,5 +1,7 @@
 # Sparse decomposition choices at fixed copies, buckets and noise
 
+[Performance decisions and measurement method](README.md)
+
 Measured on 2026-10-05, using numerical source `55de85cb`. This follows the
 [fixed-decomposition r/B screen](sparse-parameter-measurements.md): r=2, B=2h
 is the working candidate, with the original r=3, B=h+3 retained as a control.

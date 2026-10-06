@@ -214,3 +214,7 @@ GLWE 参数分别由[共享模数/采样状态](../../crates/primus_glwe/src/par
 ## 验证对应契约
 
 遵循 [AGENTS.md](../../AGENTS.md) 和[测试指南](testing.md)。普通测试（含密文端到端）优先使用能保留目标契约的小参数，只有特定路径或回归需要时才保留大尺寸案例。All-targets 用于编译/lint；lib/tests 与 doctest 分开执行，选定的 Criterion smoke 与普通测试、真实性能采样分别运行。
+
+## 性能取舍
+
+性能选择、适用范围和复现方法见[性能指南](../performance/README.zh_CN.md)。当前 API 和工作区契约保留在开发指南；历史测量及未采纳候选归入对应证据报告。

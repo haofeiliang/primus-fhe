@@ -21,7 +21,7 @@ fixtures, not assessed security parameters or equal-security comparisons.
 
 CBS and NTRU one-hot fix the client seed and give input encryption its own seed, so both
 BR variants receive identical fixed-weight secrets, input ciphertexts and LUTs.
-The current [sparse measurement report](../../guides/development/sparse-bootstrap-measurements.md)
+The current [sparse measurement report](../../guides/performance/sparse-baseline.md)
 records paired latency, stage costs, setup and memory accounting.
 
 GLWE NTT additionally provides `paper_2026_1730` IDs. These use q=512/4096,
@@ -31,7 +31,7 @@ same 28-bit prime. The 54-bit `padded_func3` case uses u64 and one padded PBS,
 not full-domain arbitrary-function evaluation. `complete_ring_return` includes
 Primus's ring KS return at Q; `blind_rotation` excludes that return. The original
 fixed-weight IDs remain regression diagnostics. See the
-[paper comparison](../../guides/development/sparse-paper-comparison.md) for
+[paper comparison](../../guides/performance/sparse-paper-comparison.md) for
 exact parameters, the benchmark-only q-to-Q adapter, full measurement commands,
 and the limits of comparison with OpenFHE. No paper safety claim is inherited.
 
@@ -169,7 +169,7 @@ taskset -c 0 cargo +nightly bench -p primus_tfhe_ntru_lut --bench pipeline --fea
   '/evaluate$' --sample-size 20 --warm-up-time 0.5 --measurement-time 2 --noplot
 ```
 
-The [current measurement record](../../guides/development/tfhe-benchmarks.md)
+The [current measurement record](../../guides/performance/tfhe-baseline.md)
 records the baseline and storage experiment. Earlier n16/n64 lookup or
 q=Q/base9 NTRU results have different work and cannot be divided by these
 results to claim an implementation speedup or regression.

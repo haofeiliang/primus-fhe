@@ -1,5 +1,7 @@
 # Sparse copy and bucket selection at fixed decomposition
 
+[Performance decisions and measurement method](README.md)
+
 Measured on 2026-10-05. This experiment starts at `55de85cb` and changes only
 the sparse copy count r and bucket count B. It uses the existing GLWE NTT NAND / padded-function
 [paper profiles](sparse-paper-comparison.md#parameters-and-comparison-boundary),

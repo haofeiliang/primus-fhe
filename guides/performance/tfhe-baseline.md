@@ -1,12 +1,14 @@
 # TFHE benchmark baseline and storage check
 
+[Performance decisions and measurement method](README.md)
+
 The [workload guide](../../crates/primus_tfhe/BENCHMARKS.md) owns target purposes
-and timing boundaries; the [parameter matrix](tfhe-parameters.md) owns the
+and timing boundaries; the [parameter matrix](../development/tfhe-parameters.md) owns the
 numerical profiles. This report records the current measurements, not production
 security recommendations or a performance comparison between equal-security systems.
 
 For the newer matched classic/sparse PBS and CBS comparison, see the
-[2026-10-04 sparse baseline](sparse-bootstrap-measurements.md). It also rechecks
+[2026-10-04 sparse baseline](sparse-baseline.md). It also rechecks
 the CPU-dependent CBS regression and distinguishes retained heap from requested
 live-heap peak. The cleanup measurements below remain historical.
 
