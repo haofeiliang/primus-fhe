@@ -14,6 +14,8 @@ workspace 内的 crate 通常应启用 `primus_modulus` 的 `derive` feature，�
 primus_modulus = { path = "../primus_modulus", features = ["derive"] }
 ```
 
+生成代码使用绝对路径 `::primus_modulus`，应保留该依赖名称；若在 Cargo 中重命名，需在 crate 根提供名为 `primus_modulus` 的别名。仅依赖 `primus_barrett_derive` 不会提供展开代码所引用的算术实现。
+
 ## 示例
 
 ```rust

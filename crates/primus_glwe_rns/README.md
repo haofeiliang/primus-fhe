@@ -101,6 +101,15 @@ evaluator.automorphism_to(&ciphertext, &mut output);
 
 `CrtGlweTraceEvaluator` / `DcrtGlweTraceEvaluator` expose `trace_to(&input, &mut output)` and return the ordinary ring trace, whose plaintext is `N*m[0]`. `DcrtGlweRevTraceEvaluator` exposes the same method but reverses the automorphism order and multiplies by `2^-1 mod q_i` at each step, retaining normalized output `m[0]`. Inputs remain unchanged; output and internal scratch are overwritten.
 
+Reverse trace keeps the same Q basis; modular `inv2` is not modulus switching or
+rounded halving. The full sequence projects the input message and input error
+onto their constant coefficients. Each automorphism/key-switch error undergoes
+only the remaining projections, so late errors can survive at nonconstant
+positions. Budget these errors for the chosen secret, basis and message scale;
+the native-torus variance bound does not follow from the absence of rounding.
+See the [phase and error contract](src/dcrt/rev_trace.rs) and the corresponding
+[single-modulus contract](../primus_glwe/src/trace/ntt_operations.rs).
+
 For either CRT or DCRT, construct `*GlweExpandCoeffEvaluator::new(&key, &domain)` for serial use or `*GlweExpandCoeffParallelEvaluator::new(&key, &domain, worker_count)` for a preallocated parallel pool. Both offer `expand_coefficients_to` (exactly N outputs) and `expand_partial_coefficients_to` (a power-of-two output count in 1..=N). Output j encrypts coefficient m[j], with no extra count factor. For partial expansion, omitted plaintext coefficients must be zero to obtain constant-polynomial outputs.
 
 Parallel calls use Rayon; initialize its worker pool before evaluation, and set `worker_count` to cover its maximum simultaneous workers. Each call borrows the evaluator mutably, preventing concurrent calls from competing for the same pool. Guards return scratch on completion or worker unwind; an undersized pool can panic after partial output writes. Serial evaluators allocate only one workspace. Repeated evaluations reuse all arithmetic scratch; neither path creates replacement workspaces online.

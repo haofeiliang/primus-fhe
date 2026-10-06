@@ -18,10 +18,10 @@ pub use primitive::UintNttTable;
 ///
 /// # Slice length contract
 ///
-/// Every input or output slice must contain exactly [`Self::poly_length`]
-/// coefficients. Implementations must enforce this contract in release builds
-/// before mutating the slice or entering an unchecked transform kernel.
-/// [`Self::poly_length`] must be a power of two of at least two.
+/// Every input or output slice must contain exactly `self.poly_length().get()`
+/// coefficients. [`Self::poly_length`] returns a [`PolyLength`], which establishes
+/// the supported power-of-two geometry. Implementations must enforce the exact
+/// slice length in release builds before writes or unchecked transform kernels.
 pub trait NttTable: Sized + Send + Sync {
     /// The value type.
     type ValueT: PrimitiveRoot;

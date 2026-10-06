@@ -148,7 +148,7 @@ PBS trait、四后端、Boolean 门、双输入打包、CBS、one-hot 与 MVB �
 | CBS output/trace/SS basis、布局和各自 noise | `CircuitBootstrapParameters`；scheme-switch key 继续绑定完整 output basis |
 | Rounded 输入 t/q、默认或独立输出 t/Q | client/compiler 绑定；输入 q 不符拒绝；默认输出 codec 在 Q 无法构造时返回 `OutputEncoding` |
 | CBS 输入域和 ManyLUT 容量 | CBS LUT 编译/绑定；独立 CBS 参数只拥有 Q，输入 q 由后端绑定检查 |
-| one-hot 的 t=2M、W、stride、非空 guard 与存储长度 | `OneHotLookupTable::try_new(tfhe, cbs, &input_codec)`；后端仍限制 classic binary/ternary |
+| one-hot 的 t=2M、W、stride、非空 guard 与存储长度 | `OneHotLookupTable::try_new(tfhe, cbs, &input_codec)`；后端支持 classic binary/ternary 与 sparse fixed-weight binary |
 | 高精度 chunk 位宽、数量、`M^d≤N`、表枚举和存储长度 | `HighPrecisionLookupTable::try_new(poly_length, ring_modulus, &input_codec, config, function)`；表保存 t/q/Q，evaluator 按表中 t 绑定 one-hot 并验证容量 |
 | 在线输入的实际编码和噪声、返回输出的 q 域 decoder | 调用方契约；表在 Q 编码，Q→q 仍为最近舍入，不重新编码 |
 
@@ -222,10 +222,12 @@ GLWE Fourier 的公共资源保存唯一 FFT engine，KS、BR、trace、scheme s
 | --- | --- | --- |
 | 普通 CBS → CMux | Rounded LWE → gadget-scaled identity ManyLUT 的 BR → reverse-trace 系数投影 → GLev/NLev → scheme switch → GGSW/NGSW → CMux | CBS 参数检查 output basis 模数及 trace/SS 环布局；输入 codec、编程域和 ManyLUT 容量在 evaluator 绑定及其 LUT 编译时检查；CMux 控制必须表示 0/1，输出为 gadget 尺度 |
 | Factorized MVB | 公共 common polynomial 和 factors → 一次 BR → 每输出乘 factor → 按所属 PBS 返回链路输出 LWE | 共享编译器约束固定 Scaled 输出；后端准备变换 factors 并绑定 context 身份；factor 会放大共用 BR 噪声，NTRU 返回还会缩放 Q→q |
-| NTRU one-hot CBS | t=2M 的 chunk → packed LUT BR → 各 selector 的偏移/投影 → NLEV，可选 scheme switch 成 NGSW | 使用已有 CBS key/output basis；`W=next_power_of_two(L)`，要求 `2MW≤N`；guard 在 one-hot LUT 上，classic binary/ternary 由后端支持检查限定 |
+| NTRU one-hot CBS | t=2M 的 chunk → packed LUT BR → 各 selector 的偏移/投影 → NLEV，可选 scheme switch 成 NGSW | 使用已有 CBS key/output basis；`W=next_power_of_two(L)`，要求 `2MW≤N`；guard 在 one-hot LUT 上；classic binary/ternary 与 sparse fixed-weight binary 共用投影流程 |
 | NTRU 高精度 LUT | 每个输入 chunk 一次 one-hot → 高 c-d 个 chunk 选择多项式 → 低 d 个 chunk 聚合 `NGSW[X^(-m_i*M^i)]` 并旋转 → 独立 LWE 返回 | 编译器检查 chunk、`M^d≤N`、枚举/存储溢出及输出 digit；evaluator 绑定 N/q/Q、表中 t 的 one-hot 几何、CBS 能力及资源；在线入口在写入前检查全部 chunk 数和 LWE 维数 |
 
 CBS 输出保留累加环秘密，不走 ordinary PBS 的返回链路；GLWE `KeyswitchBootstrap` 仍在 BR 前处理输入 KS。普通 CBS 投影的是可能有非零尾部的 ManyLUT 累加器，不能直接替换为只适用于特定稀疏消息的 prefix expansion。
+
+GLWE 的 NTT/Fourier 后端在两种 PBS 顺序下都支持 classic/sparse PBS、ManyLUT、MVB 和普通 CBS。NTRU 的 NTT/Fourier 后端还支持 one-hot 和高精度 LUT；sparse 查表需要公开提升时，由调用方提供独立 `NLEV[1]` 材料，没有提升节点则不需要。GLWE one-hot/高精度后端、sparse ternary、multi-bit BR 和 RNS hoisting 尚未实现；现有参数测量不代表这些能力或全参数覆盖。
 
 NTT 与 native Fourier 的 reverse trace 归一化契约不同：前者使用模逆除二，后者包含系数减半的舍入误差。NTRU scheme-switch key 绑定完整 output basis，GLWE 的 key 绑定 output layout，可在相同输出层数等兼容条件下复用不同 output basis；这解释了两家族 CBS 绑定接口的差别。
 

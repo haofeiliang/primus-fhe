@@ -43,6 +43,8 @@ assert_eq!(output, [11, 6, 50]);
 
 Checked constructors validate their documented range. `CompactModulus(value)` and `UintModulus(value)` remain available when an already-validated caller intentionally avoids a repeated check. Likewise, `BarrettModulus::new_unchecked`, `BarrettModulus::from_parts`, and `SimdBarrettModulus::from_parts` require the caller to uphold their documented reciprocal and range invariants.
 
+`CompactModulus` and `UintModulus` also expose their stored value as `.0`. Direct construction and field updates must preserve the ranges above; arithmetic methods do not generally revalidate them.
+
 ## Features
 
 - `derive` re-exports the `Barrett` derive macro for compile-time constant moduli. See [`primus_barrett_derive`](../primus_barrett_derive/README.md).

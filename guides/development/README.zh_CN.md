@@ -35,7 +35,7 @@ Raw 系数、NTT、Fourier 和 CRT/DCRT 多项式的 `len()` / `is_empty()` 统�
 
 [PolyLength](../../crates/primus_poly/src/poly_length.rs) 属于 `primus_poly`，集中检查 FHE 共用的 `32..=2^17` 二次幂范围。`get()`、`log_n()`、`fourier_poly_len()` 分别返回 `N`、`log2(N)` 和 `N/2` 个复数元素。GLWE/NTRU 参数、checked size、工作区、公共 TFHE LUT 和 NTT/FFT 表直接传递同一个类型，不重复检查上界。
 
-该范围保证 `2N` 可由 `usize` 表示；组合存储长度仍由拥有布局的边界检查。FFT 构造直接接受该支持范围；NTT 保留模数、单位根和 degree 的条件。顶层配置仍可接收整数 `N`；raw 缓冲区、批次数量及数值内核使用整数，依赖调用方满足布局契约。
+该范围保证 `2N` 可由 `usize` 表示；组合存储长度仍由拥有布局的边界检查。FFT 构造直接接受该支持范围；NTT 保留模数、单位根和 degree 的条件。两个 TFHE 家族的 `TfheConfig` 都接收 `PolyLength`；raw 缓冲区、批次数量及数值内核使用整数，依赖调用方满足布局契约。
 
 lattice 的 `LweDimension` 和 `GlweDimension` 检查正的 mask 计数及可表示的含 body 计数；`ciphertext_len()` 返回 `n+1`，`component_count()` 返回 `k+1`。`GlweSize` 保存 GLWE 几何尺寸和扁平长度，通过 `LweDimension::from(glwe_size)` 显式派生经过验证的 `kN`；NTRU 提取使用 `LweDimension::from(poly_length)`。原始切片保留整数维数，允许零维。
 

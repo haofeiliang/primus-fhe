@@ -6,6 +6,15 @@ mod slice;
 /// An explicit modulus with a restricted range for compact arithmetic kernels.
 ///
 /// This context stores only the modulus and does not precompute reduction data.
+/// [`Self::new`] checks the range; tuple construction and writes to the public
+/// field do not.
+///
+/// # Correctness
+///
+/// Keep `1 < value < 2^(T::BITS - 2)`, including after direct construction or
+/// field updates. The two spare high bits are required by the compact kernels.
+/// Arithmetic methods rely on this invariant and their operand range contracts;
+/// they do not generally recheck the modulus.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct CompactModulus<T>(pub T);

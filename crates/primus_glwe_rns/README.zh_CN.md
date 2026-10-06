@@ -101,6 +101,8 @@ evaluator.automorphism_to(&ciphertext, &mut output);
 
 `CrtGlweTraceEvaluator` / `DcrtGlweTraceEvaluator` 提供 `trace_to(&input, &mut output)`，普通环 trace 的明文结果为 `N*m[0]`。`DcrtGlweRevTraceEvaluator` 提供同名方法，但反转自同构顺序，每步乘 `2^-1 mod q_i`，保持归一化结果 `m[0]`。输入不变，输出及内部 scratch 被覆盖。
 
+Reverse trace 保持同一 Q 基；模逆 `inv2` 不是 modulus switch 或舍入减半。完整序列将输入消息和输入误差投影到常数项；每次自同构/key switch 引入的误差只经过剩余投影，因此较晚引入的误差可以保留在非常数位置。须按秘密、basis 和消息尺度预算这些误差，不能从“无舍入”直接推出 native-torus 方差界。详见[相位与误差契约](src/dcrt/rev_trace.rs)及对应的[单模数契约](../primus_glwe/src/trace/ntt_operations.rs)。
+
 CRT 和 DCRT 均通过 `*GlweExpandCoeffEvaluator::new(&key, &domain)` 构造串行 evaluator，通过 `*GlweExpandCoeffParallelEvaluator::new(&key, &domain, worker_count)` 构造持有预分配池的并行 evaluator。两者均提供 `expand_coefficients_to`（恰好 N 个输出）和 `expand_partial_coefficients_to`（输出数为 1..=N 内的二次幂）。输出 j 加密系数 m[j]，无额外 count 倍数。部分展开若要得到常数多项式输出，被省略的明文系数必须为零。
 
 并行调用使用 Rayon；求值前先初始化线程池，`worker_count` 必须覆盖最多同时工作的线程数。调用可变借用 evaluator，避免多个调用争抢同一个池。Guard 在线程完成或 unwind 时归还 scratch；池容量不足可能在部分输出已写入后 panic。串行 evaluator 只分配一份工作区。重复求值复用全部算术 scratch；两条路径均不在线创建替代工作区。

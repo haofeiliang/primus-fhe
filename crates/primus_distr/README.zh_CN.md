@@ -95,6 +95,8 @@ CRT batch 使用 modulus-major 布局。对于多项式长度 `N` 和分量模�
 
 对于非空 CRT batch，调用方必须提供非零多项式长度，并保证输出长度严格等于多项式 长度乘以分量数。重复执行的底层路径使用 debug-only shape 诊断；release 调用方必须在 拥有相应契约的参数或 scheme 边界建立布局不变量。
 
+CRT uniform-binary helper 必须有至少一个非空块，不支持空输出。`_to` 版本在 `length == 0` 或输出不足一个块时 panic，不完整的尾块则保持原样。分配版本要求长度与分量数均非零，且乘积可由 `usize` 表示。
+
 CRT Gaussian helper 接收 signed distribution 和原始模数值，但不会验证每个模数能否编码 分布的完整截断 support。对于标准差为 `sigma`、tail cut 为 `tau` 的 sampler，每个模数 必须大于 `max(1, floor(sigma * tau))`；facade 使用 `tau = 12`。
 
 ## 统计诊断

@@ -35,7 +35,7 @@ Raw coefficient, NTT, Fourier and CRT/DCRT polynomials expose `len()` / `is_empt
 
 [PolyLength](../../crates/primus_poly/src/poly_length.rs) belongs to `primus_poly` and centrally checks the shared FHE power-of-two range `32..=2^17`. `get()`, `log_n()` and `fourier_poly_len()` return `N`, `log2(N)` and `N/2` complex elements. GLWE/NTRU parameters, checked sizes, workspaces, shared TFHE LUTs and NTT/FFT tables pass the same type directly without repeating the upper-bound check.
 
-This range guarantees that `2N` fits in `usize`; combined storage lengths remain checked by the boundary owning the layout. FFT construction directly accepts the supported range; NTT retains its modulus, root and degree conditions. Top-level configuration may still accept integer `N`; raw buffers, batch counts and numerical kernels use integers and rely on their caller layout contracts.
+This range guarantees that `2N` fits in `usize`; combined storage lengths remain checked by the boundary owning the layout. FFT construction directly accepts the supported range; NTT retains its modulus, root and degree conditions. Both TFHE families' `TfheConfig` take `PolyLength`; raw buffers, batch counts and numerical kernels use integers and rely on their caller layout contracts.
 
 `LweDimension` and `GlweDimension` from lattice check positive mask counts and representable body-inclusive counts; `ciphertext_len()` gives `n+1` and `component_count()` gives `k+1`. `GlweSize` stores GLWE geometry and flattened lengths; `LweDimension::from(glwe_size)` explicitly derives checked `kN`. NTRU extraction uses `LweDimension::from(poly_length)`. Raw slices keep integer dimensions and may have dimension zero.
 

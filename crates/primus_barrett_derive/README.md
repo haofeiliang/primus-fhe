@@ -14,6 +14,11 @@ Workspace crates should normally enable the `derive` feature of `primus_modulus`
 primus_modulus = { path = "../primus_modulus", features = ["derive"] }
 ```
 
+Generated code uses absolute `::primus_modulus` paths. Keep that dependency name;
+if Cargo renames it, provide a crate-root alias named `primus_modulus`. Depending
+only on `primus_barrett_derive` does not provide the arithmetic implementation
+referenced by the expansion.
+
 ## Example
 
 ```rust

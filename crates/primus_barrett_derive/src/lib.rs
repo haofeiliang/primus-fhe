@@ -22,6 +22,11 @@ struct BarrettModulusInput {
 /// unsigned integer type (`u16`, `u32`, or `u64`) and a modulus satisfying
 /// `1 < value < 2^(BITS - 2)`. Invalid inputs produce a compile-time error.
 ///
+/// Generated paths start with `::primus_modulus`. The consuming crate must make
+/// that dependency available under its original name, normally by enabling its
+/// `derive` feature. A renamed dependency needs a crate-root alias named
+/// `primus_modulus`; depending only on this procedural-macro crate is insufficient.
+///
 /// The macro generates associated `value()` and `ratio()` functions together
 /// with the scalar, slice, lazy-reduction, inverse, and dot-product traits used
 /// by `primus_modulus`. It also implements `Copy`, `Clone`, `PartialEq`, `Eq`,

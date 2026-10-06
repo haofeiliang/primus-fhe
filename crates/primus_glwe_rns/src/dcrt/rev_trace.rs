@@ -88,7 +88,7 @@ impl<T: FheUint> DcrtGlweRevTraceKey<T> {
         result.as_mut().copy_from_slice(ciphertext.as_ref());
 
         for auto_key in self.auto_keys.iter() {
-            // Exact ModSwitch: multiply by 2^{-1} mod q_i (replaces q→q/2 rounding)
+            // Same-modulus normalization by inv2 in every CRT limb; Q is unchanged.
             result.mul_factor_assign(
                 &self.inv_2_residues,
                 poly_length,
@@ -162,25 +162,36 @@ where
         })
     }
 
-    /// RevHomTrace: Amplification-Removing Reverse Homomorphic Trace.
+    /// Applies normalized reverse trace, targeting the constant message `M[0]`.
     ///
-    /// Evaluates the field trace with reversed automorphism order and
-    /// per-iteration exact division by 2, naturally removing the factor N.
+    /// Uses automorphism degrees `2^j + 1` for `j = 1..=log2(N)`. Each step
+    /// multiplies by `2^-1 mod q_i` in every CRT limb before adding its
+    /// automorphic image. The ordered Q basis and ring degree stay unchanged;
+    /// this is neither modulus switching nor rounded integer division.
     ///
-    /// Output encrypts Tr_{K/Q}(M(X)) / N = M_0 (the constant coefficient).
+    /// In coefficient-domain phase notation, a step is
+    /// `phi_j = P_j(phi_(j-1)) + eta_j (mod Q)`, where
+    /// `P_j = (Id + sigma_(2^j+1))/2` uses modular division and `eta_j` is that
+    /// step's automorphism/key-switch error, including decomposition error.
+    /// The complete product of the P maps projects the input message and input
+    /// error to their constant coefficients. Error introduced at step j only
+    /// undergoes the remaining maps, projecting it onto coefficient positions
+    /// divisible by `N/2^j`. Late evaluation error can therefore remain at
+    /// nonconstant positions; the output phase need not be a constant polynomial.
     ///
-    /// Noise variance (Theorem 4): Var(C') <= Var(C) + 4*logN*V_MS + logN*V_Auto,
-    /// improving over the standard O(N^3) bound.
-    /// With exact arithmetic over odd RNS moduli, V_MS = 0, so
-    /// Var(C') <= Var(C) + logN*V_Auto (still O(N log N) when V_Auto = O(N)).
-    ///
-    /// (Alg. 5) <https://eprint.iacr.org/2025/1088>
+    /// Absence of division rounding does not imply the native-torus RevHomTrace
+    /// variance bound. A variance estimate needs an explicit model for the
+    /// centered CRT-lift errors and their correlations under the chosen secret,
+    /// basis and samplers. The same normalization contract applies to
+    /// `primus_glwe::NttGlweTraceKey::apply_reverse_partial_to` (its `ntt` feature).
     ///
     /// The output and reusable internal scratch are overwritten.
     ///
     /// # Correctness
     /// Both ciphertexts must match the domain's complete RNS GLWE layout,
-    /// NTT representation and the key's secret.
+    /// NTT representation and the key's secret. Input residues must be canonical.
+    /// The caller must budget projected input/evaluation errors against the
+    /// message scale, including nonconstant errors used by later operations.
     pub fn trace_to<A: Data<Elem = T>, B: DataMut<Elem = T>>(
         &mut self,
         input: &DcrtGlweCiphertext<A>,

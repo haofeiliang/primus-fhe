@@ -43,6 +43,8 @@ assert_eq!(output, [11, 6, 50]);
 
 带检查的构造器会验证文档规定的范围。当调用方已经完成验证，并且有意避免重复检查时，仍可使用 `CompactModulus(value)` 和 `UintModulus(value)`。同样，调用 `BarrettModulus::new_unchecked`、`BarrettModulus::from_parts` 和 `SimdBarrettModulus::from_parts` 时，调用方必须维持其文档规定的倒数与范围不变量。
 
+`CompactModulus` 和 `UintModulus` 还通过 `.0` 暴露存储值。直接构造和字段更新都必须保持上述范围；算术方法通常不重新验证模数。
+
 ## Feature
 
 - `derive` 重新导出用于编译期常量模数的 `Barrett` derive 宏。参见 [`primus_barrett_derive`](../primus_barrett_derive/README.zh_CN.md)。

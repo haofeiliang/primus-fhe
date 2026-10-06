@@ -95,6 +95,12 @@ CRT batches use modulus-major layout. For polynomial length `N` and component mo
 
 Callers must provide a nonzero polynomial length for nonempty CRT batches and an output whose length exactly matches the polynomial length times the component count. Repeated low-level paths use debug-only shape diagnostics; release callers must establish the layout at the owning parameter or scheme boundary.
 
+The CRT uniform-binary helpers specifically require at least one nonempty block,
+so empty output is unsupported. The `_to` variant panics when `length == 0` or
+the output is shorter than one block; it leaves any incomplete trailing block
+untouched. Its allocating counterpart requires nonzero length/component count
+and a product representable in `usize`.
+
 The CRT Gaussian helpers accept a signed distribution and raw modulus values. They do not validate that every modulus can encode the distribution's complete truncated support. For a sampler constructed with standard deviation `sigma` and tail cut `tau`, each modulus must exceed `max(1, floor(sigma * tau))`; the facade uses `tau = 12`.
 
 ## Statistical diagnostics

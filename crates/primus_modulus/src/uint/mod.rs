@@ -6,6 +6,14 @@ mod slice;
 /// An explicit unsigned-integer modulus for basic modular arithmetic.
 ///
 /// This context stores only the modulus and does not precompute reduction data.
+/// [`Self::new`] checks the range; tuple construction and writes to the public
+/// field do not.
+///
+/// # Correctness
+///
+/// Keep the stored modulus greater than one, including after direct construction
+/// or field updates. Arithmetic methods rely on this invariant and their operand
+/// range contracts; they do not generally recheck the modulus.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct UintModulus<T>(pub T);

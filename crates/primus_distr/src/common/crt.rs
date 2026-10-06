@@ -5,10 +5,16 @@ use rand::distr::{Distribution, Uniform};
 use super::sample_uniform_binary_values_to;
 use crate::SignedDiscreteGaussian;
 
-///
 /// Generates `length` binary values and replicates them across `moduli_count`
 /// slots, producing a vector of `length * moduli_count` elements in
 /// modulus-major CRT order.
+///
+/// # Correctness
+/// The product `length * moduli_count` must fit in `usize`.
+///
+/// # Panics
+/// Panics if `length` or `moduli_count` is zero; this sampler requires at least
+/// one nonempty CRT block.
 pub fn sample_crt_uniform_binary_values<T, R>(
     length: usize,
     moduli_count: usize,
@@ -29,6 +35,13 @@ where
 ///
 /// Samples `length` binary values into the first chunk, then copies them
 /// into each subsequent chunk of `length` elements.
+///
+/// # Correctness
+/// `result.len()` must be a multiple of `length`. A trailing partial block is
+/// left untouched, so callers must establish the complete CRT layout.
+///
+/// # Panics
+/// Panics if `length == 0` or `result.len() < length`. Empty output is not supported.
 pub fn sample_crt_uniform_binary_values_to<T, R>(result: &mut [T], length: usize, rng: &mut R)
 where
     T: FheInt,

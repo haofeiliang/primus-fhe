@@ -9,6 +9,10 @@ use super::CrtPolynomial;
 
 impl<T: FheUint> CrtPolynomial<Vec<T>> {
     /// Generates a CRT polynomial with shared uniform binary coefficients.
+    ///
+    /// Requires nonzero `poly_length` and `moduli_count`, with their product
+    /// fitting in `usize`. Inherits the layout and panic contracts of
+    /// [`primus_distr::sample_crt_uniform_binary_values`].
     #[must_use]
     #[inline]
     pub fn random_uniform_binary<R>(poly_length: usize, moduli_count: usize, rng: &mut R) -> Self
@@ -81,6 +85,10 @@ where
     T: FheUint,
 {
     /// Fills this polynomial with shared uniform binary coefficients.
+    ///
+    /// Storage must contain at least one complete block of nonzero `poly_length`
+    /// and no partial tail. Inherits the layout and panic contracts of
+    /// [`primus_distr::sample_crt_uniform_binary_values_to`]; empty storage is not supported.
     #[inline]
     pub fn random_uniform_binary_assign<R>(&mut self, poly_length: usize, rng: &mut R)
     where
