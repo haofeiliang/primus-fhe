@@ -10,7 +10,10 @@ use primus_tfhe_ntru::CircuitBootstrapParameters;
 use primus_tfhe_ntru_ntt::TfheContext;
 
 use super::aggregate_rotation_control_to;
-use crate::{HighPrecisionLookupTable, lookup_table::selection::SelectorBatches};
+use crate::lookup_table::{
+    Layout,
+    selection::{SelectorBatches, SelectorChunk},
+};
 
 /// Mutable selector buffers only. This view lets a scoped BR projection feed
 /// a chunk's consumer before the next projection reuses the same scratch.
@@ -23,39 +26,39 @@ pub(super) struct SelectorBuffers<'s, T> {
 }
 
 impl<T: FheUint> SelectorBuffers<'_, T> {
-    /// Chooses one chunk's output forms, projects once, then converts or consumes
-    /// those outputs. Low chunks retain only their monomial control; high chunks
-    /// keep full NLEV and/or nonzero NGSW according to pruning. The callback may
+    /// Projects the chunk's required forms once, then converts or consumes those
+    /// outputs. Rotation chunks retain only their monomial control; table chunks
+    /// keep their assigned full NLEV and/or nonzero NGSW batches. The callback may
     /// perform a serial BR or consume an already prepared member of a pair.
     pub fn project_chunk<Table: MonomialNttTable<ValueT = T>, LM: RingContext<T>>(
         &mut self,
-        chunk: usize,
-        table: &HighPrecisionLookupTable<T>,
+        chunk: SelectorChunk,
+        layout: Layout,
         rotation_factors: &[T],
         parameters: &CircuitBootstrapParameters<T, BarrettModulus<T>>,
         context: &TfheContext<T, Table, LM>,
         project: impl FnOnce(Option<&mut [T]>, Option<&mut [T]>),
     ) {
-        let layout = table.layout;
-        let d = layout.config.coefficient_chunk_count;
         let selector_len = parameters.output_nlev_len();
         let full_len = layout.radix * selector_len;
         let nonzero_len = full_len - selector_len;
-        if chunk < d {
-            project(None, Some(&mut *self.nonzero));
-            let factor_len = (layout.radix - 1) * layout.polynomial_length;
-            aggregate_rotation_control_to(
-                self.nonzero,
-                &rotation_factors[chunk * factor_len..(chunk + 1) * factor_len],
-                &mut NttNgswCiphertext::new(
-                    &mut self.rotations[chunk * selector_len..(chunk + 1) * selector_len],
-                ),
-                parameters,
-                context.parameters().accumulator_ntru().cipher_modulus(),
-            );
-            return;
-        }
-        let batches = table.selector_batches_for_chunk(chunk);
+        let batches = match chunk {
+            SelectorChunk::Rotation(index) => {
+                project(None, Some(&mut *self.nonzero));
+                let factor_len = (layout.radix - 1) * layout.polynomial_length;
+                aggregate_rotation_control_to(
+                    self.nonzero,
+                    &rotation_factors[index * factor_len..(index + 1) * factor_len],
+                    &mut NttNgswCiphertext::new(
+                        &mut self.rotations[index * selector_len..(index + 1) * selector_len],
+                    ),
+                    parameters,
+                    context.parameters().accumulator_ntru().cipher_modulus(),
+                );
+                return;
+            }
+            SelectorChunk::Table { batches, .. } => batches,
+        };
         let (nlev, ngsw) = match batches {
             SelectorBatches::Unused => return,
             SelectorBatches::Nlev(_) => {

@@ -20,7 +20,7 @@ use crate::{
     evaluation::{check_io, copy_completed_output_to, selected_ciphertext},
     lookup_table::{
         PolynomialId,
-        selection::{OutputAction, SelectorBatches, TableNodeId, TableOperation},
+        selection::{OutputAction, TableNodeId, TableOperation},
     },
 };
 
@@ -349,16 +349,10 @@ where
     /// traversal; projection and immediate consumption reuse the selector scratch.
     fn prepare_selectors(&mut self, input: &[LweCiphertext<T>]) {
         let table = self.lookup_table;
-        let d = table.config().coefficient_chunk_count;
-        let mut chunks = (0..d).chain(
-            table
-                .selection
-                .selectors
-                .iter()
-                .enumerate()
-                .filter(|(_, batches)| **batches != SelectorBatches::Unused)
-                .map(|(index, _)| d + index),
-        );
+        let layout = table.layout;
+        let mut chunks = table
+            .selection
+            .selector_chunks(layout.config.coefficient_chunk_count);
         // Borrow only selector outputs so the callback can consume each prepared
         // BR without exposing or replacing the shared one-hot/resource owners.
         let mut selectors = SelectorBuffers {
@@ -376,43 +370,46 @@ where
                 && let Some(second) = chunks.next()
             {
                 self.one_hot.with_sparse_pair(
-                    [input[first].as_view(), input[second].as_view()],
+                    [
+                        input[first.input_index()].as_view(),
+                        input[second.input_index()].as_view(),
+                    ],
                     pair,
                     &mut self.resources,
                     |index, projection| {
                         selectors.project_chunk(
                             [first, second][index],
-                            table,
+                            layout,
                             parameters,
                             |nlev, ngsw| projection.project_to(nlev, ngsw),
                         );
                     },
                 );
-            } else {
-                // Classic consumes only `first`; sparse reaches here for an odd tail.
-                selectors.project_chunk(first, table, parameters, |nlev, ngsw| {
-                    match (nlev, ngsw) {
-                        (Some(nlev), Some(ngsw)) => self.one_hot.one_hot_nlev_and_nonzero_ngsw_to(
-                            input[first].as_view(),
-                            nlev,
-                            ngsw,
-                            &mut self.resources,
-                        ),
-                        (Some(nlev), None) => self.one_hot.one_hot_nlev_to(
-                            input[first].as_view(),
-                            nlev,
-                            &mut self.resources,
-                        ),
-                        (None, Some(ngsw)) => self.one_hot.one_hot_nonzero_ngsw_to(
-                            input[first].as_view(),
-                            ngsw,
-                            &mut self.resources,
-                        ),
-                        (None, None) => {} // Unused high chunks were omitted by the iterator.
-                    };
-                    self.resources.external_product_workspaces().0
-                });
+                continue;
             }
+
+            // Classic consumes only `first`; sparse reaches here for an odd tail.
+            let input_chunk = input[first.input_index()].as_view();
+            selectors.project_chunk(first, layout, parameters, |nlev, ngsw| {
+                match (nlev, ngsw) {
+                    (Some(nlev), Some(ngsw)) => self.one_hot.one_hot_nlev_and_nonzero_ngsw_to(
+                        input_chunk,
+                        nlev,
+                        ngsw,
+                        &mut self.resources,
+                    ),
+                    (Some(nlev), None) => {
+                        self.one_hot
+                            .one_hot_nlev_to(input_chunk, nlev, &mut self.resources)
+                    }
+                    (None, Some(ngsw)) => {
+                        self.one_hot
+                            .one_hot_nonzero_ngsw_to(input_chunk, ngsw, &mut self.resources)
+                    }
+                    (None, None) => {} // Unused high chunks were omitted by the iterator.
+                };
+                self.resources.external_product_workspaces().0
+            });
         }
     }
 

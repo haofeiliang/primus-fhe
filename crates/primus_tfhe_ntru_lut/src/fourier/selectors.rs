@@ -7,7 +7,10 @@ use primus_ntru::FourierNgswCiphertext;
 use primus_tfhe_ntru::CircuitBootstrapParameters;
 
 use super::aggregate_rotation_control_to;
-use crate::{HighPrecisionLookupTable, lookup_table::selection::SelectorBatches};
+use crate::lookup_table::{
+    Layout,
+    selection::{SelectorBatches, SelectorChunk},
+};
 
 /// Borrowed destinations and immutable rotation constants. Projection and its
 /// consumer finish before the next input reuses the coefficient/nonzero scratch.
@@ -28,32 +31,32 @@ impl<T: TorusFftValue> SelectorBuffers<'_, T> {
     /// it then lends the shared FFT engine for immediate coefficient conversion.
     pub fn project_chunk<'f, 'a: 'f, Table: FftTable + 'a>(
         &mut self,
-        chunk: usize,
-        table: &HighPrecisionLookupTable<T>,
+        chunk: SelectorChunk,
+        layout: Layout,
         parameters: &CircuitBootstrapParameters<T, NativeModulus<T>>,
         project: impl FnOnce(Option<&mut [T]>, Option<&mut [Complex64]>) -> &'f mut FftEngine<'a, Table>,
     ) {
-        let layout = table.layout;
-        let d = layout.config.coefficient_chunk_count;
         let selector_len = parameters.output_nlev_len() / 2;
         let full_len = layout.radix * selector_len;
         let nonzero_len = full_len - selector_len;
-        if chunk < d {
-            project(None, Some(&mut *self.nonzero));
-            let row_len = layout.polynomial_length / 2;
-            let factor_len = (layout.radix - 1) * row_len;
-            aggregate_rotation_control_to(
-                self.nonzero,
-                &self.rotation_factors[chunk * factor_len..(chunk + 1) * factor_len],
-                self.gadget_one,
-                &mut FourierNgswCiphertext::new(
-                    &mut self.rotations[chunk * selector_len..(chunk + 1) * selector_len],
-                ),
-                row_len,
-            );
-            return;
-        }
-        let batches = table.selector_batches_for_chunk(chunk);
+        let batches = match chunk {
+            SelectorChunk::Rotation(index) => {
+                project(None, Some(&mut *self.nonzero));
+                let row_len = layout.polynomial_length / 2;
+                let factor_len = (layout.radix - 1) * row_len;
+                aggregate_rotation_control_to(
+                    self.nonzero,
+                    &self.rotation_factors[index * factor_len..(index + 1) * factor_len],
+                    self.gadget_one,
+                    &mut FourierNgswCiphertext::new(
+                        &mut self.rotations[index * selector_len..(index + 1) * selector_len],
+                    ),
+                    row_len,
+                );
+                return;
+            }
+            SelectorChunk::Table { batches, .. } => batches,
+        };
         let (nlev, ngsw) = match batches {
             SelectorBatches::Unused => return,
             SelectorBatches::Nlev(_) => (Some(&mut *self.coefficients), None),

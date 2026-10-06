@@ -83,6 +83,33 @@ pub(crate) enum SelectorBatches {
     },
 }
 
+/// One live input chunk and the mathematical use of its one-hot projection.
+/// Table batches are assigned by the compiler; rotation controls use the low
+/// chunk index. These small values are yielded on demand, never stored as jobs.
+#[cfg(any(feature = "ntt", feature = "fourier"))]
+#[derive(Clone, Copy)]
+pub(crate) enum SelectorChunk {
+    /// Aggregate the nonzero NGSWs into `NGSW[X^(-m_i*M^i)]` for low chunk i.
+    Rotation(usize),
+    /// Retain the full NLEV and/or nonzero NGSW batches needed by table choices.
+    Table {
+        chunk_index: usize,
+        batches: SelectorBatches,
+    },
+}
+
+#[cfg(any(feature = "ntt", feature = "fourier"))]
+impl SelectorChunk {
+    /// Index in the least-significant-chunk-first input, including pruned gaps.
+    #[must_use]
+    pub fn input_index(self) -> usize {
+        match self {
+            Self::Rotation(index) => index,
+            Self::Table { chunk_index, .. } => chunk_index,
+        }
+    }
+}
+
 #[cfg(any(feature = "ntt", feature = "fourier"))]
 impl SelectorBatches {
     /// Full-M NLEV batch for a compiled public choice. Its existence is fixed
@@ -120,6 +147,29 @@ pub(crate) struct SelectionPlan {
 }
 
 impl SelectionPlan {
+    /// Low rotation chunks followed by surviving high table chunks, in input
+    /// order. Pruned gaps consume no projection or sparse-pair member. The caller
+    /// supplies this table's split d; pairing and immediate consumption stay with
+    /// the backend so projection scratch never outlives its current input.
+    #[cfg(any(feature = "ntt", feature = "fourier"))]
+    pub fn selector_chunks(
+        &self,
+        coefficient_chunk_count: usize,
+    ) -> impl Iterator<Item = SelectorChunk> {
+        let rotations = (0..coefficient_chunk_count).map(SelectorChunk::Rotation);
+        let tables = self
+            .selectors
+            .iter()
+            .enumerate()
+            .filter_map(move |(index, &batches)| {
+                (batches != SelectorBatches::Unused).then_some(SelectorChunk::Table {
+                    chunk_index: coefficient_chunk_count + index,
+                    batches,
+                })
+            });
+        rotations.chain(tables)
+    }
+
     /// Borrow reachable operations for setup-time cost inspection.
     pub(super) fn operations(&self) -> impl ExactSizeIterator<Item = &TableOperation> {
         self.nodes.iter().map(|node| &node.operation)
