@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+primus_lattice = { path = "../primus_lattice" }
 primus_poly = { path = "../primus_poly" }
 primus_decompose = { path = "../primus_decompose" }
 primus_encoding = { path = "../primus_encoding" }
@@ -25,6 +26,7 @@ primus_test_allocations = { path = "../../test-support/allocations" }
 [features]
 default = []
 simd = [
+    "primus_lattice/simd",
     "primus_integer/simd",
     "primus_lwe/simd",
     "primus_ntru/simd",

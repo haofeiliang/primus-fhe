@@ -10,7 +10,8 @@
 //! provides a [`LookupTableCompiler`] for Rounded LUTs. [`ClientKey`] owns the
 //! complete setup secrets; [`Encryptor`] and [`Decryptor`] borrow only the external
 //! message secret and bind its codec. Choose the NTT/Fourier
-//! backend for transform tables, server material and evaluators.
+//! backend for transform tables, key generation and evaluators. Shared sparse
+//! coefficient storage is provided by [`SparseGlweBootstrappingKey`].
 //! [`KeyGenerationError`] and [`TfheClientError`] report key generation and family
 //! client construction; operations return shared [`ClientError`] or [`BooleanError`].
 //!
@@ -45,6 +46,7 @@ mod error;
 mod key;
 mod lookup_table;
 mod parameters;
+mod sparse;
 
 use primus_glwe::{GgswParameters, GlevParameters, GlweKeySwitchingParameters, GlweSecretKey};
 use primus_lwe::LweSecretKey;
@@ -56,6 +58,7 @@ pub use error::{
 };
 pub use key::{ClientKey, ExternalLweSecretKey};
 pub use parameters::{PbsOrder, TfheConfig, TfheParameters};
+pub use sparse::SparseGlweBootstrappingKey;
 
 pub use primus_tfhe::{
     BOOLEAN_PLAINTEXT_BITS, BivariateLookupTable, BooleanDecryptor, BooleanEncryptor, BooleanError,

@@ -91,9 +91,10 @@ pub use primus_tfhe::{
     DecompositionConfig, FactorizedLookupTable, InterleavedLookupTable, LookupTable,
     LookupTableCompiler, Lwe, LweCiphertext, LweSecretKeyRef,
 };
+pub use primus_tfhe_glwe::SparseGlweBootstrappingKey;
 pub use primus_tfhe_glwe::{ClientKey, EncryptionKey, ExternalLweSecretKey, PbsOrder};
 #[doc(no_inline)]
-pub use sparse::{SparseGlweBlindRotationWorkspace, SparseGlweBootstrappingKey};
+pub use sparse::SparseGlweBlindRotationWorkspace;
 
 pub use boolean::{
     BooleanDecryptor, BooleanEncryptor, BooleanError, BooleanEvaluator, BooleanGate,

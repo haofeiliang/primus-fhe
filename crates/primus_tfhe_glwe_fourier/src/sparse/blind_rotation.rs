@@ -8,12 +8,50 @@ use primus_lattice::{
     lwe::Lwe,
     workspace::FourierGlweExternalProductWorkspace,
 };
+use primus_modulus::NativeModulus;
 use primus_poly::Polynomial;
 use primus_tfhe::rotation::RotationModulusSwitch;
 
 use super::SparseGlweBootstrappingKey;
 
-impl<T: TorusFftValue> SparseGlweBootstrappingKey<T> {
+/// Reusable workspace for Fourier [`SparseGlweBootstrappingKey`] blind rotation.
+///
+/// Stores public input exponents, coefficient and Fourier aggregate buffers,
+/// one coefficient GLWE buffer and external-product scratch. It contains no
+/// plaintext secret support or matching, and allocates only during construction.
+pub struct SparseGlweBlindRotationWorkspace<T: TorusFftValue> {
+    input_exponents: Vec<usize>,
+    aggregate: Ggsw<Vec<T>>,
+    transformed: FourierGgsw<Vec<Complex64>>,
+    scratch: TorusGlwe<Vec<T>>,
+    external_product: FourierGlweExternalProductWorkspace<T>,
+}
+
+impl<T: TorusFftValue> SparseGlweBlindRotationWorkspace<T> {
+    pub(crate) fn with_external_product<R>(
+        &mut self,
+        size: primus_lattice::GadgetSize,
+        operation: impl FnOnce(&mut FourierGlweExternalProductWorkspace<T>) -> R,
+    ) -> R {
+        self.external_product.with_rebound(size, operation)
+    }
+
+    /// Allocates scratch for this key's input dimension and gadget layout.
+    /// Reusable with other sparse keys of the same dimensions and layout.
+    #[must_use]
+    pub fn new(key: &SparseGlweBootstrappingKey<T, NativeModulus<T>>) -> Self {
+        let size = key.size();
+        Self {
+            input_exponents: vec![0; key.input_dimension().get()],
+            aggregate: Ggsw::zero(size.ggsw_len()),
+            transformed: FourierGgsw::zero(size.fourier_ggsw_len()),
+            scratch: TorusGlwe::zero(size.glwe_len()),
+            external_product: FourierGlweExternalProductWorkspace::new(size),
+        }
+    }
+}
+
+impl<T: TorusFftValue> SparseGlweBlindRotationWorkspace<T> {
     /// Blind-rotates an encoded LUT into a native coefficient GLWE ciphertext.
     ///
     /// Uses ordinary PBS quantization (rotation step one), initializing a trivial
@@ -34,27 +72,20 @@ impl<T: TorusFftValue> SparseGlweBootstrappingKey<T> {
     ///
     /// Panics if input, LUT, output, workspace or FFT polynomial lengths do not
     /// match this key. Checks precede output writes.
-    pub fn fourier_blind_rotate_lookup_table_to<Table, A, B, C>(
-        &self,
+    pub fn blind_rotate_lookup_table_to<Table, A, B, C>(
+        &mut self,
+        key: &SparseGlweBootstrappingKey<T, NativeModulus<T>>,
         input: &Lwe<A>,
         lookup_table: &Polynomial<B>,
         output: &mut TorusGlwe<C>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut SparseGlweBlindRotationWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = T>,
         B: Data<Elem = T>,
         C: DataMut<Elem = T>,
     {
-        self.fourier_blind_rotate_interleaved_lookup_table_to(
-            input,
-            lookup_table,
-            1,
-            output,
-            fft,
-            context,
-        );
+        self.blind_rotate_interleaved_lookup_table_to(key, input, lookup_table, 1, output, fft);
     }
 
     /// Blind-rotates an interleaved LUT, preserving its output columns.
@@ -62,23 +93,23 @@ impl<T: TorusFftValue> SparseGlweBootstrappingKey<T> {
     /// Quantizes every mask and body coefficient to `2N / rotation_step`, then
     /// multiplies by `rotation_step`. This must be the LUT's padded output count:
     /// a nonzero power of two dividing `N`.
-    /// Inherits [`Self::fourier_blind_rotate_lookup_table_to`]'s requirements.
+    /// Inherits [`Self::blind_rotate_lookup_table_to`]'s requirements.
     /// An invalid rotation step also panics before output writes.
-    pub fn fourier_blind_rotate_interleaved_lookup_table_to<Table, A, B, C>(
-        &self,
+    pub fn blind_rotate_interleaved_lookup_table_to<Table, A, B, C>(
+        &mut self,
+        key: &SparseGlweBootstrappingKey<T, NativeModulus<T>>,
         input: &Lwe<A>,
         lookup_table: &Polynomial<B>,
         rotation_step: usize,
         output: &mut TorusGlwe<C>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut SparseGlweBlindRotationWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = T>,
         B: Data<Elem = T>,
         C: DataMut<Elem = T>,
     {
-        let size = self.size();
+        let size = key.size();
         let poly_length = size.glwe_size().poly_length().get();
         assert!(
             rotation_step.is_power_of_two() && rotation_step <= poly_length,
@@ -90,15 +121,12 @@ impl<T: TorusFftValue> SparseGlweBootstrappingKey<T> {
                 lookup_table.as_ref().len(),
                 output.as_ref().len(),
             ),
-            (self.input_dimension().get(), poly_length, size.glwe_len()),
+            (key.input_dimension().get(), poly_length, size.glwe_len()),
             "sparse blind-rotation input, LUT or output layout mismatch"
         );
         assert_eq!(
-            (
-                context.input_exponents.len(),
-                context.external_product.size()
-            ),
-            (self.input_dimension().get(), size),
+            (self.input_exponents.len(), self.external_product.size()),
+            (key.input_dimension().get(), size),
             "sparse blind-rotation workspace layout mismatch"
         );
         assert_eq!(
@@ -106,41 +134,41 @@ impl<T: TorusFftValue> SparseGlweBootstrappingKey<T> {
             poly_length,
             "sparse blind-rotation FFT length mismatch"
         );
-        self.fourier_blind_rotate_interleaved_lookup_table_kernel_to(
+        self.blind_rotate_interleaved_lookup_table_kernel_to(
+            key,
             input.as_view(),
             lookup_table.as_view(),
             rotation_step,
             output.as_mut_view(),
             fft,
-            context,
         );
     }
 
     /// The public raw wrapper or evaluator has checked layouts, FFT and LUT.
     /// Mask and body use the same step so every rotation preserves output slots.
-    pub(crate) fn fourier_blind_rotate_interleaved_lookup_table_kernel_to<Table>(
-        &self,
+    pub(crate) fn blind_rotate_interleaved_lookup_table_kernel_to<Table>(
+        &mut self,
+        key: &SparseGlweBootstrappingKey<T, NativeModulus<T>>,
         input: Lwe<&[T]>,
         lookup_table: Polynomial<&[T]>,
         rotation_step: usize,
         mut output: TorusGlwe<&mut [T]>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut SparseGlweBlindRotationWorkspace<T>,
     ) where
         Table: FftTable,
     {
-        let size = self.size();
+        let size = key.size();
         let poly_length = size.glwe_size().poly_length().get();
-        let modulus = self.input_modulus();
+        let modulus = key.input_modulus();
         let SparseGlweBlindRotationWorkspace {
             input_exponents,
             aggregate,
             transformed,
             scratch,
             external_product,
-        } = context;
+        } = self;
         let modulus_switch = if rotation_step == 1 {
-            self.rotation_modulus_switch()
+            key.rotation_modulus_switch()
         } else {
             RotationModulusSwitch::new(modulus, 2 * poly_length, rotation_step)
         };
@@ -152,8 +180,8 @@ impl<T: TorusFftValue> SparseGlweBootstrappingKey<T> {
         lookup_table.mul_monomial_to(initial_exponent, &mut Polynomial(body), modulus);
 
         let mut output_is_current = true;
-        for bucket_index in 0..self.bucket_count() {
-            let (indices, ciphertexts) = self.bucket_data(bucket_index);
+        for bucket_index in 0..key.bucket_count() {
+            let (indices, ciphertexts) = key.bucket_data(bucket_index);
             let (selections, dummy) = ciphertexts.split_at(indices.len() * size.ggsw_len());
             // A bucket always has one dummy, including publicly empty buckets.
             // Start from it so no aggregation state survives the previous bucket.
@@ -195,7 +223,7 @@ impl<T: TorusFftValue> SparseGlweBootstrappingKey<T> {
                 transformed.external_product_to(
                     &output,
                     scratch,
-                    self.basis(),
+                    key.basis(),
                     fft,
                     external_product,
                 );
@@ -203,7 +231,7 @@ impl<T: TorusFftValue> SparseGlweBootstrappingKey<T> {
                 transformed.external_product_to(
                     scratch,
                     &mut output,
-                    self.basis(),
+                    key.basis(),
                     fft,
                     external_product,
                 );
@@ -212,43 +240,6 @@ impl<T: TorusFftValue> SparseGlweBootstrappingKey<T> {
         }
         if !output_is_current {
             output.as_mut().copy_from_slice(scratch.as_ref());
-        }
-    }
-}
-
-/// Reusable workspace for Fourier [`SparseGlweBootstrappingKey`] blind rotation.
-///
-/// Stores public input exponents, coefficient and Fourier aggregate buffers,
-/// one coefficient GLWE buffer and external-product scratch. It contains no
-/// plaintext secret support or matching, and allocates only during construction.
-pub struct SparseGlweBlindRotationWorkspace<T: TorusFftValue> {
-    input_exponents: Vec<usize>,
-    aggregate: Ggsw<Vec<T>>,
-    transformed: FourierGgsw<Vec<Complex64>>,
-    scratch: TorusGlwe<Vec<T>>,
-    external_product: FourierGlweExternalProductWorkspace<T>,
-}
-
-impl<T: TorusFftValue> SparseGlweBlindRotationWorkspace<T> {
-    pub(crate) fn with_external_product<R>(
-        &mut self,
-        size: primus_lattice::GadgetSize,
-        operation: impl FnOnce(&mut FourierGlweExternalProductWorkspace<T>) -> R,
-    ) -> R {
-        self.external_product.with_rebound(size, operation)
-    }
-
-    /// Allocates scratch for this key's input dimension and gadget layout.
-    /// Reusable with other sparse keys of the same dimensions and layout.
-    #[must_use]
-    pub fn new(key: &SparseGlweBootstrappingKey<T>) -> Self {
-        let size = key.size();
-        Self {
-            input_exponents: vec![0; key.input_dimension().get()],
-            aggregate: Ggsw::zero(size.ggsw_len()),
-            transformed: FourierGgsw::zero(size.fourier_ggsw_len()),
-            scratch: TorusGlwe::zero(size.glwe_len()),
-            external_product: FourierGlweExternalProductWorkspace::new(size),
         }
     }
 }

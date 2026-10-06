@@ -4,7 +4,7 @@ mod aggregation;
 mod blind_rotation;
 mod key;
 
+use crate::SparseNtruBootstrappingKey;
 pub(crate) use blind_rotation::{SparseWorkspace, rotate_buckets, rotate_buckets_pair};
-pub use key::SparseNtruBootstrappingKey;
 
 pub use blind_rotation::SparseBlindRotationPairWorkspace;

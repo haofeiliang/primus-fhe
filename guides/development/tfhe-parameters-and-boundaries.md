@@ -168,6 +168,16 @@ PBS trait、四后端、Boolean 门、双输入打包、CBS、one-hot 与 MVB �
 
 客户端输入使用 Rounded 编码。Ordinary LUT 编译器按输入编码设置窗口，输出 codec 可独立指定；NTRU LUT 在 Q 编码，返回到 q 后须按对应 q 域输出 codec 解码并预算两次舍入误差。底层普通 GLWE/NTRU 参数保存的 Scaled codec 用于普通环消息加密，不决定 PBS 的 LUT 输出编码；两家族 TFHE 在 accumulator client 构造时才绑定它。
 
+## Sparse 系数材料与后端运算
+
+两个家族分别持有 `SparseNtruBootstrappingKey<T>` 与 `SparseGlweBootstrappingKey<T, M>`，具体后端重导出家族类型。共同层仅处理系数、公开 map 和布局；GLWE 的 M 保留 Barrett/Native 差异，NTRU 的 basis 与模数仍由后端 `BlindRotationKey` 持有。移入系数不转换表示、不复制密文，也不验证实际秘密、加密选择或噪声预算。
+
+`try_new(data, map, hamming_weight, &gadget_parameters)` 复用 gadget 的已验证布局与 map 的有效索引，检查组合后的重量、桶容量和总系数长度；GLWE 还验证预备 rotation switch 所需的 2N 表示范围。Map 保存 copy_count，原始维数由总 entry 数整除恢复，密钥只在构造时缓存该维数；不扫描所有桶或系数重新建立已经检查的 map 不变量。生成器保留采样前的存储溢出检查，公开装配器独立承担导入缓冲区的完整长度检查。
+
+NTRU 的 `first_bucket` / `ngsw_bucket` 分别借用首桶 NLEV 和后续 NGSW；GLWE 的 `bucket` 借用完整 GGSW。各桶最后均有独立 dummy，原系数顺序保持；`bucket_data` 为聚合提供同一连续存储的借用视图。NTT/Fourier 的生成、回系数舍入和聚合内核留在后端，秘密 matching/support/selectors 不进入共享 owner。
+
+GLWE raw sparse BR 由既有 `SparseGlweBlindRotationWorkspace` 执行，调用 `workspace.blind_rotate_lookup_table_to(&key, input, lut, output, table_or_fft)`。共享 key 不携带变换引擎或运算扩展 trait；普通 PBS/CBS/MVB 仍从已有 evaluator 进入。工作区与公开 raw 入口的检查位置、在线 scratch 数量及生命周期保持。
+
 ## Classic 与 CBS 能力绑定
 
 NTRU `BlindRotationKey` 持有 classic/sparse 材料、BR basis 与输入分布；`ServerKey` 再组合该 owner、返回密钥与可选 CBS 密钥。`BlindRotationKey::classic_controls()` 返回借用的 `ClassicControls`，sparse 返回 `None`。视图集中 NLEV initializer、首坐标 NLEV 的正/可选负 bit，以及后续 NGSW bit 的语义迭代器。BR 构造时选择 binary/ternary/sparse 及其 scratch，在线提升不再重新分派服务端密钥或调用可能在 sparse 下 panic 的 initializer。

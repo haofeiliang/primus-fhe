@@ -42,7 +42,7 @@ enum BlindRotation<'a, T: TorusFftValue> {
         scratch: FourierGlweBlindRotationWorkspace<T>,
     },
     Sparse {
-        key: &'a SparseGlweBootstrappingKey<T>,
+        key: &'a SparseGlweBootstrappingKey<T, NativeModulus<T>>,
         scratch: SparseGlweBlindRotationWorkspace<T>,
     },
 }
@@ -228,14 +228,14 @@ where
                     &mut self.fft,
                     scratch,
                 ),
-            BlindRotation::Sparse { key, scratch } => key
-                .fourier_blind_rotate_interleaved_lookup_table_kernel_to(
+            BlindRotation::Sparse { key, scratch } => scratch
+                .blind_rotate_interleaved_lookup_table_kernel_to(
+                    key,
                     small_lwe,
                     lookup_table.as_view(),
                     rotation_step,
                     self.accumulator.as_mut_view(),
                     &mut self.fft,
-                    scratch,
                 ),
         }
         (&self.accumulator, &mut self.fft)

@@ -83,7 +83,7 @@ pub use factorized::{FactorizedEvaluator, NttFactorizedLookupTable};
 #[doc(inline)]
 pub use key::{BlindRotationKey, ClassicControls, KeyGenerator, ServerKey};
 #[doc(no_inline)]
-pub use sparse::SparseNtruBootstrappingKey;
+pub use primus_tfhe_ntru::SparseNtruBootstrappingKey;
 
 pub use primus_tfhe::{
     BivariateLookupTable, BlindRotationConfig, CircuitBootstrapConfig, ClientError,

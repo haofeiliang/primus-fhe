@@ -3,5 +3,5 @@
 mod blind_rotation;
 mod key;
 
+use crate::SparseGlweBootstrappingKey;
 pub use blind_rotation::SparseGlweBlindRotationWorkspace;
-pub use key::SparseGlweBootstrappingKey;

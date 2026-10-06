@@ -1,146 +1,22 @@
-use primus_lattice::LweDimension;
 use std::alloc::Layout;
 
-use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{Complex64, FftTable, TorusFftValue};
 use primus_glwe::{FourierGlweSecretKey, SecretKeyDistr};
-use primus_lattice::{
-    GadgetSize,
-    ggsw::{FourierGgsw, GgswIter},
-};
+use primus_lattice::ggsw::FourierGgsw;
 use primus_modulus::NativeModulus;
-use primus_tfhe::{rotation::RotationModulusSwitch, sparse::BucketMap};
+use primus_tfhe::sparse::BucketMap;
 use zeroize::Zeroizing;
 
-use crate::{ClientKey, KeyGenerationError, KeyGenerator, SparseBootstrappingKeyError};
-
-/// Coefficient-domain GGSW selections for sparse blind rotation in the Fourier backend.
-///
-/// Each input index appears in `copy_count` distinct public buckets. Encrypted
-/// selections cover each nonzero small-LWE coefficient exactly once and select
-/// at most one entry per bucket. Every bucket also contains an independently
-/// encrypted dummy: one for an unoccupied bucket, zero otherwise.
-///
-/// Generation retains only the public mapping and ciphertexts, never the support
-/// or matching. Input and accumulator use the native modulus `2^T::BITS`.
-/// Ciphertexts are generated in Fourier form and converted to torus coefficients;
-/// this conversion can incur rounding error. Raw blind rotation is available via
-/// [`Self::fourier_blind_rotate_lookup_table_to`].
-/// [`KeyGenerator::try_generate_server_key`] can add CBS material and pairs this key with the GLWE
-/// KSK for ordinary/interleaved evaluation in [`crate::Evaluator`].
-///
-/// Successful mapping conditions the joint distribution of the public map and
-/// secret. Fixed-weight security and complete PBS noise bounds need independent
-/// assessment; eight retries do not establish a security level.
-pub struct SparseGlweBootstrappingKey<T: TorusFftValue> {
-    data: Vec<T>,
-    map: BucketMap,
-    input_dimension: LweDimension,
-    hamming_weight: usize,
-    copy_count: usize,
-    rotation_modulus_switch: RotationModulusSwitch<T>,
-    size: GadgetSize,
-    basis: ApproxSignedBasis<T>,
-}
-
-impl<T: TorusFftValue> SparseGlweBootstrappingKey<T> {
-    /// Returns the dimension of the actual blind-rotation input secret.
-    #[must_use]
-    pub fn input_dimension(&self) -> LweDimension {
-        self.input_dimension
-    }
-
-    /// Returns the public, fixed weight of the input binary secret.
-    #[must_use]
-    pub fn hamming_weight(&self) -> usize {
-        self.hamming_weight
-    }
-
-    /// Returns the number of distinct buckets containing each input index.
-    #[must_use]
-    pub fn copy_count(&self) -> usize {
-        self.copy_count
-    }
-
-    /// Returns the total number of buckets, including unoccupied buckets.
-    #[must_use]
-    pub fn bucket_count(&self) -> usize {
-        self.map.bucket_count()
-    }
-
-    /// Returns the native input modulus, also used by the accumulator.
-    #[must_use]
-    pub fn input_modulus(&self) -> NativeModulus<T> {
-        NativeModulus::new()
-    }
-
-    pub(super) fn rotation_modulus_switch(&self) -> RotationModulusSwitch<T> {
-        self.rotation_modulus_switch
-    }
-
-    /// Returns `None` for the native accumulator modulus `2^T::BITS`.
-    #[must_use]
-    pub fn cipher_modulus(&self) -> Option<T> {
-        None
-    }
-
-    /// Returns the GGSW layout shared by all selections and dummies.
-    #[must_use]
-    pub fn size(&self) -> GadgetSize {
-        self.size
-    }
-
-    /// Returns the decomposition basis, including its level order.
-    #[must_use]
-    pub fn basis(&self) -> &ApproxSignedBasis<T> {
-        &self.basis
-    }
-
-    /// Returns coefficient storage in
-    /// `[bucket][entry...,dummy][row][level][component][coefficient]` order.
-    #[must_use]
-    pub fn as_slice(&self) -> &[T] {
-        &self.data
-    }
-
-    /// Borrows one bucket's increasing input indices and coefficient GGSWs.
-    ///
-    /// Ciphertexts follow the indices, with **one additional dummy last**.
-    /// A bucket without public entries still returns its dummy ciphertext.
-    /// This view contains no plaintext selection or occupancy information.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `bucket_index >= self.bucket_count()`.
-    #[must_use]
-    pub fn bucket(&self, bucket_index: usize) -> (&[usize], GgswIter<'_, T>) {
-        let (indices, ciphertexts) = self.bucket_data(bucket_index);
-        (indices, GgswIter::new(ciphertexts, self.size.ggsw_len()))
-    }
-
-    /// Borrows a bucket's indices and contiguous GGSW storage, including its final
-    /// dummy. Splitting the dummy off allows aggregation to start with a copy.
-    pub(super) fn bucket_data(&self, bucket_index: usize) -> (&[usize], &[T]) {
-        assert!(
-            bucket_index < self.bucket_count(),
-            "sparse bucket index out of bounds"
-        );
-        let start = self.map.bucket_offsets()[bucket_index];
-        let end = self.map.bucket_offsets()[bucket_index + 1];
-        let ggsw_len = self.size.ggsw_len();
-        let ciphertexts =
-            &self.data[(start + bucket_index) * ggsw_len..(end + bucket_index + 1) * ggsw_len];
-        (&self.map.input_indices()[start..end], ciphertexts)
-    }
-}
+use crate::{
+    ClientKey, KeyGenerationError, KeyGenerator, SparseBootstrappingKeyError,
+    SparseGlweBootstrappingKey,
+};
 
 // All fallible checks and map-only retries finish before transforming the accumulator secret.
 pub(crate) struct PreparedSparseMap {
     map: BucketMap,
     selected_input_indices: Zeroizing<Vec<usize>>,
-    input_dimension: LweDimension,
     hamming_weight: usize,
-    copy_count: usize,
     data_len: usize,
 }
 
@@ -177,7 +53,7 @@ where
         copy_count: usize,
         bucket_count: usize,
         rng: &mut R,
-    ) -> Result<SparseGlweBootstrappingKey<T>, KeyGenerationError>
+    ) -> Result<SparseGlweBootstrappingKey<T, NativeModulus<T>>, KeyGenerationError>
     where
         R: rand::Rng + rand::CryptoRng,
     {
@@ -246,9 +122,7 @@ where
         Ok(PreparedSparseMap {
             map,
             selected_input_indices,
-            input_dimension: LweDimension::new(input_dimension),
             hamming_weight,
-            copy_count,
             data_len,
         })
     }
@@ -259,13 +133,11 @@ where
         prepared: PreparedSparseMap,
         output_key: &FourierGlweSecretKey,
         rng: &mut R,
-    ) -> SparseGlweBootstrappingKey<T> {
+    ) -> SparseGlweBootstrappingKey<T, NativeModulus<T>> {
         let PreparedSparseMap {
             map,
             selected_input_indices,
-            input_dimension,
             hamming_weight,
-            copy_count,
             data_len,
         } = prepared;
         let parameters = self.context.parameters();
@@ -309,19 +181,7 @@ where
         );
         drop(selectors);
 
-        SparseGlweBootstrappingKey {
-            data,
-            map,
-            input_dimension,
-            hamming_weight,
-            copy_count,
-            rotation_modulus_switch: RotationModulusSwitch::new(
-                NativeModulus::<T>::new(),
-                2 * size.glwe_size().poly_length().get(),
-                1,
-            ),
-            size,
-            basis: gadget.basis().clone(),
-        }
+        SparseGlweBootstrappingKey::try_new(data, map, hamming_weight, gadget)
+            .expect("prepared sparse map and coefficient storage must match")
     }
 }

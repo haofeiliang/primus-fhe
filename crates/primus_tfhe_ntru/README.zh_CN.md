@@ -7,7 +7,7 @@
 
 NTRU-TFHE 的参数与 LWE 客户端层；[NTT](../primus_tfhe_ntru_ntt/README.zh_CN.md) 和 [Fourier](../primus_tfhe_ntru_fourier/README.zh_CN.md) 后端提供 context、求值密钥和 evaluator。
 
-该 family 的默认依赖只使用系数类型、参数和客户端运算，不引入 NTT/FFT。需要同态求值时选择下述具体后端；其普通依赖会启用对应表示。
+该 family 的默认依赖只使用系数类型、sparse 密钥存储、参数和客户端运算，不引入 NTT/FFT。需要同态求值时选择下述具体后端；其普通依赖会启用对应表示。
 
 `TfheConfig::poly_length` 接收 `primus_poly::PolyLength`。用 `PolyLength::try_new(n)?`（已知常量可用 `new`）构造一次，供参数、尺寸与变换表复用。无效整数由 `PolyLengthError` 报告；参数构造仍负责组合布局、模数及采样器检查。
 
@@ -26,6 +26,12 @@ NTRU-TFHE 的参数与 LWE 客户端层；[NTT](../primus_tfhe_ntru_ntt/README.z
 普通 PBS 的返回顺序为：f,Q 下盲旋转 → 逐系数 Q→q 最近舍入 → 提取相位系数 → q 下 LWE key switch 到 s。ManyLUT 共享盲旋转，每个输出分别返回；`context.allocate_lwe_ciphertext()` 使用外部维数。
 
 Classic PBS、ManyLUT、CBS、Boolean 和 MVB 支持 binary/ternary 外部秘密。Sparse 须显式选择 fixed-weight binary 生成入口，允许偶数重量，支持普通/ManyLUT PBS、分解式 MVB、CBS 和 one-hot。`SparseTernary` 分布本身不会选择桶聚合。首次提升与稀疏桶的推导见[实现说明](../primus_tfhe/IMPLEMENTATION.md#ternary-and-sparse-rotation)。
+
+## Sparse 系数密钥
+
+`SparseNtruBootstrappingKey<T>` 统一持有系数控制密文与公开 bucket map，两个后端均重导出此类型。首桶通过 `first_bucket()` 提供 NLEV，后续桶通过 `ngsw_bucket(i)` 提供 NGSW，每桶末尾都有 dummy。Basis 与模数仍由后端 BR owner 持有；共享存储类型不表示 NTT residue 与 native torus 系数可以互换。
+
+通常通过后端 `KeyGenerator` 加密生成。若已有独立生成的控制密文，可用 `try_new(data, map, hamming_weight, &nlev_parameters)` 移入缓冲区并检查组合布局；它不验证加密选择、实际秘密或噪声预算。持有和读取这些系数不需要变换引擎。
 
 ## 客户端与 LUT
 

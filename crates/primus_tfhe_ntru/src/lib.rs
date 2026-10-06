@@ -6,7 +6,8 @@
 //! provides a [`LookupTableCompiler`] for Rounded LUTs. [`ClientKey`] owns the
 //! complete setup secrets; [`Encryptor`] and [`Decryptor`] borrow only the external
 //! message secret and bind its codec. Choose the NTT/Fourier
-//! backend for transform tables, server material and evaluators.
+//! backend for transform tables, key generation and evaluators. Shared sparse
+//! coefficient storage is provided by [`SparseNtruBootstrappingKey`].
 //! [`KeyGenerationError`] and [`TfheClientError`] report key generation and family
 //! client construction; operations return shared [`ClientError`] or [`BooleanError`].
 //!
@@ -47,6 +48,7 @@ mod lookup_table;
 mod lwe_return;
 mod one_hot;
 mod parameters;
+mod sparse;
 
 pub use circuit_bootstrap::CircuitBootstrapParameters;
 pub use error::{
@@ -57,6 +59,7 @@ pub use key::ClientKey;
 pub use lwe_return::{LweReturnBatchWorkspace, LweReturnEvaluator};
 pub use one_hot::{OneHotBootstrapError, OneHotLookupTable};
 pub use parameters::{TfheConfig, TfheParameters};
+pub use sparse::SparseNtruBootstrappingKey;
 
 pub use primus_ntru::{NlevParameters, NtruParameters, NtruSecretKey};
 pub use primus_tfhe::{

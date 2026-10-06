@@ -145,12 +145,12 @@ fn benchmark_blind_rotation<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
         BlindRotationKey::Sparse(key) => {
             let mut workspace = SparseGlweBlindRotationWorkspace::new(key);
             b.iter(|| {
-                key.ntt_blind_rotate_lookup_table_to(
+                workspace.blind_rotate_lookup_table_to(
+                    key,
                     black_box(&request.lifted),
                     black_box(request.lut.polynomial()),
                     black_box(&mut accumulator),
                     context.table(),
-                    &mut workspace,
                 );
             });
         }

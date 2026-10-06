@@ -122,12 +122,12 @@ fn sparse_rotation_matches_direct_phase_and_classic_with_reused_scratch() {
         let codec = RoundedCodec::new(T, modulus);
         let mut check = |input: &Lwe<Vec<u32>>, lut: &Polynomial<Vec<u32>>| {
             let (_, allocation) = allocations::measure(|| {
-                sparse.ntt_blind_rotate_lookup_table_to(
+                sparse_scratch.blind_rotate_lookup_table_to(
+                    &sparse,
                     input,
                     lut,
                     &mut sparse_output,
                     ntt,
-                    &mut sparse_scratch,
                 );
             });
             assert_eq!(allocation.count, 0);
@@ -228,12 +228,12 @@ fn sparse_rotation_matches_direct_phase_and_classic_with_reused_scratch() {
             let mut output = Glwe::new(vec![7; output_len]);
             assert!(
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    sparse.ntt_blind_rotate_lookup_table_to(
+                    sparse_scratch.blind_rotate_lookup_table_to(
+                        &sparse,
                         &input,
                         &lut,
                         &mut output,
                         table,
-                        &mut sparse_scratch,
                     );
                 }))
                 .is_err()

@@ -7,7 +7,7 @@ English | [简体中文](README.zh_CN.md)
 
 Parameters and LWE clients for NTRU-TFHE. The [NTT](../primus_tfhe_ntru_ntt/README.md) and [Fourier](../primus_tfhe_ntru_fourier/README.md) backends provide contexts, evaluation keys and evaluators.
 
-This family uses only coefficient types, parameters and client operations by default, without pulling in NTT/FFT. Select a concrete backend below for homomorphic evaluation; its normal dependencies enable the required representation.
+This family uses coefficient types, sparse key storage, parameters and client operations by default, without pulling in NTT/FFT. Select a concrete backend below for homomorphic evaluation; its normal dependencies enable the required representation.
 
 `TfheConfig::poly_length` takes `primus_poly::PolyLength`. Construct it once with `PolyLength::try_new(n)?` (or `new` for known constants) and reuse it for parameters, sizes and transform tables. Invalid integers are reported by `PolyLengthError`; parameter construction retains its combined-layout, modulus and sampler checks.
 
@@ -26,6 +26,12 @@ The direct composition entry is `TfheParameters::try_new(external_lwe, blind_rot
 Ordinary PBS returns through: blind rotation under f,Q → coefficient-wise nearest rounding Q→q → phase-coefficient extraction → LWE key switching at q to s. ManyLUT shares blind rotation but returns each output separately. `context.allocate_lwe_ciphertext()` uses the external dimension.
 
 Classic PBS, ManyLUT, CBS, Boolean and MVB support binary/ternary external secrets. Sparse requires the explicit fixed-weight binary generation entry, allows even weight, and supports ordinary/ManyLUT PBS, factorized MVB, CBS and one-hot. The `SparseTernary` distribution alone does not select bucket aggregation. First lifting and sparse-bucket derivations live in the [implementation notes](../primus_tfhe/IMPLEMENTATION.md#ternary-and-sparse-rotation).
+
+## Sparse coefficient keys
+
+`SparseNtruBootstrappingKey<T>` owns the shared coefficient controls and public bucket map; both backends re-export this type. Bucket zero exposes NLEV controls through `first_bucket()`; later buckets expose NGSWs through `ngsw_bucket(i)`, always with a dummy last. The backend BR owner retains the basis and modulus, so sharing a storage type does not make NTT residues and native-torus coefficients interchangeable.
+
+Prefer the backend `KeyGenerator` for encryption. For independently prepared controls, `try_new(data, map, hamming_weight, &nlev_parameters)` moves the buffer and checks the combined layout. It does not verify the encrypted selection, actual secret or noise budget; no transform engine is required to own or inspect the coefficients.
 
 ## Clients and LUTs
 

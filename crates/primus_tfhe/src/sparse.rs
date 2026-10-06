@@ -39,11 +39,26 @@ pub struct BucketMap {
     bucket_offsets: Vec<usize>,
     /// Original input coefficient indices, increasing within each bucket.
     input_indices: Vec<usize>,
+    /// Each input occurs this many times; also recovers the original dimension.
+    copy_count: usize,
 }
 
 impl BucketMap {
     /// Sentinel in the private assignment for a bucket with no selected input.
     pub const UNASSIGNED: usize = EMPTY;
+
+    /// Returns the original input dimension, including zero-secret coefficients.
+    /// Generation checks the complete input-by-copy product, so this quotient is exact.
+    #[must_use]
+    pub fn input_dimension(&self) -> usize {
+        self.input_indices.len() / self.copy_count
+    }
+
+    /// Returns the number of distinct public buckets containing each input index.
+    #[must_use]
+    pub fn copy_count(&self) -> usize {
+        self.copy_count
+    }
 
     /// Returns the number of public buckets, including empty ones.
     #[must_use]
@@ -198,6 +213,7 @@ impl BucketMap {
         Self {
             bucket_offsets,
             input_indices,
+            copy_count,
         }
     }
 }

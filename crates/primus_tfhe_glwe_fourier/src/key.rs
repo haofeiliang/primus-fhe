@@ -23,7 +23,7 @@ pub enum BlindRotationKey<T: TorusFftValue> {
     /// One binary control or a ternary control pair per input coefficient.
     Classic(FourierGlweBootstrappingKey<T, NativeModulus<T>>),
     /// Bucketed selections for a fixed-weight binary input secret.
-    Sparse(SparseGlweBootstrappingKey<T>),
+    Sparse(SparseGlweBootstrappingKey<T, NativeModulus<T>>),
 }
 
 impl<T: TorusFftValue> BlindRotationKey<T> {

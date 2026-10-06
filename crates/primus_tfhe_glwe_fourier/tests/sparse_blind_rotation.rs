@@ -137,21 +137,21 @@ fn check_raw<Table: FftTable>() {
         let mut check = |input: &Lwe<Vec<u32>>, step| {
             let (_, allocation) = allocations::measure(|| {
                 if step == 1 {
-                    sparse.fourier_blind_rotate_lookup_table_to(
+                    sparse_scratch.blind_rotate_lookup_table_to(
+                        &sparse,
                         input,
                         &lut,
                         &mut sparse_output,
                         &mut fft,
-                        &mut sparse_scratch,
                     );
                 } else {
-                    sparse.fourier_blind_rotate_interleaved_lookup_table_to(
+                    sparse_scratch.blind_rotate_interleaved_lookup_table_to(
+                        &sparse,
                         input,
                         &lut,
                         step,
                         &mut sparse_output,
                         &mut fft,
-                        &mut sparse_scratch,
                     );
                 }
             });
@@ -230,13 +230,13 @@ fn check_raw<Table: FftTable>() {
             let mut output = TorusGlwe::new(vec![7; output_len]);
             assert!(
                 catch_unwind(AssertUnwindSafe(|| {
-                    sparse.fourier_blind_rotate_interleaved_lookup_table_to(
+                    sparse_scratch.blind_rotate_interleaved_lookup_table_to(
+                        &sparse,
                         &input,
                         &lut,
                         step,
                         &mut output,
                         if bad_fft { &mut wrong_fft } else { &mut fft },
-                        &mut sparse_scratch,
                     );
                 }))
                 .is_err()

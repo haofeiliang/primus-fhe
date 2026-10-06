@@ -186,6 +186,9 @@ pub enum KeyGenerationError {
 /// Failure to construct an experimental sparse bootstrapping key.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SparseBootstrappingKeyError {
+    /// The prepared rotation modulus switch requires 2N to fit T.
+    #[error("rotation domain must fit the input coefficient type")]
+    RotationDomainTooLarge,
     /// Sparse generation requires a fixed-weight binary small-LWE distribution.
     #[error("sparse bootstrapping requires a fixed-weight binary small-LWE secret")]
     UnsupportedSecretDistribution,
@@ -201,4 +204,12 @@ pub enum SparseBootstrappingKeyError {
     /// GGSW ciphertext storage lengths exceed addressable allocation sizes.
     #[error("sparse GGSW storage size overflow")]
     StorageSizeOverflow,
+    /// Coefficient storage must contain every public selection and one dummy per bucket.
+    #[error("sparse coefficient storage length mismatch: expected {expected}, got {actual}")]
+    StorageLengthMismatch {
+        /// Required coefficient count, including all dummy controls.
+        expected: usize,
+        /// Supplied coefficient count.
+        actual: usize,
+    },
 }

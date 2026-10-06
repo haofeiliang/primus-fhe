@@ -154,4 +154,12 @@ pub enum SparseBootstrappingKeyError {
     /// Coefficient NGSW storage exceeds addressable allocation sizes.
     #[error("sparse NGSW storage size overflow")]
     StorageSizeOverflow,
+    /// Coefficient storage must contain every public selection and one dummy per bucket.
+    #[error("sparse coefficient storage length mismatch: expected {expected}, got {actual}")]
+    StorageLengthMismatch {
+        /// Required coefficient count, including all dummy controls.
+        expected: usize,
+        /// Supplied coefficient count.
+        actual: usize,
+    },
 }

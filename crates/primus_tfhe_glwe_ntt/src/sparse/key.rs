@@ -1,136 +1,16 @@
-use primus_lattice::LweDimension;
 use std::alloc::Layout;
 
-use primus_decompose::primitive::ApproxSignedBasis;
 use primus_glwe::{NttGlweSecretKey, SecretKeyDistr};
 use primus_integer::FheUint;
-use primus_lattice::{GadgetSize, ggsw::GgswIter};
 use primus_modulus::BarrettModulus;
 use primus_ntt::MonomialNttTable;
-use primus_tfhe::{rotation::RotationModulusSwitch, sparse::BucketMap};
+use primus_tfhe::sparse::BucketMap;
 use zeroize::Zeroizing;
 
-use crate::{ClientKey, KeyGenerationError, KeyGenerator, SparseBootstrappingKeyError};
-
-/// Coefficient-domain GGSW selections for sparse blind rotation in the NTT backend.
-///
-/// Each input index appears in `copy_count` distinct public buckets. Encrypted
-/// selections cover each nonzero small-LWE coefficient exactly once and select
-/// at most one entry per bucket. Every bucket also contains an independently
-/// encrypted dummy: one for an unoccupied bucket, zero otherwise.
-///
-/// Generation retains only the public mapping and ciphertexts, never the support
-/// or matching. Input and accumulator use the context's explicit modulus.
-/// [`Self::ntt_blind_rotate_lookup_table_to`] provides raw sparse blind rotation.
-/// [`KeyGenerator::try_generate_server_key`] pairs it with a GLWE KSK
-/// for ordinary/interleaved evaluation in [`crate::Evaluator`] and optional
-/// circuit-bootstrap material for [`crate::CircuitBootstrapEvaluator`].
-///
-/// Successful mapping conditions the joint distribution of the public map and
-/// secret. Fixed-weight security and complete PBS noise bounds need independent
-/// assessment; eight retries do not establish a security level.
-pub struct SparseGlweBootstrappingKey<T: FheUint> {
-    data: Vec<T>,
-    map: BucketMap,
-    input_dimension: LweDimension,
-    hamming_weight: usize,
-    copy_count: usize,
-    modulus: BarrettModulus<T>,
-    rotation_modulus_switch: RotationModulusSwitch<T>,
-    size: GadgetSize,
-    basis: ApproxSignedBasis<T>,
-}
-
-impl<T: FheUint> SparseGlweBootstrappingKey<T> {
-    /// Returns the dimension of the actual blind-rotation input secret.
-    #[must_use]
-    pub fn input_dimension(&self) -> LweDimension {
-        self.input_dimension
-    }
-
-    /// Returns the public, fixed weight of the input binary secret.
-    #[must_use]
-    pub fn hamming_weight(&self) -> usize {
-        self.hamming_weight
-    }
-
-    /// Returns the number of distinct buckets containing each input index.
-    #[must_use]
-    pub fn copy_count(&self) -> usize {
-        self.copy_count
-    }
-
-    /// Returns the total number of buckets, including unoccupied buckets.
-    #[must_use]
-    pub fn bucket_count(&self) -> usize {
-        self.map.bucket_count()
-    }
-
-    /// Returns the input modulus, also used for the accumulator coefficients.
-    #[must_use]
-    pub fn input_modulus(&self) -> BarrettModulus<T> {
-        self.modulus
-    }
-
-    pub(super) fn rotation_modulus_switch(&self) -> RotationModulusSwitch<T> {
-        self.rotation_modulus_switch
-    }
-
-    /// Returns the explicit accumulator modulus.
-    #[must_use]
-    pub fn cipher_modulus(&self) -> Option<T> {
-        Some(self.modulus.value())
-    }
-
-    /// Returns the GGSW layout shared by all selections and dummies.
-    #[must_use]
-    pub fn size(&self) -> GadgetSize {
-        self.size
-    }
-
-    /// Returns the decomposition basis, including its level order.
-    #[must_use]
-    pub fn basis(&self) -> &ApproxSignedBasis<T> {
-        &self.basis
-    }
-
-    /// Returns coefficient storage in
-    /// `[bucket][entry...,dummy][row][level][component][coefficient]` order.
-    #[must_use]
-    pub fn as_slice(&self) -> &[T] {
-        &self.data
-    }
-
-    /// Borrows one bucket's increasing input indices and coefficient GGSWs.
-    ///
-    /// Ciphertexts follow the indices, with **one additional dummy last**.
-    /// A bucket without public entries still returns its dummy ciphertext.
-    /// This view contains no plaintext selection or occupancy information.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `bucket_index >= self.bucket_count()`.
-    #[must_use]
-    pub fn bucket(&self, bucket_index: usize) -> (&[usize], GgswIter<'_, T>) {
-        let (indices, ciphertexts) = self.bucket_data(bucket_index);
-        (indices, GgswIter::new(ciphertexts, self.size.ggsw_len()))
-    }
-
-    /// Borrows a bucket's indices and contiguous GGSW storage, including its final
-    /// dummy. Splitting the dummy off allows aggregation to start with a copy.
-    pub(super) fn bucket_data(&self, bucket_index: usize) -> (&[usize], &[T]) {
-        assert!(
-            bucket_index < self.bucket_count(),
-            "sparse bucket index out of bounds"
-        );
-        let start = self.map.bucket_offsets()[bucket_index];
-        let end = self.map.bucket_offsets()[bucket_index + 1];
-        let ggsw_len = self.size.ggsw_len();
-        let ciphertexts =
-            &self.data[(start + bucket_index) * ggsw_len..(end + bucket_index + 1) * ggsw_len];
-        (&self.map.input_indices()[start..end], ciphertexts)
-    }
-}
+use crate::{
+    ClientKey, KeyGenerationError, KeyGenerator, SparseBootstrappingKeyError,
+    SparseGlweBootstrappingKey,
+};
 
 impl<T, Table> KeyGenerator<'_, T, Table>
 where
@@ -165,7 +45,7 @@ where
         copy_count: usize,
         bucket_count: usize,
         rng: &mut R,
-    ) -> Result<SparseGlweBootstrappingKey<T>, KeyGenerationError>
+    ) -> Result<SparseGlweBootstrappingKey<T, BarrettModulus<T>>, KeyGenerationError>
     where
         R: rand::Rng + rand::CryptoRng,
     {
@@ -255,20 +135,11 @@ where
             );
         }
 
-        Ok(SparseGlweBootstrappingKey {
+        Ok(SparseGlweBootstrappingKey::try_new(
             data,
             map,
-            input_dimension: LweDimension::new(input_dimension),
             hamming_weight,
-            copy_count,
-            modulus: parameters.small_lwe().cipher_modulus(),
-            rotation_modulus_switch: RotationModulusSwitch::new(
-                parameters.small_lwe().cipher_modulus(),
-                2 * size.glwe_size().poly_length().get(),
-                1,
-            ),
-            size,
-            basis: gadget.basis().clone(),
-        })
+            gadget,
+        )?)
     }
 }

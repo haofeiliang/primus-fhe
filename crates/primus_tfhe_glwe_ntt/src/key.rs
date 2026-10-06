@@ -24,7 +24,7 @@ pub enum BlindRotationKey<T: FheUint> {
     /// One binary control or a ternary control pair per input coefficient.
     Classic(NttGlweBootstrappingKey<T, BarrettModulus<T>>),
     /// Bucketed selections for a fixed-weight binary input secret.
-    Sparse(SparseGlweBootstrappingKey<T>),
+    Sparse(SparseGlweBootstrappingKey<T, BarrettModulus<T>>),
 }
 
 impl<T: FheUint> BlindRotationKey<T> {

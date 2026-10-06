@@ -2,11 +2,7 @@
 
 use num_traits::{ConstOne, ConstZero};
 use primus_fft::{Complex64, FftTable, TorusFftValue};
-use primus_lattice::LweDimension;
-use primus_lattice::{
-    ngsw::NgswIter,
-    nlev::{FourierNlev, Nlev, NlevIter},
-};
+use primus_lattice::nlev::{FourierNlev, Nlev};
 use primus_ntru::{FourierNtruSecretKey, NtruLweKeySwitchingKey, SecretKeyDistr};
 use primus_tfhe::sparse::BucketMap;
 use std::alloc::Layout;
@@ -15,100 +11,8 @@ use zeroize::Zeroizing;
 use crate::{
     CircuitBootstrapConfig, CircuitBootstrapKey, CircuitBootstrapParameters, ClientKey,
     KeyGenerationError, KeyGenerator, ServerKey, SparseBootstrappingKeyError,
+    SparseNtruBootstrappingKey,
 };
-
-/// Coefficient selectors and public buckets for a fixed-weight binary client.
-/// Bucket zero uses NLEV bits for public-LUT lifting; later buckets use NGSW bits.
-///
-/// Each nonzero input is privately assigned to exactly one of its public copies.
-/// Each bucket has an independently encrypted dummy, one when unoccupied and zero
-/// otherwise. Only ciphertexts and the public map remain after generation.
-/// The parent [`ServerKey`] carries the common basis and return KSK.
-/// Sparse evaluation needs no separate NLEV initializer.
-///
-/// The external secret is sampled without NTRU rejection; only the accumulator
-/// secret undergoes invertibility (and Fourier stability) screening. The public
-/// map is conditioned on successful matching to the fixed external secret.
-/// These conditions need independent security analysis; no failure rate is certified.
-/// Each Fourier control is recovered to native coefficients before storage. This
-/// conversion, the aggregate FFT and external products incur numerical error.
-pub struct SparseNtruBootstrappingKey<T: TorusFftValue> {
-    data: Vec<T>,
-    map: BucketMap,
-    input_dimension: LweDimension,
-    hamming_weight: usize,
-    copy_count: usize,
-    pub(crate) control_len: usize,
-}
-
-impl<T: TorusFftValue> SparseNtruBootstrappingKey<T> {
-    /// Returns the external LWE dimension.
-    #[must_use]
-    pub fn input_dimension(&self) -> LweDimension {
-        self.input_dimension
-    }
-
-    /// Returns the declared number of nonzero binary input coefficients.
-    #[must_use]
-    pub fn hamming_weight(&self) -> usize {
-        self.hamming_weight
-    }
-
-    /// Returns the number of distinct buckets containing every input index.
-    #[must_use]
-    pub fn copy_count(&self) -> usize {
-        self.copy_count
-    }
-
-    /// Returns the number of public buckets, including empty ones.
-    #[must_use]
-    pub fn bucket_count(&self) -> usize {
-        self.map.bucket_count()
-    }
-
-    /// Returns `[bucket][entry...,dummy][level][coefficient]` storage.
-    /// Bucket zero contains NLEV controls; later buckets contain NGSW controls.
-    #[must_use]
-    pub fn as_slice(&self) -> &[T] {
-        &self.data
-    }
-
-    /// Borrows bucket zero's increasing input indices and coefficient NLEV controls.
-    /// The last control is the dummy; a publicly empty bucket contains only the dummy.
-    #[must_use]
-    pub fn first_bucket(&self) -> (&[usize], NlevIter<'_, T>) {
-        let (indices, data) = self.bucket_data(0);
-        (indices, NlevIter::new(data, self.control_len))
-    }
-
-    /// Borrows a later bucket's increasing input indices and coefficient NGSWs, with a dummy last.
-    /// An empty bucket still contains its dummy. No plaintext assignment is exposed.
-    ///
-    /// # Panics
-    /// Panics if `bucket == 0` or `bucket >= self.bucket_count()`.
-    #[must_use]
-    pub fn ngsw_bucket(&self, bucket: usize) -> (&[usize], NgswIter<'_, T>) {
-        assert!(
-            bucket > 0,
-            "bucket zero contains NLEV controls; use first_bucket"
-        );
-        let (indices, data) = self.bucket_data(bucket);
-        (indices, NgswIter::new(data, self.control_len))
-    }
-
-    pub(super) fn bucket_data(&self, bucket: usize) -> (&[usize], &[T]) {
-        assert!(
-            bucket < self.bucket_count(),
-            "sparse bucket index out of bounds"
-        );
-        let start = self.map.bucket_offsets()[bucket];
-        let end = self.map.bucket_offsets()[bucket + 1];
-        (
-            &self.map.input_indices()[start..end],
-            &self.data[(start + bucket) * self.control_len..(end + bucket + 1) * self.control_len],
-        )
-    }
-}
 
 impl<T, Table, LM> KeyGenerator<'_, T, Table, LM>
 where
@@ -278,14 +182,12 @@ where
             }
         }
         drop(selected);
-        let controls = SparseNtruBootstrappingKey {
+        let controls = SparseNtruBootstrappingKey::try_new(
             data,
             map,
-            input_dimension: LweDimension::new(dimension),
             hamming_weight,
-            copy_count,
-            control_len,
-        };
+            parameters.blind_rotation(),
+        )?;
         let blind_rotation = crate::BlindRotationKey::from_sparse(parameters, controls);
         let circuit = circuit_parameters.map(|parameters| {
             self.generate_circuit_bootstrap_key_with_main(

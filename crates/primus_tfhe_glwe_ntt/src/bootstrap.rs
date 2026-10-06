@@ -43,7 +43,7 @@ enum BlindRotation<'a, T: FheUint> {
         scratch: NttGlweBlindRotationWorkspace<T>,
     },
     Sparse {
-        key: &'a SparseGlweBootstrappingKey<T>,
+        key: &'a SparseGlweBootstrappingKey<T, BarrettModulus<T>>,
         scratch: SparseGlweBlindRotationWorkspace<T>,
     },
 }
@@ -218,14 +218,14 @@ where
                     self.context.table(),
                     scratch,
                 ),
-            BlindRotation::Sparse { key, scratch } => key
-                .ntt_blind_rotate_interleaved_lookup_table_kernel_to(
+            BlindRotation::Sparse { key, scratch } => scratch
+                .blind_rotate_interleaved_lookup_table_kernel_to(
+                    key,
                     small_lwe,
                     lookup_table.as_view(),
                     rotation_step,
                     self.accumulator.as_mut_view(),
                     self.context.table(),
-                    scratch,
                 ),
         }
         &self.accumulator

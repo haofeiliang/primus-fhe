@@ -9,7 +9,7 @@
 
 公共层与两个后端使用相同的角色名称：`Encryptor`、`Decryptor`、`ClientKey`、 `EncryptionKey`、`PbsOrder` 和 `TfheParameters`。客户端密文为 `LweCiphertext`； GLWE 表示 PBS 累加器所属的方案家族。
 
-该 family 的默认依赖只使用系数类型、参数和客户端运算，不引入 NTT/FFT。需要同态求值时选择下述具体后端；其普通依赖会启用对应表示。
+该 family 的默认依赖只使用系数类型、sparse 密钥存储、参数和客户端运算，不引入 NTT/FFT。需要同态求值时选择下述具体后端；其普通依赖会启用对应表示。
 
 `TfheConfig::poly_length` 接收 `primus_poly::PolyLength`。用 `PolyLength::try_new(n)?`（已知常量可用 `new`）构造一次，供参数、尺寸与变换表复用。无效整数由 `PolyLengthError` 报告；参数构造仍负责组合布局、模数及采样器检查。
 
@@ -33,6 +33,12 @@
 两种 order 均返回各自的外部秘密域。后端 `context.allocate_lwe_ciphertext()` 根据 `external_lwe_dimension()` 分配输出， 用 `client_key.external_lwe_secret_key()` 借用对应秘密。 `blind_rotation_ggsw()` 描述累加环域和 GGSW 控制项， `glwe_key_switching()` 描述环密钥切换。 Basis/布局兼容不能证明实际秘密一致。
 
 `ClientKey::new` 导入系数秘密。完整 setup 检查与 BR→KS 外部绑定会核对拥有型 LWE 秘密记录的模数；即使 binary 系数相同，异模数也返回 `TfheKeyError::LweSecretKeyModulusMismatch`。这些边界也检查 small-LWE 的 binary/ternary 系数范围，无效值返回 `TfheKeyError::InvalidLweSecretKeyCoefficient`。Accumulator 仍支持 Gaussian 秘密，其幅值要求继续由后端契约规定。
+
+## Sparse 系数密钥
+
+`SparseGlweBootstrappingKey<T, M>` 统一持有系数 GGSW、公开 bucket map、布局、模数与 basis。NTT 后端使用 `M = BarrettModulus<T>`，Fourier 使用 `NativeModulus<T>`，均重导出家族类型。`bucket(i)` 借用递增的输入索引与 GGSW，每桶末尾额外包含一个 dummy。
+
+通常通过后端 `KeyGenerator` 加密生成。`try_new(data, map, hamming_weight, &ggsw_parameters)` 导入已有系数控制密文并检查组合布局，不转换或复制密文；加密选择、实际秘密与噪声预算仍由生成方保证。Raw sparse BR 使用后端的 `SparseGlweBlindRotationWorkspace::blind_rotate_lookup_table_to(&key, input, lut, output, table_or_fft)`；普通 PBS/CBS 继续使用已有 evaluator。
 
 ## 客户端与 LUT
 

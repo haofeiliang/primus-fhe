@@ -5,6 +5,7 @@ use primus_integer::FheUint;
 use primus_lattice::{
     ggsw::Ggsw, glwe::Glwe, lwe::Lwe, workspace::NttGlweExternalProductWorkspace,
 };
+use primus_modulus::BarrettModulus;
 use primus_ntt::NttTable;
 use primus_poly::Polynomial;
 use primus_reduce::ReduceOnceSlice;
@@ -12,7 +13,41 @@ use primus_tfhe::rotation::RotationModulusSwitch;
 
 use super::SparseGlweBootstrappingKey;
 
-impl<T: FheUint> SparseGlweBootstrappingKey<T> {
+/// Reusable workspace for [`SparseGlweBootstrappingKey`] blind rotation.
+///
+/// Stores input exponents, one aggregate transformed in place, a GLWE buffer and
+/// external-product scratch. It contains no secret support or matching data.
+pub struct SparseGlweBlindRotationWorkspace<T: FheUint> {
+    input_exponents: Vec<usize>,
+    aggregate: Vec<T>,
+    scratch: Glwe<Vec<T>>,
+    external_product: NttGlweExternalProductWorkspace<T>,
+}
+
+impl<T: FheUint> SparseGlweBlindRotationWorkspace<T> {
+    pub(crate) fn with_external_product<R>(
+        &mut self,
+        size: primus_lattice::GadgetSize,
+        operation: impl FnOnce(&mut NttGlweExternalProductWorkspace<T>) -> R,
+    ) -> R {
+        self.external_product.with_rebound(size, operation)
+    }
+
+    /// Allocates scratch for the key's input dimension and gadget layout.
+    /// It can be reused with other sparse keys of the same dimensions and layout.
+    #[must_use]
+    pub fn new(key: &SparseGlweBootstrappingKey<T, BarrettModulus<T>>) -> Self {
+        let size = key.size();
+        Self {
+            input_exponents: vec![0; key.input_dimension().get()],
+            aggregate: vec![T::ZERO; size.ggsw_len()],
+            scratch: Glwe::zero(size.glwe_len()),
+            external_product: NttGlweExternalProductWorkspace::new(size),
+        }
+    }
+}
+
+impl<T: FheUint> SparseGlweBlindRotationWorkspace<T> {
     /// Blind-rotates an encoded LUT into a coefficient-domain GLWE ciphertext.
     ///
     /// Uses ordinary PBS quantization (rotation step one). Quantizes each input
@@ -20,12 +55,12 @@ impl<T: FheUint> SparseGlweBootstrappingKey<T> {
     /// accumulator with `X^(-R(b)) * LUT`, then applies one external product per
     /// bucket. Its control encrypts the selected `X^R(a[i])`, or `1` if no entry
     /// is selected. All buckets and encrypted zero entries are processed.
-    /// The caller owns the output; `context` is reused without online allocation.
+    /// The caller owns the output; this workspace is reused without online allocation.
     ///
     /// # Correctness
     ///
     /// The input must use this key's small-LWE secret. Input and LUT coefficients
-    /// must be canonical under [`Self::input_modulus`]. The LUT has `N` encoded
+    /// must be canonical under [`SparseGlweBootstrappingKey::input_modulus`]. The LUT has `N` encoded
     /// coefficients; the caller is responsible for its encoding and noise margin.
     /// This raw operation performs neither key switching nor sample extraction.
     ///
@@ -33,37 +68,34 @@ impl<T: FheUint> SparseGlweBootstrappingKey<T> {
     ///
     /// Panics if input, LUT, output or workspace layouts, or the NTT length/modulus
     /// do not match this key. These checks precede output writes.
-    pub fn ntt_blind_rotate_lookup_table_to<Table, A, B, C>(
-        &self,
+    pub fn blind_rotate_lookup_table_to<Table, A, B, C>(
+        &mut self,
+        key: &SparseGlweBootstrappingKey<T, BarrettModulus<T>>,
         input: &Lwe<A>,
         lookup_table: &Polynomial<B>,
         output: &mut Glwe<C>,
         ntt: &Table,
-        context: &mut SparseGlweBlindRotationWorkspace<T>,
     ) where
         Table: NttTable<ValueT = T>,
         A: Data<Elem = T>,
         B: Data<Elem = T>,
         C: DataMut<Elem = T>,
     {
-        let size = self.size();
+        let size = key.size();
         let poly_length = size.glwe_size().poly_length().get();
-        let modulus = self.input_modulus();
+        let modulus = key.input_modulus();
         assert_eq!(
             (
                 input.dimension(),
                 lookup_table.as_ref().len(),
                 output.as_ref().len()
             ),
-            (self.input_dimension().get(), poly_length, size.glwe_len()),
+            (key.input_dimension().get(), poly_length, size.glwe_len()),
             "sparse blind-rotation input, LUT or output layout mismatch"
         );
         assert_eq!(
-            (
-                context.input_exponents.len(),
-                context.external_product.size()
-            ),
-            (self.input_dimension().get(), size),
+            (self.input_exponents.len(), self.external_product.size()),
+            (key.input_dimension().get(), size),
             "sparse blind-rotation workspace layout mismatch"
         );
         assert_eq!(
@@ -77,41 +109,41 @@ impl<T: FheUint> SparseGlweBootstrappingKey<T> {
             "sparse blind-rotation NTT modulus mismatch"
         );
 
-        self.ntt_blind_rotate_interleaved_lookup_table_kernel_to(
+        self.blind_rotate_interleaved_lookup_table_kernel_to(
+            key,
             input.as_view(),
             lookup_table.as_view(),
             1,
             output.as_mut_view(),
             ntt,
-            context,
         );
     }
 
     /// The public raw wrapper or evaluator has checked layouts, table and LUT.
     /// The rotation step is the compiled LUT's padded output count; every mask
     /// and body coefficient must use this same step to preserve output slots.
-    pub(crate) fn ntt_blind_rotate_interleaved_lookup_table_kernel_to<Table>(
-        &self,
+    pub(crate) fn blind_rotate_interleaved_lookup_table_kernel_to<Table>(
+        &mut self,
+        key: &SparseGlweBootstrappingKey<T, BarrettModulus<T>>,
         input: Lwe<&[T]>,
         lookup_table: Polynomial<&[T]>,
         rotation_step: usize,
         mut output: Glwe<&mut [T]>,
         ntt: &Table,
-        context: &mut SparseGlweBlindRotationWorkspace<T>,
     ) where
         Table: NttTable<ValueT = T>,
     {
-        let size = self.size();
+        let size = key.size();
         let poly_length = size.glwe_size().poly_length().get();
-        let modulus = self.input_modulus();
+        let modulus = key.input_modulus();
         let SparseGlweBlindRotationWorkspace {
             input_exponents,
             aggregate,
             scratch,
             external_product,
-        } = context;
+        } = self;
         let modulus_switch = if rotation_step == 1 {
-            self.rotation_modulus_switch()
+            key.rotation_modulus_switch()
         } else {
             RotationModulusSwitch::new(modulus, 2 * poly_length, rotation_step)
         };
@@ -127,8 +159,8 @@ impl<T: FheUint> SparseGlweBootstrappingKey<T> {
         let tile_length = (16 * 1024 / size_of::<T>() / poly_length).max(1) * poly_length;
         let group_capacity = super::aggregation::max_group_len(modulus.value());
         let mut output_is_current = true;
-        for bucket_index in 0..self.bucket_count() {
-            let (indices, ciphertexts) = self.bucket_data(bucket_index);
+        for bucket_index in 0..key.bucket_count() {
+            let (indices, ciphertexts) = key.bucket_data(bucket_index);
             let (selections, dummy) = ciphertexts.split_at(indices.len() * size.ggsw_len());
             // Every bucket has a dummy, even if publicly empty. It overwrites the
             // previous bucket's NTT values before adding the rotated selections.
@@ -210,7 +242,7 @@ impl<T: FheUint> SparseGlweBootstrappingKey<T> {
                 aggregate_ntt.external_product_to(
                     &output,
                     scratch,
-                    self.basis(),
+                    key.basis(),
                     modulus,
                     ntt,
                     external_product,
@@ -219,7 +251,7 @@ impl<T: FheUint> SparseGlweBootstrappingKey<T> {
                 aggregate_ntt.external_product_to(
                     scratch,
                     &mut output,
-                    self.basis(),
+                    key.basis(),
                     modulus,
                     ntt,
                     external_product,
@@ -229,40 +261,6 @@ impl<T: FheUint> SparseGlweBootstrappingKey<T> {
         }
         if !output_is_current {
             output.as_mut().copy_from_slice(scratch.as_ref());
-        }
-    }
-}
-
-/// Reusable workspace for [`SparseGlweBootstrappingKey`] blind rotation.
-///
-/// Stores input exponents, one aggregate transformed in place, a GLWE buffer and
-/// external-product scratch. It contains no secret support or matching data.
-pub struct SparseGlweBlindRotationWorkspace<T: FheUint> {
-    input_exponents: Vec<usize>,
-    aggregate: Vec<T>,
-    scratch: Glwe<Vec<T>>,
-    external_product: NttGlweExternalProductWorkspace<T>,
-}
-
-impl<T: FheUint> SparseGlweBlindRotationWorkspace<T> {
-    pub(crate) fn with_external_product<R>(
-        &mut self,
-        size: primus_lattice::GadgetSize,
-        operation: impl FnOnce(&mut NttGlweExternalProductWorkspace<T>) -> R,
-    ) -> R {
-        self.external_product.with_rebound(size, operation)
-    }
-
-    /// Allocates scratch for the key's input dimension and gadget layout.
-    /// It can be reused with other sparse keys of the same dimensions and layout.
-    #[must_use]
-    pub fn new(key: &SparseGlweBootstrappingKey<T>) -> Self {
-        let size = key.size();
-        Self {
-            input_exponents: vec![0; key.input_dimension().get()],
-            aggregate: vec![T::ZERO; size.ggsw_len()],
-            scratch: Glwe::zero(size.glwe_len()),
-            external_product: NttGlweExternalProductWorkspace::new(size),
         }
     }
 }

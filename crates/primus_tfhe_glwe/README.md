@@ -9,7 +9,7 @@ Backend-independent GLWE-TFHE parameters, client keys, encryption/decryption, an
 
 The shared layer and both backends use the same role names: `Encryptor`, `Decryptor`, `ClientKey`, `EncryptionKey`, `PbsOrder` and `TfheParameters`. Client ciphertexts are `LweCiphertext`; GLWE describes the PBS accumulator family.
 
-This family uses only coefficient types, parameters and client operations by default, without pulling in NTT/FFT. Select a concrete backend below for homomorphic evaluation; its normal dependencies enable the required representation.
+This family uses coefficient types, sparse key storage, parameters and client operations by default, without pulling in NTT/FFT. Select a concrete backend below for homomorphic evaluation; its normal dependencies enable the required representation.
 
 `TfheConfig::poly_length` takes `primus_poly::PolyLength`. Construct it once with `PolyLength::try_new(n)?` (or `new` for known constants) and reuse it for parameters, sizes and transform tables. Invalid integers are reported by `PolyLengthError`; parameter construction retains its combined-layout, modulus and sampler checks.
 
@@ -33,6 +33,12 @@ Dimension choices use `LweDimension` and, for GLWE, `GlweDimension`; decompositi
 Both orders return to their external secret. Backend `context.allocate_lwe_ciphertext()` uses `external_lwe_dimension()` to allocate outputs; `client_key.external_lwe_secret_key()` borrows that secret. `blind_rotation_ggsw()` describes the accumulator ring domain and GGSW controls, and `glwe_key_switching()` describes the ring key switch. Basis/layout compatibility does not prove actual secret identity.
 
 `ClientKey::new` imports coefficient secrets. Full setup and BR→KS external binding check the owning LWE secret’s recorded modulus; a different modulus returns `TfheKeyError::LweSecretKeyModulusMismatch`, even for identical binary coefficients. These boundaries also check the small-LWE binary/ternary coefficient domain and return `TfheKeyError::InvalidLweSecretKeyCoefficient` on invalid values. Gaussian accumulator secrets remain supported; backend magnitude requirements still apply.
+
+## Sparse coefficient keys
+
+`SparseGlweBootstrappingKey<T, M>` owns the shared coefficient GGSWs, public bucket map, layout, modulus and basis. The NTT backend uses `M = BarrettModulus<T>`; Fourier uses `NativeModulus<T>`. Both re-export the family type. `bucket(i)` borrows the increasing input indices and GGSWs, with one additional dummy last.
+
+Prefer the backend `KeyGenerator` for encryption. `try_new(data, map, hamming_weight, &ggsw_parameters)` imports already prepared coefficient controls and checks their combined layout without transforming or copying the ciphertexts. The encrypted assignment, actual secrets and noise budget remain the producer's responsibility. Raw sparse BR runs through the backend's `SparseGlweBlindRotationWorkspace::blind_rotate_lookup_table_to(&key, input, lut, output, table_or_fft)`; ordinary PBS/CBS callers continue using their evaluators.
 
 ## Clients and LUTs
 

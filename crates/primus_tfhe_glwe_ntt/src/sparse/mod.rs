@@ -1,8 +1,8 @@
-//! Sparse bootstrapping keys and reference blind rotation for the NTT backend.
+//! Sparse key generation and blind rotation for the NTT backend.
 
 mod aggregation;
 mod blind_rotation;
 mod key;
 
+use crate::SparseGlweBootstrappingKey;
 pub use blind_rotation::SparseGlweBlindRotationWorkspace;
-pub use key::SparseGlweBootstrappingKey;
