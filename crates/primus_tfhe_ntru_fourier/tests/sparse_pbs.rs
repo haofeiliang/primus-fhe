@@ -357,7 +357,8 @@ fn sparse_generation_rejects_invalid_secrets_buckets_and_cbs_before_sampling() {
     }
     let context = context::<u32, RustFftTable>(SecretKeyDistr::fixed_hamming_weight_binary(DIM, 5));
     let mut generator = KeyGenerator::new(&context);
-    let (client, _) = generator.try_generate(None, &mut rng).unwrap();
+    // Rejection paths need only the client; no BR/return key is consumed here.
+    let client = generator.try_generate_client_key(&mut rng).unwrap();
     for (copies, buckets, expected) in [
         (
             0,

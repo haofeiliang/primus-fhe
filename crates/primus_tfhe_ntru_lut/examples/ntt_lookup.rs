@@ -158,14 +158,6 @@ fn main() {
         |x, output| ((function(x) >> (CHUNK_BITS * output)) & 3) as Word,
     )
     .unwrap();
-    let stats = table.stats();
-    println!(
-        "LUT: {} unique / {} logical polynomials; {} one-hot chunks; {} selection nodes",
-        stats.unique_polynomial_count,
-        stats.logical_polynomial_count,
-        stats.one_hot_chunk_count,
-        stats.selection_node_count,
-    );
 
     // Client: generate NLEV[1] only for sparse plans with public lifts. Here its
     // basis/noise match BR (above, sigma=0.7); the ciphertext uses fresh randomness.

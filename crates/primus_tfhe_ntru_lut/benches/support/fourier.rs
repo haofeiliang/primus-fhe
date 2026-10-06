@@ -1,19 +1,20 @@
-use primus_encoding::RoundedCodec;
-use primus_tfhe::BlindRotationConfig;
-// Fourier evaluation uses the public API and shared representative parameters.
+//! Fourier evaluation uses the public API and shared representative parameters.
+
 use std::hint::black_box;
 
-use super::{CONFIG, INPUT, Workload, benchmark_lut_creation, check_repetition, heap};
 use criterion::{Criterion, SamplingMode, Throughput};
+use primus_encoding::RoundedCodec;
 use primus_fft::{FftTable, TorusFftValue};
-use primus_modulus::NativeModulus;
-use primus_modulus::PowOf2Modulus;
+use primus_modulus::{NativeModulus, PowOf2Modulus};
 use primus_ntru::SecretKeyDistr;
 use primus_test_allocations::measure;
+use primus_tfhe::BlindRotationConfig;
 use primus_tfhe_ntru_fourier::{KeyGenerator, TfheContext};
 use primus_tfhe_ntru_lut::{FourierLookupTableEvaluator, HighPrecisionLookupTable};
 use primus_tfhe_test_support::parameters::ntru;
 use rand::{SeedableRng, rngs::StdRng};
+
+use super::{CONFIG, INPUT, Workload, benchmark_lut_creation, check_repetition, heap};
 
 // Registers repeated, dense and cross-output shared LUT workloads for this backend and word width.
 pub fn benchmark<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) {

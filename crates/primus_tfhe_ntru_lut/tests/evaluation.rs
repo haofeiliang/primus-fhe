@@ -128,7 +128,7 @@ impl Mapping {
     fn digit(self, x: usize, output: usize, radix: usize) -> u64 {
         match self {
             Self::Carries => digit(x, output, radix),
-            // Nine distinct truth tables retain a complete eight-LWE tile
+            // Nine distinct truth tables retain a complete eight-LWE Fourier tile
             // and a one-LWE tail even when equal output roots are deduplicated.
             Self::ReturnTile => {
                 ([0x00u16, 0xff, 0x55, 0xaa, 0x33, 0xcc, 0x0f, 0xf0, 0x81][output] >> x & 1) as u64
@@ -180,9 +180,9 @@ impl Mapping {
 
 // Combines partition boundaries with small radix-two cases for sharing and pruning.
 fn cases(radix: usize) -> Vec<(LookupTableConfig, Mapping)> {
-    // Preserve the established geometry order and RNG stream across backends.
+    // Use the same geometry order across backends.
     let counts: &[(usize, usize, usize)] = if radix == 2 {
-        // d=0 with a return-tile tail; d=c; mixed layers; finally K=N.
+        // d=0 with a Fourier return-tile tail; d=c; mixed layers; finally K=N.
         &[(3, 9, 0), (3, 5, 3), (7, 3, 5), (7, 3, 6)]
     } else {
         // Also include a single public layer producing exactly one output.
@@ -223,8 +223,6 @@ fn cases(radix: usize) -> Vec<(LookupTableConfig, Mapping)> {
                 mapping,
             ));
         }
-    }
-    if radix == 2 {
         cases.push((
             LookupTableConfig {
                 input_chunk_count: 4,
@@ -316,46 +314,50 @@ fn exercise<T: FheUint>(
                 &format!("{case}, {mapping:?}, x={x}, output={i}, config={config:?}"),
             );
         }
+        // Shape checks run before evaluation, independently of radix/geometry.
+        // Retain a Fourier return-tile tail (scalar returns in NTT), fully pruned
+        // tables with unused inputs, and shared nodes with repeated output roots.
+        if x == 0
+            && matches!(
+                mapping,
+                Mapping::ReturnTile | Mapping::Constant | Mapping::Shared
+            )
+        {
+            check_io_rejection(&input, &mut output, &mut evaluate);
+        }
     }
-    let input: Vec<_> = (0..config.input_chunk_count)
-        .map(|_| encrypt(T::ZERO))
-        .collect();
-    let before = output.clone();
+}
+
+// Reject malformed inputs/outputs before any output write; the same evaluator
+// must still reproduce the previous ciphertexts after the rejected requests.
+fn check_io_rejection<T: FheUint>(
+    input: &[LweCiphertext<T>],
+    output: &mut [LweCiphertext<T>],
+    evaluate: &mut impl FnMut(&[LweCiphertext<T>], &mut [LweCiphertext<T>]),
+) {
+    let before = output.to_vec();
     assert!(
         catch_unwind(AssertUnwindSafe(|| evaluate(
             &input[..input.len() - 1],
-            &mut output
+            output
         )))
         .is_err()
     );
     assert_eq!(output, before);
-    let mut bad_input = input.clone();
+    let mut bad_input = input.to_vec();
     *bad_input.last_mut().unwrap() = LweCiphertext::zero(1);
-    assert!(catch_unwind(AssertUnwindSafe(|| evaluate(&bad_input, &mut output))).is_err());
+    assert!(catch_unwind(AssertUnwindSafe(|| evaluate(&bad_input, output))).is_err());
     assert_eq!(output, before);
-    let mut bad_output = output.clone();
+    let mut bad_output = output.to_vec();
     *bad_output.last_mut().unwrap() = LweCiphertext::zero(1);
     let bad_before = bad_output.clone();
-    assert!(catch_unwind(AssertUnwindSafe(|| evaluate(&input, &mut bad_output))).is_err());
+    assert!(catch_unwind(AssertUnwindSafe(|| evaluate(input, &mut bad_output))).is_err());
     assert_eq!(bad_output, bad_before);
     let len = output.len();
-    assert!(
-        catch_unwind(AssertUnwindSafe(|| evaluate(
-            &input,
-            &mut output[..len - 1]
-        )))
-        .is_err()
-    );
+    assert!(catch_unwind(AssertUnwindSafe(|| evaluate(input, &mut output[..len - 1]))).is_err());
     assert_eq!(output, before);
-    evaluate(&input, &mut output);
-    for (i, result) in output.iter().enumerate() {
-        assert_phase(
-            decrypt_phase(result),
-            mapping.digit(0, i, radix),
-            radix,
-            case,
-        );
-    }
+    evaluate(input, output);
+    assert_eq!(output, before);
 }
 
 // NTT keeps explicit prime arithmetic and exact coefficient representations.
@@ -447,33 +449,11 @@ fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T) {
                         Err(LookupTableError::IncompatiblePublicLiftKey)
                     ));
                     let other_ring = lift_parameters(PolyLength::new(32), BarrettModulus::new(q));
-                    lift_rng = StdRng::seed_from_u64(0xBAD);
-                    let mut untouched = StdRng::seed_from_u64(0xBAD);
-                    assert!(matches!(
-                        generator.try_generate_public_lift_key(
-                            client.accumulator_ntru_secret_key(),
-                            &other_ring,
-                            &mut lift_rng,
-                        ),
-                        Err(primus_tfhe_ntru::KeyGenerationError::IncompatiblePublicLiftParameters)
-                    ));
-                    assert_eq!(lift_rng.next_u64(), untouched.next_u64());
                     let other_modulus = lift_parameters(
                         context.parameters().poly_length(),
                         BarrettModulus::new(T::as_from(65_537u32)),
                     );
-                    lift_rng = StdRng::seed_from_u64(0xBAD);
-                    let mut untouched = StdRng::seed_from_u64(0xBAD);
-                    assert!(matches!(
-                        generator.try_generate_public_lift_key(
-                            client.accumulator_ntru_secret_key(),
-                            &other_modulus,
-                            &mut lift_rng,
-                        ),
-                        Err(primus_tfhe_ntru::KeyGenerationError::IncompatiblePublicLiftParameters)
-                    ));
-                    assert_eq!(lift_rng.next_u64(), untouched.next_u64());
-                    // Exact lengths isolate metadata rejection from malformed storage.
+                    // Keep both buffers alive for the binding closure's shared lifetime.
                     let foreign_keys = [
                         vec![T::ZERO; other_ring.nlev_len()],
                         vec![T::ZERO; other_modulus.nlev_len()],
@@ -481,6 +461,18 @@ fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T) {
                     for (parameters, values) in
                         [&other_ring, &other_modulus].into_iter().zip(&foreign_keys)
                     {
+                        lift_rng = StdRng::seed_from_u64(0xBAD);
+                        let mut untouched = StdRng::seed_from_u64(0xBAD);
+                        assert!(matches!(
+                            generator.try_generate_public_lift_key(
+                                client.accumulator_ntru_secret_key(),
+                                parameters,
+                                &mut lift_rng,
+                            ),
+                            Err(primus_tfhe_ntru::KeyGenerationError::IncompatiblePublicLiftParameters)
+                        ));
+                        assert_eq!(lift_rng.next_u64(), untouched.next_u64());
+                        // Exact lengths isolate metadata rejection from malformed storage.
                         let key = primus_ntru::NttNlevCiphertext::new(values.as_slice());
                         assert!(matches!(
                             bind(Some((key, parameters))),
@@ -527,6 +519,10 @@ fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T) {
                     |m| encryptor.encrypt_padded(m, &mut rng).unwrap(),
                     |c| decryptor.decrypt_phase(c.as_view()).unwrap(),
                 );
+            }
+            // Resource compatibility is independent of radix; check once per key set.
+            if radix != 2 {
+                continue;
             }
             let config = cases(radix)[0].0;
             let other = primus_tfhe_ntru_ntt::TfheContext::<_, Table, _>::try_from_parameters(
@@ -707,6 +703,10 @@ fn fourier<T: TorusFftValue, Table: FftTable>() {
                     |m| encryptor.encrypt_padded(m, &mut rng).unwrap(),
                     |c| decryptor.decrypt_phase(c.as_view()).unwrap(),
                 );
+            }
+            // Resource compatibility is independent of radix; check once per key set.
+            if radix != 2 {
+                continue;
             }
             let config = cases(radix)[0].0;
             let other = primus_tfhe_ntru_fourier::TfheContext::<_, Table, _>::from_parameters(

@@ -5,6 +5,7 @@
 //! Classic/sparse pairs use the same fixed-weight client and independently seeded inputs.
 //! IDs without a workload suffix use the polynomial example; `dense_seed42` adds a fixed dense
 //! mapping to distinguish general evaluation costs from repeated-subtable gains.
+//! `shared_middle_chunk` exercises cross-output sharing and skipped selectors.
 //! No production-source copies or private-stage hooks are used.
 //! Run: cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features ntt,rustfft,tfhe-fft
 

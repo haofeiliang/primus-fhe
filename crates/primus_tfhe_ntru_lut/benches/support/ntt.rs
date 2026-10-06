@@ -1,20 +1,21 @@
-use primus_encoding::RoundedCodec;
-use primus_tfhe::BlindRotationConfig;
-// Ntt evaluation uses the public API and shared representative parameters.
+//! NTT evaluation uses the public API and shared representative parameters.
+
 use std::hint::black_box;
 
-use super::{CONFIG, INPUT, Workload, benchmark_lut_creation, check_repetition, heap};
 use criterion::{Criterion, SamplingMode, Throughput};
+use primus_encoding::RoundedCodec;
 use primus_integer::FheUint;
 use primus_modulus::PowOf2Modulus;
 use primus_ntru::SecretKeyDistr;
 use primus_ntt::MonomialNttTable;
 use primus_test_allocations::measure;
+use primus_tfhe::BlindRotationConfig;
 use primus_tfhe_ntru_lut::{HighPrecisionLookupTable, NttLookupTableEvaluator};
 use primus_tfhe_ntru_ntt::{KeyGenerator, TfheContext};
-use primus_tfhe_test_support::parameters::ntru;
-use primus_tfhe_test_support::parameters::ntt_circuit_modulus;
+use primus_tfhe_test_support::parameters::{ntru, ntt_circuit_modulus};
 use rand::{SeedableRng, rngs::StdRng};
+
+use super::{CONFIG, INPUT, Workload, benchmark_lut_creation, check_repetition, heap};
 
 // Registers repeated, dense and cross-output shared LUT workloads for this backend and word width.
 pub fn benchmark<T: FheUint, Table: MonomialNttTable<ValueT = T>>(c: &mut Criterion) {
