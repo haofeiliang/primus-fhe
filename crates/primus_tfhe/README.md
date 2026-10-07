@@ -193,44 +193,42 @@ The minimal traits are `ProgrammableBootstrap` and `ProgrammableBootstrapInterle
 
 ### Choosing the output encoding
 
-Choose the compiler's output encoding once, then use any of its function or slice methods:
+Describe message domains once with `PbsMessageConfig::new(t_in)`. It defaults to `t_out=t_in`; `.with_output_modulus(t_out)` explicitly changes the output domain without changing input encoding or keys. All ManyLUT lanes and MVB outputs share this output modulus. Odd plaintext moduli remain supported where the operation permits them.
 
-| Output encoding | Compiler construction | Decoding |
-| --- | --- | --- |
-| GLWE default: selected input codec | `parameters.lookup_table_compiler(&input_codec)?` | `decryptor.decrypt(output.as_view())` |
-| NTRU default: input codec plaintext modulus, encoded at Q | `parameters.lookup_table_compiler(&input_codec)?` | `decryptor.decrypt(output.as_view())` |
-| Explicit output codec | `compiler.try_with_output_codec(&codec)?` | Decode `decrypt_phase(output)` with a codec at the return modulus |
+Prepare the codecs from either family's parameters; all four backends re-export the configuration:
 
-The function's output range can be smaller than the plaintext modulus: `x % 4` can still use `t=32` encoding. The GLWE basic examples use this default workflow:
+| Factory | `input_codec()` at q | `lut_output_codec()` at Q | `output_codec()` at q |
+| --- | --- | --- | --- |
+| `parameters.pbs_codecs(messages)?` | Rounded | Rounded | Rounded |
+| `parameters.factorized_pbs_codecs(messages)?` | Rounded | Scaled | Scaled |
 
-```rust,ignore
-let input_codec = primus_encoding::RoundedCodec::new(32, context.parameters().cipher_modulus());
-let compiler = context.parameters().lookup_table_compiler(&input_codec)?;
-let lut = compiler.compile_fn(|x| (x % 4) as u32)?;
-```
-
-`try_with_output_codec` returns a compiler with a copied `RoundedCodec`, leaving the input domain and accumulator modulus unchanged. The output codec sets `t_out`, validates `0..t_out` values and encodes them unsigned; interleaved columns share one codec. A mismatched ciphertext modulus returns `OutputModulusMismatch` when binding the codec, before compilation. GLWE uses the same input, accumulator and return modulus. NTRU compiles at Q and returns to q: decode with a codec at q and the same `t_out`, budgeting scaling-rounding and return errors. MVB continues to require an explicit unsigned `ScaledCodec`.
-
-For NTRU with an input codec using `t_in=16`, compute `x % 4` with `t_out=4`. This fragment reuses an existing context, clients and evaluator:
+For example, ordinary PBS or ManyLUT with `t_in=16` and `t_out=4`:
 
 ```rust,ignore
-use primus_encoding::RoundedCodec;
+use primus_tfhe::PbsMessageConfig;
 
-let input_codec = RoundedCodec::new(16u32, context.parameters().external_lwe().cipher_modulus());
-let table_codec = RoundedCodec::new(4u32, context.parameters().accumulator_ntru().cipher_modulus());
-let output_codec = RoundedCodec::new(4u32, context.parameters().external_lwe().cipher_modulus());
-let compiler = context.parameters().lookup_table_compiler(&input_codec)?
-    .try_with_output_codec(&table_codec).unwrap();
-let lut = compiler.compile_fn(|x| (x % 4) as u32).unwrap();
-let input = encryptor.encrypt_padded(7u32, &mut rng).unwrap();
+let codecs = context.parameters().pbs_codecs(
+    PbsMessageConfig::new(16).with_output_modulus(4),
+)?;
+let encryptor = context.encryptor(external_secret, codecs.input_codec())?;
+let decryptor = context.decryptor(external_secret, codecs.output_codec())?;
+let compiler = context.parameters().lookup_table_compiler(codecs.input_codec())?
+    .try_with_output_codec(codecs.lut_output_codec())?;
+let lut = compiler.compile_fn(|x| (x % 4) as u64)?;
+let input = encryptor.encrypt_padded(7, &mut rng)?;
 let output = evaluator.apply_lookup_table(input.as_view(), &lut);
-let message = output_codec.decode_value(decryptor.decrypt_phase(output.as_view()).unwrap());
-assert_eq!(message, 3);
+assert_eq!(decryptor.decrypt(output.as_view())?, 3);
 ```
 
-For GLWE use `context.parameters().cipher_modulus()` to construct the output codec. Independent output encoding requires no additional evaluation keys; keep that codec to decode the resulting ciphertext.
+Omit `.with_output_modulus(4)` for equal message moduli. Preparation validates the selected input/output codecs, allocates nothing, and retains no key or context borrow. The output choice is applied before codec validation, so an invalid default is not silently substituted. Program geometry, factorization-specific scale conditions and noise budgets are still checked or required by the chosen operation.
 
-`decrypt_phase` returns a canonical noisy residue under the external LWE secret; the caller retains the output codec for decoding. LUT compatibility metadata continues to describe the input and accumulator, without equating `t_out` to `t_in`. Chaining another PBS requires its input encoding and LUT geometry to match the previous output encoding; a context does not infer that change from raw ciphertexts. Custom encodings, per-column scales and Boolean/CBS gadget outputs use the raw constructors and retain their own decoding contracts.
+GLWE uses a common ciphertext modulus for all three roles. NTRU derives both output codecs from the same `t_out`, with Q for LUT coefficients and q for returned ciphertexts. The return path rescales an existing phase; it does not recreate the exact q-encoding center. Budget Q→q rounding and key-switch noise. Preparing a Scaled codec at q additionally checks that codec's own scale-recovery condition.
+
+For MVB, use `factorized_pbs_codecs` and pass its input and LUT-output codecs to `context.compile_factorized_lookup_table_fn`. Decode the returned phase with `codecs.output_codec().decode_value(decryptor.decrypt_phase(output.as_view())?)`; the normal client decryptor currently binds Rounded encoding. Factorized outputs keep Scaled encoding even when `t_out=t_in`.
+
+Explicit `RoundedCodec`/`ScaledCodec` construction and the existing compiler interfaces remain available for advanced composition. `LookupTableCompiler::try_new` accepts explicitly paired input and LUT-output codecs without first preparing a default output. `try_with_output_codec` changes only the compiler's output codec, checks its ciphertext modulus, and leaves input geometry unchanged. Callers using these explicit interfaces must retain the corresponding output decoder themselves. Odd full-domain methods and raw Boolean/CBS output scales keep their existing contracts.
+
+A returned value belongs to `0..t_out`; front-half input accepts only `0..ceil(t_in/2)`. Equal message moduli alone do not make an output suitable for another PBS: its encoding, domain and noise margin must also match that next program.
 
 ## Odd full-domain PBS
 

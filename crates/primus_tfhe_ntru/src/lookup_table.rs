@@ -1,7 +1,9 @@
 use primus_encoding::RoundedCodec;
 use primus_integer::FheUint;
 use primus_reduce::RingContext;
-use primus_tfhe::{LookupTableCompiler, LookupTableError};
+use primus_tfhe::{
+    FactorizedPbsCodecs, LookupTableCompiler, LookupTableError, PbsMessageConfig, RoundedPbsCodecs,
+};
 
 use crate::TfheParameters;
 
@@ -11,6 +13,39 @@ where
     M: RingContext<T>,
     LM: RingContext<T>,
 {
+    /// Prepares input and output codecs for ordinary PBS or ManyLUT.
+    ///
+    /// [`PbsMessageConfig::new`] defaults to equal plaintext moduli; use
+    /// [`PbsMessageConfig::with_output_modulus`] to change the output domain.
+    /// Derives the LUT output at Q and returned output at q from the same choice.
+    /// Rejects invalid codecs in either domain; this does not establish LUT
+    /// capacity or a noise budget for the Q→q return.
+    pub fn pbs_codecs(
+        &self,
+        messages: PbsMessageConfig<T>,
+    ) -> Result<RoundedPbsCodecs<T, M, LM>, LookupTableError> {
+        messages.try_rounded_codecs(
+            self.external_lwe().cipher_modulus(),
+            self.accumulator_ntru().cipher_modulus(),
+        )
+    }
+
+    /// Prepares Rounded input and Scaled output codecs for factorized MVB.
+    ///
+    /// Uses the same default/override rules as [`Self::pbs_codecs`], deriving
+    /// both Q/q outputs together. Inherits
+    /// [`PbsMessageConfig::try_factorized_codecs`]'s scale and error contracts;
+    /// factorization-specific conditions are checked when compiling the program.
+    pub fn factorized_pbs_codecs(
+        &self,
+        messages: PbsMessageConfig<T>,
+    ) -> Result<FactorizedPbsCodecs<T, M, LM>, LookupTableError> {
+        messages.try_factorized_codecs(
+            self.external_lwe().cipher_modulus(),
+            self.accumulator_ntru().cipher_modulus(),
+        )
+    }
+
     /// Returns a [`LookupTableCompiler`] with outputs encoded at accumulator Q.
     ///
     /// Checks that `input_codec` uses external q and that its plaintext modulus

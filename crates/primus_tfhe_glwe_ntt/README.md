@@ -9,6 +9,8 @@ GLWE-based TFHE with an explicit field modulus. Start with the [task and encodin
 
 ## Quick start
 
+The basic, sparse and MVB examples use `PbsMessageConfig`: `new(t)` defaults to equal message moduli, while `with_output_modulus(t_out)` changes only the output. Prepare with `parameters.pbs_codecs` for ordinary PBS/ManyLUT or `parameters.factorized_pbs_codecs` for MVB; the returned codecs distinguish input, LUT output and returned output. See [choosing the output encoding](../primus_tfhe/README.md#choosing-the-output-encoding).
+
 ```sh
 cargo run -p primus_tfhe_glwe_ntt --release --example ntt_basic
 ```

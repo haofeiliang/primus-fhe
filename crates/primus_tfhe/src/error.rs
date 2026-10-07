@@ -35,7 +35,10 @@ pub enum TfheEvaluationError {
 /// An error produced while compiling a TFHE lookup table.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum LookupTableError {
-    /// The requested default output encoding cannot be represented at accumulator Q.
+    /// The requested input encoding is invalid at external q.
+    #[error("invalid lookup-table input encoding")]
+    InputEncoding(#[source] primus_encoding::CodecError),
+    /// The requested output encoding is invalid at accumulator Q or external q.
     #[error("invalid lookup-table output encoding")]
     OutputEncoding(#[from] primus_encoding::CodecError),
     /// The program's input codec uses another external ciphertext modulus.

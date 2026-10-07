@@ -35,6 +35,8 @@ Prefer the backend `KeyGenerator` for encryption. For independently prepared con
 
 ## Clients and LUTs
 
+Use `PbsMessageConfig::new(t_in)` for equal input/output message moduli, or `.with_output_modulus(t_out)` to override the output. `parameters.pbs_codecs(messages)?` prepares Rounded codecs; `parameters.factorized_pbs_codecs(messages)?` prepares Rounded input and Scaled outputs for MVB. Both return named `input_codec()`, `lut_output_codec()` and `output_codec()` roles, deriving the correct ciphertext moduli without copying keys or allocating buffers. See [choosing the output encoding](../primus_tfhe/README.md#choosing-the-output-encoding) for compilation and output decoding.
+
 `ClientKey` is the complete setup bundle; ordinary clients need only `let external_secret = client.external_lwe_secret_key();`, an `&LweSecretKey`. You can generate that owner directly from `parameters.external_lwe()`, or move it out with `client.into_parts()`, without retaining an accumulator secret. Binding checks only the external domain; accumulator shape, invertibility and return-key bounds belong to their own consumers. Ring clients accept only `client.accumulator_ntru_secret_key()`.
 
 Choose a `RoundedCodec` at external q, then use the context's `encryptor(external_secret, &input_codec)`, `public_encryptor(&public, &input_codec)` and `decryptor(external_secret, &input_codec)`. `parameters.try_generate_public_key(external_secret, rng)` creates an LWE public key under independent external s. This is not an NTRU ring public key; see the [LWE public-key contract](../primus_lwe/README.md#public-key-encryption) for total noise requirements. Ordinary messages use T and `decrypt` returns `Result<T, ClientError>`.

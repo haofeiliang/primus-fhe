@@ -4,7 +4,6 @@
 //! Arithmetic profiles: guides/development/tfhe-parameters.md (not security presets).
 
 use primus_decompose::DecompositionBaseLog;
-use primus_encoding::RoundedCodec;
 use primus_glwe::SecretKeyDistr;
 use primus_lattice::{GlweDimension, LweDimension};
 use primus_lwe::LweEncryptionParameters;
@@ -13,7 +12,7 @@ use primus_ntt::U64NttTable as Table;
 use primus_poly::PolyLength;
 use primus_tfhe_glwe_ntt::{
     BlindRotationConfig, ClientKey, DecompositionConfig, GadgetEncryptionConfig, KeyGenerator,
-    PbsOrder, TfheConfig, TfheContext, TfheParameters,
+    PbsMessageConfig, PbsOrder, TfheConfig, TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -24,9 +23,12 @@ const N: usize = 1024;
 fn main() {
     let parameters = parameters();
     let context = TfheContext::<Word, Table>::try_from_parameters(parameters).unwrap();
-    // The input uses padded t=16; all three outputs use t=8 at the same modulus.
-    let input_codec = RoundedCodec::new(16, context.parameters().cipher_modulus());
-    let output_codec = RoundedCodec::new(8, context.parameters().cipher_modulus());
+
+    // Padded input t=16 and all three Rounded outputs t=8 share one configuration.
+    let codecs = context
+        .parameters()
+        .pbs_codecs(PbsMessageConfig::new(16).with_output_modulus(8))
+        .unwrap();
 
     // Client: generate sparse BR material from the fixed-weight secret.
     let mut rng = StdRng::seed_from_u64(42);
@@ -46,16 +48,20 @@ fn main() {
         .unwrap();
     // Ordinary messages borrow only the external secret from the setup bundle.
     let external_secret = client_key.external_lwe_secret_key();
-    let encryptor = context.encryptor(external_secret, &input_codec).unwrap();
-    let output_decryptor = context.decryptor(external_secret, &output_codec).unwrap();
+    let encryptor = context
+        .encryptor(external_secret, codecs.input_codec())
+        .unwrap();
+    let output_decryptor = context
+        .decryptor(external_secret, codecs.output_codec())
+        .unwrap();
     let mut input = context.allocate_lwe_ciphertext();
 
     // Server: receive server_key; compile three public functions sharing one rotation.
     let compiler = context
         .parameters()
-        .lookup_table_compiler(&input_codec)
+        .lookup_table_compiler(codecs.input_codec())
         .unwrap()
-        .try_with_output_codec(&output_codec)
+        .try_with_output_codec(codecs.lut_output_codec())
         .unwrap();
     let lut = compiler
         .compile_interleaved_fn(3, |m, i| match i {

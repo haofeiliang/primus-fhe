@@ -193,44 +193,42 @@ Raw 构造器 `LookupTable::try_new` / `InterleavedLookupTable::try_new` 显式�
 
 ### 选择输出编码
 
-先选择编译器的输出编码，再使用它的函数或切片入口：
+用 `PbsMessageConfig::new(t_in)` 集中指定消息域，默认 `t_out=t_in`；通过 `.with_output_modulus(t_out)` 显式修改输出域，不改变输入编码或密钥。ManyLUT 的各 lane、MVB 的各输出共用该输出模数。操作允许时，继续支持奇数明文模数。
 
-| 输出编码 | 编译器构造 | 解码 |
-| --- | --- | --- |
-| GLWE 默认：所选输入 codec | `parameters.lookup_table_compiler(&input_codec)?` | `decryptor.decrypt(output.as_view())` |
-| NTRU 默认：输入 codec 明文模数，在 Q 下编码 | `parameters.lookup_table_compiler(&input_codec)?` | `decryptor.decrypt(output.as_view())` |
-| 显式指定输出 codec | `compiler.try_with_output_codec(&codec)?` | 用返回模数下的 codec 解码 `decrypt_phase(output)` |
+两家族的参数提供以下准备入口，四个后端均重导出配置类型：
 
-函数输出范围可以小于明文模数，例如 `x % 4` 仍可采用 `t=32` 编码。GLWE basic 示例使用这个默认流程：
+| 工厂 | q 下的 `input_codec()` | Q 下的 `lut_output_codec()` | q 下的 `output_codec()` |
+| --- | --- | --- | --- |
+| `parameters.pbs_codecs(messages)?` | Rounded | Rounded | Rounded |
+| `parameters.factorized_pbs_codecs(messages)?` | Rounded | Scaled | Scaled |
 
-```rust,ignore
-let input_codec = primus_encoding::RoundedCodec::new(32, context.parameters().cipher_modulus());
-let compiler = context.parameters().lookup_table_compiler(&input_codec)?;
-let lut = compiler.compile_fn(|x| (x % 4) as u32)?;
-```
-
-`try_with_output_codec` 返回持有新 `RoundedCodec` 副本的编译器，保持输入域与累加器模数。输出 codec 决定 `t_out`，检查输出位于 `0..t_out`，并按 unsigned embedding 编码；交错 LUT 的各列共用这个 codec。密文模数不匹配时，在绑定 codec 阶段、编译之前返回 `OutputModulusMismatch`。GLWE 输入、accumulator 和返回使用同一模数；NTRU 在 Q 下编译、返回 q，解码 codec 使用 q 和同一个 `t_out`，须预算缩放舍入及返回误差。MVB 继续显式使用 unsigned `ScaledCodec`。
-
-例如，在 NTRU 中选择 `t_in=16` 的输入 codec，用 `t_out=4` 编码 `x % 4`。片段沿用已创建的 context、客户端和 evaluator：
+例如普通 PBS 或 ManyLUT，输入 `t_in=16`、输出 `t_out=4`：
 
 ```rust,ignore
-use primus_encoding::RoundedCodec;
+use primus_tfhe::PbsMessageConfig;
 
-let input_codec = RoundedCodec::new(16u32, context.parameters().external_lwe().cipher_modulus());
-let table_codec = RoundedCodec::new(4u32, context.parameters().accumulator_ntru().cipher_modulus());
-let output_codec = RoundedCodec::new(4u32, context.parameters().external_lwe().cipher_modulus());
-let compiler = context.parameters().lookup_table_compiler(&input_codec)?
-    .try_with_output_codec(&table_codec).unwrap();
-let lut = compiler.compile_fn(|x| (x % 4) as u32).unwrap();
-let input = encryptor.encrypt_padded(7u32, &mut rng).unwrap();
+let codecs = context.parameters().pbs_codecs(
+    PbsMessageConfig::new(16).with_output_modulus(4),
+)?;
+let encryptor = context.encryptor(external_secret, codecs.input_codec())?;
+let decryptor = context.decryptor(external_secret, codecs.output_codec())?;
+let compiler = context.parameters().lookup_table_compiler(codecs.input_codec())?
+    .try_with_output_codec(codecs.lut_output_codec())?;
+let lut = compiler.compile_fn(|x| (x % 4) as u64)?;
+let input = encryptor.encrypt_padded(7, &mut rng)?;
 let output = evaluator.apply_lookup_table(input.as_view(), &lut);
-let message = output_codec.decode_value(decryptor.decrypt_phase(output.as_view()).unwrap());
-assert_eq!(message, 3);
+assert_eq!(decryptor.decrypt(output.as_view())?, 3);
 ```
 
-GLWE 用 `context.parameters().cipher_modulus()` 构造输出 codec。 独立输出编码不需要额外求值密钥；保留该 codec，用于解码结果密文。
+省略 `.with_output_modulus(4)` 即选择相同消息模数。准备过程验证选定的输入/输出 codec，不分配内存，不借用密钥或 context。输出选择先于 codec 验证生效，不会静默替换非法默认值。程序几何、factorization 专有尺度条件和噪声预算，仍由具体操作检查或要求。
 
-`decrypt_phase` 返回外部 LWE 秘密下的规范带噪剩余类，调用方保留输出 codec 用于解码。 LUT 兼容性元数据仍描述输入与 accumulator，不要求 `t_out = t_in`。 继续串联 PBS 时，下一次输入编码和 LUT 几何必须与上一次输出编码一致；context 不会从 raw 密文推断编码变化。自定义编码、逐列尺度及 Boolean/CBS gadget 输出使用 raw 构造器， 遵循各自的解码契约。
+GLWE 三个角色使用同一密文模数；NTRU 根据同一个 `t_out` 派生两个输出 codec，LUT 系数使用 Q，返回密文使用 q。返回路径缩放既有相位，并不重新生成精确的 q 编码中心，须预算 Q→q 舍入与 key-switch 噪声。在 q 下准备 Scaled codec 还会检查该 codec 自身的尺度恢复条件。
+
+MVB 使用 `factorized_pbs_codecs`，把输入与 LUT 输出 codec 传给 `context.compile_factorized_lookup_table_fn`。返回相位通过 `codecs.output_codec().decode_value(decryptor.decrypt_phase(output.as_view())?)` 解码；当前普通客户端 decryptor 仍绑定 Rounded 编码。即使 `t_out=t_in`，factorized 输出也保持 Scaled 编码。
+
+高级组合仍可显式构造 `RoundedCodec`/`ScaledCodec` 并使用原有编译接口。`LookupTableCompiler::try_new` 直接接收配好的输入与 LUT 输出 codec，无需先准备默认输出。`try_with_output_codec` 只更改编译器的输出 codec、检查其密文模数，保持输入几何不变；显式接口的调用方自行保留对应输出 decoder。奇数全域方法及原始 Boolean/CBS 输出尺度继续遵守各自契约。
+
+返回值属于 `0..t_out`，前半区输入仅接受 `0..ceil(t_in/2)`。相同消息模数不保证结果可直接输入下一次 PBS；还需匹配下一程序的编码、输入域和噪声余量。
 
 ## 奇数全域 PBS
 

@@ -5,6 +5,8 @@
 //! [`BivariateLookupTable`] to pack bounded inputs. Backends prepare tables/keys and
 //! execute these programs; this crate does not own a transform context or server key.
 //! [`LookupTableCompiler`] shares the encoding environment for ordinary Rounded LUTs.
+//! [`PbsMessageConfig`] defaults to equal input/output message moduli and prepares
+//! [`PbsCodecs`] with an explicit output override, including independent q/Q roles.
 //! [`BooleanEvaluator`] composes the small PBS traits for Boolean gate evaluation.
 //!
 //! [`Encryptor`], [`Decryptor`] and their Boolean wrappers share external LWE
@@ -25,6 +27,7 @@ mod bootstrap;
 mod client;
 mod error;
 mod lookup_table;
+mod message;
 mod parameters;
 
 pub mod rotation;
@@ -41,6 +44,7 @@ pub use lookup_table::{
     BivariateLookupTable, FactorizedLookupTable, InterleavedLookupTable, LookupTable,
     LookupTableCompiler, front_half_domain_len,
 };
+pub use message::{FactorizedPbsCodecs, PbsCodecs, PbsMessageConfig, RoundedPbsCodecs};
 pub use parameters::{BlindRotationConfig, CircuitBootstrapConfig, GadgetEncryptionConfig};
 pub use primus_decompose::{DecompositionBaseLog, DecompositionConfig, DecompositionLevelCount};
 pub use primus_lattice::lwe::Lwe;

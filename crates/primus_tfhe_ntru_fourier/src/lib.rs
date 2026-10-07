@@ -5,16 +5,15 @@
 //! 1. Check mathematical choices with [`TfheParameters::try_from_config`].
 //! 2. Create a [`TfheContext`] and paired [`ClientKey`]/[`ServerKey`] with
 //!    [`TfheContext::try_generate_keys`] for classic BR; `None` selects ordinary PBS material.
-//! 3. Bind [`Encryptor`] and [`Decryptor`] with an explicit input
-//!    [`primus_encoding::RoundedCodec`] at external q, and create an [`Evaluator`].
-//! 4. Create a compiler with [`TfheParameters::lookup_table_compiler`] and call
-//!    [`LookupTableCompiler::compile_fn`]. Reuse [`Evaluator::apply_lookup_table_to`]
-//!    with caller-owned LWE output storage. Pass the input codec to the compiler;
-//!    default outputs use its plaintext modulus and [`Decryptor::decrypt`].
-//!    [`TfheParameters`] does not own a plaintext modulus or codec.
-//!    [`LookupTableCompiler::try_with_output_codec`] selects another output encoding.
-//!    Compile at accumulator Q; decode [`Decryptor::decrypt_phase`] with a codec
-//!    at external q and the same output plaintext modulus.
+//! 3. Prepare codecs with [`TfheParameters::pbs_codecs`] and [`PbsMessageConfig`].
+//!    Bind [`Encryptor`] to the input codec and [`Decryptor`] to the output codec;
+//!    create an [`Evaluator`] from the context. Output message moduli default to
+//!    the input choice and can be overridden before preparation.
+//! 4. Pass the input codec to [`TfheParameters::lookup_table_compiler`], then
+//!    select the LUT-output codec with [`LookupTableCompiler::try_with_output_codec`].
+//!    Call [`LookupTableCompiler::compile_fn`] and reuse
+//!    [`Evaluator::apply_lookup_table_to`] with caller-owned LWE output storage.
+//!    Prepared codecs distinguish accumulator-Q LUT output from external-q decoding.
 //!
 //! # Other operations
 //!
@@ -88,8 +87,9 @@ pub use primus_tfhe_ntru::SparseNtruBootstrappingKey;
 
 pub use primus_tfhe::{
     BivariateLookupTable, BlindRotationConfig, CircuitBootstrapConfig, ClientError,
-    DecompositionConfig, FactorizedLookupTable, GadgetEncryptionConfig, InterleavedLookupTable,
-    LookupTable, LookupTableCompiler, Lwe, LweCiphertext, LweSecretKeyRef,
+    DecompositionConfig, FactorizedLookupTable, FactorizedPbsCodecs, GadgetEncryptionConfig,
+    InterleavedLookupTable, LookupTable, LookupTableCompiler, Lwe, LweCiphertext, LweSecretKeyRef,
+    PbsCodecs, PbsMessageConfig, RoundedPbsCodecs,
 };
 pub use primus_tfhe_ntru::{
     ClientKey, EncryptionKey, LwePublicKey, LweReturnBatchWorkspace, LweReturnEvaluator,

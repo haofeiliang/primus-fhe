@@ -9,6 +9,8 @@
 
 ## 快速开始
 
+基础、sparse 和 MVB 示例使用 `PbsMessageConfig`：`new(t)` 默认输入输出消息模数相同，`with_output_modulus(t_out)` 只修改输出。普通 PBS/ManyLUT 用 `parameters.pbs_codecs` 准备，MVB 用 `parameters.factorized_pbs_codecs` 准备；返回的 codec 分别表示输入、LUT 输出和返回输出。见[选择输出编码](../primus_tfhe/README.zh_CN.md#选择输出编码)。
+
 ```sh
 cargo run -p primus_tfhe_ntru_ntt --release --example ntru_ntt_basic
 ```

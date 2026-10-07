@@ -6,7 +6,6 @@
 //! Arithmetic profiles: guides/development/tfhe-parameters.md (not security presets).
 
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
-use primus_encoding::RoundedCodec;
 use primus_fft::RustFftTable as Table;
 use primus_glwe::SecretKeyDistr;
 use primus_lattice::{GlweDimension, LweDimension};
@@ -14,8 +13,8 @@ use primus_lwe::LweEncryptionParameters;
 use primus_modulus::NativeModulus;
 use primus_poly::PolyLength;
 use primus_tfhe_glwe_fourier::{
-    DecompositionConfig, Evaluator, GadgetEncryptionConfig, LookupTable, PbsOrder, ServerKey,
-    TfheConfig, TfheContext, TfheParameters,
+    DecompositionConfig, Evaluator, GadgetEncryptionConfig, LookupTable, PbsMessageConfig,
+    PbsOrder, RoundedPbsCodecs, ServerKey, TfheConfig, TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -27,20 +26,27 @@ fn main() {
     let parameters = parameters();
     let context = TfheContext::<Word, Table>::from_parameters(parameters);
 
-    // Public message encoding is independent of the evaluation keys.
-    let input_codec = RoundedCodec::new(32, context.parameters().cipher_modulus());
+    // Input and output messages both use t=32, independently of the keys.
+    let codecs = context
+        .parameters()
+        .pbs_codecs(PbsMessageConfig::new(32))
+        .unwrap();
 
     // Client: keep client_key secret; send only server_key to the server.
     let mut rng = StdRng::seed_from_u64(42);
     let (client_key, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
     // Ordinary messages borrow only the external secret from the setup bundle.
     let external_secret = client_key.external_lwe_secret_key();
-    let encryptor = context.encryptor(external_secret, &input_codec).unwrap();
-    let decryptor = context.decryptor(external_secret, &input_codec).unwrap();
+    let encryptor = context
+        .encryptor(external_secret, codecs.input_codec())
+        .unwrap();
+    let decryptor = context
+        .decryptor(external_secret, codecs.output_codec())
+        .unwrap();
     let mut input = context.allocate_lwe_ciphertext();
 
     // Server: prepare public LUT and reusable buffers without the client secret.
-    let (lut, mut evaluator) = prepare_server(&context, &server_key, &input_codec);
+    let (lut, mut evaluator) = prepare_server(&context, &server_key, &codecs);
     let mut output = context.allocate_lwe_ciphertext();
 
     for message in [7, 2] {
@@ -64,11 +70,13 @@ fn main() {
 fn prepare_server<'a>(
     context: &'a TfheContext<Word, Table>,
     server_key: &'a ServerKey<Word>,
-    input_codec: &RoundedCodec<Word, NativeModulus<Word>>,
+    codecs: &RoundedPbsCodecs<Word, NativeModulus<Word>>,
 ) -> (LookupTable<Word>, Evaluator<'a, Word, Table>) {
     let compiler = context
         .parameters()
-        .lookup_table_compiler(input_codec)
+        .lookup_table_compiler(codecs.input_codec())
+        .unwrap()
+        .try_with_output_codec(codecs.lut_output_codec())
         .unwrap();
     let lut = compiler.compile_fn(|x| (x % 4) as Word).unwrap();
     let evaluator = context.evaluator(server_key).unwrap();

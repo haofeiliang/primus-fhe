@@ -4,7 +4,6 @@
 //! Arithmetic profiles: guides/development/tfhe-parameters.md (not security presets).
 
 use primus_decompose::DecompositionBaseLog;
-use primus_encoding::{RoundedCodec, ScaledCodec};
 use primus_lattice::LweDimension;
 use primus_lwe::LweEncryptionParameters;
 use primus_modulus::{BarrettModulus, PowOf2Modulus};
@@ -12,7 +11,8 @@ use primus_ntru::SecretKeyDistr;
 use primus_ntt::U64NttTable as Table;
 use primus_poly::PolyLength;
 use primus_tfhe_ntru_ntt::{
-    DecompositionConfig, GadgetEncryptionConfig, TfheConfig, TfheContext, TfheParameters,
+    DecompositionConfig, GadgetEncryptionConfig, PbsMessageConfig, TfheConfig, TfheContext,
+    TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -26,28 +26,33 @@ const OUTPUTS: usize = 17;
 fn main() {
     let parameters = parameters();
     let context = TfheContext::<Word, Table, _>::try_from_parameters(parameters).unwrap();
-    // Public message encoding at external q, chosen independently of key generation.
-    let input_codec = RoundedCodec::new(128, context.parameters().external_lwe().cipher_modulus());
+
+    // Numeric threshold flags use Scaled t=2; the input keeps Rounded t=128.
+    let codecs = context
+        .parameters()
+        .factorized_pbs_codecs(PbsMessageConfig::new(128).with_output_modulus(2))
+        .unwrap();
     let thresholds: Vec<_> = (1..=OUTPUTS).map(|i| i * DOMAIN / (OUTPUTS + 1)).collect();
-    // MVB compiles at Q and returns at q=2^24: retain one Scaled codec for each.
-    let table_codec = ScaledCodec::new(2, context.parameters().accumulator_ntru().cipher_modulus());
-    let output_codec = ScaledCodec::new(2, context.parameters().external_lwe().cipher_modulus());
 
     // Client: keep client_key and the decryptor; give server_key to the server.
     let mut rng = StdRng::seed_from_u64(42);
     let (client_key, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
     // Ordinary messages borrow only the external secret from the setup bundle.
     let external_secret = client_key.external_lwe_secret_key();
-    let encryptor = context.encryptor(external_secret, &input_codec).unwrap();
-    let decryptor = context.decryptor(external_secret, &input_codec).unwrap();
+    let encryptor = context
+        .encryptor(external_secret, codecs.input_codec())
+        .unwrap();
+    let decryptor = context
+        .decryptor(external_secret, codecs.input_codec())
+        .unwrap();
     let mut input = context.allocate_lwe_ciphertext();
     let mut flags = vec![0; OUTPUTS];
 
     // Server: MVB keeps all 64 inputs; interleaving 17 outputs fits only 32 here.
     let program = context
         .compile_factorized_lookup_table_fn(
-            &input_codec,
-            &table_codec,
+            codecs.input_codec(),
+            codecs.lut_output_codec(),
             DOMAIN,
             OUTPUTS,
             |score, i| Word::from(score >= thresholds[i]),
@@ -68,7 +73,9 @@ fn main() {
 
         // Client: decrypt phases and decode with the agreed output codec.
         for (flag, output) in flags.iter_mut().zip(&outputs) {
-            *flag = output_codec.decode_value(decryptor.decrypt_phase(output.as_view()).unwrap());
+            *flag = codecs
+                .output_codec()
+                .decode_value(decryptor.decrypt_phase(output.as_view()).unwrap());
         }
         for (&flag, &threshold) in flags.iter().zip(&thresholds) {
             assert_eq!(flag, Word::from(score as usize >= threshold));
