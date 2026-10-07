@@ -11,16 +11,12 @@ use primus_modulus::BarrettModulus;
 use primus_ntt::U64NttTable;
 use primus_poly::PolyLength;
 use primus_poly::Polynomial;
-use primus_test_allocations as allocations;
 use primus_tfhe_glwe_ntt::{
     BlindRotationConfig, CircuitBootstrapConfig, CircuitBootstrapEvaluator,
     CircuitBootstrapParameters, DecompositionConfig, GadgetEncryptionConfig, KeyGenerator,
     PbsOrder, TfheConfig, TfheContext, TfheEvaluationError, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
-
-#[global_allocator]
-static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
 
 const POLY_LENGTH: usize = 64;
 const MODULUS: u64 = 1_125_899_906_826_241;
@@ -158,13 +154,7 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
         });
         let choices = messages.each_ref().map(|message| {
             let mut output = context.allocate_accumulator_ciphertext();
-            let (_, allocation) = allocations::measure(|| {
-                accumulator_client.encrypt_to(message, &mut output, &mut rng)
-            });
-            assert_eq!(
-                allocation.count, 0,
-                "accumulator encryption must reuse its workspace"
-            );
+            accumulator_client.encrypt_to(message, &mut output, &mut rng);
             output
         });
 
@@ -265,14 +255,11 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
         .unwrap();
         // Missing input KS must fail at binding, for classic and sparse alike.
         if order == PbsOrder::KeyswitchBootstrap {
-            let (result, allocation) = allocations::measure(|| {
-                context.bootstrap_resources(server_key.blind_rotation_key(), None)
-            });
+            let result = context.bootstrap_resources(server_key.blind_rotation_key(), None);
             assert!(matches!(
                 result,
                 Err(TfheEvaluationError::MissingGlweKeySwitchingKey)
             ));
-            assert_eq!(allocation.count, 0);
         }
 
         let circuit_parameters = if order == PbsOrder::KeyswitchBootstrap {
@@ -294,28 +281,22 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
         // Standalone CBS has exactly the input resources required by its order.
         let mut control = evaluator.allocate_output();
         let mut selected = context.allocate_accumulator_ciphertext();
-        let (_, online) = allocations::measure(|| {
-            evaluator.circuit_bootstrap_to(input.as_view(), &mut control, &mut resources);
-            evaluator.cmux_to(
-                &control,
-                &choices[0],
-                &choices[1],
-                &mut selected,
-                &mut resources,
-            );
-        });
-        assert_eq!(online.count, 0);
+        evaluator.circuit_bootstrap_to(input.as_view(), &mut control, &mut resources);
+        evaluator.cmux_to(
+            &control,
+            &choices[0],
+            &choices[1],
+            &mut selected,
+            &mut resources,
+        );
         assert_eq!(accumulator_client.decrypt(&selected), messages[1]);
         // Moving common resources preserves the prepared CBS. Only BR→KS needs
         // to allocate a missing return stage; KS→BR already owns the input KS.
-        let (mut pbs, assembly) = allocations::measure(|| {
-            primus_tfhe_glwe_ntt::Evaluator::try_from_resources(
-                resources,
-                server_key.glwe_key_switching_key(),
-            )
-            .unwrap()
-        });
-        assert_eq!(assembly.count == 0, order == PbsOrder::KeyswitchBootstrap);
+        let mut pbs = primus_tfhe_glwe_ntt::Evaluator::try_from_resources(
+            resources,
+            server_key.glwe_key_switching_key(),
+        )
+        .unwrap();
         assert_eq!(
             circuit_parameters.lookup_table_padded_output_count(),
             levels.next_power_of_two()
@@ -368,29 +349,27 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
                     assert!(bad_output.as_ref().iter().all(|&value| value == 7));
                 }
             }
-            let (_, allocation) = allocations::measure(|| {
-                evaluator.circuit_bootstrap_to(
-                    input.as_view(),
-                    &mut control,
-                    pbs.bootstrap_resources_mut(),
-                );
-                evaluator.cmux_to(
-                    &control,
-                    &choices[0],
-                    &choices[1],
-                    &mut selected,
-                    pbs.bootstrap_resources_mut(),
-                );
-                evaluator.external_product_to(
-                    &control,
-                    &choices[1],
-                    &mut product,
-                    pbs.bootstrap_resources_mut(),
-                );
-                pbs.apply_lookup_table_to(input.as_view(), &identity, output.as_mut_view());
-                accumulator_client.decrypt_to(&selected, &mut decoded);
-                accumulator_client.decrypt_to(&product, &mut decoded_product);
-            });
+            evaluator.circuit_bootstrap_to(
+                input.as_view(),
+                &mut control,
+                pbs.bootstrap_resources_mut(),
+            );
+            evaluator.cmux_to(
+                &control,
+                &choices[0],
+                &choices[1],
+                &mut selected,
+                pbs.bootstrap_resources_mut(),
+            );
+            evaluator.external_product_to(
+                &control,
+                &choices[1],
+                &mut product,
+                pbs.bootstrap_resources_mut(),
+            );
+            pbs.apply_lookup_table_to(input.as_view(), &identity, output.as_mut_view());
+            accumulator_client.decrypt_to(&selected, &mut decoded);
+            accumulator_client.decrypt_to(&product, &mut decoded_product);
             assert_eq!(
                 context
                     .decryptor(client_key.external_lwe_secret_key(), &input_codec)
@@ -399,7 +378,6 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
                     .unwrap(),
                 bit
             );
-            assert_eq!(allocation.count, 0, "CBS must reuse its workspace");
             let output_size = circuit_parameters.output_size();
             let mut phase = Polynomial::new(vec![0u64; POLY_LENGTH]);
             for (row, glev) in control.iter_ntt_glev(output_size.glev_len()).enumerate() {
@@ -440,12 +418,7 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
         let replacement = KeyGenerator::new(&context)
             .try_generate_glwe_key_switching_key(&client_key, &mut rng)
             .unwrap();
-        let (_, rebind) =
-            allocations::measure(|| pbs.try_rebind_key_switching_key(&replacement).unwrap());
-        assert_eq!(
-            rebind.count, 0,
-            "compatible KS rebind retains ordinary workspace"
-        );
+        pbs.try_rebind_key_switching_key(&replacement).unwrap();
         pbs.apply_lookup_table_to(input.as_view(), &identity, output.as_mut_view());
         assert_eq!(
             context

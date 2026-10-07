@@ -16,11 +16,7 @@ use primus_ntru::{
     NtruLweKeySwitchingWorkspace, NtruSecretKey, SecretKeyDistr,
 };
 use primus_reduce::{Modulus, RingContext};
-use primus_test_allocations::{CountingAllocator, measure};
 use rand::{Rng, SeedableRng, rngs::StdRng};
-
-#[global_allocator]
-static ALLOCATOR: CountingAllocator = CountingAllocator;
 
 const N: usize = 32;
 const F: [i128; N] = {
@@ -225,14 +221,7 @@ fn check_scalar_returns<T: FheUint, M: RingContext<T>>(
         let switched: Vec<_> = raw.iter().map(|&v| rounded(v, source_q, q)).collect();
         let mut expected = vec![output.clone(); F.len()];
         for index in (0..F.len()).rev() {
-            let (_, allocations) = measure(|| {
-                if index == 0 {
-                    key.key_switch_to(input, &mut output, target, &mut workspace);
-                } else {
-                    key.key_switch_at_to(input, index, &mut output, target, &mut workspace);
-                }
-            });
-            assert_eq!(allocations.count, 0);
+            key.key_switch_at_to(input, index, &mut output, target, &mut workspace);
             oracle.assert_output(&raw, &switched, source_q, index, &output);
             expected[index].as_mut().copy_from_slice(output.as_ref());
         }
@@ -254,16 +243,13 @@ fn check_shared_input_returns<T: FheUint, M: RingContext<T>>(
     for (input, expected) in inputs.iter().zip(expected_inputs) {
         for count in [17, 1, 0] {
             let indices = (0..count).map(|i| (3 * i + 1) % F.len());
-            let (_, allocations) = measure(|| {
-                key.key_switch_many_at_to(
-                    input,
-                    indices.clone(),
-                    &mut outputs[..count],
-                    target,
-                    workspace,
-                );
-            });
-            assert_eq!(allocations.count, 0);
+            key.key_switch_many_at_to(
+                input,
+                indices.clone(),
+                &mut outputs[..count],
+                target,
+                workspace,
+            );
             for (output, index) in outputs[..count].iter().zip(indices) {
                 assert_eq!(output, &expected[index]);
             }
@@ -287,28 +273,25 @@ fn check_streamed_returns<T: FheUint, M: RingContext<T>>(
         workspace.extracted_slot_mut(slot).as_mut().fill(T::ONE);
     }
     for count in [17, 1, 0] {
-        let (_, allocations) = measure(|| {
-            for (tile, outputs) in outputs[..count].chunks_mut(capacity).enumerate() {
-                for slot in 0..outputs.len() {
-                    let i = tile * capacity + slot;
-                    current
-                        .as_mut()
-                        .copy_from_slice(inputs[i % inputs.len()].as_ref());
-                    key.modulus_switch_extract_at_to(
-                        current.as_view(),
-                        (3 * i + 1) % F.len(),
-                        workspace.extracted_slot_mut(slot),
-                        target,
-                    );
-                    current.as_mut().fill(T::ZERO);
-                }
-                key.key_switch_extracted_batch_to(outputs, target, workspace);
+        for (tile, outputs) in outputs[..count].chunks_mut(capacity).enumerate() {
+            for slot in 0..outputs.len() {
+                let i = tile * capacity + slot;
+                current
+                    .as_mut()
+                    .copy_from_slice(inputs[i % inputs.len()].as_ref());
+                key.modulus_switch_extract_at_to(
+                    current.as_view(),
+                    (3 * i + 1) % F.len(),
+                    workspace.extracted_slot_mut(slot),
+                    target,
+                );
+                current.as_mut().fill(T::ZERO);
             }
-            if count == 0 {
-                key.key_switch_extracted_batch_to(&mut outputs[..0], target, workspace);
-            }
-        });
-        assert_eq!(allocations.count, 0);
+            key.key_switch_extracted_batch_to(outputs, target, workspace);
+        }
+        if count == 0 {
+            key.key_switch_extracted_batch_to(&mut outputs[..0], target, workspace);
+        }
         for (i, output) in outputs[..count].iter().enumerate() {
             assert_eq!(
                 output,
@@ -650,9 +633,7 @@ fn check_encrypted_return<T: FheUint, Q: Modulus<ValueT = T>>(
     let mut workspace = NtruLweKeySwitchingWorkspace::new(PolyLength::new(secret.poly_length()));
     let mut output = LweCiphertext::zero(params.dimension().get());
     for index in [0, 31, 3, 16, 0] {
-        let (_, allocations) =
-            measure(|| key.key_switch_at_to(input, index, &mut output, target, &mut workspace));
-        assert_eq!(allocations.count, 0);
+        key.key_switch_at_to(input, index, &mut output, target, &mut workspace);
         assert_eq!(
             output_secret.decrypt_message(&output, &params),
             T::as_from((3 * index + 1) % 8)

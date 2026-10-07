@@ -19,7 +19,7 @@ NGSW and NLev use the same scalar gadget kernel. The NGSW product case measures 
 
 ## Parameters and interpretation
 
-The four product targets cover `N=1024/2048` and `u32/u64`, matching the decomposition choices in [common PBS workloads](../../primus_tfhe/BENCHMARKS.md). GLWE uses k=1: NTT `(log B,L)=(5,5)/(23,1)` and Fourier `(8,3)/(23,1)`. NTRU uses log B=9 and full levels: NTT 3/5 and Fourier 3/7. GLWE retains one k=2 case for layout scaling. These are arithmetic workloads, not recommended cryptographic parameters.
+The four product targets cover `N=1024/2048` and `u32/u64`, matching the decomposition choices in [common PBS workloads](../../../benchmarks/tfhe/BENCHMARKS.md). GLWE uses k=1: NTT `(log B,L)=(5,5)/(23,1)` and Fourier `(8,3)/(23,1)`. NTRU uses log B=9 and full levels: NTT 3/5 and Fourier 3/7. GLWE retains one k=2 case for layout scaling. These are arithmetic workloads, not recommended cryptographic parameters.
 
 NTT uses `U32NttTable`/`U64NttTable` and q=132120577/1125899906826241; Fourier uses the native torus with both FFT backends. Each FFT backend receives the same deterministic coefficients in its own evaluation order. Comparisons across families or moduli describe implementation costs, not equal-security PBS performance. All four targets use 20 samples, 1 s warm-up and 5 s measurement time.
 

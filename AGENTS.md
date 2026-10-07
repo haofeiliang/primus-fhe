@@ -9,7 +9,7 @@
 - 开始时检查 `git status`、相关暂存/未暂存差异及本次目标涉及的文档，保留用户修改和暂存状态，不自动重开已完成的全库整理。
 - 修改须最小且完整；有实质收益可破坏 API，但同步 workspace 调用方、测试、示例、基准和双语 README，不留无实际需要的兼容层、废弃代码或导入。
 - 规划、分析、审查本身不授权改源码；遵循会话中已有授权，无关问题只报告。未经明确要求，不 stage、unstage、commit、amend 或 push；提交使用简洁 Conventional Commit，不加协作者元数据，无关修改分开。
-- 成员见根 `Cargo.toml` 的 `crates/*` 和 `test-support/*`；跨层修改从底层向调用方推进。`temp/` 仅供参考，不修改其中外部项目。仓库已配置 `target-cpu=native`，不在命令中重复设置。
+- 成员见根 `Cargo.toml` 的 `crates/*` 和 `benchmarks/tfhe`；跨层修改从底层向调用方推进。`temp/` 仅供参考，不修改其中外部项目。仓库已配置 `target-cpu=native`，不在命令中重复设置。
 
 ## API 与契约
 

@@ -2,7 +2,7 @@
 
 These profiles are reproducible functional and performance fixtures. They have no security or failure-probability assessment. Two fixed seeds establish observations, not a probabilistic guarantee. Shared geometry does not make NTT, Fourier, GLWE and NTRU equally secure or their costs directly comparable.
 
-Validation and benchmark constructors live in [test-support parameters](../../test-support/tfhe/src/parameters/mod.rs), split into [GLWE](../../test-support/tfhe/src/parameters/glwe.rs) and [NTRU](../../test-support/tfhe/src/parameters/ntru.rs). They use the existing family parameter types; no backend abstraction or production preset registry is added. Ordinary integration tests keep small parameters. The [validation executable](../../test-support/tfhe/examples/validate_parameters.rs) is an explicitly invoked numerical diagnostic.
+Validation and benchmark constructors live in [benchmark parameters](../../benchmarks/tfhe/src/parameters/mod.rs), split into [GLWE](../../benchmarks/tfhe/src/parameters/glwe.rs) and [NTRU](../../benchmarks/tfhe/src/parameters/ntru.rs). They use the existing family parameter types; no backend abstraction or production preset registry is added. Ordinary integration tests keep small parameters. The [validation executable](../../benchmarks/tfhe/src/bin/validate_parameters.rs) is an explicitly invoked numerical diagnostic.
 
 The opt-in GLWE NTT [paper comparison](../performance/sparse-paper-comparison.md) defines its
 Table-3-shaped profiles beside that benchmark. It supplies real small-q inputs
@@ -111,8 +111,8 @@ The 27-bit u32 candidate did not provide a sufficient joint CBS/product budget a
 Run the full matrix explicitly:
 
 ```sh
-cargo run --release -p primus_tfhe_test_support --example validate_parameters --features rustfft,tfhe-fft
-cargo +nightly run --release -p primus_tfhe_test_support --example validate_parameters --features simd,rustfft,tfhe-fft
+cargo run --release -p primus_tfhe_benchmarks --bin validate_parameters --features validation,ntt,fourier,rustfft,tfhe-fft -- --all
+cargo +nightly run --release -p primus_tfhe_benchmarks --bin validate_parameters --features validation,ntt,fourier,simd,rustfft,tfhe-fft -- --all
 ```
 
 A substring selects before any keys are generated, for example `-- ntru/ntt/u32`, `-- glwe/rustfft/u64`, or `-- lut/compile`. Unknown filters fail. This entry is not a Criterion timing target and is not run by ordinary `nextest --lib --tests`.
@@ -149,13 +149,19 @@ These are maxima of finite observations under explicitly selected bounds. They d
 
 ## Benchmark inventory
 
-The 18 ordinary benchmark targets use selected profiles above; the four backend
+The four backends and high-precision LUT now register their 22 Cargo targets
+in [`primus_tfhe_benchmarks`](../../benchmarks/tfhe/README.md#targets).
+The mapping changes package/target names only; profiles and Criterion IDs remain
+unchanged. The counts below also include `primus_tfhe/lookup_table`, which stays
+in its original crate.
+
+The five ordinary benchmark targets use selected profiles above; the four backend
 families each have `pbs`, `sparse_pbs`, `mvb` and `circuit_bootstrap`, alongside
 public LUT compilation and the complete high-precision pipeline. The reduced suite retains representative word, FFT-engine and GLWE-order
 comparisons instead of crossing every axis for every operation. Four explicit
 `setup` targets keep u64 keygen and GLWE stage diagnostics, and GLWE NTT
 `sparse_paper` keeps the paper/candidate comparisons.
-The [benchmark guide](../../crates/primus_tfhe/BENCHMARKS.md) maps targets to
+The [benchmark guide](../../benchmarks/tfhe/BENCHMARKS.md) maps targets to
 operations, geometry and timing boundaries. The [measurement record](../performance/tfhe-baseline.md)
 tracks the current baseline and the effect of removing eager fixture setup.
 
@@ -170,7 +176,7 @@ the c7/d5/o3 parameter diagnostic remains a separate finite validation fixture.
 
 All 22 TFHE examples fix `Word = u64`, with `U64NttTable` for NTT and `RustFftTable` for Fourier. They retain the existing u64 profiles: Barrett Q50 for TFHE NTT, Native64 for Fourier, and independent PowOf2 q24 for NTRU returns. Each file contains its own explicit `parameters()` function with one set of modulus, decomposition and coefficient-noise choices; CBS adds a local `circuit_config()`. GLWE basic/CBS/ManyLUT examples fix BR→KS, and factorized MVB fixes KS→BR. Word-width comparisons remain in tests, benchmarks and parameter diagnostics. The LWE basic and NTRU automorphism examples also use u64; the latter retains its small Q27 prime and `log_basis=3` decomposition. Application bytes, indexes and floating-point values keep their own types.
 
-Examples do not import the test-support factories. Their local configuration functions make every numerical choice inspectable without leaving the file. The recommended workflow appears in `main` before parameter helpers. Basic `prepare_server` takes only public context, encoding and evaluation keys; high-precision `compile_table` takes parameters and encoding. Short CBS/one-hot/MVB server sections remain inline, with encrypted candidates clearly produced by the client. Each workload makes two requests with reused buffers. No example imports code from `benches/` or `tests/`.
+Examples do not import benchmark parameter factories. Their local configuration functions make every numerical choice inspectable without leaving the file. The recommended workflow appears in `main` before parameter helpers. Basic `prepare_server` takes only public context, encoding and evaluation keys; high-precision `compile_table` takes parameters and encoding. Short CBS/one-hot/MVB server sections remain inline, with encrypted candidates clearly produced by the client. Each workload makes two requests with reused buffers. No example imports code from `benches/` or `tests/`.
 
 | Workflow | Geometry and encoding | Complete examples |
 | --- | --- | --- |

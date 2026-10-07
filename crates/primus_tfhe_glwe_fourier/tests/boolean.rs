@@ -1,5 +1,8 @@
 //! Backend Boolean integration: real PBS, encoding, rejection and evaluator reuse.
 
+#[path = "../../primus_tfhe/tests/common/boolean.rs"]
+mod boolean;
+
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_fft::{FftTable, RustFftTable};
@@ -12,7 +15,6 @@ use primus_tfhe_glwe_fourier::{
     BooleanError, BooleanGate, GadgetEncryptionConfig, LweCiphertext, PbsOrder, TfheContext,
     TfheParameters,
 };
-use primus_tfhe_test_support::boolean;
 use rand::{SeedableRng, rngs::StdRng};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 

@@ -62,7 +62,7 @@ coverage. Other sizes, u32 timing and SIMD timing were not measured.
 
 The constructor calls below describe the measured revision. Current composition APIs and TFHE codec ownership are documented in the [parameter guide](../development/tfhe-parameters-and-boundaries.md#ntru-普通与-gadget-参数组合).
 
-Measured on 2026-10-03 against `d8eedf4f`, on AMD Ryzen 9 9955HX3D, x86_64 Linux, rustc 1.98.1 (48a229cea, LLVM 22.1.8), default features and the repository's `target-cpu=native`. Construction and retained-memory measurements used the existing `primus_test_allocations::CountingAllocator`, not timing or RSS. The three measured stages retained all returned values: create `NtruParameters::new(1024, 16u64, NativeModulus::new(), distr, 3.2)`, derive `NlevParameters::with_ntru_params(&ordinary, base_log=8, levels=Some(3))`, then clone that NLev. Run `measure` separately for each stage; all three parameter objects remain alive until after the measurements.
+Measured on 2026-10-03 against `d8eedf4f`, on AMD Ryzen 9 9955HX3D, x86_64 Linux, rustc 1.98.1 (48a229cea, LLVM 22.1.8), default features and the repository's `target-cpu=native`. Construction measurements counted allocation requests and requested/released bytes, not timing or RSS. The three measured stages retained all returned values: create `NtruParameters::new(1024, 16u64, NativeModulus::new(), distr, 3.2)`, derive `NlevParameters::with_ntru_params(&ordinary, base_log=8, levels=Some(3))`, then clone that NLev. Each stage was measured separately, keeping all three parameter objects alive until after the measurements.
 
 | Secret distribution | Stage | Allocation count before → after | Allocated bytes before → after | Released bytes before → after |
 | --- | --- | --- | --- | --- |
@@ -73,7 +73,7 @@ Measured on 2026-10-03 against `d8eedf4f`, on AMD Ryzen 9 9955HX3D, x86_64 Linux
 | Gaussian, sigma=3.2 | Gadget derivation | 4 → 2 | 712 → 72 | 0 → 0 |
 | Gaussian, sigma=3.2 | Gadget clone | 4 → 2 | 712 → 72 | 0 → 0 |
 
-For these three live parameter objects, `sum(size_of_val)` fell from 1856 to 408 bytes. Total retained requested heap (`sum(allocated_bytes - released_bytes)`) fell from 1104 to 928 bytes for sparse ternary and from 2064 to 1248 bytes for Gaussian secrets. Inline plus retained heap therefore fell from **2960 to 1336 bytes**, or **3920 to 1656 bytes**, respectively. This estimate excludes allocator overhead and stack placement. The tradeoff is one additional 464-byte allocation at initial construction; the encryption state was previously inline, so heap bytes alone do not express its total memory cost. Each gadget still allocates its own basis arrays. The temporary measurement harness was removed after recording these results.
+For these three live parameter objects, `sum(size_of_val)` fell from 1856 to 408 bytes. Total retained requested heap (`sum(allocated_bytes - released_bytes)`) fell from 1104 to 928 bytes for sparse ternary and from 2064 to 1248 bytes for Gaussian secrets. Inline plus retained heap therefore fell from **2960 to 1336 bytes**, or **3920 to 1656 bytes**, respectively. This estimate excludes allocator overhead and stack placement. The tradeoff is one additional 464-byte allocation at initial construction; the encryption state was previously inline, so heap bytes alone do not express its total memory cost. Each gadget still allocates its own basis arrays.
 
 Online encryption was measured separately using the existing [encryption benchmark](../../crates/primus_ntru/benches/encryption.rs), with one `encrypt_to` per iteration. Setup, keys, tables and output allocation were excluded. N=1024, u64, t=16, sparse ternary secret, noise sigma=3.2; NTT used q=1125899906826241 and Fourier used the native modulus. Commands on the baseline and changed tree, respectively:
 
@@ -92,7 +92,7 @@ This short local comparison found no regression; Fourier changes were not statis
 
 ## RNS base sharing measurements
 
-Measured on 2026-10-03, on AMD Ryzen 9 9955HX3D, x86_64 Linux, rustc 1.98.1 (48a229cea, LLVM 22.1.8), default features and repository compiler flags. As in the NTRU comparison above, the existing `CountingAllocator` measured requested allocation traffic while retaining returned objects. The fixture used u64 Barrett moduli `[1125899906826241, 1125899906629633]`, k=1, N=1024, t=2, gamma=2305843009213554689, sparse ternary secrets, sigma=3.2 and a full gadget basis with logB=20. Measure ordinary construction, `CrtGlevParameters::with_glwe_params`, and gadget clone separately.
+Measured on 2026-10-03, on AMD Ryzen 9 9955HX3D, x86_64 Linux, rustc 1.98.1 (48a229cea, LLVM 22.1.8), default features and repository compiler flags. As in the NTRU comparison above, measurements counted requested allocation traffic while retaining returned objects. The fixture used u64 Barrett moduli `[1125899906826241, 1125899906629633]`, k=1, N=1024, t=2, gamma=2305843009213554689, sparse ternary secrets, sigma=3.2 and a full gadget basis with logB=20. Measure ordinary construction, `CrtGlevParameters::with_glwe_params`, and gadget clone separately.
 
 | Stage | Allocation count before → after | Allocated bytes before → after | Released bytes before → after |
 | --- | --- | --- | --- |
@@ -102,7 +102,7 @@ Measured on 2026-10-03, on AMD Ryzen 9 9955HX3D, x86_64 Linux, rustc 1.98.1 (48a
 | Gadget derivation | 12 → 7 | 488 → 344 | 0 → 0 |
 | Gadget clone | 12 → 7 | 488 → 344 | 0 → 0 |
 
-For the ordinary parameter, derived gadget and gadget clone together, inline storage plus retained requested heap fell from **3888 to 3208 bytes** (about 17.5%). This excludes allocator overhead and is not RSS. Creating an unshared base now costs an extra Arc allocation and retains the numeric cache; the benefit comes from sharing the repeated bases. No global interning is performed. BFV encode and decode with prepared buffers made zero measured allocations. The temporary allocation probe was removed after measurement.
+For the ordinary parameter, derived gadget and gadget clone together, inline storage plus retained requested heap fell from **3888 to 3208 bytes** (about 17.5%). This excludes allocator overhead and is not RSS. Creating an unshared base now costs an extra Arc allocation and retains the numeric cache; the benefit comes from sharing the repeated bases. No global interning is performed. BFV encode and decode with prepared buffers made zero measured allocations.
 
 Online screening used the existing `decompose`, `bfv_rns` and `key_switching` benchmarks, with setup outside measurement. Old and new executables ran sequentially on CPU 2; no compilation ran concurrently. Use these commands on each tree, with `--save-baseline rns-owned` before and `--baseline rns-owned` after:
 

@@ -300,9 +300,9 @@ retry tails rather than reporting only the first successful graph.
 ## Reproduction and retained scope
 
 Use source `55de85cb`, the exact cases in
-[`paper/parameters.rs`](../../crates/primus_tfhe_glwe_ntt/benches/paper/parameters.rs)
+[`paper/parameters.rs`](../../benchmarks/tfhe/benches/sparse_paper/parameters.rs)
 and the q-to-Q-to-q adapter in
-[`paper/request.rs`](../../crates/primus_tfhe_glwe_ntt/benches/paper/request.rs).
+[`paper/request.rs`](../../benchmarks/tfhe/benches/sparse_paper/request.rs).
 The temporary consumer uses their unchanged numerical operations and the
 existing public generator:
 

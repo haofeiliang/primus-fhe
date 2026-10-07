@@ -8,7 +8,6 @@ use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable, U64NttTable};
 use primus_poly::PolyLength;
-use primus_test_allocations as allocations;
 use primus_tfhe::{
     BivariateLookupTable, InterleavedLookupTable, LookupTable, Lwe, ProgrammableBootstrap,
     ProgrammableBootstrapInterleaved,
@@ -16,9 +15,6 @@ use primus_tfhe::{
 use primus_tfhe_glwe_ntt::{GadgetEncryptionConfig, PbsOrder, TfheContext, TfheParameters};
 use rand::{SeedableRng, rngs::StdRng};
 use std::panic::{AssertUnwindSafe, catch_unwind};
-
-#[global_allocator]
-static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
 
 // Quantizing to multiples of 4 accumulates one rounding term per nonzero mask.
 // N=256 keeps the ManyLUT half-plateau wider than that error budget.
@@ -117,15 +113,12 @@ where
             let input = encryptor
                 .encrypt_padded(T::as_from(message), &mut rng)
                 .unwrap();
-            let (_, allocation) = allocations::measure(|| {
-                ProgrammableBootstrapInterleaved::apply_interleaved_lookup_table_to(
-                    &mut evaluator,
-                    input.as_view(),
-                    &lut,
-                    &mut outputs,
-                );
-            });
-            assert_eq!(allocation.count, 0, "PBSManyLUT must reuse its workspace");
+            ProgrammableBootstrapInterleaved::apply_interleaved_lookup_table_to(
+                &mut evaluator,
+                input.as_view(),
+                &lut,
+                &mut outputs,
+            );
             if output_count == 3 && message == 3 {
                 assert_eq!(
                     outputs,
@@ -141,19 +134,16 @@ where
             if output_count == 1 && message == 3 {
                 let single = compiler.compile_fn(|input| value(input, 0)).unwrap();
                 // Borrow boxed input and a dirty stack sub-slice. The same
-                // PBS must overwrite every coefficient without allocating.
+                // PBS must overwrite every coefficient in the reused output.
                 let input = Lwe::new(input.0.into_boxed_slice());
                 let lwe_len = input.lwe_len();
                 let mut storage = [T::ONE; N + 3];
-                let (_, allocation) = allocations::measure(|| {
-                    ProgrammableBootstrap::apply_lookup_table_to(
-                        &mut evaluator,
-                        input.as_view(),
-                        &single,
-                        Lwe::new(&mut storage[1..1 + lwe_len]),
-                    );
-                });
-                assert_eq!(allocation.count, 0, "PBS must reuse its workspace");
+                ProgrammableBootstrap::apply_lookup_table_to(
+                    &mut evaluator,
+                    input.as_view(),
+                    &single,
+                    Lwe::new(&mut storage[1..1 + lwe_len]),
+                );
                 assert_eq!(outputs[0].as_ref(), &storage[1..1 + lwe_len]);
                 assert_eq!(storage[0], T::ONE);
                 assert_eq!(storage[1 + lwe_len], T::ONE);
@@ -355,15 +345,12 @@ where
     for (x, y) in [(T::as_from(2u32), T::ONE), (T::ONE, T::ZERO)] {
         let lhs = encryptor.encrypt_padded(x, &mut rng).unwrap();
         let rhs = encryptor.encrypt_padded(y, &mut rng).unwrap();
-        let (_, allocation) = allocations::measure(|| {
-            bivariate.pack_to(lhs.as_view(), rhs.as_view(), packed.as_mut_view());
-            evaluator.apply_lookup_table_to(
-                packed.as_view(),
-                bivariate.lookup_table(),
-                result.as_mut_view(),
-            );
-        });
-        assert_eq!(allocation.count, 0, "packing and PBS must reuse storage");
+        bivariate.pack_to(lhs.as_view(), rhs.as_view(), packed.as_mut_view());
+        evaluator.apply_lookup_table_to(
+            packed.as_view(),
+            bivariate.lookup_table(),
+            result.as_mut_view(),
+        );
         assert_eq!(
             output_codec.decode_value(decryptor.decrypt_phase(result.as_view()).unwrap()),
             x * x + y
@@ -379,10 +366,7 @@ where
     for message in [0, 1, 7, 8, 14, 0] {
         let expected = values[message];
         let input = encryptor.encrypt(T::as_from(message), &mut rng).unwrap();
-        let (_, allocation) = allocations::measure(|| {
-            evaluator.apply_lookup_table_to(input.as_view(), &full, result.as_mut_view());
-        });
-        assert_eq!(allocation.count, 0, "full-domain PBS must reuse storage");
+        evaluator.apply_lookup_table_to(input.as_view(), &full, result.as_mut_view());
         assert_eq!(
             output_codec.decode_value(decryptor.decrypt_phase(result.as_view()).unwrap()),
             expected

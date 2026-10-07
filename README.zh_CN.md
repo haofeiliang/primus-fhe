@@ -53,7 +53,7 @@ RNS 与编码组件是构建模块，目前没有完整的 BFV、BGV 或 CKKS �
 
 - [测试指南](guides/development/testing.md)：普通测试、doctest、feature 覆盖和独立的示例/基准 smoke。
 - [TFHE 实现说明](crates/primus_tfhe/IMPLEMENTATION.md)：旋转、首次提升、one-hot 与 MVB 的数学依据。
-- [TFHE 基准指南](crates/primus_tfhe/BENCHMARKS.md)：工作负载与测量入口。
+- [TFHE 基准指南](benchmarks/tfhe/BENCHMARKS.md)：工作负载与测量入口。
 - [贡献规范](AGENTS.md)与 [justfile](justfile)：仓库开发约定和便捷命令。
 
 ## 许可证

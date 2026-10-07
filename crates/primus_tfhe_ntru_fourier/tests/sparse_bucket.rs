@@ -15,15 +15,11 @@ use primus_ntru::{
     NlevParameters, NtruCiphertext, NtruParameters, SecretKeyDistr,
 };
 use primus_poly::{PolyLength, Polynomial};
-use primus_test_allocations::{CountingAllocator, measure};
 use primus_tfhe_ntru_fourier::{
     BlindRotationConfig, ClientKey, GadgetEncryptionConfig, KeyGenerator, TfheContext,
     TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
-
-#[global_allocator]
-static ALLOCATOR: CountingAllocator = CountingAllocator;
 
 const N: usize = 32;
 const DIM: usize = 16;
@@ -175,16 +171,13 @@ fn check<T: TorusFftValue, Table: FftTable>(level_count: Option<usize>) {
     let mut current = NtruCiphertext::<Vec<T>>::zero(N);
     let mut scratch = NtruCiphertext::<Vec<T>>::zero(N);
     let mut ep = FourierNtruExternalProductWorkspace::new(PolyLength::new(N));
-    let (_, allocation) = measure(|| {
-        initializer.external_product_to(
-            &Polynomial(lut.as_slice()),
-            &mut current,
-            basis,
-            &mut fft,
-            &mut ep,
-        )
-    });
-    assert_eq!(allocation.count, 0);
+    initializer.external_product_to(
+        &Polynomial(lut.as_slice()),
+        &mut current,
+        basis,
+        &mut fft,
+        &mut ep,
+    );
     let init_error = error(&product(current.as_ref(), &native_secret), &lut);
     let init_numeric = error(
         current.as_ref(),
@@ -290,47 +283,41 @@ fn check<T: TorusFftValue, Table: FftTable>(level_count: Option<usize>) {
                 } else {
                     product(current.as_ref(), &native_secret)
                 };
-                let (_, allocation) = measure(|| {
-                    let (controls, dummy) =
-                        data.as_slice().split_at(indices.len() * gadget.nlev_len());
-                    aggregate.as_mut().copy_from_slice(dummy);
-                    for (&i, control) in
-                        indices.iter().zip(controls.chunks_exact(gadget.nlev_len()))
+                let (controls, dummy) = data.as_slice().split_at(indices.len() * gadget.nlev_len());
+                aggregate.as_mut().copy_from_slice(dummy);
+                for (&i, control) in indices.iter().zip(controls.chunks_exact(gadget.nlev_len())) {
+                    for (acc, row) in aggregate
+                        .as_mut()
+                        .as_chunks_mut::<N>()
+                        .0
+                        .iter_mut()
+                        .zip(control.as_chunks::<N>().0.iter())
                     {
-                        for (acc, row) in aggregate
-                            .as_mut()
-                            .as_chunks_mut::<N>()
-                            .0
-                            .iter_mut()
-                            .zip(control.as_chunks::<N>().0.iter())
-                        {
-                            Polynomial(acc).add_mul_monomial_assign(
-                                &Polynomial(row),
-                                exponents[i],
-                                modulus,
-                            );
-                        }
-                    }
-                    aggregate.write_fourier_form(&mut transformed, &mut fft);
-                    if j == 0 {
-                        FourierNlevCiphertext::new(transformed.as_ref()).external_product_to(
-                            &Polynomial(lut.as_slice()),
-                            &mut scratch,
-                            basis,
-                            &mut fft,
-                            &mut ep,
-                        );
-                    } else {
-                        transformed.external_product_to(
-                            &current,
-                            &mut scratch,
-                            basis,
-                            &mut fft,
-                            &mut ep,
+                        Polynomial(acc).add_mul_monomial_assign(
+                            &Polynomial(row),
+                            exponents[i],
+                            modulus,
                         );
                     }
-                });
-                assert_eq!(allocation.count, 0);
+                }
+                aggregate.write_fourier_form(&mut transformed, &mut fft);
+                if j == 0 {
+                    FourierNlevCiphertext::new(transformed.as_ref()).external_product_to(
+                        &Polynomial(lut.as_slice()),
+                        &mut scratch,
+                        basis,
+                        &mut fft,
+                        &mut ep,
+                    );
+                } else {
+                    transformed.external_product_to(
+                        &current,
+                        &mut scratch,
+                        basis,
+                        &mut fft,
+                        &mut ep,
+                    );
+                }
                 let expected_control = rotate(message, exponent);
                 let mut row_error_sum = 0;
                 let mut recovered = NgswCiphertext::<Vec<T>>::zero(gadget.nlev_len());

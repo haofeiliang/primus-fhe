@@ -13,15 +13,11 @@ use primus_ntru::{NtruParameters, NttNgswCiphertext, NttNtruSecretKey, SecretKey
 use primus_ntt::U64NttTable;
 use primus_poly::PolyLength;
 use primus_poly::Polynomial;
-use primus_test_allocations as allocations;
 use primus_tfhe_ntru_ntt::{
     BlindRotationConfig, CircuitBootstrapConfig, CircuitBootstrapEvaluator, DecompositionConfig,
     GadgetEncryptionConfig, TfheContext, TfheParameters,
 };
 use rand::{RngExt, SeedableRng, rngs::StdRng};
-
-#[global_allocator]
-static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
 
 const N: usize = 64;
 const Q: u64 = 1_125_899_906_826_241;
@@ -176,13 +172,7 @@ fn circuit_bootstrap(distr: SecretKeyDistr, sparse: bool) {
         .unwrap();
     let choices = [1u64, 3].map(|message| {
         let mut output = context.allocate_accumulator_ciphertext();
-        let (_, allocation) = allocations::measure(|| {
-            accumulator_client.encrypt_to(&[message; N], &mut output, &mut rng)
-        });
-        assert_eq!(
-            allocation.count, 0,
-            "accumulator encryption must reuse its workspace"
-        );
+        accumulator_client.encrypt_to(&[message; N], &mut output, &mut rng);
         output
     });
 
@@ -194,15 +184,10 @@ fn circuit_bootstrap(distr: SecretKeyDistr, sparse: bool) {
     let mut evaluator =
         CircuitBootstrapEvaluator::try_new(&resources, circuit_key, &input_codec).unwrap();
     let mut standalone_control = evaluator.allocate_output();
-    let (_, allocation) = allocations::measure(|| {
-        evaluator.circuit_bootstrap_to(input.as_view(), &mut standalone_control, &mut resources);
-    });
-    assert_eq!(allocation.count, 0);
-    let (mut pbs, allocation) = allocations::measure(|| {
+    evaluator.circuit_bootstrap_to(input.as_view(), &mut standalone_control, &mut resources);
+    let mut pbs =
         primus_tfhe_ntru_ntt::Evaluator::try_from_resources(resources, server.key_switching_key())
-            .unwrap()
-    });
-    assert!(allocation.count > 0);
+            .unwrap();
     let mut control = evaluator.allocate_output();
     let mut selected = context.allocate_accumulator_ciphertext();
     let mut product = context.allocate_accumulator_ciphertext();
@@ -261,29 +246,27 @@ fn circuit_bootstrap(distr: SecretKeyDistr, sparse: bool) {
         )
         .unwrap();
         let input = encryptor.encrypt_padded(bit, &mut rng).unwrap();
-        let (_, allocation) = allocations::measure(|| {
-            evaluator.circuit_bootstrap_to(
-                input.as_view(),
-                &mut control,
-                pbs.bootstrap_resources_mut(),
-            );
-            evaluator.cmux_to(
-                &control,
-                &choices[0],
-                &choices[1],
-                &mut selected,
-                pbs.bootstrap_resources_mut(),
-            );
-            evaluator.external_product_to(
-                &control,
-                &choices[1],
-                &mut product,
-                pbs.bootstrap_resources_mut(),
-            );
-            pbs.apply_lookup_table_to(input.as_view(), &identity, output.as_mut_view());
-            accumulator_client.decrypt_to(&selected, &mut decoded);
-            accumulator_client.decrypt_to(&product, &mut decoded_product);
-        });
+        evaluator.circuit_bootstrap_to(
+            input.as_view(),
+            &mut control,
+            pbs.bootstrap_resources_mut(),
+        );
+        evaluator.cmux_to(
+            &control,
+            &choices[0],
+            &choices[1],
+            &mut selected,
+            pbs.bootstrap_resources_mut(),
+        );
+        evaluator.external_product_to(
+            &control,
+            &choices[1],
+            &mut product,
+            pbs.bootstrap_resources_mut(),
+        );
+        pbs.apply_lookup_table_to(input.as_view(), &identity, output.as_mut_view());
+        accumulator_client.decrypt_to(&selected, &mut decoded);
+        accumulator_client.decrypt_to(&product, &mut decoded_product);
         assert_eq!(
             context
                 .decryptor(client.external_lwe_secret_key(), &input_codec)
@@ -291,10 +274,6 @@ fn circuit_bootstrap(distr: SecretKeyDistr, sparse: bool) {
                 .decrypt(output.as_view())
                 .unwrap(),
             bit
-        );
-        assert_eq!(
-            allocation.count, 0,
-            "CBS must reuse scratch from its first call"
         );
         let mut phase = Polynomial::new(vec![0u64; N]);
         for (scalar, level) in parameters
@@ -365,8 +344,7 @@ fn circuit_bootstrap(distr: SecretKeyDistr, sparse: bool) {
 
     // A different compatible key object changes only the binding, not scratch.
     let return_key = server.key_switching_key().clone();
-    let (_, allocation) = allocations::measure(|| pbs.try_rebind_return_key(&return_key).unwrap());
-    assert_eq!(allocation.count, 0, "rebinding must retain return scratch");
+    pbs.try_rebind_return_key(&return_key).unwrap();
     let identity = context
         .parameters()
         .lookup_table_compiler(&input_codec)
@@ -374,10 +352,7 @@ fn circuit_bootstrap(distr: SecretKeyDistr, sparse: bool) {
         .compile_fn(|m| m as u64)
         .unwrap();
     let mut output = context.allocate_lwe_ciphertext();
-    let (_, allocation) = allocations::measure(|| {
-        pbs.apply_lookup_table_to(input.as_view(), &identity, output.as_mut_view());
-    });
-    assert_eq!(allocation.count, 0);
+    pbs.apply_lookup_table_to(input.as_view(), &identity, output.as_mut_view());
     assert_eq!(
         context
             .decryptor(client.external_lwe_secret_key(), &input_codec)

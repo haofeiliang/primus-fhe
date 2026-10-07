@@ -53,7 +53,7 @@ Default features use stable Rust; optional `simd` requires nightly. Run `cargo c
 
 - [Testing guide](guides/development/testing.md): ordinary tests, doctests, feature coverage and separate example/benchmark smoke runs.
 - [TFHE implementation notes](crates/primus_tfhe/IMPLEMENTATION.md): rotation, first lifting, one-hot and MVB mathematics.
-- [TFHE benchmark guide](crates/primus_tfhe/BENCHMARKS.md): workloads and measurement entry points.
+- [TFHE benchmark guide](benchmarks/tfhe/BENCHMARKS.md): workloads and measurement entry points.
 - [Contribution rules](AGENTS.md) and [justfile](justfile): repository conventions and convenience commands.
 
 ## License

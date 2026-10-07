@@ -191,13 +191,13 @@ cargo test -p primus_tfhe_ntru_lut --features tfhe-fft
 
 ```sh
 # Create and drop one public high-precision LUT.
-cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features ntt,rustfft -- '/create_lut_and_drop$'
+cargo bench -p primus_tfhe_benchmarks --bench high_precision_lut --features lut,ntru-ntt,ntru-fourier,rustfft -- '/create_lut_and_drop/'
 # Homomorphically evaluate all output chunks using a prepared LUT and workspace.
-cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features ntt,rustfft -- '/evaluate$'
+cargo bench -p primus_tfhe_benchmarks --bench high_precision_lut --features lut,ntru-ntt,ntru-fourier,rustfft -- '/evaluate/'
 ```
 
-The 18 workloads retain polynomial, dense and shared tables, paired classic/sparse evaluation, and separate creation for Q50/Native64. Creation includes allocation, coefficient filling and destruction. Evaluation excludes key generation, public LUT creation, input encryption and workspace allocation. Set `PRIMUS_LUT_DIAGNOSTICS=1` and use `--test` for an explicit heap/allocation/phase report from the same fixture; ordinary timing keeps only result checks. See the [benchmark fixture](IMPLEMENTATION.md#benchmark-fixture) for details.
+The 18 workloads retain polynomial, dense and shared tables, paired classic/sparse evaluation, and separate creation for Q50/Native64. Creation includes allocation, coefficient filling and destruction. Evaluation excludes key generation, public LUT creation, input encryption and workspace allocation. Set `PRIMUS_LUT_DIAGNOSTICS=1` and use `--test` for an explicit phase-error report from the same fixture; ordinary timing keeps only result checks. See the [benchmark fixture](IMPLEMENTATION.md#benchmark-fixture) for details.
 
-Original IDs use the polynomial example; IDs containing `/dense_seed42/` use a fixed dense mapping with the same parameters. Filter by `dense_seed42` to run only that workload, or by `c8_d5_o8/evaluate$` to evaluate only the polynomial example.
+Original IDs use the polynomial example; IDs containing `/dense_seed42/` use a fixed dense mapping with the same parameters. Filter by `dense_seed42` to run only that workload, or by `c8_d5_o8/evaluate/` to evaluate only the polynomial example.
 
 The `/shared_middle_chunk/` diagnostic mapping sets every output digit to `(m_0+m_6) mod 4`. It isolates a public choice moved past chunk 5, omission of high-chunk CBS for chunks 5 and 7, and reuse of the identical final outputs. It deliberately differs from a full-width arithmetic function.

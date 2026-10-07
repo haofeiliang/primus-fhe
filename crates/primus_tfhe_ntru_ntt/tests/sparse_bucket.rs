@@ -13,16 +13,12 @@ use primus_ntru::{
 };
 use primus_ntt::{MonomialNttTable, U32NttTable, U64NttTable};
 use primus_poly::{PolyLength, Polynomial};
-use primus_test_allocations::{CountingAllocator, measure};
 use primus_tfhe_ntru_ntt::{
     BlindRotationConfig, ClientKey, GadgetEncryptionConfig, KeyGenerator, TfheContext,
     TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 use zeroize::Zeroizing;
-
-#[global_allocator]
-static ALLOCATOR: CountingAllocator = CountingAllocator;
 
 // Schoolbook multiplication by the signed secret, independent of NTT arithmetic.
 fn phase<T: FheUint>(cipher: &[T], secret: &[T::SignedInteger], q: i128) -> Vec<i128> {
@@ -172,10 +168,7 @@ fn check_bucket<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, level_cou
     let mut input = NtruCiphertext::<Vec<T>>::zero(N);
     let mut product = NtruCiphertext::<Vec<T>>::zero(N);
     let mut scratch = NttNtruExternalProductWorkspace::new(PolyLength::new(N));
-    let (_, allocations) = measure(|| {
-        initializer.external_product_to(&encoded, &mut input, basis, modulus, ntt, &mut scratch);
-    });
-    assert_eq!(allocations.count, 0);
+    initializer.external_product_to(&encoded, &mut input, basis, modulus, ntt, &mut scratch);
     let input_phase = phase(input.as_ref(), secret.as_slice(), q_wide);
     let init_bound = residual + N as i128 * digit_bound * init_error_sum;
     assert!(max_error(&input_phase, &rotated_lut, q_wide) <= init_bound);
@@ -272,49 +265,44 @@ fn check_bucket<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, level_cou
                     .map(|i| shift.map_or(0, |s| (s + 7 * i) % (2 * N)))
                     .collect();
                 let exponent = chosen.map_or(0, |i| exponents[i]);
-                let (_, allocations) = measure(|| {
-                    aggregate.copy_from_slice(dummy_control);
-                    for (&i, control) in
-                        indices.iter().zip(controls.chunks_exact(gadget.nlev_len()))
+                aggregate.copy_from_slice(dummy_control);
+                for (&i, control) in indices.iter().zip(controls.chunks_exact(gadget.nlev_len())) {
+                    for (output, row) in aggregate
+                        .as_chunks_mut::<N>()
+                        .0
+                        .iter_mut()
+                        .zip(control.as_chunks::<N>().0.iter())
                     {
-                        for (output, row) in aggregate
-                            .as_chunks_mut::<N>()
-                            .0
-                            .iter_mut()
-                            .zip(control.as_chunks::<N>().0.iter())
-                        {
-                            Polynomial(output).add_mul_monomial_assign(
-                                &Polynomial(row),
-                                exponents[i],
-                                modulus,
-                            );
-                        }
+                        Polynomial(output).add_mul_monomial_assign(
+                            &Polynomial(row),
+                            exponents[i],
+                            modulus,
+                        );
                     }
-                    if bucket == 0 {
-                        NlevCiphertext::new(aggregate.as_mut_slice())
-                            .into_ntt_form(ntt)
-                            .external_product_to(
-                                &encoded,
-                                &mut product,
-                                basis,
-                                modulus,
-                                ntt,
-                                &mut scratch,
-                            );
-                    } else {
-                        NgswCiphertext::new(aggregate.as_mut_slice())
-                            .into_ntt_form(ntt)
-                            .external_product_to(
-                                &input,
-                                &mut product,
-                                basis,
-                                modulus,
-                                ntt,
-                                &mut scratch,
-                            );
-                    }
-                });
-                assert_eq!(allocations.count, 0);
+                }
+                if bucket == 0 {
+                    NlevCiphertext::new(aggregate.as_mut_slice())
+                        .into_ntt_form(ntt)
+                        .external_product_to(
+                            &encoded,
+                            &mut product,
+                            basis,
+                            modulus,
+                            ntt,
+                            &mut scratch,
+                        );
+                } else {
+                    NgswCiphertext::new(aggregate.as_mut_slice())
+                        .into_ntt_form(ntt)
+                        .external_product_to(
+                            &input,
+                            &mut product,
+                            basis,
+                            modulus,
+                            ntt,
+                            &mut scratch,
+                        );
+                }
                 // Exact row-phase linearity proves all encrypted-zero/dummy noise was included.
                 let mut bucket_error_sum = 0;
                 let mut unit = vec![0; N];

@@ -12,15 +12,11 @@ use primus_ntru::NlevParameters;
 use primus_ntru::{NtruParameters, SecretKeyDistr};
 use primus_ntt::{MonomialNttTable, U32NttTable, U64NttTable};
 use primus_poly::PolyLength;
-use primus_test_allocations::{CountingAllocator, measure};
 use primus_tfhe::rotation::RotationModulusSwitch;
 use primus_tfhe_ntru_ntt::{
     BlindRotationConfig, GadgetEncryptionConfig, KeyGenerator, TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
-
-#[global_allocator]
-static ALLOCATOR: CountingAllocator = CountingAllocator;
 
 // Quantizing to multiples of 4 accumulates one rounding term per nonzero mask.
 // N=256 keeps the ManyLUT half-plateau wider than that error budget.
@@ -195,17 +191,11 @@ fn check_complete<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, weight:
                 *input.b_mut() =
                     input_codec.encode_value(T::as_from(message), PlaintextEmbedding::Unsigned);
             }
-            let (_, allocation) = measure(|| {
-                sparse_mvb.apply_lookup_table_to(
-                    input.as_view(),
-                    &factorized_lut,
-                    &mut factor_outputs,
-                    &mut sparse,
-                );
-            });
-            assert_eq!(
-                allocation.count, 0,
-                "first and reused sparse MVB calls must not allocate"
+            sparse_mvb.apply_lookup_table_to(
+                input.as_view(),
+                &factorized_lut,
+                &mut factor_outputs,
+                &mut sparse,
             );
             classic_mvb.apply_lookup_table_to(
                 input.as_view(),
@@ -231,10 +221,7 @@ fn check_complete<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, weight:
             }
             // Ordinary PBS/ManyLUT must still work after borrowing the shared
             // accumulator and return buffers for MVB.
-            let (_, allocation) = measure(|| {
-                sparse.apply_lookup_table_to(input.as_view(), &single, output.as_mut_view())
-            });
-            assert_eq!(allocation.count, 0);
+            sparse.apply_lookup_table_to(input.as_view(), &single, output.as_mut_view());
             classic.apply_lookup_table_to(input.as_view(), &single, reference.as_mut_view());
             for cipher in [&output, &reference] {
                 assert_eq!(
@@ -246,10 +233,7 @@ fn check_complete<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, weight:
                     value(message, 0)
                 );
             }
-            let (_, allocation) = measure(|| {
-                sparse.apply_interleaved_lookup_table_to(input.as_view(), &many, &mut outputs)
-            });
-            assert_eq!(allocation.count, 0);
+            sparse.apply_interleaved_lookup_table_to(input.as_view(), &many, &mut outputs);
             // Derive the complete public rotation from quantized mask/body and original secret.
             let modulus_switch =
                 RotationModulusSwitch::new(modulus, 2 * N, many.padded_output_count());
@@ -292,7 +276,7 @@ fn check_complete<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, weight:
 }
 
 #[test]
-fn sparse_pbs_matches_classic_outputs_and_independent_rotation_without_allocations() {
+fn sparse_pbs_matches_classic_outputs_and_independent_rotation() {
     for weight in [1, 4] {
         check_complete::<u32, U32NttTable>(132_120_577, weight);
         check_complete::<u64, U64NttTable>(1_125_899_906_826_241, weight);

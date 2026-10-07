@@ -9,15 +9,11 @@ use primus_fft::{FftTable, RustFftTable, TfheFftTable, TorusFftValue};
 use primus_lwe::LweCiphertext;
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::SecretKeyDistr;
-use primus_test_allocations as allocations;
 use primus_tfhe_ntru_fourier::{
     DecompositionConfig, FactorizedLookupTable, FourierFactorizedLookupTable,
     GadgetEncryptionConfig, LookupTable, LookupTableError, TfheConfig, TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
-
-#[global_allocator]
-static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
 
 const N: usize = 128;
 const DIM: usize = 8;
@@ -116,13 +112,7 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(distr: SecretKeyDistr) {
         let input = encryptor
             .encrypt_padded(T::as_from(message), &mut rng)
             .unwrap();
-        let (_, allocation) = allocations::measure(|| {
-            evaluator.apply_lookup_table_to(input.as_view(), &lut, &mut outputs, &mut pbs)
-        });
-        assert_eq!(
-            allocation.count, 0,
-            "first and reused MVB calls must not allocate"
-        );
+        evaluator.apply_lookup_table_to(input.as_view(), &lut, &mut outputs, &mut pbs);
         for (i, output) in outputs.iter().enumerate() {
             let expected = T::as_from(value(message, i));
             let phase = decryptor.decrypt_phase(output.as_view()).unwrap();

@@ -2,7 +2,7 @@
 
 [Performance decisions and measurement method](README.md)
 
-The [workload guide](../../crates/primus_tfhe/BENCHMARKS.md) owns target purposes
+The [workload guide](../../benchmarks/tfhe/BENCHMARKS.md) owns target purposes
 and timing boundaries; the [parameter matrix](../development/tfhe-parameters.md) owns the
 numerical profiles. This report records the current measurements, not production
 security recommendations or a performance comparison between equal-security systems.

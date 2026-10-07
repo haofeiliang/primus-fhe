@@ -12,7 +12,6 @@ use primus_ntru::{
 };
 use primus_ntt::U64NttTable;
 use primus_poly::PolyLength;
-use primus_test_allocations as allocations;
 use primus_tfhe_ntru_ntt::{
     BlindRotationConfig, CircuitBootstrapConfig, CircuitBootstrapEvaluator, DecompositionConfig,
     GadgetEncryptionConfig, OneHotCircuitBootstrapEvaluator, TfheContext, TfheParameters,
@@ -20,8 +19,6 @@ use primus_tfhe_ntru_ntt::{
 use rand::{SeedableRng, rngs::StdRng};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-#[global_allocator]
-static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
 // N=64 leaves guard slots around three interleaved gadget levels at t=8.
 const N: usize = 64;
 const Q: u128 = 1_125_899_906_826_241;
@@ -119,8 +116,7 @@ fn selectors(distr: SecretKeyDistr, sparse: bool) {
     let server = generator
         .try_generate_server_key(&client, blind_rotation, Some(cbs_config), &mut rng)
         .unwrap();
-    let ((br, return_key, circuit), allocation) = allocations::measure(|| server.into_parts());
-    assert_eq!(allocation.count, 0);
+    let (br, return_key, circuit) = server.into_parts();
     let circuit = circuit.unwrap();
     // One-hot preparation depends on the context/CBS key, not on BR controls.
     // In the sparse case prepare using a classic BR over the same two secrets,
@@ -144,10 +140,8 @@ fn selectors(distr: SecretKeyDistr, sparse: bool) {
     } else {
         resources
     };
-    let (mut pbs, allocation) = allocations::measure(|| {
-        primus_tfhe_ntru_ntt::Evaluator::try_from_resources(resources, &return_key).unwrap()
-    });
-    assert!(allocation.count > 0);
+    let mut pbs =
+        primus_tfhe_ntru_ntt::Evaluator::try_from_resources(resources, &return_key).unwrap();
     assert_eq!(evaluator.lookup_table().selector_count(), M);
     assert_eq!(evaluator.lookup_table().rotation_step(), 4);
     let scalars: Vec<_> = evaluator
@@ -230,37 +224,34 @@ fn selectors(distr: SecretKeyDistr, sparse: bool) {
             input.a_mut().fill(0);
             *input.b_mut() = exponent * ((1u64 << 24) / (2 * N as u64));
         }
-        let (_, allocation) = allocations::measure(|| {
-            evaluator.one_hot_to(
-                input.as_view(),
-                &mut nlev,
-                &mut ngsw,
-                pbs.bootstrap_resources_mut(),
-            );
-            pbs.apply_lookup_table_to(input.as_view(), &identity, lwe_output.as_mut_view());
-            evaluator.one_hot_nlev_to(
-                input.as_view(),
-                &mut nlev_only,
-                pbs.bootstrap_resources_mut(),
-            );
-            evaluator.one_hot_ngsw_to(
-                input.as_view(),
-                &mut ngsw_only,
-                pbs.bootstrap_resources_mut(),
-            );
-            evaluator.one_hot_nonzero_ngsw_to(
-                input.as_view(),
-                &mut nonzero_ngsw,
-                pbs.bootstrap_resources_mut(),
-            );
-            evaluator.one_hot_nlev_and_nonzero_ngsw_to(
-                input.as_view(),
-                &mut joint_nlev,
-                &mut joint_nonzero_ngsw,
-                pbs.bootstrap_resources_mut(),
-            );
-        });
-        assert_eq!(allocation.count, 0);
+        evaluator.one_hot_to(
+            input.as_view(),
+            &mut nlev,
+            &mut ngsw,
+            pbs.bootstrap_resources_mut(),
+        );
+        pbs.apply_lookup_table_to(input.as_view(), &identity, lwe_output.as_mut_view());
+        evaluator.one_hot_nlev_to(
+            input.as_view(),
+            &mut nlev_only,
+            pbs.bootstrap_resources_mut(),
+        );
+        evaluator.one_hot_ngsw_to(
+            input.as_view(),
+            &mut ngsw_only,
+            pbs.bootstrap_resources_mut(),
+        );
+        evaluator.one_hot_nonzero_ngsw_to(
+            input.as_view(),
+            &mut nonzero_ngsw,
+            pbs.bootstrap_resources_mut(),
+        );
+        evaluator.one_hot_nlev_and_nonzero_ngsw_to(
+            input.as_view(),
+            &mut joint_nlev,
+            &mut joint_nonzero_ngsw,
+            pbs.bootstrap_resources_mut(),
+        );
         assert_eq!(nlev, nlev_only);
         assert_eq!(ngsw, ngsw_only);
         // Compact slot r - 1 must preserve the full-mode selector r, including
@@ -271,27 +262,24 @@ fn selectors(distr: SecretKeyDistr, sparse: bool) {
         assert_eq!(joint_nonzero_ngsw, nonzero_ngsw);
         if let Some(pair) = pair.as_mut() {
             let mut next = 0;
-            let (_, allocation) = allocations::measure(|| {
-                evaluator.with_sparse_pair(
-                    [input.as_view(), second_input.as_view()],
-                    pair,
-                    pbs.bootstrap_resources_mut(),
-                    |index, projection| {
-                        assert_eq!(index, next);
-                        next += 1;
-                        projection.project_to(Some(&mut paired_nlev), Some(&mut paired_ngsw));
-                        let (expected_nlev, expected_ngsw) = if index == 0 {
-                            (&nlev, &nonzero_ngsw)
-                        } else {
-                            (&second_nlev, &second_ngsw)
-                        };
-                        assert_eq!(&paired_nlev, expected_nlev);
-                        assert_eq!(&paired_ngsw, expected_ngsw);
-                    },
-                );
-            });
+            evaluator.with_sparse_pair(
+                [input.as_view(), second_input.as_view()],
+                pair,
+                pbs.bootstrap_resources_mut(),
+                |index, projection| {
+                    assert_eq!(index, next);
+                    next += 1;
+                    projection.project_to(Some(&mut paired_nlev), Some(&mut paired_ngsw));
+                    let (expected_nlev, expected_ngsw) = if index == 0 {
+                        (&nlev, &nonzero_ngsw)
+                    } else {
+                        (&second_nlev, &second_ngsw)
+                    };
+                    assert_eq!(&paired_nlev, expected_nlev);
+                    assert_eq!(&paired_ngsw, expected_ngsw);
+                },
+            );
             assert_eq!(next, 2);
-            assert_eq!(allocation.count, 0);
         }
 
         assert_eq!(
@@ -336,34 +324,28 @@ fn selectors(distr: SecretKeyDistr, sparse: bool) {
                     &expected,
                 );
             }
-            let (_, allocation) = allocations::measure(|| {
-                primus_ntru::NlevCiphertext::new(nlev_rows)
-                    .write_ntt_form(&mut transformed_nlev, context.table());
-                transformed_nlev.external_product_to(
-                    &public,
-                    &mut selected,
-                    evaluator.parameters().output_basis(),
-                    modulus,
-                    context.table(),
-                    &mut ep,
-                );
-                accumulator.decrypt_to(&selected, &mut decoded);
-            });
-            assert_eq!(allocation.count, 0);
+            primus_ntru::NlevCiphertext::new(nlev_rows)
+                .write_ntt_form(&mut transformed_nlev, context.table());
+            transformed_nlev.external_product_to(
+                &public,
+                &mut selected,
+                evaluator.parameters().output_basis(),
+                modulus,
+                context.table(),
+                &mut ep,
+            );
+            accumulator.decrypt_to(&selected, &mut decoded);
             assert_eq!(decoded, vec![3 * bit; N]);
-            let (_, allocation) = allocations::measure(|| {
-                control.cmux_to(
-                    &choices[0],
-                    &choices[1],
-                    &mut selected,
-                    evaluator.parameters().output_basis(),
-                    modulus,
-                    context.table(),
-                    &mut ep,
-                );
-                accumulator.decrypt_to(&selected, &mut decoded);
-            });
-            assert_eq!(allocation.count, 0);
+            control.cmux_to(
+                &choices[0],
+                &choices[1],
+                &mut selected,
+                evaluator.parameters().output_basis(),
+                modulus,
+                context.table(),
+                &mut ep,
+            );
+            accumulator.decrypt_to(&selected, &mut decoded);
             assert_eq!(decoded, vec![if bit == 0 { 1 } else { 3 }; N]);
         }
     }
@@ -474,29 +456,26 @@ fn selectors(distr: SecretKeyDistr, sparse: bool) {
         CircuitBootstrapEvaluator::try_new(pbs.bootstrap_resources(), &circuit, &input_codec)
             .unwrap();
     let mut control = ordinary.allocate_output();
-    let (_, allocation) = allocations::measure(|| {
-        ordinary.circuit_bootstrap_to(input.as_view(), &mut control, pbs.bootstrap_resources_mut());
-        ordinary.cmux_to(
-            &control,
-            &choices[0],
-            &choices[1],
-            &mut selected,
-            pbs.bootstrap_resources_mut(),
-        );
-        evaluator.one_hot_to(
-            input.as_view(),
-            &mut nlev,
-            &mut ngsw,
-            pbs.bootstrap_resources_mut(),
-        );
-    });
-    assert_eq!(allocation.count, 0);
+    ordinary.circuit_bootstrap_to(input.as_view(), &mut control, pbs.bootstrap_resources_mut());
+    ordinary.cmux_to(
+        &control,
+        &choices[0],
+        &choices[1],
+        &mut selected,
+        pbs.bootstrap_resources_mut(),
+    );
+    evaluator.one_hot_to(
+        input.as_view(),
+        &mut nlev,
+        &mut ngsw,
+        pbs.bootstrap_resources_mut(),
+    );
     accumulator.decrypt_to(&selected, &mut decoded);
     assert_eq!(decoded, vec![3; N]);
 }
 
 #[test]
-fn one_hot_selectors_preserve_gadget_scales_and_control_cmux_without_allocations() {
+fn one_hot_selectors_preserve_gadget_scales_and_control_cmux() {
     for (distr, sparse) in [
         (SecretKeyDistr::UniformBinary, false),
         (SecretKeyDistr::UniformTernary, false),

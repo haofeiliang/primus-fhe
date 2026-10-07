@@ -1,0 +1,115 @@
+[package]
+name = "primus_tfhe_benchmarks"
+version = "0.1.0"
+edition = "2024"
+publish = false
+autobenches = false
+
+# Backend selection is independent of the Fourier engine.
+[dependencies]
+primus_fft = { path = "../../crates/primus_fft", optional = true }
+primus_ntt = { path = "../../crates/primus_ntt", optional = true }
+primus_tfhe_glwe_ntt = { path = "../../crates/primus_tfhe_glwe_ntt", optional = true }
+primus_tfhe_glwe_fourier = { path = "../../crates/primus_tfhe_glwe_fourier", optional = true }
+primus_tfhe_ntru_ntt = { path = "../../crates/primus_tfhe_ntru_ntt", optional = true }
+primus_tfhe_ntru_fourier = { path = "../../crates/primus_tfhe_ntru_fourier", optional = true }
+primus_tfhe_ntru_lut = { path = "../../crates/primus_tfhe_ntru_lut", optional = true }
+
+primus_decompose = { path = "../../crates/primus_decompose" }
+primus_encoding = { path = "../../crates/primus_encoding" }
+primus_glwe = { path = "../../crates/primus_glwe" }
+primus_integer = { path = "../../crates/primus_integer" }
+primus_lattice = { path = "../../crates/primus_lattice" }
+primus_lwe = { path = "../../crates/primus_lwe" }
+primus_modulus = { path = "../../crates/primus_modulus" }
+primus_ntru = { path = "../../crates/primus_ntru" }
+primus_poly = { path = "../../crates/primus_poly" }
+primus_reduce = { path = "../../crates/primus_reduce" }
+primus_tfhe = { path = "../../crates/primus_tfhe" }
+primus_tfhe_glwe = { path = "../../crates/primus_tfhe_glwe" }
+primus_tfhe_ntru = { path = "../../crates/primus_tfhe_ntru" }
+criterion = { workspace = true, features = ["html_reports"] }
+# The diagnostic CLI reuses Criterion's parser without derive or terminal styling.
+clap = { version = "4", optional = true, default-features = false, features = ["std", "help", "usage", "error-context"] }
+serde_json = { workspace = true }
+rand = { workspace = true }
+
+[[bench]]
+name = "pbs"
+harness = false
+
+[[bench]]
+name = "sparse_pbs"
+harness = false
+
+[[bench]]
+name = "cbs"
+harness = false
+
+[[bench]]
+name = "mvb"
+harness = false
+
+[[bench]]
+name = "setup"
+harness = false
+
+[[bench]]
+name = "high_precision_lut"
+harness = false
+required-features = ["lut"]
+
+[[bench]]
+name = "sparse_paper"
+harness = false
+required-features = ["glwe-ntt"]
+
+[[bin]]
+name = "validate_parameters"
+required-features = ["validation"]
+test = false
+bench = false
+
+[features]
+default = []
+validation = ["lut", "dep:clap"]
+# Convenience groups used by workspace compilation/lint; they do not run benchmarks.
+ntt = ["glwe-ntt", "ntru-ntt", "lut"]
+fourier = ["glwe-fourier", "ntru-fourier", "lut"]
+glwe-ntt = [
+    "dep:primus_tfhe_glwe_ntt",
+    "dep:primus_ntt",
+    "primus_glwe/ntt",
+    "primus_lattice/ntt",
+]
+glwe-fourier = [
+    "dep:primus_tfhe_glwe_fourier",
+    "dep:primus_fft",
+    "primus_glwe/fourier",
+    "primus_lattice/fourier",
+]
+ntru-ntt = [
+    "dep:primus_tfhe_ntru_ntt",
+    "dep:primus_ntt",
+    "primus_ntru/ntt",
+    "primus_lattice/ntt",
+    "primus_tfhe_ntru_lut?/ntt",
+]
+ntru-fourier = [
+    "dep:primus_tfhe_ntru_fourier",
+    "dep:primus_fft",
+    "primus_ntru/fourier",
+    "primus_lattice/fourier",
+    "primus_tfhe_ntru_lut?/fourier",
+]
+lut = ["dep:primus_tfhe_ntru_lut"]
+# Weak forwarding does not select another backend or representation.
+rustfft = ["primus_fft?/rustfft"]
+tfhe-fft = ["primus_fft?/tfhe-fft"]
+simd = [
+    "primus_tfhe_glwe_ntt?/simd",
+    "primus_tfhe_glwe_fourier?/simd",
+    "primus_tfhe_ntru_ntt?/simd",
+    "primus_tfhe_ntru_fourier?/simd",
+    "primus_tfhe_ntru_lut?/simd",
+]

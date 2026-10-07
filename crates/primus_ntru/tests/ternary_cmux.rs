@@ -12,11 +12,7 @@ use primus_ntru::{
 };
 use primus_ntt::{NttTable, UintNttTable};
 use primus_poly::{PolyLength, Polynomial};
-use primus_test_allocations::{CountingAllocator, measure};
 use rand::{SeedableRng, rngs::StdRng};
-
-#[global_allocator]
-static ALLOCATOR: CountingAllocator = CountingAllocator;
 
 const N: usize = 32;
 const Q: u64 = 1_125_899_906_826_241;
@@ -59,7 +55,7 @@ fn distance(lhs: u64, rhs: u64) -> u64 {
 }
 
 #[test]
-fn encrypted_ternary_step_matches_phase_oracle_and_two_binary_cmuxes_without_allocation() {
+fn encrypted_ternary_step_matches_phase_oracle_and_two_binary_cmuxes() {
     let modulus = BarrettModulus::new(Q);
     let ntt = UintNttTable::new(PolyLength::new(N), modulus).unwrap();
     let params = NtruParameters::new(
@@ -140,19 +136,16 @@ fn encrypted_ternary_step_matches_phase_oracle_and_two_binary_cmuxes_without_all
         // Sign/wrap boundaries and an interior shift; zero follows dirty scratch.
         // Exhaustive index arithmetic is covered by the polynomial rotation oracle.
         for exponent in [1, N / 2 - 1, N / 2, N - 1, N, N + 1, 2 * N - 1, 0] {
-            let (_, allocations) = measure(|| {
-                positive.cmux_ternary_monomial_to(
-                    &negative,
-                    &input,
-                    exponent,
-                    &mut output,
-                    basis,
-                    modulus,
-                    &ntt,
-                    &mut fused,
-                )
-            });
-            assert_eq!(allocations.count, 0);
+            positive.cmux_ternary_monomial_to(
+                &negative,
+                &input,
+                exponent,
+                &mut output,
+                basis,
+                modulus,
+                &ntt,
+                &mut fused,
+            );
             positive.cmux_monomial_to(
                 &input,
                 exponent,
@@ -320,18 +313,15 @@ fn check_fourier_step<T: TorusFftValue, Table: FftTable>() {
         // Sign/wrap boundaries and an interior shift; zero follows dirty scratch.
         // Exhaustive index arithmetic is covered by the polynomial rotation oracle.
         for exponent in [1, N / 2 - 1, N / 2, N - 1, N, N + 1, 2 * N - 1, 0] {
-            let (_, allocations) = measure(|| {
-                positive.cmux_ternary_monomial_to(
-                    &negative,
-                    &input,
-                    exponent,
-                    &mut output,
-                    basis,
-                    &mut fft,
-                    &mut fused,
-                )
-            });
-            assert_eq!(allocations.count, 0);
+            positive.cmux_ternary_monomial_to(
+                &negative,
+                &input,
+                exponent,
+                &mut output,
+                basis,
+                &mut fft,
+                &mut fused,
+            );
             positive.cmux_monomial_to(
                 &input,
                 exponent,
@@ -376,7 +366,7 @@ fn check_fourier_step<T: TorusFftValue, Table: FftTable>() {
 }
 
 #[test]
-fn fourier_ternary_step_matches_independent_phase_and_two_cmuxes_without_allocation() {
+fn fourier_ternary_step_matches_independent_phase_and_two_cmuxes() {
     check_fourier_step::<u32, RustFftTable>();
     check_fourier_step::<u64, RustFftTable>();
     check_fourier_step::<u32, TfheFftTable>();

@@ -92,4 +92,4 @@ NTT reverse trace 使用模逆元，Fourier 使用原生整数减半并引入 FF
 
 ## 进一步阅读
 
-[操作与资源复用](../primus_tfhe/README.zh_CN.md) · [实现说明](../primus_tfhe/IMPLEMENTATION.md) · [基准指南](../primus_tfhe/BENCHMARKS.md)
+[操作与资源复用](../primus_tfhe/README.zh_CN.md) · [实现说明](../primus_tfhe/IMPLEMENTATION.md) · [基准指南](../../benchmarks/tfhe/BENCHMARKS.md)

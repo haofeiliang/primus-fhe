@@ -37,7 +37,7 @@ Criterion 每次迭代仍是一项完整请求，10 samples、warm-up 0.15 s、m
 
 这些测量保留已有双输入 BR、delta_0 省略、重复多项式/跨输出复用、chunk 剪枝、公开提升和完整返回。普通/dense 表每次请求有 25 次 prefix 投影，shared 表有 19 次；每次 prefix 调用产生 L 个系数密文，不是仅做一次自同构。LUT 的计时外解密、phase-error 和在线零分配检查全部通过；CBS/one-hot 的原有实际 CMux 检查也通过。
 
-参数直接沿用基线的 [GLWE](../../test-support/tfhe/src/parameters/glwe.rs)、[NTRU](../../test-support/tfhe/src/parameters/ntru.rs) profiles 和 [LUT fixture](../../crates/primus_tfhe_ntru_lut/benches/support/mod.rs)：N=1024、h=32、CBS/one-hot n=728，LUT n=800、c8/d5/o8、每 chunk 两位、sparse r3/B64。NTRU 外部 q=2^24；GLWE 的 LWE 与环使用同一模数。NTT Q 为 998244353 / 1125899906826241，Fourier Q=2^word_bits。GLWE 输出 L=3/2，NTRU 输出 L=4/3（u32/u64）；BR/trace/SS 保持各自既有完整层数和噪声。密钥 seed=42，独立输入 seed=43；dense 映射 seed=42。不应用尚未推广的 sparse 参数候选，不更改分解或噪声来增加投影占比。
+参数直接沿用基线的 [GLWE](../../benchmarks/tfhe/src/parameters/glwe.rs)、[NTRU](../../benchmarks/tfhe/src/parameters/ntru.rs) profiles 和 [LUT fixture](../../benchmarks/tfhe/benches/high_precision_lut/mod.rs)：N=1024、h=32、CBS/one-hot n=728，LUT n=800、c8/d5/o8、每 chunk 两位、sparse r3/B64。NTRU 外部 q=2^24；GLWE 的 LWE 与环使用同一模数。NTT Q 为 998244353 / 1125899906826241，Fourier Q=2^word_bits。GLWE 输出 L=3/2，NTRU 输出 L=4/3（u32/u64）；BR/trace/SS 保持各自既有完整层数和噪声。密钥 seed=42，独立输入 seed=43；dense 映射 seed=42。不应用尚未推广的 sparse 参数候选，不更改分解或噪声来增加投影占比。
 
 复现完整基线的入口（CPU 8 将 `4` 替换为 `8`，只跑 LUT）：
 

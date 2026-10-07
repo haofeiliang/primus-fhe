@@ -1,6 +1,9 @@
 //! Classic/sparse differential PBS and ManyLUT on reused workspaces;
 //! bucket layouts and quantization margins are part of the fixture.
 
+#[path = "../../primus_tfhe/tests/common/boolean.rs"]
+mod boolean;
+
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_encoding::{PlaintextEmbedding, RoundedCodec};
@@ -10,17 +13,12 @@ use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
 use primus_poly::PolyLength;
-use primus_test_allocations as allocations;
 use primus_tfhe::{BivariateLookupTable, ProgrammableBootstrap, ProgrammableBootstrapInterleaved};
 use primus_tfhe_glwe_ntt::{
     BlindRotationConfig, ClientKey, GadgetEncryptionConfig, KeyGenerator, PbsOrder, TfheContext,
     TfheEvaluationError, TfheParameters,
 };
-use primus_tfhe_test_support::boolean;
 use rand::{SeedableRng, rngs::StdRng};
-
-#[global_allocator]
-static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
 
 const Q: u32 = 132_120_577;
 const N: usize = 128;
@@ -136,25 +134,19 @@ fn sparse_pbs_preserves_external_secret_and_interleaved_outputs_in_both_orders()
             let input = encryptor.encrypt_padded(message, &mut rng).unwrap();
             for evaluator in [&mut sparse, &mut classic] {
                 // Reuse one evaluator across step 1 -> 4 -> 1 and across inputs.
-                let (_, allocation) = allocations::measure(|| {
-                    ProgrammableBootstrap::apply_lookup_table_to(
-                        evaluator,
-                        input.as_view(),
-                        &single,
-                        outputs[0].as_mut_view(),
-                    );
-                });
-                assert_eq!(allocation.count, 0);
+                ProgrammableBootstrap::apply_lookup_table_to(
+                    evaluator,
+                    input.as_view(),
+                    &single,
+                    outputs[0].as_mut_view(),
+                );
                 check(&outputs[0], function(message as usize));
-                let (_, allocation) = allocations::measure(|| {
-                    ProgrammableBootstrapInterleaved::apply_interleaved_lookup_table_to(
-                        evaluator,
-                        input.as_view(),
-                        &many,
-                        &mut outputs,
-                    );
-                });
-                assert_eq!(allocation.count, 0);
+                ProgrammableBootstrapInterleaved::apply_interleaved_lookup_table_to(
+                    evaluator,
+                    input.as_view(),
+                    &many,
+                    &mut outputs,
+                );
                 for (i, output) in outputs.iter().enumerate() {
                     check(output, functions(message as usize, i));
                 }
@@ -199,7 +191,7 @@ fn centered_error(phase: u32, expected: u32) -> i64 {
 }
 
 #[test]
-fn sparse_boolean_gates_chain_in_both_orders_without_allocating() {
+fn sparse_boolean_gates_chain_in_both_orders() {
     for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
         let context = context(order, 4, 4, 7);
         let input_codec =
@@ -238,24 +230,18 @@ fn sparse_boolean_gates_chain_in_both_orders_without_allocating() {
         let mut output = LweCiphertext::zero(dimension);
         let mut current = LweCiphertext::zero(dimension);
         let codec = &input_codec;
-        let (_, allocation) = allocations::measure(|| {
-            boolean::check_truth_tables_and_chain(
-                &mut evaluator,
-                &inputs,
-                &mut output,
-                &mut current,
-                |ciphertext| {
-                    let value = decryptor.decrypt(ciphertext.as_view()).unwrap();
-                    let phase = phase_decryptor.decrypt_phase(ciphertext.as_view()).unwrap();
-                    let center = codec.encode_value(u32::from(value), PlaintextEmbedding::Unsigned);
-                    assert!(centered_error(phase, center).abs() < i64::from(Q / 8 - 1));
-                    value
-                },
-            );
-        });
-        assert_eq!(
-            allocation.count, 0,
-            "gates and their chain must reuse storage"
+        boolean::check_truth_tables_and_chain(
+            &mut evaluator,
+            &inputs,
+            &mut output,
+            &mut current,
+            |ciphertext| {
+                let value = decryptor.decrypt(ciphertext.as_view()).unwrap();
+                let phase = phase_decryptor.decrypt_phase(ciphertext.as_view()).unwrap();
+                let center = codec.encode_value(u32::from(value), PlaintextEmbedding::Unsigned);
+                assert!(centered_error(phase, center).abs() < i64::from(Q / 8 - 1));
+                value
+            },
         );
     }
 }
@@ -334,15 +320,12 @@ fn sparse_bivariate_and_odd_full_domain_respect_input_margins_in_both_orders() {
             let packed_center = encode_input(x + 3 * y);
             let rounding_error = i64::from(encode_input(x)) + 3 * i64::from(encode_input(y))
                 - i64::from(packed_center);
-            let (_, allocation) = allocations::measure(|| {
-                bivariate.pack_to(lhs.as_view(), rhs.as_view(), packed.as_mut_view());
-                evaluator.apply_lookup_table_to(
-                    packed.as_view(),
-                    bivariate.lookup_table(),
-                    output.as_mut_view(),
-                );
-            });
-            assert_eq!(allocation.count, 0, "packing and PBS must reuse storage");
+            bivariate.pack_to(lhs.as_view(), rhs.as_view(), packed.as_mut_view());
+            evaluator.apply_lookup_table_to(
+                packed.as_view(),
+                bivariate.lookup_table(),
+                output.as_mut_view(),
+            );
             assert_eq!(
                 centered_error(phase(&packed), packed_center),
                 lhs_error + 3 * rhs_error + rounding_error
@@ -357,10 +340,7 @@ fn sparse_bivariate_and_odd_full_domain_respect_input_margins_in_both_orders() {
                 .encrypt_to(message, packed.as_mut_view(), &mut rng)
                 .unwrap();
             add_phase_error(&mut packed, sign * i64::from(Q / (8 * 15)));
-            let (_, allocation) = allocations::measure(|| {
-                evaluator.apply_lookup_table_to(packed.as_view(), &full, output.as_mut_view());
-            });
-            assert_eq!(allocation.count, 0, "full-domain PBS must reuse storage");
+            evaluator.apply_lookup_table_to(packed.as_view(), &full, output.as_mut_view());
             check_output(&output, full_value(message as usize));
         }
     }

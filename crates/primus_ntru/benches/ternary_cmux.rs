@@ -21,11 +21,7 @@ use primus_ntru::{
 };
 use primus_ntt::{NttTable, PrimitiveRoot, UintNttTable};
 use primus_poly::Polynomial;
-use primus_test_allocations::{CountingAllocator, measure};
 use rand::{SeedableRng, rngs::StdRng};
-
-#[global_allocator]
-static ALLOCATOR: CountingAllocator = CountingAllocator;
 
 fn ntt<T: FheUint + PrimitiveRoot>(c: &mut Criterion, q: T, levels: usize) {
     const N: usize = 1024;
@@ -74,22 +70,13 @@ fn ntt<T: FheUint + PrimitiveRoot>(c: &mut Criterion, q: T, levels: usize) {
     let negative = NttNgswCiphertext::new(negative);
     let exponent = N / 3;
     let mut output = NtruCiphertext::<Vec<T>>::zero(N);
-    let (mut fused, fused_allocations) = measure(|| {
-        NttNtruCmuxWorkspace::<T>::new(poly_length, DecompositionLevelCount::new(levels))
-    });
-    let ((mut binary, mut intermediate), binary_allocations) = measure(|| {
-        (
-            NttNtruExternalProductWorkspace::<T>::new(poly_length),
-            NtruCiphertext::<Vec<T>>::zero(N),
-        )
-    });
-    eprintln!(
-        "u{}: controls={} B, fused scratch={} B, two-CMUX scratch={} B (includes intermediate)",
-        T::BITS,
-        std::mem::size_of_val(controls.as_slice()),
-        fused_allocations.allocated_bytes,
-        binary_allocations.allocated_bytes,
+    let mut fused =
+        NttNtruCmuxWorkspace::<T>::new(poly_length, DecompositionLevelCount::new(levels));
+    let (mut binary, mut intermediate) = (
+        NttNtruExternalProductWorkspace::<T>::new(poly_length),
+        NtruCiphertext::<Vec<T>>::zero(N),
     );
+
     let mut group = c.benchmark_group(format!(
         "ntru/ternary/ntt/u{}/n{N}/logb8/l{levels}",
         T::BITS
@@ -203,15 +190,12 @@ fn fourier<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str, 
     let negative = FourierNgswCiphertext::new(negative);
     let exponent = N / 3;
     let mut output = NtruCiphertext::<Vec<T>>::zero(N);
-    let (mut fused, fused_allocations) = measure(|| {
-        FourierNtruCmuxWorkspace::<T>::new(poly_length, DecompositionLevelCount::new(levels))
-    });
-    let ((mut binary, mut intermediate), binary_allocations) = measure(|| {
-        (
-            FourierNtruExternalProductWorkspace::<T>::new(poly_length),
-            NtruCiphertext::<Vec<T>>::zero(N),
-        )
-    });
+    let mut fused =
+        FourierNtruCmuxWorkspace::<T>::new(poly_length, DecompositionLevelCount::new(levels));
+    let (mut binary, mut intermediate) = (
+        FourierNtruExternalProductWorkspace::<T>::new(poly_length),
+        NtruCiphertext::<Vec<T>>::zero(N),
+    );
     let input_phase = native_phase(input.as_ref(), coeff.as_slice());
     let max_rotation_error = |output: &NtruCiphertext<Vec<T>>| {
         let actual = native_phase(output.as_ref(), coeff.as_slice());
@@ -260,11 +244,9 @@ fn fourier<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str, 
     );
     let binary_error = max_rotation_error(&output);
     eprintln!(
-        "{backend}/u{}: controls={} B, fused scratch={} B, two-CMUX scratch={} B; max phase error/q fused={fused_error:.3e}, two-CMUX={binary_error:.3e}",
+        "{backend}/u{}: controls={} B; max phase error/q fused={fused_error:.3e}, two-CMUX={binary_error:.3e}",
         T::BITS,
         std::mem::size_of_val(controls.as_slice()),
-        fused_allocations.allocated_bytes,
-        binary_allocations.allocated_bytes,
     );
     let mut group = c.benchmark_group(format!(
         "ntru/ternary/fourier/{backend}/u{}/n{N}/logb8/l{levels}",

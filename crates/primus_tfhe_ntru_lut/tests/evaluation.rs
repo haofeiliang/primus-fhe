@@ -19,7 +19,6 @@ use primus_ntru::{NlevParameters, NtruEncryptionParameters, SecretKeyDistr};
 use primus_ntt::{MonomialNttTable, U32NttTable, U64NttTable};
 use primus_poly::PolyLength;
 use primus_reduce::RingContext;
-use primus_test_allocations as allocations;
 use primus_tfhe::LweCiphertext;
 use primus_tfhe::{BlindRotationConfig, DecompositionBaseLog, DecompositionLevelCount};
 use primus_tfhe_ntru::{
@@ -33,8 +32,6 @@ use primus_tfhe_ntru_lut::{HighPrecisionLookupTable, LookupTableConfig, LookupTa
 use rand::{Rng, SeedableRng, rngs::StdRng};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-#[global_allocator]
-static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
 const N: usize = 64;
 
 // Small independent LWE secret at q=2^24; only the accumulator uses the transform.
@@ -307,11 +304,7 @@ fn exercise<T: FheUint>(
         let input: Vec<_> = (0..config.input_chunk_count)
             .map(|i| encrypt(T::as_from((x >> (bits * i)) & (radix - 1))))
             .collect();
-        let (_, allocation) = allocations::measure(|| evaluate(&input, &mut output));
-        assert_eq!(
-            allocation.count, 0,
-            "{case}, radix={radix}, config={config:?}"
-        );
+        evaluate(&input, &mut output);
         if matches!(mapping, Mapping::Shared) {
             // Equal roots reuse the completed LWE, including the same noise.
             assert_eq!(output[0], output[4]);

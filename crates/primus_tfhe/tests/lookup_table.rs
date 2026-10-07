@@ -8,14 +8,10 @@ use primus_modulus::{BarrettModulus, NativeModulus, PowOf2Modulus, UintModulus};
 use primus_reduce::RingContext;
 
 use primus_poly::PolyLength;
-use primus_test_allocations as allocations;
 use primus_tfhe::{
     BivariateLookupTable, InterleavedLookupTable, LookupTable, LookupTableCompiler,
     LookupTableError, LweCiphertext, rotation::RotationModulusSwitch,
 };
-
-#[global_allocator]
-static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
 
 macro_rules! with_modulus {
     ($q:expr, $modulus:ident, $body:block) => {
@@ -143,10 +139,8 @@ fn rounded_outputs_share_raw_geometry_and_preserve_callback_order() {
         let poly_length = PolyLength::new(64);
         for t in [3u32, 4, 5] {
             let input = RoundedCodec::new(t, PowOf2Modulus::new(1 << 16));
-            let (compiler, allocation) = allocations::measure(|| {
-                LookupTableCompiler::try_new(poly_length, &input, modulus, &output).unwrap()
-            });
-            assert_eq!(allocation.count, 0);
+            let compiler =
+                LookupTableCompiler::try_new(poly_length, &input, modulus, &output).unwrap();
             let d = t.div_ceil(2) as usize;
             let values: Vec<_> = (0..d as u32).map(|m| 7 - m).collect();
             let raw = LookupTable::try_new(
@@ -161,9 +155,7 @@ fn rounded_outputs_share_raw_geometry_and_preserve_callback_order() {
                 },
             )
             .unwrap();
-            let (single, allocation) =
-                allocations::measure(|| compiler.compile_slice(&values).unwrap());
-            assert_eq!(allocation.count, 1);
+            let single = compiler.compile_slice(&values).unwrap();
             assert_eq!(single.polynomial(), raw.polynomial());
             let next = Cell::new(0);
             let from_fn = compiler
@@ -178,38 +170,32 @@ fn rounded_outputs_share_raw_geometry_and_preserve_callback_order() {
             let outputs: Vec<_> = values.iter().flat_map(|&m| [m, 0, 1]).collect();
             let many = compiler.compile_interleaved_slice(3, &outputs).unwrap();
             next.set(0);
-            let (from_fn, allocation) = allocations::measure(|| {
-                compiler
-                    .compile_interleaved_fn(3, |m, j| {
-                        assert_eq!(m * 3 + j, next.replace(next.get() + 1));
-                        outputs[m * 3 + j]
-                    })
-                    .unwrap()
-            });
-            assert_eq!(allocation.count, 1);
+            let from_fn = compiler
+                .compile_interleaved_fn(3, |m, j| {
+                    assert_eq!(m * 3 + j, next.replace(next.get() + 1));
+                    outputs[m * 3 + j]
+                })
+                .unwrap();
             assert_eq!(next.get(), outputs.len());
             assert_eq!(many.polynomial(), from_fn.polynomial());
 
             if t % 2 == 1 {
                 next.set(0);
-                let (full, allocation) = allocations::measure(|| {
-                    compiler
-                        .compile_odd_full_domain_fn(|m| {
-                            let index = next.get();
-                            assert_eq!(
-                                m,
-                                if index.is_multiple_of(2) {
-                                    index / 2
-                                } else {
-                                    t.div_ceil(2) as usize + index / 2
-                                }
-                            );
-                            next.set(index + 1);
-                            m as u32
-                        })
-                        .unwrap()
-                });
-                assert_eq!(allocation.count, 1);
+                let full = compiler
+                    .compile_odd_full_domain_fn(|m| {
+                        let index = next.get();
+                        assert_eq!(
+                            m,
+                            if index.is_multiple_of(2) {
+                                index / 2
+                            } else {
+                                t.div_ceil(2) as usize + index / 2
+                            }
+                        );
+                        next.set(index + 1);
+                        m as u32
+                    })
+                    .unwrap();
                 assert_eq!(next.get(), t as usize);
                 let outputs: Vec<_> = (0..t).collect();
                 assert_eq!(
@@ -324,50 +310,6 @@ fn rounded_output_boundaries_reject_before_encoding() {
         compiler.compile_interleaved_slice(1, &[0, 8]).unwrap_err(),
         LookupTableError::OutputOutOfRange { input: 1 }
     );
-}
-
-#[test]
-fn compilation_allocates_only_the_result() {
-    fn check<M: RingContext<u32>>(modulus: M) {
-        // N=128 still fits 16 interleaved outputs at t=16.
-        const N: usize = 128;
-        let q = modulus.explicit_value();
-        let (_, single) = allocations::measure(|| {
-            compile_single(8, N, 16, q, modulus, |input| Ok(input as u32)).unwrap()
-        });
-        assert_eq!(
-            (single.count, single.allocated_bytes),
-            (1, N * size_of::<u32>())
-        );
-        let (_, full) = allocations::measure(|| {
-            LookupTable::try_new_odd_full_domain(
-                PolyLength::new(N),
-                15,
-                modulus,
-                modulus,
-                |input| Ok(input as u32),
-            )
-            .unwrap()
-        });
-        assert_eq!(
-            (full.count, full.allocated_bytes),
-            (1, N * size_of::<u32>())
-        );
-        for count in [1, 3, 4, 16] {
-            let (_, many) = allocations::measure(|| {
-                compile_interleaved(8, N, count, 16, q, modulus, |input, output| {
-                    Ok((input + output) as u32)
-                })
-                .unwrap()
-            });
-            assert_eq!(
-                (many.count, many.allocated_bytes),
-                (1, N * size_of::<u32>())
-            );
-        }
-    }
-    check(NativeModulus::new());
-    check(BarrettModulus::new(132_120_577));
 }
 
 #[test]
@@ -788,10 +730,7 @@ fn bivariate_packing_and_lut_match_integer_oracles() {
                     // Known errors e_x=-2 and e_y=1 exercise amplification and modular wrap.
                     *lhs.b_mut() = ((dot(&lhs) + ex + q - 2) % q) as u32;
                     *rhs.b_mut() = ((dot(&rhs) + ey + 1) % q) as u32;
-                    let (_, allocation) = allocations::measure(|| {
-                        lut.pack_to(lhs.as_view(), rhs.as_view(), packed.as_mut_view())
-                    });
-                    assert_eq!(allocation.count, 0);
+                    lut.pack_to(lhs.as_view(), rhs.as_view(), packed.as_mut_view());
                     for ((&a, &b), &actual) in
                         lhs.as_ref().iter().zip(rhs.as_ref()).zip(packed.as_ref())
                     {

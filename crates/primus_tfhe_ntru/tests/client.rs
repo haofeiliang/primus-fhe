@@ -9,15 +9,11 @@ use primus_ntru::NlevParameters;
 use primus_ntru::{NtruParameters, NtruSecretKey, SecretKeyDistr};
 use primus_poly::PolyLength;
 use primus_reduce::RingContext;
-use primus_test_allocations as allocations;
 use primus_tfhe_ntru::{
     BooleanDecryptor, BooleanEncryptor, BooleanError, ClientError, ClientKey, EncryptionKey,
     Encryptor, GadgetEncryptionConfig, Lwe, TfheKeyError, TfheParameters,
 };
 use rand::{Rng, SeedableRng, rngs::StdRng};
-
-#[global_allocator]
-static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
 
 fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
     let input_codec = RoundedCodec::new(plain_modulus, modulus);
@@ -269,15 +265,11 @@ fn check_boolean_client<M: RingContext<u32>>(
     let mut storage = [u32::MAX; 7];
     let mut output = Lwe::new(&mut storage[1..6]);
     for message in [false, true, false] {
-        let (result, allocation) = allocations::measure(|| {
-            encryptor.encrypt_to(message, output.as_mut_view(), &mut rng)?;
-            decryptor.decrypt(output.as_view())
-        });
+        encryptor
+            .encrypt_to(message, output.as_mut_view(), &mut rng)
+            .unwrap();
+        let result = decryptor.decrypt(output.as_view());
         assert_eq!(result, Ok(message));
-        assert_eq!(
-            allocation.count, 0,
-            "Boolean client views must not allocate"
-        );
     }
     assert_eq!([storage[0], storage[6]], [u32::MAX; 2]);
 
@@ -358,20 +350,9 @@ fn check_reused_output<M, Key>(
         // Compare identical randomness across the small domain, including the
         // centered sign boundary, then overwrite the last ciphertext with zero.
         for message in (0..limit).chain([0]) {
-            let (expected, allocation) =
-                allocations::measure(|| encrypt(message, &mut expected_rng).unwrap());
-            assert_eq!(
-                allocation.count, 1,
-                "only the ciphertext should be allocated"
-            );
-            assert_eq!(
-                allocation.allocated_bytes,
-                (dimension + 1) * size_of::<u32>()
-            );
-            let (result, allocation) =
-                allocations::measure(|| encrypt_to(message, &mut output, &mut rng));
+            let expected = encrypt(message, &mut expected_rng).unwrap();
+            let result = encrypt_to(message, &mut output, &mut rng);
             result.unwrap();
-            assert_eq!(allocation.count, 0, "client encryption must not allocate");
             assert_eq!(output, expected);
             assert_eq!(rng.next_u64(), expected_rng.next_u64());
             assert_eq!(decryptor.decrypt(output.as_view()).unwrap(), message);

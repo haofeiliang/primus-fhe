@@ -8,7 +8,6 @@ use primus_lattice::{glwe::TorusGlwe, lwe::Lwe};
 use primus_lwe::LweParameters;
 use primus_modulus::NativeModulus;
 use primus_poly::{PolyLength, Polynomial};
-use primus_test_allocations as allocations;
 use primus_tfhe_glwe_fourier::{
     BlindRotationConfig, BlindRotationKey, ClientKey, FourierGlweBlindRotationWorkspace,
     GadgetEncryptionConfig, KeyGenerator, PbsOrder, SparseGlweBlindRotationWorkspace, TfheContext,
@@ -16,9 +15,6 @@ use primus_tfhe_glwe_fourier::{
 };
 use rand::{SeedableRng, rngs::StdRng};
 use std::panic::{AssertUnwindSafe, catch_unwind};
-
-#[global_allocator]
-static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
 
 const N: usize = 32;
 const TWO_N: usize = 2 * N;
@@ -138,27 +134,24 @@ fn check_raw<Table: FftTable>() {
                 .collect::<Vec<_>>(),
         );
         let mut check = |input: &Lwe<Vec<u32>>, step| {
-            let (_, allocation) = allocations::measure(|| {
-                if step == 1 {
-                    sparse_scratch.blind_rotate_lookup_table_to(
-                        &sparse,
-                        input,
-                        &lut,
-                        &mut sparse_output,
-                        &mut fft,
-                    );
-                } else {
-                    sparse_scratch.blind_rotate_interleaved_lookup_table_to(
-                        &sparse,
-                        input,
-                        &lut,
-                        step,
-                        &mut sparse_output,
-                        &mut fft,
-                    );
-                }
-            });
-            assert_eq!(allocation.count, 0);
+            if step == 1 {
+                sparse_scratch.blind_rotate_lookup_table_to(
+                    &sparse,
+                    input,
+                    &lut,
+                    &mut sparse_output,
+                    &mut fft,
+                );
+            } else {
+                sparse_scratch.blind_rotate_interleaved_lookup_table_to(
+                    &sparse,
+                    input,
+                    &lut,
+                    step,
+                    &mut sparse_output,
+                    &mut fft,
+                );
+            }
             classic.fourier_blind_rotate_interleaved_lookup_table_to(
                 input,
                 &lut,

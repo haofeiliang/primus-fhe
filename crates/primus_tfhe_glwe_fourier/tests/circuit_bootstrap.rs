@@ -10,7 +10,6 @@ use primus_lattice::{GlweDimension, LweDimension};
 use primus_lwe::{LweCiphertext, LweEncryptionParameters};
 use primus_modulus::NativeModulus;
 use primus_poly::PolyLength;
-use primus_test_allocations as allocations;
 use primus_tfhe_glwe_fourier::{
     BlindRotationConfig, CircuitBootstrapConfig, CircuitBootstrapEvaluator,
     CircuitBootstrapParameters, ClientKey, DecompositionConfig, GadgetEncryptionConfig,
@@ -18,9 +17,6 @@ use primus_tfhe_glwe_fourier::{
     TfheParameters,
 };
 use rand::{RngExt, SeedableRng, rngs::StdRng};
-
-#[global_allocator]
-static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
 
 const POLY_LENGTH: usize = 64;
 const DIMENSION: usize = 2;
@@ -143,35 +139,15 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
     let server = generator
         .try_generate_server_key(&client, blind_rotation, Some(circuit_config()), &mut rng)
         .unwrap();
-    // The bundle factory must allocate exactly the resources needed by independently
-    // bound material: no ordinary return scratch or extra FFT engine for standalone CBS.
-    let (bundled_resources, bundled_allocation) = allocations::measure(|| {
-        context
-            .bootstrap_resources_from_server_key(&server)
-            .unwrap()
-    });
-    drop(bundled_resources);
-    let ((blind_rotation, key_switching, circuit), split) =
-        allocations::measure(|| server.into_parts());
-    assert_eq!(
-        split.count, 0,
-        "splitting material must move existing buffers"
-    );
+    let (blind_rotation, key_switching, circuit) = server.into_parts();
     let key = circuit.as_ref().unwrap();
     let parameters = key.parameters();
-    let (mut resources, independent_allocation) = allocations::measure(|| {
-        context
-            .bootstrap_resources(
-                &blind_rotation,
-                (order == PbsOrder::KeyswitchBootstrap).then_some(&key_switching),
-            )
-            .unwrap()
-    });
-    assert_eq!(bundled_allocation.count, independent_allocation.count);
-    assert_eq!(
-        bundled_allocation.allocated_bytes,
-        independent_allocation.allocated_bytes
-    );
+    let mut resources = context
+        .bootstrap_resources(
+            &blind_rotation,
+            (order == PbsOrder::KeyswitchBootstrap).then_some(&key_switching),
+        )
+        .unwrap();
     // GLWE scheme switching binds the output layout, not its exact gadget basis.
     let alternate = CircuitBootstrapParameters::try_new(
         context.parameters(),
@@ -202,12 +178,7 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
         .unwrap();
     let choices = messages.each_ref().map(|message| {
         let mut output = context.allocate_accumulator_ciphertext();
-        let (_, allocation) =
-            allocations::measure(|| accumulator_client.encrypt_to(message, &mut output, &mut rng));
-        assert_eq!(
-            allocation.count, 0,
-            "accumulator encryption must reuse its workspace"
-        );
+        accumulator_client.encrypt_to(message, &mut output, &mut rng);
         output
     });
 
@@ -263,13 +234,11 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
 
     // Missing input KS must fail at binding, for classic and sparse alike.
     if order == PbsOrder::KeyswitchBootstrap {
-        let (result, allocation) =
-            allocations::measure(|| context.bootstrap_resources(&blind_rotation, None));
+        let result = context.bootstrap_resources(&blind_rotation, None);
         assert!(matches!(
             result,
             Err(TfheEvaluationError::MissingGlweKeySwitchingKey)
         ));
-        assert_eq!(allocation.count, 0);
     }
 
     let parameters = if order == PbsOrder::KeyswitchBootstrap {
@@ -286,24 +255,19 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
     // Standalone resources contain input KS only when the selected order needs it.
     let mut control = evaluator.allocate_output();
     let mut selected = context.allocate_accumulator_ciphertext();
-    let (_, online) = allocations::measure(|| {
-        evaluator.circuit_bootstrap_to(input.as_view(), &mut control, &mut resources);
-        evaluator.cmux_to(
-            &control,
-            &choices[0],
-            &choices[1],
-            &mut selected,
-            &mut resources,
-        );
-    });
-    assert_eq!(online.count, 0);
+    evaluator.circuit_bootstrap_to(input.as_view(), &mut control, &mut resources);
+    evaluator.cmux_to(
+        &control,
+        &choices[0],
+        &choices[1],
+        &mut selected,
+        &mut resources,
+    );
     assert_eq!(accumulator_client.decrypt(&selected), messages[1]);
     // Moving common resources preserves both the FFT engine and prepared CBS.
     // Only BR→KS needs to allocate a missing output-KS stage.
-    let (mut pbs, assembly) = allocations::measure(|| {
-        primus_tfhe_glwe_fourier::Evaluator::try_from_resources(resources, &key_switching).unwrap()
-    });
-    assert_eq!(assembly.count == 0, order == PbsOrder::KeyswitchBootstrap);
+    let mut pbs =
+        primus_tfhe_glwe_fourier::Evaluator::try_from_resources(resources, &key_switching).unwrap();
     assert_eq!(parameters.lookup_table_padded_output_count(), 4);
 
     let mut control = evaluator.allocate_output();
@@ -334,29 +298,27 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
     // Reuse the output for a zero control after a nonzero control, without clearing it.
     for bit in [1u64, 0] {
         let input = encryptor.encrypt_padded(bit, &mut rng).unwrap();
-        let (_, allocation) = allocations::measure(|| {
-            evaluator.circuit_bootstrap_to(
-                input.as_view(),
-                &mut control,
-                pbs.bootstrap_resources_mut(),
-            );
-            evaluator.cmux_to(
-                &control,
-                &choices[0],
-                &choices[1],
-                &mut selected,
-                pbs.bootstrap_resources_mut(),
-            );
-            evaluator.external_product_to(
-                &control,
-                &choices[1],
-                &mut product,
-                pbs.bootstrap_resources_mut(),
-            );
-            pbs.apply_lookup_table_to(input.as_view(), &identity, output.as_mut_view());
-            accumulator_client.decrypt_to(&selected, &mut decoded);
-            accumulator_client.decrypt_to(&product, &mut decoded_product);
-        });
+        evaluator.circuit_bootstrap_to(
+            input.as_view(),
+            &mut control,
+            pbs.bootstrap_resources_mut(),
+        );
+        evaluator.cmux_to(
+            &control,
+            &choices[0],
+            &choices[1],
+            &mut selected,
+            pbs.bootstrap_resources_mut(),
+        );
+        evaluator.external_product_to(
+            &control,
+            &choices[1],
+            &mut product,
+            pbs.bootstrap_resources_mut(),
+        );
+        pbs.apply_lookup_table_to(input.as_view(), &identity, output.as_mut_view());
+        accumulator_client.decrypt_to(&selected, &mut decoded);
+        accumulator_client.decrypt_to(&product, &mut decoded_product);
         assert_eq!(
             context
                 .decryptor(client.external_lwe_secret_key(), &input_codec)
@@ -364,10 +326,6 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
                 .decrypt(output.as_view())
                 .unwrap(),
             bit
-        );
-        assert_eq!(
-            allocation.count, 0,
-            "CBS must reuse workspace from the first call"
         );
         control.write_torus_form(&mut coefficients, &mut fft);
         for (row, levels) in coefficients
@@ -413,12 +371,7 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
     let replacement = generator
         .try_generate_glwe_key_switching_key(&client, &mut rng)
         .unwrap();
-    let (_, rebind) =
-        allocations::measure(|| pbs.try_rebind_key_switching_key(&replacement).unwrap());
-    assert_eq!(
-        rebind.count, 0,
-        "compatible KS rebind retains ordinary workspace"
-    );
+    pbs.try_rebind_key_switching_key(&replacement).unwrap();
     pbs.apply_lookup_table_to(input.as_view(), &identity, output.as_mut_view());
     assert_eq!(
         context

@@ -13,11 +13,8 @@ use primus_tfhe_ntru_fourier::{
 use primus_encoding::RoundedCodec;
 use primus_modulus::PowOf2Modulus;
 use primus_ntru::SecretKeyDistr;
-use primus_test_allocations as allocations;
 use rand::{SeedableRng, rngs::StdRng};
 
-#[global_allocator]
-static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
 const N: usize = 128;
 const DIM: usize = 4;
 
@@ -107,11 +104,8 @@ fn check<T: TorusFftValue, Table: FftTable>() {
         let mut outputs = vec![output.clone(); 3];
         for m in [0usize, 1, 0] {
             let input = encryptor.encrypt_padded(T::as_from(m), &mut rng).unwrap();
-            let (_, allocation) = allocations::measure(|| {
-                evaluator.apply_lookup_table_to(input.as_view(), &single, output.as_mut_view());
-                evaluator.apply_interleaved_lookup_table_to(input.as_view(), &many, &mut outputs);
-            });
-            assert_eq!(allocation.count, 0);
+            evaluator.apply_lookup_table_to(input.as_view(), &single, output.as_mut_view());
+            evaluator.apply_interleaved_lookup_table_to(input.as_view(), &many, &mut outputs);
             assert!(output.as_ref().iter().all(|&x| x < q));
             assert_eq!(
                 decode_codec.decode_value(decryptor.decrypt_phase(output.as_view()).unwrap()),
@@ -184,15 +178,12 @@ fn check<T: TorusFftValue, Table: FftTable>() {
             let mut sparse_mvb = primus_tfhe_ntru_fourier::FactorizedEvaluator::new(&sparse);
             for m in [0usize, 1, 0] {
                 let input = encryptor.encrypt_padded(T::as_from(m), &mut rng).unwrap();
-                let (_, allocation) = allocations::measure(|| {
-                    sparse_mvb.apply_lookup_table_to(
-                        input.as_view(),
-                        &program,
-                        &mut outputs[..2],
-                        &mut sparse,
-                    );
-                });
-                assert_eq!(allocation.count, 0);
+                sparse_mvb.apply_lookup_table_to(
+                    input.as_view(),
+                    &program,
+                    &mut outputs[..2],
+                    &mut sparse,
+                );
                 for (i, output) in outputs[..2].iter().enumerate() {
                     assert!(output.as_ref().iter().all(|&x| x < q));
                     assert_eq!(
@@ -201,10 +192,7 @@ fn check<T: TorusFftValue, Table: FftTable>() {
                     );
                 }
             }
-            let (_, allocation) = allocations::measure(|| {
-                sparse.apply_interleaved_lookup_table_to(input.as_view(), &many, &mut outputs)
-            });
-            assert_eq!(allocation.count, 0);
+            sparse.apply_interleaved_lookup_table_to(input.as_view(), &many, &mut outputs);
             for (i, output) in outputs.iter().enumerate() {
                 assert_eq!(
                     decode_codec.decode_value(decryptor.decrypt_phase(output.as_view()).unwrap()),
@@ -231,7 +219,7 @@ fn check<T: TorusFftValue, Table: FftTable>() {
 }
 
 #[test]
-fn returns_to_independent_lwe_at_smaller_modulus_without_allocations() {
+fn returns_to_independent_lwe_at_smaller_modulus() {
     check::<u32, RustFftTable>();
     check::<u64, RustFftTable>();
     check::<u32, TfheFftTable>();

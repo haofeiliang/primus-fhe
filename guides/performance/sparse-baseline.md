@@ -28,7 +28,7 @@ used n800/N1024/t4 and seed 42 in the measurements below. Current NTRU CBS/one-h
 benchmarks instead pair classic/sparse at n728/h32/N1024, with separate input RNG;
 those new IDs have passed numerical smoke checks but have no timing results in this report.
 
-Parameters come from the [shared profiles](../../test-support/tfhe/src/parameters/mod.rs):
+Parameters come from the [shared profiles](../../benchmarks/tfhe/src/parameters/mod.rs):
 NTT Q=132120577 for u32 PBS, Q=998244353 for u32 CBS, Q=1125899906826241 for u64;
 Fourier uses Native32/64. NTRU external/return q is `PowOf2(2^24)`.
 Full BR bases use logB=2 (u32) or 8 (u64). GLWE KS uses the same full basis;
@@ -148,7 +148,6 @@ calling thread; retained = allocated − released. A separate live-byte counter
 tracks the maximum live requested bytes within that scope. Realloc replaces the
 old logical request with the new one. This is **requested live-heap peak**, not
 allocator-internal transient copying, allocator overhead, RSS or total process peak.
-The existing `primus_test_allocations::measure` was not changed or relabeled.
 
 Source bytes below are measured BR coefficient/transform-array lengths times
 element size, excluding metadata, return/CBS keys and context tables. These

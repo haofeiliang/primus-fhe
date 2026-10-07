@@ -23,32 +23,7 @@ zeroize = { workspace = true }
 rand = { workspace = true }
 thiserror = { workspace = true }
 
-[dev-dependencies]
-primus_test_allocations = { path = "../../test-support/allocations" }
-primus_tfhe_test_support = { path = "../../test-support/tfhe" }
-criterion = { workspace = true }
-
-[[bench]]
-name = "setup"
-harness = false
-
-[[bench]]
-name = "pbs"
-harness = false
-
-[[bench]]
-name = "circuit_bootstrap"
-harness = false
-
-[[bench]]
-name = "mvb"
-harness = false
-
-[[bench]]
-name = "sparse_pbs"
-harness = false
-
-# Targets instantiate these FFT engines explicitly; generic library APIs need neither.
+# Examples and engine-specific tests select their concrete FFT engines.
 [[example]]
 name = "ntru_fourier_basic"
 required-features = ["rustfft"]

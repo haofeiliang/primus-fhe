@@ -1,10 +1,11 @@
 set windows-shell := ["powershell.exe", "-NoLogo", "-Command"]
 export RUSTDOCFLAGS := "-D warnings"
 
-default: fmt-check (lint "*" "ntt,rustfft,tfhe-fft") (test "*" "ntt,rustfft,tfhe-fft")
+default: fmt-check (lint "*" "ntt,fourier,rustfft,tfhe-fft,validation") (test "*" "ntt,fourier,rustfft,tfhe-fft,validation")
 
 # CI selects stable; local commands use the active toolchain.
 ci: default test-doc
+  python3 -m unittest discover -s benchmarks/tfhe/tools -p 'test_*.py'
   cargo check -p primus_data --lib --no-default-features
   cargo check -p primus_fft -p primus_lwe -p primus_tfhe_glwe -p primus_tfhe_ntru -p primus_tfhe_ntru_lut --lib --no-default-features
   cargo check -p 'primus_tfhe*_ntt' -p primus_glwe_rns -p primus_tfhe_ntru_lut --lib --features primus_tfhe_ntru_lut/ntt
@@ -42,9 +43,13 @@ simd package="*":
   cargo +nightly clippy -p '{{package}}' --all-targets --all-features -- -D warnings
   cargo +nightly nextest run -p '{{package}}' --lib --tests --all-features
 
-tfhe: (lint "primus_tfhe*" "ntt,rustfft,tfhe-fft") (test "primus_tfhe*" "ntt,rustfft,tfhe-fft")
+tfhe: (lint "primus_tfhe*" "ntt,fourier,rustfft,tfhe-fft,validation") (test "primus_tfhe*" "ntt,fourier,rustfft,tfhe-fft,validation")
 
 tfhe-simd: (simd "primus_tfhe*")
+
+# Common u64 workloads across supported backends: just bench <operation> [backend]
+bench operation *args:
+  @python3 benchmarks/tfhe/tools/measure.py quick '{{operation}}' {{args}}
 
 # Explicit target, one Criterion process, no statistical sampling.
 bench-smoke package target *cargo-args:

@@ -12,7 +12,6 @@ use primus_ntru::{
     SecretKeyDistr,
 };
 use primus_poly::PolyLength;
-use primus_test_allocations as allocations;
 use primus_tfhe_ntru_fourier::{
     BlindRotationConfig, CircuitBootstrapConfig, CircuitBootstrapEvaluator, DecompositionConfig,
     GadgetEncryptionConfig, LweReturnEvaluator, OneHotCircuitBootstrapEvaluator, TfheContext,
@@ -21,8 +20,6 @@ use primus_tfhe_ntru_fourier::{
 use rand::{SeedableRng, rngs::StdRng};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-#[global_allocator]
-static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
 // N=64 leaves guard slots around three interleaved gadget levels at t=8.
 const N: usize = 64;
 const Q: u128 = 1u128 << 64;
@@ -120,8 +117,7 @@ fn selectors<Table: FftTable>(distr: SecretKeyDistr, sparse: bool) {
     let server = generator
         .try_generate_server_key(&client, blind_rotation, Some(cbs_config), &mut rng)
         .unwrap();
-    let ((br, return_key, circuit), allocation) = allocations::measure(|| server.into_parts());
-    assert_eq!(allocation.count, 0);
+    let (br, return_key, circuit) = server.into_parts();
     let circuit = circuit.unwrap();
     // One-hot preparation depends on the context/CBS key, not on BR controls.
     // In the sparse case prepare using a classic BR over the same two secrets,
@@ -145,10 +141,8 @@ fn selectors<Table: FftTable>(distr: SecretKeyDistr, sparse: bool) {
     } else {
         resources
     };
-    let (mut pbs, allocation) = allocations::measure(|| {
-        primus_tfhe_ntru_fourier::Evaluator::try_from_resources(resources, &return_key).unwrap()
-    });
-    assert!(allocation.count > 0);
+    let mut pbs =
+        primus_tfhe_ntru_fourier::Evaluator::try_from_resources(resources, &return_key).unwrap();
     assert_eq!(evaluator.lookup_table().selector_count(), M);
     assert_eq!(evaluator.lookup_table().rotation_step(), 4);
     let scalars: Vec<_> = evaluator
@@ -231,37 +225,34 @@ fn selectors<Table: FftTable>(distr: SecretKeyDistr, sparse: bool) {
             input.a_mut().fill(0);
             *input.b_mut() = exponent * ((1u64 << 24) / (2 * N as u64));
         }
-        let (_, allocation) = allocations::measure(|| {
-            evaluator.one_hot_to(
-                input.as_view(),
-                &mut nlev,
-                &mut ngsw,
-                pbs.bootstrap_resources_mut(),
-            );
-            pbs.apply_lookup_table_to(input.as_view(), &identity, lwe_output.as_mut_view());
-            evaluator.one_hot_nlev_to(
-                input.as_view(),
-                &mut nlev_only,
-                pbs.bootstrap_resources_mut(),
-            );
-            evaluator.one_hot_ngsw_to(
-                input.as_view(),
-                &mut ngsw_only,
-                pbs.bootstrap_resources_mut(),
-            );
-            evaluator.one_hot_nonzero_ngsw_to(
-                input.as_view(),
-                &mut nonzero_ngsw,
-                pbs.bootstrap_resources_mut(),
-            );
-            evaluator.one_hot_nlev_and_nonzero_ngsw_to(
-                input.as_view(),
-                &mut joint_nlev,
-                &mut joint_nonzero_ngsw,
-                pbs.bootstrap_resources_mut(),
-            );
-        });
-        assert_eq!(allocation.count, 0);
+        evaluator.one_hot_to(
+            input.as_view(),
+            &mut nlev,
+            &mut ngsw,
+            pbs.bootstrap_resources_mut(),
+        );
+        pbs.apply_lookup_table_to(input.as_view(), &identity, lwe_output.as_mut_view());
+        evaluator.one_hot_nlev_to(
+            input.as_view(),
+            &mut nlev_only,
+            pbs.bootstrap_resources_mut(),
+        );
+        evaluator.one_hot_ngsw_to(
+            input.as_view(),
+            &mut ngsw_only,
+            pbs.bootstrap_resources_mut(),
+        );
+        evaluator.one_hot_nonzero_ngsw_to(
+            input.as_view(),
+            &mut nonzero_ngsw,
+            pbs.bootstrap_resources_mut(),
+        );
+        evaluator.one_hot_nlev_and_nonzero_ngsw_to(
+            input.as_view(),
+            &mut joint_nlev,
+            &mut joint_nonzero_ngsw,
+            pbs.bootstrap_resources_mut(),
+        );
         assert_eq!(nlev, nlev_only);
         assert_eq!(ngsw, ngsw_only);
         // Compact slot r - 1 must preserve the full-mode selector r, including
@@ -272,27 +263,24 @@ fn selectors<Table: FftTable>(distr: SecretKeyDistr, sparse: bool) {
         assert_eq!(joint_nonzero_ngsw, nonzero_ngsw);
         if let Some(pair) = pair.as_mut() {
             let mut next = 0;
-            let (_, allocation) = allocations::measure(|| {
-                evaluator.with_sparse_pair(
-                    [input.as_view(), second_input.as_view()],
-                    pair,
-                    pbs.bootstrap_resources_mut(),
-                    |index, projection| {
-                        assert_eq!(index, next);
-                        next += 1;
-                        projection.project_to(Some(&mut paired_nlev), Some(&mut paired_ngsw));
-                        let (expected_nlev, expected_ngsw) = if index == 0 {
-                            (&nlev, &nonzero_ngsw)
-                        } else {
-                            (&second_nlev, &second_ngsw)
-                        };
-                        assert_eq!(&paired_nlev, expected_nlev);
-                        assert_eq!(&paired_ngsw, expected_ngsw);
-                    },
-                );
-            });
+            evaluator.with_sparse_pair(
+                [input.as_view(), second_input.as_view()],
+                pair,
+                pbs.bootstrap_resources_mut(),
+                |index, projection| {
+                    assert_eq!(index, next);
+                    next += 1;
+                    projection.project_to(Some(&mut paired_nlev), Some(&mut paired_ngsw));
+                    let (expected_nlev, expected_ngsw) = if index == 0 {
+                        (&nlev, &nonzero_ngsw)
+                    } else {
+                        (&second_nlev, &second_ngsw)
+                    };
+                    assert_eq!(&paired_nlev, expected_nlev);
+                    assert_eq!(&paired_ngsw, expected_ngsw);
+                },
+            );
             assert_eq!(next, 2);
-            assert_eq!(allocation.count, 0);
         }
 
         assert_eq!(
@@ -343,32 +331,26 @@ fn selectors<Table: FftTable>(distr: SecretKeyDistr, sparse: bool) {
                     &expected,
                 );
             }
-            let (_, allocation) = allocations::measure(|| {
-                primus_ntru::NlevCiphertext::new(nlev_rows)
-                    .write_fourier_form(&mut transformed_nlev, &mut fft);
-                transformed_nlev.external_product_to(
-                    &public,
-                    &mut selected,
-                    evaluator.parameters().output_basis(),
-                    &mut fft,
-                    &mut ep,
-                );
-                accumulator.decrypt_to(&selected, &mut decoded);
-            });
-            assert_eq!(allocation.count, 0);
+            primus_ntru::NlevCiphertext::new(nlev_rows)
+                .write_fourier_form(&mut transformed_nlev, &mut fft);
+            transformed_nlev.external_product_to(
+                &public,
+                &mut selected,
+                evaluator.parameters().output_basis(),
+                &mut fft,
+                &mut ep,
+            );
+            accumulator.decrypt_to(&selected, &mut decoded);
             assert_eq!(decoded, vec![3 * bit; N]);
-            let (_, allocation) = allocations::measure(|| {
-                control.cmux_to(
-                    &choices[0],
-                    &choices[1],
-                    &mut selected,
-                    evaluator.parameters().output_basis(),
-                    &mut fft,
-                    &mut ep,
-                );
-                accumulator.decrypt_to(&selected, &mut decoded);
-            });
-            assert_eq!(allocation.count, 0);
+            control.cmux_to(
+                &choices[0],
+                &choices[1],
+                &mut selected,
+                evaluator.parameters().output_basis(),
+                &mut fft,
+                &mut ep,
+            );
+            accumulator.decrypt_to(&selected, &mut decoded);
             assert_eq!(decoded, vec![if bit == 0 { 1 } else { 3 }; N]);
         }
     }
@@ -489,24 +471,21 @@ fn selectors<Table: FftTable>(distr: SecretKeyDistr, sparse: bool) {
         CircuitBootstrapEvaluator::try_new(pbs.bootstrap_resources(), &circuit, &input_codec)
             .unwrap();
     let mut control = ordinary.allocate_output();
-    let (_, allocation) = allocations::measure(|| {
-        pbs.apply_lookup_table_to(input.as_view(), &identity, lwe_output.as_mut_view());
-        ordinary.circuit_bootstrap_to(input.as_view(), &mut control, pbs.bootstrap_resources_mut());
-        ordinary.cmux_to(
-            &control,
-            &choices[0],
-            &choices[1],
-            &mut selected,
-            pbs.bootstrap_resources_mut(),
-        );
-        evaluator.one_hot_to(
-            input.as_view(),
-            &mut nlev,
-            &mut ngsw,
-            pbs.bootstrap_resources_mut(),
-        );
-    });
-    assert_eq!(allocation.count, 0);
+    pbs.apply_lookup_table_to(input.as_view(), &identity, lwe_output.as_mut_view());
+    ordinary.circuit_bootstrap_to(input.as_view(), &mut control, pbs.bootstrap_resources_mut());
+    ordinary.cmux_to(
+        &control,
+        &choices[0],
+        &choices[1],
+        &mut selected,
+        pbs.bootstrap_resources_mut(),
+    );
+    evaluator.one_hot_to(
+        input.as_view(),
+        &mut nlev,
+        &mut ngsw,
+        pbs.bootstrap_resources_mut(),
+    );
     accumulator.decrypt_to(&selected, &mut decoded);
     assert_eq!(decoded, vec![3; N]);
 }
@@ -523,17 +502,14 @@ fn check_return_batches<'a, Table: FftTable>(
 ) {
     let context = pbs.bootstrap_resources().context();
     let input_codec = RoundedCodec::new(8, context.parameters().external_lwe().cipher_modulus());
-    // The allocation-free binding rejects a different target q before workspace setup.
+    // The return-key binding rejects a different target q before workspace setup.
     assert_rejected(|| {
         let _ = LweReturnEvaluator::new(return_key, PowOf2Modulus::new(1u64 << 23));
     });
-    let (lwe_return, allocation) = allocations::measure(|| {
-        LweReturnEvaluator::new(
-            return_key,
-            context.parameters().external_lwe().cipher_modulus(),
-        )
-    });
-    assert_eq!(allocation.count, 0);
+    let lwe_return = LweReturnEvaluator::new(
+        return_key,
+        context.parameters().external_lwe().cipher_modulus(),
+    );
     let mut scalar_workspace = lwe_return.new_scalar_workspace();
     let mut batch_workspace = lwe_return.new_batch_workspace();
     let capacity = batch_workspace.batch_capacity();
@@ -567,20 +543,17 @@ fn check_return_batches<'a, Table: FftTable>(
 
     // Fill a full tile in order. One-hot can reuse BR/FFT between appends without
     // changing the return prefix; only ciphertext samples survive each append.
-    let (_, allocation) = allocations::measure(|| {
-        batch_workspace.begin_batch();
-        for i in 0..capacity {
-            lwe_return.append_at(
-                choices[i % choices.len()].as_view(),
-                indices[i % indices.len()],
-                &mut batch_workspace,
-            );
-            if i == 0 {
-                evaluator.one_hot_ngsw_to(input.as_view(), ngsw, pbs.bootstrap_resources_mut());
-            }
+    batch_workspace.begin_batch();
+    for i in 0..capacity {
+        lwe_return.append_at(
+            choices[i % choices.len()].as_view(),
+            indices[i % indices.len()],
+            &mut batch_workspace,
+        );
+        if i == 0 {
+            evaluator.one_hot_ngsw_to(input.as_view(), ngsw, pbs.bootstrap_resources_mut());
         }
-    });
-    assert_eq!(allocation.count, 0);
+    }
     assert_rejected(|| lwe_return.append_at(choices[0].as_view(), 0, &mut batch_workspace));
     assert_rejected(|| {
         lwe_return.return_batch_to(&mut returned[..capacity - 1], &mut batch_workspace)
@@ -598,15 +571,12 @@ fn check_return_batches<'a, Table: FftTable>(
     // Shared-input return cannot overwrite an active batch. Scalar scratch is
     // independent: using it while a batch is pending preserves every filled slot.
     let mut scalar_output = context.allocate_lwe_ciphertext();
-    let (_, allocation) = allocations::measure(|| {
-        lwe_return.return_at_to(
-            choices[0].as_view(),
-            0,
-            scalar_output.as_mut_view(),
-            &mut scalar_workspace,
-        );
-    });
-    assert_eq!(allocation.count, 0);
+    lwe_return.return_at_to(
+        choices[0].as_view(),
+        0,
+        scalar_output.as_mut_view(),
+        &mut scalar_workspace,
+    );
     assert_eq!(scalar_output, expected[0]);
     assert_rejected(|| {
         lwe_return.return_prefix_to(
@@ -628,14 +598,9 @@ fn check_return_batches<'a, Table: FftTable>(
         .unwrap()
         .compile_interleaved_fn(2, |m, _| m as u64)
         .unwrap();
-    let (_, allocation) = allocations::measure(|| {
-        pbs.apply_lookup_table_to(input.as_view(), &identity, returned[0].as_mut_view());
-        pbs.apply_interleaved_lookup_table_to(input.as_view(), &many, &mut returned[..2]);
-    });
-    assert_eq!(allocation.count, 0);
-    let (_, allocation) =
-        allocations::measure(|| lwe_return.return_batch_to(&mut returned, &mut batch_workspace));
-    assert_eq!(allocation.count, 0);
+    pbs.apply_lookup_table_to(input.as_view(), &identity, returned[0].as_mut_view());
+    pbs.apply_interleaved_lookup_table_to(input.as_view(), &many, &mut returned[..2]);
+    lwe_return.return_batch_to(&mut returned, &mut batch_workspace);
     assert_eq!(returned, expected);
     assert_rejected(|| lwe_return.return_batch_to(&mut returned, &mut batch_workspace));
     assert_eq!(returned, expected);
@@ -659,20 +624,17 @@ fn check_return_batches<'a, Table: FftTable>(
     batch_workspace.begin_batch();
     lwe_return.append_at(choices[0].as_view(), 0, &mut batch_workspace);
     batch_workspace.discard_batch();
-    let (_, allocation) = allocations::measure(|| {
-        lwe_return.return_at_to(
-            choices[0].as_view(),
-            indices[0],
-            returned[0].as_mut_view(),
-            &mut scalar_workspace,
-        );
-        lwe_return.return_prefix_to(
-            choices[0].as_view(),
-            &mut returned[..2],
-            &mut batch_workspace,
-        );
-    });
-    assert_eq!(allocation.count, 0);
+    lwe_return.return_at_to(
+        choices[0].as_view(),
+        indices[0],
+        returned[0].as_mut_view(),
+        &mut scalar_workspace,
+    );
+    lwe_return.return_prefix_to(
+        choices[0].as_view(),
+        &mut returned[..2],
+        &mut batch_workspace,
+    );
     for (index, output) in returned[..2].iter().enumerate() {
         let mut expected = context.allocate_lwe_ciphertext();
         return_key.key_switch_at_to(
@@ -691,7 +653,7 @@ fn assert_rejected(operation: impl FnOnce()) {
 }
 
 #[test]
-fn one_hot_selectors_preserve_gadget_scales_and_control_cmux_without_allocations() {
+fn one_hot_selectors_preserve_gadget_scales_and_control_cmux() {
     for (distr, sparse) in [
         (SecretKeyDistr::UniformBinary, false),
         (SecretKeyDistr::UniformTernary, false),

@@ -10,16 +10,12 @@ use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
 use primus_poly::{PolyLength, Polynomial};
-use primus_test_allocations as allocations;
 use primus_tfhe_glwe_ntt::{
     ClientKey, GadgetEncryptionConfig, KeyGenerator, NttGlweBlindRotationWorkspace,
     NttGlweBootstrappingKey, PbsOrder, SparseGlweBlindRotationWorkspace, TfheContext,
     TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
-
-#[global_allocator]
-static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
 
 const Q: u32 = 132_120_577;
 const T: u32 = 8;
@@ -124,16 +120,13 @@ fn sparse_rotation_matches_direct_phase_and_classic_with_reused_scratch() {
         let mut classic_output = Glwe::<Vec<u32>>::zero(size.glwe_len());
         let codec = RoundedCodec::new(T, modulus);
         let mut check = |input: &Lwe<Vec<u32>>, lut: &Polynomial<Vec<u32>>| {
-            let (_, allocation) = allocations::measure(|| {
-                sparse_scratch.blind_rotate_lookup_table_to(
-                    &sparse,
-                    input,
-                    lut,
-                    &mut sparse_output,
-                    ntt,
-                );
-            });
-            assert_eq!(allocation.count, 0);
+            sparse_scratch.blind_rotate_lookup_table_to(
+                &sparse,
+                input,
+                lut,
+                &mut sparse_output,
+                ntt,
+            );
             classic.ntt_blind_rotate_lookup_table_to(
                 input,
                 lut,

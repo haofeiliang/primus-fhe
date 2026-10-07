@@ -346,7 +346,7 @@ Use the geometry/bases above with the public APIs in the GLWE NTT
 [sparse](../../crates/primus_tfhe_glwe_ntt/examples/ntt_sparse.rs),
 [MVB](../../crates/primus_tfhe_glwe_ntt/examples/mvb_thresholds.rs) and
 [CBS](../../crates/primus_tfhe_glwe_ntt/examples/ntt_sparse_circuit_bootstrap.rs)
-examples, and the existing [q/Q request adapter](../../crates/primus_tfhe_glwe_ntt/benches/paper/request.rs).
+examples, and the existing [q/Q request adapter](../../benchmarks/tfhe/benches/sparse_paper/request.rs).
 Those examples retain their original geometries; do not change only a BR base
 and assume the remaining parameters match this study.
 

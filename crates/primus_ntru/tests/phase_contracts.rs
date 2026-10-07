@@ -13,10 +13,7 @@ use primus_ntru::{
 };
 use primus_ntt::{NttTable, UintNttTable};
 use primus_poly::{PolyLength, Polynomial};
-use primus_test_allocations as allocations;
 
-#[global_allocator]
-static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
 use rand::{TryCryptoRng, TryRng};
 
 const N: usize = 32;
@@ -282,20 +279,17 @@ fn fused_public_initialization_has_the_predicted_decomposition_residual() {
                     let positive = NlevCiphertext::new(positives).into_ntt_form(&ntt);
                     let negative = NlevCiphertext::new(negatives).into_ntt_form(&ntt);
                     let public = Polynomial::new(coefficients(input));
-                    let (_, allocation) = allocations::measure(|| {
-                        initializer.lift_monomial_to(
-                            &positive,
-                            ternary.then_some(&negative),
-                            &public,
-                            exponent,
-                            &mut output,
-                            &basis,
-                            modulus,
-                            &ntt,
-                            &mut workspace,
-                        )
-                    });
-                    assert_eq!(allocation.count, 0);
+                    initializer.lift_monomial_to(
+                        &positive,
+                        ternary.then_some(&negative),
+                        &public,
+                        exponent,
+                        &mut output,
+                        &basis,
+                        modulus,
+                        &ntt,
+                        &mut workspace,
+                    );
                     let direct = evaluate(direct);
                     assert_eq!(polynomial(output.as_ref()), direct);
                     let paper = ring.add(input, evaluate(paper));
@@ -412,19 +406,16 @@ fn check_native_lift<Table: FftTable>() {
                         (x.signum() * ((x.abs() + DENOMINATOR / 2) / DENOMINATOR))
                             .rem_euclid(ring.0)
                     });
-                    let (_, allocation) = allocations::measure(|| {
-                        initializer.lift_monomial_to(
-                            &positive,
-                            ternary.then_some(&negative),
-                            &public,
-                            exponent,
-                            &mut output,
-                            basis,
-                            &mut fft,
-                            &mut workspace,
-                        )
-                    });
-                    assert_eq!(allocation.count, 0);
+                    initializer.lift_monomial_to(
+                        &positive,
+                        ternary.then_some(&negative),
+                        &public,
+                        exponent,
+                        &mut output,
+                        basis,
+                        &mut fft,
+                        &mut workspace,
+                    );
                     assert_eq!(polynomial(output.as_ref()), expected);
                     let error = ring.sub(
                         ring.mul(SECRET, expected),

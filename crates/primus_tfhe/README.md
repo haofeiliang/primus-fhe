@@ -273,4 +273,4 @@ The [GLWE](../primus_tfhe_glwe_ntt/examples/mvb_thresholds.rs) and [NTRU](../pri
 
 ## Further reading
 
-[Implementation notes](IMPLEMENTATION.md) · [Common PBS benchmark parameters](BENCHMARKS.md) · [Performance decisions](IMPLEMENTATION.md#performance-decisions-and-reproducibility)
+[Implementation notes](IMPLEMENTATION.md) · [Common PBS benchmark parameters](../../benchmarks/tfhe/BENCHMARKS.md) · [Performance decisions](IMPLEMENTATION.md#performance-decisions-and-reproducibility)

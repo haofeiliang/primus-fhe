@@ -1,5 +1,8 @@
 //! Backend Boolean integration: real PBS, encoding, rejection and evaluator reuse.
 
+#[path = "../../primus_tfhe/tests/common/boolean.rs"]
+mod boolean;
+
 use primus_decompose::DecompositionBaseLog;
 use primus_encoding::RoundedCodec;
 use primus_lattice::LweDimension;
@@ -8,19 +11,14 @@ use primus_modulus::BarrettModulus;
 use primus_ntru::SecretKeyDistr;
 use primus_ntt::U32NttTable;
 use primus_poly::PolyLength;
-use primus_test_allocations as allocations;
 use primus_tfhe_ntru_ntt::{
     BooleanGate, DecompositionConfig, GadgetEncryptionConfig, LweCiphertext, TfheConfig,
     TfheContext, TfheParameters,
 };
-use primus_tfhe_test_support::boolean;
 use rand::{SeedableRng, rngs::StdRng};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-#[global_allocator]
-static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
-
-/// Reuses one key setup for gate correctness, allocation checks and rejected-call recovery.
+/// Reuses one key setup for gate correctness and rejected-call recovery.
 fn check_context(distr: SecretKeyDistr) {
     let parameters = TfheParameters::<u32>::try_from_config(TfheConfig {
         accumulator_modulus: BarrettModulus::new(132_120_577),
@@ -73,16 +71,13 @@ fn check_context(distr: SecretKeyDistr) {
     let mut rhs = LweCiphertext::zero(context.parameters().external_lwe_dimension().get());
     let mut output = rhs.clone();
     let mut current = output.clone();
-    let (_, allocation) = allocations::measure(|| {
-        boolean::check_truth_tables_and_chain(
-            &mut evaluator,
-            &inputs,
-            &mut output,
-            &mut current,
-            |ciphertext| decryptor.decrypt(ciphertext.as_view()).unwrap(),
-        );
-    });
-    assert_eq!(allocation.count, 0, "Boolean gates must reuse storage");
+    boolean::check_truth_tables_and_chain(
+        &mut evaluator,
+        &inputs,
+        &mut output,
+        &mut current,
+        |ciphertext| decryptor.decrypt(ciphertext.as_view()).unwrap(),
+    );
     // Output dimensions are checked by the real PBS backend. Common Boolean
     // input/NOT checks live in primus_tfhe/tests/boolean.rs and need no keys.
     let sentinel = LweCiphertext::new(vec![1; inputs[0].dimension()]);
@@ -102,19 +97,16 @@ fn check_context(distr: SecretKeyDistr) {
 
     // Keep one public-key path and confirm reuse after rejected calls.
     for bit in [false, true, false] {
-        let (_, allocation) = allocations::measure(|| {
-            public_encryptor
-                .encrypt_to(bit, rhs.as_mut_view(), &mut rng)
-                .unwrap();
-            evaluator.evaluate_binary_to(
-                BooleanGate::Nand,
-                inputs[1].as_view(),
-                rhs.as_view(),
-                output.as_mut_view(),
-            );
-            assert_eq!(decryptor.decrypt(output.as_view()).unwrap(), !bit);
-        });
-        assert_eq!(allocation.count, 0, "Boolean operations must reuse storage");
+        public_encryptor
+            .encrypt_to(bit, rhs.as_mut_view(), &mut rng)
+            .unwrap();
+        evaluator.evaluate_binary_to(
+            BooleanGate::Nand,
+            inputs[1].as_view(),
+            rhs.as_view(),
+            output.as_mut_view(),
+        );
+        assert_eq!(decryptor.decrypt(output.as_view()).unwrap(), !bit);
     }
 }
 

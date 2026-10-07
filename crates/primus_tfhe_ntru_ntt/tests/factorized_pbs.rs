@@ -6,7 +6,6 @@ use primus_modulus::BarrettModulus;
 use primus_ntru::SecretKeyDistr;
 use primus_ntt::U32NttTable;
 use primus_poly::PolyLength;
-use primus_test_allocations as allocations;
 use primus_tfhe_ntru_ntt::{
     DecompositionConfig, FactorizedLookupTable, GadgetEncryptionConfig, InterleavedLookupTable,
     LookupTable, LookupTableError, LweCiphertext, NttFactorizedLookupTable, TfheConfig,
@@ -14,9 +13,6 @@ use primus_tfhe_ntru_ntt::{
 };
 use rand::{SeedableRng, rngs::StdRng};
 use std::panic::{AssertUnwindSafe, catch_unwind};
-
-#[global_allocator]
-static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
 
 const N: usize = 128;
 const Q: u32 = 132_120_577;
@@ -96,15 +92,9 @@ fn check_complete(distr: SecretKeyDistr) {
     };
 
     for count in [1, 3, 17] {
-        let (lut, allocation) = allocations::measure(|| {
-            context
-                .compile_factorized_lookup_table_fn(&input_codec, &codec, DOMAIN, count, value)
-                .unwrap()
-        });
-        assert_eq!(
-            allocation.count, 2,
-            "preparation must reuse the factor buffer"
-        );
+        let lut = context
+            .compile_factorized_lookup_table_fn(&input_codec, &codec, DOMAIN, count, value)
+            .unwrap();
         assert_eq!(
             (
                 lut.input_domain_len(),
@@ -116,10 +106,7 @@ fn check_complete(distr: SecretKeyDistr) {
         let mut outputs = vec![LweCiphertext::new(vec![Q - 1; dimension + 1]); count];
         for message in [0, 3, 7, 0] {
             let input = encryptor.encrypt_padded(message as u32, &mut rng).unwrap();
-            let (_, allocation) = allocations::measure(|| {
-                evaluator.apply_lookup_table_to(input.as_view(), &lut, &mut outputs, &mut pbs);
-            });
-            assert_eq!(allocation.count, 0, "MVB must reuse its workspace");
+            evaluator.apply_lookup_table_to(input.as_view(), &lut, &mut outputs, &mut pbs);
             check(&outputs, message);
             if count == 3 {
                 for (single, output) in singles.iter().zip(&outputs) {

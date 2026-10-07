@@ -191,13 +191,13 @@ cargo test -p primus_tfhe_ntru_lut --features tfhe-fft
 
 ```sh
 # 创建并释放一个公开的高精度 LUT。
-cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features ntt,rustfft -- '/create_lut_and_drop$'
+cargo bench -p primus_tfhe_benchmarks --bench high_precision_lut --features lut,ntru-ntt,ntru-fourier,rustfft -- '/create_lut_and_drop/'
 # 使用已准备的 LUT 和工作区，同态求值全部输出 chunk。
-cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features ntt,rustfft -- '/evaluate$'
+cargo bench -p primus_tfhe_benchmarks --bench high_precision_lut --features lut,ntru-ntt,ntru-fourier,rustfft -- '/evaluate/'
 ```
 
-18 项工作负载保留 polynomial、dense、shared 三种表、classic/sparse 成对求值，以及 Q50/Native64 各自的创建。创建计时包含分配、系数填充和释放；求值计时不包含密钥生成、公开 LUT 创建、输入加密和工作区分配。设置 `PRIMUS_LUT_DIAGNOSTICS=1` 并使用 `--test`，可从同一 fixture 显式获取 heap、分配和 phase 报告；普通计时只保留结果校验。详见[基准说明](IMPLEMENTATION.md#benchmark-fixture)。
+18 项工作负载保留 polynomial、dense、shared 三种表、classic/sparse 成对求值，以及 Q50/Native64 各自的创建。创建计时包含分配、系数填充和释放；求值计时不包含密钥生成、公开 LUT 创建、输入加密和工作区分配。设置 `PRIMUS_LUT_DIAGNOSTICS=1` 并使用 `--test`，可从同一 fixture 显式获取相位误差报告；普通计时只保留结果校验。详见[基准说明](IMPLEMENTATION.md#benchmark-fixture)。
 
-原有 ID 使用多项式示例；包含 `/dense_seed42/` 的 ID 使用相同参数下的固定稠密映射。用 `dense_seed42` 过滤可只运行该负载，用 `c8_d5_o8/evaluate$` 可只测多项式示例的同态求值。
+原有 ID 使用多项式示例；包含 `/dense_seed42/` 的 ID 使用相同参数下的固定稠密映射。用 `dense_seed42` 过滤可只运行该负载，用 `c8_d5_o8/evaluate/` 可只测多项式示例的同态求值。
 
 `/shared_middle_chunk/` 诊断映射把每个输出 digit 都设为 `(m_0+m_6) mod 4`，用于隔离越过 chunk 5 的公开选择、省略 chunks 5 和 7 的高位 CBS，以及相同最终输出的复用。它是专门的共享负载，与完整位宽的算术函数不同。

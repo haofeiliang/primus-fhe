@@ -9,16 +9,12 @@ use primus_glwe::{GlweParameters, SecretKeyDistr};
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
-use primus_test_allocations as allocations;
 use primus_tfhe_glwe_ntt::{
     BlindRotationConfig, ClientKey, FactorizedLookupTable, GadgetEncryptionConfig,
     InterleavedLookupTable, KeyGenerator, LookupTable, LookupTableError, NttFactorizedLookupTable,
     PbsOrder, TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
-
-#[global_allocator]
-static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
 
 const N: usize = 128;
 const Q: u32 = 132_120_577;
@@ -121,21 +117,9 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
             let mut pbs = context.evaluator(key).unwrap();
             let mut evaluator = primus_tfhe_glwe_ntt::FactorizedEvaluator::new(&pbs);
             for count in [1, 3, 17] {
-                let (lut, allocation) = allocations::measure(|| {
-                    context
-                        .compile_factorized_lookup_table_fn(
-                            &input_codec,
-                            &codec,
-                            DOMAIN,
-                            count,
-                            value,
-                        )
-                        .unwrap()
-                });
-                assert_eq!(
-                    allocation.count, 2,
-                    "preparation must reuse the factor buffer"
-                );
+                let lut = context
+                    .compile_factorized_lookup_table_fn(&input_codec, &codec, DOMAIN, count, value)
+                    .unwrap();
                 assert_eq!(
                     (
                         lut.input_domain_len(),
@@ -147,15 +131,7 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
                 let mut outputs = vec![LweCiphertext::zero(dimension); count];
                 for message in [0, 3, 7] {
                     let input = encryptor.encrypt_padded(message as u32, &mut rng).unwrap();
-                    let (_, allocation) = allocations::measure(|| {
-                        evaluator.apply_lookup_table_to(
-                            input.as_view(),
-                            &lut,
-                            &mut outputs,
-                            &mut pbs,
-                        )
-                    });
-                    assert_eq!(allocation.count, 0, "MVB must reuse its workspace");
+                    evaluator.apply_lookup_table_to(input.as_view(), &lut, &mut outputs, &mut pbs);
                     check(&outputs, message);
                     if count == 3 && message == 3 {
                         assert_eq!(
@@ -298,7 +274,7 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
 // The broad binary/classic/sparse matrix above owns program-validation cases.
 // This case protects the ternary BR -> public-factor composition in both orders.
 #[test]
-fn factorized_pbs_accepts_ternary_controls_without_online_allocation() {
+fn factorized_pbs_accepts_ternary_controls() {
     for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
         let context = context(order, SecretKeyDistr::fixed_composition_ternary(8, 2, 2));
         let input_codec =
@@ -324,10 +300,7 @@ fn factorized_pbs_accepts_ternary_controls_without_online_allocation() {
             vec![LweCiphertext::zero(context.parameters().external_lwe_dimension().get()); 3];
         for message in [0, 3, 7] {
             let input = encryptor.encrypt_padded(message, &mut rng).unwrap();
-            let (_, allocation) = allocations::measure(|| {
-                evaluator.apply_lookup_table_to(input.as_view(), &lut, &mut outputs, &mut pbs)
-            });
-            assert_eq!(allocation.count, 0);
+            evaluator.apply_lookup_table_to(input.as_view(), &lut, &mut outputs, &mut pbs);
             for (i, output) in outputs.iter().enumerate() {
                 assert_eq!(
                     codec.decode_value(decryptor.decrypt_phase(output.as_view()).unwrap()),

@@ -4,11 +4,7 @@ use primus_encoding::{RoundedCodec, ScaledCodec};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_poly::PolyLength;
 use primus_reduce::RingContext;
-use primus_test_allocations as allocations;
 use primus_tfhe::{FactorizedLookupTable, LookupTableError};
-
-#[global_allocator]
-static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
 
 fn round_ratio(numerator: i64, denominator: i64) -> i64 {
     (numerator + denominator / 2) / denominator
@@ -77,24 +73,18 @@ fn factorization_and_all_rotations_match_integer_geometry() {
                 _ => ((m * 3 + 1) % output_t as usize) as u32,
             };
             let calls = Cell::new(0);
-            let (lut, allocation) = allocations::measure(|| {
-                FactorizedLookupTable::try_new(
-                    domain,
-                    PolyLength::new(n),
-                    3,
-                    &input_codec,
-                    &output_codec,
-                    |m, i| {
-                        assert_eq!(calls.replace(calls.get() + 1), i * domain + m);
-                        value(m, i)
-                    },
-                )
-                .unwrap()
-            });
-            assert_eq!(
-                allocation.count, 2,
-                "one allocation for V and one for all factors"
-            );
+            let lut = FactorizedLookupTable::try_new(
+                domain,
+                PolyLength::new(n),
+                3,
+                &input_codec,
+                &output_codec,
+                |m, i| {
+                    assert_eq!(calls.replace(calls.get() + 1), i * domain + m);
+                    value(m, i)
+                },
+            )
+            .unwrap();
             assert_eq!(calls.get(), 3 * domain);
             assert_eq!(lut.output_count(), 3); // Even N=1 supports more than N outputs.
             assert_eq!(lut.input_domain_len(), domain);

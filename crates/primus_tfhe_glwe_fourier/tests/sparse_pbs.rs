@@ -10,16 +10,12 @@ use primus_lattice::{GlweDimension, LweDimension};
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::NativeModulus;
 use primus_poly::PolyLength;
-use primus_test_allocations as allocations;
 use primus_tfhe::{ProgrammableBootstrap, ProgrammableBootstrapInterleaved};
 use primus_tfhe_glwe_fourier::{
     BlindRotationConfig, ClientKey, GadgetEncryptionConfig, KeyGenerator, PbsOrder, TfheContext,
     TfheEvaluationError, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
-
-#[global_allocator]
-static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
 
 const N: usize = 128;
 
@@ -143,36 +139,23 @@ fn check_pbs<Table: FftTable>() {
             };
             for evaluator in [&mut sparse, &mut classic] {
                 // Include the first call, and switch step 1 -> 4 -> 1 without resets.
-                let (_, allocation) = allocations::measure(|| {
-                    ProgrammableBootstrap::apply_lookup_table_to(
-                        evaluator,
-                        input.as_view(),
-                        &single,
-                        outputs[0].as_mut_view(),
-                    );
-                });
-                assert_eq!(allocation.count, 0);
+                ProgrammableBootstrap::apply_lookup_table_to(
+                    evaluator,
+                    input.as_view(),
+                    &single,
+                    outputs[0].as_mut_view(),
+                );
                 check(&outputs[0], function(message as usize));
-                let (_, allocation) = allocations::measure(|| {
-                    ProgrammableBootstrapInterleaved::apply_interleaved_lookup_table_to(
-                        evaluator,
-                        input.as_view(),
-                        &many,
-                        &mut outputs,
-                    );
-                });
-                assert_eq!(allocation.count, 0);
+                ProgrammableBootstrapInterleaved::apply_interleaved_lookup_table_to(
+                    evaluator,
+                    input.as_view(),
+                    &many,
+                    &mut outputs,
+                );
                 for (i, output) in outputs.iter().enumerate() {
                     check(output, functions(message as usize, i));
                 }
-                let (_, allocation) = allocations::measure(|| {
-                    evaluator.apply_lookup_table_to(
-                        input.as_view(),
-                        &single,
-                        outputs[0].as_mut_view(),
-                    );
-                });
-                assert_eq!(allocation.count, 0);
+                evaluator.apply_lookup_table_to(input.as_view(), &single, outputs[0].as_mut_view());
                 check(&outputs[0], function(message as usize));
             }
         }

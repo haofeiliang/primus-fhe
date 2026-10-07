@@ -3,7 +3,7 @@
 [English](README.md) | 简体中文
 
 当前 API 和契约见[开发指南](../development/README.zh_CN.md)。本目录保存性能选择、成本及可复现证据。
-每份报告注明版本、参数和实测范围；历史结果不代表当前验证，也不是安全保证。
+每份报告注明版本、参数和实测范围；历史结果不代表当前验证，也不是安全保证。历史后端基准命令早于迁入 `primus_tfhe_benchmarks`；当前 [target 映射](../../benchmarks/tfhe/README.zh_CN.md#targets)说明 package/target 的替换方式，不改变报告当时的受测版本。
 
 ## 保留的选择与限制
 
@@ -21,6 +21,7 @@
 
 | 报告 | 回答的问题 |
 | --- | --- |
+| [Benchmark 测量版本 2](tfhe-benchmark-schema2.md) | 集中执行/报告流程验证：六种负载、每种三个串行进程，仅 CPU 4 |
 | [TFHE 基线](tfhe-baseline.md) | 前轮整理中的基准覆盖、setup、对齐与容器测量 |
 | [Fourier 首项覆盖](fourier-first-write.md) | 最终 F0/F1 完整请求比较、资源成本、构建核验及保留 F0 的决定 |
 | [工作区测量](workspace-measurements.md) | 借用资源、参数共享、返回缓冲与存储成本 |

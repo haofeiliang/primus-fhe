@@ -879,7 +879,7 @@ cargo bench -p primus_tfhe_glwe_ntt --bench sparse_paper -- \
 For a pinned comparison, build `52589af6` and the new kernel separately, use
 `taskset -c 4` / `taskset -c 8` on their executables, and keep distinct
 `CRITERION_HOME` directories. Numerical validation uses the same public APIs as
-[the paper request adapter](../../crates/primus_tfhe_glwe_ntt/benches/paper/request.rs).
+[the paper request adapter](../../benchmarks/tfhe/benches/sparse_paper/request.rs).
 The temporary replay, instrumentation, alternate kernels and generated timing
 assets are removed after recording this report. The production change stays in
 [the existing aggregation module](../../crates/primus_tfhe_glwe_ntt/src/sparse/aggregation.rs).

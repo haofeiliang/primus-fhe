@@ -452,8 +452,8 @@ output, LUT and diagnostic buffers are excluded. BR coefficient bytes are exactl
 ## Reproduction and retained decision
 
 Start at `55de85cb` and reuse the exact numerical operations in
-[`paper/parameters.rs`](../../crates/primus_tfhe_glwe_ntt/benches/paper/parameters.rs)
-and [`paper/request.rs`](../../crates/primus_tfhe_glwe_ntt/benches/paper/request.rs).
+[`paper/parameters.rs`](../../benchmarks/tfhe/benches/sparse_paper/parameters.rs)
+and [`paper/request.rs`](../../benchmarks/tfhe/benches/sparse_paper/request.rs).
 Set both `DecompositionConfig` fields explicitly with the b/L pairs in the tables;
 keep them independent even when their base logs are equal. Do not let `None`
 silently choose a different level count. Request setup, warmup and validation

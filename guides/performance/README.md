@@ -5,7 +5,10 @@ English | [简体中文](README.zh_CN.md)
 Use the [development guide](../development/README.md) for current APIs and contracts.
 This directory records performance choices, their costs and reproducible evidence.
 Each report identifies its revision, parameters and measured scope; historical
-results are not current validation or security guarantees.
+results are not current validation or security guarantees. Historical backend
+benchmark commands predate the move to `primus_tfhe_benchmarks`; the current
+[target map](../../benchmarks/tfhe/README.md#targets) translates package/target
+names without changing those reports' measured revisions.
 
 ## Retained choices and limits
 
@@ -23,6 +26,7 @@ results are not current validation or security guarantees.
 
 | Report | What it answers |
 | --- | --- |
+| [Benchmark schema 2](tfhe-benchmark-schema2.md) | Centralized runner/report validation: six workloads, three serial processes each, CPU 4 only |
 | [TFHE baseline](tfhe-baseline.md) | Benchmark coverage, setup, alignment and container measurements from the earlier cleanup |
 | [Fourier first-product write](fourier-first-write.md) | Final F0/F1 full-request comparison, resource costs, build validation and the decision to retain F0 |
 | [Workspace measurements](workspace-measurements.md) | Borrowed resources, parameter sharing, return buffers and storage costs |
