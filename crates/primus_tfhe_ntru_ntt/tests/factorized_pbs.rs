@@ -6,6 +6,7 @@ use primus_modulus::BarrettModulus;
 use primus_ntru::SecretKeyDistr;
 use primus_ntt::U32NttTable;
 use primus_poly::PolyLength;
+use primus_tfhe::PbsMessageConfig;
 use primus_tfhe_ntru_ntt::{
     DecompositionConfig, FactorizedLookupTable, GadgetEncryptionConfig, InterleavedLookupTable,
     LookupTable, LookupTableError, LweCiphertext, NttFactorizedLookupTable, TfheConfig,
@@ -58,9 +59,19 @@ fn value(message: usize, output: usize) -> u32 {
 
 fn check_complete(distr: SecretKeyDistr) {
     let context = context(distr);
-    let input_codec = RoundedCodec::new(15, context.parameters().external_lwe().cipher_modulus());
+    // Reuse the existing distributions to cover equal and distinct message moduli.
+    let messages = if distr == SecretKeyDistr::UniformBinary {
+        PbsMessageConfig::new(15).with_output_modulus(8)
+    } else {
+        PbsMessageConfig::new(16)
+    };
+    let mvb_codecs = context
+        .parameters()
+        .factorized_pbs_codecs(messages)
+        .unwrap();
+    let input_codec = *mvb_codecs.input_codec();
+    let codec = *mvb_codecs.lut_output_codec();
     let modulus = context.parameters().accumulator_ntru().cipher_modulus();
-    let codec = ScaledCodec::new(8, modulus);
     let mut rng = StdRng::seed_from_u64(0xB301);
     let (client, server) = context.try_generate_keys(None, &mut rng).unwrap();
     let encryptor = context
@@ -74,9 +85,14 @@ fn check_complete(distr: SecretKeyDistr) {
     let dimension = context.parameters().external_lwe_dimension().get();
     // The reference uses the same Scaled centers, not Rounded outputs.
     let singles: [_; 3] = std::array::from_fn(|i| {
-        LookupTable::try_new(DOMAIN, PolyLength::new(N), 15, modulus, modulus, |m| {
-            Ok(codec.encode_value(value(m, i), PlaintextEmbedding::Unsigned))
-        })
+        LookupTable::try_new(
+            DOMAIN,
+            PolyLength::new(N),
+            messages.input_modulus,
+            modulus,
+            modulus,
+            |m| Ok(codec.encode_value(value(m, i), PlaintextEmbedding::Unsigned)),
+        )
         .unwrap()
     });
     let mut reference = LweCiphertext::zero(dimension);
@@ -93,7 +109,7 @@ fn check_complete(distr: SecretKeyDistr) {
 
     for count in [1, 3, 17] {
         let lut = context
-            .compile_factorized_lookup_table_fn(&input_codec, &codec, DOMAIN, count, value)
+            .compile_factorized_lookup_table_fn(&mvb_codecs, DOMAIN, count, value)
             .unwrap();
         assert_eq!(
             (
@@ -101,7 +117,7 @@ fn check_complete(distr: SecretKeyDistr) {
                 lut.output_count(),
                 lut.output_plaintext_modulus()
             ),
-            (DOMAIN, count, 8)
+            (DOMAIN, count, messages.output_modulus)
         );
         let mut outputs = vec![LweCiphertext::new(vec![Q - 1; dimension + 1]); count];
         for message in [0, 3, 7, 0] {
@@ -139,10 +155,15 @@ fn check_complete(distr: SecretKeyDistr) {
     let binary_decryptor = context
         .decryptor(client.external_lwe_secret_key(), &binary_codec)
         .unwrap();
+    let binary_codecs = context
+        .parameters()
+        .factorized_pbs_codecs(
+            PbsMessageConfig::new(input_codec.plaintext_modulus())
+                .with_output_modulus(binary_codec.plaintext_modulus()),
+        )
+        .unwrap();
     let binary = context
-        .compile_factorized_lookup_table_fn(&input_codec, &binary_codec, DOMAIN, 1, |m, _| {
-            u32::from(m >= 3)
-        })
+        .compile_factorized_lookup_table_fn(&binary_codecs, DOMAIN, 1, |m, _| u32::from(m >= 3))
         .unwrap();
     for message in [0, 7] {
         let input = encryptor.encrypt_padded(message, &mut rng).unwrap();
@@ -154,12 +175,13 @@ fn check_complete(distr: SecretKeyDistr) {
     }
 
     let lut = context
-        .compile_factorized_lookup_table_fn(&input_codec, &codec, DOMAIN, 3, value)
+        .compile_factorized_lookup_table_fn(&mvb_codecs, DOMAIN, 3, value)
         .unwrap();
     // Identical parameters do not establish NTT context identity.
     let other_context = self::context(distr);
+
     let foreign = other_context
-        .compile_factorized_lookup_table_fn(&input_codec, &codec, DOMAIN, 3, value)
+        .compile_factorized_lookup_table_fn(&mvb_codecs, DOMAIN, 3, value)
         .unwrap();
     let input = encryptor.encrypt_padded(3, &mut rng).unwrap();
     let wrong = LweCiphertext::zero(dimension - 1);
@@ -208,8 +230,10 @@ fn check_complete(distr: SecretKeyDistr) {
     }
     assert!(matches!(
         context.compile_factorized_lookup_table_fn(
-            &input_codec,
-            &ScaledCodec::new(8, BarrettModulus::new(97)),
+            &PbsMessageConfig::new(15)
+                .with_output_modulus(8)
+                .try_factorized_codecs(input_codec.ciphertext_modulus(), BarrettModulus::new(97))
+                .unwrap(),
             DOMAIN,
             3,
             value

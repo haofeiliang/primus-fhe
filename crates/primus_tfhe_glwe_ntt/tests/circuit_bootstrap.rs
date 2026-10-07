@@ -11,6 +11,7 @@ use primus_modulus::BarrettModulus;
 use primus_ntt::U64NttTable;
 use primus_poly::PolyLength;
 use primus_poly::Polynomial;
+use primus_tfhe::PbsMessageConfig;
 use primus_tfhe_glwe_ntt::{
     BlindRotationConfig, CircuitBootstrapConfig, CircuitBootstrapEvaluator,
     CircuitBootstrapParameters, DecompositionConfig, GadgetEncryptionConfig, KeyGenerator,
@@ -162,9 +163,13 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
             .encryptor(client_key.external_lwe_secret_key(), &input_codec)
             .unwrap();
         // The same CBS-enabled server key also supports ordinary PBS.
+        let codecs = context
+            .parameters()
+            .pbs_codecs(PbsMessageConfig::new(input_codec.plaintext_modulus()))
+            .unwrap();
         let identity = context
             .parameters()
-            .lookup_table_compiler(&input_codec)
+            .lookup_table_compiler(&codecs)
             .unwrap()
             .compile_fn(|message| message as u64)
             .unwrap();

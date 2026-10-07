@@ -127,12 +127,7 @@ fn pbs<T, Table>(
     let mut margin = ErrorMargin::new(name, seed);
 
     // Server: compile the public functions and allocate local evaluation storage.
-    let compiler = context
-        .parameters()
-        .lookup_table_compiler(codecs.input_codec())
-        .unwrap()
-        .try_with_output_codec(codecs.lut_output_codec())
-        .unwrap();
+    let compiler = context.parameters().lookup_table_compiler(&codecs).unwrap();
     let lut = compiler.compile_fn(value).unwrap();
     // Three outputs force padding to four interleaved lanes.
     let many = compiler
@@ -252,13 +247,7 @@ where
 
     // Server: compile the public thresholds and allocate evaluation storage.
     let program = context
-        .compile_factorized_lookup_table_fn(
-            codecs.input_codec(),
-            codecs.lut_output_codec(),
-            64,
-            17,
-            value,
-        )
+        .compile_factorized_lookup_table_fn(&codecs, 64, 17, value)
         .unwrap();
     let mut pbs = context.evaluator(&server_key).unwrap();
     let mut evaluator = primus_tfhe_glwe_fourier::FactorizedEvaluator::new(&pbs);

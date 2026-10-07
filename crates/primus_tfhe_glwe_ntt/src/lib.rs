@@ -9,8 +9,7 @@
 //!    Bind [`Encryptor`] to the input codec and [`Decryptor`] to the output codec;
 //!    create an [`Evaluator`] from the context. Output message moduli default to
 //!    the input choice and can be overridden before preparation.
-//! 4. Pass the input codec to [`TfheParameters::lookup_table_compiler`], then
-//!    select the LUT-output codec with [`LookupTableCompiler::try_with_output_codec`].
+//! 4. Pass the prepared codec pair to [`TfheParameters::lookup_table_compiler`].
 //!    Call [`LookupTableCompiler::compile_fn`] and reuse
 //!    [`Evaluator::apply_lookup_table_to`] with caller-owned LWE output storage.
 //!    Prepared codecs distinguish accumulator-Q LUT output from external-q decoding.

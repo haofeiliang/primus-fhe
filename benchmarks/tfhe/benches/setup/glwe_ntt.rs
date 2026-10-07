@@ -3,6 +3,7 @@
 //! Separate raw BR/GLWE-KS timings exclude prerequisite work and extraction.
 //! Run: cargo bench -p primus_tfhe_benchmarks --bench setup --features glwe-ntt
 
+use primus_tfhe::PbsMessageConfig;
 use primus_tfhe_benchmarks::measurement::{Case, Group, metadata};
 use std::hint::black_box;
 
@@ -94,18 +95,19 @@ fn stages<T: FheUint, Table: MonomialNttTable<ValueT = T>>(c: &mut Group<'_>, ba
         c.bench_function(case.id(), |b| {
             let (context, client, server_key) = &*fixture;
             let parameters = context.parameters();
-            let input_codec =
-                primus_encoding::RoundedCodec::new(T::as_from(4u32), parameters.cipher_modulus());
+            let codecs = parameters
+                .pbs_codecs(PbsMessageConfig::new(T::as_from(4u32)))
+                .unwrap();
             let poly_length = parameters.blind_rotation_ggsw().poly_length();
             let modulus = parameters.blind_rotation_ggsw().cipher_modulus();
             let mut rng = StdRng::seed_from_u64(43);
             let input = context
-                .encryptor(client.external_lwe_secret_key(), &input_codec)
+                .encryptor(client.external_lwe_secret_key(), codecs.input_codec())
                 .unwrap()
                 .encrypt_padded(T::ONE, &mut rng)
                 .unwrap();
             let lookup_table = parameters
-                .lookup_table_compiler(&input_codec)
+                .lookup_table_compiler(&codecs)
                 .unwrap()
                 .compile_fn(|m| T::as_from(m ^ 1))
                 .unwrap();
@@ -143,7 +145,7 @@ fn stages<T: FheUint, Table: MonomialNttTable<ValueT = T>>(c: &mut Group<'_>, ba
             if !verified {
                 assert_eq!(
                     context
-                        .decryptor(client.external_lwe_secret_key(), &input_codec)
+                        .decryptor(client.external_lwe_secret_key(), codecs.output_codec())
                         .unwrap()
                         .decrypt(small_lwe.as_view())
                         .unwrap(),

@@ -70,12 +70,7 @@ fn prepare_server<'a>(
     server_key: &'a ServerKey<Word>,
     codecs: &RoundedPbsCodecs<Word, BarrettModulus<Word>>,
 ) -> (LookupTable<Word>, Evaluator<'a, Word, Table>) {
-    let compiler = context
-        .parameters()
-        .lookup_table_compiler(codecs.input_codec())
-        .unwrap()
-        .try_with_output_codec(codecs.lut_output_codec())
-        .unwrap();
+    let compiler = context.parameters().lookup_table_compiler(codecs).unwrap();
     let lut = compiler.compile_fn(|x| (x % 4) as Word).unwrap();
     let evaluator = context.evaluator(server_key).unwrap();
     (lut, evaluator)

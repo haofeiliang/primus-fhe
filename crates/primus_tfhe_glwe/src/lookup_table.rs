@@ -1,8 +1,8 @@
-use primus_encoding::RoundedCodec;
 use primus_integer::FheUint;
 use primus_reduce::RingContext;
 use primus_tfhe::{
-    FactorizedPbsCodecs, LookupTableCompiler, LookupTableError, PbsMessageConfig, RoundedPbsCodecs,
+    FactorizedLookupTable, FactorizedPbsCodecs, LookupTableCompiler, LookupTableError,
+    PbsMessageConfig, RoundedPbsCodecs,
 };
 
 use crate::TfheParameters;
@@ -33,26 +33,70 @@ impl<T: FheUint, M: RingContext<T>> TfheParameters<T, M> {
         messages.try_factorized_codecs(self.cipher_modulus(), self.cipher_modulus())
     }
 
-    /// Creates a program compiler with explicit input encoding and matching outputs.
+    /// Binds prepared Rounded codecs for ordinary, interleaved or odd-domain PBS.
     ///
-    /// The input codec must use the key's ciphertext modulus. The compiler owns
-    /// its encoding state; program capacity is checked when compiling. Use
-    /// [`LookupTableCompiler::try_with_output_codec`] for a different output
-    /// message space, and decode with that output codec under the same secret.
-    pub fn lookup_table_compiler(
+    /// Checks the input at external q and LUT output at accumulator Q. The
+    /// compiler copies the selected encoding state without preparing a default
+    /// output first; input and output plaintext moduli remain independent.
+    /// Bind `codecs.output_codec()` to the output decryptor at external q.
+    /// Program geometry and output ranges are checked by the compiler methods.
+    pub fn lookup_table_compiler<OM: RingContext<T>>(
         &self,
-        input_codec: &RoundedCodec<T, M>,
-    ) -> Result<LookupTableCompiler<T, M, M>, LookupTableError> {
-        if input_codec.ciphertext_modulus().explicit_value()
+        codecs: &RoundedPbsCodecs<T, OM, M>,
+    ) -> Result<LookupTableCompiler<T, M, M, OM>, LookupTableError> {
+        if codecs.input_codec().ciphertext_modulus().explicit_value()
             != self.cipher_modulus().explicit_value()
         {
             return Err(LookupTableError::InputModulusMismatch);
         }
         LookupTableCompiler::try_new(
             self.blind_rotation_ggsw().poly_length(),
-            input_codec,
+            codecs.input_codec(),
             self.cipher_modulus(),
-            input_codec,
+            codecs.lut_output_codec(),
+        )
+    }
+
+    /// Compiles a coefficient-domain MVB program from prepared Rounded/Scaled codecs.
+    ///
+    /// `input_domain_len` selects a nonempty prefix of `0..ceil(t_in/2)`;
+    /// `output_count` is positive and unpadded. The callback must return values
+    /// in `0..t_out`. Input q and LUT-output Q must match these parameters.
+    /// The returned program owns its coefficients, without borrowing codecs or
+    /// parameters. Backend context methods also prepare its NTT/Fourier factors.
+    /// Callback order, scale conditions and noise requirements follow
+    /// [`FactorizedLookupTable::try_new`]. Returned LWE messages use
+    /// `codecs.output_codec()` at the same ciphertext modulus.
+    pub fn compile_factorized_lookup_table_fn<OM: RingContext<T>, F>(
+        &self,
+        codecs: &FactorizedPbsCodecs<T, OM, M>,
+        input_domain_len: usize,
+        output_count: usize,
+        function: F,
+    ) -> Result<FactorizedLookupTable<T>, LookupTableError>
+    where
+        F: Fn(usize, usize) -> T,
+    {
+        if codecs.input_codec().ciphertext_modulus().explicit_value()
+            != self.cipher_modulus().explicit_value()
+        {
+            return Err(LookupTableError::InputModulusMismatch);
+        }
+        if codecs
+            .lut_output_codec()
+            .ciphertext_modulus()
+            .explicit_value()
+            != self.cipher_modulus().explicit_value()
+        {
+            return Err(LookupTableError::OutputModulusMismatch);
+        }
+        FactorizedLookupTable::try_new(
+            input_domain_len,
+            self.blind_rotation_ggsw().poly_length(),
+            output_count,
+            codecs.input_codec(),
+            codecs.lut_output_codec(),
+            function,
         )
     }
 }

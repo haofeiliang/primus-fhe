@@ -59,12 +59,7 @@ fn main() {
     let mut input = context.allocate_lwe_ciphertext();
 
     // Server: receive server_key; compile three public functions sharing one rotation.
-    let compiler = context
-        .parameters()
-        .lookup_table_compiler(codecs.input_codec())
-        .unwrap()
-        .try_with_output_codec(codecs.lut_output_codec())
-        .unwrap();
+    let compiler = context.parameters().lookup_table_compiler(&codecs).unwrap();
     let lut = compiler
         .compile_interleaved_fn(3, |m, i| match i {
             0 => (m % 4) as Word,

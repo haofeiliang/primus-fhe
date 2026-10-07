@@ -161,7 +161,7 @@ GLWE 两后端同样使用短借用。独立 CBS 可用 `context.bootstrap_resou
 
 前半区单函数或切片编译器为 `0..ceil(t_in/2)` 输入域编程，输出属于输出 codec 指定的 `0..t_out`。 其余输入不独立编程；奇数全域使用下文的独立入口。交错 LUT（ManyLUT）的有效输出数 `k` 为正， 补齐后的输出数为 `s = next_power_of_two(k)`，满足 `ceil(t/2) <= N/s`。callback 按输入优先 顺序接收 `(input, output_index)`，每个有效组合调用一次；切片包含相同顺序的 `D*k` 个值。 例如 `k=3` 时三个输出占用四个槽：编译器将第四槽置零，不调用 callback；求值端只返回三个密文。 所有输出共享一次盲旋转（BR）。GLWE 共享环 key switch 后分别提取；NTRU 每个输出分别返回并执行 LWE key switch。 输出越多，旋转分辨率与输入噪声余量越低。这是一个输入求多个函数，不是独立密文批处理。
 
-通过两家族的 `parameters.lookup_table_compiler(&input_codec)?` 创建可复用的 `LookupTableCompiler`。TFHE 参数只保存密钥域和采样状态，不含明文模数；客户端和程序独立选择 codec。直接使用共享层时，`LookupTableCompiler::try_new(poly_length, &input_codec, accumulator_modulus, &output_codec)` 绑定相同的编码环境。它只复制所需编码状态，不分配内存，也不借用 parameters/context。方法如下：
+通过两家族的 `parameters.lookup_table_compiler(&codecs)?` 创建可复用的 `LookupTableCompiler`。TFHE 参数只保存密钥域和采样状态，不含明文模数；客户端和程序独立选择 codec。直接使用共享层时，`LookupTableCompiler::try_new(poly_length, &input_codec, accumulator_modulus, &output_codec)` 绑定相同的编码环境。它只复制所需编码状态，不分配内存，也不借用 parameters/context。方法如下：
 
 | 程序 | 函数输入 | 切片输入 |
 | --- | --- | --- |
@@ -212,8 +212,7 @@ let codecs = context.parameters().pbs_codecs(
 )?;
 let encryptor = context.encryptor(external_secret, codecs.input_codec())?;
 let decryptor = context.decryptor(external_secret, codecs.output_codec())?;
-let compiler = context.parameters().lookup_table_compiler(codecs.input_codec())?
-    .try_with_output_codec(codecs.lut_output_codec())?;
+let compiler = context.parameters().lookup_table_compiler(&codecs)?;
 let lut = compiler.compile_fn(|x| (x % 4) as u64)?;
 let input = encryptor.encrypt_padded(7, &mut rng)?;
 let output = evaluator.apply_lookup_table(input.as_view(), &lut);
@@ -224,26 +223,28 @@ assert_eq!(decryptor.decrypt(output.as_view())?, 3);
 
 GLWE 三个角色使用同一密文模数；NTRU 根据同一个 `t_out` 派生两个输出 codec，LUT 系数使用 Q，返回密文使用 q。返回路径缩放既有相位，并不重新生成精确的 q 编码中心，须预算 Q→q 舍入与 key-switch 噪声。在 q 下准备 Scaled codec 还会检查该 codec 自身的尺度恢复条件。
 
-MVB 使用 `factorized_pbs_codecs`，把输入与 LUT 输出 codec 传给 `context.compile_factorized_lookup_table_fn`。与普通 PBS/ManyLUT 相同，用 `context.decryptor(external_secret, codecs.output_codec())?` 绑定，再调用 `decryptor.decrypt(output.as_view())?`。即使 `t_out=t_in`，factorized 输出也保持 Scaled 编码。
+MVB 使用 `factorized_pbs_codecs`，把 `&codecs` 直接传给 `context.compile_factorized_lookup_table_fn`。与普通 PBS/ManyLUT 相同，用 `context.decryptor(external_secret, codecs.output_codec())?` 绑定，再调用 `decryptor.decrypt(output.as_view())?`。即使 `t_out=t_in`，factorized 输出也保持 Scaled 编码。
 
 decryptor 复制 codec 已准备好的 `MessageDecoder`，只借用秘密。Rounded 与 Scaled 共用 q→t 解码，但保留各自的编码中心和恢复界。输入加密与输出解密可以使用不同消息模数。`decrypt_phase` 保留给噪声诊断或高级组合，本身不解码消息。
 
-高级组合仍可显式构造 `RoundedCodec`/`ScaledCodec` 并使用原有编译接口。`LookupTableCompiler::try_new` 直接接收配好的输入与 LUT 输出 codec，无需先准备默认输出。`try_with_output_codec` 只更改编译器的输出 codec、检查其密文模数，保持输入几何不变；显式接口的调用方自行保留对应输出 decoder。奇数全域方法及原始 Boolean/CBS 输出尺度继续遵守各自契约。
+高级组合仍可显式构造 `RoundedCodec`/`ScaledCodec` 并使用底层 LUT 构造接口。`LookupTableCompiler::try_new` 直接接收配好的输入与 LUT 输出 codec，无需先准备默认输出。`try_with_output_codec` 只更改编译器的输出 codec、检查其密文模数，保持输入几何不变；显式接口的调用方自行保留对应输出 decoder。奇数全域方法及原始 Boolean/CBS 输出尺度继续遵守各自契约。
 
 返回值属于 `0..t_out`，前半区输入仅接受 `0..ceil(t_in/2)`。相同消息模数不保证结果可直接输入下一次 PBS；还需匹配下一程序的编码、输入域和噪声余量。
 
 ## 奇数全域 PBS
 
-使用 `compiler.compile_odd_full_domain_fn(function)` 或其 `_slice` 形式；需要不同输出编码时通过 `try_with_output_codec` 配置。这些方法编程整个 **`0..t_in`**。要求奇数 `t_in >= 3`、`t_in <= N`；切片按输入顺序包含 恰好 `t_in` 个输出。输入用普通 `encrypt`，随后复用 `apply_lookup_table_to`。 默认或显式指定输出编码，都将对应输出 codec 绑定到 decryptor 后调用 `decrypt`。 例如，输入与 accumulator 共用密文模数、`t_in=15`，输出 codec 配置 `t_out=8`：
+使用 `compiler.compile_odd_full_domain_fn(function)` 或其 `_slice` 形式；需要不同输出消息模数时，在准备 codec 前通过 `PbsMessageConfig::with_output_modulus` 配置。这些方法编程整个 **`0..t_in`**。要求奇数 `t_in >= 3`、`t_in <= N`；切片按输入顺序包含 恰好 `t_in` 个输出。输入用普通 `encrypt`，随后复用 `apply_lookup_table_to`。 默认或显式指定输出编码，都将对应输出 codec 绑定到 decryptor 后调用 `decrypt`。 例如，输入与 accumulator 共用密文模数、`t_in=15`，输出 codec 配置 `t_out=8`：
 
 ```rust,ignore
-let input_codec = primus_encoding::RoundedCodec::new(15, context.parameters().cipher_modulus());
-let compiler = context.parameters().lookup_table_compiler(&input_codec)?
-    .try_with_output_codec(&output_codec).unwrap();
+let codecs = context.parameters().pbs_codecs(
+    primus_tfhe::PbsMessageConfig::new(15).with_output_modulus(8),
+)?;
+let encryptor = context.encryptor(external_secret, codecs.input_codec())?;
+let compiler = context.parameters().lookup_table_compiler(&codecs)?;
 let lut = compiler.compile_odd_full_domain_fn(|x| ((x * x + 3) % 8) as u32).unwrap();
 let input = encryptor.encrypt(14u32, &mut rng).unwrap();
 evaluator.apply_lookup_table_to(input.as_view(), &lut, output.as_mut_view());
-let decryptor = context.decryptor(external_secret, &output_codec)?;
+let decryptor = context.decryptor(external_secret, codecs.output_codec())?;
 let message = decryptor.decrypt(output.as_view())?;
 assert_eq!(message, 7);
 ```

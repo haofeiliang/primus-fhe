@@ -10,7 +10,7 @@ use primus_lattice::{GlweDimension, LweDimension};
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::NativeModulus;
 use primus_poly::PolyLength;
-use primus_tfhe::{ProgrammableBootstrap, ProgrammableBootstrapInterleaved};
+use primus_tfhe::{PbsMessageConfig, ProgrammableBootstrap, ProgrammableBootstrapInterleaved};
 use primus_tfhe_glwe_fourier::{
     BlindRotationConfig, ClientKey, GadgetEncryptionConfig, KeyGenerator, PbsOrder, TfheContext,
     TfheEvaluationError, TfheParameters,
@@ -107,12 +107,14 @@ fn check_pbs<Table: FftTable>() {
         // Non-power-of-two input centers and a different output scale exercise
         // the exact prepared rotation modulus switch through both complete PBS orders.
         let codec = RoundedCodec::new(16, NativeModulus::new());
-        let compiler = context
+        let codecs = context
             .parameters()
-            .lookup_table_compiler(&input_codec)
-            .unwrap()
-            .try_with_output_codec(&codec)
+            .pbs_codecs(
+                PbsMessageConfig::new(input_codec.plaintext_modulus())
+                    .with_output_modulus(codec.plaintext_modulus()),
+            )
             .unwrap();
+        let compiler = context.parameters().lookup_table_compiler(&codecs).unwrap();
         let function = |m: usize| (3 * m as u64 + 1) % 16;
         let functions = |m: usize, i: usize| (m + 2 * i) as u64;
         let single = compiler.compile_fn(function).unwrap();

@@ -264,7 +264,7 @@ NTT 与 native Fourier 的 reverse trace 归一化契约不同：前者使用模
 | `LweEncryptionParameters::try_new` | LWE 维数、秘密支持集/重量和噪声；不构造 codec | `LweParameterError` 的 `SecretKey` / `Noise` |
 | `LweParameters::try_new` / `GlweParameters::try_new` / `NtruParameters::try_new` | 布局、codec、秘密支持集/重量、噪声 sampler；复用上述检查 | 家族各自的 `*ParameterError`；`SecretKey` 保留 `SecretKeySamplerError`，`Noise` 保留 `GaussianError` |
 | `TfheParameters::try_from_config` / `try_new` | BR/KS 域及分解、控制秘密类别、维数容量、2N 可表示性 | `TfheParameterError`；累加环错误为 `AccumulatorParameters`，NTRU 返回加密错误为 `KeySwitchingEncryption` |
-| 两家族 client / `lookup_table_compiler(&input_codec)` / CBS evaluator | 输入 codec 与密钥 q 一致；独立 NTRU CBS 编译器只拥有 Q，绑定时核对 q | `ClientError::CodecModulusMismatch` / `LookupTableError::InputModulusMismatch` |
+| 两家族 client / `lookup_table_compiler(&codecs)` / CBS evaluator | 输入 codec 与密钥 q 一致；独立 NTRU CBS 编译器只拥有 Q，绑定时核对 q | `ClientError::CodecModulusMismatch` / `LookupTableError::InputModulusMismatch` |
 | `LookupTableCompiler::try_new` / `try_with_output_codec` | 输出 codec 的密文模数等于累加模数；保存独立编码状态 | `LookupTableError::OutputModulusMismatch` |
 | `LookupTableCompiler::compile_*` | 程序容量、切片长度、旋转中心与输出范围；复用原始 LUT 编译内核 | `LookupTableError` |
 | `CircuitBootstrapParameters::try_from_config` / `try_new` | output/trace/SS basis、环布局和组合长度；trace/SS 噪声。两家族消息容量均由 CBS LUT 编译检查 | `CircuitBootstrapParameterError`，`EncryptionParameters` 标明 key role 和原错误 |

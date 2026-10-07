@@ -1,6 +1,7 @@
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_lattice::{GlweDimension, LweDimension};
 use primus_poly::PolyLength;
+use primus_tfhe::PbsMessageConfig;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use primus_decompose::primitive::ApproxSignedBasis;
@@ -78,19 +79,24 @@ fn value(m: usize, i: usize) -> usize {
 
 fn check_complete<T: TorusFftValue, Table: FftTable>(order: PbsOrder, ternary: bool) {
     let context = context::<T, Table>(order, ternary);
-    let input_codec = primus_encoding::RoundedCodec::new(
-        T::as_from(15u32),
-        context.parameters().cipher_modulus(),
-    );
+    // Existing binary/ternary cases cover both an override and equal-message default.
+    // t_out=10 retains the non-power-of-two even-scale case for both word sizes.
+    let messages = if ternary {
+        PbsMessageConfig::new(T::as_from(16u32))
+    } else {
+        PbsMessageConfig::new(T::as_from(15u32)).with_output_modulus(T::as_from(10u32))
+    };
+    let mvb_codecs = context
+        .parameters()
+        .factorized_pbs_codecs(messages)
+        .unwrap();
+    let input_codec = *mvb_codecs.input_codec();
+    let codec = *mvb_codecs.lut_output_codec();
+    let modulus = NativeModulus::new();
     let mut rng = StdRng::seed_from_u64(0x4235_3201);
     let (client, server) = context.try_generate_keys(None, &mut rng).unwrap();
-    let modulus = NativeModulus::new();
-    // Nonbinary t_out=10 has an even actual delta for both u32 and u64.
-    let codec = ScaledCodec::new(T::as_from(10usize), modulus);
     let lut = context
-        .compile_factorized_lookup_table_fn(&input_codec, &codec, DOMAIN, 3, |m, i| {
-            T::as_from(value(m, i))
-        })
+        .compile_factorized_lookup_table_fn(&mvb_codecs, DOMAIN, 3, |m, i| T::as_from(value(m, i)))
         .unwrap();
     assert_eq!(
         (
@@ -98,7 +104,7 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(order: PbsOrder, ternary: b
             lut.output_count(),
             lut.output_plaintext_modulus()
         ),
-        (DOMAIN, 3, T::as_from(10usize))
+        (DOMAIN, 3, messages.output_modulus)
     );
     let sparse = (!ternary).then(|| {
         KeyGenerator::new(&context)
@@ -138,7 +144,7 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(order: PbsOrder, ternary: b
                 LookupTable::try_new(
                     DOMAIN,
                     PolyLength::new(N),
-                    T::as_from(15usize),
+                    input_codec.plaintext_modulus(),
                     modulus,
                     modulus,
                     |m| Ok(codec.encode_value(T::as_from(value(m, i)), Unsigned)),
@@ -248,8 +254,15 @@ fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
             .collect::<Vec<_>>(),
         [3, 4, 5]
     );
+    let mvb_codecs = context
+        .parameters()
+        .factorized_pbs_codecs(
+            PbsMessageConfig::new(input_codec.plaintext_modulus())
+                .with_output_modulus(codec.plaintext_modulus()),
+        )
+        .unwrap();
     let single = context
-        .compile_factorized_lookup_table_fn(&input_codec, &codec, DOMAIN, 1, |m, _| m as u32)
+        .compile_factorized_lookup_table_fn(&mvb_codecs, DOMAIN, 1, |m, _| m as u32)
         .unwrap();
     assert_eq!(
         decryptor
@@ -299,8 +312,10 @@ fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
     }
     assert!(matches!(
         context.compile_factorized_lookup_table_fn(
-            &input_codec,
-            &ScaledCodec::new(8, BarrettModulus::new(97)),
+            &PbsMessageConfig::new(15)
+                .with_output_modulus(8)
+                .try_factorized_codecs(input_codec.ciphertext_modulus(), BarrettModulus::new(97))
+                .unwrap(),
             DOMAIN,
             1,
             |_, _| panic!()
@@ -309,8 +324,10 @@ fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
     ));
     assert!(matches!(
         context.compile_factorized_lookup_table_fn(
-            &input_codec,
-            &ScaledCodec::new(3, NativeModulus::new()),
+            &PbsMessageConfig::new(15)
+                .with_output_modulus(3)
+                .try_factorized_codecs(input_codec.ciphertext_modulus(), NativeModulus::new())
+                .unwrap(),
             DOMAIN,
             1,
             |_, _| panic!()

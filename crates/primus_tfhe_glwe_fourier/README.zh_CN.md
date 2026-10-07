@@ -15,7 +15,7 @@
 cargo run -p primus_tfhe_glwe_fourier --release --example fourier_basic --features rustfft
 ```
 
-[basic 示例](examples/fourier_basic.rs)展示参数 → context → 配对密钥 → 客户端 → 单个 LUT → 复用 evaluator 和密文缓冲。它计算 `x % 4`，输入和输出均采用 `t=32` 编码，直接用 `decrypt` 解码。 `parameters.lookup_table_compiler(&input_codec)?` 创建可复用编译器，`compiler.compile_fn(function)` 默认使用所选输入 codec 编码输出；用 `compiler.try_with_output_codec(&output_codec)?` 选择其他输出编码，见[选择输出编码](../primus_tfhe/README.zh_CN.md#选择输出编码)。 公钥加密通过 `context.public_encryptor(&public, &input_codec)` 创建客户端，见[家族说明](../primus_tfhe_glwe/README.zh_CN.md#客户端与-lut)。
+[basic 示例](examples/fourier_basic.rs)展示参数 → context → 配对密钥 → 客户端 → 单个 LUT → 复用 evaluator 和密文缓冲。它计算 `x % 4`，输入和输出均采用 `t=32` 编码，直接用 `decrypt` 解码。 `parameters.lookup_table_compiler(&codecs)?` 直接绑定已准备的输入/输出编码，再用 `compiler.compile_fn(function)` 创建 LUT。通过 `PbsMessageConfig::with_output_modulus` 选择不同输出消息模数，见[选择输出编码](../primus_tfhe/README.zh_CN.md#选择输出编码)。 公钥加密通过 `context.public_encryptor(&public, codecs.input_codec())` 创建客户端，见[家族说明](../primus_tfhe_glwe/README.zh_CN.md#客户端与-lut)。
 
 示例使用 `Word = u64` 和 Native64，每条工作流只保留一套显式参数；库与数值诊断仍支持 u32/u64。需要 TFHE-FFT 时，将 `RustFftTable as Table` 导入改为 `TfheFftTable as Table`；切换引擎时也要修改示例 target 的 `required-features`，并使用 `--features tfhe-fft`。每个文件内的 `parameters()` 直接构造 `TfheConfig`，集中列出尺寸、模数类型、秘密分布、噪声和 BR/KS 分解；CBS 示例还用 `circuit_config()` 明确输出、trace 和 scheme-switch 的分解。[数值配置与验证](../../guides/development/tfhe-parameters.md)集中记录参数选择；每例复用同一组缓冲处理两次请求。
 
@@ -65,7 +65,7 @@ let mut cbs = CircuitBootstrapEvaluator::try_new(&resources, circuit_key, &input
 
 ## 固定尺度分解式 MVB
 
-通过 `context.compile_factorized_lookup_table_fn(&input_codec, &output_codec, domain_len, output_count, function)` 编译并绑定 `FactorizedEvaluator`；输入 codec 使用 Rounded、输出 codec 使用 Scaled，均须采用 context 的密文模数。程序借用该 context，输出使用 unsigned Scaled 编码。
+通过 `context.compile_factorized_lookup_table_fn(&codecs, domain_len, output_count, function)` 编译并绑定 `FactorizedEvaluator`；`codecs` 由 `parameters.factorized_pbs_codecs(messages)` 准备，输入使用 Rounded、输出使用 Scaled，均采用 context 的密文模数。程序借用该 context，输出使用 unsigned Scaled 编码。
 
 实际尺度 `round(2^BITS/t_out)` 必须为偶数，`t_out=10` 对 u32/u64 均可用。 奇数尺度返回 `LookupTableError::OddFactorizationScale`。因子按有符号整数变换，不作环面缩放； 须预算因子放大和 FFT 误差。
 

@@ -12,6 +12,7 @@ use primus_ntru::{
 };
 use primus_ntt::U64NttTable;
 use primus_poly::PolyLength;
+use primus_tfhe::PbsMessageConfig;
 use primus_tfhe_ntru_ntt::{
     BlindRotationConfig, CircuitBootstrapConfig, CircuitBootstrapEvaluator, DecompositionConfig,
     GadgetEncryptionConfig, OneHotCircuitBootstrapEvaluator, TfheContext, TfheParameters,
@@ -172,9 +173,13 @@ fn selectors(distr: SecretKeyDistr, sparse: bool) {
     let encryptor = context
         .encryptor(client.external_lwe_secret_key(), &input_codec)
         .unwrap();
+    let codecs = context
+        .parameters()
+        .pbs_codecs(PbsMessageConfig::new(input_codec.plaintext_modulus()))
+        .unwrap();
     let identity = context
         .parameters()
-        .lookup_table_compiler(&input_codec)
+        .lookup_table_compiler(&codecs)
         .unwrap()
         .compile_fn(|m| m as u64)
         .unwrap();

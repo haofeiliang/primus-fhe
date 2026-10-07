@@ -54,7 +54,7 @@
 
 解密 LUT 结果时，将返回输出 codec 传给 `decryptor(external_secret, &output_codec)`，再调用 `decrypt()`。Rounded 和 Scaled 均可绑定，包括消息模数与输入不同的 MVB 输出。已准备的解码状态按值复制，秘密保持借用；`decrypt_phase` 继续供诊断使用。
 
-前半区 LUT 使用 `encrypt_padded`，奇数全域 LUT 使用普通 `encrypt`。`parameters.lookup_table_compiler(&input_codec)?` 检查输入密文模数并创建可复用编译器，默认使用输入 codec 编码输出；调用 `compile_fn` / `compile_slice`，或交错、奇数全域方法。`compiler.try_with_output_codec(&codec)?` 可选择其他输出明文模数；传入同一密文模数下的 `RoundedCodec`，并将它绑定到输出 decryptor。ManyLUT、Boolean、双输入和 MVB 的接口及编码要求见[公共指南](../primus_tfhe/README.zh_CN.md)。
+前半区 LUT 使用 `encrypt_padded`，奇数全域 LUT 使用普通 `encrypt`。用 `parameters.pbs_codecs(PbsMessageConfig::new(t_in))?` 准备编码，默认输出消息模数与输入相同；需要不同时，在准备前调用 `.with_output_modulus(t_out)`。`parameters.lookup_table_compiler(&codecs)?` 直接绑定选定的输入/输出编码，支持 `compile_fn` / `compile_slice` 及交错、奇数全域方法。输出 decryptor 绑定 `codecs.output_codec()`。输入、LUT 和返回密文使用同一密文模数。ManyLUT、Boolean、双输入和 MVB 的接口及编码要求见[公共指南](../primus_tfhe/README.zh_CN.md)。
 
 ## Boolean 与 CBS
 

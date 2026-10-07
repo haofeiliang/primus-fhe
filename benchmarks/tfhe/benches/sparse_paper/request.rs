@@ -1,6 +1,6 @@
 //! The benchmark's q -> Q -> q adapter, distinct from the public evaluator.
 
-use primus_encoding::{PlaintextEmbedding, RoundedCodec};
+use primus_encoding::PlaintextEmbedding;
 use primus_integer::FheUint;
 use primus_lwe::{LweCiphertext, LweDimension, LweParameters, LweSecretKey};
 use primus_modulus::{BarrettModulus, PowOf2Modulus};
@@ -59,10 +59,15 @@ impl<T: FheUint> Request<T> {
             )
             .unwrap()
         } else {
-            let codec = RoundedCodec::new(T::as_from(case.plaintext_modulus), modulus);
+            let codecs = context
+                .parameters()
+                .pbs_codecs(primus_tfhe::PbsMessageConfig::new(T::as_from(
+                    case.plaintext_modulus,
+                )))
+                .unwrap();
             context
                 .parameters()
-                .lookup_table_compiler(&codec)
+                .lookup_table_compiler(&codecs)
                 .unwrap()
                 .compile_fn(|m| T::as_from(case.function(m)))
                 .unwrap()

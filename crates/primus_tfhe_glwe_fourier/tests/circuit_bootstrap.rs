@@ -10,6 +10,7 @@ use primus_lattice::{GlweDimension, LweDimension};
 use primus_lwe::{LweCiphertext, LweEncryptionParameters};
 use primus_modulus::NativeModulus;
 use primus_poly::PolyLength;
+use primus_tfhe::PbsMessageConfig;
 use primus_tfhe_glwe_fourier::{
     BlindRotationConfig, CircuitBootstrapConfig, CircuitBootstrapEvaluator,
     CircuitBootstrapParameters, ClientKey, DecompositionConfig, GadgetEncryptionConfig,
@@ -186,9 +187,13 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
         .encryptor(client.external_lwe_secret_key(), &input_codec)
         .unwrap();
     // The same CBS-enabled server key also supports ordinary PBS.
+    let codecs = context
+        .parameters()
+        .pbs_codecs(PbsMessageConfig::new(input_codec.plaintext_modulus()))
+        .unwrap();
     let identity = context
         .parameters()
-        .lookup_table_compiler(&input_codec)
+        .lookup_table_compiler(&codecs)
         .unwrap()
         .compile_fn(|message| message as u64)
         .unwrap();

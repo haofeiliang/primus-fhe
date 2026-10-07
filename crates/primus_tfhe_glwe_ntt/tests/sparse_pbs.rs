@@ -1,6 +1,7 @@
 //! Classic/sparse differential PBS and ManyLUT on reused workspaces;
 //! bucket layouts and quantization margins are part of the fixture.
 
+use primus_tfhe::PbsMessageConfig;
 #[path = "../../primus_tfhe/tests/common/boolean.rs"]
 mod boolean;
 
@@ -111,12 +112,14 @@ fn sparse_pbs_preserves_external_secret_and_interleaved_outputs_in_both_orders()
             .unwrap();
         // A distinct output scale exercises P2.1 through both dispatch branches.
         let codec = RoundedCodec::new(16, BarrettModulus::new(Q));
-        let compiler = context
+        let codecs = context
             .parameters()
-            .lookup_table_compiler(&input_codec)
-            .unwrap()
-            .try_with_output_codec(&codec)
+            .pbs_codecs(
+                PbsMessageConfig::new(input_codec.plaintext_modulus())
+                    .with_output_modulus(codec.plaintext_modulus()),
+            )
             .unwrap();
+        let compiler = context.parameters().lookup_table_compiler(&codecs).unwrap();
         let function = |m: usize| (3 * m as u32 + 1) % 16;
         let functions = |m: usize, i: usize| (m + 2 * i) as u32;
         let single = compiler.compile_fn(function).unwrap();
@@ -295,11 +298,16 @@ fn sparse_bivariate_and_odd_full_domain_respect_input_margins_in_both_orders() {
         )
         .unwrap();
         let full_value = |m: usize| ((m * m + 3) % 8) as u32;
+        let codecs = context
+            .parameters()
+            .pbs_codecs(
+                PbsMessageConfig::new(input_codec.plaintext_modulus())
+                    .with_output_modulus(output_codec.plaintext_modulus()),
+            )
+            .unwrap();
         let full = context
             .parameters()
-            .lookup_table_compiler(&input_codec)
-            .unwrap()
-            .try_with_output_codec(&output_codec)
+            .lookup_table_compiler(&codecs)
             .unwrap()
             .compile_odd_full_domain_fn(full_value)
             .unwrap();

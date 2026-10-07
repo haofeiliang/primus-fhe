@@ -5,10 +5,10 @@
 //! Fixtures are initialized only for selected IDs, then reused across samples.
 //! Run: cargo bench -p primus_tfhe_benchmarks --bench sparse_pbs --features ntru-fourier,rustfft,tfhe-fft
 
+use primus_tfhe::PbsMessageConfig;
 use primus_tfhe_benchmarks::measurement::{Case, Group, metadata};
 use std::hint::black_box;
 
-use primus_encoding::RoundedCodec;
 #[cfg(feature = "rustfft")]
 use primus_fft::RustFftTable;
 #[cfg(all(not(feature = "rustfft"), feature = "tfhe-fft"))]
@@ -22,8 +22,9 @@ use rand::{SeedableRng, rngs::StdRng};
 
 fn pbs_pair<T: TorusFftValue, Table: FftTable>(c: &mut Group<'_>, backend: &str) {
     let parameters = ntru::diagnostic(NativeModulus::<T>::new());
-    let input_codec =
-        RoundedCodec::new(T::as_from(8u32), parameters.external_lwe().cipher_modulus());
+    let codecs = parameters
+        .pbs_codecs(PbsMessageConfig::new(T::as_from(8u32)))
+        .unwrap();
     let name = "fixed_weight";
     // Hold one context/client pair, but build each server key only when selected.
     let fixture = std::cell::LazyCell::new(|| {
@@ -52,13 +53,13 @@ fn pbs_pair<T: TorusFftValue, Table: FftTable>(c: &mut Group<'_>, backend: &str)
             let server = &*server;
             let mut rng = StdRng::seed_from_u64(43);
             let input = context
-                .encryptor(client.external_lwe_secret_key(), &input_codec)
+                .encryptor(client.external_lwe_secret_key(), codecs.input_codec())
                 .unwrap()
                 .encrypt_padded(T::ONE, &mut rng)
                 .unwrap();
             let lut = context
                 .parameters()
-                .lookup_table_compiler(&input_codec)
+                .lookup_table_compiler(&codecs)
                 .unwrap()
                 .compile_fn(|m| T::as_from((m + 1) % 4))
                 .unwrap();
@@ -68,7 +69,7 @@ fn pbs_pair<T: TorusFftValue, Table: FftTable>(c: &mut Group<'_>, backend: &str)
                 evaluator.apply_lookup_table_to(input.as_view(), &lut, output.as_mut_view());
                 assert_eq!(
                     context
-                        .decryptor(client.external_lwe_secret_key(), &input_codec)
+                        .decryptor(client.external_lwe_secret_key(), codecs.output_codec())
                         .unwrap()
                         .decrypt(output.as_view())
                         .unwrap(),

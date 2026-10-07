@@ -75,12 +75,7 @@ fn prepare_server<'a>(
     LookupTable<Word>,
     Evaluator<'a, Word, Table, PowOf2Modulus<Word>>,
 ) {
-    let compiler = context
-        .parameters()
-        .lookup_table_compiler(codecs.input_codec())
-        .unwrap()
-        .try_with_output_codec(codecs.lut_output_codec())
-        .unwrap();
+    let compiler = context.parameters().lookup_table_compiler(codecs).unwrap();
     let lut = compiler.compile_fn(|x| (x % 4) as Word).unwrap();
     let evaluator = context.evaluator(server_key).unwrap();
     (lut, evaluator)

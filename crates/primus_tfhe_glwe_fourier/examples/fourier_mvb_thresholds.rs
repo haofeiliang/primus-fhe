@@ -52,13 +52,9 @@ fn main() {
 
     // Server: MVB keeps all 64 inputs; interleaving 17 outputs fits only 32 here.
     let program = context
-        .compile_factorized_lookup_table_fn(
-            codecs.input_codec(),
-            codecs.lut_output_codec(),
-            DOMAIN,
-            OUTPUTS,
-            |score, i| Word::from(score >= thresholds[i]),
-        )
+        .compile_factorized_lookup_table_fn(&codecs, DOMAIN, OUTPUTS, |score, i| {
+            Word::from(score >= thresholds[i])
+        })
         .unwrap();
     let mut pbs = context.evaluator(&server_key).unwrap();
     let mut evaluator = FactorizedEvaluator::new(&pbs);

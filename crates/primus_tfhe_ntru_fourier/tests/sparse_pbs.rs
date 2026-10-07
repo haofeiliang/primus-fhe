@@ -11,6 +11,7 @@ use primus_modulus::NativeModulus;
 use primus_ntru::NlevParameters;
 use primus_ntru::{NtruParameters, SecretKeyDistr};
 use primus_poly::PolyLength;
+use primus_tfhe::PbsMessageConfig;
 use primus_tfhe::rotation::RotationModulusSwitch;
 use primus_tfhe_ntru_fourier::{
     BlindRotationConfig, GadgetEncryptionConfig, KeyGenerator, TfheContext, TfheParameters,
@@ -106,12 +107,14 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(weight: usize) {
     let modulus = context.parameters().external_lwe().cipher_modulus();
     let q_wide: i128 = 1i128 << T::BITS;
     let codec = RoundedCodec::new(T::as_from(8usize), modulus);
-    let compiler = context
+    let codecs = context
         .parameters()
-        .lookup_table_compiler(&input_codec)
-        .unwrap()
-        .try_with_output_codec(&codec)
+        .pbs_codecs(
+            PbsMessageConfig::new(input_codec.plaintext_modulus())
+                .with_output_modulus(codec.plaintext_modulus()),
+        )
         .unwrap();
+    let compiler = context.parameters().lookup_table_compiler(&codecs).unwrap();
     let value = |m: usize, i: usize| T::as_from((m + 2 * i) % 8);
     let single = compiler.compile_fn(|m| value(m, 0)).unwrap();
     let many = compiler.compile_interleaved_fn(3, value).unwrap();
@@ -122,8 +125,15 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(weight: usize) {
     // Integer differences in the public factors amplify BR noise. Seventeen
     // outputs also cross two complete return tiles and their singleton tail.
     let scaled = ScaledCodec::new(T::as_from(8usize), modulus);
+    let mvb_codecs = context
+        .parameters()
+        .factorized_pbs_codecs(
+            PbsMessageConfig::new(input_codec.plaintext_modulus())
+                .with_output_modulus(scaled.plaintext_modulus()),
+        )
+        .unwrap();
     let factorized_lut = context
-        .compile_factorized_lookup_table_fn(&input_codec, &scaled, 8, 17, value)
+        .compile_factorized_lookup_table_fn(&mvb_codecs, 8, 17, value)
         .unwrap();
     let mut classic_mvb = primus_tfhe_ntru_fourier::FactorizedEvaluator::new(&classic);
     let mut factor_outputs = vec![output.clone(); 17];

@@ -1,6 +1,5 @@
 //! Prepared factorized MVB programs and their reusable evaluator.
 
-use primus_encoding::{RoundedCodec, ScaledCodec};
 use primus_glwe::NttGlweCiphertext;
 use primus_integer::FheUint;
 use primus_lwe::LweCiphertext;
@@ -8,7 +7,7 @@ use primus_modulus::BarrettModulus;
 use primus_ntt::MonomialNttTable;
 use primus_poly::{NttPolynomialIter, PolynomialIterMut, PolynomialOwned};
 use primus_reduce::Modulus;
-use primus_tfhe::FactorizedLookupTable;
+use primus_tfhe::{FactorizedLookupTable, FactorizedPbsCodecs};
 
 use crate::{Evaluator, LookupTableError, Lwe, TfheContext};
 
@@ -224,19 +223,18 @@ where
     T: FheUint,
     Table: MonomialNttTable<ValueT = T>,
 {
-    /// Compiles and NTT-prepares a fixed-scale MVB program for this context.
+    /// Compiles and NTT-prepares a fixed-scale MVB program from prepared codecs.
     ///
-    /// Both codecs must use the context ciphertext modulus.
+    /// The prepared codecs must use this context's ciphertext modulus.
     /// `input_domain_len` selects a nonempty prefix of the input codec's
     /// front half; `output_count` is positive and unpadded. Outputs must lie in
-    /// the supplied Scaled codec's domain, and its ciphertext modulus must match
+    /// the prepared Scaled output domain, and its ciphertext modulus must match
     /// the accumulator. Callback order and noise requirements follow
     /// [`FactorizedLookupTable::try_new`]. The result borrows this context and
     /// may only be evaluated by its [`FactorizedEvaluator`].
     pub fn compile_factorized_lookup_table_fn<OM, F>(
         &self,
-        input_codec: &RoundedCodec<T, BarrettModulus<T>>,
-        output_codec: &ScaledCodec<T, OM>,
+        codecs: &FactorizedPbsCodecs<T, OM, BarrettModulus<T>>,
         input_domain_len: usize,
         output_count: usize,
         function: F,
@@ -245,22 +243,10 @@ where
         OM: primus_reduce::RingContext<T>,
         F: Fn(usize, usize) -> T,
     {
-        if input_codec.ciphertext_modulus().explicit_value()
-            != self.parameters().cipher_modulus().explicit_value()
-        {
-            return Err(LookupTableError::InputModulusMismatch);
-        }
-        if output_codec.ciphertext_modulus().explicit_value()
-            != self.parameters().cipher_modulus().explicit_value()
-        {
-            return Err(LookupTableError::OutputModulusMismatch);
-        }
-        let lookup_table = FactorizedLookupTable::try_new(
+        let lookup_table = self.parameters().compile_factorized_lookup_table_fn(
+            codecs,
             input_domain_len,
-            self.parameters().blind_rotation_ggsw().poly_length(),
             output_count,
-            input_codec,
-            output_codec,
             function,
         )?;
         Ok(NttFactorizedLookupTable::new(self, lookup_table))

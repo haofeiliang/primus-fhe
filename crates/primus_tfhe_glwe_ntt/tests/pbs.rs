@@ -9,8 +9,8 @@ use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable, U64NttTable};
 use primus_poly::PolyLength;
 use primus_tfhe::{
-    BivariateLookupTable, InterleavedLookupTable, LookupTable, Lwe, ProgrammableBootstrap,
-    ProgrammableBootstrapInterleaved,
+    BivariateLookupTable, InterleavedLookupTable, LookupTable, Lwe, PbsMessageConfig,
+    ProgrammableBootstrap, ProgrammableBootstrapInterleaved,
 };
 use primus_tfhe_glwe_ntt::{GadgetEncryptionConfig, PbsOrder, TfheContext, TfheParameters};
 use rand::{SeedableRng, rngs::StdRng};
@@ -90,12 +90,14 @@ where
         T::as_from(8u32),
         context.parameters().small_lwe().cipher_modulus(),
     );
-    let compiler = context
+    let codecs = context
         .parameters()
-        .lookup_table_compiler(&input_codec)
-        .unwrap()
-        .try_with_output_codec(&output_codec)
+        .pbs_codecs(
+            PbsMessageConfig::new(input_codec.plaintext_modulus())
+                .with_output_modulus(output_codec.plaintext_modulus()),
+        )
         .unwrap();
+    let compiler = context.parameters().lookup_table_compiler(&codecs).unwrap();
     // Shared tests cover geometry; keep output counts 1, 3 (padded to 4), and 4 here.
     for output_count in [1, 3, 4] {
         let flat: Vec<_> = (0..8)
@@ -163,9 +165,13 @@ where
         .unwrap()
         .encrypt_padded(T::ONE, &mut rng)
         .unwrap();
+    let codecs = context
+        .parameters()
+        .pbs_codecs(PbsMessageConfig::new(other_codec.plaintext_modulus()))
+        .unwrap();
     let other_lut = context
         .parameters()
-        .lookup_table_compiler(&other_codec)
+        .lookup_table_compiler(&codecs)
         .unwrap()
         .compile_fn(|message| T::as_from(1 - message))
         .unwrap();

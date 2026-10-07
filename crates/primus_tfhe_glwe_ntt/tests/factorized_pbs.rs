@@ -1,6 +1,7 @@
 use primus_decompose::DecompositionBaseLog;
 use primus_lattice::{GlweDimension, LweDimension};
 use primus_poly::PolyLength;
+use primus_tfhe::PbsMessageConfig;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use primus_decompose::primitive::ApproxSignedBasis;
@@ -66,10 +67,13 @@ fn value(m: usize, i: usize) -> u32 {
 fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
     for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
         let context = context(order, SecretKeyDistr::fixed_hamming_weight_binary(8, 2));
-        let input_codec =
-            primus_encoding::RoundedCodec::new(15, context.parameters().cipher_modulus());
+        let mvb_codecs = context
+            .parameters()
+            .factorized_pbs_codecs(PbsMessageConfig::new(15).with_output_modulus(8))
+            .unwrap();
+        let input_codec = *mvb_codecs.input_codec();
+        let codec = *mvb_codecs.lut_output_codec();
         let modulus = context.parameters().blind_rotation_ggsw().cipher_modulus();
-        let codec = ScaledCodec::new(8, modulus);
         let mut rng = StdRng::seed_from_u64(0x5034_3201);
         let mut generator = KeyGenerator::new(&context);
         let client = ClientKey::generate(context.parameters(), &mut rng);
@@ -118,7 +122,7 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
             let mut evaluator = primus_tfhe_glwe_ntt::FactorizedEvaluator::new(&pbs);
             for count in [1, 3, 17] {
                 let lut = context
-                    .compile_factorized_lookup_table_fn(&input_codec, &codec, DOMAIN, count, value)
+                    .compile_factorized_lookup_table_fn(&mvb_codecs, DOMAIN, count, value)
                     .unwrap();
                 assert_eq!(
                     (
@@ -198,12 +202,13 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
         ));
 
         let lut = context
-            .compile_factorized_lookup_table_fn(&input_codec, &codec, DOMAIN, 3, value)
+            .compile_factorized_lookup_table_fn(&mvb_codecs, DOMAIN, 3, value)
             .unwrap();
         // Same q,N, but deliberately a different instance.
         let other_context = self::context(order, SecretKeyDistr::fixed_hamming_weight_binary(8, 2));
+
         let foreign = other_context
-            .compile_factorized_lookup_table_fn(&input_codec, &codec, DOMAIN, 3, value)
+            .compile_factorized_lookup_table_fn(&mvb_codecs, DOMAIN, 3, value)
             .unwrap();
         let mut pbs = context.evaluator(&classic).unwrap();
         let mut evaluator = primus_tfhe_glwe_ntt::FactorizedEvaluator::new(&pbs);
@@ -260,8 +265,13 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
         }
         assert!(matches!(
             context.compile_factorized_lookup_table_fn(
-                &input_codec,
-                &ScaledCodec::new(8, BarrettModulus::new(97)),
+                &PbsMessageConfig::new(15)
+                    .with_output_modulus(8)
+                    .try_factorized_codecs(
+                        input_codec.ciphertext_modulus(),
+                        BarrettModulus::new(97)
+                    )
+                    .unwrap(),
                 DOMAIN,
                 3,
                 value
@@ -277,16 +287,22 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
 fn factorized_pbs_accepts_ternary_controls() {
     for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
         let context = context(order, SecretKeyDistr::fixed_composition_ternary(8, 2, 2));
-        let input_codec =
-            primus_encoding::RoundedCodec::new(15, context.parameters().cipher_modulus());
+        // Cover the default without adding another key-generation case.
+        let messages = if order == PbsOrder::BootstrapKeyswitch {
+            PbsMessageConfig::new(16)
+        } else {
+            PbsMessageConfig::new(15).with_output_modulus(8)
+        };
+        let mvb_codecs = context
+            .parameters()
+            .factorized_pbs_codecs(messages)
+            .unwrap();
+        let input_codec = *mvb_codecs.input_codec();
+        let codec = *mvb_codecs.output_codec();
         let mut rng = StdRng::seed_from_u64(0x0054_334d_5642);
         let (client, server) = context.try_generate_keys(None, &mut rng).unwrap();
-        let codec = ScaledCodec::new(
-            8,
-            context.parameters().blind_rotation_ggsw().cipher_modulus(),
-        );
         let lut = context
-            .compile_factorized_lookup_table_fn(&input_codec, &codec, DOMAIN, 3, value)
+            .compile_factorized_lookup_table_fn(&mvb_codecs, DOMAIN, 3, value)
             .unwrap();
         let encryptor = context
             .encryptor(client.external_lwe_secret_key(), &input_codec)

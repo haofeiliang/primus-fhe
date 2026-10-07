@@ -4,10 +4,10 @@
 //! Fixtures are initialized only for selected IDs, then reused across samples.
 //! Run: cargo bench -p primus_tfhe_benchmarks --bench pbs --features ntru-fourier,rustfft,tfhe-fft
 
+use primus_tfhe::{PbsMessageConfig, RoundedPbsCodecs};
 use primus_tfhe_benchmarks::measurement::{Case, Group, metadata};
 use std::hint::black_box;
 
-use primus_encoding::RoundedCodec;
 #[cfg(feature = "rustfft")]
 use primus_fft::RustFftTable;
 #[cfg(feature = "tfhe-fft")]
@@ -39,14 +39,15 @@ fn pbs<T: TorusFftValue, Table: FftTable>(
     let kind = if ternary { "ternary" } else { "binary" };
     let name = format!("{kind}/{}", workload.name);
     let parameters = ntru::pbs(NativeModulus::<T>::new(), workload, secret);
-    let input_codec = RoundedCodec::new(
-        T::as_from(workload.plaintext_modulus),
-        parameters.external_lwe().cipher_modulus(),
-    );
+    let codecs = parameters
+        .pbs_codecs(PbsMessageConfig::new(T::as_from(
+            workload.plaintext_modulus,
+        )))
+        .unwrap();
     // Cached owned state avoids both eager setup during --list and repeated key
     // generation for each Criterion sample. Evaluators borrow this state locally.
     let fixture =
-        std::cell::LazyCell::new(|| Fixture::<T, Table>::new(parameters, input_codec, workload));
+        std::cell::LazyCell::new(|| Fixture::<T, Table>::new(parameters, codecs, workload));
     let mut verified = false;
     let case = Case::new("ntru", backend, T::BITS, format!("{name}/complete"));
     c.bench_function(case.id(), |b| {
@@ -63,7 +64,7 @@ fn pbs<T: TorusFftValue, Table: FftTable>(
             evaluator.apply_lookup_table_to(input.as_view(), lut, output.as_mut_view());
             assert_eq!(
                 context
-                    .decryptor(client.external_lwe_secret_key(), &input_codec)
+                    .decryptor(client.external_lwe_secret_key(), codecs.output_codec())
                     .unwrap()
                     .decrypt(output.as_view())
                     .unwrap(),
@@ -125,21 +126,21 @@ impl<T: TorusFftValue, Table: FftTable> Fixture<T, Table> {
     /// preserved so the baseline keeps identical client and encryption randomness.
     fn new(
         parameters: primus_tfhe_ntru_fourier::TfheParameters<T, PowOf2Modulus<T>>,
-        input_codec: primus_encoding::RoundedCodec<T, PowOf2Modulus<T>>,
+        codecs: RoundedPbsCodecs<T, primus_modulus::NativeModulus<T>, PowOf2Modulus<T>>,
         workload: PbsWorkload,
     ) -> Self {
         let context = TfheContext::<T, Table, PowOf2Modulus<T>>::from_parameters(parameters);
         let mut rng = StdRng::seed_from_u64(42);
         let (client, server) = context.try_generate_keys(None, &mut rng).unwrap();
         let input = context
-            .encryptor(client.external_lwe_secret_key(), &input_codec)
+            .encryptor(client.external_lwe_secret_key(), codecs.input_codec())
             .unwrap()
             .encrypt_padded(T::ONE, &mut rng)
             .unwrap();
         let domain = workload.plaintext_modulus as usize / 2;
         let lut = context
             .parameters()
-            .lookup_table_compiler(&input_codec)
+            .lookup_table_compiler(&codecs)
             .unwrap()
             .compile_fn(|x| T::as_from((x + domain - 1) % domain))
             .unwrap();

@@ -11,8 +11,8 @@ use primus_ntt::{MonomialNttTable, NttTable, U32NttTable, U64NttTable};
 use primus_poly::PolyLength;
 use primus_reduce::{ReduceAdd, ReduceSub};
 use primus_tfhe::{
-    BivariateLookupTable, InterleavedLookupTable, LookupTable, Lwe, ProgrammableBootstrap,
-    ProgrammableBootstrapInterleaved,
+    BivariateLookupTable, InterleavedLookupTable, LookupTable, Lwe, PbsMessageConfig,
+    ProgrammableBootstrap, ProgrammableBootstrapInterleaved,
 };
 use primus_tfhe_ntru_ntt::{
     BlindRotationConfig, GadgetEncryptionConfig, TfheContext, TfheParameters,
@@ -124,12 +124,14 @@ where
         T::as_from(8u32),
         context.parameters().external_lwe().cipher_modulus(),
     );
-    let compiler = context
+    let codecs = context
         .parameters()
-        .lookup_table_compiler(&input_codec)
-        .unwrap()
-        .try_with_output_codec(&output_codec)
+        .pbs_codecs(
+            PbsMessageConfig::new(input_codec.plaintext_modulus())
+                .with_output_modulus(output_codec.plaintext_modulus()),
+        )
         .unwrap();
+    let compiler = context.parameters().lookup_table_compiler(&codecs).unwrap();
     let single = compiler.compile_fn(|input| value(input, 0)).unwrap();
     let mut output = LweCiphertext::zero(context.parameters().external_lwe_dimension().get());
     // Noise-free masks exercise first fusion, leading zero and remaining CMUX parity.
@@ -245,7 +247,11 @@ where
             T::as_from(t),
             context.parameters().external_lwe().cipher_modulus(),
         );
-        let compiler = context.parameters().lookup_table_compiler(&codec).unwrap();
+        let codecs = context
+            .parameters()
+            .pbs_codecs(PbsMessageConfig::new(codec.plaintext_modulus()))
+            .unwrap();
+        let compiler = context.parameters().lookup_table_compiler(&codecs).unwrap();
         let single = compiler.compile_fn(|m| T::as_from(m)).unwrap();
         let many = compiler
             .compile_interleaved_fn(2, |m, _| T::as_from(m))
@@ -552,8 +558,11 @@ fn check_first_controls<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
         let decryptor = context
             .decryptor(client.external_lwe_secret_key(), &input_codec)
             .unwrap();
+        let codecs = parameters
+            .pbs_codecs(PbsMessageConfig::new(input_codec.plaintext_modulus()))
+            .unwrap();
         let lut = parameters
-            .lookup_table_compiler(&input_codec)
+            .lookup_table_compiler(&codecs)
             .unwrap()
             .compile_fn(|m| T::as_from((m + 1) % 8))
             .unwrap();

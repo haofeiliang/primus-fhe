@@ -1,13 +1,12 @@
 //! Prepared factorized MVB programs and their reusable evaluator.
 
-use primus_encoding::{RoundedCodec, ScaledCodec};
 use primus_fft::{Complex64, FftTable, TorusFftValue};
 use primus_lattice::glwe::FourierGlwe;
 use primus_lwe::LweCiphertext;
 use primus_modulus::NativeModulus;
 use primus_poly::{FourierPolynomial, FourierPolynomialIter, PolynomialIter, PolynomialOwned};
 use primus_reduce::Modulus;
-use primus_tfhe::FactorizedLookupTable;
+use primus_tfhe::{FactorizedLookupTable, FactorizedPbsCodecs};
 
 use crate::{Evaluator, LookupTableError, Lwe, TfheContext};
 
@@ -227,9 +226,9 @@ where
     T: TorusFftValue,
     Table: FftTable,
 {
-    /// Compiles and Fourier-prepares a Native even-scale MVB program.
+    /// Compiles and Fourier-prepares a Native even-scale MVB program from prepared codecs.
     ///
-    /// Both codecs must use the context ciphertext modulus.
+    /// The prepared codecs must use this context's ciphertext modulus.
     /// `input_domain_len` selects a nonempty prefix of the input codec's
     /// front half; `output_count` is positive and unpadded. The output codec
     /// must use Native and have an even scale, including for nonbinary plaintext
@@ -241,8 +240,7 @@ where
     /// Panics for coefficient types other than u32/u64.
     pub fn compile_factorized_lookup_table_fn<OM, F>(
         &self,
-        input_codec: &RoundedCodec<T, NativeModulus<T>>,
-        output_codec: &ScaledCodec<T, OM>,
+        codecs: &FactorizedPbsCodecs<T, OM, NativeModulus<T>>,
         input_domain_len: usize,
         output_count: usize,
         function: F,
@@ -251,22 +249,10 @@ where
         OM: primus_reduce::RingContext<T>,
         F: Fn(usize, usize) -> T,
     {
-        if input_codec.ciphertext_modulus().explicit_value()
-            != self.parameters().cipher_modulus().explicit_value()
-        {
-            return Err(LookupTableError::InputModulusMismatch);
-        }
-        if output_codec.ciphertext_modulus().explicit_value()
-            != self.parameters().cipher_modulus().explicit_value()
-        {
-            return Err(LookupTableError::OutputModulusMismatch);
-        }
-        let lookup_table = FactorizedLookupTable::try_new(
+        let lookup_table = self.parameters().compile_factorized_lookup_table_fn(
+            codecs,
             input_domain_len,
-            self.parameters().blind_rotation_ggsw().poly_length(),
             output_count,
-            input_codec,
-            output_codec,
             function,
         )?;
         Ok(FourierFactorizedLookupTable::new(self, lookup_table))

@@ -13,6 +13,7 @@ use primus_lattice::{GlweDimension, LweDimension};
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::NativeModulus;
 use primus_poly::{PolyLength, Polynomial};
+use primus_tfhe::PbsMessageConfig;
 use primus_tfhe_glwe_fourier::{
     BlindRotationKey, ClientKey, FourierGlweBlindRotationWorkspace, GadgetEncryptionConfig,
     KeyGenerator, PbsOrder, TfheContext, TfheContextError, TfheEvaluationError, TfheParameters,
@@ -118,9 +119,13 @@ fn split_keys_support_both_pbs_orders() {
             .unwrap();
         check_key_switching_noise(&context, &client, &key_switching, &mut reference_rng);
         let server = primus_tfhe_glwe_fourier::ServerKey::new(blind_rotation, key_switching, None);
+        let codecs = context
+            .parameters()
+            .pbs_codecs(PbsMessageConfig::new(input_codec.plaintext_modulus()))
+            .unwrap();
         let lookup_table = context
             .parameters()
-            .lookup_table_compiler(&input_codec)
+            .lookup_table_compiler(&codecs)
             .unwrap()
             .compile_slice(&[1u32, 0])
             .unwrap();

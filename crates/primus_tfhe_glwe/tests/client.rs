@@ -526,8 +526,11 @@ fn message_codec_must_match_the_key_ciphertext_modulus() {
         parameters.public_encryptor(&public, &codec).err(),
         Some(ClientError::CodecModulusMismatch)
     );
+    let codecs = primus_tfhe::PbsMessageConfig::new(4)
+        .try_rounded_codecs(codec.ciphertext_modulus(), parameters.cipher_modulus())
+        .unwrap();
     assert_eq!(
-        parameters.lookup_table_compiler(&codec).err(),
+        parameters.lookup_table_compiler(&codecs).err(),
         Some(LookupTableError::InputModulusMismatch)
     );
 }

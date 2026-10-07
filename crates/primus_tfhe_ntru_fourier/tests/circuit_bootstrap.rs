@@ -12,6 +12,7 @@ use primus_modulus::NativeModulus;
 use primus_ntru::NlevParameters;
 use primus_ntru::{FourierNgswCiphertext, FourierNtruSecretKey, NtruParameters, SecretKeyDistr};
 use primus_poly::{PolyLength, Polynomial};
+use primus_tfhe::PbsMessageConfig;
 use primus_tfhe_ntru_fourier::{
     BlindRotationConfig, CircuitBootstrapConfig, CircuitBootstrapEvaluator, DecompositionConfig,
     GadgetEncryptionConfig, TfheContext, TfheParameters,
@@ -140,9 +141,13 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr, sparse: bool) {
         .encryptor(client.external_lwe_secret_key(), &input_codec)
         .unwrap();
     // The same CBS-enabled server key also supports ordinary PBS.
+    let codecs = context
+        .parameters()
+        .pbs_codecs(PbsMessageConfig::new(input_codec.plaintext_modulus()))
+        .unwrap();
     let identity = context
         .parameters()
-        .lookup_table_compiler(&input_codec)
+        .lookup_table_compiler(&codecs)
         .unwrap()
         .compile_fn(|message| message as u64)
         .unwrap();
@@ -201,9 +206,13 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr, sparse: bool) {
         let encryptor = context
             .encryptor(client.external_lwe_secret_key(), &input_codec)
             .unwrap();
+        let codecs = context
+            .parameters()
+            .pbs_codecs(PbsMessageConfig::new(input_codec.plaintext_modulus()))
+            .unwrap();
         let identity = context
             .parameters()
-            .lookup_table_compiler(&input_codec)
+            .lookup_table_compiler(&codecs)
             .unwrap()
             .compile_fn(|m| m as u64)
             .unwrap();
@@ -324,9 +333,13 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr, sparse: bool) {
     // A different compatible key object changes only the binding, not scratch.
     let return_key = server.key_switching_key().clone();
     pbs.try_rebind_return_key(&return_key).unwrap();
+    let codecs = context
+        .parameters()
+        .pbs_codecs(PbsMessageConfig::new(input_codec.plaintext_modulus()))
+        .unwrap();
     let identity = context
         .parameters()
-        .lookup_table_compiler(&input_codec)
+        .lookup_table_compiler(&codecs)
         .unwrap()
         .compile_fn(|m| m as u64)
         .unwrap();

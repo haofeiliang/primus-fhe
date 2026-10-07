@@ -1,10 +1,10 @@
 use primus_decompose::DecompositionBaseLog;
-use primus_encoding::ScaledCodec;
 use primus_fft::{FftTable, RustFftTable, TfheFftTable, TorusFftValue};
 use primus_lattice::LweDimension;
 use primus_lwe::LweEncryptionParameters;
 use primus_modulus::NativeModulus;
 use primus_poly::PolyLength;
+use primus_tfhe::PbsMessageConfig;
 use primus_tfhe_ntru_fourier::{
     BlindRotationConfig, DecompositionConfig, GadgetEncryptionConfig, TfheConfig, TfheContext,
     TfheEvaluationError, TfheParameters,
@@ -70,24 +70,27 @@ fn check<T: TorusFftValue, Table: FftTable>() {
                 .count(),
             2
         );
-        let output_codec = RoundedCodec::new(
-            T::as_from(8u32),
-            context.parameters().accumulator_ntru().cipher_modulus(),
-        );
+        let output_codecs = context
+            .parameters()
+            .pbs_codecs(
+                PbsMessageConfig::new(T::as_from(4u32)).with_output_modulus(T::as_from(8u32)),
+            )
+            .unwrap();
         let compiler = context
             .parameters()
-            .lookup_table_compiler(&input_codec)
-            .unwrap()
-            .try_with_output_codec(&output_codec)
+            .lookup_table_compiler(&output_codecs)
             .unwrap();
-        let decode_codec = RoundedCodec::new(T::as_from(8u32), external_modulus);
         let single = compiler.compile_fn(|m| T::as_from(m + 3)).unwrap();
         let many = compiler
             .compile_interleaved_fn(3, |m, i| T::as_from(m + i + 1))
             .unwrap();
+        let codecs = context
+            .parameters()
+            .pbs_codecs(PbsMessageConfig::new(input_codec.plaintext_modulus()))
+            .unwrap();
         let default = context
             .parameters()
-            .lookup_table_compiler(&input_codec)
+            .lookup_table_compiler(&codecs)
             .unwrap()
             .compile_fn(|m| T::as_from(1 - m))
             .unwrap();
@@ -100,7 +103,10 @@ fn check<T: TorusFftValue, Table: FftTable>() {
             .decryptor(client.external_lwe_secret_key(), &input_codec)
             .unwrap();
         let output_decryptor = context
-            .decryptor(client.external_lwe_secret_key(), &decode_codec)
+            .decryptor(
+                client.external_lwe_secret_key(),
+                output_codecs.output_codec(),
+            )
             .unwrap();
         let mut evaluator = context.evaluator(&server).unwrap();
         let mut output = context.allocate_lwe_ciphertext();
@@ -143,18 +149,17 @@ fn check<T: TorusFftValue, Table: FftTable>() {
             }
         }
         // Public factor products use the same Q-to-q return conversion.
-        let scaled_q = ScaledCodec::new(T::as_from(10u32), external_modulus);
-        let scaled_decryptor = context
-            .decryptor(client.external_lwe_secret_key(), &scaled_q)
+        let mvb_codecs = context
+            .parameters()
+            .factorized_pbs_codecs(
+                PbsMessageConfig::new(T::as_from(4u32)).with_output_modulus(T::as_from(10u32)),
+            )
             .unwrap();
-        let scaled_ring = ScaledCodec::new(
-            T::as_from(10u32),
-            context.parameters().accumulator_ntru().cipher_modulus(),
-        );
+        let scaled_decryptor = context
+            .decryptor(client.external_lwe_secret_key(), mvb_codecs.output_codec())
+            .unwrap();
         let program = context
-            .compile_factorized_lookup_table_fn(&input_codec, &scaled_ring, 2, 2, |m, i| {
-                T::as_from(m + i)
-            })
+            .compile_factorized_lookup_table_fn(&mvb_codecs, 2, 2, |m, i| T::as_from(m + i))
             .unwrap();
         let mut pbs = context.evaluator(&server).unwrap();
         let mut factorized = primus_tfhe_ntru_fourier::FactorizedEvaluator::new(&pbs);

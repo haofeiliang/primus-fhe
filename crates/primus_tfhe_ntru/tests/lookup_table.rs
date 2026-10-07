@@ -7,6 +7,7 @@ use primus_modulus::NativeModulus;
 use primus_ntru::NlevParameters;
 use primus_ntru::{NtruParameters, NtruSecretKey, SecretKeyDistr};
 use primus_poly::PolyLength;
+use primus_tfhe::PbsMessageConfig;
 use primus_tfhe_ntru::{ClientError, ClientKey, GadgetEncryptionConfig, TfheParameters};
 
 const N: usize = 32;
@@ -74,16 +75,17 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
     let key = imported_key([1, 0, 1, 1], NativeModulus::new());
     for t in [3u32, 4, 5] {
         let parameters = parameters_with_plaintext(t);
-        let input_codec = RoundedCodec::new(t, NativeModulus::new());
+        let codecs = parameters.pbs_codecs(PbsMessageConfig::new(t)).unwrap();
+        let input_codec = codecs.input_codec();
         let encryptor = parameters
-            .encryptor(key.external_lwe_secret_key(), &input_codec)
+            .encryptor(key.external_lwe_secret_key(), input_codec)
             .unwrap();
         let decryptor = parameters
-            .decryptor(key.external_lwe_secret_key(), &input_codec)
+            .decryptor(key.external_lwe_secret_key(), input_codec)
             .unwrap();
         let domain_len = t.div_ceil(2);
         let default = parameters
-            .lookup_table_compiler(&input_codec)
+            .lookup_table_compiler(&codecs)
             .unwrap()
             .compile_slice(&vec![t - 1; domain_len as usize])
             .unwrap();
@@ -97,12 +99,10 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
             encryptor.encrypt_padded(domain_len, &mut rng).unwrap_err(),
             ClientError::MessageOutsidePaddedDomain
         );
-        let output_codec = RoundedCodec::new(8, NativeModulus::new());
-        let compiler = parameters
-            .lookup_table_compiler(&input_codec)
-            .unwrap()
-            .try_with_output_codec(&output_codec)
+        let codecs = parameters
+            .pbs_codecs(PbsMessageConfig::new(t).with_output_modulus(8))
             .unwrap();
+        let compiler = parameters.lookup_table_compiler(&codecs).unwrap();
         let values: Vec<_> = (0..domain_len).map(|m| 7 - m).collect();
         let single = compiler.compile_slice(&values).unwrap();
         let many = compiler
@@ -121,7 +121,7 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
 
 // q and Q are independent: codec validity at q does not imply validity at Q.
 #[test]
-fn codec_binding_checks_input_q_and_default_output_encoding() {
+fn codec_binding_checks_domains_without_preparing_an_unused_default() {
     use primus_modulus::BarrettModulus;
     use primus_tfhe_ntru::{DecompositionConfig, LookupTableError, TfheClientError, TfheConfig};
     let basis = DecompositionConfig {
@@ -158,13 +158,89 @@ fn codec_binding_checks_input_q_and_default_output_encoding() {
         parameters.decryptor(key.external_lwe_secret_key(), &foreign),
         Err(TfheClientError::Client(ClientError::CodecModulusMismatch))
     ));
+    let foreign_codecs = PbsMessageConfig::new(4)
+        .try_rounded_codecs(
+            foreign.ciphertext_modulus(),
+            parameters.accumulator_ntru().cipher_modulus(),
+        )
+        .unwrap();
     assert!(matches!(
-        parameters.lookup_table_compiler(&foreign),
+        parameters.lookup_table_compiler(&foreign_codecs),
         Err(LookupTableError::InputModulusMismatch)
     ));
-    let too_large_for_q_ring = RoundedCodec::new(64, BarrettModulus::new(257));
     assert!(matches!(
-        parameters.lookup_table_compiler(&too_large_for_q_ring),
+        parameters.pbs_codecs(PbsMessageConfig::new(64)),
         Err(LookupTableError::OutputEncoding(_))
     ));
+    // t_in=64 is valid at q=257 but cannot encode an unused default at Q=41.
+    // A selected t_out=8 must compile, without shrinking the input to four values.
+    for messages in [
+        PbsMessageConfig::new(8u32),
+        PbsMessageConfig::new(64).with_output_modulus(8),
+    ] {
+        let domain = messages.input_modulus.div_ceil(2) as usize;
+        let codecs = parameters.pbs_codecs(messages).unwrap();
+        let compiler = parameters.lookup_table_compiler(&codecs).unwrap();
+        let single = compiler.compile_fn(|_| 7).unwrap();
+        let many = compiler.compile_interleaved_fn(1, |_, _| 7).unwrap();
+        assert_eq!(single.input_domain_len(), domain);
+        assert_eq!(many.input_domain_len(), domain);
+        assert_eq!(single.polynomial(), many.polynomial());
+        assert_eq!(single.polynomial().as_ref()[0], 36); // round(7*41/8), at Q.
+        assert_eq!(codecs.output_codec().ciphertext_modulus().value(), 257);
+        assert!(matches!(
+            compiler.compile_fn(|_| 8),
+            Err(LookupTableError::OutputOutOfRange { input: 0 })
+        ));
+        assert!(matches!(
+            compiler.compile_interleaved_fn(1, |_, _| 8),
+            Err(LookupTableError::OutputOutOfRange { input: 0 })
+        ));
+
+        let codecs = parameters.factorized_pbs_codecs(messages).unwrap();
+        let factorized = parameters
+            .compile_factorized_lookup_table_fn(&codecs, domain, 3, |_, _| 7)
+            .unwrap();
+        assert_eq!(factorized.input_domain_len(), domain);
+        assert_eq!(factorized.output_plaintext_modulus(), 8);
+        assert_eq!(factorized.output_count(), 3);
+        assert!(
+            factorized
+                .common_polynomial()
+                .as_ref()
+                .iter()
+                .all(|&x| x == 23)
+        ); // 5/2 mod 41.
+        assert!(matches!(
+            parameters.compile_factorized_lookup_table_fn(&codecs, domain, 1, |_, _| 8),
+            Err(LookupTableError::OutputOutOfRange { input: 0 })
+        ));
+    }
+
+    // Check both ciphertext roles before evaluating user callbacks.
+    for (input_q, output_q, expected) in [
+        (129, 41, LookupTableError::InputModulusMismatch),
+        (257, 97, LookupTableError::OutputModulusMismatch),
+    ] {
+        let input_modulus = BarrettModulus::new(input_q);
+        let output_modulus = BarrettModulus::new(output_q);
+        let rounded = PbsMessageConfig::new(8)
+            .try_rounded_codecs(input_modulus, output_modulus)
+            .unwrap();
+        assert_eq!(
+            parameters.lookup_table_compiler(&rounded).unwrap_err(),
+            expected
+        );
+        let factorized = PbsMessageConfig::new(8)
+            .try_factorized_codecs(input_modulus, output_modulus)
+            .unwrap();
+        assert_eq!(
+            parameters
+                .compile_factorized_lookup_table_fn(&factorized, 4, 1, |_, _| panic!(
+                    "mismatched domains must reject before callback"
+                ))
+                .unwrap_err(),
+            expected
+        );
+    }
 }

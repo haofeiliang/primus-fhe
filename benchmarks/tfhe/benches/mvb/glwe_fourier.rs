@@ -6,11 +6,12 @@
 //! Fixtures are initialized only for selected IDs, then reused across samples.
 //! Run: cargo bench -p primus_tfhe_benchmarks --bench mvb --features glwe-fourier,rustfft,tfhe-fft
 
+use primus_tfhe::{FactorizedPbsCodecs, PbsMessageConfig};
 use primus_tfhe_benchmarks::measurement::{Case, Group, metadata};
 use std::hint::black_box;
 
 use criterion::Throughput;
-use primus_encoding::{PlaintextEmbedding, ScaledCodec};
+use primus_encoding::PlaintextEmbedding;
 #[cfg(feature = "rustfft")]
 use primus_fft::RustFftTable;
 #[cfg(all(not(feature = "rustfft"), feature = "tfhe-fft"))]
@@ -35,11 +36,13 @@ fn backend<T: TorusFftValue, Table: FftTable>(c: &mut Group<'_>, backend: &str, 
             sparse,
         } = workload;
         let parameters = glwe::diagnostic(NativeModulus::<T>::new(), order);
-        let input_codec =
-            primus_encoding::RoundedCodec::new(T::as_from(2 * domain), parameters.cipher_modulus());
-        let fixture = std::cell::LazyCell::new(|| {
-            Fixture::<T, Table>::new(parameters, input_codec, workload)
-        });
+        let codecs = parameters
+            .factorized_pbs_codecs(
+                PbsMessageConfig::new(T::as_from(2 * domain)).with_output_modulus(T::TWO),
+            )
+            .unwrap();
+        let fixture =
+            std::cell::LazyCell::new(|| Fixture::<T, Table>::new(parameters, codecs, workload));
         let kind = if sparse { "sparse" } else { "classic" };
         c.throughput(Throughput::Elements(count as u64));
         for &path in workload.paths() {
@@ -91,16 +94,14 @@ struct Fixture<T: TorusFftValue, Table: FftTable> {
     server: primus_tfhe_glwe_fourier::ServerKey<T>,
     input: LweCiphertext<T>,
     workload: ThresholdWorkload,
-    input_codec: primus_encoding::RoundedCodec<T, primus_modulus::NativeModulus<T>>,
-    table_codec: ScaledCodec<T, primus_modulus::NativeModulus<T>>,
-    output_codec: ScaledCodec<T, primus_modulus::NativeModulus<T>>,
+    codecs: FactorizedPbsCodecs<T, primus_modulus::NativeModulus<T>>,
 }
 
 impl<T: TorusFftValue, Table: FftTable> Fixture<T, Table> {
     /// Preserve the seed and key-generation sequence of the matched workloads.
     fn new(
         parameters: primus_tfhe_glwe_fourier::TfheParameters<T>,
-        input_codec: primus_encoding::RoundedCodec<T, primus_modulus::NativeModulus<T>>,
+        codecs: FactorizedPbsCodecs<T, primus_modulus::NativeModulus<T>>,
         workload: ThresholdWorkload,
     ) -> Self {
         let context = TfheContext::<T, Table>::from_parameters(parameters);
@@ -112,20 +113,12 @@ impl<T: TorusFftValue, Table: FftTable> Fixture<T, Table> {
             .try_generate_server_key(&client, blind_rotation, None, &mut rng)
             .unwrap();
         let input = context
-            .encryptor(client.external_lwe_secret_key(), &input_codec)
+            .encryptor(client.external_lwe_secret_key(), codecs.input_codec())
             .unwrap()
             .encrypt_padded(T::as_from(workload.domain / 2), &mut rng)
             .unwrap();
-        let table_codec = ScaledCodec::new(
-            T::TWO,
-            context.parameters().blind_rotation_ggsw().cipher_modulus(),
-        );
-        let output_codec =
-            ScaledCodec::new(T::TWO, context.parameters().small_lwe().cipher_modulus());
         Self {
-            input_codec,
-            table_codec,
-            output_codec,
+            codecs,
             workload,
             context,
             client,
@@ -141,12 +134,14 @@ impl<T: TorusFftValue, Table: FftTable> Fixture<T, Table> {
         }
         let decryptor = self
             .context
-            .decryptor(self.client.external_lwe_secret_key(), &self.input_codec)
+            .decryptor(
+                self.client.external_lwe_secret_key(),
+                self.codecs.output_codec(),
+            )
             .unwrap();
         for (i, output) in outputs.iter().enumerate() {
             assert_eq!(
-                self.output_codec
-                    .decode_value(decryptor.decrypt_phase(output.as_view()).unwrap()),
+                decryptor.decrypt(output.as_view()).unwrap(),
                 self.workload.value(self.workload.domain / 2, i)
             );
         }
@@ -154,6 +149,7 @@ impl<T: TorusFftValue, Table: FftTable> Fixture<T, Table> {
     }
 
     /// One iteration runs k independent PBS calls, one for each threshold output.
+    /// Raw LUT construction preserves the MVB Scaled centers for a matched comparison.
     fn independent(&self, b: &mut criterion::Bencher, verified: &mut bool) {
         let w = self.workload;
         let luts: Vec<_> = (0..w.outputs)
@@ -165,11 +161,12 @@ impl<T: TorusFftValue, Table: FftTable> Fixture<T, Table> {
                         .blind_rotation_ggsw()
                         .poly_length(),
                     T::as_from(2 * w.domain),
-                    self.output_codec.ciphertext_modulus(),
-                    self.table_codec.ciphertext_modulus(),
+                    self.codecs.input_codec().ciphertext_modulus(),
+                    self.codecs.lut_output_codec().ciphertext_modulus(),
                     |m| {
                         Ok(self
-                            .table_codec
+                            .codecs
+                            .lut_output_codec()
                             .encode_value(w.value(m, i), PlaintextEmbedding::Unsigned))
                     },
                 )
@@ -205,11 +202,12 @@ impl<T: TorusFftValue, Table: FftTable> Fixture<T, Table> {
                 .poly_length(),
             w.outputs,
             T::as_from(2 * w.domain),
-            self.output_codec.ciphertext_modulus(),
-            self.table_codec.ciphertext_modulus(),
+            self.codecs.input_codec().ciphertext_modulus(),
+            self.codecs.lut_output_codec().ciphertext_modulus(),
             |m, i| {
                 Ok(self
-                    .table_codec
+                    .codecs
+                    .lut_output_codec()
                     .encode_value(w.value(m, i), PlaintextEmbedding::Unsigned))
             },
         )
@@ -234,13 +232,9 @@ impl<T: TorusFftValue, Table: FftTable> Fixture<T, Table> {
         let w = self.workload;
         let lut = self
             .context
-            .compile_factorized_lookup_table_fn(
-                &self.input_codec,
-                &self.table_codec,
-                w.domain,
-                w.outputs,
-                |m, i| w.value(m, i),
-            )
+            .compile_factorized_lookup_table_fn(&self.codecs, w.domain, w.outputs, |m, i| {
+                w.value(m, i)
+            })
             .unwrap();
         let mut outputs: Vec<_> = (0..w.outputs)
             .map(|_| self.context.allocate_lwe_ciphertext())

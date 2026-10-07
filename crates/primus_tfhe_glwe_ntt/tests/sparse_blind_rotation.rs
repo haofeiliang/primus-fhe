@@ -10,6 +10,7 @@ use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
 use primus_poly::{PolyLength, Polynomial};
+use primus_tfhe::PbsMessageConfig;
 use primus_tfhe_glwe_ntt::{
     ClientKey, GadgetEncryptionConfig, KeyGenerator, NttGlweBlindRotationWorkspace,
     NttGlweBootstrappingKey, PbsOrder, SparseGlweBlindRotationWorkspace, TfheContext,
@@ -185,11 +186,16 @@ fn sparse_rotation_matches_direct_phase_and_classic_with_reused_scratch() {
             check(&Lwe::new(vec![Q - 1; 17]), &lut);
         } else {
             let function = |m: usize| (3 * m as u32 + 1) % T;
+            let codecs = context
+                .parameters()
+                .pbs_codecs(
+                    PbsMessageConfig::new(input_codec.plaintext_modulus())
+                        .with_output_modulus(codec.plaintext_modulus()),
+                )
+                .unwrap();
             let lut = context
                 .parameters()
-                .lookup_table_compiler(&input_codec)
-                .unwrap()
-                .try_with_output_codec(&codec)
+                .lookup_table_compiler(&codecs)
                 .unwrap()
                 .compile_fn(function)
                 .unwrap();

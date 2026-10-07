@@ -5,6 +5,7 @@
 //! Fixtures are initialized only for selected IDs, then reused across samples.
 //! Run: cargo bench -p primus_tfhe_benchmarks --bench sparse_pbs --features glwe-ntt
 
+use primus_tfhe::PbsMessageConfig;
 use primus_tfhe_benchmarks::measurement::{Case, Group, metadata};
 use std::hint::black_box;
 
@@ -21,8 +22,9 @@ fn pbs_pair<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     order: PbsOrder,
 ) {
     let parameters = glwe::diagnostic(ntt_modulus::<T>(), order);
-    let input_codec =
-        primus_encoding::RoundedCodec::new(T::as_from(8u32), parameters.cipher_modulus());
+    let codecs = parameters
+        .pbs_codecs(PbsMessageConfig::new(T::as_from(8u32)))
+        .unwrap();
     let name = format!("fixed_weight/{order:?}");
     // Hold one context/client pair, but build each server key only when selected.
     let fixture = std::cell::LazyCell::new(|| {
@@ -49,13 +51,13 @@ fn pbs_pair<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
             let server = &*server;
             let mut rng = StdRng::seed_from_u64(43);
             let input = context
-                .encryptor(client.external_lwe_secret_key(), &input_codec)
+                .encryptor(client.external_lwe_secret_key(), codecs.input_codec())
                 .unwrap()
                 .encrypt_padded(T::ONE, &mut rng)
                 .unwrap();
             let lut = context
                 .parameters()
-                .lookup_table_compiler(&input_codec)
+                .lookup_table_compiler(&codecs)
                 .unwrap()
                 .compile_fn(|m| T::as_from((m + 1) % 4))
                 .unwrap();
@@ -65,7 +67,7 @@ fn pbs_pair<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
                 evaluator.apply_lookup_table_to(input.as_view(), &lut, output.as_mut_view());
                 assert_eq!(
                     context
-                        .decryptor(client.external_lwe_secret_key(), &input_codec)
+                        .decryptor(client.external_lwe_secret_key(), codecs.output_codec())
                         .unwrap()
                         .decrypt(output.as_view())
                         .unwrap(),
