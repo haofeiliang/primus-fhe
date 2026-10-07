@@ -12,6 +12,7 @@ results are not current validation or security guarantees.
 | Topic | Decision and evidence |
 | --- | --- |
 | Coefficient arithmetic | Retain NTRU pairs, bounded NTT pairs, GLWE u64 grouped accumulation and compact bucket reduction, and NTRU Fourier u64 four-way accumulation within their documented bounds. See [arithmetic](sparse-arithmetic.md), especially the current [grouped/reduction](sparse-arithmetic.md#combined-7-g-and-7-l-reassessment) and [Fourier](sparse-arithmetic.md#current-source-four-way-reassessment) reassessments. Do not add gains measured against different baselines. |
+| Fourier first-product write | Keep clear-then-accumulate. F1 improves binary PBS and classic CBS in measured profiles, but sparse CBS and process variability prevent global acceptance. The [final comparison](fourier-first-write.md) summarizes the corrected 108-process comparison and retains all 54 paired results. |
 | Layout and batching | Retain the internal paired NTRU LUT blind rotation. Aggregation tiles, first-bucket specialization, streaming products and GLWE tile-major keys did not justify adoption in the tested workloads. See [layout and batching](sparse-layout-and-batching.md). |
 | Parameters | GLWE NTT replica/bucket and decomposition candidates are scoped to validated consumers; defaults remain unchanged. PBS success alone does not validate CBS output scales. See the three [parameter reports](#evidence-index). |
 | Shared projection | The first-level prototype was withdrawn: the small complete-request gain did not justify storage, API and error-contract costs. The [study](shared-projection-analysis.md) retains the derivation and negative result. |
@@ -23,6 +24,7 @@ results are not current validation or security guarantees.
 | Report | What it answers |
 | --- | --- |
 | [TFHE baseline](tfhe-baseline.md) | Benchmark coverage, setup, alignment and container measurements from the earlier cleanup |
+| [Fourier first-product write](fourier-first-write.md) | Final F0/F1 full-request comparison, resource costs, build validation and the decision to retain F0 |
 | [Workspace measurements](workspace-measurements.md) | Borrowed resources, parameter sharing, return buffers and storage costs |
 | [Sparse baseline](sparse-baseline.md) | Complete requests, stage diagnosis, retained/peak heap and aggregate scratch |
 | [Sparse arithmetic](sparse-arithmetic.md) | Pair/four-way accumulation, lazy ranges and compact reduction |

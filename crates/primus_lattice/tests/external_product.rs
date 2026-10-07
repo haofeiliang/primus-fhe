@@ -9,7 +9,7 @@ use primus_lattice::GlweDimension;
 use primus_lattice::{
     GadgetSize, GlweSize,
     ggsw::{FourierGgswOwned, Ggsw},
-    glwe::Glwe,
+    glwe::{FourierGlwe, Glwe},
     ngsw::{FourierNgswOwned, Ngsw},
     nlev::{FourierNlevOwned, Nlev},
     ntru::{FourierNtru, Ntru, NttNtru},
@@ -45,15 +45,38 @@ fn fourier_ggsw_workspace_reuse<Table: FftTable>() {
         .collect();
     let input = Glwe::new(values.clone());
     let mut output = Glwe::new(vec![u32::MAX; values.len()]);
+    let mut transformed = FourierGlwe::new(vec![
+        Complex64::new(1.0, -1.0);
+        components * fft.fourier_length()
+    ]);
     let mut workspace = FourierGlweExternalProductWorkspace::new(GadgetSize::new(
         GlweSize::new(GlweDimension::new(components - 1), PolyLength::new(n)),
         DecompositionLevelCount::new(levels),
     ));
-    key.external_product_to(&input, &mut output, &basis, &mut engine, &mut workspace);
-    assert_eq!(output.as_ref(), values);
-    key.set_zero();
-    key.external_product_to(&input, &mut output, &basis, &mut engine, &mut workspace);
-    assert!(output.as_ref().iter().all(|&x| x == 0));
+    let zeros = vec![0; values.len()];
+    for nonzero in [true, false] {
+        if !nonzero {
+            key.set_zero();
+        }
+        let expected = if nonzero { &values } else { &zeros };
+        key.external_product_to(&input, &mut output, &basis, &mut engine, &mut workspace);
+        assert_eq!(output.as_ref(), expected);
+
+        // The Fourier endpoint uses its destination as the accumulator instead
+        // of workspace storage. Neither buffer needs clearing between calls.
+        key.external_product_fourier_to(
+            &input,
+            &mut transformed,
+            &basis,
+            &mut engine,
+            &mut workspace,
+        );
+        if !nonzero {
+            assert!(transformed.as_ref().iter().all(|&x| x == Complex64::ZERO));
+        }
+        transformed.write_torus_form(&mut output, &mut engine);
+        assert_eq!(output.as_ref(), expected);
+    }
 }
 
 #[test]

@@ -73,8 +73,8 @@ impl<T: FheUint> BlindRotationKey<T> {
 /// Both PBS orders share these key materials. [`crate::PbsOrder`] only changes
 /// the order in which the evaluator applies them.
 pub struct ServerKey<T: FheUint> {
-    circuit_bootstrap: Option<Box<CircuitBootstrapKey<T>>>,
     blind_rotation_key: BlindRotationKey<T>,
+    circuit_bootstrap: Option<Box<CircuitBootstrapKey<T>>>,
     glwe_key_switching_key: NttGlweKeySwitchingKey<T>,
 }
 
