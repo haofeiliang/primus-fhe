@@ -8,7 +8,7 @@ pub use encryption_key::EncryptionKey;
 pub use error::{BooleanError, ClientError};
 pub use parameters::LweClientParameters;
 
-use primus_encoding::{PlaintextEmbedding, RoundedCodec};
+use primus_encoding::{MessageDecoder, PlaintextEmbedding};
 use primus_integer::FheUint;
 use primus_lattice::lwe::Lwe;
 use primus_lwe::{LweCiphertext, LweSecretKeyRef};
@@ -195,16 +195,17 @@ impl<'a, T: FheUint, M: RingContext<T>, Key: EncryptionKey<T, M>> Encryptor<'a, 
     }
 }
 
-/// Decrypts rounded TFHE messages under a borrowed external LWE secret.
+/// Decrypts Rounded or Scaled messages under a borrowed external LWE secret.
 ///
 /// Inputs are LWE views; use `as_view()` to borrow an owning ciphertext.
 pub struct Decryptor<'a, T: FheUint, M: RingContext<T>> {
-    codec: &'a RoundedCodec<T, M>,
+    decoder: MessageDecoder<T, M>,
     key: LweSecretKeyRef<'a, T>,
 }
 
 impl<'a, T: FheUint, M: RingContext<T>> Decryptor<'a, T, M> {
-    /// Borrows an LWE secret and its message codec.
+    /// Borrows an LWE secret and copies the prepared decoding state from a
+    /// Rounded or Scaled codec. The codec need not outlive this decryptor.
     ///
     /// # Correctness
     ///
@@ -213,15 +214,22 @@ impl<'a, T: FheUint, M: RingContext<T>> Decryptor<'a, T, M> {
     /// This raw-view constructor cannot check the owning key's recorded modulus;
     /// use the family factory or establish that compatibility before borrowing.
     #[must_use]
-    pub fn new(codec: &'a RoundedCodec<T, M>, key: LweSecretKeyRef<'a, T>) -> Self {
-        Self { codec, key }
+    pub fn new(codec: impl Into<MessageDecoder<T, M>>, key: LweSecretKeyRef<'a, T>) -> Self {
+        Self {
+            decoder: codec.into(),
+            key,
+        }
     }
 
-    /// Decodes a canonical message in `[0, t)` using the input codec.
-    /// For a different LUT output codec, decode [`Self::decrypt_phase`] instead.
+    /// Decodes a canonical message in `[0, t)` using the bound output decoder.
+    ///
+    /// # Correctness
+    /// Inherits [`Self::decrypt_phase`]'s key and residue requirements. The
+    /// producing operation must use the bound message modulus and satisfy its
+    /// decoding error bound; raw ciphertexts carry no encoding metadata.
     pub fn decrypt(&self, ciphertext: Lwe<&[T]>) -> Result<T, ClientError> {
         let phase = self.decrypt_phase(ciphertext)?;
-        Ok(self.codec.decode_value(phase))
+        Ok(self.decoder.decode_value(phase))
     }
 
     /// Returns the noisy LWE phase as a canonical residue in `[0, q)`.
@@ -239,6 +247,6 @@ impl<'a, T: FheUint, M: RingContext<T>> Decryptor<'a, T, M> {
         }
         Ok(self
             .key
-            .decrypt_phase(&ciphertext, self.codec.ciphertext_modulus()))
+            .decrypt_phase(&ciphertext, self.decoder.ciphertext_modulus()))
     }
 }

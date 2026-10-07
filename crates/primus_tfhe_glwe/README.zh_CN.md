@@ -52,7 +52,9 @@
 
 客户端读写接收 LWE 借用视图：向 `encrypt_to` 传入 `output.as_mut_view()`，向 `decrypt` 或 `decrypt_phase` 传入 `ciphertext.as_view()`。分配型加密方法仍返回 `LweCiphertext<T>`；Boolean 客户端遵循同样的约定。
 
-前半区 LUT 使用 `encrypt_padded`，奇数全域 LUT 使用普通 `encrypt`。`parameters.lookup_table_compiler(&input_codec)?` 检查输入密文模数并创建可复用编译器，默认使用输入 codec 编码输出；调用 `compile_fn` / `compile_slice`，或交错、奇数全域方法。`compiler.try_with_output_codec(&codec)?` 可选择其他输出明文模数；传入同一密文模数下的 `RoundedCodec`，再用它解码 `decrypt_phase`。ManyLUT、Boolean、双输入和 MVB 的接口及编码要求见[公共指南](../primus_tfhe/README.zh_CN.md)。
+解密 LUT 结果时，将返回输出 codec 传给 `decryptor(external_secret, &output_codec)`，再调用 `decrypt()`。Rounded 和 Scaled 均可绑定，包括消息模数与输入不同的 MVB 输出。已准备的解码状态按值复制，秘密保持借用；`decrypt_phase` 继续供诊断使用。
+
+前半区 LUT 使用 `encrypt_padded`，奇数全域 LUT 使用普通 `encrypt`。`parameters.lookup_table_compiler(&input_codec)?` 检查输入密文模数并创建可复用编译器，默认使用输入 codec 编码输出；调用 `compile_fn` / `compile_slice`，或交错、奇数全域方法。`compiler.try_with_output_codec(&codec)?` 可选择其他输出明文模数；传入同一密文模数下的 `RoundedCodec`，并将它绑定到输出 decryptor。ManyLUT、Boolean、双输入和 MVB 的接口及编码要求见[公共指南](../primus_tfhe/README.zh_CN.md)。
 
 ## Boolean 与 CBS
 

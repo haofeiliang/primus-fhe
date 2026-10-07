@@ -134,12 +134,19 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
             .err(),
         Some(error.clone())
     );
-    assert_eq!(
-        params
-            .decryptor(wrong_domain.external_lwe_secret_key(), &input_codec)
-            .err(),
-        Some(error)
-    );
+    // Scaled output binding must still validate the owning secret's q.
+    let scaled = primus_encoding::ScaledCodec::new(plain_modulus, modulus);
+    for decoder in [
+        primus_encoding::MessageDecoder::from(&input_codec),
+        primus_encoding::MessageDecoder::from(&scaled),
+    ] {
+        assert_eq!(
+            params
+                .decryptor(wrong_domain.external_lwe_secret_key(), decoder)
+                .err(),
+            Some(error.clone())
+        );
+    }
     let seed = rng.next_u64();
     let mut rng = StdRng::seed_from_u64(seed);
     let mut untouched = StdRng::seed_from_u64(seed);

@@ -1,12 +1,11 @@
 use super::{
-    decode,
     helpers::{check_message, lift_centered_from_raw, validate_moduli},
     integer_scale::IntegerScale,
 };
-use crate::{CodecError, PlaintextEmbedding};
+use crate::{CodecError, MessageDecoder, PlaintextEmbedding};
 use primus_integer::FheUint;
 use primus_modulus::UintModulus;
-use primus_reduce::{Modulus, ModulusSwitch, PrepareModulusSwitch, ReduceAdd};
+use primus_reduce::{Modulus, PrepareModulusSwitch, ReduceAdd};
 
 /// Fixed rounded scaling: `lift(m) * delta mod q`, returned in `[0,q)`, where
 /// `delta = round(q/t)` with ties upward.
@@ -18,10 +17,8 @@ use primus_reduce::{Modulus, ModulusSwitch, PrepareModulusSwitch, ReduceAdd};
 /// Accumulators and decoding inputs must be canonical ciphertext residues.
 #[derive(Clone, Copy, Debug)]
 pub struct ScaledCodec<T: FheUint, M: Modulus<ValueT = T>> {
-    plaintext_modulus: T,
-    decoding_switch: ModulusSwitch<T>,
+    decoder: MessageDecoder<T, M>,
     scale: IntegerScale<T>,
-    ciphertext_modulus: M,
 }
 
 impl<T, M> ScaledCodec<T, M>
@@ -62,13 +59,10 @@ where
         let delta = plaintext_modulus_context
             .prepare_switch_to(ciphertext_modulus)
             .switch(T::ONE);
-        let decoding_switch = ciphertext_modulus.prepare_switch_to(plaintext_modulus_context);
         let scale = IntegerScale::new(delta);
         Ok(Self {
-            plaintext_modulus,
-            decoding_switch,
+            decoder: MessageDecoder::from_validated_moduli(plaintext_modulus, ciphertext_modulus),
             scale,
-            ciphertext_modulus,
         })
     }
 
@@ -76,14 +70,14 @@ where
     #[must_use]
     #[inline]
     pub fn plaintext_modulus(&self) -> T {
-        self.plaintext_modulus
+        self.decoder.plaintext_modulus()
     }
 
     /// Returns the ciphertext modulus used for encoding and decoding.
     #[must_use]
     #[inline]
     pub fn ciphertext_modulus(&self) -> M {
-        self.ciphertext_modulus
+        self.decoder.ciphertext_modulus()
     }
 
     /// Encodes a residue in `[0,t)` into a canonical residue in `[0,q)` with the selected lift.
@@ -113,7 +107,7 @@ where
         };
         let value = self.scale.encode_magnitude(m);
         if negative {
-            self.scale.neg_nonzero(value, self.ciphertext_modulus)
+            self.scale.neg_nonzero(value, self.ciphertext_modulus())
         } else {
             value
         }
@@ -130,9 +124,9 @@ where
         self.validate(messages, output.len());
         self.scale.apply::<false, _, _>(
             output.iter_mut().zip(messages.iter().copied()),
-            self.plaintext_modulus,
+            self.plaintext_modulus(),
             embedding,
-            self.ciphertext_modulus,
+            self.ciphertext_modulus(),
         );
     }
 
@@ -150,9 +144,9 @@ where
                 let m = *out;
                 (out, m)
             }),
-            self.plaintext_modulus,
+            self.plaintext_modulus(),
             embedding,
-            self.ciphertext_modulus,
+            self.ciphertext_modulus(),
         );
     }
 
@@ -177,9 +171,9 @@ where
         self.validate(messages, accumulator.len());
         self.scale.apply::<true, _, _>(
             accumulator.iter_mut().zip(messages.iter().copied()),
-            self.plaintext_modulus,
+            self.plaintext_modulus(),
             embedding,
-            self.ciphertext_modulus,
+            self.ciphertext_modulus(),
         );
     }
 
@@ -204,7 +198,7 @@ where
     #[must_use]
     #[inline]
     pub fn decode_value(&self, value: T) -> T {
-        self.decoding_switch.switch(value)
+        self.decoder.decode_value(value)
     }
 
     /// Replaces ciphertext residues with canonical plaintext residues in `[0,t)`.
@@ -213,7 +207,7 @@ where
     ///
     /// Every input must be in `[0,q)`. This range is not checked.
     pub fn decode_slice_assign(&self, values: &mut [T]) {
-        decode::assign(&self.decoding_switch, values);
+        self.decoder.decode_slice_assign(values);
     }
 
     /// Decodes into an equally sized output slice of canonical residues in `[0,t)`.
@@ -226,7 +220,7 @@ where
     ///
     /// Panics if the slices differ in length, before writing any output.
     pub fn decode_slice_to(&self, input: &[T], output: &mut [T]) {
-        decode::to(&self.decoding_switch, input, output);
+        self.decoder.decode_slice_to(input, output);
     }
 }
 
@@ -270,4 +264,10 @@ where
         return Err(CodecError::InsufficientScaleRecovery);
     }
     Ok(())
+}
+
+impl<T: FheUint, M: Modulus<ValueT = T>> From<&ScaledCodec<T, M>> for MessageDecoder<T, M> {
+    fn from(codec: &ScaledCodec<T, M>) -> Self {
+        codec.decoder
+    }
 }

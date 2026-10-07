@@ -43,7 +43,7 @@ fn main() {
         .encryptor(external_secret, codecs.input_codec())
         .unwrap();
     let decryptor = context
-        .decryptor(external_secret, codecs.input_codec())
+        .decryptor(external_secret, codecs.output_codec())
         .unwrap();
     let mut input = context.allocate_lwe_ciphertext();
     let mut flags = vec![0; OUTPUTS];
@@ -71,11 +71,9 @@ fn main() {
         // Server -> client: return one ciphertext per threshold, reusing all buffers.
         evaluator.apply_lookup_table_to(input.as_view(), &program, &mut outputs, &mut pbs);
 
-        // Client: decrypt phases and decode with the agreed output codec.
+        // Client: decrypt with the agreed Scaled output codec.
         for (flag, output) in flags.iter_mut().zip(&outputs) {
-            *flag = codecs
-                .output_codec()
-                .decode_value(decryptor.decrypt_phase(output.as_view()).unwrap());
+            *flag = decryptor.decrypt(output.as_view()).unwrap();
         }
         for (&flag, &threshold) in flags.iter().zip(&thresholds) {
             assert_eq!(flag, Word::from(score as usize >= threshold));

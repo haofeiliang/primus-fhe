@@ -101,13 +101,13 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
             .encryptor(client.external_lwe_secret_key(), &input_codec)
             .unwrap();
         let decryptor = context
-            .decryptor(client.external_lwe_secret_key(), &input_codec)
+            .decryptor(client.external_lwe_secret_key(), &codec)
             .unwrap();
         let check = |outputs: &[LweCiphertext<u32>], message: usize| {
             for (i, output) in outputs.iter().enumerate() {
                 assert_eq!(output.dimension(), dimension);
                 assert_eq!(
-                    codec.decode_value(decryptor.decrypt_phase(output.as_view()).unwrap()),
+                    decryptor.decrypt(output.as_view()).unwrap(),
                     value(message, i)
                 );
             }
@@ -292,7 +292,7 @@ fn factorized_pbs_accepts_ternary_controls() {
             .encryptor(client.external_lwe_secret_key(), &input_codec)
             .unwrap();
         let decryptor = context
-            .decryptor(client.external_lwe_secret_key(), &input_codec)
+            .decryptor(client.external_lwe_secret_key(), &codec)
             .unwrap();
         let mut pbs = context.evaluator(&server).unwrap();
         let mut evaluator = primus_tfhe_glwe_ntt::FactorizedEvaluator::new(&pbs);
@@ -303,7 +303,7 @@ fn factorized_pbs_accepts_ternary_controls() {
             evaluator.apply_lookup_table_to(input.as_view(), &lut, &mut outputs, &mut pbs);
             for (i, output) in outputs.iter().enumerate() {
                 assert_eq!(
-                    codec.decode_value(decryptor.decrypt_phase(output.as_view()).unwrap()),
+                    decryptor.decrypt(output.as_view()).unwrap(),
                     value(message as usize, i)
                 );
             }

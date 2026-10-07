@@ -121,7 +121,7 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(order: PbsOrder, ternary: b
             .encryptor(client.external_lwe_secret_key(), &input_codec)
             .unwrap();
         let decryptor = context
-            .decryptor(client.external_lwe_secret_key(), &input_codec)
+            .decryptor(client.external_lwe_secret_key(), &codec)
             .unwrap();
         let dimension = context.parameters().external_lwe_dimension().get();
         assert_eq!(
@@ -163,10 +163,7 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(order: PbsOrder, ternary: b
                     .abs();
                 assert!(error * T::TORUS_SCALE < 0.01);
                 pbs.apply_lookup_table_to(input.as_view(), &singles[i], reference.as_mut_view());
-                assert_eq!(
-                    codec.decode_value(decryptor.decrypt_phase(reference.as_view()).unwrap()),
-                    expected
-                );
+                assert_eq!(decryptor.decrypt(reference.as_view()).unwrap(), expected);
             }
         }
     }
@@ -241,13 +238,13 @@ fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
         assert_eq!(outputs, before);
     }
     let decryptor = context
-        .decryptor(client.external_lwe_secret_key(), &input_codec)
+        .decryptor(client.external_lwe_secret_key(), &codec)
         .unwrap();
     let outputs = evaluator.apply_lookup_table(input.as_view(), &lut, &mut pbs);
     assert_eq!(
         outputs
             .iter()
-            .map(|output| codec.decode_value(decryptor.decrypt_phase(output.as_view()).unwrap()))
+            .map(|output| decryptor.decrypt(output.as_view()).unwrap())
             .collect::<Vec<_>>(),
         [3, 4, 5]
     );
@@ -255,13 +252,9 @@ fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
         .compile_factorized_lookup_table_fn(&input_codec, &codec, DOMAIN, 1, |m, _| m as u32)
         .unwrap();
     assert_eq!(
-        codec.decode_value(
-            decryptor
-                .decrypt_phase(
-                    evaluator.apply_lookup_table(input.as_view(), &single, &mut pbs)[0].as_view()
-                )
-                .unwrap()
-        ),
+        decryptor
+            .decrypt(evaluator.apply_lookup_table(input.as_view(), &single, &mut pbs)[0].as_view())
+            .unwrap(),
         3
     );
 

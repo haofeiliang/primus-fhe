@@ -1,6 +1,6 @@
 //! Single-modulus contracts checked with independent `u128` arithmetic.
 
-use primus_encoding::{PlaintextEmbedding, RoundedCodec, ScaledCodec};
+use primus_encoding::{MessageDecoder, PlaintextEmbedding, RoundedCodec, ScaledCodec};
 use primus_integer::FheUint;
 use primus_modulus::{BarrettModulus, NativeModulus, PowOf2Modulus, UintModulus};
 use primus_reduce::{PrepareModulusSwitch, ReduceAdd};
@@ -245,6 +245,21 @@ fn check_decode<
     assert_eq!(output, expected, "t={t}, q={q}");
     for (&phase, &decoded) in phases.iter().zip(&expected) {
         assert_eq!(codec.decode_value(phase), decoded);
+    }
+    // Both codecs expose the same prepared decoder; check it against the
+    // integer oracle, including cells that do not contain encoding centers.
+    let scaled = ScaledCodec::<T, _>::try_new(to_value(t), modulus).ok();
+    for decoder in std::iter::once(MessageDecoder::from(&codec))
+        .chain(scaled.as_ref().map(MessageDecoder::from))
+    {
+        decoder.decode_slice_to(&phases, &mut output);
+        assert_eq!(output, expected);
+        for (&phase, &decoded) in phases.iter().zip(&expected) {
+            assert_eq!(decoder.decode_value(phase), decoded);
+        }
+        output.copy_from_slice(&phases);
+        decoder.decode_slice_assign(&mut output);
+        assert_eq!(output, expected);
     }
     let mut inplace = phases;
     codec.decode_slice_assign(&mut inplace);

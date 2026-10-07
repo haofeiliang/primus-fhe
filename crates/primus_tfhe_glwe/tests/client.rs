@@ -509,12 +509,19 @@ fn message_codec_must_match_the_key_ciphertext_modulus() {
             .err(),
         Some(error.clone())
     );
-    assert_eq!(
-        parameters
-            .decryptor(client.external_lwe_secret_key(), &codec)
-            .err(),
-        Some(error)
-    );
+    // Output binding must reject the wrong q for either encoding family.
+    let scaled = primus_encoding::ScaledCodec::new(4, codec.ciphertext_modulus());
+    for decoder in [
+        primus_encoding::MessageDecoder::from(&codec),
+        primus_encoding::MessageDecoder::from(&scaled),
+    ] {
+        assert_eq!(
+            parameters
+                .decryptor(client.external_lwe_secret_key(), decoder)
+                .err(),
+            Some(error.clone())
+        );
+    }
     assert_eq!(
         parameters.public_encryptor(&public, &codec).err(),
         Some(ClientError::CodecModulusMismatch)

@@ -1,4 +1,4 @@
-use primus_encoding::RoundedCodec;
+use primus_encoding::{MessageDecoder, RoundedCodec};
 use primus_integer::FheUint;
 use primus_lwe::{LwePublicKey, LweSecretKey};
 use primus_reduce::RingContext;
@@ -33,15 +33,17 @@ impl<T: FheUint, M: RingContext<T>, LM: RingContext<T>> TfheParameters<T, M, LM>
     }
 
     /// Binds the active external secret and a decoder at the key's ciphertext modulus.
-    /// The selected message encoding must match the input ciphertext, including LUT outputs.
+    /// Accepts a Rounded or Scaled output codec, copying its prepared decoding
+    /// state. Its message modulus and recovery bound must match the ciphertext.
     pub fn decryptor<'a>(
         &self,
         key: &'a LweSecretKey<T>,
-        codec: &'a RoundedCodec<T, LM>,
+        codec: impl Into<MessageDecoder<T, LM>>,
     ) -> Result<Decryptor<'a, T, LM>, TfheClientError> {
         self.check_external_secret_key(key)?;
-        self.check_codec(codec)?;
-        Ok(Decryptor::new(codec, key.as_view()))
+        let decoder = codec.into();
+        self.check_codec_modulus(decoder.ciphertext_modulus())?;
+        Ok(Decryptor::new(decoder, key.as_view()))
     }
 
     /// Generates an LWE public key using only the external secret and its fresh noise.
@@ -69,10 +71,8 @@ impl<T: FheUint, M: RingContext<T>, LM: RingContext<T>> TfheParameters<T, M, LM>
         ))
     }
 
-    fn check_codec(&self, codec: &RoundedCodec<T, LM>) -> Result<(), ClientError> {
-        if codec.ciphertext_modulus().explicit_value()
-            != self.external_lwe().cipher_modulus().explicit_value()
-        {
+    fn check_codec_modulus(&self, modulus: LM) -> Result<(), ClientError> {
+        if modulus.explicit_value() != self.external_lwe().cipher_modulus().explicit_value() {
             return Err(ClientError::CodecModulusMismatch);
         }
         Ok(())
@@ -83,7 +83,7 @@ impl<T: FheUint, M: RingContext<T>, LM: RingContext<T>> TfheParameters<T, M, LM>
         &'a self,
         codec: &'a RoundedCodec<T, LM>,
     ) -> Result<LweClientParameters<'a, T, LM>, ClientError> {
-        self.check_codec(codec)?;
+        self.check_codec_modulus(codec.ciphertext_modulus())?;
         let noise = self.external_lwe().noise_distribution();
         LweClientParameters::try_from_parts(self.external_lwe_dimension(), codec, noise)
     }

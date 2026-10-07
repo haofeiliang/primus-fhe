@@ -53,7 +53,7 @@ impl<'a, T: FheUint, M: RingContext<T>> BooleanDecryptor<'a, T, M> {
     /// Creates a Boolean decryptor and validates the required plaintext
     /// modulus.
     pub fn try_new(inner: Decryptor<'a, T, M>) -> Result<Self, BooleanError> {
-        validate_boolean_modulus(inner.codec.plaintext_modulus())?;
+        validate_boolean_modulus(inner.decoder.plaintext_modulus())?;
         Ok(Self { inner })
     }
 

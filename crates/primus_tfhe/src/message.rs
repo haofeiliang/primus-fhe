@@ -122,6 +122,8 @@ impl<Input, LutOutput, Output> PbsCodecs<Input, LutOutput, Output> {
     }
 
     /// Returns the output codec for decoding returned ciphertexts at external q.
+    /// Pass this codec to the context's `decryptor` factory for `decrypt()` with
+    /// the selected output message modulus, including Scaled MVB outputs.
     /// The returned phase still includes any Q→q rounding and return-stage noise.
     #[must_use]
     pub fn output_codec(&self) -> &Output {

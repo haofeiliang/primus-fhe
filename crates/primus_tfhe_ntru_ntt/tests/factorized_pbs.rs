@@ -67,7 +67,7 @@ fn check_complete(distr: SecretKeyDistr) {
         .encryptor(client.external_lwe_secret_key(), &input_codec)
         .unwrap();
     let decryptor = context
-        .decryptor(client.external_lwe_secret_key(), &input_codec)
+        .decryptor(client.external_lwe_secret_key(), &codec)
         .unwrap();
     let mut pbs = context.evaluator(&server).unwrap();
     let mut evaluator = primus_tfhe_ntru_ntt::FactorizedEvaluator::new(&pbs);
@@ -84,7 +84,7 @@ fn check_complete(distr: SecretKeyDistr) {
         for (i, output) in outputs.iter().enumerate() {
             assert_eq!(output.dimension(), dimension);
             assert_eq!(
-                codec.decode_value(decryptor.decrypt_phase(output.as_view()).unwrap()),
+                decryptor.decrypt(output.as_view()).unwrap(),
                 value(message, i),
                 "message={message}, output={i}"
             );
@@ -112,8 +112,8 @@ fn check_complete(distr: SecretKeyDistr) {
                 for (single, output) in singles.iter().zip(&outputs) {
                     pbs.apply_lookup_table_to(input.as_view(), single, reference.as_mut_view());
                     assert_eq!(
-                        codec.decode_value(decryptor.decrypt_phase(reference.as_view()).unwrap()),
-                        codec.decode_value(decryptor.decrypt_phase(output.as_view()).unwrap())
+                        decryptor.decrypt(reference.as_view()).unwrap(),
+                        decryptor.decrypt(output.as_view()).unwrap()
                     );
                 }
             }
@@ -136,6 +136,9 @@ fn check_complete(distr: SecretKeyDistr) {
     // For t_out=2, Delta is odd: the initializer must handle modular Delta/2,
     // whose canonical value is large, before any noisy public multiplication.
     let binary_codec = ScaledCodec::new(2, modulus);
+    let binary_decryptor = context
+        .decryptor(client.external_lwe_secret_key(), &binary_codec)
+        .unwrap();
     let binary = context
         .compile_factorized_lookup_table_fn(&input_codec, &binary_codec, DOMAIN, 1, |m, _| {
             u32::from(m >= 3)
@@ -145,7 +148,7 @@ fn check_complete(distr: SecretKeyDistr) {
         let input = encryptor.encrypt_padded(message, &mut rng).unwrap();
         let output = evaluator.apply_lookup_table(input.as_view(), &binary, &mut pbs);
         assert_eq!(
-            binary_codec.decode_value(decryptor.decrypt_phase(output[0].as_view()).unwrap()),
+            binary_decryptor.decrypt(output[0].as_view()).unwrap(),
             u32::from(message >= 3)
         );
     }

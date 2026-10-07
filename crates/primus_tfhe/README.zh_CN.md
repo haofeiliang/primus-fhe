@@ -224,7 +224,9 @@ assert_eq!(decryptor.decrypt(output.as_view())?, 3);
 
 GLWE 三个角色使用同一密文模数；NTRU 根据同一个 `t_out` 派生两个输出 codec，LUT 系数使用 Q，返回密文使用 q。返回路径缩放既有相位，并不重新生成精确的 q 编码中心，须预算 Q→q 舍入与 key-switch 噪声。在 q 下准备 Scaled codec 还会检查该 codec 自身的尺度恢复条件。
 
-MVB 使用 `factorized_pbs_codecs`，把输入与 LUT 输出 codec 传给 `context.compile_factorized_lookup_table_fn`。返回相位通过 `codecs.output_codec().decode_value(decryptor.decrypt_phase(output.as_view())?)` 解码；当前普通客户端 decryptor 仍绑定 Rounded 编码。即使 `t_out=t_in`，factorized 输出也保持 Scaled 编码。
+MVB 使用 `factorized_pbs_codecs`，把输入与 LUT 输出 codec 传给 `context.compile_factorized_lookup_table_fn`。与普通 PBS/ManyLUT 相同，用 `context.decryptor(external_secret, codecs.output_codec())?` 绑定，再调用 `decryptor.decrypt(output.as_view())?`。即使 `t_out=t_in`，factorized 输出也保持 Scaled 编码。
+
+decryptor 复制 codec 已准备好的 `MessageDecoder`，只借用秘密。Rounded 与 Scaled 共用 q→t 解码，但保留各自的编码中心和恢复界。输入加密与输出解密可以使用不同消息模数。`decrypt_phase` 保留给噪声诊断或高级组合，本身不解码消息。
 
 高级组合仍可显式构造 `RoundedCodec`/`ScaledCodec` 并使用原有编译接口。`LookupTableCompiler::try_new` 直接接收配好的输入与 LUT 输出 codec，无需先准备默认输出。`try_with_output_codec` 只更改编译器的输出 codec、检查其密文模数，保持输入几何不变；显式接口的调用方自行保留对应输出 decoder。奇数全域方法及原始 Boolean/CBS 输出尺度继续遵守各自契约。
 
@@ -232,7 +234,7 @@ MVB 使用 `factorized_pbs_codecs`，把输入与 LUT 输出 codec 传给 `conte
 
 ## 奇数全域 PBS
 
-使用 `compiler.compile_odd_full_domain_fn(function)` 或其 `_slice` 形式；需要不同输出编码时通过 `try_with_output_codec` 配置。这些方法编程整个 **`0..t_in`**。要求奇数 `t_in >= 3`、`t_in <= N`；切片按输入顺序包含 恰好 `t_in` 个输出。输入用普通 `encrypt`，随后复用 `apply_lookup_table_to`。 默认编码用 `decrypt` 解码；显式指定输出编码时使用对应 codec。 例如，输入与 accumulator 共用密文模数、`t_in=15`，输出 codec 配置 `t_out=8`：
+使用 `compiler.compile_odd_full_domain_fn(function)` 或其 `_slice` 形式；需要不同输出编码时通过 `try_with_output_codec` 配置。这些方法编程整个 **`0..t_in`**。要求奇数 `t_in >= 3`、`t_in <= N`；切片按输入顺序包含 恰好 `t_in` 个输出。输入用普通 `encrypt`，随后复用 `apply_lookup_table_to`。 默认或显式指定输出编码，都将对应输出 codec 绑定到 decryptor 后调用 `decrypt`。 例如，输入与 accumulator 共用密文模数、`t_in=15`，输出 codec 配置 `t_out=8`：
 
 ```rust,ignore
 let input_codec = primus_encoding::RoundedCodec::new(15, context.parameters().cipher_modulus());
@@ -241,7 +243,8 @@ let compiler = context.parameters().lookup_table_compiler(&input_codec)?
 let lut = compiler.compile_odd_full_domain_fn(|x| ((x * x + 3) % 8) as u32).unwrap();
 let input = encryptor.encrypt(14u32, &mut rng).unwrap();
 evaluator.apply_lookup_table_to(input.as_view(), &lut, output.as_mut_view());
-let message = output_codec.decode_value(decryptor.decrypt_phase(output.as_view()).unwrap());
+let decryptor = context.decryptor(external_secret, &output_codec)?;
+let message = decryptor.decrypt(output.as_view())?;
 assert_eq!(message, 7);
 ```
 

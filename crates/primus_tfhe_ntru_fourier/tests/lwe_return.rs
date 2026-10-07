@@ -99,6 +99,9 @@ fn check<T: TorusFftValue, Table: FftTable>() {
         let decryptor = context
             .decryptor(client.external_lwe_secret_key(), &input_codec)
             .unwrap();
+        let output_decryptor = context
+            .decryptor(client.external_lwe_secret_key(), &decode_codec)
+            .unwrap();
         let mut evaluator = context.evaluator(&server).unwrap();
         let mut output = context.allocate_lwe_ciphertext();
         let mut outputs = vec![output.clone(); 3];
@@ -108,12 +111,12 @@ fn check<T: TorusFftValue, Table: FftTable>() {
             evaluator.apply_interleaved_lookup_table_to(input.as_view(), &many, &mut outputs);
             assert!(output.as_ref().iter().all(|&x| x < q));
             assert_eq!(
-                decode_codec.decode_value(decryptor.decrypt_phase(output.as_view()).unwrap()),
+                output_decryptor.decrypt(output.as_view()).unwrap(),
                 T::as_from(m + 3)
             );
             for (i, output) in outputs.iter().enumerate() {
                 assert_eq!(
-                    decode_codec.decode_value(decryptor.decrypt_phase(output.as_view()).unwrap()),
+                    output_decryptor.decrypt(output.as_view()).unwrap(),
                     T::as_from(m + i + 1)
                 );
             }
@@ -141,6 +144,9 @@ fn check<T: TorusFftValue, Table: FftTable>() {
         }
         // Public factor products use the same Q-to-q return conversion.
         let scaled_q = ScaledCodec::new(T::as_from(10u32), external_modulus);
+        let scaled_decryptor = context
+            .decryptor(client.external_lwe_secret_key(), &scaled_q)
+            .unwrap();
         let scaled_ring = ScaledCodec::new(
             T::as_from(10u32),
             context.parameters().accumulator_ntru().cipher_modulus(),
@@ -156,7 +162,7 @@ fn check<T: TorusFftValue, Table: FftTable>() {
         factorized.apply_lookup_table_to(input.as_view(), &program, &mut outputs[..2], &mut pbs);
         for (i, output) in outputs[..2].iter().enumerate() {
             assert_eq!(
-                scaled_q.decode_value(decryptor.decrypt_phase(output.as_view()).unwrap()),
+                scaled_decryptor.decrypt(output.as_view()).unwrap(),
                 T::as_from(i + 1)
             );
         }
@@ -187,7 +193,7 @@ fn check<T: TorusFftValue, Table: FftTable>() {
                 for (i, output) in outputs[..2].iter().enumerate() {
                     assert!(output.as_ref().iter().all(|&x| x < q));
                     assert_eq!(
-                        scaled_q.decode_value(decryptor.decrypt_phase(output.as_view()).unwrap()),
+                        scaled_decryptor.decrypt(output.as_view()).unwrap(),
                         T::as_from(m + i)
                     );
                 }
@@ -195,7 +201,7 @@ fn check<T: TorusFftValue, Table: FftTable>() {
             sparse.apply_interleaved_lookup_table_to(input.as_view(), &many, &mut outputs);
             for (i, output) in outputs.iter().enumerate() {
                 assert_eq!(
-                    decode_codec.decode_value(decryptor.decrypt_phase(output.as_view()).unwrap()),
+                    output_decryptor.decrypt(output.as_view()).unwrap(),
                     T::as_from(i + 2)
                 );
             }

@@ -1,4 +1,4 @@
-use primus_encoding::RoundedCodec;
+use primus_encoding::{MessageDecoder, RoundedCodec};
 use primus_integer::FheUint;
 use primus_lwe::LwePublicKey;
 use primus_reduce::RingContext;
@@ -34,16 +34,18 @@ impl<T: FheUint, M: RingContext<T>> TfheParameters<T, M> {
     }
 
     /// Binds the active external secret and a decoder at the key's ciphertext modulus.
-    /// The selected message encoding must match the input ciphertext, including LUT outputs.
+    /// Accepts a Rounded or Scaled output codec, copying its prepared decoding
+    /// state. Its message modulus and recovery bound must match the ciphertext.
     /// Inherits [`Self::encryptor`]'s signed-secret range contract.
     pub fn decryptor<'a>(
         &self,
         key: ExternalLweSecretKey<'a, T>,
-        codec: &'a RoundedCodec<T, M>,
+        codec: impl Into<MessageDecoder<T, M>>,
     ) -> Result<Decryptor<'a, T, M>, TfheClientError> {
         let key = key.bind(self)?;
-        self.check_codec(codec)?;
-        Ok(Decryptor::new(codec, key))
+        let decoder = codec.into();
+        self.check_codec_modulus(decoder.ciphertext_modulus())?;
+        Ok(Decryptor::new(decoder, key))
     }
 
     /// Generates an LWE public key using only the selected external secret.
@@ -84,8 +86,8 @@ impl<T: FheUint, M: RingContext<T>> TfheParameters<T, M> {
         })
     }
 
-    fn check_codec(&self, codec: &RoundedCodec<T, M>) -> Result<(), ClientError> {
-        if codec.ciphertext_modulus().explicit_value() != self.cipher_modulus().explicit_value() {
+    fn check_codec_modulus(&self, modulus: M) -> Result<(), ClientError> {
+        if modulus.explicit_value() != self.cipher_modulus().explicit_value() {
             return Err(ClientError::CodecModulusMismatch);
         }
         Ok(())
@@ -97,7 +99,7 @@ impl<T: FheUint, M: RingContext<T>> TfheParameters<T, M> {
         &'a self,
         codec: &'a RoundedCodec<T, M>,
     ) -> Result<LweClientParameters<'a, T, M>, ClientError> {
-        self.check_codec(codec)?;
+        self.check_codec_modulus(codec.ciphertext_modulus())?;
         let noise = match self.pbs_order() {
             crate::PbsOrder::BootstrapKeyswitch => self.small_lwe().noise_distribution(),
             crate::PbsOrder::KeyswitchBootstrap => self.blind_rotation_ggsw().noise_distribution(),

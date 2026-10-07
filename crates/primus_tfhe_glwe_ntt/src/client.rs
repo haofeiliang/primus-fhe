@@ -1,6 +1,6 @@
 //! External LWE client constructors for the bound TFHE context.
 
-use primus_encoding::RoundedCodec;
+use primus_encoding::{MessageDecoder, RoundedCodec};
 use primus_integer::FheUint;
 use primus_lwe::LwePublicKey;
 use primus_modulus::BarrettModulus;
@@ -35,12 +35,13 @@ where
         self.parameters().public_encryptor(public_key, codec)
     }
 
-    /// Creates a decryptor after checking only the external secret.
+    /// Binds a Rounded or Scaled output codec after checking the external
+    /// secret and ciphertext modulus. Copies the prepared decoding state.
     /// Inherits [`primus_tfhe_glwe::TfheParameters::decryptor`]'s signed-range contract.
     pub fn decryptor<'a>(
-        &'a self,
+        &self,
         secret_key: ExternalLweSecretKey<'a, T>,
-        codec: &'a RoundedCodec<T, BarrettModulus<T>>,
+        codec: impl Into<MessageDecoder<T, BarrettModulus<T>>>,
     ) -> Result<Decryptor<'a, T>, TfheClientError> {
         self.parameters().decryptor(secret_key, codec)
     }

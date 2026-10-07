@@ -52,7 +52,9 @@ Choose a `RoundedCodec` independently of key generation. Bind the external key w
 
 Client reads/writes accept borrowed LWE views: pass `output.as_mut_view()` to `encrypt_to` and `ciphertext.as_view()` to `decrypt` or `decrypt_phase`. Allocating encryption methods still return `LweCiphertext<T>`; Boolean clients follow the same convention.
 
-Use `encrypt_padded` for front-half LUTs and ordinary `encrypt` for odd full domains. `parameters.lookup_table_compiler(&input_codec)?` checks the input ciphertext modulus and creates a reusable compiler whose default output codec is the input codec; call `compile_fn` / `compile_slice`, or the interleaved / odd full-domain methods. `compiler.try_with_output_codec(&codec)?` selects a different output plaintext modulus. Supply a `RoundedCodec` at the same ciphertext modulus and use it to decode `decrypt_phase`. ManyLUT, Boolean, bivariate and MVB interfaces and encodings are described in the [common guide](../primus_tfhe/README.md).
+For LUT results, pass the returned-output codec to `decryptor(external_secret, &output_codec)` and call `decrypt()`. Both Rounded and Scaled codecs are accepted, including MVB output with a different message modulus. The prepared decoding state is copied; the secret remains borrowed. `decrypt_phase` remains available for diagnostics.
+
+Use `encrypt_padded` for front-half LUTs and ordinary `encrypt` for odd full domains. `parameters.lookup_table_compiler(&input_codec)?` checks the input ciphertext modulus and creates a reusable compiler whose default output codec is the input codec; call `compile_fn` / `compile_slice`, or the interleaved / odd full-domain methods. `compiler.try_with_output_codec(&codec)?` selects a different output plaintext modulus. Supply a `RoundedCodec` at the same ciphertext modulus and bind it to the output decryptor. ManyLUT, Boolean, bivariate and MVB interfaces and encodings are described in the [common guide](../primus_tfhe/README.md).
 
 ## Boolean and CBS
 

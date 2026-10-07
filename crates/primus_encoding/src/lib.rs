@@ -3,7 +3,8 @@
 //! [`RoundedCodec`] rounds each scaled message; [`ScaledCodec`] uses a fixed
 //! rounded integer scale. Both support native and explicit ciphertext moduli.
 //! The optional `rns` feature provides BFV coefficient scaling and decoding over
-//! an RNS ciphertext basis. Public types are available at the crate root.
+//! an RNS ciphertext basis. [`MessageDecoder`] reuses either single-modulus
+//! codec's prepared q-to-t decoding. Public types are available at the crate root.
 //! These codecs do not implement integer slot packing or CKKS canonical embedding.
 //! [`phase_error_magnitude`] measures an extracted phase against an explicitly
 //! expected encoded phase, independently of decoding or secret keys.
@@ -19,6 +20,7 @@ mod phase_error;
 mod rounded;
 mod scaled;
 
+pub use decode::MessageDecoder;
 pub use phase_error::{phase_error_magnitude, phase_error_magnitude_slice_to};
 pub use rounded::RoundedCodec;
 pub use scaled::ScaledCodec;

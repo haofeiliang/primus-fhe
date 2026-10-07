@@ -224,7 +224,9 @@ Omit `.with_output_modulus(4)` for equal message moduli. Preparation validates t
 
 GLWE uses a common ciphertext modulus for all three roles. NTRU derives both output codecs from the same `t_out`, with Q for LUT coefficients and q for returned ciphertexts. The return path rescales an existing phase; it does not recreate the exact q-encoding center. Budget Q→q rounding and key-switch noise. Preparing a Scaled codec at q additionally checks that codec's own scale-recovery condition.
 
-For MVB, use `factorized_pbs_codecs` and pass its input and LUT-output codecs to `context.compile_factorized_lookup_table_fn`. Decode the returned phase with `codecs.output_codec().decode_value(decryptor.decrypt_phase(output.as_view())?)`; the normal client decryptor currently binds Rounded encoding. Factorized outputs keep Scaled encoding even when `t_out=t_in`.
+For MVB, use `factorized_pbs_codecs` and pass its input and LUT-output codecs to `context.compile_factorized_lookup_table_fn`. Bind `context.decryptor(external_secret, codecs.output_codec())?`, then call `decryptor.decrypt(output.as_view())?`, just as for ordinary PBS or ManyLUT. Factorized outputs keep Scaled encoding even when `t_out=t_in`.
+
+The decryptor copies the codec’s prepared `MessageDecoder` and borrows only the secret. Rounded and Scaled codecs share q→t decoding, while retaining their distinct encoding centers and recovery bounds. Input encryption and output decryption may use different message moduli. Keep `decrypt_phase` for noise diagnostics or advanced composition; it does not decode a message.
 
 Explicit `RoundedCodec`/`ScaledCodec` construction and the existing compiler interfaces remain available for advanced composition. `LookupTableCompiler::try_new` accepts explicitly paired input and LUT-output codecs without first preparing a default output. `try_with_output_codec` changes only the compiler's output codec, checks its ciphertext modulus, and leaves input geometry unchanged. Callers using these explicit interfaces must retain the corresponding output decoder themselves. Odd full-domain methods and raw Boolean/CBS output scales keep their existing contracts.
 
@@ -232,7 +234,7 @@ A returned value belongs to `0..t_out`; front-half input accepts only `0..ceil(t
 
 ## Odd full-domain PBS
 
-Use `compiler.compile_odd_full_domain_fn(function)` or its `_slice` form; configure a different output encoding with `try_with_output_codec` when needed. These methods program **all of `0..t_in`**, with odd `t_in >= 3` and `t_in <= N`. Slices contain exactly `t_in` outputs in input order. Encrypt with ordinary `encrypt`, then use the existing `apply_lookup_table_to`. Decode with `decrypt` for the default encoding, or with the explicit output codec. For example, with a common input/accumulator modulus, `t_in=15` and an output codec for `t_out=8`:
+Use `compiler.compile_odd_full_domain_fn(function)` or its `_slice` form; configure a different output encoding with `try_with_output_codec` when needed. These methods program **all of `0..t_in`**, with odd `t_in >= 3` and `t_in <= N`. Slices contain exactly `t_in` outputs in input order. Encrypt with ordinary `encrypt`, then use the existing `apply_lookup_table_to`. Bind the output codec to the decryptor and call `decrypt`, for either default or explicit output encoding. For example, with a common input/accumulator modulus, `t_in=15` and an output codec for `t_out=8`:
 
 ```rust,ignore
 let input_codec = primus_encoding::RoundedCodec::new(15, context.parameters().cipher_modulus());
@@ -241,7 +243,8 @@ let compiler = context.parameters().lookup_table_compiler(&input_codec)?
 let lut = compiler.compile_odd_full_domain_fn(|x| ((x * x + 3) % 8) as u32).unwrap();
 let input = encryptor.encrypt(14u32, &mut rng).unwrap();
 evaluator.apply_lookup_table_to(input.as_view(), &lut, output.as_mut_view());
-let message = output_codec.decode_value(decryptor.decrypt_phase(output.as_view()).unwrap());
+let decryptor = context.decryptor(external_secret, &output_codec)?;
+let message = decryptor.decrypt(output.as_view())?;
 assert_eq!(message, 7);
 ```
 

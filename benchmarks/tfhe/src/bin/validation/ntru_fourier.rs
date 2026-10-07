@@ -2,13 +2,13 @@
 //! The external LWE uses an independent q=2^24; only ring values enter the transform.
 
 use super::metrics::ErrorMargin;
-use primus_encoding::{PlaintextEmbedding, RoundedCodec, ScaledCodec};
+use primus_encoding::{PlaintextEmbedding, ScaledCodec};
 use primus_fft::{FftTable, TorusFftValue};
 use primus_glwe::SecretKeyDistr;
 use primus_integer::AsInto;
 use primus_modulus::{NativeModulus, PowOf2Modulus};
 use primus_poly::PolyLength;
-use primus_tfhe::BlindRotationConfig;
+use primus_tfhe::{BlindRotationConfig, PbsMessageConfig};
 use primus_tfhe_benchmarks::parameters::{N, ntru};
 use primus_tfhe_benchmarks::{benchmark::PBS_WORKLOADS, parameters::SPARSE_WEIGHT};
 use primus_tfhe_ntru_fourier::{ClientKey, KeyGenerator, ServerKey, TfheContext};
@@ -319,9 +319,12 @@ fn pbs<T: TorusFftValue, Table: FftTable>(
     plaintext_modulus: u32,
 ) {
     // Public setup: agree on the padded domain and the functions to evaluate.
-    let modulus = context.parameters().external_lwe().cipher_modulus();
     let t = T::as_from(plaintext_modulus);
-    let input_codec = primus_encoding::RoundedCodec::new(t, modulus);
+    let codecs = context
+        .parameters()
+        .pbs_codecs(PbsMessageConfig::new(t))
+        .unwrap();
+    let modulus = codecs.output_codec().ciphertext_modulus();
     let domain: usize = t.as_into();
     // Padded inputs occupy only the first half of the plaintext domain.
     let domain = domain / 2;
@@ -344,18 +347,19 @@ fn pbs<T: TorusFftValue, Table: FftTable>(
         .unwrap();
 
     let encryptor = context
-        .encryptor(client_key.external_lwe_secret_key(), &input_codec)
+        .encryptor(client_key.external_lwe_secret_key(), codecs.input_codec())
         .unwrap();
     let decryptor = context
-        .decryptor(client_key.external_lwe_secret_key(), &input_codec)
+        .decryptor(client_key.external_lwe_secret_key(), codecs.output_codec())
         .unwrap();
-    let codec = RoundedCodec::new(t, modulus);
     let mut margin = ErrorMargin::new(name, seed);
 
     // Server: compile the public functions and allocate local evaluation storage.
     let compiler = context
         .parameters()
-        .lookup_table_compiler(&input_codec)
+        .lookup_table_compiler(codecs.input_codec())
+        .unwrap()
+        .try_with_output_codec(codecs.lut_output_codec())
         .unwrap();
     let lut = compiler.compile_fn(value).unwrap();
     // Three outputs force padding to four interleaved lanes.
@@ -390,7 +394,9 @@ fn pbs<T: TorusFftValue, Table: FftTable>(
         );
         margin.decoded(
             decryptor.decrypt_phase(output.as_view()).unwrap(),
-            codec.encode_value(value(m), PlaintextEmbedding::Unsigned),
+            codecs
+                .output_codec()
+                .encode_value(value(m), PlaintextEmbedding::Unsigned),
             modulus,
             domain * 2,
         );
@@ -403,7 +409,9 @@ fn pbs<T: TorusFftValue, Table: FftTable>(
             );
             margin.decoded(
                 decryptor.decrypt_phase(output.as_view()).unwrap(),
-                codec.encode_value(expected, PlaintextEmbedding::Unsigned),
+                codecs
+                    .output_codec()
+                    .encode_value(expected, PlaintextEmbedding::Unsigned),
                 modulus,
                 domain * 2,
             );
@@ -414,16 +422,16 @@ fn pbs<T: TorusFftValue, Table: FftTable>(
     if domain == 2 {
         // Client: prepare encrypted Boolean inputs and keep decryption local.
         let encryptor = context
-            .boolean_encryptor(client_key.external_lwe_secret_key(), &input_codec)
+            .boolean_encryptor(client_key.external_lwe_secret_key(), codecs.input_codec())
             .unwrap();
         let decryptor = context
-            .boolean_decryptor(client_key.external_lwe_secret_key(), &input_codec)
+            .boolean_decryptor(client_key.external_lwe_secret_key(), codecs.output_codec())
             .unwrap();
         let inputs = [false, true].map(|bit| encryptor.encrypt(bit, &mut rng).unwrap());
 
         // Server: own the gate evaluator and its reusable output buffers.
         let mut evaluator = context
-            .boolean_evaluator(&server_key, &input_codec)
+            .boolean_evaluator(&server_key, codecs.input_codec())
             .unwrap();
         let mut output = context.allocate_lwe_ciphertext();
         let mut current = context.allocate_lwe_ciphertext();
@@ -448,12 +456,14 @@ fn thresholds<T: TorusFftValue, Table: FftTable>(
     seed: u64,
     name: &str,
 ) {
-    let input_codec = primus_encoding::RoundedCodec::new(
-        T::as_from(128u32),
-        context.parameters().external_lwe().cipher_modulus(),
-    );
     // Public setup: 64 padded inputs, 17 thresholds, binary output encoding.
-    let modulus = context.parameters().external_lwe().cipher_modulus();
+    let codecs = context
+        .parameters()
+        .factorized_pbs_codecs(
+            PbsMessageConfig::new(T::as_from(128u32)).with_output_modulus(T::as_from(2u32)),
+        )
+        .unwrap();
+    let modulus = codecs.output_codec().ciphertext_modulus();
     let value = |m: usize, i: usize| T::as_from(usize::from(m >= (i + 1) * 64 / 18));
 
     // Client: generate both keys; give only the evaluation key to the server.
@@ -461,22 +471,23 @@ fn thresholds<T: TorusFftValue, Table: FftTable>(
     let (client_key, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
 
     let encryptor = context
-        .encryptor(client_key.external_lwe_secret_key(), &input_codec)
+        .encryptor(client_key.external_lwe_secret_key(), codecs.input_codec())
         .unwrap();
     let decryptor = context
-        .decryptor(client_key.external_lwe_secret_key(), &input_codec)
+        .decryptor(client_key.external_lwe_secret_key(), codecs.output_codec())
         .unwrap();
-    let output_codec = ScaledCodec::new(T::as_from(2u32), modulus);
     let mut margin = ErrorMargin::new(name, seed);
 
     // Server: compile the public thresholds and allocate evaluation storage.
     // The LUT is encoded at ring Q, but returned phases are decoded at LWE q.
-    let ring_codec = ScaledCodec::new(
-        T::as_from(2u32),
-        context.parameters().accumulator_ntru().cipher_modulus(),
-    );
     let program = context
-        .compile_factorized_lookup_table_fn(&input_codec, &ring_codec, 64, 17, value)
+        .compile_factorized_lookup_table_fn(
+            codecs.input_codec(),
+            codecs.lut_output_codec(),
+            64,
+            17,
+            value,
+        )
         .unwrap();
     let mut pbs = context.evaluator(&server_key).unwrap();
     let mut evaluator = primus_tfhe_ntru_fourier::FactorizedEvaluator::new(&pbs);
@@ -493,13 +504,15 @@ fn thresholds<T: TorusFftValue, Table: FftTable>(
         for (i, output) in outputs.iter().enumerate() {
             let phase = decryptor.decrypt_phase(output.as_view()).unwrap();
             assert_eq!(
-                output_codec.decode_value(phase),
+                codecs.output_codec().decode_value(phase),
                 value(m, i),
                 "{name},seed={seed},m={m},threshold={i}"
             );
             margin.decoded(
                 phase,
-                output_codec.encode_value(value(m, i), PlaintextEmbedding::Unsigned),
+                codecs
+                    .output_codec()
+                    .encode_value(value(m, i), PlaintextEmbedding::Unsigned),
                 modulus,
                 2,
             );
