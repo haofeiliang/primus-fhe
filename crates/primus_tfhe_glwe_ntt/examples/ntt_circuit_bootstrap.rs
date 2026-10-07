@@ -12,9 +12,8 @@ use primus_modulus::BarrettModulus;
 use primus_ntt::U64NttTable as Table;
 use primus_poly::PolyLength;
 use primus_tfhe_glwe_ntt::{
-    BlindRotationConfig, CircuitBootstrapConfig, CircuitBootstrapEvaluator,
-    CircuitBootstrapParameters, ClientKey, DecompositionConfig, GadgetEncryptionConfig,
-    KeyGenerator, PbsOrder, TfheConfig, TfheContext, TfheParameters,
+    BlindRotationConfig, CircuitBootstrapConfig, CircuitBootstrapEvaluator, DecompositionConfig,
+    GadgetEncryptionConfig, PbsOrder, TfheConfig, TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -32,18 +31,10 @@ fn main() {
     // Client: generate BR and CBS material from the same accumulator secret.
     // This BR→KS ring-output workflow needs neither an input KS nor a return key.
     let mut rng = StdRng::seed_from_u64(42);
-    let client_key = ClientKey::generate(context.parameters(), &mut rng);
-    let mut generator = KeyGenerator::new(&context);
-    let blind_rotation = generator
-        .try_generate_blind_rotation_key(&client_key, BlindRotationConfig::Classic, &mut rng)
-        .unwrap();
-    let circuit_parameters =
-        CircuitBootstrapParameters::try_from_config(context.parameters(), circuit_config())
-            .unwrap();
-    let circuit_key = generator
-        .try_generate_circuit_bootstrap_key(
-            client_key.glwe_secret_key(),
-            circuit_parameters,
+    let (client_key, server_key) = context
+        .try_generate_circuit_bootstrap_keys(
+            BlindRotationConfig::Classic,
+            circuit_config(),
             &mut rng,
         )
         .unwrap();
@@ -65,9 +56,13 @@ fn main() {
     let mut decoded = vec![0; N];
 
     // Server: receive BR/CBS material and encrypted candidates.
-    let mut resources = context.bootstrap_resources(&blind_rotation, None).unwrap();
-    let mut cbs =
-        CircuitBootstrapEvaluator::try_new(&resources, &circuit_key, &selector_codec).unwrap();
+    let mut resources = server_key.bootstrap_resources(&context).unwrap();
+    let mut cbs = CircuitBootstrapEvaluator::try_new(
+        &resources,
+        server_key.circuit_bootstrap_key(),
+        &selector_codec,
+    )
+    .unwrap();
     let mut control = cbs.allocate_output();
     let mut selected = context.allocate_accumulator_ciphertext();
 

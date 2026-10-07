@@ -59,6 +59,18 @@ CBS and sparse configuration errors precede secret sampling. Existing clients ar
 
 `None` for CBS generates BR and ordinary return material; `Some(config)` adds trace/scheme-switch keys. Independent BR, CBS and return generation remains available, and NTRU public lift is requested separately when a lookup needs it. Each backend's `BlindRotationKey` owns only BR material; `ServerKey` combines materials. GLWE ring KS and NTRU LWE return keep distinct APIs because their domains differ.
 
+For ring-output CBS or NTRU one-hot, use the dedicated paired entry:
+
+```rust,ignore
+let (client, server) = context.try_generate_circuit_bootstrap_keys(blind_rotation, cbs_config, rng)?;
+let mut resources = server.bootstrap_resources(&context)?;
+let mut cbs = CircuitBootstrapEvaluator::try_new(
+    &resources, server.circuit_bootstrap_key(), &input_codec,
+)?;
+```
+
+This returns `CircuitBootstrapServerKey`, with BR and required CBS material. GLWE adds input KS only for KS→BR; GLWE BR→KS and NTRU generate no ordinary return key. NTRU one-hot uses `OneHotCircuitBootstrapEvaluator` with the same bundle. The generator variant has the same method name and reuses setup scratch. For mixed PBS/CBS or high-precision lookup, keep `try_generate_keys(..., Some(cbs_config), ...)` and its complete `ServerKey`. Components can be borrowed or moved out with `into_parts()` for advanced composition; no ciphertext buffers are copied.
+
 ## Client and server roles
 
 `Encryptor`, `Decryptor` and their Boolean wrappers share encoding, range checks and allocation-free `*_to` operations. `LweClientParameters::new(&lwe_parameters)` borrows a validated LWE domain, including its dimension, rounded codec and noise, and derives the mask sampler from the codec modulus. Its fields are private and available through accessors. Family constructors validate their keys and select the active LWE secret and noise once; Both families use `LweClientParameters::try_from_parts(dimension, &codec, &noise)` to bind a selected message encoding: GLWE BR→KS uses small-LWE noise and dimension, while KS→BR uses the extracted dimension and accumulator noise; NTRU uses its independent external LWE parameters. Codec/key and codec/noise moduli are checked at binding. These checks do not establish a noise or security budget.

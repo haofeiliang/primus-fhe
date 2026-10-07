@@ -137,10 +137,20 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
         BlindRotationConfig::Classic
     };
     let (client, server) = generator
-        .try_generate(blind_rotation, Some(circuit_config()), &mut rng)
+        .try_generate_circuit_bootstrap_keys(blind_rotation, circuit_config(), &mut rng)
         .unwrap();
-    let (blind_rotation, key_switching, circuit) = server.into_parts();
-    let key = circuit.as_ref().unwrap();
+    assert_eq!(
+        server.input_key_switching_key().is_some(),
+        order == PbsOrder::KeyswitchBootstrap
+    );
+    let (blind_rotation, input_ks, circuit) = server.into_parts();
+    // The mixed PBS checks below require a return KS in BR→KS order.
+    let key_switching = input_ks.unwrap_or_else(|| {
+        generator
+            .try_generate_glwe_key_switching_key(&client, &mut rng)
+            .unwrap()
+    });
+    let key = &circuit;
     let parameters = key.parameters();
     let mut resources = context
         .bootstrap_resources(
@@ -418,6 +428,24 @@ fn evaluator_rejects_resource_mismatches_and_checks_shapes_before_writes() {
     let client = ClientKey::generate(context.parameters(), &mut rng);
     let parameters = circuit_parameters(context.parameters());
     let mut generator = KeyGenerator::new(&context);
+    // Invalid CBS choices fail before fresh client sampling.
+    let mut invalid = circuit_config();
+    invalid.trace.noise_standard_deviation = -1.0;
+    let mut fresh_rng = StdRng::seed_from_u64(43);
+    assert!(
+        generator
+            .try_generate_circuit_bootstrap_keys(
+                BlindRotationConfig::Classic,
+                invalid,
+                &mut fresh_rng,
+            )
+            .is_err()
+    );
+    assert_eq!(
+        fresh_rng.random::<u64>(),
+        StdRng::seed_from_u64(43).random::<u64>()
+    );
+
     let key = generator
         .try_generate_circuit_bootstrap_key(client.glwe_secret_key(), parameters.clone(), &mut rng)
         .unwrap();

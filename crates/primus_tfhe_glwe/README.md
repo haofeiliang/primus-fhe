@@ -58,13 +58,15 @@ Use `encrypt_padded` for front-half LUTs and ordinary `encrypt` for odd full dom
 
 ## Boolean and CBS
 
+Both backends provide `context.try_generate_circuit_bootstrap_keys(blind_rotation, cbs_config, rng)` for a client and a `CircuitBootstrapServerKey` containing only ring-output material. CBS is required in this bundle; ordinary return material is not generated. GLWE KS→BR still includes its input KS. For mixed PBS/CBS, retain the complete `ServerKey`. See [material selection](../primus_tfhe/README.md#selecting-blind-rotation).
+
 With an explicit t=4 `RoundedCodec` argument, contexts provide `boolean_encryptor`, `boolean_public_encryptor`, `boolean_decryptor` and `boolean_evaluator`. These use ordinary PBS material; see the [common Boolean contract](../primus_tfhe/README.md#boolean-gates) for calls and chaining.
 
 Input encoding and ManyLUT capacity are checked at CBS program binding: both backends use `CircuitBootstrapEvaluator::try_new(&resources, key, &input_codec)`. The default constructor uses the key's parameters; `try_with_parameters` explicitly selects a compatible alternate output basis. The same keys can serve several message moduli, provided each program fits and has sufficient noise margin. `accumulator_client(client.glwe_secret_key(), scaled_codec)` independently binds ordinary ring messages; its `ScaledCodec` need not use the input LWE message modulus.
 
 CBS is an optional facility in both backends, with separate output basis, trace/scheme-switch parameters and keys. Both PBS orders support classic binary/ternary and sparse binary keys. CBS outputs remain under the accumulator secret and use gadget scales. The family defines `CircuitBootstrapParameters<T, M>`; backends provide concrete modulus aliases. Output bases with the same level count can reuse the scheme-switch key; numerical and transform requirements belong to the corresponding backend contracts.
 
-Backends support independent BR, ring KS and CBS material alongside convenient complete `ServerKey` generation. CBS generation takes only the accumulator secret. Independent BR→KS CBS needs no ring KS, while KS→BR still needs it to prepare the input. Ordinary PBS requires both BR and ring KS in either order. See the backend guides for APIs and examples.
+Backends support independent BR, ring KS and CBS material alongside convenient complete `ServerKey` generation. Independent CBS component generation takes only the accumulator secret. Independent BR→KS CBS needs no ring KS, while KS→BR still needs it to prepare the input. Ordinary PBS requires both BR and ring KS in either order. See the backend guides for APIs and examples.
 
 ## Examples
 

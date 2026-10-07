@@ -14,9 +14,8 @@ use primus_modulus::{NativeModulus, PowOf2Modulus};
 use primus_ntru::SecretKeyDistr;
 use primus_poly::PolyLength;
 use primus_tfhe_ntru_fourier::{
-    BlindRotationConfig, CircuitBootstrapConfig, CircuitBootstrapEvaluator,
-    CircuitBootstrapParameters, DecompositionConfig, GadgetEncryptionConfig, KeyGenerator,
-    TfheConfig, TfheContext, TfheParameters,
+    BlindRotationConfig, CircuitBootstrapConfig, CircuitBootstrapEvaluator, DecompositionConfig,
+    GadgetEncryptionConfig, TfheConfig, TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -32,18 +31,10 @@ fn main() {
 
     // Client: generate BR and CBS material; this ring-output workflow needs no return key.
     let mut rng = StdRng::seed_from_u64(42);
-    let mut generator = KeyGenerator::new(&context);
-    let client_key = generator.try_generate_client_key(&mut rng).unwrap();
-    let blind_rotation_key = generator
-        .try_generate_blind_rotation_key(&client_key, BlindRotationConfig::Classic, &mut rng)
-        .unwrap();
-    let circuit_parameters =
-        CircuitBootstrapParameters::try_from_config(context.parameters(), circuit_config())
-            .unwrap();
-    let circuit_key = generator
-        .try_generate_circuit_bootstrap_key(
-            client_key.accumulator_ntru_secret_key(),
-            circuit_parameters,
+    let (client_key, server_key) = context
+        .try_generate_circuit_bootstrap_keys(
+            BlindRotationConfig::Classic,
+            circuit_config(),
             &mut rng,
         )
         .unwrap();
@@ -66,9 +57,13 @@ fn main() {
     let mut decoded = vec![0; N];
 
     // Server: receive the encrypted candidates; allocate the control and result.
-    let mut resources = context.bootstrap_resources(&blind_rotation_key).unwrap();
-    let mut cbs =
-        CircuitBootstrapEvaluator::try_new(&resources, &circuit_key, &selector_codec).unwrap();
+    let mut resources = server_key.bootstrap_resources(&context).unwrap();
+    let mut cbs = CircuitBootstrapEvaluator::try_new(
+        &resources,
+        server_key.circuit_bootstrap_key(),
+        &selector_codec,
+    )
+    .unwrap();
     let mut control = cbs.allocate_output();
     let mut selected = context.allocate_accumulator_ciphertext();
 

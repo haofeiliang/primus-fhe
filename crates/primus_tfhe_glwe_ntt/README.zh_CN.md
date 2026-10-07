@@ -47,6 +47,8 @@ NTT 表需要实现 `MonomialNttTable`，内置表均支持。Context 检查长�
 
 `ServerKey` 仍是完整 PBS 的便捷组合。高级工作流可分别持有 `BlindRotationKey`、环 KS key 和 `CircuitBootstrapKey`，通过 `ServerKey::new` / `into_parts` 移动组合，不复制密文数组。`KeyGenerator::try_generate_blind_rotation_key(&client, config, rng)` 通过 `BlindRotationConfig` 选择 classic 或 sparse BR，不额外生成返回或 CBS 材料；`try_generate_glwe_key_switching_key` 独立生成环 KS；`try_generate_circuit_bootstrap_key(accumulator_secret, parameters, rng)` 只需要累加器秘密。独立生成可能重复转换秘密；成对生成继续复用已准备的表示。
 
+仅需环输出 CBS 时，`context.try_generate_circuit_bootstrap_keys(blind_rotation, cbs_config, rng)` 返回 `(ClientKey, CircuitBootstrapServerKey)`，其中 CBS 材料始终存在，仅 KS→BR 生成输入 KS。通过 `server.bootstrap_resources(&context)` 和 `server.circuit_bootstrap_key()` 绑定 evaluator，见[材料选择](../primus_tfhe/README.zh_CN.md#选择盲旋转算法)。
+
 已有 `ServerKey`、仅需独立 CBS 时，按需准备公共资源：
 
 ```rust,ignore
@@ -91,7 +93,7 @@ let mut evaluator = context.evaluator(&server)?;
 
 ## 电路自举
 
-`context.try_generate_keys(blind_rotation, Some(cbs_config), &mut rng)` 生成配对材料，`ServerKey` 持有附加参数及 trace/scheme-switch 密钥。取得 `server.circuit_bootstrap_key()` 后，显式传给上述 CBS 构造器。使用 `allocate_output`、`circuit_bootstrap_to` 和 `cmux_to`，每次操作借用公共资源；[CBS → CMUX 示例](examples/ntt_circuit_bootstrap.rs)展示独立生成 BR/CBS 材料及完整消费链。
+`context.try_generate_circuit_bootstrap_keys(blind_rotation, cbs_config, &mut rng)` 为环输出生成配对材料，`CircuitBootstrapServerKey` 持有 BR、必要的输入准备和 CBS 材料；`circuit_bootstrap_key()` 直接返回必需的密钥。混合 PBS/CBS 仍可用 `try_generate_keys(blind_rotation, Some(cbs_config), rng)` 生成完整 `ServerKey`。取得 `server.circuit_bootstrap_key()` 后，显式传给上述 CBS 构造器。使用 `allocate_output`、`circuit_bootstrap_to` 和 `cmux_to`，每次操作借用公共资源；[CBS → CMUX 示例](examples/ntt_circuit_bootstrap.rs)展示成组生成 BR/CBS 材料及完整消费链。
 
 [稀疏 CBS 示例](examples/ntt_sparse_circuit_bootstrap.rs)直接展示固定重量秘密、稀疏密钥生成与 CBS 参数。两种 PBS 顺序都支持；后面的 CBS 与 CMux 调用方式相同。
 

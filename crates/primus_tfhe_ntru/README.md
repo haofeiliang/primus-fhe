@@ -55,6 +55,8 @@ Pass an explicit t=4 `RoundedCodec` to `boolean_encryptor`, `boolean_public_encr
 
 ## CBS and examples
 
+Both backends provide `context.try_generate_circuit_bootstrap_keys(blind_rotation, cbs_config, rng)` for a client and a `CircuitBootstrapServerKey` containing only ring-output material. CBS is required in this bundle; ordinary return material is not generated. The same bundle serves one-hot CBS, without a return-q magnitude restriction. For mixed PBS/CBS or high-precision lookup, retain the complete `ServerKey`. See [material selection](../primus_tfhe/README.md#selecting-blind-rotation).
+
 The backends expose independent `BlindRotationKey`, return and `CircuitBootstrapKey` owners, with `ServerKey::new` / `into_parts` for moving them into or out of a complete bundle. `parameters.try_generate_lwe_return_key(&client, rng)` generates return material without a transform workspace; `parameters.check_lwe_return_key(&key)` checks N/Q/q/dimension/basis at composition. CBS-only generation and binding do not require a return key or f's magnitude bound at external q. The accumulator's backend conversion requirements still apply.
 
 `context.try_generate_keys(blind_rotation, Some(cbs_config), rng)` includes trace/scheme-switch material for either classic or sparse BR; `None` omits CBS material. `BlindRotationConfig` explicitly selects the algorithm. Both backends compose common `BootstrapResources` with `CircuitBootstrapEvaluator::try_new`. See each backend README for resource reuse. CBS skips the ordinary PBS return path and produces NGSW under f. An input bit 0/1 produces a CMux control; candidate ring ciphertexts must share f, Q and encoding. Backend examples show the complete consumption chain.

@@ -48,6 +48,8 @@ Fourier 环只支持 `NativeModulus`；`PowOf2Modulus` 环不受支持。 NTRU �
 
 `ServerKey` 组合独立拥有的 `BlindRotationKey`、`NtruLweKeySwitchingKey` 和可选 `CircuitBootstrapKey`。`into_parts()` 移出组件，不复制密文缓冲；`ServerKey::new(br, return_key, cbs)` 组合各 owner。独立生成分别使用 `KeyGenerator::try_generate_blind_rotation_key(&client, config, rng)`、`parameters.try_generate_lwe_return_key(&client, rng)` 和 `generator.try_generate_circuit_bootstrap_key(client.accumulator_ntru_secret_key(), cbs_parameters, rng)`。`BlindRotationConfig` 选择 classic 或 sparse BR，不额外生成返回或 CBS 材料。独立生成可能重复转换累加秘密；成对生成复用同一次变换。
 
+仅需环输出 CBS/one-hot 时，`context.try_generate_circuit_bootstrap_keys(blind_rotation, cbs_config, rng)` 返回 `(ClientKey, CircuitBootstrapServerKey)`。生成时 BR/CBS 共享已接受的累加秘密变换和逆，不生成返回密钥，也不施加返回 q 的幅度界。通过 `server.bootstrap_resources(&context)` 绑定资源，`server.circuit_bootstrap_key()` 直接取得 CBS 材料，见[材料选择](../primus_tfhe/README.zh_CN.md#选择盲旋转算法)。
+
 `Evaluator::try_from_parts(context, br, return_key)` 绑定普通 PBS。独立 CBS/one-hot 先用 `context.bootstrap_resources(br)?` 准备公共 BR/外积资源，再用 `try_new(&resources, circuit_key, &input_codec)` 准备操作状态，无需返回密钥；CBS 示例展示这一流程。独立材料必须采用相同实际秘密与FFT table 实例，形状和模数检查不能证明身份。
 
 `server_key.blind_rotation_key().classic_controls()` 返回借用的 `ClassicControls` 视图，稀疏材料返回 `None`。视图的 `initializer()` 用于提升公开多项式；首坐标使用 NLEV bit，后续坐标使用 NGSW bit，ternary 秘密按正/负 bit 配对。CBS、one-hot 在所选 classic/sparse BR 上使用独立的 trace/scheme-switch 材料；MVB 不需要额外的提升或 CBS 材料。可选的 `circuit_bootstrap_key()` 仍可用于查看或组合 CBS 材料。
@@ -84,13 +86,13 @@ let (client, server) = context.try_generate_keys(blind_rotation, None, &mut rng)
 let mut evaluator = context.evaluator(&server)?;
 ```
 
-普通/交错 PBS 复用原 evaluator，分解式 MVB 每次调用时借用它。将 `None` 改为 `Some(cbs_config)` 会复用累加秘密变换并生成 CBS/one-hot 材料。仅需环输出时，可独立生成 sparse BR 和 CBS 组件，无需返回密钥。 `server.blind_rotation_key().sparse_blind_rotation_key()` 提供选择密文。
+普通/交错 PBS 复用原 evaluator，分解式 MVB 每次调用时借用它。将 `None` 改为 `Some(cbs_config)` 会复用累加秘密变换并生成 CBS/one-hot 材料。仅需环输出时，以同样的 sparse 选择调用 `try_generate_circuit_bootstrap_keys`，无需返回密钥。 `server.blind_rotation_key().sparse_blind_rotation_key()` 提供选择密文。
 
 外部秘密允许偶数重量。只有环秘密需要可逆且 Fourier 逆稳定；系数恢复和聚合 FFT 另引入数值误差。
 
 ## 可选电路自举
 
-`context.try_generate_keys(blind_rotation, Some(cbs_config), &mut rng)` 生成配对材料，`ServerKey` 持有附加参数及 trace/scheme-switch 密钥。取出 `server.circuit_bootstrap_key()`，与公共资源一起传给 `CircuitBootstrapEvaluator::try_new`；该构造器显式要求 CBS 材料。使用 `allocate_output`、`circuit_bootstrap_to` 和 `cmux_to`；[CBS → CMUX 示例](examples/ntru_fourier_circuit_bootstrap.rs)展示完整消费链。
+`context.try_generate_circuit_bootstrap_keys(blind_rotation, cbs_config, &mut rng)` 为环输出生成配对材料，`CircuitBootstrapServerKey` 持有 BR、必要的输入准备和 CBS 材料；`circuit_bootstrap_key()` 直接返回必需的密钥。混合 PBS/CBS 仍可用 `try_generate_keys(blind_rotation, Some(cbs_config), rng)` 生成完整 `ServerKey`。取出 `server.circuit_bootstrap_key()`，与公共资源一起传给 `CircuitBootstrapEvaluator::try_new`；该构造器显式要求 CBS 材料。使用 `allocate_output`、`circuit_bootstrap_to` 和 `cmux_to`；[CBS → CMUX 示例](examples/ntru_fourier_circuit_bootstrap.rs)展示完整消费链。
 
 输出为 `f_acc` 下的 `FourierNgswCiphertext`。Circuit key 绑定完整输出 basis； `try_new(&resources, circuit_key, &input_codec)` 从该密钥取得参数。 须对最小输出 gadget 尺度预算 Native trace halving 和 FFT 误差。
 

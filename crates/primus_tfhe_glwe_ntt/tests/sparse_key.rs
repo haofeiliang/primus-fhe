@@ -230,6 +230,22 @@ fn sparse_key_rejects_invalid_parameters_and_actual_secret_before_sampling() {
             noise_standard_deviation: 0.7,
         },
     };
+    // Fresh ring-output setup rejects CBS config before either secret is sampled.
+    let mut fresh_rng = StdRng::seed_from_u64(43);
+    assert!(
+        generator
+            .try_generate_circuit_bootstrap_keys(
+                BlindRotationConfig::Sparse {
+                    copy_count: 3,
+                    bucket_count: 8
+                },
+                invalid_cbs,
+                &mut fresh_rng,
+            )
+            .is_err()
+    );
+    assert_eq!(fresh_rng.next_u64(), StdRng::seed_from_u64(43).next_u64());
+
     let mut rng = StdRng::seed_from_u64(43);
     assert!(matches!(
         generator.try_generate_server_key(

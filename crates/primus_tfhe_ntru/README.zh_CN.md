@@ -55,6 +55,8 @@ Classic PBS、ManyLUT、CBS、Boolean 和 MVB 支持 binary/ternary 外部秘密
 
 ## CBS 与示例
 
+两个后端均提供 `context.try_generate_circuit_bootstrap_keys(blind_rotation, cbs_config, rng)`，返回 client 和仅含环输出所需材料的 `CircuitBootstrapServerKey`。CBS 在该组合中始终存在，不生成普通返回材料。相同组合也服务 one-hot CBS，不受返回 q 的秘密幅度限制。混合 PBS/CBS 或高精度查表仍使用完整 `ServerKey`，见[材料选择](../primus_tfhe/README.zh_CN.md#选择盲旋转算法)。
+
 两后端提供独立的 `BlindRotationKey`、返回密钥与 `CircuitBootstrapKey` owner，通过 `ServerKey::new` / `into_parts` 移入或移出完整组合。`parameters.try_generate_lwe_return_key(&client, rng)` 无需变换工作区即可生成返回密钥；`parameters.check_lwe_return_key(&key)` 在组合时核对 N/Q/q、维数与 basis。CBS-only 生成和绑定无需返回密钥，也无需 f 满足外部 q 的幅度界；累加秘密仍须满足各后端的转换要求。
 
 `context.try_generate_keys(blind_rotation, Some(cbs_config), rng)` 为 classic 或 sparse BR 添加 trace/scheme-switch 材料，传入 `None` 则不生成 CBS 材料；`BlindRotationConfig` 显式选择算法。两个后端均通过公共 `BootstrapResources` 与 `CircuitBootstrapEvaluator::try_new` 组合；资源复用方式见各后端 README。CBS 跳过普通 PBS 返回路径，生成 f 下的 NGSW。输入 0/1 时它可控制 CMux，候选环密文须使用同一 f、Q 和编码；完整消费过程见后端示例。

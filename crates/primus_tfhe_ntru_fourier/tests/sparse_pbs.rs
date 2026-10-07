@@ -445,6 +445,22 @@ fn sparse_generation_rejects_invalid_secrets_buckets_and_cbs_before_sampling() {
             noise_standard_deviation: 0.7,
         },
     };
+    // Fresh CBS setup must also reject the config before sampling either secret.
+    let mut fresh_rng = StdRng::seed_from_u64(43);
+    assert!(
+        generator
+            .try_generate_circuit_bootstrap_keys(
+                BlindRotationConfig::Sparse {
+                    copy_count: 3,
+                    bucket_count: 8
+                },
+                invalid_cbs,
+                &mut fresh_rng,
+            )
+            .is_err()
+    );
+    assert_eq!(fresh_rng.next_u64(), StdRng::seed_from_u64(43).next_u64());
+
     rng = StdRng::seed_from_u64(0xBAD);
     let mut untouched = StdRng::seed_from_u64(0xBAD);
     assert!(

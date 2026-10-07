@@ -105,7 +105,6 @@ fn selectors(distr: SecretKeyDistr, sparse: bool) {
         },
     };
     let mut generator = primus_tfhe_ntru_ntt::KeyGenerator::new(&context);
-    let client = generator.try_generate_client_key(&mut rng).unwrap();
     let blind_rotation = if sparse {
         BlindRotationConfig::Sparse {
             copy_count: 3,
@@ -114,11 +113,15 @@ fn selectors(distr: SecretKeyDistr, sparse: bool) {
     } else {
         BlindRotationConfig::Classic
     };
-    let server = generator
-        .try_generate_server_key(&client, blind_rotation, Some(cbs_config), &mut rng)
+    let (client, server) = generator
+        .try_generate_circuit_bootstrap_keys(blind_rotation, cbs_config, &mut rng)
         .unwrap();
-    let (br, return_key, circuit) = server.into_parts();
-    let circuit = circuit.unwrap();
+    let (br, circuit) = server.into_parts();
+    // Only the mixed PBS checks below need the separate ordinary return key.
+    let return_key = context
+        .parameters()
+        .try_generate_lwe_return_key(&client, &mut rng)
+        .unwrap();
     // One-hot preparation depends on the context/CBS key, not on BR controls.
     // In the sparse case prepare using a classic BR over the same two secrets,
     // then lend sparse resources for every numerical check below.

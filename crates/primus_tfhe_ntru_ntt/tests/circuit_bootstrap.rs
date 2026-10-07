@@ -85,7 +85,6 @@ fn circuit_bootstrap(distr: SecretKeyDistr, sparse: bool) {
     };
     // CBS-only material can be generated and bound before any return key exists.
     let mut generator = primus_tfhe_ntru_ntt::KeyGenerator::new(&context);
-    let client = generator.try_generate_client_key(&mut rng).unwrap();
     let blind_rotation = if sparse {
         BlindRotationConfig::Sparse {
             copy_count: 3,
@@ -94,24 +93,19 @@ fn circuit_bootstrap(distr: SecretKeyDistr, sparse: bool) {
     } else {
         BlindRotationConfig::Classic
     };
-    let br = generator
-        .try_generate_blind_rotation_key(&client, blind_rotation, &mut rng)
-        .unwrap();
-    let circuit = generator
-        .try_generate_circuit_bootstrap_key(
-            client.accumulator_ntru_secret_key(),
-            primus_tfhe_ntru_ntt::CircuitBootstrapParameters::try_from_config(
-                context.parameters(),
-                cbs_config,
-            )
-            .unwrap(),
-            &mut rng,
-        )
+    let (client, ring_server) = generator
+        .try_generate_circuit_bootstrap_keys(blind_rotation, cbs_config, &mut rng)
         .unwrap();
     {
-        let resources = context.bootstrap_resources(&br).unwrap();
-        let _cbs = CircuitBootstrapEvaluator::try_new(&resources, &circuit, &input_codec).unwrap();
+        let resources = ring_server.bootstrap_resources(&context).unwrap();
+        let _cbs = CircuitBootstrapEvaluator::try_new(
+            &resources,
+            ring_server.circuit_bootstrap_key(),
+            &input_codec,
+        )
+        .unwrap();
     }
+    let (br, circuit) = ring_server.into_parts();
     let return_key = context
         .parameters()
         .try_generate_lwe_return_key(&client, &mut rng)
@@ -399,6 +393,20 @@ fn independent_cbs_material_does_not_require_a_return_key() {
         log_basis: DecompositionBaseLog::new(4),
         level_count: None,
     };
+    let cbs_config = CircuitBootstrapConfig {
+        output: DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(4),
+            level_count: Some(DecompositionLevelCount::new(1)),
+        },
+        trace: GadgetEncryptionConfig {
+            decomposition: full,
+            noise_standard_deviation: 0.7,
+        },
+        scheme_switch: GadgetEncryptionConfig {
+            decomposition: full,
+            noise_standard_deviation: 0.7,
+        },
+    };
     let config = primus_tfhe_ntru_ntt::TfheConfig {
         external_lwe: primus_lwe::LweEncryptionParameters::new(
             LweDimension::new(2),
@@ -438,7 +446,21 @@ fn independent_cbs_material_does_not_require_a_return_key() {
         .unwrap();
         let mut generator = KeyGenerator::new(&candidate);
         let mut sample_rng = StdRng::seed_from_u64(42);
-        let sample = generator.try_generate_client_key(&mut sample_rng).unwrap();
+        let (sample, ring_server) = generator
+            .try_generate_circuit_bootstrap_keys(
+                BlindRotationConfig::Classic,
+                cbs_config,
+                &mut sample_rng,
+            )
+            .unwrap();
+        let codec = RoundedCodec::new(4, candidate.parameters().external_lwe().cipher_modulus());
+        let resources = ring_server.bootstrap_resources(&candidate).unwrap();
+        let _cbs = CircuitBootstrapEvaluator::try_new(
+            &resources,
+            ring_server.circuit_bootstrap_key(),
+            &codec,
+        )
+        .unwrap();
         let fits = sample
             .accumulator_ntru_secret_key()
             .as_slice()
@@ -485,24 +507,8 @@ fn independent_cbs_material_does_not_require_a_return_key() {
     let br = generator
         .try_generate_classic_blind_rotation_key(&client, &mut rng)
         .unwrap();
-    let cbs_parameters = CircuitBootstrapParameters::try_from_config(
-        context.parameters(),
-        CircuitBootstrapConfig {
-            output: DecompositionConfig {
-                log_basis: DecompositionBaseLog::new(4),
-                level_count: Some(DecompositionLevelCount::new(1)),
-            },
-            trace: GadgetEncryptionConfig {
-                decomposition: full,
-                noise_standard_deviation: 0.7,
-            },
-            scheme_switch: GadgetEncryptionConfig {
-                decomposition: full,
-                noise_standard_deviation: 0.7,
-            },
-        },
-    )
-    .unwrap();
+    let cbs_parameters =
+        CircuitBootstrapParameters::try_from_config(context.parameters(), cbs_config).unwrap();
     let (_, accumulator) = client.into_parts();
     let circuit = generator
         .try_generate_circuit_bootstrap_key(&accumulator, cbs_parameters, &mut rng)

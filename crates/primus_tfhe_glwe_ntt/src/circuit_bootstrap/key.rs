@@ -8,9 +8,9 @@ use crate::{CircuitBootstrapParameters, KeyGenerationError, KeyGenerator, TfheCo
 
 /// Trace-projection and scheme-switching keys used after PBSManyLUT.
 ///
-/// The ordinary PBS bootstrapping key remains in [`crate::ServerKey`]. This
-/// object contains only the additional, optional circuit-bootstrapping
-/// material. Both keys must use the same accumulator secret and the evaluator's
+/// BR is owned separately by [`crate::BlindRotationKey`]. This object contains
+/// only the trace and scheme-switch material, combined with BR in
+/// [`crate::CircuitBootstrapServerKey`] or optionally in [`crate::ServerKey`]. Both keys must use the same accumulator secret and the evaluator's
 /// NTT representation; see [`crate::CircuitBootstrapEvaluator::try_new`].
 pub struct CircuitBootstrapKey<T: FheUint> {
     parameters: CircuitBootstrapParameters<T>,

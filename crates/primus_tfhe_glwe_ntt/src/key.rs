@@ -1,5 +1,8 @@
 //! Server evaluation material and paired or component key generation.
 
+mod circuit;
+pub use circuit::CircuitBootstrapServerKey;
+
 use primus_glwe::{
     NttGlweGadgetEncryptWorkspace, NttGlweKeySwitchingKey, NttGlweSecretKey, SecretKeyDistr,
 };
@@ -286,13 +289,7 @@ where
     {
         let circuit_parameters = self.prepare_circuit_bootstrap(circuit_bootstrap)?;
         client_key.check_compatible(self.context.parameters())?;
-        let sparse_layout = match blind_rotation {
-            BlindRotationConfig::Classic => None,
-            BlindRotationConfig::Sparse {
-                copy_count,
-                bucket_count,
-            } => Some(self.prepare_sparse_layout(copy_count, bucket_count)?),
-        };
+        let sparse_layout = self.prepare_blind_rotation(blind_rotation)?;
         let transformed = NttGlweSecretKey::from_coeff_secret_key(
             client_key.glwe_secret_key(),
             self.context.table(),
@@ -304,6 +301,38 @@ where
             circuit_parameters,
             rng,
         )
+    }
+
+    /// Encrypts selected BR controls after key compatibility and layout preparation.
+    /// Borrows the same accumulator representation later used by CBS generation.
+    fn generate_blind_rotation_key_with_main<R: rand::Rng + rand::CryptoRng>(
+        &mut self,
+        client_key: &ClientKey<T>,
+        main_glwe_secret_key: &NttGlweSecretKey<T>,
+        sparse_layout: Option<crate::sparse::SparseKeyLayout>,
+        rng: &mut R,
+    ) -> Result<BlindRotationKey<T>, KeyGenerationError> {
+        let parameters = self.context.parameters();
+        self.gadget.resize(parameters.blind_rotation_ggsw().size());
+        Ok(match sparse_layout {
+            None => BlindRotationKey::Classic(NttGlweBootstrappingKey::generate_ntt(
+                client_key.small_lwe_secret_key(),
+                parameters.small_lwe(),
+                main_glwe_secret_key,
+                parameters.blind_rotation_ggsw(),
+                self.context.table(),
+                rng,
+                &mut self.gadget,
+            )),
+            Some(layout) => {
+                BlindRotationKey::Sparse(self.generate_sparse_bootstrapping_key_with_main(
+                    client_key,
+                    layout,
+                    main_glwe_secret_key,
+                    rng,
+                )?)
+            }
+        })
     }
 
     /// The caller established client compatibility by sampling or validation,
@@ -320,27 +349,12 @@ where
     where
         R: rand::Rng + rand::CryptoRng,
     {
-        let parameters = self.context.parameters();
-        self.gadget.resize(parameters.blind_rotation_ggsw().size());
-        let blind_rotation_key = match sparse_layout {
-            None => BlindRotationKey::Classic(NttGlweBootstrappingKey::generate_ntt(
-                client_key.small_lwe_secret_key(),
-                parameters.small_lwe(),
-                &main_glwe_secret_key,
-                parameters.blind_rotation_ggsw(),
-                self.context.table(),
-                rng,
-                &mut self.gadget,
-            )),
-            Some(layout) => {
-                BlindRotationKey::Sparse(self.generate_sparse_bootstrapping_key_with_main(
-                    client_key,
-                    layout,
-                    &main_glwe_secret_key,
-                    rng,
-                )?)
-            }
-        };
+        let blind_rotation_key = self.generate_blind_rotation_key_with_main(
+            client_key,
+            &main_glwe_secret_key,
+            sparse_layout,
+            rng,
+        )?;
         let circuit_bootstrap = circuit_parameters.map(|parameters| {
             Box::new(self.generate_circuit_bootstrap_key_with_main(
                 client_key.glwe_secret_key(),
@@ -402,13 +416,7 @@ where
         R: rand::Rng + rand::CryptoRng,
     {
         let circuit_parameters = self.prepare_circuit_bootstrap(circuit_bootstrap)?;
-        let sparse_layout = match blind_rotation {
-            BlindRotationConfig::Classic => None,
-            BlindRotationConfig::Sparse {
-                copy_count,
-                bucket_count,
-            } => Some(self.prepare_sparse_layout(copy_count, bucket_count)?),
-        };
+        let sparse_layout = self.prepare_blind_rotation(blind_rotation)?;
         let client_key = ClientKey::generate(self.context.parameters(), rng);
         let transformed = NttGlweSecretKey::from_coeff_secret_key(
             client_key.glwe_secret_key(),
@@ -422,6 +430,20 @@ where
             rng,
         )?;
         Ok((client_key, server_key))
+    }
+
+    /// Prepares the selected BR layout before sampling: `None` denotes classic.
+    fn prepare_blind_rotation(
+        &self,
+        blind_rotation: BlindRotationConfig,
+    ) -> Result<Option<crate::sparse::SparseKeyLayout>, KeyGenerationError> {
+        Ok(match blind_rotation {
+            BlindRotationConfig::Classic => None,
+            BlindRotationConfig::Sparse {
+                copy_count,
+                bucket_count,
+            } => Some(self.prepare_sparse_layout(copy_count, bucket_count)?),
+        })
     }
 
     /// Prepares optional CBS bases before any secret or evaluation-key sampling.

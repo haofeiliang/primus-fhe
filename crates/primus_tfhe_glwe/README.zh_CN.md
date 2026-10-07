@@ -58,6 +58,8 @@
 
 ## Boolean 与 CBS
 
+两个后端均提供 `context.try_generate_circuit_bootstrap_keys(blind_rotation, cbs_config, rng)`，返回 client 和仅含环输出所需材料的 `CircuitBootstrapServerKey`。CBS 在该组合中始终存在，不生成普通返回材料。GLWE KS→BR 仍包含输入 KS。混合 PBS/CBS 仍使用完整 `ServerKey`，见[材料选择](../primus_tfhe/README.zh_CN.md#选择盲旋转算法)。
+
 显式传入 t=4 的 `RoundedCodec` 时，context 提供 `boolean_encryptor`、`boolean_public_encryptor`、`boolean_decryptor` 和 `boolean_evaluator`。这些接口使用普通 PBS 材料；调用与串联约定见[公共 Boolean 契约](../primus_tfhe/README.zh_CN.md#boolean-门)。
 
 输入编码与 ManyLUT 容量在 CBS 程序绑定时检查：两后端均使用 `CircuitBootstrapEvaluator::try_new(&resources, key, &input_codec)`。默认构造使用密钥自带参数，`try_with_parameters` 显式选择兼容的替代输出 basis。同一套密钥可服务多个明文模数，前提是各程序满足容量与噪声余量。`accumulator_client(client.glwe_secret_key(), scaled_codec)` 独立绑定普通环消息，其 `ScaledCodec` 不必采用输入 LWE 的明文模数。

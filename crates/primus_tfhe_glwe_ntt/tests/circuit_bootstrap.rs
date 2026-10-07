@@ -110,9 +110,21 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
                 noise_standard_deviation: 0.7,
             },
         };
-        let (client_key, classic_server_key) = context
-            .try_generate_keys(BlindRotationConfig::Classic, Some(cbs_config), &mut rng)
+        let (client_key, ring_server) = context
+            .try_generate_circuit_bootstrap_keys(BlindRotationConfig::Classic, cbs_config, &mut rng)
             .unwrap();
+        assert_eq!(
+            ring_server.input_key_switching_key().is_some(),
+            order == PbsOrder::KeyswitchBootstrap
+        );
+        let (br, input_ks, circuit) = ring_server.into_parts();
+        // Ordinary PBS additionally needs output KS in BR→KS order.
+        let ks = input_ks.unwrap_or_else(|| {
+            KeyGenerator::new(&context)
+                .try_generate_glwe_key_switching_key(&client_key, &mut rng)
+                .unwrap()
+        });
+        let classic_server_key = primus_tfhe_glwe_ntt::ServerKey::new(br, ks, Some(circuit));
         let sparse_server_key = sparse.then(|| {
             // Bundled generation and separately paired CBS material share the same evaluator.
             let config = (order == PbsOrder::BootstrapKeyswitch).then_some(cbs_config);

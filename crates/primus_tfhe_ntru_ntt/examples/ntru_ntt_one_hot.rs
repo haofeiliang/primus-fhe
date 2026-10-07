@@ -14,7 +14,7 @@ use primus_ntt::U64NttTable as Table;
 use primus_poly::PolyLength;
 use primus_tfhe_ntru_ntt::{
     BlindRotationConfig, CircuitBootstrapConfig, DecompositionConfig, GadgetEncryptionConfig,
-    KeyGenerator, OneHotCircuitBootstrapEvaluator, TfheConfig, TfheContext, TfheParameters,
+    OneHotCircuitBootstrapEvaluator, TfheConfig, TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -30,13 +30,10 @@ fn main() {
 
     // Client: independent LWE/NTRU secrets; send evaluation material and both encrypted choices.
     let mut rng = StdRng::seed_from_u64(42);
-    let mut generator = KeyGenerator::new(&context);
-    let client_key = generator.try_generate_client_key(&mut rng).unwrap();
-    let server_key = generator
-        .try_generate_server_key(
-            &client_key,
+    let (client_key, server_key) = context
+        .try_generate_circuit_bootstrap_keys(
             BlindRotationConfig::Classic,
-            Some(circuit_config()),
+            circuit_config(),
             &mut rng,
         )
         .unwrap();
@@ -56,12 +53,10 @@ fn main() {
     let mut decoded = vec![0; N];
 
     // Server: reserve one transformed NGSW per value in 0..4 and one ring result.
-    let mut resources = context
-        .bootstrap_resources(server_key.blind_rotation_key())
-        .unwrap();
+    let mut resources = server_key.bootstrap_resources(&context).unwrap();
     let mut cbs = OneHotCircuitBootstrapEvaluator::try_new(
         &resources,
-        server_key.circuit_bootstrap_key().unwrap(),
+        server_key.circuit_bootstrap_key(),
         &selector_codec,
     )
     .unwrap();

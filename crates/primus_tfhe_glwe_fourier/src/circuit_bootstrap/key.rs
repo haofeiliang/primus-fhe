@@ -8,7 +8,8 @@ use crate::{CircuitBootstrapParameters, KeyGenerationError, KeyGenerator, TfheCo
 /// Optional trace-projection and GLev-to-Fourier-GGSW scheme-switch keys.
 ///
 /// Both keys use the client's accumulator GLWE secret and the generating
-/// context's FFT table. The ordinary PBS keys remain in [`crate::ServerKey`].
+/// context's FFT table. BR is owned separately by [`crate::BlindRotationKey`];
+/// [`crate::CircuitBootstrapServerKey`] groups it with this CBS material.
 /// Layout and basis equality do not establish secret or FFT representation
 /// identity; consumers must use the same secret and FFT table instance as
 /// generation; see [`crate::CircuitBootstrapEvaluator::try_new`].

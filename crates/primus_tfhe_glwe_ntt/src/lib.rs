@@ -85,7 +85,7 @@ pub use factorized::{FactorizedEvaluator, NttFactorizedLookupTable};
 #[doc(no_inline)]
 pub use key::BlindRotationKey;
 #[doc(inline)]
-pub use key::{KeyGenerator, ServerKey};
+pub use key::{CircuitBootstrapServerKey, KeyGenerator, ServerKey};
 pub use primus_tfhe::{
     BivariateLookupTable, BlindRotationConfig, CircuitBootstrapConfig, ClientError,
     DecompositionConfig, FactorizedLookupTable, FactorizedPbsCodecs, GadgetEncryptionConfig,

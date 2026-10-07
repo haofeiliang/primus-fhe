@@ -81,7 +81,9 @@ pub use evaluator::Evaluator;
 #[doc(inline)]
 pub use factorized::{FactorizedEvaluator, FourierFactorizedLookupTable};
 #[doc(inline)]
-pub use key::{BlindRotationKey, ClassicControls, KeyGenerator, ServerKey};
+pub use key::{
+    BlindRotationKey, CircuitBootstrapServerKey, ClassicControls, KeyGenerator, ServerKey,
+};
 #[doc(no_inline)]
 pub use primus_tfhe_ntru::SparseNtruBootstrappingKey;
 

@@ -59,6 +59,18 @@ CBS 和 sparse 配置错误在秘密采样前返回。已有客户端在生成�
 
 CBS 传 `None` 生成 BR 和普通返回材料，传 `Some(config)` 则添加 trace/scheme-switch 密钥。BR、CBS 和返回密钥仍可独立生成；NTRU 公开提升在查表需要时单独请求。各后端的 `BlindRotationKey` 只持有 BR 材料，`ServerKey` 组合材料。GLWE 环 KS 和 NTRU LWE 返回的域不同，继续保留各自的接口。
 
+仅需环输出 CBS 或 NTRU one-hot 时，使用专门的成对入口：
+
+```rust,ignore
+let (client, server) = context.try_generate_circuit_bootstrap_keys(blind_rotation, cbs_config, rng)?;
+let mut resources = server.bootstrap_resources(&context)?;
+let mut cbs = CircuitBootstrapEvaluator::try_new(
+    &resources, server.circuit_bootstrap_key(), &input_codec,
+)?;
+```
+
+返回的 `CircuitBootstrapServerKey` 包含 BR 和必需的 CBS 材料。GLWE 仅在 KS→BR 时添加输入 KS；GLWE BR→KS 和 NTRU 均不生成普通返回密钥。NTRU one-hot 用相同组合绑定 `OneHotCircuitBootstrapEvaluator`。生成器提供同名方法，可复用 setup 工作区。混合 PBS/CBS 或高精度查表继续使用 `try_generate_keys(..., Some(cbs_config), ...)` 及完整 `ServerKey`。高级组合可以借用组件，或通过 `into_parts()` 移出组件，不复制密文缓冲。
+
 ## 客户端与服务端边界
 
 `Encryptor`、`Decryptor` 及其 Boolean 包装共享编码、范围检查和无分配的 `*_to` 操作。`LweClientParameters::new(&lwe_parameters)` 借用已验证 LWE 域的维数、Rounded codec 和噪声，并从 codec 模数派生 mask 采样器。字段私有，通过访问器读取。家族构造入口先验证密钥，再一次性选定有效 LWE 秘密和噪声；两家族通过 `LweClientParameters::try_from_parts(dimension, &codec, &noise)` 绑定所选消息编码：GLWE BR→KS 使用 small LWE 的噪声和维数，KS→BR 使用提取维数和 accumulator 噪声；NTRU 使用独立外部 LWE 参数。绑定时检查 codec 与密钥、噪声的模数配对。这些检查不建立噪声或安全预算。

@@ -47,6 +47,8 @@ Ordinary/interleaved `Evaluator` owns common `BootstrapResources` and its return
 
 `ServerKey` remains the convenient complete PBS bundle. Advanced workflows can own `BlindRotationKey`, the ring KS key and `CircuitBootstrapKey` separately; `ServerKey::new` / `into_parts` move them without copying ciphertext arrays. `KeyGenerator::try_generate_blind_rotation_key(&client, config, rng)` uses `BlindRotationConfig` to select classic or sparse BR, without generating return or CBS material; `try_generate_glwe_key_switching_key` generates ring KS separately; `try_generate_circuit_bootstrap_key(accumulator_secret, parameters, rng)` needs only the accumulator secret. Separate generation may transform secrets again; paired generation retains its existing transform reuse.
 
+For ring-output CBS, `context.try_generate_circuit_bootstrap_keys(blind_rotation, cbs_config, rng)` returns `(ClientKey, CircuitBootstrapServerKey)`. This bundle always contains CBS material and generates input KS only for KS→BR. Use `server.bootstrap_resources(&context)` and `server.circuit_bootstrap_key()` to bind the evaluator; see [material selection](../primus_tfhe/README.md#selecting-blind-rotation).
+
 For standalone CBS with an existing `ServerKey`, prepare only the required common resources:
 
 ```rust,ignore
@@ -91,7 +93,7 @@ The separate `sparse_candidate_r2` IDs use two copies, `2*h` buckets and fewer B
 
 ## Circuit bootstrapping
 
-Generate paired material with `context.try_generate_keys(blind_rotation, Some(cbs_config), &mut rng)`; `ServerKey` owns the additional parameters and trace/scheme-switch keys. Obtain `server.circuit_bootstrap_key()` and explicitly pass that material to the CBS constructor above. Use `allocate_output`, `circuit_bootstrap_to` and `cmux_to`, lending common resources to each operation; the [CBS → CMUX example](examples/ntt_circuit_bootstrap.rs) shows independent BR/CBS generation and the complete consumption chain.
+Use `context.try_generate_circuit_bootstrap_keys(blind_rotation, cbs_config, &mut rng)` for ring outputs. Its `CircuitBootstrapServerKey` owns BR, required input preparation and CBS material; `circuit_bootstrap_key()` returns the required key directly. Mixed PBS/CBS workflows can still generate a complete `ServerKey` with `try_generate_keys(blind_rotation, Some(cbs_config), rng)`. Obtain `server.circuit_bootstrap_key()` and explicitly pass that material to the CBS constructor above. Use `allocate_output`, `circuit_bootstrap_to` and `cmux_to`, lending common resources to each operation; the [CBS → CMUX example](examples/ntt_circuit_bootstrap.rs) shows grouped BR/CBS generation and the complete consumption chain.
 
 The [sparse CBS example](examples/ntt_sparse_circuit_bootstrap.rs) shows the fixed-weight secret, sparse key generation and CBS configuration together. Both PBS orders work; subsequent CBS and CMux calls are identical.
 

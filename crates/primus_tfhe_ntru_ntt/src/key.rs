@@ -1,5 +1,8 @@
 //! Server evaluation material and paired or component key generation.
 
+mod circuit;
+pub use circuit::CircuitBootstrapServerKey;
+
 mod blind_rotation;
 mod classic;
 pub use blind_rotation::BlindRotationKey;
@@ -169,13 +172,7 @@ where
     {
         let circuit_parameters = self.prepare_circuit_bootstrap(circuit_bootstrap)?;
         client_key.check_compatible(self.context.parameters())?;
-        let sparse_layout = match blind_rotation {
-            BlindRotationConfig::Classic => None,
-            BlindRotationConfig::Sparse {
-                copy_count,
-                bucket_count,
-            } => Some(self.prepare_sparse_layout(copy_count, bucket_count)?),
-        };
+        let sparse_layout = self.prepare_blind_rotation(blind_rotation)?;
         let transformed = NttNtruSecretKey::try_from_coeff_secret_key(
             client_key.accumulator_ntru_secret_key(),
             self.context
@@ -193,6 +190,30 @@ where
         )
     }
 
+    /// Encrypts selected BR controls after key compatibility and layout preparation.
+    /// Borrows the same accumulator representation later used by CBS generation.
+    fn generate_blind_rotation_key_with_main<R: rand::Rng + rand::CryptoRng>(
+        &mut self,
+        client_key: &ClientKey<T>,
+        accumulator_ntt: &NttNtruSecretKey<T>,
+        sparse_layout: Option<crate::sparse::SparseKeyLayout>,
+        rng: &mut R,
+    ) -> Result<BlindRotationKey<T>, KeyGenerationError> {
+        Ok(match sparse_layout {
+            None => self.generate_classic_blind_rotation_key_from_transformed(
+                client_key,
+                accumulator_ntt,
+                rng,
+            ),
+            Some(layout) => self.generate_sparse_blind_rotation_key_with_main(
+                client_key,
+                accumulator_ntt,
+                layout,
+                rng,
+            )?,
+        })
+    }
+
     /// Consumes the accepted ring representation for BR and CBS, then releases it
     /// before allocating ordinary return material. The caller established client
     /// compatibility and the return-q bound by sampling or validation.
@@ -208,17 +229,12 @@ where
         R: rand::Rng + rand::CryptoRng,
     {
         let parameters = self.context.parameters();
-        let blind_rotation = match sparse_layout {
-            None => {
-                self.generate_blind_rotation_key_from_transformed(client_key, &accumulator_ntt, rng)
-            }
-            Some(layout) => self.generate_sparse_blind_rotation_key_with_main(
-                client_key,
-                &accumulator_ntt,
-                layout,
-                rng,
-            )?,
-        };
+        let blind_rotation = self.generate_blind_rotation_key_with_main(
+            client_key,
+            &accumulator_ntt,
+            sparse_layout,
+            rng,
+        )?;
         let circuit_bootstrap = circuit_parameters.map(|parameters| {
             self.generate_circuit_bootstrap_key_with_main(
                 client_key.accumulator_ntru_secret_key(),
@@ -304,7 +320,13 @@ where
                 .cipher_modulus(),
             self.context.table(),
         )?;
-        Ok(self.generate_blind_rotation_key_from_transformed(client_key, &transformed, rng))
+        Ok(
+            self.generate_classic_blind_rotation_key_from_transformed(
+                client_key,
+                &transformed,
+                rng,
+            ),
+        )
     }
 
     /// Generates independent `NLEV_f[1]` for public polynomial lifting.
@@ -349,7 +371,7 @@ where
     }
 
     /// Reuses the checked accumulator transform in paired generation.
-    fn generate_blind_rotation_key_from_transformed<R: rand::Rng + rand::CryptoRng>(
+    fn generate_classic_blind_rotation_key_from_transformed<R: rand::Rng + rand::CryptoRng>(
         &mut self,
         client_key: &ClientKey<T>,
         transformed: &NttNtruSecretKey<T>,
@@ -492,13 +514,7 @@ where
         R: rand::Rng + rand::CryptoRng,
     {
         let circuit_parameters = self.prepare_circuit_bootstrap(circuit_bootstrap)?;
-        let sparse_layout = match blind_rotation {
-            BlindRotationConfig::Classic => None,
-            BlindRotationConfig::Sparse {
-                copy_count,
-                bucket_count,
-            } => Some(self.prepare_sparse_layout(copy_count, bucket_count)?),
-        };
+        let sparse_layout = self.prepare_blind_rotation(blind_rotation)?;
         let (client_key, transformed) = self.generate_client_key_with_main(rng)?;
         let parameters = self.context.parameters();
         // Sampling proves the usual q bound. For unusually small q, check the
@@ -520,6 +536,20 @@ where
             rng,
         )?;
         Ok((client_key, server_key))
+    }
+
+    /// Prepares the selected BR layout before sampling: `None` denotes classic.
+    fn prepare_blind_rotation(
+        &self,
+        blind_rotation: BlindRotationConfig,
+    ) -> Result<Option<crate::sparse::SparseKeyLayout>, KeyGenerationError> {
+        Ok(match blind_rotation {
+            BlindRotationConfig::Classic => None,
+            BlindRotationConfig::Sparse {
+                copy_count,
+                bucket_count,
+            } => Some(self.prepare_sparse_layout(copy_count, bucket_count)?),
+        })
     }
 
     /// Prepares optional CBS bases before any secret or evaluation-key sampling.

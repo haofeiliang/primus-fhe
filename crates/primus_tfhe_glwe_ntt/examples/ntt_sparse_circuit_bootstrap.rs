@@ -12,9 +12,8 @@ use primus_modulus::BarrettModulus;
 use primus_ntt::U64NttTable as Table;
 use primus_poly::PolyLength;
 use primus_tfhe_glwe_ntt::{
-    BlindRotationConfig, CircuitBootstrapConfig, CircuitBootstrapEvaluator, ClientKey,
-    DecompositionConfig, GadgetEncryptionConfig, KeyGenerator, PbsOrder, TfheConfig, TfheContext,
-    TfheParameters,
+    BlindRotationConfig, CircuitBootstrapConfig, CircuitBootstrapEvaluator, DecompositionConfig,
+    GadgetEncryptionConfig, PbsOrder, TfheConfig, TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -29,19 +28,15 @@ fn main() {
     // Padded t=4 encodes a selection bit independently of the ring messages.
     let selector_codec = RoundedCodec::new(4, context.parameters().cipher_modulus());
 
-    // Client: generate CBS material with the paired keys; send server_key only.
+    // Client: generate sparse BR/CBS material, without an unused return key.
     let mut rng = StdRng::seed_from_u64(42);
-    let client_key = ClientKey::generate(context.parameters(), &mut rng);
-    let mut generator = KeyGenerator::new(&context);
-    // Sparse CBS uses three copies and 64 buckets for the fixed-weight LWE secret.
-    let server_key = generator
-        .try_generate_server_key(
-            &client_key,
+    let (client_key, server_key) = context
+        .try_generate_circuit_bootstrap_keys(
             BlindRotationConfig::Sparse {
                 copy_count: 3,
                 bucket_count: 64,
             },
-            Some(circuit_config()),
+            circuit_config(),
             &mut rng,
         )
         .unwrap();
@@ -63,12 +58,13 @@ fn main() {
     let mut decoded = vec![0; N];
 
     // Server: receive the encrypted candidates; allocate the control and result.
-    let mut resources = context
-        .bootstrap_resources_from_server_key(&server_key)
-        .unwrap();
-    let circuit_key = server_key.circuit_bootstrap_key().unwrap();
-    let mut cbs =
-        CircuitBootstrapEvaluator::try_new(&resources, circuit_key, &selector_codec).unwrap();
+    let mut resources = server_key.bootstrap_resources(&context).unwrap();
+    let mut cbs = CircuitBootstrapEvaluator::try_new(
+        &resources,
+        server_key.circuit_bootstrap_key(),
+        &selector_codec,
+    )
+    .unwrap();
     let mut control = cbs.allocate_output();
     let mut selected = context.allocate_accumulator_ciphertext();
 
