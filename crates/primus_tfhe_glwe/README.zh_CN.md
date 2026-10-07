@@ -46,7 +46,7 @@
 
 `ClientKey` 保留为生成服务端密钥的完整 setup 组合。普通消息先取 `let external_secret = client.external_lwe_secret_key();`：BR→KS 借用 `ExternalLweSecretKey::SmallLwe(&small)`，KS→BR 借用 `ExternalLweSecretKey::ExtractedGlwe(&glwe)`。也可直接用这两个变体借用独立持有的秘密；`into_parts()` 无复制地移出两把密钥。消息客户端只检查该外部角色，setup 仍检查完整组合。环客户端只接收 `client.glwe_secret_key()`。
 
-优先通过 `context.try_generate_keys(circuit_bootstrap, rng)` 生成配套 client/server 密钥；仅需系数秘密时使用 `ClientKey::generate(&parameters, &mut rng)`。
+优先通过 `context.try_generate_keys(blind_rotation, circuit_bootstrap, rng)` 生成配套 client/server 密钥；仅需系数秘密时使用 `ClientKey::generate(&parameters, &mut rng)`。
 
 独立于密钥生成选择 `RoundedCodec`。通过 context 的 `encryptor(external_secret, &codec)`、`public_encryptor(&public, &codec)`、`decryptor(external_secret, &codec)` 绑定外部密钥；`parameters.try_generate_public_key(external_secret, rng)` 生成对应的 LWE 公钥。两种 PBS 顺序使用各自的外部秘密与维数。公钥加密的总噪声要求见 [LWE 公钥契约](../primus_lwe/README.zh_CN.md#公钥加密)。
 

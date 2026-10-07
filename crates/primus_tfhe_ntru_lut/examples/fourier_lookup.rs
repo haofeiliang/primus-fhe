@@ -13,6 +13,7 @@ use primus_lwe::LweEncryptionParameters;
 use primus_modulus::{NativeModulus, PowOf2Modulus};
 use primus_ntru::SecretKeyDistr;
 use primus_poly::PolyLength;
+use primus_tfhe::BlindRotationConfig;
 use primus_tfhe::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_tfhe_ntru_fourier::{
     CircuitBootstrapConfig, DecompositionConfig, GadgetEncryptionConfig, TfheConfig, TfheContext,
@@ -50,7 +51,11 @@ fn main() {
     // Client: generate independent LWE/NTRU secrets plus CBS-enabled server material.
     let mut rng = StdRng::seed_from_u64(42);
     let (client_key, server_key) = context
-        .try_generate_keys(Some(circuit_config()), &mut rng)
+        .try_generate_keys(
+            BlindRotationConfig::Classic,
+            Some(circuit_config()),
+            &mut rng,
+        )
         .unwrap();
     // Ordinary messages borrow only the external secret from the setup bundle.
     let external_secret = client_key.external_lwe_secret_key();

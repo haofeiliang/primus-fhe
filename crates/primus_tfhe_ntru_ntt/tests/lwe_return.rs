@@ -60,7 +60,17 @@ fn check<T: FheUint, Table: MonomialNttTable<ValueT = T>>(ring_q: T) {
             context.parameters().external_lwe().cipher_modulus(),
         );
         let mut rng = StdRng::seed_from_u64(0x513251);
-        let (client, server) = context.try_generate_keys(None, &mut rng).unwrap();
+        let blind_rotation = if distr.is_binary() {
+            BlindRotationConfig::Sparse {
+                copy_count: 3,
+                bucket_count: 8,
+            }
+        } else {
+            BlindRotationConfig::Classic
+        };
+        let (client, server) = context
+            .try_generate_keys(blind_rotation, None, &mut rng)
+            .unwrap();
         // Both distributions have even support and cannot form an invertible native NTRU key.
         assert_eq!(
             client

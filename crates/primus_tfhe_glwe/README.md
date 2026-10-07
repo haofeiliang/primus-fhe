@@ -46,7 +46,7 @@ Use `PbsMessageConfig::new(t_in)` for equal input/output message moduli, or `.wi
 
 `ClientKey` remains the complete setup bundle for generating server keys. For ordinary messages, use `let external_secret = client.external_lwe_secret_key();`: it borrows `ExternalLweSecretKey::SmallLwe(&small)` for BR→KS or `ExternalLweSecretKey::ExtractedGlwe(&glwe)` for KS→BR. These variants also accept independently retained owners; `into_parts()` moves both keys out without copying. Message clients check only that external role, while setup checks both secrets. Ring clients accept only `client.glwe_secret_key()`.
 
-Prefer `context.try_generate_keys(circuit_bootstrap, rng)` for paired client/server keys. Use `ClientKey::generate(&parameters, &mut rng)` when only coefficient secrets are needed.
+Prefer `context.try_generate_keys(blind_rotation, circuit_bootstrap, rng)` for paired client/server keys. Use `ClientKey::generate(&parameters, &mut rng)` when only coefficient secrets are needed.
 
 Choose a `RoundedCodec` independently of key generation. Bind the external key with the context's `encryptor(external_secret, &codec)`, `public_encryptor(&public, &codec)` and `decryptor(external_secret, &codec)`. `parameters.try_generate_public_key(external_secret, rng)` creates the corresponding LWE public key. Each PBS order uses its own external secret and dimension. See the [LWE public-key contract](../primus_lwe/README.md#public-key-encryption) for its total noise requirements.
 

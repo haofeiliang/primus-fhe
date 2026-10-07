@@ -390,6 +390,22 @@ fn sparse_generation_rejects_invalid_secrets_buckets_and_cbs_before_sampling() {
                     &mut rng
                 )
                 .err(),
+            Some(Error::SparseBootstrapping(expected.clone()))
+        );
+        assert_eq!(rng.next_u64(), untouched.next_u64());
+        rng = StdRng::seed_from_u64(0xBAD);
+        let mut untouched = StdRng::seed_from_u64(0xBAD);
+        assert_eq!(
+            generator
+                .try_generate(
+                    BlindRotationConfig::Sparse {
+                        copy_count: copies,
+                        bucket_count: buckets
+                    },
+                    None,
+                    &mut rng,
+                )
+                .err(),
             Some(Error::SparseBootstrapping(expected))
         );
         assert_eq!(rng.next_u64(), untouched.next_u64());

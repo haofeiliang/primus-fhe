@@ -4,6 +4,7 @@
 //! Fixtures are initialized only for selected IDs, then reused across samples.
 //! Run: cargo bench -p primus_tfhe_benchmarks --bench pbs --features glwe-fourier,rustfft,tfhe-fft
 
+use primus_tfhe::BlindRotationConfig;
 use primus_tfhe::{PbsMessageConfig, RoundedPbsCodecs};
 use primus_tfhe_benchmarks::measurement::{Case, Group, metadata};
 use std::hint::black_box;
@@ -146,7 +147,9 @@ impl<T: TorusFftValue, Table: FftTable> Fixture<T, Table> {
     ) -> Self {
         let context = TfheContext::<T, Table>::from_parameters(parameters);
         let mut rng = StdRng::seed_from_u64(42);
-        let (client, server) = context.try_generate_keys(None, &mut rng).unwrap();
+        let (client, server) = context
+            .try_generate_keys(BlindRotationConfig::Classic, None, &mut rng)
+            .unwrap();
         let input = context
             .encryptor(client.external_lwe_secret_key(), codecs.input_codec())
             .unwrap()

@@ -2,6 +2,7 @@
 
 mod blind_rotation;
 mod key;
+pub(crate) use key::SparseKeyLayout;
 
 use crate::SparseNtruBootstrappingKey;
 pub use blind_rotation::SparseBlindRotationPairWorkspace;

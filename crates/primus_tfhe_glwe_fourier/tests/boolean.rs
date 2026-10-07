@@ -11,6 +11,7 @@ use primus_lattice::{GlweDimension, LweDimension};
 use primus_lwe::LweParameters;
 use primus_modulus::NativeModulus;
 use primus_poly::PolyLength;
+use primus_tfhe::BlindRotationConfig;
 use primus_tfhe_glwe_fourier::{
     BooleanError, BooleanGate, GadgetEncryptionConfig, LweCiphertext, PbsOrder, TfheContext,
     TfheParameters,
@@ -67,7 +68,9 @@ fn boolean_factories_support_truth_tables_and_reused_output_in_both_orders() {
         let input_codec =
             primus_encoding::RoundedCodec::new(4, context.parameters().cipher_modulus());
         let mut rng = StdRng::seed_from_u64(42);
-        let (client_key, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
+        let (client_key, server_key) = context
+            .try_generate_keys(BlindRotationConfig::Classic, None, &mut rng)
+            .unwrap();
         let encryptor = context
             .boolean_encryptor(client_key.external_lwe_secret_key(), &input_codec)
             .unwrap();

@@ -45,15 +45,17 @@ Sparse 模式需显式选择生成入口，暂不支持 sparse ternary。NTRU �
 
 ## 选择盲旋转算法
 
-四个后端均导出 `BlindRotationConfig`。已有客户端密钥时，独立选择 BR 算法、秘密分布和可选 CBS 材料：
+四个后端均导出 `BlindRotationConfig`，独立选择 BR 算法、秘密分布和可选 CBS 材料：
 
 ```rust,ignore
 let blind_rotation = BlindRotationConfig::Sparse { copy_count: 3, bucket_count: 64 };
-// 同一个 fixed-weight binary 客户端也可使用 BlindRotationConfig::Classic。
-let server = generator.try_generate_server_key(&client, blind_rotation, Some(cbs_config), rng)?;
+// 使用 BlindRotationConfig::Classic 选择逐坐标 CMux 控制。
+let (client, server) = context.try_generate_keys(blind_rotation, None, rng)?;
 ```
 
-`Classic` 支持 binary/ternary，包括固定重量分布。`Sparse` 要求 fixed-weight binary 且 `0<h<n`，只重试公开桶映射，匹配失败返回错误；不会修改客户端秘密或回退到 classic。成对生成快捷入口 `context.try_generate_keys(cbs, rng)` / `generator.try_generate(cbs, rng)` 仍生成 **classic** 材料，并复用转换后的秘密。
+`Classic` 支持 binary/ternary，包括固定重量分布。`Sparse` 要求 fixed-weight binary 且 `0<h<n`，只重试公开桶映射，匹配失败返回错误；不会修改客户端秘密或回退到 classic。成对生成复用转换后的秘密；`generator.try_generate(blind_rotation, cbs, rng)` 提供同样的选择并复用生成工作区。保留已有客户端时，使用 `generator.try_generate_server_key(&client, blind_rotation, cbs, rng)`。
+
+CBS 和 sparse 配置错误在秘密采样前返回。已有客户端在生成边界验证；新生成密钥依赖采样器保证。NTRU 若无法通过采样器幅度上界保证返回 q 的条件，则额外检查实际接受的环秘密；仅需环输出的 BR/CBS 不受该返回界限制。
 
 CBS 传 `None` 生成 BR 和普通返回材料，传 `Some(config)` 则添加 trace/scheme-switch 密钥。BR、CBS 和返回密钥仍可独立生成；NTRU 公开提升在查表需要时单独请求。各后端的 `BlindRotationKey` 只持有 BR 材料，`ServerKey` 组合材料。GLWE 环 KS 和 NTRU LWE 返回的域不同，继续保留各自的接口。
 

@@ -75,15 +75,13 @@ let mut cbs = CircuitBootstrapEvaluator::try_new(&resources, circuit_key, &input
 
 ## 实验性稀疏 PBS
 
-`KeyGenerator::try_generate_server_key(&client, blind_rotation, cbs, rng)` 为已有客户端选择 `BlindRotationConfig::Classic` 或 `Sparse { copy_count, bucket_count }`；同一个 fixed-weight binary 秘密支持两者。CBS 传 `None` 只生成普通 BR/返回材料，传 `Some(config)` 则添加 CBS 密钥。成对生成快捷入口 `try_generate_keys` 选择 classic 并保留秘密变换复用；独立组件不要求完整密钥包。见[算法和材料选择](../primus_tfhe/README.zh_CN.md#选择盲旋转算法)。
+`KeyGenerator::try_generate_server_key(&client, blind_rotation, cbs, rng)` 为已有客户端选择 `BlindRotationConfig::Classic` 或 `Sparse { copy_count, bucket_count }`；同一个 fixed-weight binary 秘密支持两者。CBS 传 `None` 只生成普通 BR/返回材料，传 `Some(config)` 则添加 CBS 密钥。成对生成快捷入口 `context.try_generate_keys(blind_rotation, cbs, rng)` 接收同样的选择并复用变换后的秘密；独立组件不要求完整密钥包。见[算法和材料选择](../primus_tfhe/README.zh_CN.md#选择盲旋转算法)。
 
-为 small-LWE 选择固定重量 binary 分布，并显式调用稀疏生成器； 仅选择低重量分布仍使用经典 BR。要求 `0<h<n`、`copy_count>=1`、`bucket_count>=max(copy_count,h)`。
+为 small-LWE 选择固定重量 binary 分布，并显式选择 sparse；秘密分布本身不决定算法。要求 `0<h<n`、`copy_count>=1`、`bucket_count>=max(copy_count,h)`。
 
 ```rust,ignore
-let mut generator = KeyGenerator::new(&context);
-let client = ClientKey::generate(context.parameters(), &mut rng);
 let blind_rotation = BlindRotationConfig::Sparse { copy_count: 3, bucket_count: 2 * h };
-let server = generator.try_generate_server_key(&client, blind_rotation, None, &mut rng)?;
+let (client, server) = context.try_generate_keys(blind_rotation, None, &mut rng)?;
 let mut evaluator = context.evaluator(&server)?;
 ```
 
@@ -91,7 +89,7 @@ let mut evaluator = context.evaluator(&server)?;
 
 ## 电路自举
 
-`context.try_generate_keys(Some(cbs_config), &mut rng)` 生成配对材料，`ServerKey` 持有附加参数及 trace/scheme-switch 密钥。取得 `server.circuit_bootstrap_key()` 后，显式传给上述 CBS 构造器。使用 `allocate_output`、`circuit_bootstrap_to` 和 `cmux_to`，每次操作借用公共资源；[CBS → CMUX 示例](examples/fourier_circuit_bootstrap.rs)展示独立生成 BR/CBS 材料及完整消费链。
+`context.try_generate_keys(blind_rotation, Some(cbs_config), &mut rng)` 生成配对材料，`ServerKey` 持有附加参数及 trace/scheme-switch 密钥。取得 `server.circuit_bootstrap_key()` 后，显式传给上述 CBS 构造器。使用 `allocate_output`、`circuit_bootstrap_to` 和 `cmux_to`，每次操作借用公共资源；[CBS → CMUX 示例](examples/fourier_circuit_bootstrap.rs)展示独立生成 BR/CBS 材料及完整消费链。
 
 [稀疏 CBS 示例](examples/fourier_sparse_circuit_bootstrap.rs)直接展示固定重量秘密、稀疏密钥生成与 CBS 参数。两种 PBS 顺序都支持；后面的 CBS 与 CMux 调用方式相同。
 

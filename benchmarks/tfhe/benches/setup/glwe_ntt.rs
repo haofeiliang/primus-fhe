@@ -86,7 +86,9 @@ fn stages<T: FheUint, Table: MonomialNttTable<ValueT = T>>(c: &mut Group<'_>, ba
         ))
         .unwrap();
         let mut rng = StdRng::seed_from_u64(42);
-        let (client, server) = context.try_generate_keys(None, &mut rng).unwrap();
+        let (client, server) = context
+            .try_generate_keys(BlindRotationConfig::Classic, None, &mut rng)
+            .unwrap();
         (context, client, server)
     });
     for stage in ["glwe_key_switching", "blind_rotation"] {

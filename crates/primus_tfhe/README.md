@@ -45,15 +45,17 @@ Sparse mode requires explicit key generation; sparse ternary is unsupported. NTR
 
 ## Selecting blind rotation
 
-All four backends re-export `BlindRotationConfig`. With an existing client, select the algorithm independently of the secret distribution and optional CBS material:
+All four backends re-export `BlindRotationConfig`. Select the algorithm independently of the secret distribution and optional CBS material:
 
 ```rust,ignore
 let blind_rotation = BlindRotationConfig::Sparse { copy_count: 3, bucket_count: 64 };
-// Use BlindRotationConfig::Classic with the same fixed-weight binary client.
-let server = generator.try_generate_server_key(&client, blind_rotation, Some(cbs_config), rng)?;
+// Use BlindRotationConfig::Classic for per-coordinate CMux controls.
+let (client, server) = context.try_generate_keys(blind_rotation, None, rng)?;
 ```
 
-`Classic` supports binary and ternary distributions, including fixed-weight ones. `Sparse` requires fixed-weight binary with `0<h<n`; it retries only the public bucket map and returns an error if matching fails. It never changes the client secret or falls back to classic. The paired `context.try_generate_keys(cbs, rng)` / `generator.try_generate(cbs, rng)` shortcuts still generate **classic** material and reuse transformed secrets.
+`Classic` supports binary and ternary distributions, including fixed-weight ones. `Sparse` requires fixed-weight binary with `0<h<n`; it retries only the public bucket map and returns an error if matching fails. It never changes the client secret or falls back to classic. Paired generation reuses transformed secrets; `generator.try_generate(blind_rotation, cbs, rng)` offers the same choice with reusable setup scratch. To retain an existing client, use `generator.try_generate_server_key(&client, blind_rotation, cbs, rng)`.
+
+CBS and sparse configuration errors precede secret sampling. Existing clients are validated at the generation boundary; fresh keys rely on the sampler guarantees. NTRU additionally checks the accepted ring secret against return q when its sampler bound cannot establish that condition. Ring-only BR/CBS does not need this return bound.
 
 `None` for CBS generates BR and ordinary return material; `Some(config)` adds trace/scheme-switch keys. Independent BR, CBS and return generation remains available, and NTRU public lift is requested separately when a lookup needs it. Each backend's `BlindRotationKey` owns only BR material; `ServerKey` combines materials. GLWE ring KS and NTRU LWE return keep distinct APIs because their domains differ.
 

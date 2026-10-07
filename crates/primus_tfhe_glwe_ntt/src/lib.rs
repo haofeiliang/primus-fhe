@@ -4,7 +4,8 @@
 //!
 //! 1. Check mathematical choices with [`TfheParameters::try_from_config`].
 //! 2. Create a [`TfheContext`] and paired [`ClientKey`]/[`ServerKey`] with
-//!    [`TfheContext::try_generate_keys`] for classic BR; `None` selects ordinary PBS material.
+//!    [`TfheContext::try_generate_keys`] and an explicit [`BlindRotationConfig`];
+//!    `None` selects ordinary PBS material.
 //! 3. Prepare codecs with [`TfheParameters::pbs_codecs`] and [`PbsMessageConfig`].
 //!    Bind [`Encryptor`] to the input codec and [`Decryptor`] to the output codec;
 //!    create an [`Evaluator`] from the context. Output message moduli default to

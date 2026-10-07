@@ -127,7 +127,6 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
     ));
     let input_codec = primus_encoding::RoundedCodec::new(4, context.parameters().cipher_modulus());
     let mut rng = StdRng::seed_from_u64(0x4342_534b_4559 ^ order as u64);
-    let client = ClientKey::generate(context.parameters(), &mut rng);
     let mut generator = KeyGenerator::new(&context);
     let blind_rotation = if sparse {
         BlindRotationConfig::Sparse {
@@ -137,8 +136,8 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
     } else {
         BlindRotationConfig::Classic
     };
-    let server = generator
-        .try_generate_server_key(&client, blind_rotation, Some(circuit_config()), &mut rng)
+    let (client, server) = generator
+        .try_generate(blind_rotation, Some(circuit_config()), &mut rng)
         .unwrap();
     let (blind_rotation, key_switching, circuit) = server.into_parts();
     let key = circuit.as_ref().unwrap();
@@ -570,7 +569,7 @@ fn incompatible_parameters_and_client_keys_are_rejected_before_sampling() {
     let mut rng = StdRng::seed_from_u64(43);
     let mut untouched_rng = StdRng::seed_from_u64(43);
     assert!(matches!(
-        context.try_generate_keys(Some(invalid), &mut rng),
+        context.try_generate_keys(BlindRotationConfig::Classic, Some(invalid), &mut rng),
         Err(KeyGenerationError::CircuitBootstrapParameters(_))
     ));
     assert_eq!(rng.random::<u64>(), untouched_rng.random::<u64>());

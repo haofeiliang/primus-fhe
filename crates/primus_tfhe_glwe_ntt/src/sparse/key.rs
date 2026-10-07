@@ -12,11 +12,63 @@ use crate::{
     SparseGlweBootstrappingKey,
 };
 
+/// Validated bucket geometry and ciphertext allocation size, before secret sampling.
+/// Kept only during setup; the map and key retain their own final metadata.
+pub(crate) struct SparseKeyLayout {
+    copy_count: usize,
+    bucket_count: usize,
+    hamming_weight: usize,
+    data_len: usize,
+}
+
 impl<T, Table> KeyGenerator<'_, T, Table>
 where
     T: FheUint,
     Table: MonomialNttTable<ValueT = T>,
 {
+    /// Validates public sparse choices before allocating keys or consuming randomness.
+    pub(crate) fn prepare_sparse_layout(
+        &self,
+        copy_count: usize,
+        bucket_count: usize,
+    ) -> Result<SparseKeyLayout, KeyGenerationError> {
+        use SparseBootstrappingKeyError as Error;
+        let parameters = self.context.parameters();
+        let input = parameters.small_lwe();
+        let SecretKeyDistr::FixedHammingWeightBinary { hamming_weight } = input.secret_key_distr()
+        else {
+            return Err(Error::UnsupportedSecretDistribution.into());
+        };
+        let dimension = input.dimension().get();
+        if hamming_weight == 0 || hamming_weight >= dimension {
+            return Err(Error::InvalidHammingWeight.into());
+        }
+        let entries = dimension
+            .checked_mul(copy_count)
+            .ok_or(Error::StorageSizeOverflow)?;
+        let offsets = bucket_count
+            .checked_add(1)
+            .ok_or(Error::StorageSizeOverflow)?;
+        let data_len = entries
+            .checked_add(bucket_count)
+            .and_then(|count| count.checked_mul(parameters.blind_rotation_ggsw().size().ggsw_len()))
+            .ok_or(Error::StorageSizeOverflow)?;
+        Layout::array::<usize>(entries).map_err(|_| Error::StorageSizeOverflow)?;
+        Layout::array::<usize>(offsets).map_err(|_| Error::StorageSizeOverflow)?;
+        Layout::array::<T>(data_len).map_err(|_| Error::StorageSizeOverflow)?;
+        if copy_count == 0 || bucket_count < copy_count.max(hamming_weight) {
+            return Err(
+                Error::from(primus_tfhe::sparse::BucketMapError::InvalidBucketParameters).into(),
+            );
+        }
+        Ok(SparseKeyLayout {
+            copy_count,
+            bucket_count,
+            hamming_weight,
+            data_len,
+        })
+    }
+
     /// Generates a sparse BSK from this client's fixed-weight small-LWE secret.
     ///
     /// Each input chooses `copy_count` distinct buckets uniformly. Complete
@@ -49,28 +101,35 @@ where
     where
         R: rand::Rng + rand::CryptoRng,
     {
+        client_key.check_compatible(self.context.parameters())?;
+        let layout = self.prepare_sparse_layout(copy_count, bucket_count)?;
+        let output_key = NttGlweSecretKey::from_coeff_secret_key(
+            client_key.glwe_secret_key(),
+            self.context.table(),
+        );
+        self.generate_sparse_bootstrapping_key_with_main(client_key, layout, &output_key, rng)
+    }
+
+    /// Reuses the accepted accumulator transform for BR and optional CBS.
+    /// Only sparse support/matching checks remain after setup validation.
+    pub(crate) fn generate_sparse_bootstrapping_key_with_main<R: rand::Rng + rand::CryptoRng>(
+        &mut self,
+        client_key: &ClientKey<T>,
+        layout: SparseKeyLayout,
+        output_key: &NttGlweSecretKey<T>,
+        rng: &mut R,
+    ) -> Result<SparseGlweBootstrappingKey<T, BarrettModulus<T>>, KeyGenerationError> {
         use SparseBootstrappingKeyError as Error;
-
+        let SparseKeyLayout {
+            copy_count,
+            bucket_count,
+            hamming_weight,
+            data_len,
+        } = layout;
         let parameters = self.context.parameters();
-        client_key.check_compatible(parameters)?;
         let input = client_key.small_lwe_secret_key();
-        let SecretKeyDistr::FixedHammingWeightBinary { hamming_weight } = input.distr() else {
-            return Err(Error::UnsupportedSecretDistribution.into());
-        };
         let input_dimension = input.dimension();
-        if hamming_weight == 0 || hamming_weight >= input_dimension {
-            return Err(Error::InvalidHammingWeight.into());
-        }
-        let entry_count = input_dimension
-            .checked_mul(copy_count)
-            .ok_or(Error::StorageSizeOverflow)?;
         let size = parameters.blind_rotation_ggsw().size();
-        let data_len = entry_count
-            .checked_add(bucket_count)
-            .and_then(|count| count.checked_mul(size.ggsw_len()))
-            .ok_or(Error::StorageSizeOverflow)?;
-        Layout::array::<T>(data_len).map_err(|_| Error::StorageSizeOverflow)?;
-
         let mut nonzero_indices = Zeroizing::new(Vec::with_capacity(hamming_weight));
         for (index, &coefficient) in input.as_ref().iter().enumerate() {
             if coefficient == T::ONE {
@@ -96,7 +155,6 @@ where
         drop(nonzero_indices);
 
         let ntt = self.context.table();
-        let output_key = NttGlweSecretKey::from_coeff_secret_key(client_key.glwe_secret_key(), ntt);
         let gadget = parameters.blind_rotation_ggsw();
         self.gadget.resize(size);
         let mut data = vec![T::ZERO; data_len];

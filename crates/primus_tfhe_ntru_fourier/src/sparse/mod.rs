@@ -3,6 +3,7 @@
 mod aggregation;
 mod blind_rotation;
 mod key;
+pub(crate) use key::SparseKeyLayout;
 
 use crate::SparseNtruBootstrappingKey;
 pub(crate) use blind_rotation::{SparseWorkspace, rotate_buckets, rotate_buckets_pair};

@@ -7,6 +7,7 @@ use primus_lattice::{GlweDimension, LweDimension};
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_poly::PolyLength;
+use primus_tfhe::BlindRotationConfig;
 use primus_tfhe::{
     BivariateLookupTable, InterleavedLookupTable, LookupTable, Lwe, PbsMessageConfig,
     ProgrammableBootstrap, ProgrammableBootstrapInterleaved,
@@ -71,7 +72,9 @@ where
         T::as_from(15u32),
         context.parameters().cipher_modulus(),
     );
-    let (client_key, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
+    let (client_key, server_key) = context
+        .try_generate_keys(BlindRotationConfig::Classic, None, &mut rng)
+        .unwrap();
     let encryptor = context
         .encryptor(client_key.external_lwe_secret_key(), &input_codec)
         .unwrap();

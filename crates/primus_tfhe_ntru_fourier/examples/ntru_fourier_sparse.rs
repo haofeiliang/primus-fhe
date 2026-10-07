@@ -13,8 +13,8 @@ use primus_modulus::{NativeModulus, PowOf2Modulus};
 use primus_ntru::SecretKeyDistr;
 use primus_poly::PolyLength;
 use primus_tfhe_ntru_fourier::{
-    BlindRotationConfig, DecompositionConfig, GadgetEncryptionConfig, KeyGenerator,
-    PbsMessageConfig, TfheConfig, TfheContext, TfheParameters,
+    BlindRotationConfig, DecompositionConfig, GadgetEncryptionConfig, PbsMessageConfig, TfheConfig,
+    TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -34,12 +34,9 @@ fn main() {
 
     // Client: generate sparse BR material from the fixed-weight secret.
     let mut rng = StdRng::seed_from_u64(42);
-    let mut generator = KeyGenerator::new(&context);
-    let client_key = generator.try_generate_client_key(&mut rng).unwrap();
     // Three copies, 64 buckets. Map retries retain the same client secret.
-    let server_key = generator
-        .try_generate_server_key(
-            &client_key,
+    let (client_key, server_key) = context
+        .try_generate_keys(
             BlindRotationConfig::Sparse {
                 copy_count: 3,
                 bucket_count: 64,

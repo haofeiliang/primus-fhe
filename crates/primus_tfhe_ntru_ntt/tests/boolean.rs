@@ -11,6 +11,7 @@ use primus_modulus::BarrettModulus;
 use primus_ntru::SecretKeyDistr;
 use primus_ntt::U32NttTable;
 use primus_poly::PolyLength;
+use primus_tfhe::BlindRotationConfig;
 use primus_tfhe_ntru_ntt::{
     BooleanGate, DecompositionConfig, GadgetEncryptionConfig, LweCiphertext, TfheConfig,
     TfheContext, TfheParameters,
@@ -49,7 +50,9 @@ fn check_context(distr: SecretKeyDistr) {
     let context = TfheContext::<_, U32NttTable>::try_from_parameters(parameters).unwrap();
     let input_codec = RoundedCodec::new(4, context.parameters().external_lwe().cipher_modulus());
     let mut rng = StdRng::seed_from_u64(0xB201);
-    let (client, server) = context.try_generate_keys(None, &mut rng).unwrap();
+    let (client, server) = context
+        .try_generate_keys(BlindRotationConfig::Classic, None, &mut rng)
+        .unwrap();
     let public = context
         .parameters()
         .try_generate_public_key(client.external_lwe_secret_key(), &mut rng)

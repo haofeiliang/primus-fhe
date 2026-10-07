@@ -155,6 +155,25 @@ fn sparse_key_rejects_invalid_parameters_and_actual_secret_before_sampling() {
 
     let client = ClientKey::generate(context.parameters(), &mut StdRng::seed_from_u64(42));
     let mut generator = KeyGenerator::new(&context);
+    // Fresh generation must reject public geometry before sampling either secret.
+    for (copy_count, bucket_count) in [(0, 8), (9, 8), (3, 3)] {
+        let mut rng = StdRng::seed_from_u64(43);
+        assert_eq!(
+            generator
+                .try_generate(
+                    BlindRotationConfig::Sparse {
+                        copy_count,
+                        bucket_count
+                    },
+                    None,
+                    &mut rng,
+                )
+                .err(),
+            Some(Error::BucketMap(BucketMapError::InvalidBucketParameters).into())
+        );
+        assert_eq!(rng.next_u64(), StdRng::seed_from_u64(43).next_u64());
+    }
+
     let wrong_order = ClientKey::new(
         client.small_lwe_secret_key().clone(),
         client.glwe_secret_key().clone(),

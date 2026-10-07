@@ -18,7 +18,7 @@ pub struct GadgetEncryptionConfig<D = DecompositionConfig> {
     pub noise_standard_deviation: f64,
 }
 
-/// Blind-rotation algorithm used to generate evaluation material for an existing client.
+/// Blind-rotation algorithm used for fresh paired keys or an existing client.
 ///
 /// This choice does not change the secret distribution in TFHE parameters. A fixed-weight
 /// binary secret can use either algorithm; selecting sparse with an unsupported distribution

@@ -11,8 +11,8 @@ use primus_modulus::BarrettModulus;
 use primus_ntt::U64NttTable as Table;
 use primus_poly::PolyLength;
 use primus_tfhe_glwe_ntt::{
-    BlindRotationConfig, ClientKey, DecompositionConfig, GadgetEncryptionConfig, KeyGenerator,
-    PbsMessageConfig, PbsOrder, TfheConfig, TfheContext, TfheParameters,
+    BlindRotationConfig, DecompositionConfig, GadgetEncryptionConfig, PbsMessageConfig, PbsOrder,
+    TfheConfig, TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -32,12 +32,9 @@ fn main() {
 
     // Client: generate sparse BR material from the fixed-weight secret.
     let mut rng = StdRng::seed_from_u64(42);
-    let mut generator = KeyGenerator::new(&context);
-    let client_key = ClientKey::generate(context.parameters(), &mut rng);
     // Three copies, 64 buckets. Map retries retain the same client secret.
-    let server_key = generator
-        .try_generate_server_key(
-            &client_key,
+    let (client_key, server_key) = context
+        .try_generate_keys(
             BlindRotationConfig::Sparse {
                 copy_count: 3,
                 bucket_count: 64,

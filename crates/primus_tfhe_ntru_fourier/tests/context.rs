@@ -8,6 +8,7 @@ use primus_modulus::NativeModulus;
 use primus_ntru::NlevParameters;
 use primus_ntru::{NtruParameters, SecretKeyDistr};
 use primus_poly::PolyLength;
+use primus_tfhe::BlindRotationConfig;
 use primus_tfhe_ntru_fourier::{
     GadgetEncryptionConfig, TfheContext, TfheEvaluationError, TfheParameters,
 };
@@ -59,7 +60,9 @@ fn rejects_server_keys_with_same_layout_but_different_bases() {
     let context = TfheContext::try_new(parameters(8, 8), table).unwrap();
     let input_codec = RoundedCodec::new(4, context.parameters().external_lwe().cipher_modulus());
     let mut rng = StdRng::seed_from_u64(0x464f_5552_4241_5349);
-    let (_, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
+    let (_, server_key) = context
+        .try_generate_keys(BlindRotationConfig::Classic, None, &mut rng)
+        .unwrap();
     assert!(server_key.circuit_bootstrap_key().is_none());
     assert!(context.evaluator(&server_key).is_ok());
 

@@ -11,6 +11,7 @@ use primus_lwe::LweEncryptionParameters;
 use primus_modulus::NativeModulus;
 use primus_ntru::SecretKeyDistr;
 use primus_poly::PolyLength;
+use primus_tfhe::BlindRotationConfig;
 use primus_tfhe_ntru_fourier::{
     BooleanGate, DecompositionConfig, GadgetEncryptionConfig, LweCiphertext, TfheConfig,
     TfheContext, TfheParameters,
@@ -49,7 +50,9 @@ fn check_context<Table: FftTable>(distr: SecretKeyDistr) {
     let context = TfheContext::<_, Table>::from_parameters(parameters);
     let input_codec = RoundedCodec::new(4, context.parameters().external_lwe().cipher_modulus());
     let mut rng = StdRng::seed_from_u64(0xB201);
-    let (client, server) = context.try_generate_keys(None, &mut rng).unwrap();
+    let (client, server) = context
+        .try_generate_keys(BlindRotationConfig::Classic, None, &mut rng)
+        .unwrap();
     let public = context
         .parameters()
         .try_generate_public_key(client.external_lwe_secret_key(), &mut rng)

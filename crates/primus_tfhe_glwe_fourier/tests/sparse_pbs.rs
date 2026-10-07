@@ -71,10 +71,8 @@ fn check_pbs<Table: FftTable>() {
             primus_encoding::RoundedCodec::new(15, context.parameters().cipher_modulus());
         let mut generator = KeyGenerator::new(&context);
         let mut rng = StdRng::seed_from_u64(0x4234_3250);
-        let client = ClientKey::generate(context.parameters(), &mut rng);
-        let sparse_key = generator
-            .try_generate_server_key(
-                &client,
+        let (client, sparse_key) = generator
+            .try_generate(
                 BlindRotationConfig::Sparse {
                     copy_count: 3,
                     bucket_count: 8,

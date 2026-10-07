@@ -399,7 +399,7 @@ fn independent_cbs_material_does_not_require_a_return_key() {
         log_basis: DecompositionBaseLog::new(4),
         level_count: None,
     };
-    let parameters = TfheParameters::try_from_config(primus_tfhe_ntru_ntt::TfheConfig {
+    let config = primus_tfhe_ntru_ntt::TfheConfig {
         external_lwe: primus_lwe::LweEncryptionParameters::new(
             LweDimension::new(2),
             primus_modulus::PowOf2Modulus::new(16u32),
@@ -420,8 +420,44 @@ fn independent_cbs_material_does_not_require_a_return_key() {
             },
             noise_standard_deviation: 0.7,
         },
-    })
-    .unwrap();
+    };
+    // Generated keys also need the q bound when the sampler support is wider.
+    // Fixed seeds cover both rejection and an accepted sample below that support bound.
+    for (q, accepted) in [(16u32, false), (64, true)] {
+        let mut candidate = config.clone();
+        candidate.accumulator_secret_key_distr = SecretKeyDistr::gaussian(12.8);
+        candidate.external_lwe = primus_lwe::LweEncryptionParameters::new(
+            LweDimension::new(2),
+            primus_modulus::PowOf2Modulus::new(q),
+            SecretKeyDistr::UniformBinary,
+            0.7,
+        );
+        let candidate = TfheContext::<_, primus_ntt::U32NttTable, _>::try_from_parameters(
+            TfheParameters::try_from_config(candidate).unwrap(),
+        )
+        .unwrap();
+        let mut generator = KeyGenerator::new(&candidate);
+        let mut sample_rng = StdRng::seed_from_u64(42);
+        let sample = generator.try_generate_client_key(&mut sample_rng).unwrap();
+        let fits = sample
+            .accumulator_ntru_secret_key()
+            .as_slice()
+            .iter()
+            .all(|s| s.unsigned_abs() < q);
+        assert_eq!(fits, accepted);
+        let result = generator.try_generate(
+            BlindRotationConfig::Classic,
+            None,
+            &mut StdRng::seed_from_u64(42),
+        );
+        assert_eq!(
+            result.err(),
+            (!fits).then_some(primus_tfhe_ntru::KeyGenerationError::ClientKey(
+                TfheKeyError::AccumulatorSecretOutsideLweModulus
+            ),)
+        );
+    }
+    let parameters = TfheParameters::try_from_config(config).unwrap();
     let context =
         TfheContext::<_, primus_ntt::U32NttTable, _>::try_from_parameters(parameters).unwrap();
     let input_codec = RoundedCodec::new(4, context.parameters().external_lwe().cipher_modulus());

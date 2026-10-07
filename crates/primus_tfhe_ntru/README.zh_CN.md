@@ -21,7 +21,7 @@ NTRU-TFHE 的参数与 LWE 客户端层；[NTT](../primus_tfhe_ntru_ntt/README.z
 
 `accumulator_ntru()` 借用盲旋转 gadget 在 Q 下的环与采样状态。密钥参数不保存消息 codec。CBS 的 `trace` 和 `scheme_switch` 各使用 Q 下的 `GadgetEncryptionConfig`，构造不含 codec 的 NLev 参数并独立选择噪声。CBS 的 `output` 仍为描述输出 gadget 标量的 `DecompositionConfig`。
 
-`ClientKey` 保存独立 LWE 秘密 s 与 NTRU 环秘密 f。使用 `context.try_generate_keys(cbs_config, rng)` 生成配套密钥，或用 `ClientKey::new(s, f)` 导入。只有 f 需要可逆性检查，Fourier 还检查逆稳定性；外部秘密不要求补零、可逆或奇数重量。`external_lwe_secret_key()` 返回 q 下的 LWE 秘密。绑定在借用 raw view 前检查该密钥记录的模数；即使 binary 系数相同，异模数也返回 `TfheKeyError::LweSecretKeyModulusMismatch`。
+`ClientKey` 保存独立 LWE 秘密 s 与 NTRU 环秘密 f。使用 `context.try_generate_keys(blind_rotation, cbs_config, rng)` 生成配套密钥，或用 `ClientKey::new(s, f)` 导入。只有 f 需要可逆性检查，Fourier 还检查逆稳定性；外部秘密不要求补零、可逆或奇数重量。`external_lwe_secret_key()` 返回 q 下的 LWE 秘密。绑定在借用 raw view 前检查该密钥记录的模数；即使 binary 系数相同，异模数也返回 `TfheKeyError::LweSecretKeyModulusMismatch`。
 
 普通 PBS 的返回顺序为：f,Q 下盲旋转 → 逐系数 Q→q 最近舍入 → 提取相位系数 → q 下 LWE key switch 到 s。ManyLUT 共享盲旋转，每个输出分别返回；`context.allocate_lwe_ciphertext()` 使用外部维数。
 
@@ -57,7 +57,7 @@ Classic PBS、ManyLUT、CBS、Boolean 和 MVB 支持 binary/ternary 外部秘密
 
 两后端提供独立的 `BlindRotationKey`、返回密钥与 `CircuitBootstrapKey` owner，通过 `ServerKey::new` / `into_parts` 移入或移出完整组合。`parameters.try_generate_lwe_return_key(&client, rng)` 无需变换工作区即可生成返回密钥；`parameters.check_lwe_return_key(&key)` 在组合时核对 N/Q/q、维数与 basis。CBS-only 生成和绑定无需返回密钥，也无需 f 满足外部 q 的幅度界；累加秘密仍须满足各后端的转换要求。
 
-`context.try_generate_keys(Some(cbs_config), rng)` 添加 trace/scheme-switch 材料；sparse BR 使用 `context.try_generate_server_key(&client, BlindRotationConfig::Sparse { copy_count: copies, bucket_count: buckets }, Some(cbs_config), rng)`，传入 `None` 则不生成 CBS 材料。两个后端均通过公共 `BootstrapResources` 与 `CircuitBootstrapEvaluator::try_new` 组合；资源复用方式见各后端 README。CBS 跳过普通 PBS 返回路径，生成 f 下的 NGSW。输入 0/1 时它可控制 CMux，候选环密文须使用同一 f、Q 和编码；完整消费过程见后端示例。
+`context.try_generate_keys(blind_rotation, Some(cbs_config), rng)` 为 classic 或 sparse BR 添加 trace/scheme-switch 材料，传入 `None` 则不生成 CBS 材料；`BlindRotationConfig` 显式选择算法。两个后端均通过公共 `BootstrapResources` 与 `CircuitBootstrapEvaluator::try_new` 组合；资源复用方式见各后端 README。CBS 跳过普通 PBS 返回路径，生成 f 下的 NGSW。输入 0/1 时它可控制 CMux，候选环密文须使用同一 f、Q 和编码；完整消费过程见后端示例。
 
 `CircuitBootstrapParameters` 独立选择 output、trace、scheme-switch basis。输出保留请求的层数，scheme-switch key 绑定完整 output basis；相同长度不能证明 basis 或实际秘密相同。BR 分解必须能解析 LUT 和最小输出 gadget 尺度。CBS 的输入编码和 ManyLUT 容量在 evaluator 绑定时检查；同一密钥材料可服务多个 t。`accumulator_client(client.accumulator_ntru_secret_key(), scaled_codec)` 独立绑定 Q 下的普通环消息，复用 gadget 的采样状态；其明文模数可与输入 LWE 不同。
 

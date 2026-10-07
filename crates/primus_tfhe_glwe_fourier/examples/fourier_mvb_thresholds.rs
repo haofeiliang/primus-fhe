@@ -12,6 +12,7 @@ use primus_lattice::{GlweDimension, LweDimension};
 use primus_lwe::LweEncryptionParameters;
 use primus_modulus::NativeModulus;
 use primus_poly::PolyLength;
+use primus_tfhe::BlindRotationConfig;
 use primus_tfhe_glwe_fourier::{
     DecompositionConfig, FactorizedEvaluator, GadgetEncryptionConfig, PbsMessageConfig, PbsOrder,
     TfheConfig, TfheContext, TfheParameters,
@@ -38,7 +39,9 @@ fn main() {
 
     // Client: keep client_key and the decryptor; give server_key to the server.
     let mut rng = StdRng::seed_from_u64(42);
-    let (client_key, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
+    let (client_key, server_key) = context
+        .try_generate_keys(BlindRotationConfig::Classic, None, &mut rng)
+        .unwrap();
     // Ordinary messages borrow only the external secret from the setup bundle.
     let external_secret = client_key.external_lwe_secret_key();
     let encryptor = context

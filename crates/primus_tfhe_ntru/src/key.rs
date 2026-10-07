@@ -59,7 +59,19 @@ impl<T: FheUint> ClientKey<T> {
         parameters: &TfheParameters<T, M, LM>,
     ) -> Result<(), TfheKeyError> {
         self.check_blind_rotation_compatible(parameters)?;
-        if let Some(q) = parameters.external_lwe().cipher_modulus_value() {
+        self.check_accumulator_return_modulus(parameters.external_lwe().cipher_modulus())
+    }
+
+    /// Checks only that every accumulator coefficient has magnitude below return q.
+    /// This is needed for Q→q return-key generation, not ring-only BR/CBS.
+    /// It does not check shapes, distribution labels or invertibility. A generator
+    /// may skip this scan when its sampler's inclusive bound is below q; imported
+    /// keys still need [`Self::check_compatible`]'s complete boundary.
+    pub fn check_accumulator_return_modulus(
+        &self,
+        modulus: impl primus_reduce::Modulus<ValueT = T>,
+    ) -> Result<(), TfheKeyError> {
+        if let Some(q) = modulus.explicit_value() {
             let too_large = self
                 .accumulator_ntru_secret_key
                 .as_slice()

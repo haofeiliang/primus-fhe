@@ -13,7 +13,7 @@ use primus_lattice::{GlweDimension, LweDimension};
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::NativeModulus;
 use primus_poly::{PolyLength, Polynomial};
-use primus_tfhe::PbsMessageConfig;
+use primus_tfhe::{BlindRotationConfig, PbsMessageConfig};
 use primus_tfhe_glwe_fourier::{
     BlindRotationKey, ClientKey, FourierGlweBlindRotationWorkspace, GadgetEncryptionConfig,
     KeyGenerator, PbsOrder, TfheContext, TfheContextError, TfheEvaluationError, TfheParameters,
@@ -213,7 +213,9 @@ fn server_keys_are_bound_to_both_decomposition_bases() {
     )
     .unwrap();
     let mut rng = StdRng::seed_from_u64(42);
-    let (_, server_key) = source.try_generate_keys(None, &mut rng).unwrap();
+    let (_, server_key) = source
+        .try_generate_keys(BlindRotationConfig::Classic, None, &mut rng)
+        .unwrap();
     assert!(server_key.circuit_bootstrap_key().is_none());
     for (br_log, ks_log, distribution, expected) in [
         (
@@ -252,7 +254,9 @@ fn public_blind_rotation_rejects_mismatches_before_output_writes() {
     .unwrap();
 
     let mut rng = StdRng::seed_from_u64(42);
-    let (_, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
+    let (_, server_key) = context
+        .try_generate_keys(BlindRotationConfig::Classic, None, &mut rng)
+        .unwrap();
     let BlindRotationKey::Classic(key) = server_key.blind_rotation_key() else {
         panic!("raw classic rotation test requires a classic key");
     };

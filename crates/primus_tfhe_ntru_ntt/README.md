@@ -70,15 +70,13 @@ Run the [17-threshold example](examples/ntru_ntt_mvb_thresholds.rs) with `--exam
 
 This backend re-exports the family's [shared coefficient key](../primus_tfhe_ntru/README.md#sparse-coefficient-keys), `SparseNtruBootstrappingKey<T>`. Generation, transforms and bucket aggregation remain backend-specific.
 
-`KeyGenerator::try_generate_server_key(&client, blind_rotation, cbs, rng)` selects `BlindRotationConfig::Classic` or `Sparse { copy_count, bucket_count }` for an existing client. A fixed-weight binary secret supports both choices. `None` for CBS keeps ordinary BR/return material; `Some(config)` also generates CBS keys. The paired `try_generate_keys` shortcut selects classic and retains secret-transform reuse; independent components do not require a complete bundle. See [algorithm and material choices](../primus_tfhe/README.md#selecting-blind-rotation).
+`KeyGenerator::try_generate_server_key(&client, blind_rotation, cbs, rng)` selects `BlindRotationConfig::Classic` or `Sparse { copy_count, bucket_count }` for an existing client. A fixed-weight binary secret supports both choices. `None` for CBS keeps ordinary BR/return material; `Some(config)` also generates CBS keys. The paired `context.try_generate_keys(blind_rotation, cbs, rng)` shortcut accepts the same choice and reuses transformed secrets; independent components do not require a complete bundle. See [algorithm and material choices](../primus_tfhe/README.md#selecting-blind-rotation).
 
-Select a fixed-weight binary external-LWE distribution and choose sparse generation explicitly; a low-weight distribution alone still selects classic BR. Require `0<h<n`, `copy_count>=1` and `bucket_count>=max(copy_count,h)`.
+Select a fixed-weight binary external-LWE distribution and choose sparse generation explicitly; the distribution alone does not select the algorithm. Require `0<h<n`, `copy_count>=1` and `bucket_count>=max(copy_count,h)`.
 
 ```rust,ignore
-let mut generator = KeyGenerator::new(&context);
-let client = generator.try_generate_client_key(&mut rng)?;
 let blind_rotation = BlindRotationConfig::Sparse { copy_count: 3, bucket_count: 2 * h };
-let server = generator.try_generate_server_key(&client, blind_rotation, None, &mut rng)?;
+let (client, server) = context.try_generate_keys(blind_rotation, None, &mut rng)?;
 let mut evaluator = context.evaluator(&server)?;
 ```
 
@@ -86,7 +84,7 @@ Ordinary/interleaved PBS use the same evaluator; factorized MVB borrows it per c
 
 ## Optional circuit bootstrapping
 
-Generate paired material with `context.try_generate_keys(Some(cbs_config), &mut rng)`; `ServerKey` owns the additional parameters and trace/scheme-switch keys. Obtain `server.circuit_bootstrap_key()` and pass it with common resources to `CircuitBootstrapEvaluator::try_new`, which explicitly requires CBS material. Use `allocate_output`, `circuit_bootstrap_to` and `cmux_to`; the [CBS → CMUX example](examples/ntru_ntt_circuit_bootstrap.rs) shows their complete consumption chain.
+Generate paired material with `context.try_generate_keys(blind_rotation, Some(cbs_config), &mut rng)`; `ServerKey` owns the additional parameters and trace/scheme-switch keys. Obtain `server.circuit_bootstrap_key()` and pass it with common resources to `CircuitBootstrapEvaluator::try_new`, which explicitly requires CBS material. Use `allocate_output`, `circuit_bootstrap_to` and `cmux_to`; the [CBS → CMUX example](examples/ntru_ntt_circuit_bootstrap.rs) shows their complete consumption chain.
 
 The output is `NttNgswCiphertext` under `f_acc`. The circuit key binds the complete output basis; `try_new(&resources, circuit_key, &input_codec)` obtains parameters from that key. NTT trace normalization requires odd Q below `2^(T::BITS-1)`.
 

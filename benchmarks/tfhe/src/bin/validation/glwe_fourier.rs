@@ -235,7 +235,9 @@ where
 
     // Client: generate both keys; give only the evaluation key to the server.
     let mut rng = StdRng::seed_from_u64(seed);
-    let (client_key, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
+    let (client_key, server_key) = context
+        .try_generate_keys(BlindRotationConfig::Classic, None, &mut rng)
+        .unwrap();
 
     let encryptor = context
         .encryptor(client_key.external_lwe_secret_key(), codecs.input_codec())

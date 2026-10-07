@@ -6,7 +6,7 @@ use primus_modulus::BarrettModulus;
 use primus_ntru::SecretKeyDistr;
 use primus_ntt::U32NttTable;
 use primus_poly::PolyLength;
-use primus_tfhe::PbsMessageConfig;
+use primus_tfhe::{BlindRotationConfig, PbsMessageConfig};
 use primus_tfhe_ntru_ntt::{
     DecompositionConfig, FactorizedLookupTable, GadgetEncryptionConfig, InterleavedLookupTable,
     LookupTable, LookupTableError, LweCiphertext, NttFactorizedLookupTable, TfheConfig,
@@ -73,7 +73,9 @@ fn check_complete(distr: SecretKeyDistr) {
     let codec = *mvb_codecs.lut_output_codec();
     let modulus = context.parameters().accumulator_ntru().cipher_modulus();
     let mut rng = StdRng::seed_from_u64(0xB301);
-    let (client, server) = context.try_generate_keys(None, &mut rng).unwrap();
+    let (client, server) = context
+        .try_generate_keys(BlindRotationConfig::Classic, None, &mut rng)
+        .unwrap();
     let encryptor = context
         .encryptor(client.external_lwe_secret_key(), &input_codec)
         .unwrap();

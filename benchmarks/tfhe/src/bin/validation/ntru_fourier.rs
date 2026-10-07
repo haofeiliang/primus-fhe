@@ -79,7 +79,11 @@ fn one_hot_and_lookup<T: TorusFftValue, Table: FftTable>(
     // Client: generate both keys once; keep the secret key and RNG local.
     let mut rng = StdRng::seed_from_u64(seed);
     let (client_key, server_key) = context
-        .try_generate_keys(Some(ntru::cbs::<T>()), &mut rng)
+        .try_generate_keys(
+            BlindRotationConfig::Classic,
+            Some(ntru::cbs::<T>()),
+            &mut rng,
+        )
         .unwrap();
 
     // Test driver: run both roles with the same keys and sampling stream.
@@ -463,7 +467,9 @@ fn thresholds<T: TorusFftValue, Table: FftTable>(
 
     // Client: generate both keys; give only the evaluation key to the server.
     let mut rng = StdRng::seed_from_u64(seed);
-    let (client_key, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
+    let (client_key, server_key) = context
+        .try_generate_keys(BlindRotationConfig::Classic, None, &mut rng)
+        .unwrap();
 
     let encryptor = context
         .encryptor(client_key.external_lwe_secret_key(), codecs.input_codec())
@@ -529,7 +535,11 @@ fn circuit<T: TorusFftValue, Table: FftTable>(
     // Client: generate both keys; give only the evaluation key to the server.
     let mut rng = StdRng::seed_from_u64(seed);
     let (client_key, server_key) = context
-        .try_generate_keys(Some(ntru::cbs::<T>()), &mut rng)
+        .try_generate_keys(
+            BlindRotationConfig::Classic,
+            Some(ntru::cbs::<T>()),
+            &mut rng,
+        )
         .unwrap();
 
     // Retain public output metadata for the client-side phase oracle.

@@ -78,10 +78,8 @@ fn sparse_pbs_preserves_external_secret_and_interleaved_outputs_in_both_orders()
             primus_encoding::RoundedCodec::new(8, context.parameters().cipher_modulus());
         let mut generator = KeyGenerator::new(&context);
         let mut rng = StdRng::seed_from_u64(0x5035_5042);
-        let client = ClientKey::generate(context.parameters(), &mut rng);
-        let sparse_key = generator
-            .try_generate_server_key(
-                &client,
+        let (client, sparse_key) = generator
+            .try_generate(
                 BlindRotationConfig::Sparse {
                     copy_count: 3,
                     bucket_count: 8,

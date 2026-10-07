@@ -111,7 +111,7 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
             },
         };
         let (client_key, classic_server_key) = context
-            .try_generate_keys(Some(cbs_config), &mut rng)
+            .try_generate_keys(BlindRotationConfig::Classic, Some(cbs_config), &mut rng)
             .unwrap();
         let sparse_server_key = sparse.then(|| {
             // Bundled generation and separately paired CBS material share the same evaluator.

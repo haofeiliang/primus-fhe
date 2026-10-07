@@ -2,7 +2,7 @@ use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_lattice::LweDimension;
 use primus_lwe::LweEncryptionParameters;
 use primus_poly::PolyLength;
-use primus_tfhe::PbsMessageConfig;
+use primus_tfhe::{BlindRotationConfig, PbsMessageConfig};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use primus_encoding::{PlaintextEmbedding::Unsigned, RoundedCodec, ScaledCodec};
@@ -75,7 +75,9 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(distr: SecretKeyDistr) {
     let codec = *mvb_codecs.lut_output_codec();
     let modulus = NativeModulus::new();
     let mut rng = StdRng::seed_from_u64(0x4235_3301);
-    let (client, server) = context.try_generate_keys(None, &mut rng).unwrap();
+    let (client, server) = context
+        .try_generate_keys(BlindRotationConfig::Classic, None, &mut rng)
+        .unwrap();
     // Two full return tiles and a singleton tail reuse one polynomial buffer.
     let output_count = 17;
     let lut = context
@@ -155,7 +157,9 @@ fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
     let context = context::<u32, RustFftTable>(SecretKeyDistr::fixed_hamming_weight_binary(DIM, 3));
     let input_codec = RoundedCodec::new(15, context.parameters().external_lwe().cipher_modulus());
     let mut rng = StdRng::seed_from_u64(0x4235_3302);
-    let (client, server) = context.try_generate_keys(None, &mut rng).unwrap();
+    let (client, server) = context
+        .try_generate_keys(BlindRotationConfig::Classic, None, &mut rng)
+        .unwrap();
     let codec = ScaledCodec::new(8u32, NativeModulus::new());
     let compile = || {
         FactorizedLookupTable::try_new(

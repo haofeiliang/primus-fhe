@@ -94,7 +94,9 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(order: PbsOrder, ternary: b
     let codec = *mvb_codecs.lut_output_codec();
     let modulus = NativeModulus::new();
     let mut rng = StdRng::seed_from_u64(0x4235_3201);
-    let (client, server) = context.try_generate_keys(None, &mut rng).unwrap();
+    let (client, server) = context
+        .try_generate_keys(BlindRotationConfig::Classic, None, &mut rng)
+        .unwrap();
     let lut = context
         .compile_factorized_lookup_table_fn(&mvb_codecs, DOMAIN, 3, |m, i| T::as_from(value(m, i)))
         .unwrap();
@@ -193,7 +195,9 @@ fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
     let context = context::<u32, RustFftTable>(PbsOrder::BootstrapKeyswitch, false);
     let input_codec = primus_encoding::RoundedCodec::new(15, context.parameters().cipher_modulus());
     let mut rng = StdRng::seed_from_u64(0x4235_3202);
-    let (client, server) = context.try_generate_keys(None, &mut rng).unwrap();
+    let (client, server) = context
+        .try_generate_keys(BlindRotationConfig::Classic, None, &mut rng)
+        .unwrap();
     let codec = ScaledCodec::new(8u32, NativeModulus::new());
     let compile = || {
         FactorizedLookupTable::try_new(

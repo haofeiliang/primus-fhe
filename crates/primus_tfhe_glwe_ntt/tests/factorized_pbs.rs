@@ -300,7 +300,9 @@ fn factorized_pbs_accepts_ternary_controls() {
         let input_codec = *mvb_codecs.input_codec();
         let codec = *mvb_codecs.output_codec();
         let mut rng = StdRng::seed_from_u64(0x0054_334d_5642);
-        let (client, server) = context.try_generate_keys(None, &mut rng).unwrap();
+        let (client, server) = context
+            .try_generate_keys(BlindRotationConfig::Classic, None, &mut rng)
+            .unwrap();
         let lut = context
             .compile_factorized_lookup_table_fn(&mvb_codecs, DOMAIN, 3, value)
             .unwrap();

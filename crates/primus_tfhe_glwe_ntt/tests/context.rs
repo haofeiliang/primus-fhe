@@ -12,7 +12,7 @@ use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
 use primus_poly::PolyLength;
-use primus_tfhe::PbsMessageConfig;
+use primus_tfhe::{BlindRotationConfig, PbsMessageConfig};
 use primus_tfhe_glwe_ntt::{
     ClientKey, GadgetEncryptionConfig, KeyGenerator, PbsOrder, TfheContext, TfheContextError,
     TfheEvaluationError, TfheParameters,
@@ -73,7 +73,9 @@ fn server_keys_are_bound_to_their_decomposition_bases() {
     let source =
         TfheContext::try_new(parameters(PbsOrder::BootstrapKeyswitch), source_table).unwrap();
     let mut rng = StdRng::seed_from_u64(0x4241_5349_534b_4559);
-    let (_, server_key) = source.try_generate_keys(None, &mut rng).unwrap();
+    let (_, server_key) = source
+        .try_generate_keys(BlindRotationConfig::Classic, None, &mut rng)
+        .unwrap();
     assert!(server_key.circuit_bootstrap_key().is_none());
 
     for (br_log, ks_log, distribution, expected) in [

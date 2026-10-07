@@ -70,7 +70,9 @@ fn rejects_server_keys_with_same_layout_but_different_bases_or_modulus() {
     .unwrap();
     let context = TfheContext::try_new(original, table).unwrap();
     let mut rng = StdRng::seed_from_u64(0x4e54_5255_4241_5349);
-    let (_, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
+    let (_, server_key) = context
+        .try_generate_keys(BlindRotationConfig::Classic, None, &mut rng)
+        .unwrap();
     assert!(server_key.circuit_bootstrap_key().is_none());
     assert!(context.evaluator(&server_key).is_ok());
 

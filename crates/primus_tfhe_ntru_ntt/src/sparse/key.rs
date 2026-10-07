@@ -3,17 +3,25 @@
 use num_traits::{ConstOne, ConstZero};
 use primus_integer::FheUint;
 use primus_lattice::nlev::NttNlev;
-use primus_ntru::{NtruLweKeySwitchingKey, NttNtruSecretKey, SecretKeyDistr};
+use primus_ntru::{NttNtruSecretKey, SecretKeyDistr};
 use primus_ntt::MonomialNttTable;
 use primus_tfhe::sparse::BucketMap;
 use std::alloc::Layout;
 use zeroize::Zeroizing;
 
 use crate::{
-    CircuitBootstrapConfig, CircuitBootstrapKey, CircuitBootstrapParameters, ClientKey,
-    KeyGenerationError, KeyGenerator, ServerKey, SparseBootstrappingKeyError,
+    ClientKey, KeyGenerationError, KeyGenerator, SparseBootstrappingKeyError,
     SparseNtruBootstrappingKey,
 };
+
+/// Validated bucket geometry and ciphertext allocation size, before secret sampling.
+/// Kept only during setup; the map and key retain their own final metadata.
+pub(crate) struct SparseKeyLayout {
+    copy_count: usize,
+    bucket_count: usize,
+    hamming_weight: usize,
+    data_len: usize,
+}
 
 impl<T, Table, LM> KeyGenerator<'_, T, Table, LM>
 where
@@ -21,37 +29,47 @@ where
     Table: MonomialNttTable<ValueT = T>,
     LM: primus_reduce::RingContext<T>,
 {
-    // Generate sparse BR/CBS with one accumulator transform before allocating return material.
-    pub(crate) fn try_generate_sparse_server_key<R>(
-        &mut self,
-        client_key: &ClientKey<T>,
+    /// Validates public sparse choices before allocating keys or consuming randomness.
+    pub(crate) fn prepare_sparse_layout(
+        &self,
         copy_count: usize,
         bucket_count: usize,
-        circuit_bootstrap: Option<CircuitBootstrapConfig>,
-        rng: &mut R,
-    ) -> Result<ServerKey<T>, KeyGenerationError>
-    where
-        R: rand::Rng + rand::CryptoRng,
-    {
-        let circuit_parameters = self.prepare_circuit_bootstrap(circuit_bootstrap)?;
-        client_key.check_compatible(self.context.parameters())?;
-        let (blind_rotation, circuit) = self.generate_sparse_bootstrap_keys(
-            client_key,
+    ) -> Result<SparseKeyLayout, KeyGenerationError> {
+        use SparseBootstrappingKeyError as Error;
+        let parameters = self.context.parameters();
+        let input = parameters.external_lwe();
+        let SecretKeyDistr::FixedHammingWeightBinary { hamming_weight } = input.secret_key_distr()
+        else {
+            return Err(Error::UnsupportedSecretDistribution.into());
+        };
+        let dimension = input.dimension().get();
+        if hamming_weight == 0 || hamming_weight >= dimension {
+            return Err(Error::InvalidHammingWeight.into());
+        }
+        let entries = dimension
+            .checked_mul(copy_count)
+            .ok_or(Error::StorageSizeOverflow)?;
+        let offsets = bucket_count
+            .checked_add(1)
+            .ok_or(Error::StorageSizeOverflow)?;
+        let data_len = entries
+            .checked_add(bucket_count)
+            .and_then(|count| count.checked_mul(parameters.blind_rotation().nlev_len()))
+            .ok_or(Error::StorageSizeOverflow)?;
+        Layout::array::<usize>(entries).map_err(|_| Error::StorageSizeOverflow)?;
+        Layout::array::<usize>(offsets).map_err(|_| Error::StorageSizeOverflow)?;
+        Layout::array::<T>(data_len).map_err(|_| Error::StorageSizeOverflow)?;
+        if copy_count == 0 || bucket_count < copy_count.max(hamming_weight) {
+            return Err(
+                Error::from(primus_tfhe::sparse::BucketMapError::InvalidBucketParameters).into(),
+            );
+        }
+        Ok(SparseKeyLayout {
             copy_count,
             bucket_count,
-            circuit_parameters,
-            rng,
-        )?;
-        let parameters = self.context.parameters();
-        let return_key = NtruLweKeySwitchingKey::generate(
-            client_key.accumulator_ntru_secret_key(),
-            parameters.accumulator_ntru().cipher_modulus(),
-            client_key.external_lwe_secret_key(),
-            parameters.key_switching_lwe(),
-            parameters.key_switching_basis().clone(),
-            rng,
-        );
-        Ok(ServerKey::new(blind_rotation, return_key, circuit))
+            hamming_weight,
+            data_len,
+        })
     }
 
     /// Generates only sparse BR controls, retaining the fixed input secret.
@@ -81,40 +99,38 @@ where
         R: rand::Rng + rand::CryptoRng,
     {
         client_key.check_blind_rotation_compatible(self.context.parameters())?;
-        let (blind_rotation, _) =
-            self.generate_sparse_bootstrap_keys(client_key, copy_count, bucket_count, None, rng)?;
-        Ok(blind_rotation)
+        let layout = self.prepare_sparse_layout(copy_count, bucket_count)?;
+        let transformed = NttNtruSecretKey::try_from_coeff_secret_key(
+            client_key.accumulator_ntru_secret_key(),
+            self.context
+                .parameters()
+                .accumulator_ntru()
+                .cipher_modulus(),
+            self.context.table(),
+        )?;
+        self.generate_sparse_blind_rotation_key_with_main(client_key, &transformed, layout, rng)
     }
 
-    /// Shares matching/encryption after the public boundary checked secret roles.
-    /// Optional CBS generation reuses the same accumulator transform, with its own bases.
-    fn generate_sparse_bootstrap_keys<R: rand::Rng + rand::CryptoRng>(
+    /// Matches the fixed support and encrypts controls with the already accepted inverse.
+    /// The caller established client compatibility and sparse allocation bounds.
+    pub(crate) fn generate_sparse_blind_rotation_key_with_main<R: rand::Rng + rand::CryptoRng>(
         &mut self,
         client_key: &ClientKey<T>,
-        copy_count: usize,
-        bucket_count: usize,
-        circuit_parameters: Option<CircuitBootstrapParameters<T>>,
+        accumulator_ntt: &NttNtruSecretKey<T>,
+        layout: SparseKeyLayout,
         rng: &mut R,
-    ) -> Result<(crate::BlindRotationKey<T>, Option<CircuitBootstrapKey<T>>), KeyGenerationError>
-    {
+    ) -> Result<crate::BlindRotationKey<T>, KeyGenerationError> {
         use SparseBootstrappingKeyError as Error;
         let parameters = self.context.parameters();
-        let SecretKeyDistr::FixedHammingWeightBinary { hamming_weight } =
-            parameters.external_lwe().secret_key_distr()
-        else {
-            return Err(Error::UnsupportedSecretDistribution.into());
-        };
+        let SparseKeyLayout {
+            copy_count,
+            bucket_count,
+            hamming_weight,
+            data_len,
+        } = layout;
         let dimension = parameters.external_lwe_dimension().get();
-        if hamming_weight == 0 || hamming_weight >= dimension {
-            return Err(Error::InvalidHammingWeight.into());
-        }
         let control_len = parameters.blind_rotation().nlev_len();
-        let data_len = dimension
-            .checked_mul(copy_count)
-            .and_then(|n| n.checked_add(bucket_count))
-            .and_then(|n| n.checked_mul(control_len))
-            .ok_or(Error::StorageSizeOverflow)?;
-        Layout::array::<T>(data_len).map_err(|_| Error::StorageSizeOverflow)?;
+        let ntt = self.context.table();
         let nonzero_indices = Zeroizing::new(
             client_key
                 .external_lwe_secret_key()
@@ -127,13 +143,6 @@ where
         if nonzero_indices.len() != hamming_weight {
             return Err(Error::InvalidSecretWeight.into());
         }
-        let ntt = self.context.table();
-        let modulus = parameters.accumulator_ntru().cipher_modulus();
-        let accumulator_ntt = NttNtruSecretKey::try_from_coeff_secret_key(
-            client_key.accumulator_ntru_secret_key(),
-            modulus,
-            ntt,
-        )?;
         let (map, selected) =
             BucketMap::try_generate(dimension, copy_count, bucket_count, &nonzero_indices, rng)
                 .map_err(Error::from)?;
@@ -200,14 +209,6 @@ where
             parameters.blind_rotation(),
         )?;
         let blind_rotation = crate::BlindRotationKey::from_sparse(parameters, controls);
-        let circuit = circuit_parameters.map(|parameters| {
-            self.generate_circuit_bootstrap_key_with_main(
-                client_key.accumulator_ntru_secret_key(),
-                &accumulator_ntt,
-                parameters,
-                rng,
-            )
-        });
-        Ok((blind_rotation, circuit))
+        Ok(blind_rotation)
     }
 }

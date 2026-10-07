@@ -72,15 +72,13 @@ NTT 表需要实现 `MonomialNttTable`，内置表均支持。Context 检查长�
 
 本后端重导出家族的[共享系数密钥](../primus_tfhe_ntru/README.zh_CN.md#sparse-系数密钥) `SparseNtruBootstrappingKey<T>`；生成、变换及桶聚合仍由各后端负责。
 
-`KeyGenerator::try_generate_server_key(&client, blind_rotation, cbs, rng)` 为已有客户端选择 `BlindRotationConfig::Classic` 或 `Sparse { copy_count, bucket_count }`；同一个 fixed-weight binary 秘密支持两者。CBS 传 `None` 只生成普通 BR/返回材料，传 `Some(config)` 则添加 CBS 密钥。成对生成快捷入口 `try_generate_keys` 选择 classic 并保留秘密变换复用；独立组件不要求完整密钥包。见[算法和材料选择](../primus_tfhe/README.zh_CN.md#选择盲旋转算法)。
+`KeyGenerator::try_generate_server_key(&client, blind_rotation, cbs, rng)` 为已有客户端选择 `BlindRotationConfig::Classic` 或 `Sparse { copy_count, bucket_count }`；同一个 fixed-weight binary 秘密支持两者。CBS 传 `None` 只生成普通 BR/返回材料，传 `Some(config)` 则添加 CBS 密钥。成对生成快捷入口 `context.try_generate_keys(blind_rotation, cbs, rng)` 接收同样的选择并复用变换后的秘密；独立组件不要求完整密钥包。见[算法和材料选择](../primus_tfhe/README.zh_CN.md#选择盲旋转算法)。
 
-为 external-LWE 选择固定重量 binary 分布，并显式调用稀疏生成器； 仅选择低重量分布仍使用经典 BR。要求 `0<h<n`、`copy_count>=1`、`bucket_count>=max(copy_count,h)`。
+为 external-LWE 选择固定重量 binary 分布，并显式选择 sparse；秘密分布本身不决定算法。要求 `0<h<n`、`copy_count>=1`、`bucket_count>=max(copy_count,h)`。
 
 ```rust,ignore
-let mut generator = KeyGenerator::new(&context);
-let client = generator.try_generate_client_key(&mut rng)?;
 let blind_rotation = BlindRotationConfig::Sparse { copy_count: 3, bucket_count: 2 * h };
-let server = generator.try_generate_server_key(&client, blind_rotation, None, &mut rng)?;
+let (client, server) = context.try_generate_keys(blind_rotation, None, &mut rng)?;
 let mut evaluator = context.evaluator(&server)?;
 ```
 
@@ -88,7 +86,7 @@ let mut evaluator = context.evaluator(&server)?;
 
 ## 可选电路自举
 
-`context.try_generate_keys(Some(cbs_config), &mut rng)` 生成配对材料，`ServerKey` 持有附加参数及 trace/scheme-switch 密钥。取出 `server.circuit_bootstrap_key()`，与公共资源一起传给 `CircuitBootstrapEvaluator::try_new`；该构造器显式要求 CBS 材料。使用 `allocate_output`、`circuit_bootstrap_to` 和 `cmux_to`；[CBS → CMUX 示例](examples/ntru_ntt_circuit_bootstrap.rs)展示完整消费链。
+`context.try_generate_keys(blind_rotation, Some(cbs_config), &mut rng)` 生成配对材料，`ServerKey` 持有附加参数及 trace/scheme-switch 密钥。取出 `server.circuit_bootstrap_key()`，与公共资源一起传给 `CircuitBootstrapEvaluator::try_new`；该构造器显式要求 CBS 材料。使用 `allocate_output`、`circuit_bootstrap_to` 和 `cmux_to`；[CBS → CMUX 示例](examples/ntru_ntt_circuit_bootstrap.rs)展示完整消费链。
 
 输出为 `f_acc` 下的 `NttNgswCiphertext`。Circuit key 绑定完整输出 basis； `try_new(&resources, circuit_key, &input_codec)` 从该密钥取得参数。 NTT trace 归一化要求奇数 Q 且小于 `2^(T::BITS-1)`。
 
