@@ -4,8 +4,7 @@
 //! Arithmetic profiles: guides/development/tfhe-parameters.md (not security presets).
 
 use primus_decompose::DecompositionBaseLog;
-use primus_encoding::RoundedCodec;
-use primus_encoding::ScaledCodec;
+use primus_encoding::{RoundedCodec, ScaledCodec};
 use primus_lattice::LweDimension;
 use primus_lwe::LweEncryptionParameters;
 use primus_modulus::{BarrettModulus, PowOf2Modulus};
@@ -13,8 +12,7 @@ use primus_ntru::SecretKeyDistr;
 use primus_ntt::U64NttTable as Table;
 use primus_poly::PolyLength;
 use primus_tfhe_ntru_ntt::{
-    BlindRotationConfig, DecompositionConfig, GadgetEncryptionConfig, KeyGenerator, TfheConfig,
-    TfheContext, TfheParameters,
+    DecompositionConfig, GadgetEncryptionConfig, TfheConfig, TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -37,11 +35,7 @@ fn main() {
 
     // Client: keep client_key and the decryptor; give server_key to the server.
     let mut rng = StdRng::seed_from_u64(42);
-    let mut generator = KeyGenerator::new(&context);
-    let client_key = generator.try_generate_client_key(&mut rng).unwrap();
-    let server_key = generator
-        .try_generate_server_key(&client_key, BlindRotationConfig::Classic, None, &mut rng)
-        .unwrap();
+    let (client_key, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
     // Ordinary messages borrow only the external secret from the setup bundle.
     let external_secret = client_key.external_lwe_secret_key();
     let encryptor = context.encryptor(external_secret, &input_codec).unwrap();

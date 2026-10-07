@@ -6,7 +6,7 @@
 //! Arithmetic profiles: guides/development/tfhe-parameters.md (not security presets).
 
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
-use primus_encoding::RoundedCodec;
+use primus_encoding::{RoundedCodec, ScaledCodec};
 use primus_fft::RustFftTable as Table;
 use primus_glwe::SecretKeyDistr;
 use primus_lattice::{GlweDimension, LweDimension};
@@ -28,8 +28,8 @@ fn main() {
     let parameters = parameters();
     let context = TfheContext::<Word, Table>::from_parameters(parameters);
 
-    // Public message encoding is independent of the evaluation keys.
-    let input_codec = RoundedCodec::new(4, context.parameters().cipher_modulus());
+    // Padded t=4 encodes a selection bit independently of the ring messages.
+    let selector_codec = RoundedCodec::new(4, context.parameters().cipher_modulus());
 
     // Client: generate CBS material with the paired keys; send server_key only.
     let mut rng = StdRng::seed_from_u64(42);
@@ -47,17 +47,14 @@ fn main() {
             &mut rng,
         )
         .unwrap();
-    // Ordinary messages borrow only the external secret from the setup bundle.
+    // The selector is encrypted with the external LWE secret.
     let external_secret = client_key.external_lwe_secret_key();
-    let encryptor = context.encryptor(external_secret, &input_codec).unwrap();
+    let encryptor = context.encryptor(external_secret, &selector_codec).unwrap();
+
+    // Candidate ring messages use their own t=4 space under the accumulator secret.
+    let ring_message_codec = ScaledCodec::new(4, context.parameters().cipher_modulus());
     let mut ring_client = context
-        .accumulator_client(
-            client_key.glwe_secret_key(),
-            primus_encoding::ScaledCodec::new(
-                input_codec.plaintext_modulus(),
-                input_codec.ciphertext_modulus(),
-            ),
-        )
+        .accumulator_client(client_key.glwe_secret_key(), ring_message_codec)
         .unwrap();
     // Encrypt both candidates with the accumulator secret used by the CBS output.
     let lhs_message = vec![1; N];
@@ -73,7 +70,7 @@ fn main() {
         .unwrap();
     let circuit_key = server_key.circuit_bootstrap_key().unwrap();
     let mut cbs =
-        CircuitBootstrapEvaluator::try_new(&resources, circuit_key, &input_codec).unwrap();
+        CircuitBootstrapEvaluator::try_new(&resources, circuit_key, &selector_codec).unwrap();
     let mut control = cbs.allocate_output();
     let mut selected = context.allocate_accumulator_ciphertext();
 

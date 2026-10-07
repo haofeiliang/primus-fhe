@@ -1,4 +1,5 @@
 //! Check storage bindings and owned constructors, not the containers themselves.
+
 use std::sync::Arc;
 
 use primus_data::{Data, DataMut, DataOwned};

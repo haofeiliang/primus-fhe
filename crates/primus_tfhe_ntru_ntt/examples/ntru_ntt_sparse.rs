@@ -50,7 +50,7 @@ fn main() {
     // Ordinary messages borrow only the external secret from the setup bundle.
     let external_secret = client_key.external_lwe_secret_key();
     let encryptor = context.encryptor(external_secret, &input_codec).unwrap();
-    let decryptor = context.decryptor(external_secret, &input_codec).unwrap();
+    let output_decryptor = context.decryptor(external_secret, &output_codec).unwrap();
     let mut input = context.allocate_lwe_ciphertext();
 
     // Server: receive server_key; compile three public functions sharing one rotation.
@@ -79,10 +79,9 @@ fn main() {
         // Server -> client: return message, carry and parity, reusing the evaluator.
         evaluator.apply_interleaved_lookup_table_to(input.as_view(), &lut, &mut outputs);
 
-        // Client: decode with the output codec, not the input's t=16 codec.
+        // Client: decrypt all three results in the configured t=8 output space.
         for (output, expected) in outputs.iter().zip([message % 4, message / 4, message % 2]) {
-            let value =
-                output_codec.decode_value(decryptor.decrypt_phase(output.as_view()).unwrap());
+            let value = output_decryptor.decrypt(output.as_view()).unwrap();
             assert_eq!(value, expected);
         }
         println!("input {message}: message/carry/parity decoded correctly");

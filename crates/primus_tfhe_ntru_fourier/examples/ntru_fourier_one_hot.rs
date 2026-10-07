@@ -6,8 +6,7 @@
 //! Arithmetic profiles: guides/development/tfhe-parameters.md (not security presets).
 
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
-use primus_encoding::RoundedCodec;
-use primus_encoding::ScaledCodec;
+use primus_encoding::{RoundedCodec, ScaledCodec};
 use primus_fft::RustFftTable as Table;
 use primus_lattice::LweDimension;
 use primus_lattice::ngsw::FourierNgswIter;
@@ -28,8 +27,8 @@ const TARGET: usize = 2; // Public selector r in 0..4; delta_r encrypts [input =
 
 fn main() {
     let context = TfheContext::<Word, Table, _>::from_parameters(parameters());
-    // Public message encoding at external q, chosen independently of key generation.
-    let input_codec = RoundedCodec::new(8, context.parameters().external_lwe().cipher_modulus());
+    // Padded t=8 encodes four selector values independently of the ring messages.
+    let selector_codec = RoundedCodec::new(8, context.parameters().external_lwe().cipher_modulus());
 
     // Client: independent LWE/NTRU secrets; send evaluation material and both encrypted choices.
     let mut rng = StdRng::seed_from_u64(42);
@@ -43,15 +42,15 @@ fn main() {
             &mut rng,
         )
         .unwrap();
-    // Ordinary messages borrow only the external secret from the setup bundle.
+    // The selector is encrypted with the external LWE secret.
     let external_secret = client_key.external_lwe_secret_key();
-    let encryptor = context.encryptor(external_secret, &input_codec).unwrap();
-    let ring_codec = ScaledCodec::new(
-        input_codec.plaintext_modulus(),
-        context.parameters().accumulator_ntru().cipher_modulus(),
-    );
+    let encryptor = context.encryptor(external_secret, &selector_codec).unwrap();
+
+    // Candidate ring messages use their own t=8 space at accumulator Q.
+    let ring_message_codec =
+        ScaledCodec::new(8, context.parameters().accumulator_ntru().cipher_modulus());
     let mut ring_client = context
-        .accumulator_client(client_key.accumulator_ntru_secret_key(), ring_codec)
+        .accumulator_client(client_key.accumulator_ntru_secret_key(), ring_message_codec)
         .unwrap();
     let lhs = ring_client.encrypt(&vec![1; N], &mut rng);
     let rhs = ring_client.encrypt(&vec![3; N], &mut rng);
@@ -65,7 +64,7 @@ fn main() {
     let mut cbs = OneHotCircuitBootstrapEvaluator::try_new(
         &resources,
         server_key.circuit_bootstrap_key().unwrap(),
-        &input_codec,
+        &selector_codec,
     )
     .unwrap();
     let mut selectors = cbs.allocate_ngsw_output();
