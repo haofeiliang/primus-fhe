@@ -5,7 +5,7 @@ use primus_tfhe::TfheEvaluationError;
 
 use crate::{
     BlindRotationKey, Lwe, TfheContext,
-    blind_rotation::{BlindRotationWorkspace, blind_rotate_lookup_table_to},
+    blind_rotation::{BlindRotationResources, blind_rotate_lookup_table_to},
 };
 
 /// Shared NTT blind-rotation, coefficient and external-product resources.
@@ -13,6 +13,9 @@ use crate::{
 /// Ordinary [`crate::Evaluator`] owns these. Standalone CBS/one-hot callers can
 /// prepare them directly and borrow them for each operation. No return buffers
 /// are included, and reusing these resources online requires no allocation.
+/// Context, keys and the NTT table are borrowed; BR buffers are owned here.
+/// Serial operations can lend one instance to each other; concurrent requests
+/// need independent mutable resources and may share the immutable context/keys.
 pub struct BootstrapResources<'a, T, Table, LM = primus_modulus::BarrettModulus<T>>
 where
     T: FheUint,
@@ -21,7 +24,7 @@ where
 {
     pub(crate) context: &'a TfheContext<T, Table, LM>,
     pub(crate) blind_rotation_key: &'a BlindRotationKey<T>,
-    pub(crate) workspace: BlindRotationWorkspace<'a, T>,
+    pub(crate) blind_rotation: BlindRotationResources<'a, T>,
 }
 
 impl<'a, T, Table, LM> BootstrapResources<'a, T, Table, LM>
@@ -46,7 +49,7 @@ where
         Ok(Self {
             context,
             blind_rotation_key,
-            workspace: BlindRotationWorkspace::new(context.parameters(), blind_rotation_key),
+            blind_rotation: BlindRotationResources::new(context.parameters(), blind_rotation_key),
         })
     }
 
@@ -67,7 +70,7 @@ where
     pub fn external_product_workspace(
         &mut self,
     ) -> &mut primus_ntru::NttNtruExternalProductWorkspace<T> {
-        self.workspace.rotation.external_product()
+        self.blind_rotation.rotation.external_product()
     }
 
     /// Rejects a different context before scratch/output writes. Prepared CBS,
@@ -96,7 +99,7 @@ where
             input,
             lookup_table.as_view(),
             rotation_step,
-            &mut self.workspace,
+            &mut self.blind_rotation,
             parameters,
             self.context.table(),
         );

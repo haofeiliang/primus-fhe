@@ -193,15 +193,18 @@ GLWE 参数分别由[共享模数/采样状态](../../crates/primus_glwe/src/par
 
 ## 区分运行环境与工作区
 
-命名按职责区分：成组复用缓冲使用 `Workspace`，绑定运行环境的类型保留 `Context`。
+命名按职责区分：`Workspace` 保存复用存储，`Context` 保存已验证环境，`Resources` 组合公共绑定资源，`Evaluator` / `Engine` 执行具体流程。
 
 | 职责 | 命名规则 | 当前入口 |
 | --- | --- | --- |
 | 保存一组复用临时缓冲和形状不变量 | `*Workspace` | [Ntt/FourierNtruExternalProductWorkspace](../../crates/primus_lattice/src/workspace/mod.rs)、[NtruLweKeySwitchingWorkspace](../../crates/primus_ntru/src/key_switch/lwe.rs) |
 | FFT 后端拥有的临时缓冲 | 同样使用 `*Workspace` | [FftTable::Workspace / new_workspace 和 FftEngine](../../crates/primus_fft/src/table.rs) |
 | 绑定已验证参数、模数和变换环境 | `*Context` | [TfheContext](../../crates/primus_tfhe_ntru_ntt/src/context.rs)；算术 `RingContext` / `FieldContext` 仍为能力 trait |
-| 绑定密钥/表和可变工作区并提供执行流程 | `*Evaluator` / `*Engine` | TFHE evaluator、`FftEngine`；混合状态按实际职责判断 |
+| 将借用的环境/计算材料与拥有的复用缓冲组合 | `*Resources` | 四个 TFHE 后端的 `BootstrapResources`；内部 KS/BR 资源组合 |
+| 使用拥有或短借用的资源执行具体流程 | `*Evaluator` / `*Engine` | PBS、CBS、one-hot、MVB evaluator 和 `FftEngine` |
 | 借用的一段临时切片或区域 | 局部变量 `scratch` / `buffer` | 无需另加 wrapper；第三方 `PodBuffer` / `PodStack` 保留原名 |
+
+Resources 借用 context/key 的 owner，只拥有准备好的缓冲；Fourier 后端还拥有借用 context 表的 FFT engine。串行 PBS/MVB/CBS/one-hot 可相互借用公共资源，并发 worker 通常需要独立可变实例。GLWE 的 `KeySwitchingResources` 将环 KS 密钥与底层 workspace、switched 输出绑定；NTRU 的 `BlindRotationResources` 将 classic controls 或 sparse key 与所选 BR 缓冲绑定，内部外积 workspace 仍是纯存储。这些内部组合使用 `Resources`，不增加新的公开 wrapper；缓冲类型带有辅助运算方法，也不必因此改叫 `Evaluator`。参见 [TFHE 资源组合](tfhe-parameters-and-boundaries.md#输入盲旋转与返回组合)。
 
 工作区长度相同不证明 basis、模数、表或秘密相容。在重复操作前构造缓冲，遵循接口的覆盖/累加规则；借用工作区或调用方 accumulator 需要恢复时须明确恢复契约。秘密密钥和工作区擦除后的状态可能不同，复用前阅读各类型的 `zeroize` 契约。
 

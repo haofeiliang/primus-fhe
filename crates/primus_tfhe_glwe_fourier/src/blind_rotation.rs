@@ -40,7 +40,7 @@ where
         accumulator: &TorusGlwe<B>,
         output: &mut TorusGlwe<C>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweBlindRotationWorkspace<T>,
+        workspace: &mut FourierGlweBlindRotationWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = T>,
@@ -53,7 +53,7 @@ where
             accumulator.as_view(),
             output.as_mut_view(),
             fft,
-            context,
+            workspace,
             |x| modulus_switch.exponent(x),
         );
     }
@@ -70,7 +70,7 @@ where
         lookup_table: &Polynomial<B>,
         output: &mut TorusGlwe<C>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweBlindRotationWorkspace<T>,
+        workspace: &mut FourierGlweBlindRotationWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = T>,
@@ -91,13 +91,13 @@ where
             ),
             "blind-rotation input, lookup table or output layout mismatch"
         );
-        self.assert_compatible(fft, context);
+        self.assert_compatible(fft, workspace);
         self.fourier_blind_rotate_lookup_table_kernel_to(
             input.as_view(),
             lookup_table.as_view(),
             output.as_mut_view(),
             fft,
-            context,
+            workspace,
         );
     }
 
@@ -109,7 +109,7 @@ where
         lookup_table: Polynomial<&[T]>,
         output: TorusGlwe<&mut [T]>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweBlindRotationWorkspace<T>,
+        workspace: &mut FourierGlweBlindRotationWorkspace<T>,
     ) where
         Table: FftTable,
     {
@@ -119,7 +119,7 @@ where
             1,
             output,
             fft,
-            context,
+            workspace,
         );
     }
 
@@ -139,7 +139,7 @@ where
         rotation_step: usize,
         output: &mut TorusGlwe<C>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweBlindRotationWorkspace<T>,
+        workspace: &mut FourierGlweBlindRotationWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = T>,
@@ -164,14 +164,14 @@ where
             ),
             "PBSManyLUT input, table, or output layout mismatch"
         );
-        self.assert_compatible(fft, context);
+        self.assert_compatible(fft, workspace);
         self.fourier_blind_rotate_interleaved_lookup_table_kernel_to(
             input.as_view(),
             lookup_table.as_view(),
             rotation_step,
             output.as_mut_view(),
             fft,
-            context,
+            workspace,
         );
     }
 
@@ -184,7 +184,7 @@ where
         rotation_step: usize,
         mut output: TorusGlwe<&mut [T]>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweBlindRotationWorkspace<T>,
+        workspace: &mut FourierGlweBlindRotationWorkspace<T>,
     ) where
         Table: FftTable,
     {
@@ -223,7 +223,7 @@ where
             &mut Polynomial(body),
             NativeModulus::new(),
         );
-        self.blind_rotate_initialized(input, output, fft, context, exponent_of);
+        self.blind_rotate_initialized(input, output, fft, workspace, exponent_of);
     }
 
     /// Blind-rotates from an LWE whose coefficients are exponents in `[0, 2N)`.
@@ -241,7 +241,7 @@ where
         accumulator: &TorusGlwe<B>,
         output: &mut TorusGlwe<C>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweBlindRotationWorkspace<T>,
+        workspace: &mut FourierGlweBlindRotationWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = T>,
@@ -254,7 +254,7 @@ where
             accumulator.as_view(),
             output.as_mut_view(),
             fft,
-            context,
+            workspace,
             |x| {
                 // This entry already receives exponents; do not quantize them again.
                 let exponent = x.try_into().unwrap();
@@ -271,7 +271,7 @@ where
         accumulator: TorusGlwe<&[T]>,
         mut output: TorusGlwe<&mut [T]>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweBlindRotationWorkspace<T>,
+        workspace: &mut FourierGlweBlindRotationWorkspace<T>,
         exponent_of: F,
     ) where
         Table: FftTable,
@@ -293,7 +293,7 @@ where
             "blind-rotation input, accumulator or output layout mismatch"
         );
 
-        self.assert_compatible(fft, context);
+        self.assert_compatible(fft, workspace);
         let initial_exponent = exponent_of(input.b()).wrapping_neg() & (two_n - 1);
         accumulator.mul_monomial_to(
             initial_exponent,
@@ -301,14 +301,14 @@ where
             poly_length,
             NativeModulus::new(),
         );
-        self.blind_rotate_initialized(input, output, fft, context, exponent_of);
+        self.blind_rotate_initialized(input, output, fft, workspace, exponent_of);
     }
 
     /// Checks evaluation resources before initializing the output accumulator.
     fn assert_compatible<Table: FftTable>(
         &self,
         fft: &FftEngine<'_, Table>,
-        context: &FourierGlweBlindRotationWorkspace<T>,
+        workspace: &FourierGlweBlindRotationWorkspace<T>,
     ) {
         assert_eq!(
             fft.poly_length().get(),
@@ -316,17 +316,17 @@ where
             "blind-rotation FFT polynomial length mismatch"
         );
         assert_eq!(
-            context.size(),
+            workspace.size(),
             self.size(),
             "blind-rotation workspace gadget layout mismatch"
         );
         assert_eq!(
-            matches!(context.cmux, CmuxWorkspace::Binary(_)),
+            matches!(workspace.cmux, CmuxWorkspace::Binary(_)),
             self.input_distribution().is_binary(),
             "blind-rotation workspace control layout mismatch"
         );
         debug_assert_eq!(
-            context.scratch.as_ref().len(),
+            workspace.scratch.as_ref().len(),
             self.size().glwe_len(),
             "blind-rotation workspace GLWE layout mismatch"
         );
@@ -338,13 +338,13 @@ where
         input: Lwe<&[T]>,
         mut output: TorusGlwe<&mut [T]>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweBlindRotationWorkspace<T>,
+        workspace: &mut FourierGlweBlindRotationWorkspace<T>,
         exponent_of: F,
     ) where
         Table: FftTable,
         F: Fn(T) -> usize,
     {
-        let FourierGlweBlindRotationWorkspace { scratch, cmux } = context;
+        let FourierGlweBlindRotationWorkspace { scratch, cmux } = workspace;
         // Dispatch once per blind rotation; the coordinate loop has no secret-
         // distribution branch, and both paths share initialization and swapping.
         match cmux {
@@ -432,15 +432,15 @@ impl<T: TorusFftValue> FourierGlweBlindRotationWorkspace<T> {
         operation: impl FnOnce(&mut FourierGlweExternalProductWorkspace<T>) -> R,
     ) -> R {
         match &mut self.cmux {
-            CmuxWorkspace::Binary(context) => context.with_rebound(size, operation),
-            CmuxWorkspace::Ternary(context) => context.with_external_product(size, operation),
+            CmuxWorkspace::Binary(workspace) => workspace.with_rebound(size, operation),
+            CmuxWorkspace::Ternary(workspace) => workspace.with_external_product(size, operation),
         }
     }
 
     fn size(&self) -> GadgetSize {
         match &self.cmux {
-            CmuxWorkspace::Binary(context) => context.size(),
-            CmuxWorkspace::Ternary(context) => context.size(),
+            CmuxWorkspace::Binary(workspace) => workspace.size(),
+            CmuxWorkspace::Ternary(workspace) => workspace.size(),
         }
     }
 
@@ -451,9 +451,9 @@ impl<T: TorusFftValue> FourierGlweBlindRotationWorkspace<T> {
             return;
         }
         match &mut self.cmux {
-            CmuxWorkspace::Binary(context) => context.resize(size),
-            CmuxWorkspace::Ternary(context) => {
-                *context = FourierGlweTernaryCmuxWorkspace::new(size)
+            CmuxWorkspace::Binary(workspace) => workspace.resize(size),
+            CmuxWorkspace::Ternary(workspace) => {
+                *workspace = FourierGlweTernaryCmuxWorkspace::new(size)
             }
         }
         self.scratch.0.resize(size.glwe_len(), T::ZERO);

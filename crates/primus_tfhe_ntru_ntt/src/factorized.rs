@@ -240,7 +240,7 @@ where
         let resources = &mut evaluator.resources;
         resources.blind_rotate(input, common, 1);
         resources
-            .workspace
+            .blind_rotation
             .current
             .write_ntt_form(&mut self.shared_rotation, resources.context.table());
     }
@@ -254,7 +254,7 @@ where
     ) {
         let resources = &mut evaluator.resources;
         let parameters = resources.context.parameters();
-        let mut product = NttNtru::new(resources.workspace.current.as_mut());
+        let mut product = NttNtru::new(resources.blind_rotation.current.as_mut());
         self.shared_rotation.mul_ntt_polynomial_to(
             &factor,
             &mut product,
@@ -262,7 +262,7 @@ where
         );
         product.into_coeff_form(resources.context.table());
         evaluator.lwe_return.append_at(
-            resources.workspace.current.as_view(),
+            resources.blind_rotation.current.as_view(),
             0,
             &mut evaluator.batch_return,
         );

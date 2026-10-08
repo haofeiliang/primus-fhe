@@ -246,7 +246,7 @@ impl<'a, T: TorusFftValue, Table: FftTable, LM: primus_reduce::RingContext<T>>
         let resources = &mut evaluator.resources;
         resources.blind_rotate(input, common, 1);
         resources
-            .workspace
+            .blind_rotation
             .current
             .write_fourier_form(&mut self.shared_rotation, &mut resources.fft);
     }
@@ -262,9 +262,9 @@ impl<'a, T: TorusFftValue, Table: FftTable, LM: primus_reduce::RingContext<T>>
         self.shared_rotation
             .mul_fourier_polynomial_to(&factor, &mut self.product);
         self.product
-            .write_torus_form(&mut resources.workspace.current, &mut resources.fft);
+            .write_torus_form(&mut resources.blind_rotation.current, &mut resources.fft);
         evaluator.lwe_return.append_at(
-            resources.workspace.current.as_view(),
+            resources.blind_rotation.current.as_view(),
             0,
             &mut evaluator.batch_return,
         );

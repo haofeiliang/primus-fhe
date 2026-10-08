@@ -82,9 +82,10 @@ TFHE 的 `TfheParameters::try_new(external_lwe, blind_rotation, key_switching)` 
 | `Config` | 调用方的独立选择；不保证组合已经有效 |
 | `Parameters` | 已验证的数学域、派生布局、codec、basis 和 sampler |
 | `Context` | 绑定家族参数与不可变 NTT/FFT 表；保留便捷工厂及公开布局的输出分配入口 |
-| `Workspace` | 特定算法可复用的临时存储；不拥有客户端秘密或自行选择参数 |
+| `Workspace` | 复用缓冲及形状不变量；不绑定计算密钥或运行环境，可提供缓冲操作 helper |
+| `Resources` | 组合借用的环境/计算材料与拥有的匹配缓冲，供操作共享 |
 | `KeyGenerator` / `AccumulatorClient` | 绑定 context，准备密钥生成或环客户端所需的表示和 scratch |
-| `Evaluator` | 绑定 context、服务端密钥和对应算法工作区，执行在线同态运算 |
+| `Evaluator` / `Engine` | 执行具体流程，可拥有资源或在请求期间短借用公共资源 |
 
 `ClientKey` 是生成服务端材料的拥有型 setup 组合，`check_compatible` 校验整套秘密。普通加解密、Boolean 客户端和 LWE 公钥生成改为接收外部秘密；`AccumulatorClient` 只接收系数域累加秘密。工厂绑定之后仍借用 raw view 执行，不复制秘密、不逐消息检查，也不扫描无关秘密。
 
@@ -226,7 +227,9 @@ ServerKey 的可选 CBS 材料仍使用 `Option` 表示；四个后端的 CBS �
 
 ## 输入、盲旋转与返回组合
 
-四后端各自的公共 `BootstrapResources` 绑定 input 准备、所选 BR key/scratch、系数 accumulator 与 Fourier FFT engine。GLWE KS→BR 保留输入 KS，BR→KS 直接使用外部 input。普通 `Evaluator` 组合完整返回阶段：GLWE BR→KS 的输出 KS、KS→BR 的直接提取，或 NTRU 返回对象；必需资源不再是可能缺失的 `Option`。
+`Workspace` 是缓冲与形状不变量；`Resources` 是借用的材料/环境加拥有的匹配缓冲；`Evaluator` / `Engine` 是具体流程；`Context` 是已验证参数与变换环境。资源组合不复制密钥/表，不因局部 helper 存在就改变类型职责。GLWE 内部 `KeySwitchingResources` 持有环 KS key 引用、底层纯 workspace 及 switched 输出，`BlindRotationResources` 为所选 BR key 配对 scratch；NTRU 内部 `BlindRotationResources` 保存 classic controls 或 sparse key 的绑定、current/scratch 及外积空间。这些组合直接使用已有类型，不另设公开包装层。
+
+四后端各自的公共 `BootstrapResources` 绑定 input 准备、所选 BR key/scratch、系数 accumulator 与 Fourier FFT engine。GLWE KS→BR 保留输入 KS，BR→KS 直接使用外部 input。Context/key/table 的 owner 由调用方保留，common resources 拥有缓冲；Fourier engine 借用该 context 的 FFT table。串行操作短借用同一 common，多个并发请求使用各自的可变资源。普通 `Evaluator` 组合完整返回阶段：GLWE BR→KS 的输出 KS、KS→BR 的直接提取，或 NTRU 返回对象；必需资源不再是可能缺失的 `Option`。
 
 NTRU 两后端将公共 BR/外积资源放入各自的 `BootstrapResources`，Fourier 还在其中绑定同一个 FFT engine。普通 `Evaluator` 拥有公共资源与返回缓冲；CBS/one-hot 只持 LUT/投影状态，MVB 持额外变换域多项式。执行时短借用资源或 PBS，在借用边界检查同一 context；准备状态不缓存 BR 控制，实际秘密配对的 classic/sparse 资源可以互换，检查不证明独立材料的秘密身份。LUT 独立拥有公共资源、one-hot 状态与返回缓冲：NTT 仅 scalar，Fourier 仅 batch。没有 evaluator 嵌套或恢复协议；Fourier 因子保持整数变换，gadget 保持 torus 变换，streamed tile 顺序不变。
 

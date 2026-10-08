@@ -9,7 +9,7 @@ use primus_tfhe_glwe::PbsOrder;
 
 use crate::{
     BlindRotationKey, Lwe, ServerKey, TfheContext,
-    bootstrap::{BootstrapResources, KeySwitchingWorkspace},
+    bootstrap::{BootstrapResources, KeySwitchingResources},
     error::TfheEvaluationError,
 };
 
@@ -27,7 +27,7 @@ where
 
 /// The result stage is complete and selected once for the bound PBS order.
 enum LweReturn<'a, T: TorusFftValue> {
-    Keyswitch(KeySwitchingWorkspace<'a, T>),
+    Keyswitch(KeySwitchingResources<'a, T>),
     Extract,
 }
 
@@ -113,7 +113,7 @@ where
         let parameters = resources.context.parameters();
         let lwe_return = match parameters.pbs_order() {
             PbsOrder::BootstrapKeyswitch => {
-                LweReturn::Keyswitch(KeySwitchingWorkspace::new(parameters, key))
+                LweReturn::Keyswitch(KeySwitchingResources::new(parameters, key))
             }
             PbsOrder::KeyswitchBootstrap => LweReturn::Extract,
         };
@@ -164,8 +164,8 @@ where
     ) -> Result<(), TfheEvaluationError> {
         crate::key::check_glwe_key_switching_key(self.resources.context.parameters(), key)?;
         self.resources.rebind_input_key_switching_key(key);
-        if let LweReturn::Keyswitch(workspace) = &mut self.lwe_return {
-            workspace.key = key;
+        if let LweReturn::Keyswitch(resources) = &mut self.lwe_return {
+            resources.key = key;
         }
         Ok(())
     }

@@ -207,15 +207,18 @@ Context-bearing wrappers describe their own role in `Display` and expose the und
 
 ## Distinguish environment from workspace
 
-Names follow responsibility; reusable buffer groups use `Workspace`, while bound execution environments retain `Context`.
+Names distinguish reusable storage (`Workspace`), validated environments (`Context`), bound common resources (`Resources`) and specific execution workflows (`Evaluator` / `Engine`).
 
 | Responsibility | Naming rule | Current entry point |
 | --- | --- | --- |
 | A group of reusable temporary buffers with shape invariants | `*Workspace` | [Ntt/FourierNtruExternalProductWorkspace](../../crates/primus_lattice/src/workspace/mod.rs), [NtruLweKeySwitchingWorkspace](../../crates/primus_ntru/src/key_switch/lwe.rs) |
 | Owned FFT temporary buffers | `*Workspace` as well | [FftTable::Workspace / new_workspace and FftEngine](../../crates/primus_fft/src/table.rs) |
 | Validated parameters, modulus and transform environment | `*Context` | [TfheContext](../../crates/primus_tfhe_ntru_ntt/src/context.rs); arithmetic `RingContext` / `FieldContext` remain capability traits |
-| Bound execution with keys/tables and mutable workspace | `*Evaluator` / `*Engine` | TFHE evaluators and `FftEngine`; classify mixed state by its actual responsibility |
+| Borrowed environment/evaluation material paired with owned reusable buffers | `*Resources` | Four TFHE backends’ `BootstrapResources`; internal KS/BR resource sets |
+| A specific execution workflow using owned or briefly borrowed resources | `*Evaluator` / `*Engine` | PBS, CBS, one-hot and MVB evaluators; `FftEngine` |
 | One borrowed temporary slice or region | Local `scratch` / `buffer` | No extra wrapper required; third-party `PodBuffer` / `PodStack` retain their names |
+
+Resources borrow context/key owners; they own only their prepared buffers and, in Fourier backends, the FFT engine borrowing the context’s table. Serial PBS/MVB/CBS/one-hot operations can lend common resources to each other; concurrent workers normally need separate mutable instances. GLWE `KeySwitchingResources` binds a ring KS key to its lower-level workspace and switched output. NTRU `BlindRotationResources` binds classic controls or a sparse key to the selected BR buffers; their external-product workspaces remain pure storage. These internal combinations use `Resources` without introducing another public wrapper. A buffer helper does not itself require an `Evaluator` name. See [TFHE resource composition](tfhe-parameters-and-boundaries.md#输入盲旋转与返回组合).
 
 A workspace with the right length does not prove basis, modulus, table or key compatibility. Construct reusable buffers before the repeated operation, preserve the API's overwrite/accumulate rules, and document when a borrowed workspace or caller-owned accumulator must be restored. Secret-key erasure and workspace erasure may have different postconditions; read each type's `zeroize` contract before reuse.
 

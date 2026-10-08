@@ -38,7 +38,7 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
         output: &mut Glwe<C>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttGlweBlindRotationWorkspace<T>,
+        workspace: &mut NttGlweBlindRotationWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: MonomialNttTable<ValueT = T>,
@@ -53,7 +53,7 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
             output.as_mut_view(),
             modulus,
             ntt,
-            context,
+            workspace,
             |x| modulus_switch.exponent(x),
         );
     }
@@ -71,7 +71,7 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
         output: &mut Glwe<C>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttGlweBlindRotationWorkspace<T>,
+        workspace: &mut NttGlweBlindRotationWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: MonomialNttTable<ValueT = T>,
@@ -93,14 +93,14 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
             ),
             "blind-rotation input, lookup table or output layout mismatch"
         );
-        self.assert_compatible(modulus, ntt, context);
+        self.assert_compatible(modulus, ntt, workspace);
         self.ntt_blind_rotate_lookup_table_kernel_to(
             input.as_view(),
             lookup_table.as_view(),
             output.as_mut_view(),
             modulus,
             ntt,
-            context,
+            workspace,
         );
     }
 
@@ -113,7 +113,7 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
         output: Glwe<&mut [T]>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttGlweBlindRotationWorkspace<T>,
+        workspace: &mut NttGlweBlindRotationWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: MonomialNttTable<ValueT = T>,
@@ -125,7 +125,7 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
             output,
             modulus,
             ntt,
-            context,
+            workspace,
         );
     }
 
@@ -150,7 +150,7 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
         output: &mut Glwe<C>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttGlweBlindRotationWorkspace<T>,
+        workspace: &mut NttGlweBlindRotationWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: MonomialNttTable<ValueT = T>,
@@ -176,7 +176,7 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
             ),
             "PBSManyLUT input, table, or output layout mismatch"
         );
-        self.assert_compatible(modulus, ntt, context);
+        self.assert_compatible(modulus, ntt, workspace);
         self.ntt_blind_rotate_interleaved_lookup_table_kernel_to(
             input.as_view(),
             lookup_table.as_view(),
@@ -184,7 +184,7 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
             output.as_mut_view(),
             modulus,
             ntt,
-            context,
+            workspace,
         );
     }
 
@@ -202,7 +202,7 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
         mut output: Glwe<&mut [T]>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttGlweBlindRotationWorkspace<T>,
+        workspace: &mut NttGlweBlindRotationWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: MonomialNttTable<ValueT = T>,
@@ -238,7 +238,7 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
         let (mask, body) = output.a_b_mut_slices(poly_length);
         mask.fill(T::ZERO);
         lookup_table.mul_monomial_to(initial_exponent, &mut Polynomial(body), modulus);
-        self.blind_rotate_initialized(input, output, modulus, ntt, context, exponent_of);
+        self.blind_rotate_initialized(input, output, modulus, ntt, workspace, exponent_of);
     }
 
     /// Blind-rotates from an LWE whose coefficients are exponents in `[0, 2N)`.
@@ -256,7 +256,7 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
         output: &mut Glwe<C>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttGlweBlindRotationWorkspace<T>,
+        workspace: &mut NttGlweBlindRotationWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: MonomialNttTable<ValueT = T>,
@@ -271,7 +271,7 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
             output.as_mut_view(),
             modulus,
             ntt,
-            context,
+            workspace,
             |x| {
                 // This entry already receives exponents; do not quantize them again.
                 let exponent = x.try_into().unwrap();
@@ -293,7 +293,7 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
         mut output: Glwe<&mut [T]>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttGlweBlindRotationWorkspace<T>,
+        workspace: &mut NttGlweBlindRotationWorkspace<T>,
         exponent_of: F,
     ) where
         M: FieldContext<T>,
@@ -316,10 +316,10 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
             "blind-rotation input, accumulator or output layout mismatch"
         );
 
-        self.assert_compatible(modulus, ntt, context);
+        self.assert_compatible(modulus, ntt, workspace);
         let initial_exponent = exponent_of(input.b()).wrapping_neg() & (two_n - 1);
         accumulator.mul_monomial_to(initial_exponent, &mut output, poly_length, modulus);
-        self.blind_rotate_initialized(input, output, modulus, ntt, context, exponent_of);
+        self.blind_rotate_initialized(input, output, modulus, ntt, workspace, exponent_of);
     }
 
     /// Checks evaluation resources before initializing the output accumulator.
@@ -327,7 +327,7 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
         &self,
         modulus: M,
         ntt: &Table,
-        context: &NttGlweBlindRotationWorkspace<T>,
+        workspace: &NttGlweBlindRotationWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: MonomialNttTable<ValueT = T>,
@@ -348,17 +348,17 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
             "NTT ciphertext modulus mismatch"
         );
         assert_eq!(
-            context.size(),
+            workspace.size(),
             self.size(),
             "blind-rotation workspace gadget layout mismatch"
         );
         assert_eq!(
-            matches!(context.cmux, CmuxWorkspace::Binary(_)),
+            matches!(workspace.cmux, CmuxWorkspace::Binary(_)),
             self.input_distribution().is_binary(),
             "blind-rotation workspace control layout mismatch"
         );
         debug_assert_eq!(
-            context.scratch.as_ref().len(),
+            workspace.scratch.as_ref().len(),
             self.size().glwe_len(),
             "blind-rotation workspace GLWE layout mismatch"
         );
@@ -371,14 +371,14 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
         mut output: Glwe<&mut [T]>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttGlweBlindRotationWorkspace<T>,
+        workspace: &mut NttGlweBlindRotationWorkspace<T>,
         exponent_of: F,
     ) where
         M: FieldContext<T>,
         Table: MonomialNttTable<ValueT = T>,
         F: Fn(T) -> usize,
     {
-        let NttGlweBlindRotationWorkspace { scratch, cmux } = context;
+        let NttGlweBlindRotationWorkspace { scratch, cmux } = workspace;
         // Dispatch once per blind rotation; the coordinate loop has no secret-
         // distribution branch, and both paths share initialization and swapping.
         match cmux {
@@ -468,15 +468,15 @@ impl<T: FheUint> NttGlweBlindRotationWorkspace<T> {
         operation: impl FnOnce(&mut NttGlweExternalProductWorkspace<T>) -> R,
     ) -> R {
         match &mut self.cmux {
-            CmuxWorkspace::Binary(context) => context.with_rebound(size, operation),
-            CmuxWorkspace::Ternary(context) => context.with_external_product(size, operation),
+            CmuxWorkspace::Binary(workspace) => workspace.with_rebound(size, operation),
+            CmuxWorkspace::Ternary(workspace) => workspace.with_external_product(size, operation),
         }
     }
 
     fn size(&self) -> GadgetSize {
         match &self.cmux {
-            CmuxWorkspace::Binary(context) => context.size(),
-            CmuxWorkspace::Ternary(context) => context.size(),
+            CmuxWorkspace::Binary(workspace) => workspace.size(),
+            CmuxWorkspace::Ternary(workspace) => workspace.size(),
         }
     }
 
@@ -487,8 +487,10 @@ impl<T: FheUint> NttGlweBlindRotationWorkspace<T> {
             return;
         }
         match &mut self.cmux {
-            CmuxWorkspace::Binary(context) => context.resize(size),
-            CmuxWorkspace::Ternary(context) => *context = NttGlweTernaryCmuxWorkspace::new(size),
+            CmuxWorkspace::Binary(workspace) => workspace.resize(size),
+            CmuxWorkspace::Ternary(workspace) => {
+                *workspace = NttGlweTernaryCmuxWorkspace::new(size)
+            }
         }
         self.scratch.0.resize(size.glwe_len(), T::ZERO);
     }

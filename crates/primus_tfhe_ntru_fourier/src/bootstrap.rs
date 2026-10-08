@@ -4,7 +4,7 @@ use primus_tfhe::TfheEvaluationError;
 
 use crate::{
     BlindRotationKey, Lwe, TfheContext,
-    blind_rotation::{BlindRotationWorkspace, blind_rotate_lookup_table_to},
+    blind_rotation::{BlindRotationResources, blind_rotate_lookup_table_to},
 };
 
 /// Shared Fourier blind-rotation, coefficient, FFT and external-product resources.
@@ -12,6 +12,10 @@ use crate::{
 /// Ordinary [`crate::Evaluator`] owns these. Standalone CBS/one-hot callers can
 /// prepare them directly and borrow them for each operation. No return buffers
 /// are included, and reusing these resources online requires no allocation.
+/// Context, keys and the FFT table are borrowed; BR buffers and the FFT engine
+/// are owned here.
+/// Serial operations can lend one instance to each other; concurrent requests
+/// need independent mutable resources and may share the immutable context/keys.
 pub struct BootstrapResources<'a, T, Table, LM = primus_modulus::NativeModulus<T>>
 where
     T: TorusFftValue,
@@ -20,7 +24,7 @@ where
 {
     pub(crate) context: &'a TfheContext<T, Table, LM>,
     pub(crate) blind_rotation_key: &'a BlindRotationKey<T>,
-    pub(crate) workspace: BlindRotationWorkspace<'a, T>,
+    pub(crate) blind_rotation: BlindRotationResources<'a, T>,
     pub(crate) fft: FftEngine<'a, Table>,
 }
 
@@ -46,7 +50,7 @@ where
         Ok(Self {
             context,
             blind_rotation_key,
-            workspace: BlindRotationWorkspace::new(context.parameters(), blind_rotation_key),
+            blind_rotation: BlindRotationResources::new(context.parameters(), blind_rotation_key),
             fft: context.new_fft_engine(),
         })
     }
@@ -71,7 +75,10 @@ where
         &mut FftEngine<'a, Table>,
         &mut primus_ntru::FourierNtruExternalProductWorkspace<T>,
     ) {
-        (&mut self.fft, self.workspace.rotation.external_product())
+        (
+            &mut self.fft,
+            self.blind_rotation.rotation.external_product(),
+        )
     }
 
     /// Rejects a different context before scratch/output writes. Prepared CBS,
@@ -100,7 +107,7 @@ where
             input,
             lookup_table.as_view(),
             rotation_step,
-            &mut self.workspace,
+            &mut self.blind_rotation,
             parameters,
             &mut self.fft,
         );

@@ -339,9 +339,9 @@ where
             // Negative BR places selector r at -r*S+l, including its negacyclic
             // sign. Rotate by +r*S first; prefix projection then shifts by -l.
             // General BR tails are nonzero: prefix expansion is not valid here.
-            resources.workspace.current.mul_monomial_to(
+            resources.blind_rotation.current.mul_monomial_to(
                 selector * self.lookup_table.selector_stride(),
-                &mut resources.workspace.scratch,
+                &mut resources.blind_rotation.scratch,
                 tfhe.accumulator_ntru().cipher_modulus(),
             );
             let projected = match nlev_output.as_deref_mut() {
@@ -351,13 +351,13 @@ where
             self.circuit_key
                 .trace_key()
                 .project_prefix_coefficients_with_scratch_to(
-                    &resources.workspace.scratch,
+                    &resources.blind_rotation.scratch,
                     self.lookup_table.level_count().get(),
                     projected,
                     tfhe.accumulator_ntru().cipher_modulus(),
                     resources.context.table(),
                     &mut self.trace_scratch,
-                    resources.workspace.rotation.external_product(),
+                    resources.blind_rotation.rotation.external_product(),
                 );
             if let Some(output) = ngsw_output
                 .as_deref_mut()
@@ -371,7 +371,7 @@ where
                     ),
                     tfhe.accumulator_ntru().cipher_modulus(),
                     resources.context.table(),
-                    resources.workspace.rotation.external_product(),
+                    resources.blind_rotation.rotation.external_product(),
                 );
             }
         }

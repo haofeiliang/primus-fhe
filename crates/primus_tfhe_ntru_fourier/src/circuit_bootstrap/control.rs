@@ -44,7 +44,7 @@ pub(super) fn cmux_to<T, Table, LM>(
         &mut output,
         parameters.output_basis(),
         &mut resources.fft,
-        resources.workspace.rotation.external_product(),
+        resources.blind_rotation.rotation.external_product(),
     );
 }
 
@@ -77,6 +77,6 @@ pub(super) fn external_product_to<T, Table, LM>(
         &mut output,
         parameters.output_basis(),
         &mut resources.fft,
-        resources.workspace.rotation.external_product(),
+        resources.blind_rotation.rotation.external_product(),
     );
 }

@@ -45,7 +45,7 @@ pub(super) fn cmux_to<T, Table, LM>(
             .accumulator_ntru()
             .cipher_modulus(),
         resources.context.table(),
-        resources.workspace.rotation.external_product(),
+        resources.blind_rotation.rotation.external_product(),
     );
 }
 
@@ -83,6 +83,6 @@ pub(super) fn external_product_to<T, Table, LM>(
             .accumulator_ntru()
             .cipher_modulus(),
         resources.context.table(),
-        resources.workspace.rotation.external_product(),
+        resources.blind_rotation.rotation.external_product(),
     );
 }

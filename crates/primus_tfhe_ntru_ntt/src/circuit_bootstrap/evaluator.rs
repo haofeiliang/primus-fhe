@@ -129,20 +129,20 @@ where
         circuit_key
             .trace_key()
             .project_prefix_coefficients_with_scratch_to(
-                &resources.workspace.current,
+                &resources.blind_rotation.current,
                 parameters.output_basis().decompose_length().get(),
                 self.projected.as_mut(),
                 tfhe.accumulator_ntru().cipher_modulus(),
                 resources.context.table(),
                 &mut self.trace_scratch,
-                resources.workspace.rotation.external_product(),
+                resources.blind_rotation.rotation.external_product(),
             );
         circuit_key.scheme_switch_key().apply_to(
             &self.projected,
             output,
             tfhe.accumulator_ntru().cipher_modulus(),
             resources.context.table(),
-            resources.workspace.rotation.external_product(),
+            resources.blind_rotation.rotation.external_product(),
         );
     }
 }

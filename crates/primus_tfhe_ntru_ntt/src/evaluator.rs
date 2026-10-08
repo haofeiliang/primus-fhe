@@ -273,7 +273,7 @@ where
     /// CBS consumes `current` directly; ordinary PBS returns its phase coefficient.
     fn return_accumulator_at_to(&mut self, index: usize, output: Lwe<&mut [T]>) {
         self.lwe_return.return_at_to(
-            self.resources.workspace.current.as_view(),
+            self.resources.blind_rotation.current.as_view(),
             index,
             output,
             &mut self.scalar_return,
@@ -284,7 +284,7 @@ where
     /// singleton outputs directly, without a tile copy.
     fn return_accumulator_prefix_to(&mut self, outputs: &mut [LweCiphertext<T>]) {
         self.lwe_return.return_prefix_to(
-            self.resources.workspace.current.as_view(),
+            self.resources.blind_rotation.current.as_view(),
             outputs,
             &mut self.batch_return,
         );

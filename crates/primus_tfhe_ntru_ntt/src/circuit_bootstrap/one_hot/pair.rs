@@ -101,7 +101,7 @@ where
                 resources,
             },
         );
-        core::mem::swap(&mut second.current, &mut resources.workspace.current);
+        core::mem::swap(&mut second.current, &mut resources.blind_rotation.current);
         consume(
             1,
             OneHotProjection {
@@ -146,7 +146,7 @@ where
         let RotationState::Sparse {
             key,
             scratch: workspace,
-        } = &mut resources.workspace.rotation
+        } = &mut resources.blind_rotation.rotation
         else {
             panic!("one-hot pair requires sparse blind-rotation resources");
         };
@@ -159,7 +159,7 @@ where
         for ((input, exponents), current) in inputs
             .into_iter()
             .zip([&mut workspace.exponents, &mut second.exponents])
-            .zip([&mut resources.workspace.current, &mut second.current])
+            .zip([&mut resources.blind_rotation.current, &mut second.current])
         {
             modulus_switch.exponent_slice_to(input.a(), exponents);
             let exponent = modulus_switch.exponent(input.b()).wrapping_neg() & (2 * n - 1);
@@ -174,8 +174,8 @@ where
             workspace,
             second,
             [
-                &mut resources.workspace.current,
-                &mut resources.workspace.scratch,
+                &mut resources.blind_rotation.current,
+                &mut resources.blind_rotation.scratch,
             ],
             resources.blind_rotation_key.blind_rotation_basis(),
             modulus,

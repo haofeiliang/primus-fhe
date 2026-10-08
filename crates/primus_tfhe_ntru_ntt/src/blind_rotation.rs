@@ -12,8 +12,10 @@ use crate::{
     sparse::{SparseWorkspace, rotate_buckets},
 };
 
-/// Coefficient buffers and external-product scratch reused by one evaluator.
-pub(crate) struct BlindRotationWorkspace<'a, T: FheUint> {
+/// Borrowed classic controls or sparse key with owned BR buffers and product scratch.
+/// The outer bootstrap resources provide the context/table binding; this set
+/// keeps the selected controls and their matching buffers together.
+pub(crate) struct BlindRotationResources<'a, T: FheUint> {
     /// Coefficient-domain result under the accumulator secret after BR.
     pub(crate) current: Ntru<Vec<T>>,
     /// BR temporary storage in the accumulator domain.
@@ -21,7 +23,7 @@ pub(crate) struct BlindRotationWorkspace<'a, T: FheUint> {
     pub(crate) rotation: RotationState<'a, T>,
 }
 
-impl<'a, T: FheUint> BlindRotationWorkspace<'a, T> {
+impl<'a, T: FheUint> BlindRotationResources<'a, T> {
     /// Allocates all NTT blind-rotation storage once.
     pub(crate) fn new<LM: primus_reduce::RingContext<T>>(
         parameters: &TfheParameters<T, LM>,
@@ -52,7 +54,8 @@ impl<'a, T: FheUint> BlindRotationWorkspace<'a, T> {
     }
 }
 
-// A validated control layout and its scratch travel together for the evaluator's lifetime.
+/// Borrowed BR material and owned scratch selected for one control layout.
+/// The variant keeps sparse keys or classic control views paired with their buffers.
 pub(crate) enum RotationState<'a, T: FheUint> {
     Sparse {
         key: &'a SparseNtruBootstrappingKey<T>,
@@ -80,8 +83,8 @@ impl<'a, T: FheUint> RotationState<'a, T> {
 
 /// Initializes and blind-rotates an encrypted NTRU accumulator.
 ///
-/// Writes the selected LUT phase to coefficient-domain `workspace.current`
-/// under `f_acc`, reusing `workspace.scratch` as temporary storage. The caller
+/// Writes the selected LUT phase to coefficient-domain `resources.current`
+/// under `f_acc`, reusing `resources.scratch` as temporary storage. The caller
 /// established input/LUT compatibility; `rotation_step` is the LUT's padded
 /// output count (one for ordinary PBS).
 pub(crate) fn blind_rotate_lookup_table_to<T, Table, LM: primus_reduce::RingContext<T>>(
@@ -89,7 +92,7 @@ pub(crate) fn blind_rotate_lookup_table_to<T, Table, LM: primus_reduce::RingCont
     input: Lwe<&[T]>,
     lookup_table: Polynomial<&[T]>,
     rotation_step: usize,
-    workspace: &mut BlindRotationWorkspace<'_, T>,
+    resources: &mut BlindRotationResources<'_, T>,
     parameters: &TfheParameters<T, LM>,
     ntt: &Table,
 ) where
@@ -112,21 +115,21 @@ pub(crate) fn blind_rotate_lookup_table_to<T, Table, LM: primus_reduce::RingCont
 
     lookup_table.mul_monomial_to(
         initial_exponent,
-        &mut Polynomial(workspace.scratch.as_mut()),
+        &mut Polynomial(resources.scratch.as_mut()),
         modulus,
     );
 
     let basis = blind_rotation_key.blind_rotation_basis();
 
     // One public layout dispatch per BR; the coordinate loop stays specialized.
-    match &mut workspace.rotation {
+    match &mut resources.rotation {
         RotationState::Sparse { key, scratch } => {
             modulus_switch.exponent_slice_to(input.a(), &mut scratch.exponents);
             rotate_buckets(
                 key,
                 scratch,
-                &mut workspace.current,
-                &mut workspace.scratch,
+                &mut resources.current,
+                &mut resources.scratch,
                 basis,
                 modulus,
                 ntt,
@@ -140,9 +143,9 @@ pub(crate) fn blind_rotate_lookup_table_to<T, Table, LM: primus_reduce::RingCont
             controls.initializer().lift_monomial_to(
                 &positive,
                 negative.as_ref(),
-                &Polynomial(workspace.scratch.as_ref()),
+                &Polynomial(resources.scratch.as_ref()),
                 exponent_of(input.a()[0]),
-                &mut workspace.current,
+                &mut resources.current,
                 basis,
                 modulus,
                 ntt,
@@ -151,8 +154,8 @@ pub(crate) fn blind_rotate_lookup_table_to<T, Table, LM: primus_reduce::RingCont
             rotate_controls(
                 &input.a()[1..],
                 controls.remaining_controls(),
-                &mut workspace.current,
-                &mut workspace.scratch,
+                &mut resources.current,
+                &mut resources.scratch,
                 exponent_of,
                 |control, exponent, input, output| {
                     control.cmux_monomial_to(
@@ -175,9 +178,9 @@ pub(crate) fn blind_rotate_lookup_table_to<T, Table, LM: primus_reduce::RingCont
             controls.initializer().lift_monomial_to(
                 &positive,
                 negative.as_ref(),
-                &Polynomial(workspace.scratch.as_ref()),
+                &Polynomial(resources.scratch.as_ref()),
                 exponent_of(input.a()[0]),
-                &mut workspace.current,
+                &mut resources.current,
                 basis,
                 modulus,
                 ntt,
@@ -186,8 +189,8 @@ pub(crate) fn blind_rotate_lookup_table_to<T, Table, LM: primus_reduce::RingCont
             rotate_controls(
                 &input.a()[1..],
                 controls.ternary_controls(),
-                &mut workspace.current,
-                &mut workspace.scratch,
+                &mut resources.current,
+                &mut resources.scratch,
                 exponent_of,
                 |(positive, negative), exponent, input, output| {
                     positive.cmux_ternary_monomial_to(

@@ -129,18 +129,18 @@ where
         circuit_key
             .trace_key()
             .project_prefix_coefficients_with_scratch_to(
-                &resources.workspace.current,
+                &resources.blind_rotation.current,
                 parameters.output_basis().decompose_length().get(),
                 self.projected.as_mut(),
                 &mut resources.fft,
                 &mut self.trace_scratch,
-                resources.workspace.rotation.external_product(),
+                resources.blind_rotation.rotation.external_product(),
             );
         circuit_key.scheme_switch_key().apply_to(
             &self.projected,
             output,
             &mut resources.fft,
-            resources.workspace.rotation.external_product(),
+            resources.blind_rotation.rotation.external_product(),
         );
     }
 }

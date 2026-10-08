@@ -12,15 +12,16 @@ use crate::{
     SparseGlweBlindRotationWorkspace, SparseGlweBootstrappingKey, TfheContext,
 };
 
-/// Ring key-switch material bound to its reusable scratch and output.
-/// The selected PBS order places this complete stage before or after BR.
-pub(crate) struct KeySwitchingWorkspace<'a, T: FheUint> {
+/// Borrowed ring key-switch key with owned scratch and switched output.
+/// The selected PBS order places this complete resource set before or after BR;
+/// the lower-level key-switch workspace contains only reusable buffers.
+pub(crate) struct KeySwitchingResources<'a, T: FheUint> {
     pub(crate) key: &'a NttGlweKeySwitchingKey<T>,
     pub(crate) scratch: NttGlweKeySwitchingWorkspace<T>,
     pub(crate) switched: GlweCiphertext<Vec<T>>,
 }
 
-impl<'a, T: FheUint> KeySwitchingWorkspace<'a, T> {
+impl<'a, T: FheUint> KeySwitchingResources<'a, T> {
     #[must_use]
     pub(crate) fn new(
         parameters: &crate::TfheParameters<T>,
@@ -36,8 +37,9 @@ impl<'a, T: FheUint> KeySwitchingWorkspace<'a, T> {
     }
 }
 
-/// Pair each selected key with its own scratch; only one algorithm is allocated.
-enum BlindRotation<'a, T: FheUint> {
+/// Borrowed BR key paired with the selected algorithm's owned scratch.
+/// Only classic or sparse storage is allocated; no key data is copied.
+enum BlindRotationResources<'a, T: FheUint> {
     Classic {
         key: &'a NttGlweBootstrappingKey<T, BarrettModulus<T>>,
         scratch: NttGlweBlindRotationWorkspace<T>,
@@ -52,7 +54,7 @@ enum BlindRotation<'a, T: FheUint> {
 enum InputPreparation<'a, T: FheUint> {
     Direct,
     Keyswitch {
-        workspace: KeySwitchingWorkspace<'a, T>,
+        key_switching: KeySwitchingResources<'a, T>,
         small_lwe: LweCiphertext<T>,
     },
 }
@@ -62,13 +64,16 @@ enum InputPreparation<'a, T: FheUint> {
 /// KS→BR includes input KS and a compact small LWE. BR→KS consumes input directly
 /// and includes no output KS. Ordinary [`crate::Evaluator`] owns these resources;
 /// standalone CBS can prepare and borrow them without the ordinary return stage.
+/// Context and keys are borrowed; accumulator and scratch buffers are owned here.
+/// Serial operations can lend one instance to each other. Concurrent requests
+/// need independent mutable resources and may share the immutable context/keys.
 pub struct BootstrapResources<'a, T, Table>
 where
     T: FheUint,
     Table: MonomialNttTable<ValueT = T>,
 {
     pub(crate) context: &'a TfheContext<T, Table>,
-    blind_rotation: BlindRotation<'a, T>,
+    blind_rotation: BlindRotationResources<'a, T>,
     input: InputPreparation<'a, T>,
     // Coefficient GLWE under the accumulator secret after either BR order.
     pub(crate) accumulator: GlweCiphertext<Vec<T>>,
@@ -107,11 +112,11 @@ where
         Ok(Self {
             context,
             blind_rotation: match blind_rotation_key {
-                BlindRotationKey::Classic(key) => BlindRotation::Classic {
+                BlindRotationKey::Classic(key) => BlindRotationResources::Classic {
                     key,
                     scratch: NttGlweBlindRotationWorkspace::new(key),
                 },
-                BlindRotationKey::Sparse(key) => BlindRotation::Sparse {
+                BlindRotationKey::Sparse(key) => BlindRotationResources::Sparse {
                     key,
                     scratch: SparseGlweBlindRotationWorkspace::new(key),
                 },
@@ -119,7 +124,7 @@ where
             input: match parameters.pbs_order() {
                 PbsOrder::BootstrapKeyswitch => InputPreparation::Direct,
                 PbsOrder::KeyswitchBootstrap => InputPreparation::Keyswitch {
-                    workspace: KeySwitchingWorkspace::new(
+                    key_switching: KeySwitchingResources::new(
                         parameters,
                         input_key_switching_key.expect("KS→BR material was checked above"),
                     ),
@@ -149,8 +154,8 @@ where
     /// Rebind a checked compatible KS key without replacing input scratch.
     /// The owning composition/rebinding boundary validates the replacement first.
     pub(crate) fn rebind_input_key_switching_key(&mut self, key: &'a NttGlweKeySwitchingKey<T>) {
-        if let InputPreparation::Keyswitch { workspace, .. } = &mut self.input {
-            workspace.key = key;
+        if let InputPreparation::Keyswitch { key_switching, .. } = &mut self.input {
+            key_switching.key = key;
         }
     }
 
@@ -163,10 +168,12 @@ where
         operation: impl FnOnce(&mut primus_lattice::workspace::NttGlweExternalProductWorkspace<T>) -> R,
     ) -> R {
         match &mut self.blind_rotation {
-            BlindRotation::Classic { scratch, .. } => {
+            BlindRotationResources::Classic { scratch, .. } => {
                 scratch.with_external_product(size, operation)
             }
-            BlindRotation::Sparse { scratch, .. } => scratch.with_external_product(size, operation),
+            BlindRotationResources::Sparse { scratch, .. } => {
+                scratch.with_external_product(size, operation)
+            }
         }
     }
 
@@ -183,7 +190,7 @@ where
         let small_lwe = match &mut self.input {
             InputPreparation::Direct => input,
             InputPreparation::Keyswitch {
-                workspace: ks,
+                key_switching: ks,
                 small_lwe,
             } => {
                 let glwe = parameters.blind_rotation_ggsw();
@@ -208,7 +215,7 @@ where
             }
         };
         match &mut self.blind_rotation {
-            BlindRotation::Classic { key, scratch } => key
+            BlindRotationResources::Classic { key, scratch } => key
                 .ntt_blind_rotate_interleaved_lookup_table_kernel_to(
                     small_lwe,
                     lookup_table.as_view(),
@@ -218,7 +225,7 @@ where
                     self.context.table(),
                     scratch,
                 ),
-            BlindRotation::Sparse { key, scratch } => scratch
+            BlindRotationResources::Sparse { key, scratch } => scratch
                 .blind_rotate_interleaved_lookup_table_kernel_to(
                     key,
                     small_lwe,
