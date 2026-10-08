@@ -232,7 +232,7 @@ where
             .chunks_exact_mut((layout.radix - 1) * n)
             .enumerate()
         {
-            let chunk_place_value = 1usize << (i * layout.chunk_bits); // M^i
+            let chunk_place_value = 1usize << (i * layout.chunk_format.bits() as usize); // M^i
             for (chunk_value, mut factor) in
                 (1..layout.radix).zip(NttPolynomialIterMut::new(factors, n))
             {

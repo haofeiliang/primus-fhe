@@ -13,6 +13,8 @@
 //! After encrypted table selection and negative rotation, the existing return
 //! key rescales Q to q and switches to the independent external LWE secret.
 //! Output chunks use the same radix but an independently chosen count.
+//! [`ChunkFormat`] derives that radix and the padded plaintext modulus from a
+//! bit width, and optionally splits/joins cleartext words in reusable slices.
 //!
 //! # Compile without a backend
 //! Only the ring length, accumulator Q, input codec at q and chunk geometry are
@@ -22,9 +24,10 @@
 //! use primus_encoding::RoundedCodec;
 //! use primus_modulus::{BarrettModulus, PowOf2Modulus};
 //! use primus_poly::PolyLength;
-//! use primus_tfhe_ntru_lut::{HighPrecisionLookupTable, LookupTableConfig};
+//! use primus_tfhe_ntru_lut::{ChunkFormat, HighPrecisionLookupTable, LookupTableConfig};
 //!
-//! let codec = RoundedCodec::new(8u32, PowOf2Modulus::new(1 << 24));
+//! let chunks = ChunkFormat::new(2);
+//! let codec = RoundedCodec::new(chunks.plaintext_modulus(), PowOf2Modulus::new(1u32 << 24));
 //! let table = HighPrecisionLookupTable::try_new(
 //!     PolyLength::new(32), BarrettModulus::new(65_537), &codec,
 //!     LookupTableConfig {
@@ -32,7 +35,7 @@
 //!         output_chunk_count: 1,
 //!         coefficient_chunk_count: 2,
 //!     },
-//!     |x, _| (x & 3) as u32,
+//!     |x, _| chunks.chunk(x, 0) as u32,
 //! )?;
 //! assert_eq!(table.stats().input_bits, 6);
 //! assert_eq!(table.stats().unique_polynomial_count, 1);
@@ -60,6 +63,7 @@
 
 #![deny(missing_docs)]
 
+mod chunk;
 #[cfg(any(feature = "ntt", feature = "fourier"))]
 mod evaluation;
 #[cfg(feature = "fourier")]
@@ -68,6 +72,7 @@ mod lookup_table;
 #[cfg(feature = "ntt")]
 mod ntt;
 
+pub use chunk::{ChunkFormat, ChunkFormatError};
 #[cfg(feature = "fourier")]
 pub use fourier::{FourierLookupTableEvaluator, FourierPublicLift};
 pub use lookup_table::{

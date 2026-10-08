@@ -10,6 +10,7 @@ mod statistics;
 pub use statistics::{LookupTableStats, LookupWorkspaceEstimate};
 pub(crate) mod selection;
 
+use crate::ChunkFormat;
 use selection::SelectionPlan;
 
 /// Chunk counts and the split between table selection and coefficient selection.
@@ -97,8 +98,8 @@ pub(crate) struct Layout {
     pub config: LookupTableConfig,
     /// Number M of possible values per padded chunk: half the plaintext modulus.
     pub radix: usize,
-    /// Number tau of bits per chunk, with M=2^tau.
-    pub chunk_bits: usize,
+    /// Uniform chunk format derived from the input codec's t=2*M.
+    pub chunk_format: ChunkFormat,
     /// Ring degree N, including each polynomial's zero-padded tail.
     pub polynomial_length: usize,
     /// Complete input domain size M^c, which must fit in usize.
@@ -117,12 +118,8 @@ impl Layout {
         polynomial_length: usize,
         config: LookupTableConfig,
     ) -> Result<Self, LookupTableError> {
-        let plaintext_modulus: usize = plaintext_modulus
-            .try_into()
-            .map_err(|_| LookupTableError::InvalidPlaintextModulus)?;
-        if plaintext_modulus < 4 || !plaintext_modulus.is_power_of_two() {
-            return Err(LookupTableError::InvalidPlaintextModulus);
-        }
+        let chunk_format = ChunkFormat::from_plaintext_modulus(plaintext_modulus)
+            .ok_or(LookupTableError::InvalidPlaintextModulus)?;
         if config.input_chunk_count == 0 || config.output_chunk_count == 0 {
             return Err(LookupTableError::EmptyChunks);
         }
@@ -130,8 +127,8 @@ impl Layout {
             return Err(LookupTableError::InvalidCoefficientChunkCount);
         }
 
-        let radix = plaintext_modulus / 2;
-        let chunk_bits = radix.trailing_zeros() as usize;
+        let radix = chunk_format.radix();
+        let chunk_bits = chunk_format.bits() as usize;
         let input_bit_count = chunk_bits
             .checked_mul(config.input_chunk_count)
             .filter(|&bits| bits < usize::BITS as usize)
@@ -151,7 +148,7 @@ impl Layout {
         Ok(Self {
             config,
             radix,
-            chunk_bits,
+            chunk_format,
             polynomial_length,
             input_value_count,
             entries_per_polynomial,
@@ -250,7 +247,14 @@ impl<T: FheUint> HighPrecisionLookupTable<T> {
     /// Returns tau, the common input and output chunk bit width.
     #[must_use]
     pub fn chunk_bits(&self) -> usize {
-        self.layout.chunk_bits
+        self.layout.chunk_format.bits() as usize
+    }
+
+    /// Returns the uniform format fixed by this table's input codec.
+    /// Counts and the coefficient/table partition remain in [`Self::config`].
+    #[must_use]
+    pub fn chunk_format(&self) -> ChunkFormat {
+        self.layout.chunk_format
     }
 
     /// Returns M raised to the input chunk count, the complete input domain size.

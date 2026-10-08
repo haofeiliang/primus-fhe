@@ -21,6 +21,7 @@
 | `TfheConfig` → `TfheParameters` | 家族特定的 LWE/环配置、BR/KS 各自的 `GadgetEncryptionConfig`、PBS order（GLWE） | 同域检查与派生返回布局；消息编码由程序/client 绑定；NTT/Fourier 表由后端 context 绑定 |
 | `CircuitBootstrapConfig` → `CircuitBootstrapParameters` | output、trace、scheme-switch 各自的 `DecompositionConfig` | 环大小/模数与密钥行噪声继承累加环，共享其采样状态；输出布局由 output basis 派生；interleaved 容量由程序绑定检查 |
 | `HighPrecisionLookupTable::try_new` | PolyLength N、累加模数 Q、输入 Rounded codec 的 q/t、chunk 配置 | 完整枚举、编码/去重/选择计划，无密钥或 TFHE 参数；evaluator 绑定时核对 N/q/Q 和 CBS；`stats()` 与部分工作区估算用于比较分区 |
+| `ChunkFormat` | 统一位宽 tau | 派生 M、t=2M、mask 和最低位 chunk 在前的明文拆分/组合；机器字工具检查容量与 digit，编译器仍从 codec 推导同一格式，不限制输出总位宽为 u64 |
 | `LookupTableConfig` | 输入 chunk 数 c、输出 chunk 数 o、低位系数 chunk 数 d | `M=t/2`、每个多项式的有效系数数 `M^d`、每输出多项式数 `M^(c-d)`，以及完整存储长度 |
 
 入口：[LWE](../../crates/primus_lwe/src/parameter.rs)、[GLWE](../../crates/primus_glwe/src/parameter/ordinary.rs)、[NTRU](../../crates/primus_ntru/src/parameter/ordinary.rs)、[分解](../../crates/primus_decompose/src/parameters.rs)、[GLWE TFHE](../../crates/primus_tfhe_glwe/src/parameters.rs)、[NTRU TFHE](../../crates/primus_tfhe_ntru/src/parameters.rs)。

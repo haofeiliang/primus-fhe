@@ -14,7 +14,7 @@ use primus_tfhe_ntru_lut::{FourierLookupTableEvaluator, HighPrecisionLookupTable
 use rand::{SeedableRng, rngs::StdRng};
 
 use super::{
-    CONFIG, INPUT, Workload, benchmark_lut_creation, check_repetition,
+    CHUNKS, CONFIG, INPUT, Workload, benchmark_lut_creation, check_repetition,
     diagnostics::report_phase_error,
 };
 
@@ -39,8 +39,10 @@ fn benchmark_workload<T: TorusFftValue, Table: FftTable>(
         NativeModulus::<T>::new(),
         SecretKeyDistr::fixed_hamming_weight_binary(800, 32),
     );
-    let input_codec =
-        RoundedCodec::new(T::as_from(8u32), parameters.external_lwe().cipher_modulus());
+    let input_codec = RoundedCodec::new(
+        CHUNKS.plaintext_modulus(),
+        parameters.external_lwe().cipher_modulus(),
+    );
     let kind = if sparse { "sparse" } else { "classic" };
     let name = format!("{kind}/c8_d5_o8{}", workload.suffix());
     if !sparse {
@@ -183,7 +185,7 @@ impl<T: TorusFftValue, Table: FftTable> Fixture<T, Table> {
         let input: Vec<_> = (0..CONFIG.input_chunk_count)
             .map(|i| {
                 encryptor
-                    .encrypt_padded(T::as_from((INPUT >> (2 * i)) & 3), &mut rng)
+                    .encrypt_padded(T::as_from(CHUNKS.chunk(INPUT, i)), &mut rng)
                     .unwrap()
             })
             .collect();

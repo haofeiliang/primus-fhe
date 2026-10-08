@@ -17,10 +17,11 @@
 
 ```rust,ignore
 use primus_tfhe_ntru_lut::{
-    HighPrecisionLookupTable, LookupTableConfig, NttLookupTableEvaluator,
+    ChunkFormat, HighPrecisionLookupTable, LookupTableConfig, NttLookupTableEvaluator,
 };
 
-let input_codec = primus_encoding::RoundedCodec::new(8u64, context.parameters().external_lwe().cipher_modulus());
+let chunks = ChunkFormat::new(2);
+let input_codec = primus_encoding::RoundedCodec::new(chunks.plaintext_modulus(), context.parameters().external_lwe().cipher_modulus());
 let table = HighPrecisionLookupTable::try_new(
     context.parameters().poly_length(),
     context.parameters().accumulator_ntru().cipher_modulus(),
@@ -33,7 +34,7 @@ let table = HighPrecisionLookupTable::try_new(
     |x, output| {
         let x = x as u64; // 明文中间结果可能超出 u32。
         let value = (x * x + 3 * x + 7) % 65536;
-        (value >> (2 * output)) & 3
+        chunks.chunk(value, output)
     },
 )?;
 let mut evaluator = NttLookupTableEvaluator::try_new(&context, &server, None, &table)?;
@@ -53,6 +54,10 @@ cargo run --release -p primus_tfhe_ntru_lut --example fourier_lookup --features 
 ## 编码与表分区
 
 要求明文模数 `t=2*M`，其中 `M=2^tau>=2`。输入与输出 chunks 共用 tau，数量独立指定且均为正。两个密文切片都按低位在前排列：`x=sum_i m_i*M^i`。输入已经分别加密，API 不对单个高精度 LWE 做同态拆分。
+
+`ChunkFormat::new(tau)` 统一派生 `bits()`、`radix()`、`mask()` 和 `plaintext_modulus()`；用后者构造 Rounded codec。`bit_count(count)` 以 u32 返回各自的总位宽，超出范围时拒绝。编译器从 codec 派生相同格式，通过 `table.chunk_format()` 取得，编译时无需再传第二份位宽。格式本身不持有缓冲或 codec。
+
+明文机器字使用 `chunks.split_to(value, &mut digits)` 覆盖复用的低位在前切片，再用 `chunks.join(&digits)` 组合。工具拒绝容量超限、截断和非法 digit，允许恰好填满机器字。`chunks.chunk(value, index)` 提取单项 digit，超出机器字部分按零扩展，可用于表回调。机器字转换为可选功能：回调仍可分别提供总位宽超过 u64 或其他单个机器字的输出 digits；LUT 独立保留完整输入枚举与存储上限。
 
 令 `c=input_chunk_count`、`d=coefficient_chunk_count`、`o=output_chunk_count`，要求 `0<=d<=c`、`M^d<=N`。低 d 个 chunks 选择系数，其余高位 chunks 选择多项式。各布局量的含义为：
 
@@ -167,7 +172,7 @@ Evaluator 借用 context、server key 和 table，并在构造时分配全部缓
 
 ## Features
 
-默认 features 为空，只提供 `HighPrecisionLookupTable`、`LookupTableConfig`、编译错误及公开多项式访问。`try_new` 接收 `PolyLength`、累加 Q、输入 codec 和 chunk 配置；普通依赖不包含 LWE/GLWE/NTRU/TFHE 材料或变换 crate。统计与两种工作区估算均无需启用后端。编译保留完整的不可变选择计划，回调顺序、系数编码和表布局不随 feature 改变。
+默认 features 为空，提供 `ChunkFormat`、`HighPrecisionLookupTable`、`LookupTableConfig`、相关错误及公开多项式访问，无需变换或 evaluator。`try_new` 接收 `PolyLength`、累加 Q、输入 codec 和 chunk 配置；普通依赖不包含 LWE/GLWE/NTRU/TFHE 材料或变换 crate。统计与两种工作区估算均无需启用后端。编译保留完整的不可变选择计划，回调顺序、系数编码和表布局不随 feature 改变。
 
 | Feature | 启用内容 |
 | --- | --- |

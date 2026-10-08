@@ -20,7 +20,7 @@ use primus_tfhe_ntru_fourier::{
     TfheParameters,
 };
 use primus_tfhe_ntru_lut::{
-    FourierLookupTableEvaluator, HighPrecisionLookupTable, LookupTableConfig,
+    ChunkFormat, FourierLookupTableEvaluator, HighPrecisionLookupTable, LookupTableConfig,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -35,18 +35,21 @@ const CONFIG: LookupTableConfig = LookupTableConfig {
     output_chunk_count: 8,
     coefficient_chunk_count: 5,
 };
-const CHUNK_BITS: usize = 2;
-const INPUT_BITS: usize = CHUNK_BITS * CONFIG.input_chunk_count;
-const OUTPUT_BITS: usize = CHUNK_BITS * CONFIG.output_chunk_count;
+const CHUNKS: ChunkFormat = ChunkFormat::new(2);
 
 fn main() {
-    println!("f(x) = (x*x + 3*x + 7) mod {}", 1u64 << OUTPUT_BITS);
-    println!("Input: {INPUT_BITS} bits; output: {OUTPUT_BITS} bits");
+    let input_bits = CHUNKS.bit_count(CONFIG.input_chunk_count);
+    let output_bits = CHUNKS.bit_count(CONFIG.output_chunk_count);
+    println!("f(x) = (x*x + 3*x + 7) mod {}", 1u64 << output_bits);
+    println!("Input: {input_bits} bits; output: {output_bits} bits");
 
     let parameters = parameters();
     let context = TfheContext::<Word, Table, _>::from_parameters(parameters);
     // Public message encoding at external q, chosen independently of key generation.
-    let input_codec = RoundedCodec::new(8, context.parameters().external_lwe().cipher_modulus());
+    let input_codec = RoundedCodec::new(
+        CHUNKS.plaintext_modulus(),
+        context.parameters().external_lwe().cipher_modulus(),
+    );
 
     // Client: generate independent LWE/NTRU secrets plus CBS-enabled server material.
     let mut rng = StdRng::seed_from_u64(42);
@@ -65,6 +68,10 @@ fn main() {
         .map(|_| context.allocate_lwe_ciphertext())
         .collect();
 
+    // Client: reuse cleartext buffers too; splitting/joining do not allocate.
+    let mut input_digits = vec![Word::default(); CONFIG.input_chunk_count];
+    let mut output_digits = vec![Word::default(); CONFIG.output_chunk_count];
+
     // Server: compile the public function independently of client secrets.
     let table = compile_table(context.parameters(), &input_codec);
 
@@ -81,8 +88,8 @@ fn main() {
     // Eight two-bit chunks, written most-significant first.
     for x in [0b10_10_10_11_11_00_11_01, 0] {
         // Client -> server: split before encryption, least-significant chunk first.
-        for (i, chunk) in input.iter_mut().enumerate() {
-            let digit = ((x >> (CHUNK_BITS * i)) & 3) as Word;
+        CHUNKS.split_to(x, &mut input_digits);
+        for (&digit, chunk) in input_digits.iter().zip(&mut input) {
             encryptor
                 .encrypt_padded_to(digit, chunk.as_mut_view(), &mut rng)
                 .unwrap();
@@ -92,11 +99,10 @@ fn main() {
         evaluator.evaluate_to(&input, &mut output);
 
         // Client: decode and join chunks in the same least-significant-first order.
-        let mut result = 0usize;
-        for (i, chunk) in output.iter().enumerate() {
-            let digit = decryptor.decrypt(chunk.as_view()).unwrap() as usize;
-            result |= digit << (CHUNK_BITS * i);
+        for (chunk, digit) in output.iter().zip(&mut output_digits) {
+            *digit = decryptor.decrypt(chunk.as_view()).unwrap();
         }
+        let result = CHUNKS.join(&output_digits);
         assert_eq!(result, function(x));
         println!("f({x}) = {result}");
     }
@@ -113,17 +119,16 @@ fn compile_table(
         parameters.accumulator_ntru().cipher_modulus(),
         input_codec,
         CONFIG,
-        |x, output| ((function(x) >> (CHUNK_BITS * output)) & 3) as Word,
+        |x, output| CHUNKS.chunk(function(x as Word), output),
     )
     .unwrap()
 }
 
 // Return 16 bits and retain dependence on the high input chunks. Input and output
 // chunk counts are independent; this example chooses eight for both.
-fn function(x: usize) -> usize {
+fn function(x: Word) -> Word {
     // The cleartext polynomial can exceed u32 even for a 16-bit input.
-    let x = x as u64;
-    ((x * x + 3 * x + 7) % (1u64 << OUTPUT_BITS)) as usize
+    (x * x + 3 * x + 7) & ((1u64 << CHUNKS.bit_count(CONFIG.output_chunk_count)) - 1)
 }
 
 // Key parameters: n=800, N=1024; independent external LWE q=2^24.

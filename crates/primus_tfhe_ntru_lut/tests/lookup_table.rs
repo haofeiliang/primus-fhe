@@ -4,7 +4,7 @@ use primus_modulus::{BarrettModulus, NativeModulus, PowOf2Modulus};
 use primus_poly::PolyLength;
 use primus_reduce::RingContext;
 use primus_tfhe_ntru_lut::{
-    HighPrecisionLookupTable, LookupTableConfig, LookupTableError, LookupTableStats,
+    ChunkFormat, HighPrecisionLookupTable, LookupTableConfig, LookupTableError, LookupTableStats,
     LookupWorkspaceEstimate,
 };
 
@@ -32,6 +32,7 @@ fn geometry<M: RingContext<u64>>(modulus: M, q: u128) {
         .unwrap();
         assert_eq!(lut.config(), config);
         assert_eq!(lut.chunk_bits(), 2);
+        assert_eq!(lut.chunk_format(), ChunkFormat::new(2));
         assert_eq!(lut.input_value_count(), 64);
         assert_eq!(
             lut.entries_per_polynomial(),
@@ -86,6 +87,28 @@ fn geometry<M: RingContext<u64>>(modulus: M, q: u128) {
             input_codec.ciphertext_modulus()
         ));
         assert!(!lut.is_compatible(PolyLength::new(64), modulus, PowOf2Modulus::new(1 << 23)));
+    }
+    // An output wider than u64 remains a sequence of independently compiled
+    // digits; only optional word conversion has a machine-word capacity limit.
+    let wide = HighPrecisionLookupTable::try_new(
+        PolyLength::new(32),
+        modulus,
+        &input_codec,
+        LookupTableConfig {
+            input_chunk_count: 1,
+            output_chunk_count: 33,
+            coefficient_chunk_count: 0,
+        },
+        |x, output| if output == 32 { x as u64 } else { 0 },
+    )
+    .unwrap();
+    assert_eq!(wide.stats().input_bits, 2);
+    assert_eq!(wide.stats().output_bits, 66);
+    for x in 0..4 {
+        assert_eq!(
+            wide.polynomial(32, x).as_ref()[0],
+            ((q * x as u128 + 4) / 8) as u64
+        );
     }
 }
 

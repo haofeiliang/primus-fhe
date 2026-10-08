@@ -62,8 +62,8 @@ impl<T: FheUint> HighPrecisionLookupTable<T> {
         let d = layout.config.coefficient_chunk_count;
         // Domain/storage construction bounds these counts and both bit products.
         LookupTableStats {
-            input_bits: layout.chunk_bits * layout.config.input_chunk_count,
-            output_bits: layout.chunk_bits * layout.config.output_chunk_count,
+            input_bits: layout.chunk_format.bits() as usize * layout.config.input_chunk_count,
+            output_bits: layout.chunk_format.bits() as usize * layout.config.output_chunk_count,
             logical_polynomial_count: layout.config.output_chunk_count
                 * layout.polynomials_per_output,
             unique_polynomial_count: self.unique_polynomial_count(),

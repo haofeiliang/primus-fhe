@@ -232,7 +232,8 @@ impl SelectionPlan {
         loop {
             let branch = |chunk_index| {
                 (prefix
-                    >> ((chunk_index - layout.config.coefficient_chunk_count) * layout.chunk_bits))
+                    >> ((chunk_index - layout.config.coefficient_chunk_count)
+                        * layout.chunk_format.bits() as usize))
                     & (layout.radix - 1)
             };
             match &self.node(node_id).operation {

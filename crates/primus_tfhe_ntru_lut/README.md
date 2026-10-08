@@ -17,10 +17,11 @@ For a u64 context with `t=8` and `N=1024`, eight two-bit chunks represent a 16-b
 
 ```rust,ignore
 use primus_tfhe_ntru_lut::{
-    HighPrecisionLookupTable, LookupTableConfig, NttLookupTableEvaluator,
+    ChunkFormat, HighPrecisionLookupTable, LookupTableConfig, NttLookupTableEvaluator,
 };
 
-let input_codec = primus_encoding::RoundedCodec::new(8u64, context.parameters().external_lwe().cipher_modulus());
+let chunks = ChunkFormat::new(2);
+let input_codec = primus_encoding::RoundedCodec::new(chunks.plaintext_modulus(), context.parameters().external_lwe().cipher_modulus());
 let table = HighPrecisionLookupTable::try_new(
     context.parameters().poly_length(),
     context.parameters().accumulator_ntru().cipher_modulus(),
@@ -33,7 +34,7 @@ let table = HighPrecisionLookupTable::try_new(
     |x, output| {
         let x = x as u64; // The cleartext intermediate can exceed u32.
         let value = (x * x + 3 * x + 7) % 65536;
-        (value >> (2 * output)) & 3
+        chunks.chunk(value, output)
     },
 )?;
 let mut evaluator = NttLookupTableEvaluator::try_new(&context, &server, None, &table)?;
@@ -53,6 +54,10 @@ cargo run --release -p primus_tfhe_ntru_lut --example fourier_lookup --features 
 ## Encoding and table partition
 
 The plaintext modulus must be `t=2*M`, with `M=2^tau>=2`. All input and output chunks share tau; their counts are independent and positive. Both ciphertext slices are least-significant first: `x=sum_i m_i*M^i`. Inputs are separate encrypted chunks; the API does not homomorphically split one high-precision LWE.
+
+`ChunkFormat::new(tau)` is the single source for `bits()`, `radix()`, `mask()` and `plaintext_modulus()`; use the latter when constructing the Rounded codec. `bit_count(count)` returns either combined width as u32, rejecting overflow. The compiler derives the same format from the codec, available as `table.chunk_format()`, so callers do not supply a second width to compilation. This format owns no buffers or codec.
+
+For cleartext words, `chunks.split_to(value, &mut digits)` overwrites a reusable least-significant-first slice, and `chunks.join(&digits)` reconstructs the word. These helpers reject oversized capacity, truncation or invalid digits; exact word capacity is allowed. `chunks.chunk(value, index)` extracts one digit with zero extension beyond the word, useful in a table callback. Word conversion is optional: the callback may instead supply output digits whose combined width exceeds u64 or any other one word. The LUT retains its separate full-input enumeration/storage limits.
 
 Let `c=input_chunk_count`, `d=coefficient_chunk_count` and `o=output_chunk_count`. Require `0<=d<=c` and `M^d<=N`. The low d chunks select a coefficient; the remaining high chunks select a polynomial. The layout quantities are:
 
@@ -167,7 +172,7 @@ The [parameter guide](../../guides/development/tfhe-parameters.md) records examp
 
 ## Features
 
-Default features are empty: public table compilation, inspection, `LookupTableConfig` and compilation errors need no transform or evaluator. `HighPrecisionLookupTable::try_new` takes `PolyLength`, accumulator Q, an input codec and chunk configuration; its normal dependencies include no LWE/GLWE/NTRU/TFHE material or transform crate. Statistics and both workspace estimates are available without a backend. Compilation retains the complete immutable selection plan. Features do not change callback order, coefficient encoding or table layout.
+Default features are empty: `ChunkFormat`, public table compilation and inspection, `LookupTableConfig` and their errors need no transform or evaluator. `HighPrecisionLookupTable::try_new` takes `PolyLength`, accumulator Q, an input codec and chunk configuration; its normal dependencies include no LWE/GLWE/NTRU/TFHE material or transform crate. Statistics and both workspace estimates are available without a backend. Compilation retains the complete immutable selection plan. Features do not change callback order, coefficient encoding or table layout.
 
 | Feature | Enables |
 | --- | --- |

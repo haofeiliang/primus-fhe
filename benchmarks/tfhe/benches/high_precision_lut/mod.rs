@@ -8,7 +8,7 @@ use primus_integer::FheUint;
 use primus_reduce::RingContext;
 use primus_tfhe_benchmarks::measurement::{Case, Group, metadata};
 use primus_tfhe_ntru::TfheParameters;
-use primus_tfhe_ntru_lut::{HighPrecisionLookupTable, LookupTableConfig};
+use primus_tfhe_ntru_lut::{ChunkFormat, HighPrecisionLookupTable, LookupTableConfig};
 
 mod diagnostics;
 #[cfg(all(
@@ -19,6 +19,7 @@ pub mod fourier;
 #[cfg(feature = "ntru-ntt")]
 pub mod ntt;
 
+pub const CHUNKS: ChunkFormat = ChunkFormat::new(2);
 pub const CONFIG: LookupTableConfig = LookupTableConfig {
     input_chunk_count: 8,
     output_chunk_count: 8,
@@ -40,7 +41,7 @@ pub enum Workload {
 impl Workload {
     /// Geometry and function structure distinguish general lookup from repeated tables.
     pub fn metadata(self) -> serde_json::Value {
-        serde_json::json!({"chunk_bits": 2, "input_chunks": CONFIG.input_chunk_count,
+        serde_json::json!({"chunk_bits": CHUNKS.bits(), "input_chunks": CONFIG.input_chunk_count,
             "coefficient_chunks": CONFIG.coefficient_chunk_count, "output_chunks": CONFIG.output_chunk_count,
             "function": match self { Self::Polynomial => "x*x+3*x+7 mod 2^16", Self::Dense => "SplitMix64 seed42", Self::Shared => "(m0+m6)%4 repeated eight times" },
             "unique_polynomials_per_output": match self { Self::Polynomial => [1,1,1,1,1,4,16,64], Self::Dense => [64;8], Self::Shared => [4;8] }})
@@ -66,7 +67,9 @@ impl Workload {
                 // Identical output digits expose sharing and a public choice
                 // moved past the omitted first layer. Low rotations still
                 // select m_0; m_6 supplies the high-chunk addition.
-                return T::as_from(((x & 3) + ((x >> 12) & 3)) & 3);
+                return T::as_from(
+                    (CHUNKS.chunk(x, 0) + CHUNKS.chunk(x, 6)) & CHUNKS.mask() as u64,
+                );
             }
             Self::Dense => {
                 let mut z = x.wrapping_add(42).wrapping_add(0x9e37_79b9_7f4a_7c15);
@@ -75,7 +78,7 @@ impl Workload {
                 z ^ (z >> 31)
             }
         };
-        T::as_from((value >> (2 * output)) & 3)
+        T::as_from(CHUNKS.chunk(value, output))
     }
 }
 
@@ -107,8 +110,10 @@ pub fn benchmark_lut_creation<T: FheUint, M: RingContext<T>, LM: RingContext<T>>
     parameters: &TfheParameters<T, M, LM>,
     workload: Workload,
 ) {
-    let input_codec =
-        RoundedCodec::new(T::as_from(8u32), parameters.external_lwe().cipher_modulus());
+    let input_codec = RoundedCodec::new(
+        CHUNKS.plaintext_modulus(),
+        parameters.external_lwe().cipher_modulus(),
+    );
     let poly_length = parameters.poly_length();
     let ring_modulus = parameters.accumulator_ntru().cipher_modulus();
     c.throughput(criterion::Throughput::Elements(1));
