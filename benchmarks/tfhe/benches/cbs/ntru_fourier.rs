@@ -6,7 +6,7 @@
 //! Fixtures are initialized only for selected IDs, then reused across samples.
 //! Run: cargo bench -p primus_tfhe_benchmarks --bench cbs --features ntru-fourier,rustfft,tfhe-fft
 
-use primus_encoding::{RoundedCodec, ScaledCodec};
+use primus_encoding::ScaledCodec;
 use primus_tfhe_benchmarks::measurement::{Case, Group, metadata};
 use std::hint::black_box;
 
@@ -26,12 +26,14 @@ use rand::{SeedableRng, rngs::StdRng};
 // CBS consumes a bit and emits a gadget control, not an LWE result. Verify
 // that representation by selecting an encrypted ring message before timing.
 fn ordinary<T: TorusFftValue, Table: FftTable>(c: &mut Group<'_>, backend: &str, sparse: bool) {
-    let input_codec = RoundedCodec::new(T::as_from(4u32), PowOf2Modulus::new(T::ONE << 24u32));
     let kind = if sparse { "sparse" } else { "classic" };
     let parameters = ntru::diagnostic(NativeModulus::<T>::new());
+    let (input_codec, ring_message_codec) = parameters
+        .circuit_bootstrap_codecs(T::as_from(4u32), T::as_from(4u32))
+        .unwrap();
     let name = format!("{kind}/complete");
     let fixture = std::cell::LazyCell::new(|| {
-        Fixture::<T, Table>::new(parameters, input_codec, sparse, T::ONE)
+        Fixture::<T, Table>::new(parameters, input_codec, ring_message_codec, sparse, T::ONE)
     });
     let mut verified = false;
     c.throughput(criterion::Throughput::Elements(1));
@@ -63,10 +65,7 @@ fn ordinary<T: TorusFftValue, Table: FftTable>(c: &mut Group<'_>, backend: &str,
             context
                 .accumulator_client(
                     client.accumulator_ntru_secret_key(),
-                    ScaledCodec::new(
-                        input_codec.plaintext_modulus(),
-                        context.parameters().accumulator_ntru().cipher_modulus(),
-                    ),
+                    ring_message_codec,
                 )
                 .unwrap()
                 .decrypt_to(&selected, &mut decoded);
@@ -99,15 +98,13 @@ fn ordinary<T: TorusFftValue, Table: FftTable>(c: &mut Group<'_>, backend: &str,
 // The compact batch omits delta_0. Compare equal input geometry to isolate the
 // saved selector work; one iteration produces M or M-1 complete NGSW controls.
 fn one_hot<T: TorusFftValue, Table: FftTable>(c: &mut Group<'_>, backend: &str, sparse: bool) {
-    let input_codec = RoundedCodec::new(T::as_from(8u32), PowOf2Modulus::new(T::ONE << 24u32));
+    let parameters = ntru::diagnostic(NativeModulus::<T>::new());
+    let (input_codec, ring_message_codec) = parameters
+        .circuit_bootstrap_codecs(T::as_from(8u32), T::as_from(8u32))
+        .unwrap();
     let br = if sparse { "sparse" } else { "classic" };
     let fixture = std::cell::LazyCell::new(|| {
-        Fixture::<T, Table>::new(
-            ntru::diagnostic(NativeModulus::<T>::new()),
-            input_codec,
-            sparse,
-            T::TWO,
-        )
+        Fixture::<T, Table>::new(parameters, input_codec, ring_message_codec, sparse, T::TWO)
     });
     for compact in [false, true] {
         let kind = if compact { "nonzero" } else { "full" };
@@ -142,7 +139,7 @@ fn one_hot<T: TorusFftValue, Table: FftTable>(c: &mut Group<'_>, backend: &str, 
                 } else {
                     evaluator.one_hot_ngsw_to(input.as_view(), &mut output, &mut resources);
                 }
-                fixture.check_one_hot(&output, &evaluator, &mut resources, compact, input_codec);
+                fixture.check_one_hot(&output, &evaluator, &mut resources, compact, ring_message_codec);
                 verified = true;
             }
             metadata::record("cbs", &case, || {
@@ -211,6 +208,7 @@ impl<T: TorusFftValue, Table: FftTable> Fixture<T, Table> {
     fn new(
         parameters: primus_tfhe_ntru_fourier::TfheParameters<T, PowOf2Modulus<T>>,
         input_codec: primus_encoding::RoundedCodec<T, PowOf2Modulus<T>>,
+        ring_message_codec: primus_encoding::ScaledCodec<T, primus_modulus::NativeModulus<T>>,
         sparse: bool,
         message: T,
     ) -> Self {
@@ -230,13 +228,7 @@ impl<T: TorusFftValue, Table: FftTable> Fixture<T, Table> {
             .encrypt_padded(message, &mut rng)
             .unwrap();
         let mut ring = context
-            .accumulator_client(
-                client.accumulator_ntru_secret_key(),
-                ScaledCodec::new(
-                    input_codec.plaintext_modulus(),
-                    context.parameters().accumulator_ntru().cipher_modulus(),
-                ),
-            )
+            .accumulator_client(client.accumulator_ntru_secret_key(), ring_message_codec)
             .unwrap();
         let lhs = ring.encrypt(&[T::ZERO; N], &mut rng);
         let rhs = ring.encrypt(&[T::ONE; N], &mut rng);
@@ -262,7 +254,7 @@ impl<T: TorusFftValue, Table: FftTable> Fixture<T, Table> {
             PowOf2Modulus<T>,
         >,
         compact: bool,
-        input_codec: RoundedCodec<T, PowOf2Modulus<T>>,
+        ring_message_codec: ScaledCodec<T, primus_modulus::NativeModulus<T>>,
     ) {
         let Self {
             context,
@@ -274,13 +266,7 @@ impl<T: TorusFftValue, Table: FftTable> Fixture<T, Table> {
         let mut selected = context.allocate_accumulator_ciphertext();
         let mut decoded = vec![T::ZERO; N];
         let mut ring = context
-            .accumulator_client(
-                client.accumulator_ntru_secret_key(),
-                ScaledCodec::new(
-                    input_codec.plaintext_modulus(),
-                    context.parameters().accumulator_ntru().cipher_modulus(),
-                ),
-            )
+            .accumulator_client(client.accumulator_ntru_secret_key(), ring_message_codec)
             .unwrap();
         // Both views iterate mathematical r, even when storage omits delta_0.
         let selectors = if compact {

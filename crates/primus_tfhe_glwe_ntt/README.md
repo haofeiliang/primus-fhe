@@ -96,6 +96,8 @@ The separate `sparse_candidate_r2` IDs use two copies, `2*h` buckets and fewer B
 
 ## Circuit bootstrapping
 
+`parameters.circuit_bootstrap_codecs(t_in, t_ring)?` returns Rounded input and Scaled candidate ring codecs with the correct q/Q and independent plaintext domains. Pass the former to the input encryptor and CBS evaluator, and the latter to `accumulator_client`; it does not describe the CBS gadget output.
+
 Use `context.try_generate_circuit_bootstrap_keys(blind_rotation, cbs_config, &mut rng)` for ring outputs. Its `CircuitBootstrapServerKey` owns BR, required input preparation and CBS material; `circuit_bootstrap_key()` returns the required key directly. Mixed PBS/CBS workflows can still generate a complete `ServerKey` with `try_generate_keys(blind_rotation, Some(cbs_config), rng)`. Obtain `server.circuit_bootstrap_key()` and explicitly pass that material to the CBS constructor above. Use `allocate_output`, `circuit_bootstrap_to` and `cmux_to`, lending common resources to each operation; the [CBS → CMUX example](examples/ntt_circuit_bootstrap.rs) shows grouped BR/CBS generation and the complete consumption chain.
 
 The [sparse CBS example](examples/ntt_sparse_circuit_bootstrap.rs) shows the fixed-weight secret, sparse key generation and CBS configuration together. Both PBS orders work; subsequent CBS and CMux calls are identical.

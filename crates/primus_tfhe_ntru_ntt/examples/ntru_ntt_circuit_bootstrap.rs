@@ -4,7 +4,6 @@
 //! Arithmetic profiles: guides/development/tfhe-parameters.md (not security presets).
 
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
-use primus_encoding::{RoundedCodec, ScaledCodec};
 use primus_lattice::LweDimension;
 use primus_lwe::LweEncryptionParameters;
 use primus_modulus::{BarrettModulus, PowOf2Modulus};
@@ -25,7 +24,8 @@ fn main() {
     let parameters = parameters();
     let context = TfheContext::<Word, Table, _>::try_from_parameters(parameters).unwrap();
     // Padded t=4 encodes a selection bit independently of the ring messages.
-    let selector_codec = RoundedCodec::new(4, context.parameters().external_lwe().cipher_modulus());
+    let (selector_codec, ring_message_codec) =
+        context.parameters().circuit_bootstrap_codecs(4, 8).unwrap();
 
     // Client: generate BR and CBS material; this ring-output workflow needs no return key.
     let mut rng = StdRng::seed_from_u64(42);
@@ -41,8 +41,6 @@ fn main() {
     let encryptor = context.encryptor(external_secret, &selector_codec).unwrap();
 
     // Candidate ring messages use an independent t=8 space at accumulator Q.
-    let ring_message_codec =
-        ScaledCodec::new(8, context.parameters().accumulator_ntru().cipher_modulus());
     let mut ring_client = context
         .accumulator_client(client_key.accumulator_ntru_secret_key(), ring_message_codec)
         .unwrap();

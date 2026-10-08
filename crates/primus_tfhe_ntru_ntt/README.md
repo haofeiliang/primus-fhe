@@ -89,6 +89,8 @@ Ordinary/interleaved PBS use the same evaluator; factorized MVB borrows it per c
 
 ## Optional circuit bootstrapping
 
+`parameters.circuit_bootstrap_codecs(t_in, t_ring)?` returns Rounded input and Scaled candidate ring codecs with the correct q/Q and independent plaintext domains. Pass the former to the input encryptor and CBS evaluator, and the latter to `accumulator_client`; it does not describe the CBS gadget output.
+
 Use `context.try_generate_circuit_bootstrap_keys(blind_rotation, cbs_config, &mut rng)` for ring outputs. Its `CircuitBootstrapServerKey` owns BR, required input preparation and CBS material; `circuit_bootstrap_key()` returns the required key directly. Mixed PBS/CBS workflows can still generate a complete `ServerKey` with `try_generate_keys(blind_rotation, Some(cbs_config), rng)`. Obtain `server.circuit_bootstrap_key()` and pass it with common resources to `CircuitBootstrapEvaluator::try_new`, which explicitly requires CBS material. Use `allocate_output`, `circuit_bootstrap_to` and `cmux_to`; the [CBS → CMUX example](examples/ntru_ntt_circuit_bootstrap.rs) shows their complete consumption chain.
 
 The output is `NttNgswCiphertext` under `f_acc`. The circuit key binds the complete output basis; `try_new(&resources, circuit_key, &input_codec)` obtains parameters from that key. NTT trace normalization requires odd Q below `2^(T::BITS-1)`.

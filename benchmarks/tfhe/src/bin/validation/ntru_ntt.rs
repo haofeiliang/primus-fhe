@@ -2,7 +2,7 @@
 //! The external LWE uses an independent q=2^24; only ring values enter the transform.
 
 use super::metrics::ErrorMargin;
-use primus_encoding::{PlaintextEmbedding, ScaledCodec};
+use primus_encoding::PlaintextEmbedding;
 use primus_glwe::SecretKeyDistr;
 use primus_integer::{AsInto, FheUint};
 use primus_modulus::{BarrettModulus, PowOf2Modulus};
@@ -534,10 +534,10 @@ fn circuit<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
         modulus, secret,
     ))
     .unwrap();
-    let input_codec = primus_encoding::RoundedCodec::new(
-        T::as_from(4u32),
-        context.parameters().external_lwe().cipher_modulus(),
-    );
+    let (input_codec, ring_message_codec) = context
+        .parameters()
+        .circuit_bootstrap_codecs(T::as_from(4u32), T::as_from(4u32))
+        .unwrap();
 
     // Client: generate both keys; give only the evaluation key to the server.
     let mut rng = StdRng::seed_from_u64(seed);
@@ -557,13 +557,7 @@ fn circuit<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
         .encryptor(client_key.external_lwe_secret_key(), &input_codec)
         .unwrap();
     let mut accumulator = context
-        .accumulator_client(
-            client_key.accumulator_ntru_secret_key(),
-            ScaledCodec::new(
-                T::as_from(4u32),
-                context.parameters().accumulator_ntru().cipher_modulus(),
-            ),
-        )
+        .accumulator_client(client_key.accumulator_ntru_secret_key(), ring_message_codec)
         .unwrap();
     // Vary all coefficients so CMux cannot pass by selecting only a constant term.
     let messages = [0, 1].map(|offset| {

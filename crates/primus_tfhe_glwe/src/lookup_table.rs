@@ -1,13 +1,34 @@
+use primus_encoding::{RoundedCodec, ScaledCodec};
 use primus_integer::FheUint;
 use primus_reduce::RingContext;
 use primus_tfhe::{
-    FactorizedLookupTable, FactorizedPbsCodecs, LookupTableCompiler, LookupTableError,
-    PbsMessageConfig, RoundedPbsCodecs,
+    CircuitBootstrapCodecs, FactorizedLookupTable, FactorizedPbsCodecs, LookupTableCompiler,
+    LookupTableError, PbsMessageConfig, RoundedPbsCodecs,
 };
 
 use crate::TfheParameters;
 
 impl<T: FheUint, M: RingContext<T>> TfheParameters<T, M> {
+    /// Prepares `(input_codec, ring_message_codec)` for CBS followed by CMux.
+    ///
+    /// The Rounded input and Scaled candidate ring messages have independent
+    /// plaintext moduli. Both use this family's ciphertext modulus. The ring
+    /// codec describes ordinary candidates, not the CBS output gadget scalars.
+    /// Returns `InputEncoding` for an invalid input codec and `OutputEncoding`
+    /// for an invalid ring codec. Preparation allocates nothing. Operation
+    /// binding checks CBS capacity; callers must establish the noise margin.
+    pub fn circuit_bootstrap_codecs(
+        &self,
+        input_plaintext_modulus: T,
+        ring_plaintext_modulus: T,
+    ) -> Result<CircuitBootstrapCodecs<T, M>, LookupTableError> {
+        let input_codec = RoundedCodec::try_new(input_plaintext_modulus, self.cipher_modulus())
+            .map_err(LookupTableError::InputEncoding)?;
+        let ring_message_codec =
+            ScaledCodec::try_new(ring_plaintext_modulus, self.cipher_modulus())?;
+        Ok((input_codec, ring_message_codec))
+    }
+
     /// Prepares input and output codecs for ordinary PBS or ManyLUT.
     ///
     /// [`PbsMessageConfig::new`] defaults to equal plaintext moduli; use

@@ -137,6 +137,7 @@ PBS trait、四后端、Boolean 门、双输入打包、CBS、one-hot 与 MVB �
 | CBS output/trace/SS basis、布局与继承的 accumulator noise | `CircuitBootstrapParameters`；不依赖输入明文模数 |
 | Rounded 消息编码及 external fresh noise | client 工厂接收 `&RoundedCodec`，检查 codec 的 q；BR→KS 使用 small noise，KS→BR 使用 accumulator noise |
 | 普通环消息 Scaled 编码 | `accumulator_client(client, codec)` 一次绑定；复用 gadget 共享采样状态，不复制 Gaussian 预计算 |
+| CBS 输入与候选环消息编码准备 | `TfheParameters::circuit_bootstrap_codecs(t_in, t_ring)` 返回 Rounded 输入与 Scaled 环消息；两个明文域独立，共用 q=Q；不表示 gadget 输出 |
 | 输入 t、编程域、单表/ManyLUT 的中心、输出编码和容量 | 普通 LUT compiler / factorized compiler；CBS 由 `compile_lookup_table(&input_codec)` 在 evaluator 构造时检查 |
 | online ciphertext 与所选程序的消息编码一致、实际噪声余量 | 调用方契约；raw 密文没有编码/噪声元数据，不能据布局判定 |
 
@@ -153,6 +154,7 @@ PBS trait、四后端、Boolean 门、双输入打包、CBS、one-hot 与 MVB �
 | CBS output/trace/SS basis、布局与继承的 accumulator noise | `CircuitBootstrapParameters`；scheme-switch key 继续绑定完整 output basis |
 | Rounded 输入 t/q、默认或独立输出 t/Q | client/compiler 绑定；输入 q 不符拒绝；默认输出 codec 在 Q 无法构造时返回 `OutputEncoding` |
 | CBS 输入域和 ManyLUT 容量 | CBS LUT 编译/绑定；独立 CBS 参数只拥有 Q，输入 q 由后端绑定检查 |
+| CBS/one-hot 输入与候选环消息编码准备 | `TfheParameters::circuit_bootstrap_codecs(t_in, t_ring)` 仅准备 Rounded(t_in,q) 和 Scaled(t_ring,Q)，不准备无用的 Scaled(t_ring,q)；后续绑定仍检查实际资源组合 |
 | one-hot 的 t=2M、W、stride、非空 guard 与存储长度 | `OneHotLookupTable::try_new(tfhe, cbs, &input_codec)`；后端支持 classic binary/ternary 与 sparse fixed-weight binary |
 | 高精度 chunk 位宽、数量、`M^d≤N`、表枚举和存储长度 | `HighPrecisionLookupTable::try_new(poly_length, ring_modulus, &input_codec, config, function)`；表保存 t/q/Q，evaluator 按表中 t 绑定 one-hot 并验证容量 |
 | 在线输入的实际编码和噪声、返回输出的 q 域 decoder | 调用方契约；表在 Q 编码，Q→q 仍为最近舍入，不重新编码 |

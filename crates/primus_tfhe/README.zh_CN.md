@@ -122,8 +122,7 @@ assert!(!decryptor.decrypt(output.as_view())?);
 
 ```rust,ignore
 // 客户端：加密两条候选消息。
-let input_codec = primus_encoding::RoundedCodec::new(4, context.parameters().cipher_modulus());
-let ring_codec = primus_encoding::ScaledCodec::new(8, context.parameters().cipher_modulus());
+let (input_codec, ring_codec) = context.parameters().circuit_bootstrap_codecs(4, 8)?;
 let mut ring_client = context.accumulator_client(client_key.glwe_secret_key(), ring_codec)?;
 let lhs = ring_client.encrypt(&lhs_message, &mut rng);
 let rhs = ring_client.encrypt(&rhs_message, &mut rng);

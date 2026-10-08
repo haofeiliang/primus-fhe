@@ -55,6 +55,8 @@ Pass an explicit t=4 `RoundedCodec` to `boolean_encryptor`, `boolean_public_encr
 
 ## CBS and examples
 
+`let (input_codec, ring_message_codec) = parameters.circuit_bootstrap_codecs(4, 8)?;` prepares Rounded input and Scaled candidate ring messages for CBS → CMux with independent plaintext moduli. Parameters supply input q and accumulator Q; only these two codecs are prepared, so ring messages need no return encoding at q. The ring codec does not describe CBS output gadget scales. Capacity and noise margins remain operation contracts; existing concrete codecs can still be bound directly.
+
 Both backends provide `context.try_generate_circuit_bootstrap_keys(blind_rotation, cbs_config, rng)` for a client and a `CircuitBootstrapServerKey` containing only ring-output material. CBS is required in this bundle; ordinary return material is not generated. The same bundle serves one-hot CBS, without a return-q magnitude restriction. For mixed PBS/CBS or high-precision lookup, retain the complete `ServerKey`. See [material selection](../primus_tfhe/README.md#selecting-blind-rotation).
 
 The backends expose independent `BlindRotationKey`, return and `CircuitBootstrapKey` owners, with `ServerKey::new` / `into_parts` for moving them into or out of a complete bundle. `parameters.try_generate_lwe_return_key(&client, rng)` generates return material without a transform workspace; `parameters.check_lwe_return_key(&key)` checks N/Q/q/dimension/basis at composition. CBS-only generation and binding do not require a return key or f's magnitude bound at external q. The accumulator's backend conversion requirements still apply.

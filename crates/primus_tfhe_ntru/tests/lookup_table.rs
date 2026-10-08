@@ -244,3 +244,72 @@ fn codec_binding_checks_domains_without_preparing_an_unused_default() {
         );
     }
 }
+
+// CBS candidates stay at Q: they do not pass through the ordinary LWE return.
+#[test]
+fn cbs_ring_messages_do_not_require_a_return_codec() {
+    use primus_encoding::{CodecError, PlaintextEmbedding, ScaledCodec};
+    use primus_modulus::BarrettModulus;
+    use primus_tfhe_ntru::{DecompositionConfig, LookupTableError, TfheConfig};
+
+    let gadget = GadgetEncryptionConfig {
+        decomposition: DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(2),
+            level_count: None,
+        },
+        noise_standard_deviation: 0.7,
+    };
+    let parameters = TfheParameters::try_from_config(TfheConfig {
+        external_lwe: LweEncryptionParameters::new(
+            LweDimension::new(LWE_DIMENSION),
+            BarrettModulus::new(17u32),
+            SecretKeyDistr::UniformBinary,
+            0.7,
+        ),
+        accumulator_modulus: BarrettModulus::new(97),
+        poly_length: PolyLength::new(N),
+        accumulator_secret_key_distr: SecretKeyDistr::UniformBinary,
+        blind_rotation: gadget,
+        key_switching: gadget,
+    })
+    .unwrap();
+
+    // At t=12, q=17 satisfies the domain but fails fixed-scale recovery;
+    // t=24 exceeds q altogether. Both candidate spaces are valid at Q=97.
+    for (ring_t, return_error) in [
+        (12, CodecError::InsufficientScaleRecovery),
+        (24, CodecError::CiphertextModulusTooSmall),
+    ] {
+        assert_eq!(
+            ScaledCodec::try_new(ring_t, parameters.external_lwe().cipher_modulus()).unwrap_err(),
+            return_error
+        );
+        let (input, ring) = parameters.circuit_bootstrap_codecs(4, ring_t).unwrap();
+        assert_eq!(input.ciphertext_modulus().value(), 17);
+        assert_eq!(input.plaintext_modulus(), 4);
+        assert_eq!(ring.ciphertext_modulus().value(), 97);
+        assert_eq!(ring.plaintext_modulus(), ring_t);
+        for message in 0..ring_t {
+            let encoded = ring.encode_value(message, PlaintextEmbedding::Unsigned);
+            assert_eq!(ring.decode_value(encoded), message);
+        }
+    }
+
+    // Reject errors in either actual codec role, including Q scale recovery.
+    assert!(matches!(
+        parameters.circuit_bootstrap_codecs(0, 12),
+        Err(LookupTableError::InputEncoding(_))
+    ));
+    for ring_t in [1, 97] {
+        assert!(matches!(
+            parameters.circuit_bootstrap_codecs(4, ring_t),
+            Err(LookupTableError::OutputEncoding(_))
+        ));
+    }
+    assert!(matches!(
+        parameters.circuit_bootstrap_codecs(4, 40),
+        Err(LookupTableError::OutputEncoding(
+            CodecError::InsufficientScaleRecovery
+        ))
+    ));
+}

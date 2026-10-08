@@ -58,6 +58,8 @@
 
 ## Boolean 与 CBS
 
+`let (input_codec, ring_message_codec) = parameters.circuit_bootstrap_codecs(4, 8)?;` 为 CBS → CMux 准备 Rounded 输入与 Scaled 候选环消息编码，两个明文模数独立指定。参数自动提供共同密文模数 q=Q；只准备实际使用的这两个编码，不准备额外的返回编码。环消息 codec 不表示 CBS 输出的 gadget 标度；容量与噪声余量仍遵循操作契约。已准备的具体 codec 仍可直接绑定。
+
 两个后端均提供 `context.try_generate_circuit_bootstrap_keys(blind_rotation, cbs_config, rng)`，返回 client 和仅含环输出所需材料的 `CircuitBootstrapServerKey`。CBS 在该组合中始终存在，不生成普通返回材料。GLWE KS→BR 仍包含输入 KS。混合 PBS/CBS 仍使用完整 `ServerKey`，见[材料选择](../primus_tfhe/README.zh_CN.md#选择盲旋转算法)。
 
 显式传入 t=4 的 `RoundedCodec` 时，context 提供 `boolean_encryptor`、`boolean_public_encryptor`、`boolean_decryptor` 和 `boolean_evaluator`。这些接口使用普通 PBS 材料；调用与串联约定见[公共 Boolean 契约](../primus_tfhe/README.zh_CN.md#boolean-门)。

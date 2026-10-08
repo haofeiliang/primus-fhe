@@ -108,6 +108,14 @@ pub type RoundedPbsCodecs<T, M, LM = M> =
 pub type FactorizedPbsCodecs<T, M, LM = M> =
     PbsCodecs<RoundedCodec<T, LM>, ScaledCodec<T, M>, ScaledCodec<T, LM>>;
 
+/// `(input_codec, ring_message_codec)` for CBS or one-hot followed by CMux.
+///
+/// Rounded input uses external q (LM), and Scaled candidate ring messages use
+/// accumulator Q (M). Their plaintext moduli are independent. This is a tuple
+/// of the existing concrete codecs, without a returned-output codec at q;
+/// the ring codec does not describe the CBS output gadget scalars.
+pub type CircuitBootstrapCodecs<T, M, LM = M> = (RoundedCodec<T, LM>, ScaledCodec<T, M>);
+
 impl<Input, LutOutput, Output> PbsCodecs<Input, LutOutput, Output> {
     /// Returns the input codec at the external ciphertext modulus q.
     #[must_use]

@@ -55,6 +55,8 @@ Classic PBS、ManyLUT、CBS、Boolean 和 MVB 支持 binary/ternary 外部秘密
 
 ## CBS 与示例
 
+`let (input_codec, ring_message_codec) = parameters.circuit_bootstrap_codecs(4, 8)?;` 为 CBS → CMux 准备 Rounded 输入与 Scaled 候选环消息编码，两个明文模数独立指定。参数自动提供输入 q 与累加环 Q；只准备实际使用的这两个编码，不要求候选环消息能在 q 下返回。环消息 codec 不表示 CBS 输出的 gadget 标度；容量与噪声余量仍遵循操作契约。已准备的具体 codec 仍可直接绑定。
+
 两个后端均提供 `context.try_generate_circuit_bootstrap_keys(blind_rotation, cbs_config, rng)`，返回 client 和仅含环输出所需材料的 `CircuitBootstrapServerKey`。CBS 在该组合中始终存在，不生成普通返回材料。相同组合也服务 one-hot CBS，不受返回 q 的秘密幅度限制。混合 PBS/CBS 或高精度查表仍使用完整 `ServerKey`，见[材料选择](../primus_tfhe/README.zh_CN.md#选择盲旋转算法)。
 
 两后端提供独立的 `BlindRotationKey`、返回密钥与 `CircuitBootstrapKey` owner，通过 `ServerKey::new` / `into_parts` 移入或移出完整组合。`parameters.try_generate_lwe_return_key(&client, rng)` 无需变换工作区即可生成返回密钥；`parameters.check_lwe_return_key(&key)` 在组合时核对 N/Q/q、维数与 basis。CBS-only 生成和绑定无需返回密钥，也无需 f 满足外部 q 的幅度界；累加秘密仍须满足各后端的转换要求。

@@ -44,7 +44,9 @@ pub use lookup_table::{
     BivariateLookupTable, FactorizedLookupTable, InterleavedLookupTable, LookupTable,
     LookupTableCompiler, front_half_domain_len,
 };
-pub use message::{FactorizedPbsCodecs, PbsCodecs, PbsMessageConfig, RoundedPbsCodecs};
+pub use message::{
+    CircuitBootstrapCodecs, FactorizedPbsCodecs, PbsCodecs, PbsMessageConfig, RoundedPbsCodecs,
+};
 pub use parameters::{BlindRotationConfig, CircuitBootstrapConfig, GadgetEncryptionConfig};
 pub use primus_decompose::{DecompositionBaseLog, DecompositionConfig, DecompositionLevelCount};
 pub use primus_lattice::lwe::Lwe;

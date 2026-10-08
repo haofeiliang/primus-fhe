@@ -28,11 +28,12 @@ fn ordinary<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     let kind = if sparse { "sparse" } else { "classic" };
     // Pair classic and sparse BR using identical parameters and client seed.
     let parameters = glwe::diagnostic(ntt_circuit_modulus::<T>(), order);
-    let input_codec =
-        primus_encoding::RoundedCodec::new(T::as_from(4u32), parameters.cipher_modulus());
+    let (input_codec, ring_message_codec) = parameters
+        .circuit_bootstrap_codecs(T::as_from(4u32), T::as_from(4u32))
+        .unwrap();
     let name = format!("{kind}/{order:?}/complete");
     let fixture = std::cell::LazyCell::new(|| {
-        Fixture::<T, Table>::new(parameters, input_codec, sparse, T::ONE)
+        Fixture::<T, Table>::new(parameters, input_codec, ring_message_codec, sparse, T::ONE)
     });
     let mut verified = false;
     c.throughput(criterion::Throughput::Elements(1));
@@ -59,10 +60,7 @@ fn ordinary<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
             context
                 .accumulator_client(
                     client.glwe_secret_key(),
-                    primus_encoding::ScaledCodec::new(
-                        input_codec.plaintext_modulus(),
-                        input_codec.ciphertext_modulus(),
-                    ),
+                    ring_message_codec,
                 )
                 .unwrap()
                 .decrypt_to(&selected, &mut decoded);
@@ -114,6 +112,7 @@ impl<T: FheUint, Table: MonomialNttTable<ValueT = T>> Fixture<T, Table> {
     fn new(
         parameters: primus_tfhe_glwe_ntt::TfheParameters<T>,
         input_codec: primus_encoding::RoundedCodec<T, primus_modulus::BarrettModulus<T>>,
+        ring_message_codec: primus_encoding::ScaledCodec<T, primus_modulus::BarrettModulus<T>>,
         sparse: bool,
         message: T,
     ) -> Self {
@@ -133,13 +132,7 @@ impl<T: FheUint, Table: MonomialNttTable<ValueT = T>> Fixture<T, Table> {
             .encrypt_padded(message, &mut rng)
             .unwrap();
         let mut ring = context
-            .accumulator_client(
-                client.glwe_secret_key(),
-                primus_encoding::ScaledCodec::new(
-                    input_codec.plaintext_modulus(),
-                    input_codec.ciphertext_modulus(),
-                ),
-            )
+            .accumulator_client(client.glwe_secret_key(), ring_message_codec)
             .unwrap();
         let lhs = ring.encrypt(&[T::ZERO; N], &mut rng);
         let rhs = ring.encrypt(&[T::ONE; N], &mut rng);

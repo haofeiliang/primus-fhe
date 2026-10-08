@@ -58,6 +58,8 @@ Use `encrypt_padded` for front-half LUTs and ordinary `encrypt` for odd full dom
 
 ## Boolean and CBS
 
+`let (input_codec, ring_message_codec) = parameters.circuit_bootstrap_codecs(4, 8)?;` prepares Rounded input and Scaled candidate ring messages for CBS → CMux with independent plaintext moduli. Parameters supply the common ciphertext modulus q=Q; only these two codecs are prepared, without an extra returned-output codec. The ring codec does not describe CBS output gadget scales. Capacity and noise margins remain operation contracts; existing concrete codecs can still be bound directly.
+
 Both backends provide `context.try_generate_circuit_bootstrap_keys(blind_rotation, cbs_config, rng)` for a client and a `CircuitBootstrapServerKey` containing only ring-output material. CBS is required in this bundle; ordinary return material is not generated. GLWE KS→BR still includes its input KS. For mixed PBS/CBS, retain the complete `ServerKey`. See [material selection](../primus_tfhe/README.md#selecting-blind-rotation).
 
 With an explicit t=4 `RoundedCodec` argument, contexts provide `boolean_encryptor`, `boolean_public_encryptor`, `boolean_decryptor` and `boolean_evaluator`. These use ordinary PBS material; see the [common Boolean contract](../primus_tfhe/README.md#boolean-gates) for calls and chaining.
