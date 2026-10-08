@@ -30,6 +30,13 @@
 //! Standalone resources include input KS for KS→BR, but no output KS for BR→KS.
 //! The specialized constructors document their allocation and borrowing contracts.
 //!
+//! Ring-output CBS can use [`TfheContext::try_generate_circuit_bootstrap_keys`]
+//! without ordinary return material. [`TfheParameters::circuit_bootstrap_codecs`]
+//! prepares the independent input and candidate ring-message encodings. Compile F
+//! with [`CircuitBootstrapParameters::compile_lookup_table_fn`] and bind the program
+//! with [`CircuitBootstrapEvaluator::try_with_lookup_table`]. CBS output uses its
+//! gadget basis; CMux requires bit-valued F across the programmed input domain.
+//!
 //! # Composition and representation
 //!
 //! [`key`] contains evaluation material and component generation. Common workflow types

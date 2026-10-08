@@ -76,7 +76,6 @@ impl<'a, T: FheUint> NttNgswSelectors<'a, T> {
 
     /// Iterates over mathematical branch numbers and borrowed NGSW controls.
     /// Exact batch length was checked at construction, so no tail is discarded.
-    #[must_use]
     pub fn iter(
         &self,
     ) -> impl ExactSizeIterator<Item = (usize, NttNgsw<&'a [T]>)> + DoubleEndedIterator + use<'a, T>

@@ -64,7 +64,6 @@ impl<'a, T: FheUint> NlevSelectors<'a, T> {
 
     /// Iterates over mathematical branch numbers and borrowed NLEV controls.
     /// Exact batch length was checked at construction, so no tail is discarded.
-    #[must_use]
     pub fn iter(
         &self,
     ) -> impl ExactSizeIterator<Item = (usize, Nlev<&'a [T]>)> + DoubleEndedIterator + use<'a, T>

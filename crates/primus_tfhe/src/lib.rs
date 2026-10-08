@@ -7,6 +7,9 @@
 //! [`LookupTableCompiler`] shares the encoding environment for ordinary Rounded LUTs.
 //! [`PbsMessageConfig`] defaults to equal input/output message moduli and prepares
 //! [`PbsCodecs`] with an explicit output override, including independent q/Q roles.
+//! [`CircuitBootstrapLookupTable`] programs integer functions at gadget scales;
+//! it is distinct from ordinary Rounded/Scaled output LUTs. Families compile the
+//! program, and concrete backends bind it to CBS keys and reusable workspace.
 //! [`BooleanEvaluator`] composes the small PBS traits for Boolean gate evaluation.
 //!
 //! [`Encryptor`], [`Decryptor`] and their Boolean wrappers share external LWE

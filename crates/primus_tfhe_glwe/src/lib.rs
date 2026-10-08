@@ -15,6 +15,14 @@
 //! [`KeyGenerationError`] and [`TfheClientError`] report key generation and family
 //! client construction; operations return shared [`ClientError`] or [`BooleanError`].
 //!
+//! [`TfheParameters::pbs_codecs`] defaults to equal input/output message moduli
+//! through [`PbsMessageConfig`]; its output override preserves independent domains.
+//! [`TfheParameters::factorized_pbs_codecs`] instead prepares Scaled MVB outputs.
+//! Bind returned LWE decryption to the prepared output codec, not the input codec.
+//! For CBS, [`TfheParameters::circuit_bootstrap_codecs`] prepares input and candidate
+//! ring-message codecs; [`CircuitBootstrapParameters::compile_lookup_table_fn`]
+//! programs gadget-scaled integers independently of those candidate messages.
+//!
 //! # Public-key clients
 //!
 //! [`TfheParameters::try_generate_public_key`] returns an [`LwePublicKey`] under

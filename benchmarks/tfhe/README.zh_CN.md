@@ -78,7 +78,7 @@ cargo bench -p primus_tfhe_benchmarks --bench high_precision_lut --features lut,
 
 同一运算的各后端进入同一个 Criterion group，可生成 HTML 对照。ID 将工作负载放在 `family/engine/word` 前面；不同 order、输出契约和参数仍保留区别。相同 n/N 不代表等安全性，完整矩阵及数值契约见 [BENCHMARKS.md](BENCHMARKS.md)。
 
-原生产库的 `pbs`、`sparse_pbs`、`mvb`、`setup`、`sparse_paper` 在这里保持 target 名称；`circuit_bootstrap` 改为 `cbs`，LUT `pipeline` 改为 `high_precision_lut`。中间版本的后端前缀 target 已移除。旧 ID `family/engine/word/work` 对应新 ID `target/work/family/engine/word`，移除重复运算前缀与 n/N 尺寸部分；当前用例直接构造这个 ID，元数据记录实际尺寸。独立的 `primus_tfhe/lookup_table` 基准仍在原库。
+独立的 `primus_tfhe/lookup_table` 基准仍在原库。
 
 ## 源码组织
 
@@ -95,7 +95,7 @@ cargo bench -p primus_tfhe_benchmarks --bench high_precision_lut --features lut,
 
 测量版本 **2** 默认 30 个样本、3 秒预热、5 秒请求采样时长，使用 flat sampling。样本数和时长可通过 Criterion CLI 覆盖。一次迭代执行一个真实请求；独立 PBS 做 k 次调用，是因为实际需要 k 个输出。MVB/LUT 吞吐量按输出密文计数，延迟始终为整个请求。表创建包含 drop；keygen 使用 `iter_batched` 将返回密钥的释放放到计时外。
 
-选中案例后才缓存创建密钥和输入。借用它们的 evaluator、输出缓冲区在每个 callback 内构造，在该 callback 的计时循环中复用。Setup、验证、元数据均在计时外；保留原有安全的所有权方式。统一分组和采样默认值后重新建立基线，不将搬迁称为算法加速，生产数值内核未改。
+选中案例后才缓存创建密钥和输入。借用它们的 evaluator、输出缓冲区在每个 callback 内构造，在该 callback 的计时循环中复用。Setup、验证、元数据均在计时外。元数据记录实际数值参数，MVB 分别记录输入、输出明文模数；报告会拒绝与缺少这些字段的旧 MVB 记录严格配对，尽管负载和计时未变。测量版本 2 保持当前 fixture 生命周期和采样策略。
 
 已启用 Criterion HTML。标准库实现的[小型执行脚本](tools/measure.py)先构建并冻结 Cargo 返回的二进制，再串行启动 Linux CPU 绑核进程。细节可运行 `--help`：
 

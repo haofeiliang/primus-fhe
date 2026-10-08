@@ -62,7 +62,8 @@ where
     /// Both classic and sparse BR use this same path.
     ///
     /// # Correctness
-    /// Inherits [`Self::try_new`]'s secret, representation and noise requirements.
+    /// Inherits [`Self::try_new`]'s secret and representation requirements. Noise
+    /// must satisfy [`Self::circuit_bootstrap_to`] and the consuming operation.
     /// Inputs must use the encoding selected at program compilation. CMux requires
     /// the function to return a bit throughout the programmed input domain.
     pub fn try_with_lookup_table(

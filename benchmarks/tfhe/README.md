@@ -96,11 +96,6 @@ IDs place the workload before `family/engine/word`; different orders, output
 contracts and profiles remain distinct. Same n/N does not mean equal security.
 See [BENCHMARKS.md](BENCHMARKS.md) for the retained matrix and numerical contracts.
 
-Previous production-crate targets `pbs`, `sparse_pbs`, `mvb`, `setup` and
-`sparse_paper` now use the same target name here; `circuit_bootstrap` becomes
-`cbs`, and LUT `pipeline` becomes `high_precision_lut`. The intermediate
-backend-prefixed targets are removed. For an old ID `family/engine/word/work`,
-the new ID is `target/work/family/engine/word`, with redundant operation and n/N geometry components removed. Current cases construct this ID directly; metadata records the actual geometry.
 The separate `primus_tfhe/lookup_table` benchmark remains in its original crate.
 
 ## Source organization
@@ -136,9 +131,11 @@ latency always covers the whole request. Construction includes drop; keygen uses
 
 Selected callbacks lazily cache owned keys/input. Borrowed evaluators and output
 buffers are created per callback and reused across its timed iterations. Setup,
-verification and metadata stay outside timing. This preserves the former safe
-ownership strategy; unified grouping/default sampling establishes a new baseline.
-No production numerical kernel changed, and migration is not an algorithm speedup.
+verification and metadata stay outside timing. Metadata records actual numerical
+parameters; MVB records input and output plaintext moduli separately. Reports reject
+strict comparisons with older MVB records that lack these fields, even though the
+workload and timing are unchanged. Measurement schema 2 keeps the current fixture
+lifetime and sampling policy.
 
 Criterion HTML is enabled. For repeatable Linux measurements, the small standard-
 library [runner](tools/measure.py) first builds and freezes Cargo-reported binaries,

@@ -60,7 +60,8 @@ fn backend<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
                         "parameters": metadata::glwe(fixture.context.parameters()),
                         "blind_rotation": metadata::blind_rotation(sparse),
                         "encoding": "rounded_padded_input_scaled_bit_output",
-                        "plaintext_modulus": 2 * domain, "outputs": count,
+                        "input_plaintext_modulus": 2 * domain,
+                        "output_plaintext_modulus": 2, "outputs": count,
                         "function": "threshold (i+1)*domain/(count+1)", "path": path.name(),
 
                     })

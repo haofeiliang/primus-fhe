@@ -78,7 +78,6 @@ impl<'a> FourierNgswSelectors<'a> {
 
     /// Iterates over mathematical branch numbers and borrowed NGSW controls.
     /// Exact batch length was checked at construction, so no tail is discarded.
-    #[must_use]
     pub fn iter(
         &self,
     ) -> impl ExactSizeIterator<Item = (usize, FourierNgsw<&'a [Complex64]>)>
