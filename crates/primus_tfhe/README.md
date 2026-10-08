@@ -19,7 +19,7 @@ Choose the function and encoding first, then the GLWE/NTRU family, NTT/Fourier r
 | Factorized MVB | Rounded front-half prefix | k unsigned Scaled LWEs | Ordinary key | Prepared program + `FactorizedEvaluator`; one BR, per-output products |
 | Bounded two-input function | Same secret/codec, `x<B,y<R`, `B*R<=ceil(t/2)` | One Rounded LWE | Ordinary key | `BivariateLookupTable` and one reusable packed LWE |
 | Boolean gates | Rounded 0/1 with `t=4` | Same Boolean LWE encoding, ready for chaining | Ordinary key | `BooleanEvaluator` owns gate LUTs and temporary ciphertexts |
-| CBS → CMUX | Rounded front half; a CMUX control requires input 0/1 | Accumulator-secret GGSW/NGSW gadget control, then a selected ring ciphertext | BR + trace/SS; input KS for GLWE KS→BR | `CircuitBootstrapEvaluator`; separate `AccumulatorClient` for ring clients |
+| CBS → CMUX | Rounded front half; CMUX requires bit-valued F(m) | Accumulator-secret GGSW/NGSW gadget control, then a selected ring ciphertext | BR + trace/SS; input KS for GLWE KS→BR | `CircuitBootstrapEvaluator`; separate `AccumulatorClient` for ring clients |
 | One-hot CBS | One padded chunk, t=2M | NLEV/NGSW selectors for δ_r(m) | NTRU CBS material | [One-hot API](../primus_tfhe_ntru/README.md#one-hot-cbs) |
 | High-precision lookup | Separately encrypted chunks of uniform width | Independently chosen output chunk count | NTRU CBS and return keys; public lift when required | [High-precision lookup](../primus_tfhe_ntru_lut/README.md) |
 
@@ -122,26 +122,33 @@ All four backends bind CBS output layout and consumption to the same evaluator. 
 
 ```rust,ignore
 // Client: encrypt the two candidate messages.
-let (input_codec, ring_codec) = context.parameters().circuit_bootstrap_codecs(4, 8)?;
+let (input_codec, ring_codec) = context.parameters().circuit_bootstrap_codecs(8, 8)?;
 let mut ring_client = context.accumulator_client(client_key.glwe_secret_key(), ring_codec)?;
 let lhs = ring_client.encrypt(&lhs_message, &mut rng);
 let rhs = ring_client.encrypt(&rhs_message, &mut rng);
 let mut decoded = vec![0; lhs_message.len()];
+let external_secret = client_key.external_lwe_secret_key();
+let input = context.encryptor(external_secret, &input_codec)?.encrypt_padded(3, &mut rng)?;
 
-// Server: receive the encrypted input bit and candidates, then return selected.
+// Server: compute F(m) = [m >= 2] inside the same CBS, then return selected.
 let mut pbs = context.evaluator(&server_key)?;
 let key = server_key.circuit_bootstrap_key().unwrap();
-let mut cbs = CircuitBootstrapEvaluator::try_new(
-    pbs.bootstrap_resources(), key, &input_codec,
+let program = key.parameters().compile_lookup_table_fn(&input_codec, |m| u64::from(m >= 2))?;
+let mut cbs = CircuitBootstrapEvaluator::try_with_lookup_table(
+    pbs.bootstrap_resources(), key, program,
 )?;
 let mut control = cbs.allocate_output();
 let mut selected = context.allocate_accumulator_ciphertext();
-cbs.circuit_bootstrap_to(input_bit.as_view(), &mut control, pbs.bootstrap_resources_mut());
+cbs.circuit_bootstrap_to(input.as_view(), &mut control, pbs.bootstrap_resources_mut());
 cbs.cmux_to(&control, &lhs, &rhs, &mut selected, pbs.bootstrap_resources_mut());
 
 // Client: decrypt the response.
 ring_client.decrypt_to(&selected, &mut decoded);
 ```
+
+`compile_lookup_table_fn` evaluates one integer function over `0..ceil(t_in/2)` and programs every lane as `g_j * F(m) mod Q`. `compile_lookup_table_slice` takes exactly that many results (here `[0, 0, 1, 1]`). The returned `CircuitBootstrapLookupTable` retains its gadget basis and input domain; `try_with_lookup_table` checks N, q/Q and the exact basis before moving it into the evaluator. A raw Rounded/Scaled `InterleavedLookupTable` cannot substitute for this program. `try_new` and `compile_lookup_table` remain the identity `F(m)=m` shortcuts. Compilation is offline; changing compatible functions needs no new evaluation key or extra blind rotation.
+
+CMux requires every programmed result to be 0 or 1; the input itself need not be a bit. General canonical ring integers (less than explicit Q) can instead be consumed by external products with a suitable multiplication/noise budget. Input t, integer function results, candidate ring-message t and output gadget basis are independent roles. This API supports the unsigned front-half domain; one-hot retains its dedicated selector tables.
 
 All four backends borrow common resources and take the default CBS output parameters from the circuit key; see resource reuse below.
 
@@ -196,7 +203,7 @@ Raw constructors `LookupTable::try_new` / `InterleavedLookupTable::try_new` acce
 | `encrypt_padded` | Same unsigned scale, restricted to `0..ceil(t/2)` for front-half LUT input |
 | `encrypt_centered` | Modular representative in `0..t`; upper-half values represent negatives, e.g. `3` means `-1` for `t=4` |
 | Boolean (both families) | External `false/true` is `0/1` modulo 4; internal LUTs use signed values at the rounded modulus-8 scale, followed by a restoring shift |
-| CBS | Ordinary unsigned LWE input becomes GGSW/NGSW at the selected gadget scales, under the accumulator secret; a `0/1` input yields a CMUX control |
+| CBS | Unsigned front-half input maps through F to GGSW/NGSW at the selected gadget scales, under the accumulator secret; bit-valued F yields a CMUX control |
 
 Client `decrypt` uses its bound codec and returns a canonical representative in `0..t`. Centered encryption is not a replacement for the unsigned input contract of ordinary LUTs. PBS preserves the LUT's output scale; it does not automatically convert Boolean or gadget outputs to ordinary messages.
 

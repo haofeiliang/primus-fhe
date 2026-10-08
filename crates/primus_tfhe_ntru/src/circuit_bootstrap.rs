@@ -1,11 +1,13 @@
 //! Shared parameter validation for NTRU circuit bootstrapping.
 
 use primus_decompose::{DecompositionConfig, primitive::ApproxSignedBasis};
+use primus_encoding::RoundedCodec;
 use primus_integer::FheUint;
 use primus_modulus::NativeModulus;
 use primus_ntru::NlevParameters;
 use primus_poly::PolyLength;
 use primus_reduce::RingContext;
+use primus_tfhe::{CircuitBootstrapLookupTable, LookupTableError};
 
 use crate::{CircuitBootstrapConfig, CircuitBootstrapParameterError, TfheParameters};
 
@@ -14,7 +16,8 @@ use crate::{CircuitBootstrapConfig, CircuitBootstrapParameterError, TfheParamete
 /// The TFHE context supplies BR parameters. Trace, scheme-switch and output
 /// bases are independent. The scheme-switch key binds the complete output basis.
 /// The BR basis must resolve the smallest programmed output gadget scale.
-/// Construction checks domains and layouts; program binding checks ManyLUT capacity.
+/// Construction checks domains and layouts; compilation checks ManyLUT capacity,
+/// and backend program binding checks external q and the complete output basis.
 /// Neither establishes a noise budget, failure probability or security. In particular the scheme-switch
 /// key encrypts secret-dependent messages and multiplies errors by f and f²;
 /// ordinary PBS parameters are not automatically valid CBS parameters.
@@ -113,34 +116,55 @@ impl<T: FheUint, M: RingContext<T>> CircuitBootstrapParameters<T, M> {
     }
 
     /// Compiles the gadget-scaled identity for a selected Rounded input encoding.
-    ///
-    /// Checks front-half geometry and interleaved output capacity here,
-    /// rather than at key generation. The same CBS material may serve another t
-    /// when its program fits. Output values are gadget scalars, not codec-scaled
-    /// messages. These parameters own Q only; backend binding checks the input
-    /// codec against external q. Callers must budget input, trace and scheme-switch noise.
+    /// Inherits [`Self::compile_lookup_table_fn`]'s domain, capacity and noise contracts.
     pub fn compile_lookup_table<LM: RingContext<T>>(
         &self,
-        input_codec: &primus_encoding::RoundedCodec<T, LM>,
-    ) -> Result<primus_tfhe::InterleavedLookupTable<T>, primus_tfhe::LookupTableError> {
-        use primus_tfhe::{InterleavedLookupTable, LookupTableError, front_half_domain_len};
-        let modulus = self.trace.encryption_parameters().cipher_modulus();
-        let poly_length = self.poly_length();
-        let plaintext_modulus = input_codec.plaintext_modulus();
-        let domain_len = front_half_domain_len(plaintext_modulus, poly_length)?;
-        let scalars: Vec<T> = self.output_basis.scalar_iter().collect();
-        InterleavedLookupTable::try_new(
-            domain_len,
-            poly_length,
-            scalars.len(),
-            plaintext_modulus,
-            input_codec.ciphertext_modulus(),
-            modulus,
-            |input, level| {
-                let input =
-                    T::try_from(input).map_err(|_| LookupTableError::PlaintextModulusTooLarge)?;
-                Ok(modulus.reduce_mul(scalars[level], input))
-            },
+        input_codec: &RoundedCodec<T, LM>,
+    ) -> Result<CircuitBootstrapLookupTable<T>, LookupTableError> {
+        self.compile_lookup_table_fn(input_codec, T::as_from)
+    }
+
+    /// Compiles `g_j * F(m) mod Q` for every output gadget level j.
+    ///
+    /// These parameters own Q; backend binding checks input q. Uses the complete
+    /// unsigned front-half domain `0..ceil(t_in/2)`. Results must be canonical
+    /// ring integers (less than explicit Q), rather than codec-scaled messages.
+    /// The callback runs once per input during compilation; execution never calls it.
+    /// Input geometry, capacity and results follow
+    /// [`CircuitBootstrapLookupTable::try_from_fn`]. CMux requires every result
+    /// in `{0, 1}`; other integers can be consumed by external products.
+    /// Callers must budget BR, trace, scheme-switch and consumption noise.
+    pub fn compile_lookup_table_fn<LM: RingContext<T>, F>(
+        &self,
+        input_codec: &RoundedCodec<T, LM>,
+        function: F,
+    ) -> Result<CircuitBootstrapLookupTable<T>, LookupTableError>
+    where
+        F: Fn(usize) -> T,
+    {
+        CircuitBootstrapLookupTable::try_from_fn(
+            self.poly_length(),
+            input_codec,
+            &self.output_basis,
+            self.trace.encryption_parameters().cipher_modulus(),
+            function,
+        )
+    }
+
+    /// Compiles the complete slice of integer results indexed by input message.
+    /// Inherits [`Self::compile_lookup_table_fn`]'s gadget, domain and noise contracts.
+    /// Missing or extra entries return [`LookupTableError::DomainLengthMismatch`].
+    pub fn compile_lookup_table_slice<LM: RingContext<T>>(
+        &self,
+        input_codec: &RoundedCodec<T, LM>,
+        values: &[T],
+    ) -> Result<CircuitBootstrapLookupTable<T>, LookupTableError> {
+        CircuitBootstrapLookupTable::try_from_slice(
+            self.poly_length(),
+            input_codec,
+            &self.output_basis,
+            self.trace.encryption_parameters().cipher_modulus(),
+            values,
         )
     }
 

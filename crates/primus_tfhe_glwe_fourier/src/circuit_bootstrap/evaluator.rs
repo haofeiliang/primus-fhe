@@ -5,7 +5,7 @@ use primus_glwe::GlweCiphertext;
 use primus_glwe::{FourierGlweTraceWorkspace, GlevCiphertext};
 use primus_lattice::ggsw::FourierGgsw;
 use primus_modulus::NativeModulus;
-use primus_tfhe::InterleavedLookupTable;
+use primus_tfhe::CircuitBootstrapLookupTable;
 
 use super::key::CircuitBootstrapBinding;
 
@@ -26,7 +26,7 @@ where
 {
     context: &'a TfheContext<T, Table>,
     circuit: CircuitBootstrapBinding<'a, T>,
-    lookup_table: InterleavedLookupTable<T>,
+    lookup_table: CircuitBootstrapLookupTable<T>,
     trace: FourierGlweTraceWorkspace<T>,
     projected: GlevCiphertext<Vec<T>>,
 }
@@ -79,18 +79,74 @@ where
         let tfhe = context.parameters();
         let circuit = CircuitBootstrapBinding::try_new(tfhe, parameters, circuit_key)?;
 
-        let glwe = tfhe.blind_rotation_ggsw();
         let lookup_table = parameters.compile_lookup_table(input_codec)?;
+        Ok(Self::from_binding(context, circuit, lookup_table))
+    }
 
-        let glwe_size = glwe.glwe_size();
+    /// Binds a precompiled integer CBS program using the key's output parameters.
+    /// The program is moved without cloning or recompilation. Classic/sparse BR
+    /// and both PBS orders use the same projection and scheme-switch path.
+    ///
+    /// # Correctness
+    /// Inherits [`Self::try_with_parameters`]'s secret, representation and noise
+    /// requirements. Inputs must use the encoding selected at program compilation.
+    /// CMux requires the programmed function to return a bit throughout its domain.
+    pub fn try_with_lookup_table(
+        resources: &BootstrapResources<'a, T, Table>,
+        circuit_key: &'a CircuitBootstrapKey<T>,
+        lookup_table: CircuitBootstrapLookupTable<T>,
+    ) -> Result<Self, TfheEvaluationError> {
+        Self::try_with_parameters_and_lookup_table(
+            resources,
+            circuit_key.parameters(),
+            circuit_key,
+            lookup_table,
+        )
+    }
 
-        Ok(Self {
+    /// Binds independently selected output parameters and a precompiled CBS program.
+    /// Checks key/parameters and the program's N, q/Q and exact output basis before
+    /// allocating projection buffers. GLWE permits a different output basis with
+    /// the same key layout; the program must use that selected basis.
+    ///
+    /// # Correctness
+    /// Inherits [`Self::try_with_lookup_table`]'s input/function requirements and
+    /// [`Self::try_with_parameters`]'s secret, representation and noise requirements.
+    pub fn try_with_parameters_and_lookup_table(
+        resources: &BootstrapResources<'a, T, Table>,
+        parameters: &'a CircuitBootstrapParameters<T>,
+        circuit_key: &'a CircuitBootstrapKey<T>,
+        lookup_table: CircuitBootstrapLookupTable<T>,
+    ) -> Result<Self, TfheEvaluationError> {
+        let context = resources.context;
+        let tfhe = context.parameters();
+        let circuit = CircuitBootstrapBinding::try_new(tfhe, parameters, circuit_key)?;
+        if !lookup_table.is_compatible(
+            parameters.output_size().glwe_size().poly_length(),
+            parameters.output_basis().modulus(),
+            parameters.output_basis(),
+        ) {
+            return Err(TfheEvaluationError::IncompatibleCircuitBootstrapLookupTable);
+        }
+        Ok(Self::from_binding(context, circuit, lookup_table))
+    }
+
+    /// Allocates projection storage after the entry point has established the key,
+    /// parameters and program pairing; the identity compiler already establishes
+    /// its program's geometry/basis, so that path does not recheck them.
+    fn from_binding(
+        context: &'a TfheContext<T, Table>,
+        circuit: CircuitBootstrapBinding<'a, T>,
+        lookup_table: CircuitBootstrapLookupTable<T>,
+    ) -> Self {
+        let parameters = circuit.parameters;
+        Self {
             context,
             circuit,
             lookup_table,
-            trace: FourierGlweTraceWorkspace::new(glwe_size),
+            trace: FourierGlweTraceWorkspace::new(parameters.output_size().glwe_size()),
             projected: GlevCiphertext::zero(parameters.output_size().glev_len()),
-        })
+        }
     }
 
     /// Allocates a zeroed Fourier GGSW with this evaluator's output layout.
@@ -113,7 +169,7 @@ where
         output
     }
 
-    /// Writes a Fourier GGSW encrypting the input message under the accumulator
+    /// Writes a Fourier GGSW encrypting F(m) under the accumulator
     /// GLWE secret, with the configured output gadget scalars.
     ///
     /// # Correctness
@@ -126,8 +182,9 @@ where
     /// halving and FFT rounding, must fit the independent CBS error budget;
     /// see [`CircuitBootstrapParameters`]. Sparse keys also require aggregation
     /// noise from every bucket, including zero selections and dummies, and the
-    /// aggregate FFT error to fit that budget. CMUX consumption requires message
-    /// 0 or 1. The output uses gadget scales rather than ordinary LWE encoding.
+    /// aggregate FFT error to fit that budget. CMux requires `F(m)` in `{0, 1}`
+    /// throughout the programmed domain. The default identity uses `F(m)=m`.
+    /// The output uses gadget scales rather than ordinary LWE encoding.
     ///
     /// # Panics
     ///

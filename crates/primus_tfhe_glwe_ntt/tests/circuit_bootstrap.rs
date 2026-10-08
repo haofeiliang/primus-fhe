@@ -338,9 +338,55 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
         let mut decoded = vec![0; POLY_LENGTH];
         let mut decoded_product = vec![0; POLY_LENGTH];
         // A zero result must overwrite the previous nonzero control.
-        for bit in [1u64, 0] {
-            let input = encryptor.encrypt_padded(bit, &mut rng).unwrap();
-            if bit == 1 {
+        // Preserve the identity regression, then bind two functions to the same
+        // keys/resources: a bit predicate and a non-bit integer external-product control.
+        let predicate = circuit_parameters
+            .compile_lookup_table_fn(&input_codec, |m| u64::from(m == 0))
+            .unwrap();
+        let integer = circuit_parameters
+            .compile_lookup_table_slice(&input_codec, &[2, 3])
+            .unwrap();
+        // Equal level counts do not imply compatible gadget scales.
+        let wrong_basis = ApproxSignedBasis::new(
+            circuit_parameters.output_basis().modulus(),
+            DecompositionBaseLog::new(10),
+            Some(DecompositionLevelCount::new(3)),
+        );
+        let wrong_program = primus_tfhe::CircuitBootstrapLookupTable::try_from_fn(
+            PolyLength::new(POLY_LENGTH),
+            &input_codec,
+            &wrong_basis,
+            context.parameters().cipher_modulus(),
+            |_| 0,
+        )
+        .unwrap();
+        assert!(matches!(
+            CircuitBootstrapEvaluator::try_with_parameters_and_lookup_table(
+                pbs.bootstrap_resources(),
+                circuit_parameters,
+                circuit_key,
+                wrong_program,
+            ),
+            Err(TfheEvaluationError::IncompatibleCircuitBootstrapLookupTable)
+        ));
+        for (message, value, program) in [
+            (1u64, 1u64, None),
+            (0, 0, None),
+            (1, 0, Some(&predicate)),
+            (0, 1, Some(&predicate)),
+            (0, 2, Some(&integer)),
+        ] {
+            if let Some(program) = program {
+                evaluator = CircuitBootstrapEvaluator::try_with_parameters_and_lookup_table(
+                    pbs.bootstrap_resources(),
+                    circuit_parameters,
+                    circuit_key,
+                    program.clone(),
+                )
+                .unwrap();
+            }
+            let input = encryptor.encrypt_padded(message, &mut rng).unwrap();
+            if message == 1 && program.is_none() {
                 for (dimension, length) in [
                     (input.dimension() - 1, control.as_ref().len()),
                     (input.dimension(), control.as_ref().len() - 1),
@@ -365,13 +411,15 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
                 &mut control,
                 pbs.bootstrap_resources_mut(),
             );
-            evaluator.cmux_to(
-                &control,
-                &choices[0],
-                &choices[1],
-                &mut selected,
-                pbs.bootstrap_resources_mut(),
-            );
+            if value <= 1 {
+                evaluator.cmux_to(
+                    &control,
+                    &choices[0],
+                    &choices[1],
+                    &mut selected,
+                    pbs.bootstrap_resources_mut(),
+                );
+            }
             evaluator.external_product_to(
                 &control,
                 &choices[1],
@@ -387,7 +435,7 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
                     .unwrap()
                     .decrypt(output.as_view())
                     .unwrap(),
-                bit
+                message
             );
             let output_size = circuit_parameters.output_size();
             let mut phase = Polynomial::new(vec![0u64; POLY_LENGTH]);
@@ -400,11 +448,11 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
                 {
                     main_secret.decrypt_phase_to(&level, &mut phase, modulus, context.table());
                     for (index, &actual) in phase.as_ref().iter().enumerate() {
-                        // Mask rows encrypt -g_l * bit * s_r; the body row
-                        // encrypts the constant g_l * bit, with a zero tail.
+                        // Mask rows encrypt -g_l * F(m) * s_r; the body row
+                        // encrypts the constant g_l * F(m), with a zero tail.
                         let coefficient =
                             secret.map_or(i128::from(index == 0), |s| -i128::from(s[index]));
-                        let expected = (coefficient * i128::from(scalar) * i128::from(bit))
+                        let expected = (coefficient * i128::from(scalar) * i128::from(value))
                             .rem_euclid(i128::from(MODULUS))
                             as u64;
                         let distance = actual.abs_diff(expected);
@@ -412,15 +460,20 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
                         // Functional fixture bound, below the smallest gadget step.
                         assert!(
                             distance < scalar / 8,
-                            "order {order:?}, sparse {sparse}, bit {bit}, row {row}, scalar {scalar}, index {index}: distance {distance}"
+                            "order {order:?}, sparse {sparse}, input {message}, value {value}, row {row}, scalar {scalar}, index {index}: distance {distance}"
                         );
                     }
                 }
             }
-            assert_eq!(decoded, messages[bit as usize]);
+            if value <= 1 {
+                assert_eq!(decoded, messages[value as usize]);
+            }
             assert_eq!(
                 decoded_product,
-                messages[1].iter().map(|m| m * bit).collect::<Vec<_>>()
+                messages[1]
+                    .iter()
+                    .map(|m| m * value % 4)
+                    .collect::<Vec<_>>()
             );
         }
 

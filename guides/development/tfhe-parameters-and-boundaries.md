@@ -307,3 +307,16 @@ RNS GLWE 提供 `CrtGlweParameters::try_new`，其 `new` 是调用同一校验�
 参数拒绝由 [codec](../../crates/primus_encoding/tests/plaintext_codec.rs)、[sampler](../../crates/primus_distr/tests/secret_key_sampler.rs)、[LWE](../../crates/primus_lwe/tests/parameters.rs)、[GLWE](../../crates/primus_glwe/tests/boundaries.rs)、[NTRU](../../crates/primus_ntru/tests/secret_key.rs) 和两家族 [GLWE 参数](../../crates/primus_tfhe_glwe/tests/parameters.rs) / [NTRU 参数](../../crates/primus_tfhe_ntru/tests/parameters.rs) 在拥有契约的层保护。配置回归使用小参数，不生成大密钥。
 
 后端 PBS、CBS/CMux、MVB、one-hot 和高精度 LUT 的现有独立数值/资源回归继续验证合法输入链路；默认和 nightly 全 features 分开运行，命令及覆盖归属见[测试指南](testing.md)。参数构造整理不提供 kernel 提速结论，也不扩大数值支持范围。
+
+## 自定义 CBS 程序
+
+`CircuitBootstrapParameters::compile_lookup_table_fn`（或 `_slice`）在完整 unsigned
+Rounded 前半区编译一个整数函数 F。各层包含 `g_j * F(m) mod Q`，交错 padding
+由输出 basis 决定。`CircuitBootstrapLookupTable` 保留该 basis 和已编译的 q/Q/N 域；
+四个后端的 `CircuitBootstrapEvaluator::try_with_lookup_table` 在 setup 时验证配对。
+GLWE 的替代 basis 入口还显式接收所选 CBS 参数。普通消息表的形状不能证明 gadget 标度。
+
+恒等函数便利入口从同一已验证参数编译，直接准备 projection storage，不重复外部程序
+配对检查。在线仍以复用存储完成一次 BR、trace 和 scheme switching，不调用闭包、编译、
+分配或增加检查。CMux 要求整个域上的 F 为 bit；整数外积控制需要对应乘法与噪声预算。
+程序检查不证明秘密/变换身份或这些噪声余量。One-hot 保留专用查表几何。

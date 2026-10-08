@@ -2,12 +2,14 @@
 //!
 //! - `single`: one output; front-half and odd full-domain constructors.
 //! - `interleaved`: multiple output lanes sharing one blind rotation.
+//! - `circuit_bootstrap`: a single integer function at all CBS gadget scales.
 //! - `factorized`: a common polynomial and fixed-scale difference factors for MVB.
 //! - `bivariate`: bounded input packing followed by a single-output lookup.
 //! - `compile`: input geometry, validation and polynomial filling.
 //! - `rounded`: shared plaintext-output constructors using rounded codecs.
 
 mod bivariate;
+mod circuit_bootstrap;
 mod compile;
 mod compiler;
 mod factorized;
@@ -17,6 +19,7 @@ mod single;
 use primus_integer::FheUint;
 
 pub use bivariate::BivariateLookupTable;
+pub use circuit_bootstrap::CircuitBootstrapLookupTable;
 pub use compile::front_half_domain_len;
 pub use compiler::LookupTableCompiler;
 pub use factorized::FactorizedLookupTable;

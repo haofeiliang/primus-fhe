@@ -88,9 +88,10 @@ pub use primus_tfhe_ntru::SparseNtruBootstrappingKey;
 
 pub use primus_tfhe::{
     BivariateLookupTable, BlindRotationConfig, CircuitBootstrapCodecs, CircuitBootstrapConfig,
-    ClientError, DecompositionConfig, FactorizedLookupTable, FactorizedPbsCodecs,
-    GadgetEncryptionConfig, InterleavedLookupTable, LookupTable, LookupTableCompiler, Lwe,
-    LweCiphertext, LweSecretKeyRef, PbsCodecs, PbsMessageConfig, RoundedPbsCodecs,
+    CircuitBootstrapLookupTable, ClientError, DecompositionConfig, FactorizedLookupTable,
+    FactorizedPbsCodecs, GadgetEncryptionConfig, InterleavedLookupTable, LookupTable,
+    LookupTableCompiler, Lwe, LweCiphertext, LweSecretKeyRef, PbsCodecs, PbsMessageConfig,
+    RoundedPbsCodecs,
 };
 pub use primus_tfhe_ntru::{
     ClientKey, EncryptionKey, LwePublicKey, LweReturnBatchWorkspace, LweReturnEvaluator,

@@ -8,7 +8,7 @@ use primus_encoding::ScaledCodec;
 use primus_fft::{Complex64, FftTable, RustFftTable, TfheFftTable};
 use primus_lattice::LweDimension;
 use primus_lwe::LweParameters;
-use primus_modulus::NativeModulus;
+use primus_modulus::{NativeModulus, PowOf2Modulus};
 use primus_ntru::NlevParameters;
 use primus_ntru::{FourierNgswCiphertext, FourierNtruSecretKey, NtruParameters, SecretKeyDistr};
 use primus_poly::{PolyLength, Polynomial};
@@ -175,6 +175,31 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr, sparse: bool) {
         .unwrap();
     let mut evaluator =
         CircuitBootstrapEvaluator::try_new(&resources, circuit_key, &input_codec).unwrap();
+    let foreign_input = RoundedCodec::new(4, PowOf2Modulus::new(1u64 << 23));
+    let foreign_program = parameters
+        .compile_lookup_table_fn(&foreign_input, |_| 0)
+        .unwrap();
+    assert!(matches!(
+        CircuitBootstrapEvaluator::try_with_lookup_table(&resources, circuit_key, foreign_program,),
+        Err(primus_tfhe::TfheEvaluationError::IncompatibleCircuitBootstrapLookupTable)
+    ));
+    let wrong_basis = ApproxSignedBasis::new(
+        parameters.output_basis().modulus(),
+        DecompositionBaseLog::new(9),
+        Some(DecompositionLevelCount::new(3)),
+    );
+    let wrong_program = primus_tfhe::CircuitBootstrapLookupTable::try_from_fn(
+        PolyLength::new(N),
+        &input_codec,
+        &wrong_basis,
+        context.parameters().accumulator_ntru().cipher_modulus(),
+        |_| 0,
+    )
+    .unwrap();
+    assert!(matches!(
+        CircuitBootstrapEvaluator::try_with_lookup_table(&resources, circuit_key, wrong_program,),
+        Err(primus_tfhe::TfheEvaluationError::IncompatibleCircuitBootstrapLookupTable)
+    ));
     let mut standalone_control = evaluator.allocate_output();
     evaluator.circuit_bootstrap_to(input.as_view(), &mut standalone_control, &mut resources);
     let mut pbs = primus_tfhe_ntru_fourier::Evaluator::try_from_resources(
@@ -187,8 +212,16 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr, sparse: bool) {
     let mut product = context.allocate_accumulator_ciphertext();
     let mut decoded = vec![0; N];
     let mut decoded_product = vec![0; N];
-    // Rebind the same CBS key to t=8; the final zero overwrites a nonzero control.
-    for (t, bit) in [(4u64, 1u64), (8, 1), (8, 0)] {
+    // Reuse the same keys with identity, a t=8 predicate, and an integer control.
+    // Non-bit outputs are consumed only by the external product.
+    for (t, message, value, values) in [
+        (4u64, 1u64, 1u64, None),
+        (8, 1, 1, None),
+        (8, 0, 0, None),
+        (8, 3, 1, Some([0, 0, 1, 1].as_slice())),
+        (8, 1, 0, Some([0, 0, 1, 1].as_slice())),
+        (4, 0, 2, Some([2, 3].as_slice())),
+    ] {
         let input_codec =
             RoundedCodec::new(t, context.parameters().external_lwe().cipher_modulus());
         let encryptor = context
@@ -204,25 +237,34 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr, sparse: bool) {
             .unwrap()
             .compile_fn(|m| m as u64)
             .unwrap();
-        evaluator = CircuitBootstrapEvaluator::try_new(
-            pbs.bootstrap_resources(),
-            circuit_key,
-            &input_codec,
-        )
+        evaluator = if let Some(values) = values {
+            let program = parameters
+                .compile_lookup_table_slice(&input_codec, values)
+                .unwrap();
+            CircuitBootstrapEvaluator::try_with_lookup_table(
+                pbs.bootstrap_resources(),
+                circuit_key,
+                program,
+            )
+        } else {
+            CircuitBootstrapEvaluator::try_new(pbs.bootstrap_resources(), circuit_key, &input_codec)
+        }
         .unwrap();
-        let input = encryptor.encrypt_padded(bit, &mut rng).unwrap();
+        let input = encryptor.encrypt_padded(message, &mut rng).unwrap();
         evaluator.circuit_bootstrap_to(
             input.as_view(),
             &mut control,
             pbs.bootstrap_resources_mut(),
         );
-        evaluator.cmux_to(
-            &control,
-            &choices[0],
-            &choices[1],
-            &mut selected,
-            pbs.bootstrap_resources_mut(),
-        );
+        if value <= 1 {
+            evaluator.cmux_to(
+                &control,
+                &choices[0],
+                &choices[1],
+                &mut selected,
+                pbs.bootstrap_resources_mut(),
+            );
+        }
         evaluator.external_product_to(
             &control,
             &choices[1],
@@ -238,7 +280,7 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr, sparse: bool) {
                 .unwrap()
                 .decrypt(output.as_view())
                 .unwrap(),
-            bit
+            message
         );
         let mut phase = Polynomial::new(vec![0u64; N]);
         for (scalar, level) in parameters
@@ -254,15 +296,17 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr, sparse: bool) {
             {
                 let q = 1u128 << 64;
                 let value =
-                    (u128::from(scalar) * u128::from(f.unsigned_abs()) * u128::from(bit)) % q;
+                    (u128::from(scalar) * u128::from(f.unsigned_abs()) * u128::from(value)) % q;
                 let expected = if f < 0 { (q - value) % q } else { value };
                 let distance = (u128::from(actual) + q - expected) % q;
                 // Separate native/FFT fixture bound, not an NTT noise model.
                 assert!(distance.min(q - distance) < (1 << 32));
             }
         }
-        assert_eq!(decoded, vec![if bit == 0 { 1 } else { 3 }; N]);
-        assert_eq!(decoded_product, vec![3 * bit; N]);
+        if value <= 1 {
+            assert_eq!(decoded, vec![if value == 0 { 1 } else { 3 }; N]);
+        }
+        assert_eq!(decoded_product, vec![3 * value % 4; N]);
     }
     control.as_mut().fill(Complex64::new(7.0, 0.0));
     let invalid = primus_tfhe::LweCiphertext::zero(15);

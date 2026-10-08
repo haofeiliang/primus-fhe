@@ -5,7 +5,7 @@ use primus_encoding::RoundedCodec;
 use primus_fft::{Complex64, FftTable, TorusFftValue};
 use primus_ntru::NtruCiphertext;
 use primus_ntru::{FourierNgswCiphertext, NlevCiphertext};
-use primus_tfhe::{InterleavedLookupTable, LookupTableError};
+use primus_tfhe::{CircuitBootstrapLookupTable, LookupTableError};
 
 use crate::{BootstrapResources, CircuitBootstrapKey, Lwe, TfheContext, TfheEvaluationError};
 
@@ -20,7 +20,7 @@ where
 {
     context: &'a TfheContext<T, Table, LM>,
     circuit_key: &'a CircuitBootstrapKey<T>,
-    lookup_table: InterleavedLookupTable<T>,
+    lookup_table: CircuitBootstrapLookupTable<T>,
     trace_scratch: Vec<T>,
     projected: NlevCiphertext<Vec<T>>,
 }
@@ -47,22 +47,57 @@ where
         let context = resources.context;
         let tfhe = context.parameters();
         circuit_key.check_parameters(tfhe)?;
-        let parameters = circuit_key.parameters();
-        let poly_length = tfhe.poly_length();
-        let n = poly_length.get();
         if input_codec.ciphertext_modulus().explicit_value()
             != tfhe.external_lwe().cipher_modulus_value()
         {
             return Err(LookupTableError::InputModulusMismatch.into());
         }
-        let lookup_table = parameters.compile_lookup_table(input_codec)?;
-        Ok(Self {
-            context: resources.context,
+        let lookup_table = circuit_key.parameters().compile_lookup_table(input_codec)?;
+        Ok(Self::from_lookup_table(context, circuit_key, lookup_table))
+    }
+
+    /// Binds a precompiled integer CBS program without cloning or recompilation.
+    /// Checks its N, external q, accumulator Q and exact output gadget basis
+    /// against the circuit key before allocating projection storage.
+    /// Both classic and sparse BR use this same path.
+    ///
+    /// # Correctness
+    /// Inherits [`Self::try_new`]'s secret, representation and noise requirements.
+    /// Inputs must use the encoding selected at program compilation. CMux requires
+    /// the function to return a bit throughout the programmed input domain.
+    pub fn try_with_lookup_table(
+        resources: &BootstrapResources<'a, T, Table, LM>,
+        circuit_key: &'a CircuitBootstrapKey<T>,
+        lookup_table: CircuitBootstrapLookupTable<T>,
+    ) -> Result<Self, TfheEvaluationError> {
+        let context = resources.context;
+        let tfhe = context.parameters();
+        circuit_key.check_parameters(tfhe)?;
+        if !lookup_table.is_compatible(
+            tfhe.poly_length(),
+            tfhe.external_lwe().cipher_modulus_value(),
+            circuit_key.parameters().output_basis(),
+        ) {
+            return Err(TfheEvaluationError::IncompatibleCircuitBootstrapLookupTable);
+        }
+        Ok(Self::from_lookup_table(context, circuit_key, lookup_table))
+    }
+
+    /// Allocates projection storage after compilation or external program binding
+    /// establishes the program/key/context pairing. No checks are repeated here.
+    fn from_lookup_table(
+        context: &'a TfheContext<T, Table, LM>,
+        circuit_key: &'a CircuitBootstrapKey<T>,
+        lookup_table: CircuitBootstrapLookupTable<T>,
+    ) -> Self {
+        let n = context.parameters().poly_length().get();
+        Self {
+            context,
             circuit_key,
             lookup_table,
             trace_scratch: vec![T::ZERO; 2 * n],
-            projected: NlevCiphertext::zero(parameters.output_nlev_len()),
-        })
+            projected: NlevCiphertext::zero(circuit_key.parameters().output_nlev_len()),
+        }
     }
 
     /// Allocates a zeroed Fourier NGSW with this evaluator's output layout.
@@ -84,7 +119,7 @@ where
         output
     }
 
-    /// Writes `NGSW_f_acc[m]` with the configured output gadget scalars.
+    /// Writes `NGSW_f_acc[F(m)]` with the configured output gadget scalars.
     /// Reuses one BR, trace workspace and coefficient NLev allocation.
     ///
     /// # Correctness
@@ -93,8 +128,10 @@ where
     /// noise margin for the coarser ManyLUT windows are required. Trace and
     /// scheme-switch errors must fit the independent CBS budget, including f/f²
     /// amplification, native halving and FFT rounding; see
-    /// [`crate::CircuitBootstrapParameters`]. CMUX use requires m=0/1.
-    /// The output uses gadget scales, not ordinary plaintext or Boolean encoding.
+    /// [`crate::CircuitBootstrapParameters`]. CMux requires `F(m)` in `{0, 1}`
+    /// throughout the programmed domain.
+    /// The default identity program uses `F(m)=m`. The output uses gadget scales,
+    /// not ordinary plaintext or Boolean encoding.
     ///
     /// # Panics
     /// Panics before output writes if input dimension or output NGSW length is

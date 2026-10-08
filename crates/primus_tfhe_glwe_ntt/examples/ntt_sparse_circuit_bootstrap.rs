@@ -1,4 +1,4 @@
-//! Use an encrypted LWE bit to select between two encrypted ring messages via sparse CBS and CMux.
+//! Evaluate an encrypted integer predicate with sparse CBS, then select a ring message via CMux.
 //!
 //! Run: `cargo run --release -p primus_tfhe_glwe_ntt --example ntt_sparse_circuit_bootstrap`
 //! Arithmetic profiles: guides/development/tfhe-parameters.md (not security presets).
@@ -24,9 +24,9 @@ fn main() {
     let parameters = parameters();
     let context = TfheContext::<Word, Table>::try_from_parameters(parameters).unwrap();
 
-    // Padded t=4 encodes a selection bit independently of the ring messages.
-    let (selector_codec, ring_message_codec) =
-        context.parameters().circuit_bootstrap_codecs(4, 8).unwrap();
+    // Padded t=8 accepts integers 0..4, independently of the candidate ring messages.
+    let (input_codec, ring_message_codec) =
+        context.parameters().circuit_bootstrap_codecs(8, 8).unwrap();
 
     // Client: generate sparse BR/CBS material, without an unused return key.
     let mut rng = StdRng::seed_from_u64(42);
@@ -40,9 +40,9 @@ fn main() {
             &mut rng,
         )
         .unwrap();
-    // The selector is encrypted with the external LWE secret.
+    // The integer input is encrypted with the external LWE secret.
     let external_secret = client_key.external_lwe_secret_key();
-    let encryptor = context.encryptor(external_secret, &selector_codec).unwrap();
+    let encryptor = context.encryptor(external_secret, &input_codec).unwrap();
 
     // Candidate ring messages use an independent t=8 space under the accumulator secret.
     let mut ring_client = context
@@ -58,30 +58,44 @@ fn main() {
 
     // Server: receive the encrypted candidates; allocate the control and result.
     let mut resources = server_key.bootstrap_resources(&context).unwrap();
-    let mut cbs = CircuitBootstrapEvaluator::try_new(
+    // Compile F(m) = [m >= 2] once. CBS emits gadget-scaled F(m), so CMux
+    // consumes a bit even when the encrypted input itself is not a bit.
+    let program = server_key
+        .circuit_bootstrap_key()
+        .parameters()
+        .compile_lookup_table_fn(&input_codec, |m| Word::from(m >= 2))
+        .unwrap();
+    let mut cbs = CircuitBootstrapEvaluator::try_with_lookup_table(
         &resources,
         server_key.circuit_bootstrap_key(),
-        &selector_codec,
+        program,
     )
     .unwrap();
     let mut control = cbs.allocate_output();
     let mut selected = context.allocate_accumulator_ciphertext();
 
-    for bit in [1, 0] {
-        // Client -> server: send the encrypted selection bit.
+    for message in [3, 1] {
+        // Client -> server: send the encrypted integer.
         encryptor
-            .encrypt_padded_to(bit, input.as_mut_view(), &mut rng)
+            .encrypt_padded_to(message, input.as_mut_view(), &mut rng)
             .unwrap();
 
-        // Server: CBS produces a gadget control; CMux selects rhs for 1, lhs for 0.
+        // Server: one CBS computes the predicate; CMux selects rhs when it is true.
         cbs.circuit_bootstrap_to(input.as_view(), &mut control, &mut resources);
         cbs.cmux_to(&control, &lhs, &rhs, &mut selected, &mut resources);
 
         // Client: decrypt the returned ring ciphertext, reusing the decoding buffer.
         ring_client.decrypt_to(&selected, &mut decoded);
-        let expected = if bit == 0 { &lhs_message } else { &rhs_message };
+        let expected = if message >= 2 {
+            &rhs_message
+        } else {
+            &lhs_message
+        };
         assert_eq!(&decoded, expected);
-        println!("bit {bit}: selected coefficients {}", decoded[0]);
+        println!(
+            "input {message}, predicate m >= 2: selected coefficients {}",
+            decoded[0]
+        );
     }
 }
 

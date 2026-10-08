@@ -41,8 +41,8 @@ pub use client::{
 };
 pub use error::{LookupTableError, TfheEvaluationError};
 pub use lookup_table::{
-    BivariateLookupTable, FactorizedLookupTable, InterleavedLookupTable, LookupTable,
-    LookupTableCompiler, front_half_domain_len,
+    BivariateLookupTable, CircuitBootstrapLookupTable, FactorizedLookupTable,
+    InterleavedLookupTable, LookupTable, LookupTableCompiler, front_half_domain_len,
 };
 pub use message::{
     CircuitBootstrapCodecs, FactorizedPbsCodecs, PbsCodecs, PbsMessageConfig, RoundedPbsCodecs,

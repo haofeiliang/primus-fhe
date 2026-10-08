@@ -27,6 +27,9 @@ pub enum TfheEvaluationError {
     /// CBS material has a different layout or decomposition basis.
     #[error("circuit-bootstrap key is incompatible with its parameters")]
     IncompatibleCircuitBootstrapKey,
+    /// A CBS program has another ring, external modulus or output gadget basis.
+    #[error("circuit-bootstrap lookup table is incompatible with the evaluation parameters")]
+    IncompatibleCircuitBootstrapLookupTable,
     /// Compiling an evaluator's internal LUT failed.
     #[error(transparent)]
     LookupTable(#[from] LookupTableError),
@@ -138,6 +141,9 @@ pub enum LookupTableError {
     /// The output codec uses a different modulus from the accumulator.
     #[error("output codec ciphertext modulus differs from the accumulator modulus")]
     OutputModulusMismatch,
+    /// The CBS output gadget basis uses another accumulator modulus.
+    #[error("output gadget basis modulus differs from the accumulator modulus")]
+    OutputBasisModulusMismatch,
     /// A function output lies outside the output codec's plaintext domain.
     #[error("lookup-table output for input {input} is outside the output plaintext domain")]
     OutputOutOfRange {

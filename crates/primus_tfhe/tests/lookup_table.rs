@@ -9,9 +9,133 @@ use primus_reduce::RingContext;
 
 use primus_poly::PolyLength;
 use primus_tfhe::{
-    BivariateLookupTable, InterleavedLookupTable, LookupTable, LookupTableCompiler,
-    LookupTableError, LweCiphertext, rotation::RotationModulusSwitch,
+    BivariateLookupTable, CircuitBootstrapLookupTable, InterleavedLookupTable, LookupTable,
+    LookupTableCompiler, LookupTableError, LweCiphertext, rotation::RotationModulusSwitch,
 };
+
+#[test]
+fn cbs_programs_bind_one_function_to_every_gadget_scale() {
+    use primus_decompose::{
+        DecompositionBaseLog, DecompositionLevelCount, primitive::ApproxSignedBasis,
+    };
+    use primus_encoding::PlaintextEmbedding;
+
+    fn check<M: RingContext<u32>>(modulus: M) {
+        let poly_length = PolyLength::new(32);
+        let input = RoundedCodec::new(5, PowOf2Modulus::new(1 << 16));
+        let basis = ApproxSignedBasis::new(
+            modulus.explicit_value(),
+            DecompositionBaseLog::new(2),
+            Some(DecompositionLevelCount::new(3)),
+        );
+        let values = [2u32, 0, 3];
+        let calls = Cell::new(0);
+        let program =
+            CircuitBootstrapLookupTable::try_from_fn(poly_length, &input, &basis, modulus, |m| {
+                assert_eq!(m, calls.replace(calls.get() + 1));
+                values[m]
+            })
+            .unwrap();
+        assert_eq!(calls.get(), values.len());
+        let from_slice = CircuitBootstrapLookupTable::try_from_slice(
+            poly_length,
+            &input,
+            &basis,
+            modulus,
+            &values,
+        )
+        .unwrap();
+        assert_eq!(program.polynomial(), from_slice.polynomial());
+        assert_eq!(program.input_domain_len(), values.len());
+        assert_eq!(program.padded_output_count(), 4);
+        assert_eq!(program.output_basis(), &basis);
+
+        // Read every programmed center directly, without executing the CBS path.
+        // Independent integer multiplication checks gadget scales and the padding lane.
+        let rotation = RotationModulusSwitch::new(input.ciphertext_modulus(), 64, 4);
+        let q = modulus.explicit_value().map_or(1u64 << 32, u64::from);
+        for (m, value) in values.into_iter().enumerate() {
+            let encoded = input.encode_value(m as u32, PlaintextEmbedding::Unsigned);
+            let center = rotation.exponent(encoded);
+            for (level, scalar) in basis.scalar_iter().enumerate() {
+                assert_eq!(
+                    program.polynomial().as_ref()[center + level],
+                    (u64::from(scalar) * u64::from(value) % q) as u32
+                );
+            }
+            assert_eq!(program.polynomial().as_ref()[center + 3], 0);
+        }
+        assert!(program.is_compatible(poly_length, Some(1 << 16), &basis));
+        assert!(!program.is_compatible(PolyLength::new(64), Some(1 << 16), &basis));
+        assert!(!program.is_compatible(poly_length, Some(1 << 15), &basis));
+        let other_basis = ApproxSignedBasis::new(
+            modulus.explicit_value(),
+            DecompositionBaseLog::new(3),
+            Some(DecompositionLevelCount::new(2)),
+        );
+        assert!(!program.is_compatible(poly_length, Some(1 << 16), &other_basis));
+        for values in [&[0u32, 1][..], &[0u32, 1, 2, 3][..]] {
+            assert_eq!(
+                CircuitBootstrapLookupTable::try_from_slice(
+                    poly_length,
+                    &input,
+                    &basis,
+                    modulus,
+                    values,
+                )
+                .unwrap_err(),
+                LookupTableError::DomainLengthMismatch {
+                    expected: 3,
+                    actual: values.len(),
+                }
+            );
+        }
+    }
+    check(BarrettModulus::new(97));
+    check(NativeModulus::new());
+
+    let modulus = BarrettModulus::new(97u32);
+    let poly_length = PolyLength::new(32);
+    let basis = primus_decompose::primitive::ApproxSignedBasis::new(
+        Some(97),
+        DecompositionBaseLog::new(2),
+        Some(DecompositionLevelCount::new(3)),
+    );
+    let input = RoundedCodec::new(4, PowOf2Modulus::new(1 << 16));
+    assert_eq!(
+        CircuitBootstrapLookupTable::try_from_fn(poly_length, &input, &basis, modulus, |m| {
+            if m == 0 { 0 } else { 97 }
+        },)
+        .unwrap_err(),
+        LookupTableError::EncodedOutputOutOfRange { input: 1 }
+    );
+    assert_eq!(
+        CircuitBootstrapLookupTable::try_from_fn(
+            poly_length,
+            &input,
+            &basis,
+            BarrettModulus::new(101),
+            |_| panic!("basis mismatch precedes function evaluation"),
+        )
+        .unwrap_err(),
+        LookupTableError::OutputBasisModulusMismatch
+    );
+    let crowded = RoundedCodec::new(18, input.ciphertext_modulus());
+    assert_eq!(
+        CircuitBootstrapLookupTable::try_from_fn(
+            poly_length,
+            &crowded,
+            &basis,
+            modulus,
+            |_| panic!("capacity failure precedes function evaluation"),
+        )
+        .unwrap_err(),
+        LookupTableError::PlaintextDomainTooLarge {
+            domain_len: 9,
+            coefficients_per_output: 8,
+        }
+    );
+}
 
 macro_rules! with_modulus {
     ($q:expr, $modulus:ident, $body:block) => {

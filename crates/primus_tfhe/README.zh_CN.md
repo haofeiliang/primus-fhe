@@ -19,7 +19,7 @@
 | 分解式 MVB | Rounded 前半区前缀 | k 个 unsigned Scaled LWE | 普通密钥 | 预处理程序 + `FactorizedEvaluator`，共享一次 BR、逐输出乘法 |
 | 有界双输入 | 同秘密/编码，`x<B,y<R` 且 `B*R<=ceil(t/2)` | 一个 Rounded LWE | 普通密钥 | `BivariateLookupTable`，另复用一个打包 LWE |
 | Boolean 门 | `t=4` 下的 Rounded 0/1 | 可直接串联的同编码 Boolean LWE | 普通密钥 | `BooleanEvaluator` 持有门 LUT 和临时密文 |
-| CBS → CMUX | Rounded 前半区；CMUX 控制输入为 0/1 | accumulator 秘密下的 GGSW/NGSW gadget 控制，再选择环密文 | BR + trace/SS；GLWE KS→BR 另需输入 KS | `CircuitBootstrapEvaluator`；环客户端独立使用 `AccumulatorClient` |
+| CBS → CMUX | Rounded 前半区；CMUX 要求 F(m) 为 bit | accumulator 秘密下的 GGSW/NGSW gadget 控制，再选择环密文 | BR + trace/SS；GLWE KS→BR 另需输入 KS | `CircuitBootstrapEvaluator`；环客户端独立使用 `AccumulatorClient` |
 | One-hot CBS | 一个 padded chunk，t=2M | δ_r(m) 的 NLEV/NGSW selectors | NTRU CBS 材料 | [One-hot 接口](../primus_tfhe_ntru/README.zh_CN.md#one-hot-cbs) |
 | 高精度查表 | 多个独立加密、统一位宽的 chunks | 可独立指定数量的输出 chunks | NTRU CBS 和返回密钥；按需提供公开提升 | [高精度查表](../primus_tfhe_ntru_lut/README.zh_CN.md) |
 
@@ -122,26 +122,33 @@ assert!(!decryptor.decrypt(output.as_view())?);
 
 ```rust,ignore
 // 客户端：加密两条候选消息。
-let (input_codec, ring_codec) = context.parameters().circuit_bootstrap_codecs(4, 8)?;
+let (input_codec, ring_codec) = context.parameters().circuit_bootstrap_codecs(8, 8)?;
 let mut ring_client = context.accumulator_client(client_key.glwe_secret_key(), ring_codec)?;
 let lhs = ring_client.encrypt(&lhs_message, &mut rng);
 let rhs = ring_client.encrypt(&rhs_message, &mut rng);
 let mut decoded = vec![0; lhs_message.len()];
+let external_secret = client_key.external_lwe_secret_key();
+let input = context.encryptor(external_secret, &input_codec)?.encrypt_padded(3, &mut rng)?;
 
-// 服务端：接收加密的输入位和候选消息，返回 selected。
+// 服务端：在同一次 CBS 内计算 F(m) = [m >= 2]，返回 selected。
 let mut pbs = context.evaluator(&server_key)?;
 let key = server_key.circuit_bootstrap_key().unwrap();
-let mut cbs = CircuitBootstrapEvaluator::try_new(
-    pbs.bootstrap_resources(), key, &input_codec,
+let program = key.parameters().compile_lookup_table_fn(&input_codec, |m| u64::from(m >= 2))?;
+let mut cbs = CircuitBootstrapEvaluator::try_with_lookup_table(
+    pbs.bootstrap_resources(), key, program,
 )?;
 let mut control = cbs.allocate_output();
 let mut selected = context.allocate_accumulator_ciphertext();
-cbs.circuit_bootstrap_to(input_bit.as_view(), &mut control, pbs.bootstrap_resources_mut());
+cbs.circuit_bootstrap_to(input.as_view(), &mut control, pbs.bootstrap_resources_mut());
 cbs.cmux_to(&control, &lhs, &rhs, &mut selected, pbs.bootstrap_resources_mut());
 
 // 客户端：解密返回结果。
 ring_client.decrypt_to(&selected, &mut decoded);
 ```
+
+`compile_lookup_table_fn` 在 `0..ceil(t_in/2)` 上求值一个整数函数，将每个输出层编译为 `g_j * F(m) mod Q`。`compile_lookup_table_slice` 接收完整的结果切片（此例为 `[0, 0, 1, 1]`）。返回的 `CircuitBootstrapLookupTable` 保留 gadget basis 与输入域，`try_with_lookup_table` 检查 N、q/Q 和完整 basis 后将它移入 evaluator。普通 Rounded/Scaled `InterleavedLookupTable` 不能代替这个程序。`try_new` 与 `compile_lookup_table` 保留恒等函数 `F(m)=m` 的便捷用法。编译在离线阶段完成；更换相容函数不需要新计算密钥或额外盲旋转。
+
+用于 CMux 时，整个输入域上的函数结果必须是 0 或 1，输入本身可以是整数。一般规范环整数（小于显式 Q）可用于外积，但需满足对应乘法与噪声预算。输入 t、函数整数结果、候选环消息 t 和输出 gadget basis 是独立角色。此入口支持 unsigned 前半区；one-hot 保留专用 selector 表。
 
 四个后端均借用公共资源，并从 circuit key 取得默认 CBS 输出参数，见下文资源复用。
 
@@ -196,7 +203,7 @@ Raw 构造器 `LookupTable::try_new` / `InterleavedLookupTable::try_new` 显式�
 | `encrypt_padded` | 相同 unsigned 尺度，输入限制为 `0..ceil(t/2)`，供前半区 LUT 使用 |
 | `encrypt_centered` | 接收 `0..t` 的模代表元；上半区表示负数，例如 `t=4` 时 `3` 表示 `-1` |
 | 两族 Boolean | 外部 `false/true` 对应模 4 下的 `0/1`；内部 LUT 使用 rounded 模 8 尺度的正负值，随后平移恢复外部编码 |
-| CBS | 普通 unsigned LWE 输入转为指定 gadget 尺度的 GGSW/NGSW，秘密为 accumulator secret；`0/1` 输入可生成 CMUX 控制 |
+| CBS | unsigned 前半区输入经 F 映射为指定 gadget 尺度的 GGSW/NGSW，秘密为 accumulator secret；F 为 bit 时可生成 CMUX 控制 |
 
 客户端 `decrypt` 使用绑定的 codec，返回 `0..t` 中的规范代表元。Centered 加密不能替代普通 LUT 的 unsigned 输入契约。PBS 保留 LUT 的输出尺度，不会自动把 Boolean 或 gadget 输出改为普通消息编码。
 
