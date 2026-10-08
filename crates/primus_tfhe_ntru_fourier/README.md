@@ -9,7 +9,7 @@ NTRU-based TFHE with the native torus. Start with the [task and encoding guide](
 
 ## Quick start
 
-The basic, sparse and MVB examples use `PbsMessageConfig`: `new(t)` defaults to equal message moduli, while `with_output_modulus(t_out)` changes only the output. Prepare with `parameters.pbs_codecs` for ordinary PBS/ManyLUT or `parameters.factorized_pbs_codecs` for MVB; the returned codecs distinguish input, LUT output and returned output. `context.decryptor(external_secret, codecs.output_codec())?` accepts Rounded or Scaled outputs; use `decrypt()` to obtain the message. See [choosing the output encoding](../primus_tfhe/README.md#choosing-the-output-encoding).
+The basic, sparse, ManyLUT and MVB examples use `PbsMessageConfig`: `new(t)` defaults to equal message moduli, while `with_output_modulus(t_out)` changes only the output. Prepare with `parameters.pbs_codecs` for ordinary PBS/ManyLUT or `parameters.factorized_pbs_codecs` for MVB; the returned codecs distinguish input, LUT output and returned output. `context.decryptor(external_secret, codecs.output_codec())?` accepts Rounded or Scaled outputs; use `decrypt()` to obtain the message. See [choosing the output encoding](../primus_tfhe/README.md#choosing-the-output-encoding).
 
 ```sh
 cargo run -p primus_tfhe_ntru_fourier --release --example ntru_fourier_basic --features rustfft
@@ -19,12 +19,13 @@ The [basic example](examples/ntru_fourier_basic.rs) shows parameters → context
 
 Examples use `Word = u64` and Native64, with one explicit parameter set per workflow. The library and numerical diagnostics still support both u32 and u64. Select TFHE-FFT by replacing the `RustFftTable as Table` import with `TfheFftTable as Table`. When changing engines, also update the example target’s `required-features` and use `--features tfhe-fft`. Each file defines its own `parameters()` using an explicit `TfheConfig`: dimensions, modulus types, secret distributions, noise and BR/KS decompositions are visible together. Message codecs are chosen separately in `main`; key generation does not depend on t. CBS examples also define `circuit_config()` for the output, trace and scheme-switch bases. The [parameter and validation guide](../../guides/development/tfhe-parameters.md) records numerical choices; each example handles two requests with the same buffers.
 
-Examples start with `main`, followed by local parameters. Each fixes one workflow: classic PBS/CBS/one-hot/MVB, or sparse ManyLUT in the dedicated sparse file. Basic `prepare_server` accepts public context, encoding and evaluation keys only; the two requests reuse the same LUT, evaluator and output buffer. Client encryption and decryption stay in `main`; see [client/server roles and buffer allocation](../primus_tfhe/README.md#client-and-server-roles).
+Examples start with `main`, followed by local parameters; comments identify client and server stages. Basic and sparse both compute `x % 4` with equal input/output message moduli. The separate ManyLUT example computes `x % 4` and `x / 4`, sets `t_in=16` and `t_out=8`, and decrypts with the output codec. Each example reuses the LUT, evaluator and output buffers for two requests. See [client/server roles and buffer allocation](../primus_tfhe/README.md#client-and-server-roles).
 
 | Operation | Complete example |
 | --- | --- |
 | Classic PBS | [basic](examples/ntru_fourier_basic.rs) |
-| Sparse PBS / interleaved ManyLUT | [sparse](examples/ntru_fourier_sparse.rs) |
+| Sparse PBS | [sparse](examples/ntru_fourier_sparse.rs) |
+| Interleaved ManyLUT with a separate output message modulus | [many_lut](examples/ntru_fourier_many_lut.rs) |
 | CBS → CMux | [circuit_bootstrap](examples/ntru_fourier_circuit_bootstrap.rs) |
 | Factorized MVB | [thresholds](examples/ntru_fourier_mvb_thresholds.rs) |
 | One-hot CBS → CMux | [one_hot](examples/ntru_fourier_one_hot.rs) |

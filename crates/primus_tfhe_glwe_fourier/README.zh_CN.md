@@ -9,7 +9,7 @@
 
 ## 快速开始
 
-基础、sparse 和 MVB 示例使用 `PbsMessageConfig`：`new(t)` 默认输入输出消息模数相同，`with_output_modulus(t_out)` 只修改输出。普通 PBS/ManyLUT 用 `parameters.pbs_codecs` 准备，MVB 用 `parameters.factorized_pbs_codecs` 准备；返回的 codec 分别表示输入、LUT 输出和返回输出。`context.decryptor(external_secret, codecs.output_codec())?` 同时接受 Rounded/Scaled 输出，随后用 `decrypt()` 得到消息。见[选择输出编码](../primus_tfhe/README.zh_CN.md#选择输出编码)。
+基础、sparse、ManyLUT 和 MVB 示例使用 `PbsMessageConfig`：`new(t)` 默认输入输出消息模数相同，`with_output_modulus(t_out)` 只修改输出。普通 PBS/ManyLUT 用 `parameters.pbs_codecs` 准备，MVB 用 `parameters.factorized_pbs_codecs` 准备；返回的 codec 分别表示输入、LUT 输出和返回输出。`context.decryptor(external_secret, codecs.output_codec())?` 同时接受 Rounded/Scaled 输出，随后用 `decrypt()` 得到消息。见[选择输出编码](../primus_tfhe/README.zh_CN.md#选择输出编码)。
 
 ```sh
 cargo run -p primus_tfhe_glwe_fourier --release --example fourier_basic --features rustfft
@@ -19,12 +19,13 @@ cargo run -p primus_tfhe_glwe_fourier --release --example fourier_basic --featur
 
 示例使用 `Word = u64` 和 Native64，每条工作流只保留一套显式参数；库与数值诊断仍支持 u32/u64。需要 TFHE-FFT 时，将 `RustFftTable as Table` 导入改为 `TfheFftTable as Table`；切换引擎时也要修改示例 target 的 `required-features`，并使用 `--features tfhe-fft`。每个文件内的 `parameters()` 直接构造 `TfheConfig`，集中列出尺寸、模数类型、秘密分布、噪声和 BR/KS 分解；CBS 示例还用 `circuit_config()` 明确输出、trace 和 scheme-switch 的分解。[数值配置与验证](../../guides/development/tfhe-parameters.md)集中记录参数选择；每例复用同一组缓冲处理两次请求。
 
-示例先展示 `main`，后列本地参数。每例固定一条流程：classic PBS/CBS/MVB，或专用 sparse 文件中的 ManyLUT/CBS。基础例的 `prepare_server` 只接收公开 context、编码和计算密钥；两次请求复用 LUT、evaluator 和输出缓冲，加密与解密留在 `main`。见[双方职责与缓冲分配](../primus_tfhe/README.zh_CN.md#客户端与服务端边界)。
+示例先展示 `main`，后列本地参数；用注释标明客户端和服务端阶段。Basic 与 sparse 都计算 `x % 4`，默认输入输出消息模数相同；独立 ManyLUT 示例同时计算 `x % 4` 和 `x / 4`，显式设置 `t_in=16`、`t_out=8`，并用输出 codec 解密。每例复用 LUT、evaluator 和输出缓冲处理两次请求。见[双方职责与缓冲分配](../primus_tfhe/README.zh_CN.md#客户端与服务端边界)。
 
 | 操作 | 完整示例 |
 | --- | --- |
 | Classic PBS | [basic](examples/fourier_basic.rs) |
-| Sparse PBS / 交错多输出 ManyLUT | [sparse](examples/fourier_sparse.rs) |
+| Sparse PBS | [sparse](examples/fourier_sparse.rs) |
+| 交错多输出 ManyLUT，独立输出消息模数 | [many_lut](examples/fourier_many_lut.rs) |
 | Classic CBS → CMux | [circuit_bootstrap](examples/fourier_circuit_bootstrap.rs) |
 | Sparse CBS → CMux | [sparse_circuit_bootstrap](examples/fourier_sparse_circuit_bootstrap.rs) |
 | 分解式 MVB | [thresholds](examples/fourier_mvb_thresholds.rs) |

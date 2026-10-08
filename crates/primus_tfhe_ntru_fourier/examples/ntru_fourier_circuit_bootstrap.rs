@@ -42,9 +42,9 @@ fn main() {
     let external_secret = client_key.external_lwe_secret_key();
     let encryptor = context.encryptor(external_secret, &selector_codec).unwrap();
 
-    // Candidate ring messages use their own t=4 space at accumulator Q.
+    // Candidate ring messages use an independent t=8 space at accumulator Q.
     let ring_message_codec =
-        ScaledCodec::new(4, context.parameters().accumulator_ntru().cipher_modulus());
+        ScaledCodec::new(8, context.parameters().accumulator_ntru().cipher_modulus());
     let mut ring_client = context
         .accumulator_client(client_key.accumulator_ntru_secret_key(), ring_message_codec)
         .unwrap();

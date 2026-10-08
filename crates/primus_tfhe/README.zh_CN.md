@@ -83,7 +83,7 @@ let mut cbs = CircuitBootstrapEvaluator::try_new(
 
 求值端的单项 LWE 参数使用相同视图：`evaluator.apply_lookup_table_to(input.as_view(), &lut, output.as_mut_view())`。Boolean 门和双输入打包借用各自的操作数；CBS、one-hot 和 MVB 借用其 LWE 输入。分配型方法仍返回拥有型密文。ManyLUT/MVB 输出批次以及高精度输入/输出批次借用预先分配的 `LweCiphertext<T>` 切片。每个有效输出对应一个完整 LWE，LUT padding 不需要额外密文。每个 LWE 保留自己的系数缓冲，直接传入已有切片即可，无需打包系数或收集视图。写入输出前会检查数量和每个密文的维数。
 
-客户端生成配套密钥，保留 setup 组合 `ClientKey`（也可通过 `into_parts()` 分开持有秘密）和加解密器，将 `ServerKey` 提供给服务端。 服务端只需公开 context、求值密钥、LUT/程序和输入密文；计算后将密文结果返回客户端。 示例在同一进程展示这些阶段，参数构造单独放置。输入和输出编码是双方约定的公开信息。 基础例的 `prepare_server` 只接收公开 context、codec 与计算密钥，加密/解密留在 `main`。CBS 的候选环密文由客户端加密；sparse 高精度计划可能还需客户端生成 NLEV[1] 提升密文。公开 LUT 可由服务端编译，双方各自分配并复用缓冲；示例不引入传输层。
+客户端生成配套密钥，保留 setup 组合 `ClientKey`（也可通过 `into_parts()` 分开持有秘密）和加解密器，将 `ServerKey` 提供给服务端。 服务端只需公开 context、求值密钥、LUT/程序和输入密文；计算后将密文结果返回客户端。 示例在同一进程展示这些阶段，参数构造单独放置。输入和输出编码是双方约定的公开信息。 各阶段直接写在 `main` 中，用注释标明双方职责：服务端准备只使用公开 context、codec 与计算密钥，加密/解密使用客户端秘密。CBS 的候选环密文由客户端加密；sparse 高精度计划可能还需客户端生成 NLEV[1] 提升密文。公开 LUT 可由服务端编译，双方各自分配并复用缓冲；示例不引入传输层。
 
 普通缓冲分配不依赖私钥：四个后端的 `context.allocate_lwe_ciphertext()` 按外部 LWE 维度分配 mask/body；`context.allocate_accumulator_ciphertext()` 按累加器布局分配系数域 GLWE/NTRU。两者只分配零存储，不执行加密。CBS 控制的布局还依赖输出分解和变换表示， 因此使用 `cbs.allocate_output()`。工作区和结果缓冲在各自一端创建一次并复用。
 

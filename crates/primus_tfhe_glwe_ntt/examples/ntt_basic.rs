@@ -12,8 +12,8 @@ use primus_ntt::U64NttTable as Table;
 use primus_poly::PolyLength;
 use primus_tfhe::BlindRotationConfig;
 use primus_tfhe_glwe_ntt::{
-    DecompositionConfig, Evaluator, GadgetEncryptionConfig, LookupTable, PbsMessageConfig,
-    PbsOrder, RoundedPbsCodecs, ServerKey, TfheConfig, TfheContext, TfheParameters,
+    DecompositionConfig, GadgetEncryptionConfig, PbsMessageConfig, PbsOrder, TfheConfig,
+    TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -47,7 +47,9 @@ fn main() {
     let mut input = context.allocate_lwe_ciphertext();
 
     // Server: prepare public LUT and reusable buffers without the client secret.
-    let (lut, mut evaluator) = prepare_server(&context, &server_key, &codecs);
+    let compiler = context.parameters().lookup_table_compiler(&codecs).unwrap();
+    let lut = compiler.compile_fn(|x| (x % 4) as Word).unwrap();
+    let mut evaluator = context.evaluator(&server_key).unwrap();
     let mut output = context.allocate_lwe_ciphertext();
 
     for message in [7, 2] {
@@ -64,19 +66,6 @@ fn main() {
         assert_eq!(result, message % 4);
         println!("f({message}) = {result}");
     }
-}
-
-// Server setup receives only public context, encoding and evaluation keys.
-// The LUT and workspace are prepared once, then reused for both requests.
-fn prepare_server<'a>(
-    context: &'a TfheContext<Word, Table>,
-    server_key: &'a ServerKey<Word>,
-    codecs: &RoundedPbsCodecs<Word, BarrettModulus<Word>>,
-) -> (LookupTable<Word>, Evaluator<'a, Word, Table>) {
-    let compiler = context.parameters().lookup_table_compiler(codecs).unwrap();
-    let lut = compiler.compile_fn(|x| (x % 4) as Word).unwrap();
-    let evaluator = context.evaluator(server_key).unwrap();
-    (lut, evaluator)
 }
 
 // Key parameters: n=866, N=2048; LWE and GLWE share the ciphertext modulus.

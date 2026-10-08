@@ -9,7 +9,7 @@ GLWE-based TFHE with an explicit field modulus. Start with the [task and encodin
 
 ## Quick start
 
-The basic, sparse and MVB examples use `PbsMessageConfig`: `new(t)` defaults to equal message moduli, while `with_output_modulus(t_out)` changes only the output. Prepare with `parameters.pbs_codecs` for ordinary PBS/ManyLUT or `parameters.factorized_pbs_codecs` for MVB; the returned codecs distinguish input, LUT output and returned output. `context.decryptor(external_secret, codecs.output_codec())?` accepts Rounded or Scaled outputs; use `decrypt()` to obtain the message. See [choosing the output encoding](../primus_tfhe/README.md#choosing-the-output-encoding).
+The basic, sparse, ManyLUT and MVB examples use `PbsMessageConfig`: `new(t)` defaults to equal message moduli, while `with_output_modulus(t_out)` changes only the output. Prepare with `parameters.pbs_codecs` for ordinary PBS/ManyLUT or `parameters.factorized_pbs_codecs` for MVB; the returned codecs distinguish input, LUT output and returned output. `context.decryptor(external_secret, codecs.output_codec())?` accepts Rounded or Scaled outputs; use `decrypt()` to obtain the message. See [choosing the output encoding](../primus_tfhe/README.md#choosing-the-output-encoding).
 
 ```sh
 cargo run -p primus_tfhe_glwe_ntt --release --example ntt_basic
@@ -19,12 +19,13 @@ The [basic example](examples/ntt_basic.rs) shows parameters → context → pair
 
 Examples use `Word = u64` and `U64NttTable`, with one explicit parameter set per workflow. The library and numerical diagnostics still support both u32 and u64. Each file defines its own `parameters()` using an explicit `TfheConfig`: dimensions, modulus types, secret distributions, noise and BR/KS decompositions are visible together. CBS examples also define `circuit_config()` for the output, trace and scheme-switch bases. The [parameter and validation guide](../../guides/development/tfhe-parameters.md) records numerical choices; each example handles two requests with the same buffers.
 
-Examples start with `main`, followed by local parameters. Each fixes one workflow: classic PBS/CBS/MVB, or sparse ManyLUT/CBS in the dedicated sparse files. Basic `prepare_server` accepts public context, encoding and evaluation keys only; the two requests reuse the same LUT, evaluator and output buffer. Client encryption and decryption stay in `main`; see [client/server roles and buffer allocation](../primus_tfhe/README.md#client-and-server-roles).
+Examples start with `main`, followed by local parameters; comments identify client and server stages. Basic and sparse both compute `x % 4` with equal input/output message moduli. The separate ManyLUT example computes `x % 4` and `x / 4`, sets `t_in=16` and `t_out=8`, and decrypts with the output codec. Each example reuses the LUT, evaluator and output buffers for two requests. See [client/server roles and buffer allocation](../primus_tfhe/README.md#client-and-server-roles).
 
 | Operation | Complete example |
 | --- | --- |
 | Classic PBS | [basic](examples/ntt_basic.rs) |
-| Sparse PBS / interleaved ManyLUT | [sparse](examples/ntt_sparse.rs) |
+| Sparse PBS | [sparse](examples/ntt_sparse.rs) |
+| Interleaved ManyLUT with a separate output message modulus | [many_lut](examples/ntt_many_lut.rs) |
 | Classic CBS → CMux | [circuit_bootstrap](examples/ntt_circuit_bootstrap.rs) |
 | Sparse CBS → CMux | [sparse_circuit_bootstrap](examples/ntt_sparse_circuit_bootstrap.rs) |
 | Factorized MVB | [thresholds](examples/mvb_thresholds.rs) |

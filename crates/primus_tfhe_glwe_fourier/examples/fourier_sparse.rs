@@ -1,4 +1,4 @@
-//! Use sparse GLWE PBS to return message, carry and parity from one encrypted input.
+//! Compute x % 4 with sparse PBS; reuse the same LUT and evaluator.
 //!
 //! Run: `cargo run --release -p primus_tfhe_glwe_fourier --example fourier_sparse --features rustfft`
 //! To use TfheFftTable, switch the Table import, this target's
@@ -26,10 +26,10 @@ fn main() {
     let parameters = parameters();
     let context = TfheContext::<Word, Table>::from_parameters(parameters);
 
-    // Padded input t=16 and all three Rounded outputs t=8 share one configuration.
+    // Like basic PBS, input and output use the same message modulus.
     let codecs = context
         .parameters()
-        .pbs_codecs(PbsMessageConfig::new(16).with_output_modulus(8))
+        .pbs_codecs(PbsMessageConfig::new(32))
         .unwrap();
 
     // Client: generate sparse BR material from the fixed-weight secret.
@@ -50,38 +50,30 @@ fn main() {
     let encryptor = context
         .encryptor(external_secret, codecs.input_codec())
         .unwrap();
-    let output_decryptor = context
+    let decryptor = context
         .decryptor(external_secret, codecs.output_codec())
         .unwrap();
     let mut input = context.allocate_lwe_ciphertext();
 
-    // Server: receive server_key; compile three public functions sharing one rotation.
+    // Server: the ordinary PBS API also accepts sparse BR material.
     let compiler = context.parameters().lookup_table_compiler(&codecs).unwrap();
-    let lut = compiler
-        .compile_interleaved_fn(3, |m, i| match i {
-            0 => (m % 4) as Word,
-            1 => (m / 4) as Word,
-            _ => (m % 2) as Word,
-        })
-        .unwrap();
+    let lut = compiler.compile_fn(|x| (x % 4) as Word).unwrap();
     let mut evaluator = context.evaluator(&server_key).unwrap();
-    let mut outputs = vec![context.allocate_lwe_ciphertext(); 3];
+    let mut output = context.allocate_lwe_ciphertext();
 
     for message in [7, 2] {
-        // Client -> server: send an encrypted padded input in 0..8.
+        // Client -> server: send one encrypted, padded input.
         encryptor
             .encrypt_padded_to(message, input.as_mut_view(), &mut rng)
             .unwrap();
 
-        // Server -> client: return message, carry and parity, reusing the evaluator.
-        evaluator.apply_interleaved_lookup_table_to(input.as_view(), &lut, &mut outputs);
+        // Server -> client: reuse the LUT, evaluator and output buffer.
+        evaluator.apply_lookup_table_to(input.as_view(), &lut, output.as_mut_view());
 
-        // Client: decrypt all three results in the configured t=8 output space.
-        for (output, expected) in outputs.iter().zip([message % 4, message / 4, message % 2]) {
-            let value = output_decryptor.decrypt(output.as_view()).unwrap();
-            assert_eq!(value, expected);
-        }
-        println!("input {message}: message/carry/parity decoded correctly");
+        // Client: decode with the configured output codec.
+        let result = decryptor.decrypt(output.as_view()).unwrap();
+        assert_eq!(result, message % 4);
+        println!("f({message}) = {result}");
     }
 }
 

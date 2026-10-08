@@ -12,8 +12,8 @@ use primus_ntt::U64NttTable as Table;
 use primus_poly::PolyLength;
 use primus_tfhe::BlindRotationConfig;
 use primus_tfhe_ntru_ntt::{
-    DecompositionConfig, GadgetEncryptionConfig, PbsMessageConfig, TfheConfig, TfheContext,
-    TfheParameters,
+    DecompositionConfig, FactorizedEvaluator, GadgetEncryptionConfig, PbsMessageConfig, TfheConfig,
+    TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -49,7 +49,7 @@ fn main() {
         .decryptor(external_secret, codecs.output_codec())
         .unwrap();
     let mut input = context.allocate_lwe_ciphertext();
-    let mut flags = vec![0; OUTPUTS];
+    let mut flags = [0; OUTPUTS];
 
     // Server: MVB keeps all 64 inputs; interleaving 17 outputs fits only 32 here.
     let program = context
@@ -58,7 +58,7 @@ fn main() {
         })
         .unwrap();
     let mut pbs = context.evaluator(&server_key).unwrap();
-    let mut evaluator = primus_tfhe_ntru_ntt::FactorizedEvaluator::new(&pbs);
+    let mut evaluator = FactorizedEvaluator::new(&pbs);
     let mut outputs = vec![context.allocate_lwe_ciphertext(); OUTPUTS];
 
     for score in [12, 45] {
@@ -71,11 +71,9 @@ fn main() {
         evaluator.apply_lookup_table_to(input.as_view(), &program, &mut outputs, &mut pbs);
 
         // Client: decrypt with the agreed Scaled output codec.
-        for (flag, output) in flags.iter_mut().zip(&outputs) {
-            *flag = decryptor.decrypt(output.as_view()).unwrap();
-        }
-        for (&flag, &threshold) in flags.iter().zip(&thresholds) {
-            assert_eq!(flag, Word::from(score as usize >= threshold));
+        for (i, output) in outputs.iter().enumerate() {
+            flags[i] = decryptor.decrypt(output.as_view()).unwrap();
+            assert_eq!(flags[i], Word::from(score as usize >= thresholds[i]));
         }
         println!("score={score}, thresholds={thresholds:?}, flags={flags:?}");
     }

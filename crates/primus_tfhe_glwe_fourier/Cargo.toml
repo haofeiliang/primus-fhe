@@ -38,6 +38,10 @@ name = "fourier_mvb_thresholds"
 required-features = ["rustfft"]
 
 [[example]]
+name = "fourier_many_lut"
+required-features = ["rustfft"]
+
+[[example]]
 name = "fourier_sparse"
 required-features = ["rustfft"]
 
