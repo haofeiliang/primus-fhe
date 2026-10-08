@@ -66,8 +66,11 @@ impl PolyLength {
     ///
     /// Panics if [`Self::try_new`] rejects the coefficient count.
     #[must_use]
-    pub fn new(poly_length: usize) -> Self {
-        Self::try_new(poly_length).unwrap_or_else(|error| panic!("{error}"))
+    pub const fn new(poly_length: usize) -> Self {
+        match Self::try_new(poly_length) {
+            Ok(length) => length,
+            Err(_) => panic!("polynomial length must be a power of two in the supported range"),
+        }
     }
 
     /// Returns `N`, the number of coefficients modulo `X^N + 1`.

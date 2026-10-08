@@ -12,8 +12,8 @@ use primus_modulus::NativeModulus;
 use primus_poly::PolyLength;
 use primus_tfhe::{PbsMessageConfig, ProgrammableBootstrap, ProgrammableBootstrapInterleaved};
 use primus_tfhe_glwe_fourier::{
-    BlindRotationConfig, ClientKey, GadgetEncryptionConfig, KeyGenerator, PbsOrder, TfheContext,
-    TfheEvaluationError, TfheParameters,
+    BlindRotationAlgorithm, ClientKey, GadgetEncryptionConfig, KeyGenerator, PbsOrder,
+    PbsParameters, TfheContext, TfheEvaluationError,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -25,7 +25,7 @@ fn context<Table: FftTable>(
     log_basis: u32,
 ) -> TfheContext<u64, Table> {
     let modulus = NativeModulus::new();
-    let parameters = TfheParameters::try_new(
+    let parameters = PbsParameters::try_new(
         (LweParameters::new(
             LweDimension::new(16),
             15,
@@ -73,7 +73,7 @@ fn check_pbs<Table: FftTable>() {
         let mut rng = StdRng::seed_from_u64(0x4234_3250);
         let (client, sparse_key) = generator
             .try_generate(
-                BlindRotationConfig::Sparse {
+                BlindRotationAlgorithm::Sparse {
                     copy_count: 3,
                     bucket_count: 8,
                 },
@@ -82,7 +82,7 @@ fn check_pbs<Table: FftTable>() {
             )
             .unwrap();
         let classic_key = generator
-            .try_generate_server_key(&client, BlindRotationConfig::Classic, None, &mut rng)
+            .try_generate_server_key(&client, BlindRotationAlgorithm::Classic, None, &mut rng)
             .unwrap();
         let mut sparse = context.evaluator(&sparse_key).unwrap();
         let mut classic = context.evaluator(&classic_key).unwrap();
@@ -178,7 +178,7 @@ fn sparse_keys_bind_parameters() {
     let server = generator
         .try_generate_server_key(
             &client,
-            BlindRotationConfig::Sparse {
+            BlindRotationAlgorithm::Sparse {
                 copy_count: 3,
                 bucket_count: 8,
             },

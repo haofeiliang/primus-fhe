@@ -16,7 +16,7 @@ where
     Table: FftTable,
 {
     /// Creates an encryptor after checking only the external secret.
-    /// Inherits [`primus_tfhe_glwe::TfheParameters::encryptor`]'s signed-range contract.
+    /// Inherits [`primus_tfhe_glwe::PbsParameters::encryptor`]'s signed-range contract.
     pub fn encryptor<'a>(
         &'a self,
         secret_key: ExternalLweSecretKey<'a, T>,
@@ -37,7 +37,7 @@ where
 
     /// Binds a Rounded or Scaled output codec after checking the external
     /// secret and ciphertext modulus. Copies the prepared decoding state.
-    /// Inherits [`primus_tfhe_glwe::TfheParameters::decryptor`]'s signed-range contract.
+    /// Inherits [`primus_tfhe_glwe::PbsParameters::decryptor`]'s signed-range contract.
     pub fn decryptor<'a>(
         &self,
         secret_key: ExternalLweSecretKey<'a, T>,

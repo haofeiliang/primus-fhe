@@ -8,7 +8,7 @@ use primus_poly::Polynomial;
 use primus_tfhe::rotation::RotationModulusSwitch;
 
 use crate::{
-    BlindRotationKey, ClassicControls, SparseNtruBootstrappingKey, TfheParameters,
+    BlindRotationKey, ClassicControls, PbsParameters, SparseNtruBootstrappingKey,
     sparse::{SparseWorkspace, rotate_buckets},
 };
 
@@ -26,7 +26,7 @@ pub(crate) struct BlindRotationResources<'a, T: FheUint> {
 impl<'a, T: FheUint> BlindRotationResources<'a, T> {
     /// Allocates all NTT blind-rotation storage once.
     pub(crate) fn new<LM: primus_reduce::RingContext<T>>(
-        parameters: &TfheParameters<T, LM>,
+        parameters: &PbsParameters<T, LM>,
         blind_rotation_key: &'a BlindRotationKey<T>,
     ) -> Self {
         let poly_length = parameters.poly_length();
@@ -93,7 +93,7 @@ pub(crate) fn blind_rotate_lookup_table_to<T, Table, LM: primus_reduce::RingCont
     lookup_table: Polynomial<&[T]>,
     rotation_step: usize,
     resources: &mut BlindRotationResources<'_, T>,
-    parameters: &TfheParameters<T, LM>,
+    parameters: &PbsParameters<T, LM>,
     ntt: &Table,
 ) where
     T: FheUint,

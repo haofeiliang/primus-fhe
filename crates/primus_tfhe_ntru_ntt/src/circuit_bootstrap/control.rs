@@ -5,14 +5,14 @@ use primus_ntru::{NtruCiphertext, NttNgswCiphertext};
 use primus_ntt::MonomialNttTable;
 use primus_reduce::RingContext;
 
-use crate::{BootstrapResources, CircuitBootstrapParameters};
+use crate::{BootstrapResources, CbsParameters};
 
 /// Consumes a bit control after the public evaluator has checked the resource
 /// context. CBS binding established the basis and accumulator domain; raw
 /// ciphertext views still require exact lengths before any output is written.
 /// Slice views keep this implementation independent of caller-owned storage.
 pub(super) fn cmux_to<T, Table, LM>(
-    parameters: &CircuitBootstrapParameters<T>,
+    parameters: &CbsParameters<T>,
     control: NttNgswCiphertext<&[T]>,
     lhs: NtruCiphertext<&[T]>,
     rhs: NtruCiphertext<&[T]>,
@@ -53,7 +53,7 @@ pub(super) fn cmux_to<T, Table, LM>(
 /// identity; lengths are checked here before writes, and the existing resource
 /// owner supplies scratch. Unlike CMux, the control need not encrypt a bit.
 pub(super) fn external_product_to<T, Table, LM>(
-    parameters: &CircuitBootstrapParameters<T>,
+    parameters: &CbsParameters<T>,
     control: NttNgswCiphertext<&[T]>,
     input: NtruCiphertext<&[T]>,
     mut output: NtruCiphertext<&mut [T]>,

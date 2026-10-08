@@ -10,7 +10,7 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
     use primus_glwe::{GlweParameters, GlweSecretKey, GlweSize, SecretKeyDistr};
     use primus_lwe::{LweParameters, LweSecretKey};
     use primus_tfhe_glwe::{
-        ClientError, ClientKey, GadgetEncryptionConfig, PbsOrder, TfheParameters,
+        ClientError, ClientKey, GadgetEncryptionConfig, PbsOrder, PbsParameters,
     };
     use rand::{SeedableRng, rngs::StdRng};
 
@@ -37,7 +37,7 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
             DecompositionBaseLog::new(8),
             None,
         );
-        let parameters = TfheParameters::try_new(
+        let parameters = PbsParameters::try_new(
             lwe.into_encryption_parameters(),
             primus_glwe::GgswParameters::try_with_basis(&glwe, bsk).unwrap(),
             GadgetEncryptionConfig {

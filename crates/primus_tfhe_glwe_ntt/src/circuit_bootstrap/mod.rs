@@ -10,5 +10,4 @@ pub use key::CircuitBootstrapKey;
 ///
 /// Matching parameters do not establish secret or NTT representation identity;
 /// see [`CircuitBootstrapEvaluator::try_new`].
-pub type CircuitBootstrapParameters<T> =
-    primus_tfhe_glwe::CircuitBootstrapParameters<T, primus_modulus::BarrettModulus<T>>;
+pub type CbsParameters<T> = primus_tfhe_glwe::CbsParameters<T, primus_modulus::BarrettModulus<T>>;

@@ -129,7 +129,7 @@ where
     /// noise margin for the coarser ManyLUT windows are required. Trace and
     /// scheme-switch errors must fit the independent CBS budget, including f/f²
     /// amplification, native halving and FFT rounding; see
-    /// [`crate::CircuitBootstrapParameters`]. CMux requires `F(m)` in `{0, 1}`
+    /// [`crate::CbsParameters`]. CMux requires `F(m)` in `{0, 1}`
     /// throughout the programmed domain.
     /// The default identity program uses `F(m)=m`. The output uses gadget scales,
     /// not ordinary plaintext or Boolean encoding.

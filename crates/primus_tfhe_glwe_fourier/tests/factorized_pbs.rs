@@ -11,9 +11,9 @@ use primus_glwe::{GlweParameters, SecretKeyDistr};
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_tfhe_glwe_fourier::{
-    BlindRotationConfig, FactorizedLookupTable, FourierFactorizedLookupTable,
-    GadgetEncryptionConfig, KeyGenerator, LookupTable, LookupTableError, PbsOrder, TfheContext,
-    TfheParameters,
+    BlindRotationAlgorithm, FactorizedLookupTable, FourierFactorizedLookupTable,
+    GadgetEncryptionConfig, KeyGenerator, LookupTable, LookupTableError, PbsOrder, PbsParameters,
+    TfheContext,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -33,7 +33,7 @@ fn context<T: TorusFftValue, Table: FftTable>(
         SecretKeyDistr::fixed_hamming_weight_binary(DIM, 4)
     };
     TfheContext::from_parameters(
-        TfheParameters::try_new(
+        PbsParameters::try_new(
             (LweParameters::new(LweDimension::new(DIM), t, modulus, distribution, 0.7))
                 .into_encryption_parameters(),
             primus_glwe::GgswParameters::try_with_basis(
@@ -95,7 +95,7 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(order: PbsOrder, ternary: b
     let modulus = NativeModulus::new();
     let mut rng = StdRng::seed_from_u64(0x4235_3201);
     let (client, server) = context
-        .try_generate_keys(BlindRotationConfig::Classic, None, &mut rng)
+        .try_generate_keys(BlindRotationAlgorithm::Classic, None, &mut rng)
         .unwrap();
     let lut = context
         .compile_factorized_lookup_table_fn(&mvb_codecs, DOMAIN, 3, |m, i| T::as_from(value(m, i)))
@@ -112,7 +112,7 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(order: PbsOrder, ternary: b
         KeyGenerator::new(&context)
             .try_generate_server_key(
                 &client,
-                BlindRotationConfig::Sparse {
+                BlindRotationAlgorithm::Sparse {
                     copy_count: 3,
                     bucket_count: 8,
                 },
@@ -196,7 +196,7 @@ fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
     let input_codec = primus_encoding::RoundedCodec::new(15, context.parameters().cipher_modulus());
     let mut rng = StdRng::seed_from_u64(0x4235_3202);
     let (client, server) = context
-        .try_generate_keys(BlindRotationConfig::Classic, None, &mut rng)
+        .try_generate_keys(BlindRotationAlgorithm::Classic, None, &mut rng)
         .unwrap();
     let codec = ScaledCodec::new(8u32, NativeModulus::new());
     let compile = || {

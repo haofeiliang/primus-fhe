@@ -12,7 +12,7 @@ use primus_ntru::SecretKeyDistr;
 use primus_ntt::{MonomialNttTable, U64NttTable};
 use primus_tfhe_benchmarks::parameters::ntt_modulus;
 use primus_tfhe_benchmarks::{benchmark::PBS_WORKLOADS, parameters::ntru};
-use primus_tfhe_ntru_ntt::{BlindRotationConfig, KeyGenerator, TfheContext};
+use primus_tfhe_ntru_ntt::{BlindRotationAlgorithm, KeyGenerator, TfheContext};
 use rand::{SeedableRng, rngs::StdRng};
 
 // Keygen keeps one Boolean-sized fixture per secret distribution.
@@ -58,7 +58,7 @@ fn keygen<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
                 generator
                     .try_generate_server_key(
                         black_box(client),
-                        BlindRotationConfig::Classic,
+                        BlindRotationAlgorithm::Classic,
                         None,
                         &mut rng,
                     )

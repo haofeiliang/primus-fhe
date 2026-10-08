@@ -9,7 +9,7 @@ use primus_poly::PolyLength;
 use primus_reduce::RingContext;
 use primus_tfhe::{CircuitBootstrapLookupTable, LookupTableError};
 
-use crate::{CircuitBootstrapConfig, CircuitBootstrapParameterError, TfheParameters};
+use crate::{CbsGadgetConfig, CircuitBootstrapParameterError, PbsParameters};
 
 /// Optional CBS parameters, separate from ordinary PBS server-key parameters.
 ///
@@ -22,14 +22,14 @@ use crate::{CircuitBootstrapConfig, CircuitBootstrapParameterError, TfheParamete
 /// key encrypts secret-dependent messages and multiplies errors by f and f²;
 /// ordinary PBS parameters are not automatically valid CBS parameters.
 #[derive(Clone)]
-pub struct CircuitBootstrapParameters<T: FheUint, M: RingContext<T>> {
+pub struct CbsParameters<T: FheUint, M: RingContext<T>> {
     trace: NlevParameters<T, M>,
     scheme_switch: NlevParameters<T, M>,
     output_basis: ApproxSignedBasis<T>,
     output_nlev_len: usize,
 }
 
-impl<T: FheUint, M: RingContext<T>> CircuitBootstrapParameters<T, M> {
+impl<T: FheUint, M: RingContext<T>> CbsParameters<T, M> {
     /// Derives CBS parameters from TFHE with independent gadget bases.
     ///
     /// Reuses the accumulator's validated ring and sampler state without preparing
@@ -42,8 +42,8 @@ impl<T: FheUint, M: RingContext<T>> CircuitBootstrapParameters<T, M> {
     ///
     /// Invalid trace and scheme-switch bases/layouts are returned with their key role.
     pub fn try_from_config<LM: RingContext<T>>(
-        tfhe: &TfheParameters<T, M, LM>,
-        config: CircuitBootstrapConfig,
+        tfhe: &PbsParameters<T, M, LM>,
+        config: CbsGadgetConfig,
     ) -> Result<Self, CircuitBootstrapParameterError> {
         let accumulator = tfhe.accumulator_ntru();
         let output_basis = config
@@ -68,7 +68,7 @@ impl<T: FheUint, M: RingContext<T>> CircuitBootstrapParameters<T, M> {
     /// Checks the accumulator ring, modulus and output layout independently of input encoding.
     /// The output layout is derived from the TFHE accumulator and `output_basis`.
     pub fn try_new<LM: RingContext<T>>(
-        tfhe: &TfheParameters<T, M, LM>,
+        tfhe: &PbsParameters<T, M, LM>,
         output_basis: ApproxSignedBasis<T>,
         trace: NlevParameters<T, M>,
         scheme_switch: NlevParameters<T, M>,
@@ -213,13 +213,13 @@ impl<T: FheUint, M: RingContext<T>> CircuitBootstrapParameters<T, M> {
     /// Checks the accumulator ring and modulus independently of message encoding.
     /// This does not establish noise margins or secret/transform identity.
     #[must_use]
-    pub fn is_compatible<LM: RingContext<T>>(&self, tfhe: &TfheParameters<T, M, LM>) -> bool {
+    pub fn is_compatible<LM: RingContext<T>>(&self, tfhe: &PbsParameters<T, M, LM>) -> bool {
         self.poly_length() == tfhe.poly_length()
             && self.output_basis.modulus() == tfhe.accumulator_ntru().cipher_modulus_value()
     }
 }
 
-impl<T: FheUint> CircuitBootstrapParameters<T, NativeModulus<T>> {
+impl<T: FheUint> CbsParameters<T, NativeModulus<T>> {
     /// Returns the number of complex values in the output Fourier NLev/NGSW.
     #[must_use]
     #[inline]

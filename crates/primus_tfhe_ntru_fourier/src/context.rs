@@ -1,7 +1,7 @@
 use primus_fft::{FftEngine, FftTable, TorusFftValue};
 use primus_ntru::NtruCiphertext;
 
-use crate::{LweCiphertext, TfheContextError, TfheParameters};
+use crate::{LweCiphertext, PbsParameters, TfheContextError};
 
 /// Validated binding between native NTRU TFHE parameters and one Fourier table.
 pub struct TfheContext<T, Table, LM = primus_modulus::NativeModulus<T>>
@@ -10,7 +10,7 @@ where
     Table: FftTable,
     LM: primus_reduce::RingContext<T>,
 {
-    parameters: TfheParameters<T, LM>,
+    parameters: PbsParameters<T, LM>,
     table: Table,
 }
 
@@ -25,14 +25,14 @@ where
     /// Use [`Self::try_new`] to inject an existing table instead; all transformed
     /// keys must use the bound table. The parameters already establish its length.
     #[must_use]
-    pub fn from_parameters(parameters: TfheParameters<T, LM>) -> Self {
+    pub fn from_parameters(parameters: PbsParameters<T, LM>) -> Self {
         let table = Table::new(parameters.accumulator_ntru().poly_length());
         Self { parameters, table }
     }
 
     /// Binds parameters to a Fourier table with the same ring length.
     pub fn try_new(
-        parameters: TfheParameters<T, LM>,
+        parameters: PbsParameters<T, LM>,
         table: Table,
     ) -> Result<Self, TfheContextError> {
         let expected = parameters.poly_length().get();
@@ -46,7 +46,7 @@ where
     /// Returns the validated mathematical parameters.
     #[must_use]
     #[inline]
-    pub fn parameters(&self) -> &TfheParameters<T, LM> {
+    pub fn parameters(&self) -> &PbsParameters<T, LM> {
         &self.parameters
     }
 
@@ -81,7 +81,7 @@ where
     /// Decomposes this context into parameters and its Fourier table.
     #[must_use]
     #[inline]
-    pub fn into_parts(self) -> (TfheParameters<T, LM>, Table) {
+    pub fn into_parts(self) -> (PbsParameters<T, LM>, Table) {
         (self.parameters, self.table)
     }
 }

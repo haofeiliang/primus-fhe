@@ -28,6 +28,7 @@
 mod boolean;
 mod bootstrap;
 mod client;
+mod config;
 mod error;
 mod lookup_table;
 mod message;
@@ -42,6 +43,7 @@ pub use client::{
     BooleanDecryptor, BooleanEncryptor, BooleanError, ClientError, Decryptor, EncryptionKey,
     Encryptor, LweClientParameters,
 };
+pub use config::{LweConfig, LweConfigError, ModulusConfig, ModulusConfigError};
 pub use error::{LookupTableError, TfheEvaluationError};
 pub use lookup_table::{
     BivariateLookupTable, CircuitBootstrapLookupTable, FactorizedLookupTable,
@@ -50,7 +52,7 @@ pub use lookup_table::{
 pub use message::{
     CircuitBootstrapCodecs, FactorizedPbsCodecs, PbsCodecs, PbsMessageConfig, RoundedPbsCodecs,
 };
-pub use parameters::{BlindRotationConfig, CircuitBootstrapConfig, GadgetEncryptionConfig};
+pub use parameters::{BlindRotationAlgorithm, CbsGadgetConfig, GadgetEncryptionConfig};
 pub use primus_decompose::{DecompositionBaseLog, DecompositionConfig, DecompositionLevelCount};
 pub use primus_lattice::lwe::Lwe;
 pub use primus_lwe::{LweCiphertext, LweSecretKeyRef};

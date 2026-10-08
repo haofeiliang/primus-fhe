@@ -7,7 +7,7 @@ use primus_integer::FheUint;
 use primus_reduce::RingContext;
 use primus_tfhe::{CircuitBootstrapLookupTable, LookupTableError};
 
-use crate::{CircuitBootstrapConfig, CircuitBootstrapParameterError, TfheParameters};
+use crate::{CbsGadgetConfig, CircuitBootstrapParameterError, PbsParameters};
 
 /// Independent parameters for GLWE circuit bootstrapping.
 ///
@@ -24,14 +24,14 @@ use crate::{CircuitBootstrapConfig, CircuitBootstrapParameterError, TfheParamete
 /// do not establish secret or transform identity; execution backends specify
 /// their representation and numerical requirements.
 #[derive(Clone)]
-pub struct CircuitBootstrapParameters<T: FheUint, M: RingContext<T>> {
+pub struct CbsParameters<T: FheUint, M: RingContext<T>> {
     trace: GlevParameters<T, M>,
     scheme_switch: GgswParameters<T, M>,
     output_basis: ApproxSignedBasis<T>,
     output_size: GadgetSize,
 }
 
-impl<T: FheUint, M: RingContext<T>> CircuitBootstrapParameters<T, M> {
+impl<T: FheUint, M: RingContext<T>> CbsParameters<T, M> {
     /// Derives CBS parameters from TFHE with independent gadget bases.
     ///
     /// Reuses the accumulator's validated layout and sampler state without preparing
@@ -43,8 +43,8 @@ impl<T: FheUint, M: RingContext<T>> CircuitBootstrapParameters<T, M> {
     ///
     /// Invalid trace and scheme-switch bases/layouts are returned with their key role.
     pub fn try_from_config(
-        tfhe: &TfheParameters<T, M>,
-        config: CircuitBootstrapConfig,
+        tfhe: &PbsParameters<T, M>,
+        config: CbsGadgetConfig,
     ) -> Result<Self, CircuitBootstrapParameterError> {
         let accumulator = tfhe.blind_rotation_ggsw();
         let output_basis = config
@@ -71,7 +71,7 @@ impl<T: FheUint, M: RingContext<T>> CircuitBootstrapParameters<T, M> {
     /// Returns an error if bases or key layouts use another accumulator domain,
     /// or the output layout overflows. No message codec is required.
     pub fn try_new(
-        tfhe: &TfheParameters<T, M>,
+        tfhe: &PbsParameters<T, M>,
         output_basis: ApproxSignedBasis<T>,
         trace: GlevParameters<T, M>,
         scheme_switch: GgswParameters<T, M>,
@@ -216,7 +216,7 @@ impl<T: FheUint, M: RingContext<T>> CircuitBootstrapParameters<T, M> {
     /// Checks the accumulator layout and ciphertext modulus independently of message encoding.
     /// This does not check noise, secret identity or transform representation.
     #[must_use]
-    pub fn is_compatible(&self, tfhe: &TfheParameters<T, M>) -> bool {
+    pub fn is_compatible(&self, tfhe: &PbsParameters<T, M>) -> bool {
         let glwe = tfhe.blind_rotation_ggsw();
         self.output_size.glwe_size() == glwe.glwe_size()
             && self.output_basis.modulus() == glwe.cipher_modulus().explicit_value()

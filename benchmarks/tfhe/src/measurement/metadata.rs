@@ -27,9 +27,12 @@ fn basis<T: FheUint>(basis: &ApproxSignedBasis<T>) -> Value {
 }
 
 /// Actual GLWE parameters, including both key-noise roles and return order.
-pub fn glwe<T: FheUint, M: RingContext<T>>(p: &primus_tfhe_glwe::TfheParameters<T, M>) -> Value {
+pub fn glwe<T: FheUint, M: RingContext<T>>(p: &primus_tfhe_glwe::PbsParameters<T, M>) -> Value {
     let br = p.blind_rotation_ggsw();
-    let ks = p.glwe_key_switching().output();
+    let ks = p
+        .glwe_key_switching()
+        .expect("PBS parameters include key switching")
+        .output();
     json!({
         "word_bits": T::BITS, "q": modulus(p.cipher_modulus()), "Q": modulus(p.cipher_modulus()),
         "small_lwe_dimension": p.small_lwe().dimension().get(),
@@ -46,7 +49,7 @@ pub fn glwe<T: FheUint, M: RingContext<T>>(p: &primus_tfhe_glwe::TfheParameters<
 
 /// Actual NTRU parameters; external q and ring Q are independent domains.
 pub fn ntru<T: FheUint, M: RingContext<T>, LM: RingContext<T>>(
-    p: &primus_tfhe_ntru::TfheParameters<T, M, LM>,
+    p: &primus_tfhe_ntru::PbsParameters<T, M, LM>,
 ) -> Value {
     let br = p.blind_rotation();
     let ring = p.accumulator_ntru();
@@ -57,7 +60,7 @@ pub fn ntru<T: FheUint, M: RingContext<T>, LM: RingContext<T>>(
         "ring_secret": format!("{:?}", ring.secret_key_distr()),
         "external_lwe_sigma": p.external_lwe().noise_standard_deviation(),
         "br": {"basis": basis(br.basis()), "coefficient_sigma": ring.noise_distribution().standard_deviation()},
-        "ks": {"kind": "ntru_to_lwe_at_q", "basis": basis(p.key_switching_basis()), "coefficient_sigma": p.key_switching_lwe().noise_standard_deviation()},
+        "ks": {"kind": "ntru_to_lwe_at_q", "basis": basis(p.key_switching_basis().expect("PBS parameters include key switching")), "coefficient_sigma": p.key_switching_lwe().expect("PBS parameters include key switching").noise_standard_deviation()},
         "order": "BootstrapModulusSwitchKeyswitch"
     })
 }
@@ -65,7 +68,7 @@ pub fn ntru<T: FheUint, M: RingContext<T>, LM: RingContext<T>>(
 /// CBS bases are independent of the PBS return key; row noise comes from the
 /// accumulator. Null levels request the full modulus-dependent decomposition.
 /// Supply the actual accumulator sigma to preserve the recorded numerical profile.
-pub fn cbs(config: primus_tfhe::CircuitBootstrapConfig, coefficient_sigma: f64) -> Value {
+pub fn cbs(config: primus_tfhe::CbsGadgetConfig, coefficient_sigma: f64) -> Value {
     let decomposition = |d: primus_decompose::DecompositionConfig| {
         json!({
             "base_log": d.log_basis.get(), "levels": d.level_count.map(|l| l.get())
@@ -79,11 +82,11 @@ pub fn cbs(config: primus_tfhe::CircuitBootstrapConfig, coefficient_sigma: f64) 
 /// One complete sparse mapping; dense/classic uses no copies or buckets.
 pub fn blind_rotation(sparse: bool) -> Value {
     match crate::benchmark::blind_rotation(sparse) {
-        primus_tfhe::BlindRotationConfig::Sparse {
+        primus_tfhe::BlindRotationAlgorithm::Sparse {
             copy_count,
             bucket_count,
         } => json!({"algorithm": "sparse", "copies": copy_count, "buckets": bucket_count}),
-        primus_tfhe::BlindRotationConfig::Classic => json!({"algorithm": "classic"}),
+        primus_tfhe::BlindRotationAlgorithm::Classic => json!({"algorithm": "classic"}),
     }
 }
 

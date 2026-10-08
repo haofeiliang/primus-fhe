@@ -7,22 +7,22 @@ use primus_fft::{Complex64, FftTable, RustFftTable, TfheFftTable};
 use primus_glwe::{GlevParameters, SecretKeyDistr};
 use primus_lattice::ggsw::{FourierGgsw, Ggsw};
 use primus_lattice::{GlweDimension, LweDimension};
-use primus_lwe::{LweCiphertext, LweEncryptionParameters};
+use primus_lwe::LweCiphertext;
 use primus_modulus::NativeModulus;
 use primus_poly::PolyLength;
 use primus_tfhe::PbsMessageConfig;
+use primus_tfhe_glwe::{BlindRotationConfig, LweConfig};
 use primus_tfhe_glwe_fourier::{
-    BlindRotationConfig, CircuitBootstrapConfig, CircuitBootstrapEvaluator,
-    CircuitBootstrapParameters, ClientKey, DecompositionConfig, GadgetEncryptionConfig,
-    KeyGenerationError, KeyGenerator, PbsOrder, TfheConfig, TfheContext, TfheEvaluationError,
-    TfheParameters,
+    BlindRotationAlgorithm, CbsGadgetConfig, CbsParameters, CircuitBootstrapEvaluator, ClientKey,
+    DecompositionConfig, GadgetEncryptionConfig, KeyGenerationError, KeyGenerator, PbsOrder,
+    PbsParameters, TfheContext, TfheEvaluationError,
 };
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 
 const POLY_LENGTH: usize = 64;
 const DIMENSION: usize = 2;
 
-fn parameters(dimension: usize, poly_length: usize) -> TfheParameters<u64> {
+fn parameters(dimension: usize, poly_length: usize) -> PbsParameters<u64> {
     parameters_with_order_and_distribution(
         dimension,
         poly_length,
@@ -36,37 +36,43 @@ fn parameters_with_order_and_distribution(
     poly_length: usize,
     order: PbsOrder,
     distribution: SecretKeyDistr,
-) -> TfheParameters<u64> {
+) -> PbsParameters<u64> {
     // Retain enough precision below the smallest CBS output gadget scale.
     let decomposition = DecompositionConfig {
         log_basis: DecompositionBaseLog::new(8),
         level_count: Some(DecompositionLevelCount::new(6)),
     };
-    TfheParameters::try_from_config(TfheConfig {
-        small_lwe: LweEncryptionParameters::new(
-            LweDimension::new(4),
-            NativeModulus::new(),
-            distribution,
-            0.7,
-        ),
-        accumulator_dimension: GlweDimension::new(dimension),
-        poly_length: PolyLength::new(poly_length),
-        accumulator_secret_key_distr: SecretKeyDistr::UniformTernary,
-        blind_rotation: GadgetEncryptionConfig {
+    BlindRotationConfig {
+        small_lwe: LweConfig {
+            dimension: LweDimension::new(4),
+            cipher_modulus: NativeModulus::new().into(),
+            secret_key_distr: distribution,
+            noise_standard_deviation: 0.7,
+        },
+        acc_dimension: GlweDimension::new(dimension),
+        acc_poly_length: PolyLength::new(poly_length),
+        bsk_secret_distr: SecretKeyDistr::UniformTernary,
+        bsk_gadget: GadgetEncryptionConfig {
             decomposition,
             noise_standard_deviation: 0.7,
         },
-        key_switching: GadgetEncryptionConfig {
-            decomposition,
-            noise_standard_deviation: 0.7,
-        },
-        pbs_order: order,
+        algorithm: BlindRotationAlgorithm::Classic,
+    }
+    .try_prepare()
+    .and_then(|parameters| {
+        parameters.try_with_key_switching(
+            GadgetEncryptionConfig {
+                decomposition,
+                noise_standard_deviation: 0.7,
+            },
+            order,
+        )
     })
     .unwrap()
 }
 
-fn circuit_config() -> CircuitBootstrapConfig {
-    CircuitBootstrapConfig {
+fn circuit_config() -> CbsGadgetConfig {
+    CbsGadgetConfig {
         output: DecompositionConfig {
             log_basis: DecompositionBaseLog::new(8),
             level_count: Some(DecompositionLevelCount::new(3)),
@@ -82,8 +88,8 @@ fn circuit_config() -> CircuitBootstrapConfig {
     }
 }
 
-fn circuit_parameters(tfhe: &TfheParameters<u64>) -> CircuitBootstrapParameters<u64> {
-    CircuitBootstrapParameters::try_from_config(tfhe, circuit_config()).unwrap()
+fn circuit_parameters(tfhe: &PbsParameters<u64>) -> CbsParameters<u64> {
+    CbsParameters::try_from_config(tfhe, circuit_config()).unwrap()
 }
 
 // Exact native-ring phase, independent of FFT and sample extraction.
@@ -123,12 +129,12 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
     let mut rng = StdRng::seed_from_u64(0x4342_534b_4559 ^ order as u64);
     let mut generator = KeyGenerator::new(&context);
     let blind_rotation = if sparse {
-        BlindRotationConfig::Sparse {
+        BlindRotationAlgorithm::Sparse {
             copy_count: 3,
             bucket_count: 4,
         }
     } else {
-        BlindRotationConfig::Classic
+        BlindRotationAlgorithm::Classic
     };
     let (client, server) = generator
         .try_generate_circuit_bootstrap_keys(blind_rotation, circuit_config(), &mut rng)
@@ -153,7 +159,7 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
         )
         .unwrap();
     // GLWE scheme switching binds the output layout, not its exact gadget basis.
-    let alternate = CircuitBootstrapParameters::try_new(
+    let alternate = CbsParameters::try_new(
         context.parameters(),
         ApproxSignedBasis::new(
             None,
@@ -479,7 +485,7 @@ fn evaluator_rejects_resource_mismatches_and_checks_shapes_before_writes() {
     assert!(
         generator
             .try_generate_circuit_bootstrap_keys(
-                BlindRotationConfig::Classic,
+                BlindRotationAlgorithm::Classic,
                 invalid,
                 &mut fresh_rng,
             )
@@ -497,7 +503,7 @@ fn evaluator_rejects_resource_mismatches_and_checks_shapes_before_writes() {
     let server = generator
         .try_generate_server_key(
             &client,
-            BlindRotationConfig::Sparse {
+            BlindRotationAlgorithm::Sparse {
                 copy_count: 3,
                 bucket_count: 4,
             },
@@ -547,8 +553,7 @@ fn evaluator_rejects_resource_mismatches_and_checks_shapes_before_writes() {
         ),
     ] {
         let foreign =
-            CircuitBootstrapParameters::try_new(context.parameters(), output, trace, scheme_switch)
-                .unwrap();
+            CbsParameters::try_new(context.parameters(), output, trace, scheme_switch).unwrap();
         assert!(matches!(
             CircuitBootstrapEvaluator::try_with_parameters(
                 &resources,
@@ -641,8 +646,8 @@ fn incompatible_parameters_and_client_keys_are_rejected_before_sampling() {
     let mut rng = StdRng::seed_from_u64(43);
     let mut untouched_rng = StdRng::seed_from_u64(43);
     assert!(matches!(
-        context.try_generate_keys(BlindRotationConfig::Classic, Some(invalid), &mut rng),
-        Err(KeyGenerationError::CircuitBootstrapParameters(_))
+        context.try_generate_keys(BlindRotationAlgorithm::Classic, Some(invalid), &mut rng),
+        Err(KeyGenerationError::CbsParameters(_))
     ));
     assert_eq!(rng.random::<u64>(), untouched_rng.random::<u64>());
     let mut rng = StdRng::seed_from_u64(44);
@@ -650,14 +655,14 @@ fn incompatible_parameters_and_client_keys_are_rejected_before_sampling() {
     assert!(matches!(
         KeyGenerator::new(&context).try_generate_server_key(
             &client,
-            BlindRotationConfig::Sparse {
+            BlindRotationAlgorithm::Sparse {
                 copy_count: 3,
                 bucket_count: 4
             },
             Some(invalid),
             &mut rng
         ),
-        Err(KeyGenerationError::CircuitBootstrapParameters(_))
+        Err(KeyGenerationError::CbsParameters(_))
     ));
     assert_eq!(rng.random::<u64>(), untouched_rng.random::<u64>());
     let foreign_client = ClientKey::generate(&parameters(DIMENSION + 1, POLY_LENGTH), &mut rng);
@@ -672,4 +677,49 @@ fn incompatible_parameters_and_client_keys_are_rejected_before_sampling() {
         Err(KeyGenerationError::ClientKey(_))
     ));
     assert_eq!(rng.random::<u64>(), untouched_rng.random::<u64>());
+}
+
+/// A ring-output setup has no unused KS state and rejects ordinary PBS before sampling.
+#[test]
+fn ring_only_parameters_reject_ordinary_pbs_before_sampling() {
+    let full = parameters(DIMENSION, POLY_LENGTH);
+    let parameters = PbsParameters::try_without_key_switching(
+        full.small_lwe().clone(),
+        full.blind_rotation_ggsw().clone(),
+    )
+    .unwrap();
+    let context = TfheContext::<_, RustFftTable>::from_parameters(parameters);
+    let mut rng = StdRng::seed_from_u64(42);
+    let mut untouched = StdRng::seed_from_u64(42);
+    assert_eq!(
+        context
+            .try_generate_keys(BlindRotationAlgorithm::Classic, None, &mut rng)
+            .err(),
+        Some(primus_tfhe_glwe_fourier::KeyGenerationError::MissingKeySwitchingParameters)
+    );
+    assert_eq!(
+        rand::RngExt::random::<u64>(&mut rng),
+        rand::RngExt::random::<u64>(&mut untouched)
+    );
+    let config = CbsGadgetConfig {
+        output: DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(8),
+            level_count: Some(DecompositionLevelCount::new(2)),
+        },
+        trace: DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(8),
+            level_count: None,
+        },
+        scheme_switch: DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(8),
+            level_count: None,
+        },
+    };
+    let (_, server) = context
+        .try_generate_circuit_bootstrap_keys(BlindRotationAlgorithm::Classic, config, &mut rng)
+        .unwrap();
+    assert!(server.input_key_switching_key().is_none());
+    let resources = server.bootstrap_resources(&context).unwrap();
+    let codec = primus_encoding::RoundedCodec::new(4, context.parameters().cipher_modulus());
+    CircuitBootstrapEvaluator::try_new(&resources, server.circuit_bootstrap_key(), &codec).unwrap();
 }

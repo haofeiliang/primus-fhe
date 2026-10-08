@@ -14,7 +14,7 @@ use primus_poly::PolyLength;
 use primus_tfhe::PbsMessageConfig;
 use primus_tfhe::rotation::RotationModulusSwitch;
 use primus_tfhe_ntru_fourier::{
-    BlindRotationConfig, GadgetEncryptionConfig, KeyGenerator, TfheContext, TfheParameters,
+    BlindRotationAlgorithm, GadgetEncryptionConfig, KeyGenerator, PbsParameters, TfheContext,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -46,7 +46,7 @@ fn context<T: TorusFftValue, Table: FftTable>(distr: SecretKeyDistr) -> TfheCont
         None,
     );
     TfheContext::from_parameters(
-        TfheParameters::try_new(
+        PbsParameters::try_new(
             lwe.into_encryption_parameters(),
             NlevParameters::try_with_basis(&acc, blind_rotation_basis).unwrap(),
             GadgetEncryptionConfig {
@@ -101,7 +101,7 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(weight: usize) {
         );
     }
     let classic_key = generator
-        .try_generate_server_key(&client, BlindRotationConfig::Classic, None, &mut rng)
+        .try_generate_server_key(&client, BlindRotationAlgorithm::Classic, None, &mut rng)
         .unwrap();
     let mut classic = context.evaluator(&classic_key).unwrap();
     let modulus = context.parameters().external_lwe().cipher_modulus();
@@ -156,7 +156,7 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(weight: usize) {
         let server = generator
             .try_generate_server_key(
                 &client,
-                BlindRotationConfig::Sparse {
+                BlindRotationAlgorithm::Sparse {
                     copy_count: copies,
                     bucket_count: buckets,
                 },
@@ -295,7 +295,7 @@ fn sparse_generation_rejects_invalid_secrets_buckets_and_cbs_before_sampling() {
     use primus_ntru::NtruSecretKey;
     use primus_tfhe::sparse::BucketMapError;
     use primus_tfhe_ntru_fourier::{
-        CircuitBootstrapConfig, ClientKey, DecompositionConfig, KeyGenerationError as Error,
+        CbsGadgetConfig, ClientKey, DecompositionConfig, KeyGenerationError as Error,
         SparseBootstrappingKeyError as SparseError,
     };
     use rand::Rng;
@@ -341,7 +341,7 @@ fn sparse_generation_rejects_invalid_secrets_buckets_and_cbs_before_sampling() {
             context
                 .try_generate_server_key(
                     &client,
-                    BlindRotationConfig::Sparse {
+                    BlindRotationAlgorithm::Sparse {
                         copy_count: 3,
                         bucket_count: 8
                     },
@@ -376,7 +376,7 @@ fn sparse_generation_rejects_invalid_secrets_buckets_and_cbs_before_sampling() {
             generator
                 .try_generate_server_key(
                     &client,
-                    BlindRotationConfig::Sparse {
+                    BlindRotationAlgorithm::Sparse {
                         copy_count: copies,
                         bucket_count: buckets
                     },
@@ -392,7 +392,7 @@ fn sparse_generation_rejects_invalid_secrets_buckets_and_cbs_before_sampling() {
         assert_eq!(
             generator
                 .try_generate(
-                    BlindRotationConfig::Sparse {
+                    BlindRotationAlgorithm::Sparse {
                         copy_count: copies,
                         bucket_count: buckets
                     },
@@ -414,7 +414,7 @@ fn sparse_generation_rejects_invalid_secrets_buckets_and_cbs_before_sampling() {
         generator
             .try_generate_server_key(
                 &noninvertible,
-                BlindRotationConfig::Sparse {
+                BlindRotationAlgorithm::Sparse {
                     copy_count: 3,
                     bucket_count: 8
                 },
@@ -431,7 +431,7 @@ fn sparse_generation_rejects_invalid_secrets_buckets_and_cbs_before_sampling() {
         log_basis: DecompositionBaseLog::new(8),
         level_count: None,
     };
-    let invalid_cbs = CircuitBootstrapConfig {
+    let invalid_cbs = CbsGadgetConfig {
         output: DecompositionConfig {
             log_basis: DecompositionBaseLog::new(8),
             level_count: Some(DecompositionLevelCount::new(1)),
@@ -447,7 +447,7 @@ fn sparse_generation_rejects_invalid_secrets_buckets_and_cbs_before_sampling() {
     assert!(
         generator
             .try_generate_circuit_bootstrap_keys(
-                BlindRotationConfig::Sparse {
+                BlindRotationAlgorithm::Sparse {
                     copy_count: 3,
                     bucket_count: 8
                 },
@@ -464,7 +464,7 @@ fn sparse_generation_rejects_invalid_secrets_buckets_and_cbs_before_sampling() {
         generator
             .try_generate_server_key(
                 &client,
-                BlindRotationConfig::Sparse {
+                BlindRotationAlgorithm::Sparse {
                     copy_count: 3,
                     bucket_count: 8
                 },

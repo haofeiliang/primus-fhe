@@ -1,7 +1,7 @@
 //! Independent ownership and compatibility of classic or sparse BR controls.
 
 use super::ClassicControls;
-use crate::{SparseNtruBootstrappingKey, TfheParameters};
+use crate::{PbsParameters, SparseNtruBootstrappingKey};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_integer::FheUint;
 use primus_lattice::nlev::NttNlev;
@@ -66,7 +66,7 @@ impl<T: FheUint> BlindRotationKey<T> {
 
     /// Moves independently generated bucket controls into their BR domain.
     pub(crate) fn from_sparse<LM: primus_reduce::RingContext<T>>(
-        parameters: &TfheParameters<T, LM>,
+        parameters: &PbsParameters<T, LM>,
         controls: SparseNtruBootstrappingKey<T>,
     ) -> Self {
         Self {
@@ -91,7 +91,7 @@ impl<T: FheUint> BlindRotationKey<T> {
     /// Bit controls do not depend on external q; input preparation binds that modulus.
     pub(crate) fn is_compatible<LM: primus_reduce::RingContext<T>>(
         &self,
-        parameters: &TfheParameters<T, LM>,
+        parameters: &PbsParameters<T, LM>,
     ) -> bool {
         self.input_distribution == parameters.external_lwe().secret_key_distr()
             && &self.blind_rotation_basis == parameters.blind_rotation().basis()

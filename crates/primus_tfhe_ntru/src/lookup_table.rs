@@ -6,9 +6,9 @@ use primus_tfhe::{
     LookupTableError, PbsMessageConfig, RoundedPbsCodecs,
 };
 
-use crate::TfheParameters;
+use crate::PbsParameters;
 
-impl<T, M, LM> TfheParameters<T, M, LM>
+impl<T, M, LM> PbsParameters<T, M, LM>
 where
     T: FheUint,
     M: RingContext<T>,

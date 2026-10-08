@@ -7,7 +7,7 @@ use primus_glwe::SecretKeyDistr;
 use primus_integer::{AsInto, FheUint};
 use primus_ntt::MonomialNttTable;
 use primus_poly::Polynomial;
-use primus_tfhe::{BlindRotationConfig, PbsMessageConfig};
+use primus_tfhe::{BlindRotationAlgorithm, PbsMessageConfig};
 use primus_tfhe_benchmarks::{
     benchmark::PBS_WORKLOADS,
     parameters::{N, SPARSE_WEIGHT, glwe},
@@ -109,12 +109,12 @@ fn pbs<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     let client_key = ClientKey::generate(context.parameters(), &mut rng);
     let mut generator = KeyGenerator::new(context);
     let blind_rotation = if sparse {
-        BlindRotationConfig::Sparse {
+        BlindRotationAlgorithm::Sparse {
             copy_count: 3,
             bucket_count: 2 * SPARSE_WEIGHT,
         }
     } else {
-        BlindRotationConfig::Classic
+        BlindRotationAlgorithm::Classic
     };
     let server_key = generator
         .try_generate_server_key(&client_key, blind_rotation, None, &mut rng)
@@ -238,7 +238,7 @@ fn thresholds<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     // Client: generate both keys; give only the evaluation key to the server.
     let mut rng = StdRng::seed_from_u64(seed);
     let (client_key, server_key) = context
-        .try_generate_keys(BlindRotationConfig::Classic, None, &mut rng)
+        .try_generate_keys(BlindRotationAlgorithm::Classic, None, &mut rng)
         .unwrap();
 
     let encryptor = context
@@ -303,12 +303,12 @@ fn circuit<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     let client_key = ClientKey::generate(context.parameters(), &mut rng);
     let mut generator = KeyGenerator::new(context);
     let blind_rotation = if sparse {
-        BlindRotationConfig::Sparse {
+        BlindRotationAlgorithm::Sparse {
             copy_count: 3,
             bucket_count: 2 * SPARSE_WEIGHT,
         }
     } else {
-        BlindRotationConfig::Classic
+        BlindRotationAlgorithm::Classic
     };
     let server_key = generator
         .try_generate_server_key(

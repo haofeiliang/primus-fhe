@@ -6,13 +6,13 @@
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_glwe::SecretKeyDistr;
 use primus_lattice::{GlweDimension, LweDimension};
-use primus_lwe::LweEncryptionParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntt::U64NttTable as Table;
 use primus_poly::PolyLength;
+use primus_tfhe_glwe::{BlindRotationConfig, LweConfig};
 use primus_tfhe_glwe_ntt::{
-    BlindRotationConfig, CircuitBootstrapConfig, CircuitBootstrapEvaluator, DecompositionConfig,
-    GadgetEncryptionConfig, PbsOrder, TfheConfig, TfheContext, TfheParameters,
+    BlindRotationAlgorithm, CbsGadgetConfig, CircuitBootstrapEvaluator, DecompositionConfig,
+    GadgetEncryptionConfig, PbsParameters, TfheContext,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -33,7 +33,7 @@ fn main() {
     let mut rng = StdRng::seed_from_u64(42);
     let (client_key, server_key) = context
         .try_generate_circuit_bootstrap_keys(
-            BlindRotationConfig::Classic,
+            BlindRotationAlgorithm::Classic,
             circuit_config(),
             &mut rng,
         )
@@ -99,7 +99,7 @@ fn main() {
 
 // Key parameters: n=800, N=1024; LWE and GLWE share the ciphertext modulus.
 // Noise sigmas below are in coefficient units; these are arithmetic examples, not security presets.
-fn parameters() -> TfheParameters<Word> {
+fn parameters() -> PbsParameters<Word> {
     // NTT requires a prime admitting a 2N-th root, rather than a power-of-two modulus.
     let ring_modulus: Word = 1_125_899_906_826_241;
     let modulus = BarrettModulus::new(ring_modulus);
@@ -111,36 +111,33 @@ fn parameters() -> TfheParameters<Word> {
         level_count: None,
     };
 
-    TfheParameters::try_from_config(TfheConfig {
-        small_lwe: LweEncryptionParameters::new(
-            LweDimension::new(800),
-            modulus,
-            SecretKeyDistr::UniformBinary,
-            q * 2.046151696979124e-6,
-        ),
-        accumulator_dimension: GlweDimension::new(1),
-        poly_length: PolyLength::new(N),
-        accumulator_secret_key_distr: SecretKeyDistr::UniformTernary,
-        blind_rotation: GadgetEncryptionConfig {
+    BlindRotationConfig {
+        small_lwe: LweConfig {
+            dimension: LweDimension::new(800),
+            cipher_modulus: modulus.into(),
+            secret_key_distr: SecretKeyDistr::UniformBinary,
+            noise_standard_deviation: q * 2.046151696979124e-6,
+        },
+        acc_dimension: GlweDimension::new(1),
+        acc_poly_length: PolyLength::new(N),
+        bsk_secret_distr: SecretKeyDistr::UniformTernary,
+        bsk_gadget: GadgetEncryptionConfig {
             decomposition: full,
             noise_standard_deviation: 6.4,
         },
-        key_switching: GadgetEncryptionConfig {
-            decomposition: full,
-            noise_standard_deviation: 6.4,
-        },
-        pbs_order: PbsOrder::BootstrapKeyswitch,
-    })
+        algorithm: BlindRotationAlgorithm::Classic,
+    }
+    .try_prepare()
     .unwrap()
 }
 
 // CBS emits a gadget ciphertext; its output basis is separate from the two evaluation-key bases.
-fn circuit_config() -> CircuitBootstrapConfig {
+fn circuit_config() -> CbsGadgetConfig {
     let internal = DecompositionConfig {
         log_basis: DecompositionBaseLog::new(8),
         level_count: None,
     };
-    CircuitBootstrapConfig {
+    CbsGadgetConfig {
         output: DecompositionConfig {
             log_basis: DecompositionBaseLog::new(8),
             level_count: Some(DecompositionLevelCount::new(2)),

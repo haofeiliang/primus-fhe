@@ -12,8 +12,8 @@ use primus_modulus::NativeModulus;
 use primus_poly::PolyLength;
 use primus_tfhe::sparse::BucketMapError;
 use primus_tfhe_glwe_fourier::{
-    BlindRotationConfig, BlindRotationKey, ClientKey, GadgetEncryptionConfig, KeyGenerator,
-    PbsOrder, SparseBootstrappingKeyError as Error, TfheContext, TfheParameters,
+    BlindRotationAlgorithm, BlindRotationKey, ClientKey, GadgetEncryptionConfig, KeyGenerator,
+    PbsOrder, PbsParameters, SparseBootstrappingKeyError as Error, TfheContext,
 };
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
@@ -35,7 +35,7 @@ fn context<Table: FftTable>(distribution: SecretKeyDistr) -> TfheContext<u64, Ta
         DecompositionBaseLog::new(8),
         Some(DecompositionLevelCount::new(6)),
     );
-    let parameters = TfheParameters::try_new(
+    let parameters = PbsParameters::try_new(
         lwe.into_encryption_parameters(),
         primus_glwe::GgswParameters::try_with_basis(&glwe, basis.clone()).unwrap(),
         GadgetEncryptionConfig {
@@ -82,7 +82,7 @@ fn check_selectors<Table: FftTable>() {
         let BlindRotationKey::Sparse(key) = generator
             .try_generate_blind_rotation_key(
                 &client,
-                BlindRotationConfig::Sparse {
+                BlindRotationAlgorithm::Sparse {
                     copy_count,
                     bucket_count,
                 },
@@ -176,7 +176,7 @@ fn sparse_key_errors_do_not_consume_randomness() {
         assert_eq!(
             generator
                 .try_generate(
-                    BlindRotationConfig::Sparse {
+                    BlindRotationAlgorithm::Sparse {
                         copy_count,
                         bucket_count
                     },
@@ -196,7 +196,12 @@ fn sparse_key_errors_do_not_consume_randomness() {
     );
     let mut rng = StdRng::seed_from_u64(43);
     let expected = generator
-        .try_generate_server_key(&wrong_order, BlindRotationConfig::Classic, None, &mut rng)
+        .try_generate_server_key(
+            &wrong_order,
+            BlindRotationAlgorithm::Classic,
+            None,
+            &mut rng,
+        )
         .err()
         .unwrap();
     assert!(matches!(
@@ -213,7 +218,7 @@ fn sparse_key_errors_do_not_consume_randomness() {
         generator
             .try_generate_server_key(
                 &wrong_order,
-                BlindRotationConfig::Sparse {
+                BlindRotationAlgorithm::Sparse {
                     copy_count: 3,
                     bucket_count: 8
                 },

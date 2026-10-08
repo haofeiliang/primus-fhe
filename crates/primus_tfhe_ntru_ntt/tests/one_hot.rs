@@ -13,8 +13,8 @@ use primus_ntt::U64NttTable;
 use primus_poly::PolyLength;
 use primus_tfhe::PbsMessageConfig;
 use primus_tfhe_ntru_ntt::{
-    BlindRotationConfig, CircuitBootstrapConfig, CircuitBootstrapEvaluator, DecompositionConfig,
-    GadgetEncryptionConfig, OneHotCircuitBootstrapEvaluator, TfheContext, TfheParameters,
+    BlindRotationAlgorithm, CbsGadgetConfig, CircuitBootstrapEvaluator, DecompositionConfig,
+    GadgetEncryptionConfig, OneHotCircuitBootstrapEvaluator, PbsParameters, TfheContext,
 };
 use rand::{SeedableRng, rngs::StdRng};
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -72,7 +72,7 @@ fn selectors(distr: SecretKeyDistr, sparse: bool) {
         DecompositionBaseLog::new(10),
         None,
     );
-    let tfhe = TfheParameters::try_new(
+    let tfhe = PbsParameters::try_new(
         LweEncryptionParameters::new(
             LweDimension::new(4),
             PowOf2Modulus::new(1u64 << 24),
@@ -89,7 +89,7 @@ fn selectors(distr: SecretKeyDistr, sparse: bool) {
     let context = TfheContext::<_, U64NttTable, _>::try_from_parameters(tfhe).unwrap();
     let input_codec = RoundedCodec::new(8, context.parameters().external_lwe().cipher_modulus());
     let mut rng = StdRng::seed_from_u64(0x4f48434253);
-    let cbs_config = CircuitBootstrapConfig {
+    let cbs_config = CbsGadgetConfig {
         output: DecompositionConfig {
             log_basis: DecompositionBaseLog::new(8),
             level_count: Some(DecompositionLevelCount::new(L)),
@@ -99,12 +99,12 @@ fn selectors(distr: SecretKeyDistr, sparse: bool) {
     };
     let mut generator = primus_tfhe_ntru_ntt::KeyGenerator::new(&context);
     let blind_rotation = if sparse {
-        BlindRotationConfig::Sparse {
+        BlindRotationAlgorithm::Sparse {
             copy_count: 3,
             bucket_count: 8,
         }
     } else {
-        BlindRotationConfig::Classic
+        BlindRotationAlgorithm::Classic
     };
     let (client, server) = generator
         .try_generate_circuit_bootstrap_keys(blind_rotation, cbs_config, &mut rng)

@@ -20,9 +20,9 @@ use primus_ntt::{MonomialNttTable, U32NttTable, U64NttTable};
 use primus_poly::PolyLength;
 use primus_reduce::RingContext;
 use primus_tfhe::LweCiphertext;
-use primus_tfhe::{BlindRotationConfig, DecompositionBaseLog, DecompositionLevelCount};
+use primus_tfhe::{BlindRotationAlgorithm, DecompositionBaseLog, DecompositionLevelCount};
 use primus_tfhe_ntru::{
-    CircuitBootstrapConfig, DecompositionConfig, GadgetEncryptionConfig, TfheParameters,
+    CbsGadgetConfig, DecompositionConfig, GadgetEncryptionConfig, PbsParameters,
 };
 #[cfg(any(feature = "rustfft", feature = "tfhe-fft"))]
 use primus_tfhe_ntru_lut::FourierLookupTableEvaluator;
@@ -39,32 +39,44 @@ fn parameters<T: FheUint, M: RingContext<T>>(
     modulus: M,
     distr: SecretKeyDistr,
     dimension: usize,
-) -> TfheParameters<T, M, PowOf2Modulus<T>> {
-    TfheParameters::try_from_config(primus_tfhe_ntru::TfheConfig {
-        external_lwe: LweEncryptionParameters::new(
-            LweDimension::new(dimension),
-            PowOf2Modulus::new(T::ONE << 24u32),
-            distr,
-            0.7,
-        ),
-        accumulator_modulus: modulus,
-        poly_length: PolyLength::new(N),
-        accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
-        blind_rotation: GadgetEncryptionConfig {
+) -> PbsParameters<T, M, PowOf2Modulus<T>> {
+    let external_lwe = LweEncryptionParameters::new(
+        LweDimension::new(dimension),
+        PowOf2Modulus::new(T::ONE << 24u32),
+        distr,
+        0.7,
+    );
+    let bsk_gadget = GadgetEncryptionConfig {
+        decomposition: DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(8),
+            level_count: None,
+        },
+        noise_standard_deviation: 0.7,
+    };
+    let blind_rotation = primus_ntru::NlevParameters::try_from_parts(
+        std::sync::Arc::new(primus_ntru::NtruEncryptionParameters::new(
+            PolyLength::new(N),
+            modulus,
+            SecretKeyDistr::SparseTernary,
+            bsk_gadget.noise_standard_deviation,
+        )),
+        bsk_gadget
+            .decomposition
+            .try_build(modulus.explicit_value())
+            .unwrap(),
+    )
+    .unwrap();
+    PbsParameters::try_new(
+        external_lwe,
+        blind_rotation,
+        GadgetEncryptionConfig {
             decomposition: DecompositionConfig {
                 log_basis: DecompositionBaseLog::new(8),
                 level_count: None,
             },
             noise_standard_deviation: 0.7,
         },
-        key_switching: GadgetEncryptionConfig {
-            decomposition: DecompositionConfig {
-                log_basis: DecompositionBaseLog::new(8),
-                level_count: None,
-            },
-            noise_standard_deviation: 0.7,
-        },
-    })
+    )
     .unwrap()
 }
 
@@ -93,12 +105,12 @@ fn lift_parameters<T: FheUint, M: RingContext<T>>(
 }
 
 // Three retained levels leave precision for the CMux/rotation products in each word.
-fn cbs<T: FheUint>() -> CircuitBootstrapConfig {
+fn cbs<T: FheUint>() -> CbsGadgetConfig {
     let full = DecompositionConfig {
         log_basis: DecompositionBaseLog::new(8),
         level_count: None,
     };
-    CircuitBootstrapConfig {
+    CbsGadgetConfig {
         output: DecompositionConfig {
             log_basis: if T::BITS == 32 {
                 DecompositionBaseLog::new(4)
@@ -374,12 +386,12 @@ fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T) {
         let mut generator = primus_tfhe_ntru_ntt::KeyGenerator::new(&context);
         let client = generator.try_generate_client_key(&mut rng).unwrap();
         let blind_rotation = if sparse {
-            BlindRotationConfig::Sparse {
+            BlindRotationAlgorithm::Sparse {
                 copy_count: 3,
                 bucket_count: 8,
             }
         } else {
-            BlindRotationConfig::Classic
+            BlindRotationAlgorithm::Classic
         };
         let server = generator
             .try_generate_server_key(&client, blind_rotation, Some(cbs::<T>()), &mut rng)
@@ -598,12 +610,12 @@ fn fourier<T: TorusFftValue, Table: FftTable>() {
         let mut generator = primus_tfhe_ntru_fourier::KeyGenerator::new(&context);
         let client = generator.try_generate_client_key(&mut rng).unwrap();
         let blind_rotation = if sparse {
-            BlindRotationConfig::Sparse {
+            BlindRotationAlgorithm::Sparse {
                 copy_count: 3,
                 bucket_count: 8,
             }
         } else {
-            BlindRotationConfig::Classic
+            BlindRotationAlgorithm::Classic
         };
         let server = generator
             .try_generate_server_key(&client, blind_rotation, Some(cbs::<T>()), &mut rng)

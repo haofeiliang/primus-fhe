@@ -9,8 +9,8 @@ use primus_ntru::{NtruParameters, SecretKeyDistr};
 use primus_poly::PolyLength;
 use primus_reduce::RingContext;
 use primus_tfhe_ntru::{
-    CircuitBootstrapConfig, CircuitBootstrapParameters, DecompositionConfig,
-    GadgetEncryptionConfig, OneHotBootstrapError, OneHotLookupTable, TfheParameters,
+    CbsGadgetConfig, CbsParameters, DecompositionConfig, GadgetEncryptionConfig,
+    OneHotBootstrapError, OneHotLookupTable, PbsParameters,
 };
 
 fn parameters<M: RingContext<u64>>(
@@ -18,8 +18,8 @@ fn parameters<M: RingContext<u64>>(
     t: u64,
     levels: usize,
 ) -> (
-    TfheParameters<u64, M, PowOf2Modulus<u64>>,
-    CircuitBootstrapParameters<u64, M>,
+    PbsParameters<u64, M, PowOf2Modulus<u64>>,
+    CbsParameters<u64, M>,
 ) {
     let ring = NtruParameters::new(
         PolyLength::new(64),
@@ -37,7 +37,7 @@ fn parameters<M: RingContext<u64>>(
         log_basis: DecompositionBaseLog::new(3),
         level_count: None,
     };
-    let tfhe = TfheParameters::try_new(
+    let tfhe = PbsParameters::try_new(
         LweEncryptionParameters::new(
             LweDimension::new(4),
             PowOf2Modulus::new(1 << 20),
@@ -51,9 +51,9 @@ fn parameters<M: RingContext<u64>>(
         },
     )
     .unwrap();
-    let cbs = CircuitBootstrapParameters::try_from_config(
+    let cbs = CbsParameters::try_from_config(
         &tfhe,
-        CircuitBootstrapConfig {
+        CbsGadgetConfig {
             output: DecompositionConfig {
                 log_basis: DecompositionBaseLog::new(3),
                 level_count: Some(DecompositionLevelCount::new(levels)),

@@ -1,8 +1,8 @@
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_lattice::LweDimension;
-use primus_lwe::LweEncryptionParameters;
 use primus_poly::PolyLength;
-use primus_tfhe::{BlindRotationConfig, PbsMessageConfig};
+use primus_tfhe::{BlindRotationAlgorithm, PbsMessageConfig};
+use primus_tfhe_ntru::{BlindRotationConfig, LweConfig};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use primus_encoding::{PlaintextEmbedding::Unsigned, RoundedCodec, ScaledCodec};
@@ -12,7 +12,7 @@ use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::SecretKeyDistr;
 use primus_tfhe_ntru_fourier::{
     DecompositionConfig, FactorizedLookupTable, FourierFactorizedLookupTable,
-    GadgetEncryptionConfig, LookupTable, LookupTableError, TfheConfig, TfheContext, TfheParameters,
+    GadgetEncryptionConfig, LookupTable, LookupTableError, TfheContext,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -21,30 +21,34 @@ const DIM: usize = 8;
 const DOMAIN: usize = 8;
 
 fn context<T: TorusFftValue, Table: FftTable>(distr: SecretKeyDistr) -> TfheContext<T, Table> {
-    let parameters = TfheParameters::try_from_config(TfheConfig {
-        accumulator_modulus: NativeModulus::new(),
-        external_lwe: LweEncryptionParameters::new(
-            LweDimension::new(DIM),
-            NativeModulus::new(),
-            distr,
-            0.7,
-        ),
-        poly_length: PolyLength::new(N),
-        accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
-        blind_rotation: GadgetEncryptionConfig {
+    let parameters = BlindRotationConfig {
+        external_lwe: LweConfig {
+            dimension: LweDimension::new(DIM),
+            cipher_modulus: NativeModulus::new().into(),
+            secret_key_distr: distr,
+            noise_standard_deviation: 0.7,
+        },
+        acc_modulus: NativeModulus::new().into(),
+        acc_poly_length: PolyLength::new(N),
+        bsk_secret_distr: SecretKeyDistr::SparseTernary,
+        bsk_gadget: GadgetEncryptionConfig {
             decomposition: DecompositionConfig {
                 log_basis: DecompositionBaseLog::new(8),
                 level_count: Some(DecompositionLevelCount::new(3)),
             },
             noise_standard_deviation: 0.7,
         },
-        key_switching: GadgetEncryptionConfig {
+        algorithm: BlindRotationAlgorithm::Classic,
+    }
+    .try_prepare()
+    .and_then(|parameters| {
+        parameters.try_with_key_switching(GadgetEncryptionConfig {
             decomposition: DecompositionConfig {
                 log_basis: DecompositionBaseLog::new(8),
                 level_count: Some(DecompositionLevelCount::new(3)),
             },
             noise_standard_deviation: 0.7,
-        },
+        })
     })
     .unwrap();
     TfheContext::from_parameters(parameters)
@@ -76,7 +80,7 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(distr: SecretKeyDistr) {
     let modulus = NativeModulus::new();
     let mut rng = StdRng::seed_from_u64(0x4235_3301);
     let (client, server) = context
-        .try_generate_keys(BlindRotationConfig::Classic, None, &mut rng)
+        .try_generate_keys(BlindRotationAlgorithm::Classic, None, &mut rng)
         .unwrap();
     // Two full return tiles and a singleton tail reuse one polynomial buffer.
     let output_count = 17;
@@ -158,7 +162,7 @@ fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
     let input_codec = RoundedCodec::new(15, context.parameters().external_lwe().cipher_modulus());
     let mut rng = StdRng::seed_from_u64(0x4235_3302);
     let (client, server) = context
-        .try_generate_keys(BlindRotationConfig::Classic, None, &mut rng)
+        .try_generate_keys(BlindRotationAlgorithm::Classic, None, &mut rng)
         .unwrap();
     let codec = ScaledCodec::new(8u32, NativeModulus::new());
     let compile = || {

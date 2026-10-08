@@ -6,7 +6,7 @@ use primus_modulus::NativeModulus;
 use primus_poly::Polynomial;
 use primus_tfhe::rotation::RotationModulusSwitch;
 
-use crate::{BlindRotationKey, ClassicControls, TfheParameters};
+use crate::{BlindRotationKey, ClassicControls, PbsParameters};
 
 /// Borrowed classic controls or sparse key with owned BR buffers and product scratch.
 /// The outer bootstrap resources provide the context/FFT binding; this set
@@ -22,7 +22,7 @@ pub(crate) struct BlindRotationResources<'a, T: TorusFftValue> {
 impl<'a, T: TorusFftValue> BlindRotationResources<'a, T> {
     /// Allocates all blind-rotation storage once.
     pub(crate) fn new<LM: primus_reduce::RingContext<T>>(
-        parameters: &TfheParameters<T, LM>,
+        parameters: &PbsParameters<T, LM>,
         blind_rotation_key: &'a BlindRotationKey<T>,
     ) -> Self {
         let poly_length = parameters.poly_length();
@@ -91,7 +91,7 @@ pub(crate) fn blind_rotate_lookup_table_to<T, Table, LM: primus_reduce::RingCont
     lookup_table: Polynomial<&[T]>,
     rotation_step: usize,
     resources: &mut BlindRotationResources<'_, T>,
-    parameters: &TfheParameters<T, LM>,
+    parameters: &PbsParameters<T, LM>,
     fft: &mut FftEngine<'_, Table>,
 ) where
     T: TorusFftValue,

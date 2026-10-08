@@ -4,7 +4,7 @@ use primus_glwe::{GlweSecretKey, NttGlweSchemeSwitchKey, NttGlweSecretKey, NttGl
 use primus_integer::FheUint;
 use primus_ntt::MonomialNttTable;
 
-use crate::{CircuitBootstrapParameters, KeyGenerationError, KeyGenerator, TfheContext};
+use crate::{CbsParameters, KeyGenerationError, KeyGenerator, TfheContext};
 
 /// Trace-projection and scheme-switching keys used after PBSManyLUT.
 ///
@@ -13,7 +13,7 @@ use crate::{CircuitBootstrapParameters, KeyGenerationError, KeyGenerator, TfheCo
 /// [`crate::CircuitBootstrapServerKey`] or optionally in [`crate::ServerKey`]. Both keys must use the same accumulator secret and the evaluator's
 /// NTT representation; see [`crate::CircuitBootstrapEvaluator::try_new`].
 pub struct CircuitBootstrapKey<T: FheUint> {
-    parameters: CircuitBootstrapParameters<T>,
+    parameters: CbsParameters<T>,
     trace: NttGlweTraceKey<T>,
     scheme_switch: NttGlweSchemeSwitchKey<T>,
 }
@@ -22,15 +22,15 @@ pub struct CircuitBootstrapKey<T: FheUint> {
 // binds output layout; a compatible alternate output basis remains valid.
 pub(super) struct CircuitBootstrapBinding<'a, T: FheUint> {
     pub(super) key: &'a CircuitBootstrapKey<T>,
-    pub(super) parameters: &'a CircuitBootstrapParameters<T>,
+    pub(super) parameters: &'a CbsParameters<T>,
 }
 
 impl<'a, T: FheUint> CircuitBootstrapBinding<'a, T> {
     // Check caller-supplied parts before LUT/workspace preparation. Unlike NTRU,
     // GLWE can reuse scheme-switch material with another compatible output basis.
     pub(super) fn try_new(
-        tfhe: &crate::TfheParameters<T>,
-        parameters: &'a CircuitBootstrapParameters<T>,
+        tfhe: &crate::PbsParameters<T>,
+        parameters: &'a CbsParameters<T>,
         key: &'a CircuitBootstrapKey<T>,
     ) -> Result<Self, crate::TfheEvaluationError> {
         if !parameters.is_compatible(tfhe) {
@@ -48,11 +48,11 @@ impl<'a, T: FheUint> CircuitBootstrapBinding<'a, T> {
 impl<T: FheUint> CircuitBootstrapKey<T> {
     /// Returns the CBS parameters selected when this material was generated.
     #[must_use]
-    pub fn parameters(&self) -> &CircuitBootstrapParameters<T> {
+    pub fn parameters(&self) -> &CbsParameters<T> {
         &self.parameters
     }
 
-    pub(crate) fn is_compatible(&self, parameters: &CircuitBootstrapParameters<T>) -> bool {
+    pub(crate) fn is_compatible(&self, parameters: &CbsParameters<T>) -> bool {
         self.parameters.output_size() == parameters.output_size()
             && self.parameters.trace().size() == parameters.trace().size()
             && self.parameters.scheme_switch().size() == parameters.scheme_switch().size()
@@ -97,7 +97,7 @@ where
     pub fn try_generate_circuit_bootstrap_key<R>(
         &mut self,
         accumulator_secret: &GlweSecretKey<T>,
-        parameters: CircuitBootstrapParameters<T>,
+        parameters: CbsParameters<T>,
         rng: &mut R,
     ) -> Result<CircuitBootstrapKey<T>, KeyGenerationError>
     where
@@ -125,7 +125,7 @@ where
         &mut self,
         accumulator_secret: &GlweSecretKey<T>,
         ntt_secret_key: &NttGlweSecretKey<T>,
-        parameters: CircuitBootstrapParameters<T>,
+        parameters: CbsParameters<T>,
         rng: &mut R,
     ) -> CircuitBootstrapKey<T>
     where
@@ -175,7 +175,7 @@ where
     pub fn try_generate_circuit_bootstrap_key<R>(
         &self,
         accumulator_secret: &GlweSecretKey<T>,
-        parameters: CircuitBootstrapParameters<T>,
+        parameters: CbsParameters<T>,
         rng: &mut R,
     ) -> Result<CircuitBootstrapKey<T>, KeyGenerationError>
     where

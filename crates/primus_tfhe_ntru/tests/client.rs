@@ -11,7 +11,7 @@ use primus_poly::PolyLength;
 use primus_reduce::RingContext;
 use primus_tfhe_ntru::{
     BooleanDecryptor, BooleanEncryptor, BooleanError, ClientError, ClientKey, EncryptionKey,
-    Encryptor, GadgetEncryptionConfig, Lwe, TfheKeyError, TfheParameters,
+    Encryptor, GadgetEncryptionConfig, Lwe, PbsParameters, TfheKeyError,
 };
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
@@ -24,7 +24,7 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
         SecretKeyDistr::UniformBinary,
         1.4,
     );
-    let params = TfheParameters::try_new(
+    let params = PbsParameters::try_new(
         LweEncryptionParameters::new(
             LweDimension::new(4),
             modulus,
@@ -226,7 +226,7 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
 }
 
 fn check_boolean_client<M: RingContext<u32>>(
-    parameters: &TfheParameters<u32, M>,
+    parameters: &PbsParameters<u32, M>,
     client: &ClientKey<u32>,
     input_codec: &RoundedCodec<u32, M>,
 ) {
@@ -322,7 +322,7 @@ enum Encoding {
 }
 
 fn check_reused_output<M, Key>(
-    parameters: &TfheParameters<u32, M>,
+    parameters: &PbsParameters<u32, M>,
     client: &ClientKey<u32>,
     input_codec: &RoundedCodec<u32, M>,
     encryptor: Encryptor<'_, u32, M, Key>,

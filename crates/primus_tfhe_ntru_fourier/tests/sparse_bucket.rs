@@ -16,8 +16,8 @@ use primus_ntru::{
 };
 use primus_poly::{PolyLength, Polynomial};
 use primus_tfhe_ntru_fourier::{
-    BlindRotationConfig, ClientKey, GadgetEncryptionConfig, KeyGenerator, TfheContext,
-    TfheParameters,
+    BlindRotationAlgorithm, ClientKey, GadgetEncryptionConfig, KeyGenerator, PbsParameters,
+    TfheContext,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -121,7 +121,7 @@ fn check<T: TorusFftValue, Table: FftTable>(level_count: Option<usize>) {
             .unwrap();
     drop(fft);
     let context = TfheContext::try_new(
-        TfheParameters::try_new(
+        PbsParameters::try_new(
             LweEncryptionParameters::new(
                 LweDimension::new(DIM),
                 modulus,
@@ -206,7 +206,7 @@ fn check<T: TorusFftValue, Table: FftTable>(level_count: Option<usize>) {
         let server = KeyGenerator::new(&context)
             .try_generate_server_key(
                 &imported,
-                BlindRotationConfig::Sparse {
+                BlindRotationAlgorithm::Sparse {
                     copy_count: copies,
                     bucket_count: buckets,
                 },

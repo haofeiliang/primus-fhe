@@ -12,7 +12,7 @@ use primus_reduce::RingContext;
 use primus_tfhe::PolyLength;
 use primus_tfhe::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_tfhe_ntru::{
-    CircuitBootstrapConfig, DecompositionConfig, GadgetEncryptionConfig, TfheConfig, TfheParameters,
+    CbsGadgetConfig, DecompositionConfig, GadgetEncryptionConfig, PbsParameters,
 };
 
 use super::{DIMENSION, N, SPARSE_DIMENSION, SPARSE_WEIGHT};
@@ -37,7 +37,7 @@ pub fn pbs<T, M>(
     modulus: M,
     workload: PbsWorkload,
     secret: SecretKeyDistr,
-) -> TfheParameters<T, M, PowOf2Modulus<T>>
+) -> PbsParameters<T, M, PowOf2Modulus<T>>
 where
     T: FheUint,
     M: RingContext<T>,
@@ -60,34 +60,46 @@ fn parameters<T, M>(
     poly_length: usize,
     secret: SecretKeyDistr,
     lwe_standard_deviation: f64,
-) -> TfheParameters<T, M, PowOf2Modulus<T>>
+) -> PbsParameters<T, M, PowOf2Modulus<T>>
 where
     T: FheUint,
     M: RingContext<T>,
 {
     super::require_word::<T>();
     let q = T::ONE << 24u32;
-    TfheParameters::try_from_config(TfheConfig {
-        external_lwe: LweEncryptionParameters::new(
-            LweDimension::new(lwe_dimension),
-            PowOf2Modulus::new(q),
-            secret,
-            lwe_standard_deviation,
-        ),
-        accumulator_modulus: modulus,
-        poly_length: PolyLength::new(poly_length),
-        accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
-        // Preserve the existing NTRU ring noise: CBS multiplies errors by f/f².
-        // External LWE and return KS use their independent q-domain budgets.
-        blind_rotation: GadgetEncryptionConfig {
-            decomposition: full(if T::BITS == 32 { 2 } else { 8 }),
-            noise_standard_deviation: 0.7,
-        },
-        key_switching: GadgetEncryptionConfig {
+    let external_lwe = LweEncryptionParameters::new(
+        LweDimension::new(lwe_dimension),
+        PowOf2Modulus::new(q),
+        secret,
+        lwe_standard_deviation,
+    );
+    // Preserve the NTRU ring noise: CBS multiplies errors by f/f².
+    // Fresh LWE and return KS retain independent q-domain budgets.
+    let bsk_gadget = GadgetEncryptionConfig {
+        decomposition: full(if T::BITS == 32 { 2 } else { 8 }),
+        noise_standard_deviation: 0.7,
+    };
+    let blind_rotation = primus_ntru::NlevParameters::try_from_parts(
+        std::sync::Arc::new(primus_ntru::NtruEncryptionParameters::new(
+            PolyLength::new(poly_length),
+            modulus,
+            SecretKeyDistr::SparseTernary,
+            bsk_gadget.noise_standard_deviation,
+        )),
+        bsk_gadget
+            .decomposition
+            .try_build(modulus.explicit_value())
+            .unwrap(),
+    )
+    .unwrap();
+    PbsParameters::try_new(
+        external_lwe,
+        blind_rotation,
+        GadgetEncryptionConfig {
             decomposition: full(3),
             noise_standard_deviation: 3.2,
         },
-    })
+    )
     .unwrap()
 }
 
@@ -98,7 +110,7 @@ where
 /// Panics unless the coefficient word is u32 or u64. The family parameter
 /// constructor also rejects invalid geometry or basis/modulus combinations.
 #[must_use]
-pub fn circuit<T, M>(modulus: M, secret: SecretKeyDistr) -> TfheParameters<T, M, PowOf2Modulus<T>>
+pub fn circuit<T, M>(modulus: M, secret: SecretKeyDistr) -> PbsParameters<T, M, PowOf2Modulus<T>>
 where
     T: FheUint,
     M: RingContext<T>,
@@ -112,15 +124,15 @@ where
     )
 }
 
-/// Circuit output basis and independent trace/scheme-switch key noise.
+/// Circuit output, trace and scheme-switch bases; key rows inherit ring noise.
 ///
 /// # Panics
 /// Panics unless the coefficient word is u32 or u64.
 #[must_use]
-pub fn cbs<T: FheUint>() -> CircuitBootstrapConfig {
+pub fn cbs<T: FheUint>() -> CbsGadgetConfig {
     super::require_word::<T>();
     let internal = full(if T::BITS == 32 { 2 } else { 8 });
-    CircuitBootstrapConfig {
+    CbsGadgetConfig {
         output: DecompositionConfig {
             log_basis: if T::BITS == 32 {
                 DecompositionBaseLog::new(3)
@@ -145,7 +157,7 @@ pub fn cbs<T: FheUint>() -> CircuitBootstrapConfig {
 /// Panics unless the coefficient word is u32 or u64. The family parameter
 /// constructor also rejects invalid geometry or basis/modulus combinations.
 #[must_use]
-pub fn diagnostic<T, M>(modulus: M) -> TfheParameters<T, M, PowOf2Modulus<T>>
+pub fn diagnostic<T, M>(modulus: M) -> PbsParameters<T, M, PowOf2Modulus<T>>
 where
     T: FheUint,
     M: RingContext<T>,

@@ -45,11 +45,11 @@ Sparse 模式需显式选择生成入口，暂不支持 sparse ternary。NTRU �
 
 ## 选择盲旋转算法
 
-四个后端均导出 `BlindRotationConfig`，独立选择 BR 算法、秘密分布和可选 CBS 材料：
+四个后端均导出 `BlindRotationAlgorithm`，独立选择 BR 算法、秘密分布和可选 CBS 材料：
 
 ```rust,ignore
-let blind_rotation = BlindRotationConfig::Sparse { copy_count: 3, bucket_count: 64 };
-// 使用 BlindRotationConfig::Classic 选择逐坐标 CMux 控制。
+let blind_rotation = BlindRotationAlgorithm::Sparse { copy_count: 3, bucket_count: 64 };
+// 使用 BlindRotationAlgorithm::Classic 选择逐坐标 CMux 控制。
 let (client, server) = context.try_generate_keys(blind_rotation, None, rng)?;
 ```
 
@@ -170,9 +170,9 @@ GLWE 两后端同样使用短借用。独立 CBS 可用 `context.bootstrap_resou
 
 ## LUT 与资源生命周期
 
-后端接受具名 `TfheConfig` 并派生公共环参数，`TfheContext::try_from_parameters` 自动创建选定类型的变换表。本 crate 从 [`primus_decompose`](../primus_decompose/README.zh_CN.md) 重新导出 `DecompositionConfig`（分解基与保留层数）。`GadgetEncryptionConfig { decomposition, noise_standard_deviation }` 集中 blind rotation 或 PBS key switching 的独立选择。`CircuitBootstrapConfig` 包含三组 `DecompositionConfig`：`output`、`trace` 和 `scheme_switch`。Trace 与 scheme-switch 密钥行继承累加环加密噪声并共享其不可变采样状态，basis 和随机采样仍然独立。各后端绑定自己的模数、布局与表示。`Option<CircuitBootstrapConfig>` 在配套密钥生成时选择是否启用 CBS；server key 持有对应参数和材料，各 evaluator 只持有自身工作区。
+后端接受纯数值 `PbsConfig` / `CbsConfig` 并派生公共环参数，`TfheContext::try_from_parameters` 自动创建选定类型的变换表。本 crate 从 [`primus_decompose`](../primus_decompose/README.zh_CN.md) 重新导出 `DecompositionConfig`（分解基与保留层数）。`GadgetEncryptionConfig { decomposition, noise_standard_deviation }` 集中 blind rotation 或 PBS key switching 的独立选择。`CbsGadgetConfig` 包含三组 `DecompositionConfig`：`output`、`trace` 和 `scheme_switch`。Trace 与 scheme-switch 密钥行继承累加环加密噪声并共享其不可变采样状态，basis 和随机采样仍然独立。各后端绑定自己的模数、布局与表示。`Option<CbsGadgetConfig>` 在配套密钥生成时选择是否启用 CBS；server key 持有对应参数和材料，各 evaluator 只持有自身工作区。
 
-`GadgetEncryptionConfig<D = DecompositionConfig>` 默认接收分解配置；GLWE 的直接构造入口用已准备的 `ApproxSignedBasis<T>` 作为 D，移动其所有权而不重新构造。噪声标准差使用密钥模数下的系数单位：GLWE BR/KS 使用共同 q，NTRU BR 与 CBS trace/scheme switching 使用累加 Q，NTRU 返回 KS 使用外部 q。Config 本身不校验，由原有参数构造边界验证。`TfheConfig::blind_rotation` 中的噪声也用于累加环加密，以及 GLWE KS→BR 的新鲜外部 LWE 加密。KS 噪声仍独立配置；CBS trace/scheme-switch 密钥行继承累加环噪声。
+`GadgetEncryptionConfig<D = DecompositionConfig>` 默认接收分解配置；GLWE 的直接构造入口用已准备的 `ApproxSignedBasis<T>` 作为 D，移动其所有权而不重新构造。噪声标准差使用密钥模数下的系数单位：GLWE BR/KS 使用共同 q，NTRU BR 与 CBS trace/scheme switching 使用累加 Q，NTRU 返回 KS 使用外部 q。Config 本身不校验，由原有参数构造边界验证。`BlindRotationConfig::bsk_gadget` 中的噪声也用于累加环加密，以及 GLWE KS→BR 的新鲜外部 LWE 加密。KS 噪声仍独立配置；CBS trace/scheme-switch 密钥行继承累加环噪声。
 
 1. Family 参数描述外部 LWE 和 accumulator 环。
 2. 后端 context 绑定参数与 NTT/FFT table，并生成配套的 client/server key。
@@ -214,6 +214,8 @@ Raw 构造器 `LookupTable::try_new` / `InterleavedLookupTable::try_new` 显式�
 ### 选择输出编码
 
 用 `PbsMessageConfig::new(t_in)` 集中指定消息域，默认 `t_out=t_in`；通过 `.with_output_modulus(t_out)` 显式修改输出域，不改变输入编码或密钥。ManyLUT 的各 lane、MVB 的各输出共用该输出模数。操作允许时，继续支持奇数明文模数。
+
+按二进制输入位宽选择时，`PbsMessageConfig::from_input_bits(4)` 对应 16 个合法 padded 输入、codec 模数 32，其中一位用于 padding。默认完整输出模数仍为 32，不自动代表输出带 padding 或可以继续 PBS。`try_from_input_bits(u32)` 拒绝无法表示的模数；密文兼容性和 LUT 容量仍在 setup 检查。一般/奇数模数继续使用 `new(t)`。
 
 两家族的参数提供以下准备入口，四个后端均重导出配置类型：
 

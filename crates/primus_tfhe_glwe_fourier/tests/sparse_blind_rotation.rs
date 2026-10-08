@@ -9,9 +9,9 @@ use primus_lwe::LweParameters;
 use primus_modulus::NativeModulus;
 use primus_poly::{PolyLength, Polynomial};
 use primus_tfhe_glwe_fourier::{
-    BlindRotationConfig, BlindRotationKey, ClientKey, FourierGlweBlindRotationWorkspace,
-    GadgetEncryptionConfig, KeyGenerator, PbsOrder, SparseGlweBlindRotationWorkspace, TfheContext,
-    TfheParameters,
+    BlindRotationAlgorithm, BlindRotationKey, ClientKey, FourierGlweBlindRotationWorkspace,
+    GadgetEncryptionConfig, KeyGenerator, PbsOrder, PbsParameters,
+    SparseGlweBlindRotationWorkspace, TfheContext,
 };
 use rand::{SeedableRng, rngs::StdRng};
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -80,7 +80,7 @@ fn check_raw<Table: FftTable>() {
             DecompositionBaseLog::new(8),
             Some(DecompositionLevelCount::new(3)),
         );
-        let parameters = TfheParameters::try_new(
+        let parameters = PbsParameters::try_new(
             (LweParameters::new(
                 LweDimension::new(16),
                 8,
@@ -117,7 +117,7 @@ fn check_raw<Table: FftTable>() {
             .try_generate_sparse_blind_rotation_key(&client, copies, buckets, &mut rng)
             .unwrap();
         let server = generator
-            .try_generate_server_key(&client, BlindRotationConfig::Classic, None, &mut rng)
+            .try_generate_server_key(&client, BlindRotationAlgorithm::Classic, None, &mut rng)
             .unwrap();
         let BlindRotationKey::Classic(classic) = server.blind_rotation_key() else {
             panic!("expected classic key")

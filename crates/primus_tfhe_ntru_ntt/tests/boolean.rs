@@ -6,52 +6,56 @@ mod boolean;
 use primus_decompose::DecompositionBaseLog;
 use primus_encoding::RoundedCodec;
 use primus_lattice::LweDimension;
-use primus_lwe::LweEncryptionParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntru::SecretKeyDistr;
 use primus_ntt::U32NttTable;
 use primus_poly::PolyLength;
-use primus_tfhe::BlindRotationConfig;
+use primus_tfhe::BlindRotationAlgorithm;
+use primus_tfhe_ntru::{BlindRotationConfig, LweConfig};
 use primus_tfhe_ntru_ntt::{
-    BooleanGate, DecompositionConfig, GadgetEncryptionConfig, LweCiphertext, TfheConfig,
-    TfheContext, TfheParameters,
+    BooleanGate, DecompositionConfig, GadgetEncryptionConfig, LweCiphertext, PbsParameters,
+    TfheContext,
 };
 use rand::{SeedableRng, rngs::StdRng};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 /// Reuses one key setup for gate correctness and rejected-call recovery.
 fn check_context(distr: SecretKeyDistr) {
-    let parameters = TfheParameters::<u32>::try_from_config(TfheConfig {
-        accumulator_modulus: BarrettModulus::new(132_120_577),
-        external_lwe: LweEncryptionParameters::new(
-            LweDimension::new(4),
-            BarrettModulus::new(132_120_577),
-            distr,
-            0.7,
-        ),
-        poly_length: PolyLength::new(32),
-        accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
-        blind_rotation: GadgetEncryptionConfig {
+    let parameters: PbsParameters<u32> = BlindRotationConfig {
+        external_lwe: LweConfig {
+            dimension: LweDimension::new(4),
+            cipher_modulus: BarrettModulus::new(132_120_577).into(),
+            secret_key_distr: distr,
+            noise_standard_deviation: 0.7,
+        },
+        acc_modulus: BarrettModulus::new(132_120_577).into(),
+        acc_poly_length: PolyLength::new(32),
+        bsk_secret_distr: SecretKeyDistr::SparseTernary,
+        bsk_gadget: GadgetEncryptionConfig {
             decomposition: DecompositionConfig {
                 log_basis: DecompositionBaseLog::new(8),
                 level_count: None,
             },
             noise_standard_deviation: 0.7,
         },
-        key_switching: GadgetEncryptionConfig {
+        algorithm: BlindRotationAlgorithm::Classic,
+    }
+    .try_prepare()
+    .and_then(|parameters| {
+        parameters.try_with_key_switching(GadgetEncryptionConfig {
             decomposition: DecompositionConfig {
                 log_basis: DecompositionBaseLog::new(8),
                 level_count: None,
             },
             noise_standard_deviation: 0.7,
-        },
+        })
     })
     .unwrap();
     let context = TfheContext::<_, U32NttTable>::try_from_parameters(parameters).unwrap();
     let input_codec = RoundedCodec::new(4, context.parameters().external_lwe().cipher_modulus());
     let mut rng = StdRng::seed_from_u64(0xB201);
     let (client, server) = context
-        .try_generate_keys(BlindRotationConfig::Classic, None, &mut rng)
+        .try_generate_keys(BlindRotationAlgorithm::Classic, None, &mut rng)
         .unwrap();
     let public = context
         .parameters()

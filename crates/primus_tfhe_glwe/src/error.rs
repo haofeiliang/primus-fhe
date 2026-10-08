@@ -7,6 +7,9 @@ use primus_glwe::GlevParameterError;
 /// An invalid combination of GLWE-based TFHE parameters.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum TfheParameterError {
+    /// The numerical LWE description or its fresh encryption sampler is invalid.
+    #[error("invalid input LWE configuration")]
+    InputParameters(#[source] primus_tfhe::LweConfigError),
     /// The configured accumulator layout, encoding or samplers are invalid.
     #[error("invalid accumulator parameters")]
     AccumulatorParameters(#[source] primus_glwe::GlweParameterError),
@@ -160,6 +163,9 @@ pub enum CircuitBootstrapParameterError {
 /// Failure to generate ordinary or circuit-bootstrap keys for this TFHE family.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum KeyGenerationError {
+    /// Ordinary PBS/KS generation needs a KS domain; ring-output CBS can omit it.
+    #[error("this operation requires key-switching parameters")]
+    MissingKeySwitchingParameters,
     /// The supplied client secrets do not match the TFHE parameters.
     #[error(transparent)]
     ClientKey(#[from] TfheKeyError),
@@ -168,7 +174,7 @@ pub enum KeyGenerationError {
     SparseBootstrapping(#[from] SparseBootstrappingKeyError),
     /// The requested CBS configuration cannot be prepared.
     #[error(transparent)]
-    CircuitBootstrapParameters(#[from] CircuitBootstrapParameterError),
+    CbsParameters(#[from] CircuitBootstrapParameterError),
     /// Prepared CBS parameters belong to another accumulator domain.
     #[error("circuit-bootstrap parameters do not match this TFHE context")]
     IncompatibleCircuitBootstrapParameters,

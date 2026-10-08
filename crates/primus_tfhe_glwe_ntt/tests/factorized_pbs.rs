@@ -11,9 +11,9 @@ use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
 use primus_tfhe_glwe_ntt::{
-    BlindRotationConfig, ClientKey, FactorizedLookupTable, GadgetEncryptionConfig,
+    BlindRotationAlgorithm, ClientKey, FactorizedLookupTable, GadgetEncryptionConfig,
     InterleavedLookupTable, KeyGenerator, LookupTable, LookupTableError, NttFactorizedLookupTable,
-    PbsOrder, TfheContext, TfheParameters,
+    PbsOrder, PbsParameters, TfheContext,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -23,7 +23,7 @@ const DOMAIN: usize = 8;
 
 fn context(order: PbsOrder, distribution: SecretKeyDistr) -> TfheContext<u32, U32NttTable> {
     let modulus = BarrettModulus::new(Q);
-    let parameters = TfheParameters::try_new(
+    let parameters = PbsParameters::try_new(
         (LweParameters::new(LweDimension::new(8), 15, modulus, distribution, 0.7))
             .into_encryption_parameters(),
         primus_glwe::GgswParameters::try_with_basis(
@@ -78,12 +78,12 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
         let mut generator = KeyGenerator::new(&context);
         let client = ClientKey::generate(context.parameters(), &mut rng);
         let classic = generator
-            .try_generate_server_key(&client, BlindRotationConfig::Classic, None, &mut rng)
+            .try_generate_server_key(&client, BlindRotationAlgorithm::Classic, None, &mut rng)
             .unwrap();
         let sparse = generator
             .try_generate_server_key(
                 &client,
-                BlindRotationConfig::Sparse {
+                BlindRotationAlgorithm::Sparse {
                     copy_count: 3,
                     bucket_count: 4,
                 },
@@ -301,7 +301,7 @@ fn factorized_pbs_accepts_ternary_controls() {
         let codec = *mvb_codecs.output_codec();
         let mut rng = StdRng::seed_from_u64(0x0054_334d_5642);
         let (client, server) = context
-            .try_generate_keys(BlindRotationConfig::Classic, None, &mut rng)
+            .try_generate_keys(BlindRotationAlgorithm::Classic, None, &mut rng)
             .unwrap();
         let lut = context
             .compile_factorized_lookup_table_fn(&mvb_codecs, DOMAIN, 3, value)

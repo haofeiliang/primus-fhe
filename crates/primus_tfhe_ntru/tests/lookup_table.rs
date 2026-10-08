@@ -7,13 +7,15 @@ use primus_modulus::NativeModulus;
 use primus_ntru::NlevParameters;
 use primus_ntru::{NtruParameters, NtruSecretKey, SecretKeyDistr};
 use primus_poly::PolyLength;
+use primus_tfhe::BlindRotationAlgorithm;
 use primus_tfhe::PbsMessageConfig;
-use primus_tfhe_ntru::{ClientError, ClientKey, GadgetEncryptionConfig, TfheParameters};
+use primus_tfhe_ntru::{BlindRotationConfig, LweConfig};
+use primus_tfhe_ntru::{ClientError, ClientKey, GadgetEncryptionConfig, PbsParameters};
 
 const N: usize = 32;
 const LWE_DIMENSION: usize = 4;
 
-fn parameters_with_plaintext(t: u32) -> TfheParameters<u32, NativeModulus<u32>> {
+fn parameters_with_plaintext(t: u32) -> PbsParameters<u32, NativeModulus<u32>> {
     let modulus = NativeModulus::new();
 
     let accumulator = NtruParameters::new(
@@ -28,7 +30,7 @@ fn parameters_with_plaintext(t: u32) -> TfheParameters<u32, NativeModulus<u32>> 
         DecompositionBaseLog::new(8),
         None,
     );
-    TfheParameters::try_new(
+    PbsParameters::try_new(
         LweEncryptionParameters::new(
             LweDimension::new(LWE_DIMENSION),
             modulus,
@@ -123,29 +125,33 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
 #[test]
 fn codec_binding_checks_domains_without_preparing_an_unused_default() {
     use primus_modulus::BarrettModulus;
-    use primus_tfhe_ntru::{DecompositionConfig, LookupTableError, TfheClientError, TfheConfig};
+    use primus_tfhe_ntru::{DecompositionConfig, LookupTableError, TfheClientError};
     let basis = DecompositionConfig {
         log_basis: DecompositionBaseLog::new(2),
         level_count: None,
     };
-    let parameters = TfheParameters::try_from_config(TfheConfig {
-        external_lwe: LweEncryptionParameters::new(
-            LweDimension::new(LWE_DIMENSION),
-            BarrettModulus::new(257),
-            SecretKeyDistr::UniformBinary,
-            0.7,
-        ),
-        accumulator_modulus: BarrettModulus::new(41),
-        poly_length: PolyLength::new(N),
-        accumulator_secret_key_distr: SecretKeyDistr::gaussian(3.2),
-        blind_rotation: GadgetEncryptionConfig {
+    let parameters = BlindRotationConfig {
+        external_lwe: LweConfig {
+            dimension: LweDimension::new(LWE_DIMENSION),
+            cipher_modulus: BarrettModulus::new(257).into(),
+            secret_key_distr: SecretKeyDistr::UniformBinary,
+            noise_standard_deviation: 0.7,
+        },
+        acc_modulus: BarrettModulus::new(41).into(),
+        acc_poly_length: PolyLength::new(N),
+        bsk_secret_distr: SecretKeyDistr::gaussian(3.2),
+        bsk_gadget: GadgetEncryptionConfig {
             decomposition: basis,
             noise_standard_deviation: 0.7,
         },
-        key_switching: GadgetEncryptionConfig {
+        algorithm: BlindRotationAlgorithm::Classic,
+    }
+    .try_prepare()
+    .and_then(|parameters| {
+        parameters.try_with_key_switching(GadgetEncryptionConfig {
             decomposition: basis,
             noise_standard_deviation: 0.7,
-        },
+        })
     })
     .unwrap();
     let key = imported_key([1, 0, 1, 1], parameters.external_lwe().cipher_modulus());
@@ -250,7 +256,7 @@ fn codec_binding_checks_domains_without_preparing_an_unused_default() {
 fn cbs_ring_messages_do_not_require_a_return_codec() {
     use primus_encoding::{CodecError, PlaintextEmbedding, ScaledCodec};
     use primus_modulus::BarrettModulus;
-    use primus_tfhe_ntru::{DecompositionConfig, LookupTableError, TfheConfig};
+    use primus_tfhe_ntru::{DecompositionConfig, LookupTableError};
 
     let gadget = GadgetEncryptionConfig {
         decomposition: DecompositionConfig {
@@ -259,19 +265,21 @@ fn cbs_ring_messages_do_not_require_a_return_codec() {
         },
         noise_standard_deviation: 0.7,
     };
-    let parameters = TfheParameters::try_from_config(TfheConfig {
-        external_lwe: LweEncryptionParameters::new(
-            LweDimension::new(LWE_DIMENSION),
-            BarrettModulus::new(17u32),
-            SecretKeyDistr::UniformBinary,
-            0.7,
-        ),
-        accumulator_modulus: BarrettModulus::new(97),
-        poly_length: PolyLength::new(N),
-        accumulator_secret_key_distr: SecretKeyDistr::UniformBinary,
-        blind_rotation: gadget,
-        key_switching: gadget,
-    })
+    let parameters = BlindRotationConfig {
+        external_lwe: LweConfig {
+            dimension: LweDimension::new(LWE_DIMENSION),
+            cipher_modulus: BarrettModulus::new(17u32).into(),
+            secret_key_distr: SecretKeyDistr::UniformBinary,
+            noise_standard_deviation: 0.7,
+        },
+        acc_modulus: BarrettModulus::new(97).into(),
+        acc_poly_length: PolyLength::new(N),
+        bsk_secret_distr: SecretKeyDistr::UniformBinary,
+        bsk_gadget: gadget,
+        algorithm: BlindRotationAlgorithm::Classic,
+    }
+    .try_prepare()
+    .and_then(|parameters| parameters.try_with_key_switching(gadget))
     .unwrap();
 
     // At t=12, q=17 satisfies the domain but fails fixed-scale recovery;

@@ -139,7 +139,7 @@ impl<T: TorusFftValue, Table: FftTable> Fixture<T, Table> {
     /// Builds the fixed-seed request outside timing; key-generation order is
     /// preserved so the baseline keeps identical client and encryption randomness.
     fn new(
-        parameters: primus_tfhe_ntru_fourier::TfheParameters<T, PowOf2Modulus<T>>,
+        parameters: primus_tfhe_ntru_fourier::PbsParameters<T, PowOf2Modulus<T>>,
         input_codec: primus_encoding::RoundedCodec<T, PowOf2Modulus<T>>,
         workload: Workload,
         sparse: bool,

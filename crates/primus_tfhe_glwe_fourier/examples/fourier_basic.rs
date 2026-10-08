@@ -5,38 +5,26 @@
 //! required-features and the command above to tfhe-fft.
 //! Arithmetic profiles: guides/development/tfhe-parameters.md (not security presets).
 
-use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_fft::RustFftTable as Table;
-use primus_glwe::SecretKeyDistr;
-use primus_lattice::{GlweDimension, LweDimension};
-use primus_lwe::LweEncryptionParameters;
-use primus_modulus::NativeModulus;
-use primus_poly::PolyLength;
-use primus_tfhe::BlindRotationConfig;
-use primus_tfhe_glwe_fourier::{
-    DecompositionConfig, GadgetEncryptionConfig, PbsMessageConfig, PbsOrder, TfheConfig,
-    TfheContext, TfheParameters,
-};
+use primus_tfhe_glwe_fourier::{TfheContext, experimental};
 use rand::{SeedableRng, rngs::StdRng};
 
-// This example uses u64 coefficients with the explicit parameters below.
+// The paired experimental entry fixes u64 coefficients and the input/output domains.
 type Word = u64;
-const N: usize = 2048;
 
 fn main() {
-    let parameters = parameters();
+    let config = experimental::CLASSIC_PBS_U64;
+    let parameters = config.try_prepare().unwrap();
     let context = TfheContext::<Word, Table>::from_parameters(parameters);
 
     // Input and output messages both use t=32, independently of the keys.
-    let codecs = context
-        .parameters()
-        .pbs_codecs(PbsMessageConfig::new(32))
-        .unwrap();
+    // To change only the output domain, use config.messages.with_output_modulus(t_out) here.
+    let codecs = context.parameters().pbs_codecs(config.messages).unwrap();
 
     // Client: keep client_key secret; send only server_key to the server.
     let mut rng = StdRng::seed_from_u64(42);
     let (client_key, server_key) = context
-        .try_generate_keys(BlindRotationConfig::Classic, None, &mut rng)
+        .try_generate_keys(config.blind_rotation.algorithm, None, &mut rng)
         .unwrap();
     // Ordinary messages borrow only the external secret from the setup bundle.
     let external_secret = client_key.external_lwe_secret_key();
@@ -68,39 +56,4 @@ fn main() {
         assert_eq!(result, message % 4);
         println!("f({message}) = {result}");
     }
-}
-
-// Key parameters: n=866, N=2048; LWE and GLWE share the ciphertext modulus.
-// Noise sigmas below are in coefficient units; these are arithmetic examples, not security presets.
-fn parameters() -> TfheParameters<Word> {
-    let modulus = NativeModulus::<Word>::new();
-    let q = 2f64.powi(64); // Native u64 modulus, represented only for noise scaling.
-
-    TfheParameters::try_from_config(TfheConfig {
-        small_lwe: LweEncryptionParameters::new(
-            LweDimension::new(866),
-            modulus,
-            SecretKeyDistr::UniformBinary,
-            q * 2.046151696979124e-6,
-        ),
-        accumulator_dimension: GlweDimension::new(1),
-        poly_length: PolyLength::new(N),
-        accumulator_secret_key_distr: SecretKeyDistr::UniformBinary,
-        blind_rotation: GadgetEncryptionConfig {
-            decomposition: DecompositionConfig {
-                log_basis: DecompositionBaseLog::new(23),
-                level_count: Some(DecompositionLevelCount::new(1)),
-            },
-            noise_standard_deviation: (q * 2.845267479601915e-15).max(6.4),
-        },
-        key_switching: GadgetEncryptionConfig {
-            decomposition: DecompositionConfig {
-                log_basis: DecompositionBaseLog::new(3),
-                level_count: Some(DecompositionLevelCount::new(5)),
-            },
-            noise_standard_deviation: (q * 2.845267479601915e-15).max(6.4),
-        },
-        pbs_order: PbsOrder::BootstrapKeyswitch,
-    })
-    .unwrap()
 }

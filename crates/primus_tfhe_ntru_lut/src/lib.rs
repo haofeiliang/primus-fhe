@@ -53,6 +53,8 @@
 //! `fourier` is generic over an FFT table without choosing its implementation.
 //! Either backend feature also enables `HighPrecisionLookupTable::try_from_parameters`,
 //! which compiles with existing N/Q/q parameters without needing a context or keys.
+//! The same features enable `experimental` paired u64 key/chunk configurations;
+//! those arithmetic examples have no assessed security or failure-probability guarantee.
 //! `rustfft` / `tfhe-fft` enable `fourier` and the selected FFT implementation.
 //! Features are additive. `simd` propagates nightly SIMD to active arithmetic
 //! dependencies without activating an evaluator or FFT implementation.
@@ -67,7 +69,11 @@
 
 mod chunk;
 #[cfg(any(feature = "ntt", feature = "fourier"))]
+mod config;
+#[cfg(any(feature = "ntt", feature = "fourier"))]
 mod evaluation;
+#[cfg(any(feature = "ntt", feature = "fourier"))]
+pub mod experimental;
 #[cfg(feature = "fourier")]
 mod fourier;
 mod lookup_table;
@@ -75,6 +81,8 @@ mod lookup_table;
 mod ntt;
 
 pub use chunk::{ChunkFormat, ChunkFormatError};
+#[cfg(any(feature = "ntt", feature = "fourier"))]
+pub use config::HighPrecLutConfig;
 #[cfg(feature = "fourier")]
 pub use fourier::{FourierLookupTableEvaluator, FourierPublicLift};
 pub use lookup_table::{

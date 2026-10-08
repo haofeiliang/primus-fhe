@@ -13,8 +13,8 @@ use primus_ntt::{NttTable, U32NttTable};
 use primus_poly::{PolyLength, PolynomialOwned};
 use primus_tfhe::sparse::BucketMapError;
 use primus_tfhe_glwe_ntt::{
-    BlindRotationConfig, BlindRotationKey, ClientKey, GadgetEncryptionConfig, KeyGenerator,
-    PbsOrder, SparseBootstrappingKeyError as Error, TfheContext, TfheParameters,
+    BlindRotationAlgorithm, BlindRotationKey, ClientKey, GadgetEncryptionConfig, KeyGenerator,
+    PbsOrder, PbsParameters, SparseBootstrappingKeyError as Error, TfheContext,
 };
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
@@ -33,7 +33,7 @@ fn context(distribution: SecretKeyDistr) -> TfheContext<u32, U32NttTable> {
         0.7,
     );
     let basis = ApproxSignedBasis::new(Some(Q), DecompositionBaseLog::new(9), None);
-    let parameters = TfheParameters::try_new(
+    let parameters = PbsParameters::try_new(
         lwe.into_encryption_parameters(),
         primus_glwe::GgswParameters::try_with_basis(&glwe, basis.clone()).unwrap(),
         GadgetEncryptionConfig {
@@ -80,7 +80,7 @@ fn encrypted_selections_cover_the_support_once_with_dummy_per_bucket() {
         let BlindRotationKey::Sparse(key) = generator
             .try_generate_blind_rotation_key(
                 &client,
-                BlindRotationConfig::Sparse {
+                BlindRotationAlgorithm::Sparse {
                     copy_count,
                     bucket_count,
                 },
@@ -161,7 +161,7 @@ fn sparse_key_rejects_invalid_parameters_and_actual_secret_before_sampling() {
         assert_eq!(
             generator
                 .try_generate(
-                    BlindRotationConfig::Sparse {
+                    BlindRotationAlgorithm::Sparse {
                         copy_count,
                         bucket_count
                     },
@@ -181,7 +181,12 @@ fn sparse_key_rejects_invalid_parameters_and_actual_secret_before_sampling() {
     );
     let mut rng = StdRng::seed_from_u64(43);
     let expected = generator
-        .try_generate_server_key(&wrong_order, BlindRotationConfig::Classic, None, &mut rng)
+        .try_generate_server_key(
+            &wrong_order,
+            BlindRotationAlgorithm::Classic,
+            None,
+            &mut rng,
+        )
         .err()
         .unwrap();
     assert!(matches!(
@@ -198,7 +203,7 @@ fn sparse_key_rejects_invalid_parameters_and_actual_secret_before_sampling() {
         generator
             .try_generate_server_key(
                 &wrong_order,
-                BlindRotationConfig::Sparse {
+                BlindRotationAlgorithm::Sparse {
                     copy_count: 3,
                     bucket_count: 8
                 },
@@ -210,7 +215,7 @@ fn sparse_key_rejects_invalid_parameters_and_actual_secret_before_sampling() {
     );
     assert_eq!(rng.next_u64(), StdRng::seed_from_u64(43).next_u64());
 
-    let invalid_cbs = primus_tfhe_glwe_ntt::CircuitBootstrapConfig {
+    let invalid_cbs = primus_tfhe_glwe_ntt::CbsGadgetConfig {
         output: primus_tfhe_glwe_ntt::DecompositionConfig {
             log_basis: DecompositionBaseLog::new(8),
             level_count: Some(DecompositionLevelCount::new(usize::MAX)),
@@ -229,7 +234,7 @@ fn sparse_key_rejects_invalid_parameters_and_actual_secret_before_sampling() {
     assert!(
         generator
             .try_generate_circuit_bootstrap_keys(
-                BlindRotationConfig::Sparse {
+                BlindRotationAlgorithm::Sparse {
                     copy_count: 3,
                     bucket_count: 8
                 },
@@ -244,18 +249,16 @@ fn sparse_key_rejects_invalid_parameters_and_actual_secret_before_sampling() {
     assert!(matches!(
         generator.try_generate_server_key(
             &client,
-            BlindRotationConfig::Sparse {
+            BlindRotationAlgorithm::Sparse {
                 copy_count: 3,
                 bucket_count: 8
             },
             Some(invalid_cbs),
             &mut rng
         ),
-        Err(
-            primus_tfhe_glwe_ntt::KeyGenerationError::CircuitBootstrapParameters(
-                primus_tfhe_glwe_ntt::CircuitBootstrapParameterError::InvalidOutputBasis(_)
-            )
-        )
+        Err(primus_tfhe_glwe_ntt::KeyGenerationError::CbsParameters(
+            primus_tfhe_glwe_ntt::CircuitBootstrapParameterError::InvalidOutputBasis(_)
+        ))
     ));
     assert_eq!(rng.next_u64(), StdRng::seed_from_u64(43).next_u64());
 

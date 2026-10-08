@@ -10,7 +10,7 @@ use primus_ntt::MonomialNttTable;
 use primus_poly::{NttPolynomialIter, NttPolynomialIterMut, Polynomial};
 use primus_reduce::{ReduceSub, RingContext};
 use primus_tfhe::LweCiphertext;
-use primus_tfhe_ntru::{CircuitBootstrapParameters, LweReturnEvaluator};
+use primus_tfhe_ntru::{CbsParameters, LweReturnEvaluator};
 use primus_tfhe_ntru_ntt::{
     BlindRotationKey, CircuitBootstrapKey, OneHotCircuitBootstrapEvaluator, ServerKey, TfheContext,
 };
@@ -532,7 +532,7 @@ fn aggregate_rotation_control_to<T: FheUint>(
     selectors: &[T],
     factors: &[T],
     output: &mut NttNgswCiphertext<&mut [T]>,
-    parameters: &CircuitBootstrapParameters<T, BarrettModulus<T>>,
+    parameters: &CbsParameters<T, BarrettModulus<T>>,
     modulus: BarrettModulus<T>,
 ) {
     let n = parameters.poly_length().get();

@@ -19,8 +19,8 @@ use primus_integer::FheUint;
 use primus_ntt::{MonomialNttTable, U32NttTable, U64NttTable};
 use primus_tfhe_benchmarks::measurement::{Case as BenchmarkCase, Group, metadata};
 use primus_tfhe_glwe_ntt::{
-    BlindRotationConfig, BlindRotationKey, ClientKey, KeyGenerator, NttGlweBlindRotationWorkspace,
-    ServerKey, SparseGlweBlindRotationWorkspace, TfheContext,
+    BlindRotationAlgorithm, BlindRotationKey, ClientKey, KeyGenerator,
+    NttGlweBlindRotationWorkspace, ServerKey, SparseGlweBlindRotationWorkspace, TfheContext,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -62,11 +62,11 @@ impl<T: FheUint, Table: MonomialNttTable<ValueT = T>> Fixture<T, Table> {
         let context = TfheContext::<T, Table>::try_from_parameters(case.parameters(mode)).unwrap();
         let client = ClientKey::generate(context.parameters(), &mut StdRng::seed_from_u64(42));
         let choice = match mode.sparse_counts(case) {
-            Some((copy_count, bucket_count)) => BlindRotationConfig::Sparse {
+            Some((copy_count, bucket_count)) => BlindRotationAlgorithm::Sparse {
                 copy_count,
                 bucket_count,
             },
-            None => BlindRotationConfig::Classic,
+            None => BlindRotationAlgorithm::Classic,
         };
         let server = KeyGenerator::new(&context)
             .try_generate_server_key(&client, choice, None, &mut StdRng::seed_from_u64(4242))

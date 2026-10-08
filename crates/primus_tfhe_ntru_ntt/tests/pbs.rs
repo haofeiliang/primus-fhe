@@ -15,14 +15,14 @@ use primus_tfhe::{
     ProgrammableBootstrap, ProgrammableBootstrapInterleaved,
 };
 use primus_tfhe_ntru_ntt::{
-    BlindRotationConfig, GadgetEncryptionConfig, TfheContext, TfheParameters,
+    BlindRotationAlgorithm, GadgetEncryptionConfig, PbsParameters, TfheContext,
 };
 use rand::{SeedableRng, rngs::StdRng};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 const N: usize = 128;
 
-fn parameters<T: FheUint>(q: T, distr: SecretKeyDistr, dimension: usize) -> TfheParameters<T> {
+fn parameters<T: FheUint>(q: T, distr: SecretKeyDistr, dimension: usize) -> PbsParameters<T> {
     let modulus = BarrettModulus::new(q);
     let lwe = LweParameters::new(
         LweDimension::new(dimension),
@@ -44,7 +44,7 @@ fn parameters<T: FheUint>(q: T, distr: SecretKeyDistr, dimension: usize) -> Tfhe
         None,
     );
 
-    TfheParameters::try_new(
+    PbsParameters::try_new(
         lwe.into_encryption_parameters(),
         NlevParameters::try_with_basis(&acc, blind_rotation_basis).unwrap(),
         GadgetEncryptionConfig {
@@ -82,7 +82,7 @@ where
         .unwrap();
     let mut rng = StdRng::seed_from_u64(0x4d41_4e59_5042_5301);
     let (client_key, server_key) = context
-        .try_generate_keys(BlindRotationConfig::Classic, None, &mut rng)
+        .try_generate_keys(BlindRotationAlgorithm::Classic, None, &mut rng)
         .unwrap();
     assert_eq!(
         server_key.blind_rotation_key().input_distribution(),
@@ -106,7 +106,7 @@ where
     );
     // Re-import the generated coefficient secrets through the validation path.
     let imported = primus_tfhe_ntru_ntt::KeyGenerator::new(&context)
-        .try_generate_server_key(&client_key, BlindRotationConfig::Classic, None, &mut rng)
+        .try_generate_server_key(&client_key, BlindRotationAlgorithm::Classic, None, &mut rng)
         .unwrap();
     assert!(context.evaluator(&imported).is_ok());
     let public = context
@@ -554,7 +554,7 @@ fn check_first_controls<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
             generated.accumulator_ntru_secret_key().clone(),
         );
         let server = generator
-            .try_generate_server_key(&client, BlindRotationConfig::Classic, None, &mut rng)
+            .try_generate_server_key(&client, BlindRotationAlgorithm::Classic, None, &mut rng)
             .unwrap();
         let mut evaluator = context.evaluator(&server).unwrap();
         let decryptor = context

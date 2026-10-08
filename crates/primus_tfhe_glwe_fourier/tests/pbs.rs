@@ -7,12 +7,12 @@ use primus_lattice::{GlweDimension, LweDimension};
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_poly::PolyLength;
-use primus_tfhe::BlindRotationConfig;
+use primus_tfhe::BlindRotationAlgorithm;
 use primus_tfhe::{
     BivariateLookupTable, InterleavedLookupTable, LookupTable, Lwe, PbsMessageConfig,
     ProgrammableBootstrap, ProgrammableBootstrapInterleaved,
 };
-use primus_tfhe_glwe_fourier::{GadgetEncryptionConfig, PbsOrder, TfheContext, TfheParameters};
+use primus_tfhe_glwe_fourier::{GadgetEncryptionConfig, PbsOrder, PbsParameters, TfheContext};
 use rand::{SeedableRng, rngs::StdRng};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
@@ -20,7 +20,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 // N=256 keeps the ManyLUT half-plateau wider than that error budget.
 const N: usize = 256;
 
-fn parameters<T: TorusFftValue>(order: PbsOrder) -> TfheParameters<T> {
+fn parameters<T: TorusFftValue>(order: PbsOrder) -> PbsParameters<T> {
     let modulus = NativeModulus::new();
     let lwe = LweParameters::new(
         LweDimension::new(8),
@@ -42,7 +42,7 @@ fn parameters<T: TorusFftValue>(order: PbsOrder) -> TfheParameters<T> {
         DecompositionBaseLog::new(8),
         None,
     );
-    TfheParameters::try_new(
+    PbsParameters::try_new(
         lwe.into_encryption_parameters(),
         primus_glwe::GgswParameters::try_with_basis(&glwe, bsk).unwrap(),
         GadgetEncryptionConfig {
@@ -73,7 +73,7 @@ where
         context.parameters().cipher_modulus(),
     );
     let (client_key, server_key) = context
-        .try_generate_keys(BlindRotationConfig::Classic, None, &mut rng)
+        .try_generate_keys(BlindRotationAlgorithm::Classic, None, &mut rng)
         .unwrap();
     let encryptor = context
         .encryptor(client_key.external_lwe_secret_key(), &input_codec)

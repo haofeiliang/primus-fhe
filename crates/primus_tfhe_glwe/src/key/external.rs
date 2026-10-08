@@ -5,7 +5,7 @@ use primus_integer::FheUint;
 use primus_lwe::{LweSecretKey, LweSecretKeyRef};
 use primus_reduce::RingContext;
 
-use crate::{PbsOrder, TfheKeyError, TfheParameters};
+use crate::{PbsOrder, PbsParameters, TfheKeyError};
 
 /// The secret used by external LWE messages in one GLWE PBS order.
 ///
@@ -27,7 +27,7 @@ impl<'a, T: FheUint> ExternalLweSecretKey<'a, T> {
     /// coefficient magnitudes remain the raw LWE view's caller precondition.
     pub(crate) fn bind<M: RingContext<T>>(
         self,
-        parameters: &TfheParameters<T, M>,
+        parameters: &PbsParameters<T, M>,
     ) -> Result<LweSecretKeyRef<'a, T>, TfheKeyError> {
         let actual = match self {
             Self::SmallLwe(_) => PbsOrder::BootstrapKeyswitch,

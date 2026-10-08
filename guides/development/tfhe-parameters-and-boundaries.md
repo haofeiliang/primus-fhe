@@ -6,7 +6,7 @@
 
 以 q 表示外部 LWE 模数、Q 表示累加环模数，n 表示盲旋转控制秘密的 LWE 维数，N 表示环长度，k 表示 GLWE 秘密多项式数。
 
-已验证的参数、size 和工作区沿调用链传递 `LweDimension`、`GlweDimension`、`primus_poly::PolyLength`；分解参数使用 `DecompositionBaseLog` 和 `DecompositionLevelCount`。组合长度由拥有布局的构造边界检查。Raw 存储和数值内核使用整数，不从存储长度推断模数、秘密或表示身份。普通 GLWE/NTRU/CRT GLWE 构造及两家族 `TfheConfig` 均直接接收 `PolyLength`，无效环长归 `PolyLengthError`；上层只检查自身组合约束。
+已验证的参数、size 和工作区沿调用链传递 `LweDimension`、`GlweDimension`、`primus_poly::PolyLength`；分解参数使用 `DecompositionBaseLog` 和 `DecompositionLevelCount`。组合长度由拥有布局的构造边界检查。Raw 存储和数值内核使用整数，不从存储长度推断模数、秘密或表示身份。普通 GLWE/NTRU/CRT GLWE 构造及两家族 `BlindRotationConfig` 均直接接收 `PolyLength`，无效环长归 `PolyLengthError`；上层只检查自身组合约束。
 
 | 对象 | 独立选择 | 派生或绑定内容 |
 | --- | --- | --- |
@@ -18,8 +18,10 @@
 | `GadgetEncryptionConfig<D = DecompositionConfig>` | 同一计算密钥角色的 `decomposition` 与 `noise_standard_deviation` | 不自行检查；家族构造入口绑定对应模数和布局；GLWE 直接入口以预计算 `ApproxSignedBasis` 作为 D，无需重建 |
 | `GlevParameters` / `GgswParameters` | `GlweSize`、共享模数/采样状态、该运算的 basis | 固定秘密重量、basis 模数和 gadget 布局；无需普通消息 codec |
 | `NlevParameters` | 共享 NTRU 环/采样状态和该运算的 basis | basis 模数、N*L 布局和层序；无需普通消息 codec |
-| `TfheConfig` → `TfheParameters` | 家族特定的 LWE/环配置、BR/KS 各自的 `GadgetEncryptionConfig`、PBS order（GLWE） | 同域检查与派生返回布局；消息编码由程序/client 绑定；NTT/Fourier 表由后端 context 绑定 |
-| `CircuitBootstrapConfig` → `CircuitBootstrapParameters` | output、trace、scheme-switch 各自的 `DecompositionConfig` | 环大小/模数与密钥行噪声继承累加环，共享其采样状态；输出布局由 output basis 派生；interleaved 容量由程序绑定检查 |
+| `ModulusConfig<M>` / `LweConfig<M>` | 纯数值模数、维数、分布和噪声；具体 reducer 的静态类型 | setup 的标准 `TryFrom`/`try_prepare` 验证表示并准备 reducer/sampler，不进入在线内核 |
+| `PbsConfig` / `CbsConfig` / `HighPrecLutConfig` | 按操作组合共享 `BlindRotationConfig`，分别补 KS/消息、CBS gadget/输入域、one-hot/返回/表布局 | `try_prepare` 准备共享密钥域；编码/函数/几何仍由各自拥有的工厂和程序边界检查 |
+| `PbsConfig` / `CbsConfig` → `PbsParameters` | 家族特定的 LWE/环配置、BR 与操作所需 KS 各自的 `GadgetEncryptionConfig`、PBS order/输入准备（GLWE） | 同域检查与派生返回布局；消息编码由程序/client 绑定；NTT/Fourier 表由后端 context 绑定 |
+| `CbsGadgetConfig` → `CbsParameters` | output、trace、scheme-switch 各自的 `DecompositionConfig` | 环大小/模数与密钥行噪声继承累加环，共享其采样状态；输出布局由 output basis 派生；interleaved 容量由程序绑定检查 |
 | `HighPrecisionLookupTable::try_new` | PolyLength N、累加模数 Q、输入 Rounded codec 的 q/t、chunk 配置 | 完整枚举、编码/去重/选择计划，无密钥或 TFHE 参数；evaluator 绑定时核对 N/q/Q 和 CBS；`stats()` 与部分工作区估算用于比较分区 |
 | `ChunkFormat` | 统一位宽 tau | 派生 M、t=2M、mask 和最低位 chunk 在前的明文拆分/组合；机器字工具检查容量与 digit，编译器仍从 codec 推导同一格式，不限制输出总位宽为 u64 |
 | `LookupTableConfig` | 输入 chunk 数 c、输出 chunk 数 o、低位系数 chunk 数 d | `M=t/2`、每个多项式的有效系数数 `M^d`、每输出多项式数 `M^(c-d)`，以及完整存储长度 |
@@ -50,10 +52,10 @@ GLWE-TFHE 的 NTT/Fourier、classic/sparse 路径遵循相同的噪声来源：
 | --- | --- |
 | BR→KS 的新鲜外部 LWE 密文 | `small_lwe().noise_distribution()` |
 | 累加环加密、BR 密钥行、KS→BR 的新鲜外部 LWE 密文 | `blind_rotation_ggsw().noise_distribution()`；由 `blind_rotation.noise_standard_deviation` 构造 |
-| 两种 order 的环 KS 密钥行 | `glwe_key_switching().output().noise_distribution()`；由 `key_switching.noise_standard_deviation` 构造，KS basis 也独立 |
+| 两种 order 的环 KS 密钥行 | `glwe_key_switching()` 返回 Some 时的 `output().noise_distribution()`；由 `key_switching.noise_standard_deviation` 构造，KS basis 也独立 |
 | CBS trace 与 scheme-switch 密钥行 | `blind_rotation_ggsw().noise_distribution()`；共享 accumulator 的新鲜加密噪声与采样状态 |
 
-这里的新鲜密文噪声指私钥加密直接采样的误差；公钥加密还包含公钥自身及组合误差，不能只用一个 sampler 标准差描述总噪声。GLWE-TFHE 的 `TfheConfig` 和直接 `TfheParameters::try_new` 均显式接收独立 KS 标准差；构造输出 GLev 的采样状态时验证该值，失败返回 `TfheParameterError::KeySwitchingEncryption`。完整 server key 与独立 KS 材料生成均消费这组输出参数，在线求值无需额外分派。调整 KS 噪声不改变 BR、新鲜 LWE 或 CBS 的采样状态；入口只验证采样器支持条件，不认证参数的安全等级。
+这里的新鲜密文噪声指私钥加密直接采样的误差；公钥加密还包含公钥自身及组合误差，不能只用一个 sampler 标准差描述总噪声。GLWE-TFHE 的 `PbsConfig` 和直接 `PbsParameters::try_new` 均显式接收独立 KS 标准差；构造输出 GLev 的采样状态时验证该值，失败返回 `TfheParameterError::KeySwitchingEncryption`。完整 server key 与独立 KS 材料生成均消费这组输出参数，在线求值无需额外分派。调整 KS 噪声不改变 BR、新鲜 LWE 或 CBS 的采样状态；入口只验证采样器支持条件，不认证参数的安全等级。
 
 ## NTRU 普通与 gadget 参数组合
 
@@ -61,7 +63,9 @@ GLWE-TFHE 的 NTT/Fourier、classic/sparse 路径遵循相同的噪声来源：
 
 `NlevParameters::try_from_parts(Arc<NtruEncryptionParameters>, basis)` 检查 basis/Q 和 N*L；`NtruParameters::try_from_parts(shared_encryption, codec)` 检查 codec/Q，固定尺度恢复条件由 codec 自身保证。两者 `encryption_parameters()` 均借用同一状态。密钥生成、encoded/zero 加密只需加密参数；普通加解密仍使用含 codec 的参数。`try_with_basis` / `try_with_ntru_params` 是从普通参数派生 gadget 的便捷入口，只复制 Arc，不复制采样表。NLev 克隆仍复制其独立 basis；没有把秘密系数或 RNG 放入共享状态。
 
-TFHE 的 `TfheParameters::try_new(external_lwe, blind_rotation, key_switching)` 接收外部 `LweEncryptionParameters`、BR `NlevParameters` 和返回 KS 的 `GadgetEncryptionConfig`（分解配置与噪声）。`accumulator_ntru()` 借用 BR 内的 `NtruEncryptionParameters`，TFHE 不另存普通 accumulator 参数或 codec。构造时检查外部 binary/ternary 控制秘密、2N 可表示性，并在外部 q 下构造返回 KS basis 和采样状态。
+用户入口 `PbsConfig`、`CbsConfig` 和 `HighPrecLutConfig` 用纯数值常量组合实际所需角色，见[配套类型与常量](tfhe-parameters.md#scope-of-paired-parameter-entries)。`PbsParameters` 共享 BR 域并按需保存 KS 状态；GLWE BR→KS CBS 与 NTRU CBS/one-hot 不准备闲置返回 basis/sampler，GLWE KS→BR CBS 的 `CbsInput` 才携带输入 KS，高精度 LUT 显式加入返回配置。缺少 KS 的普通 PBS/KS 生成在消费 RNG 前返回 `KeyGenerationError::MissingKeySwitchingParameters`；绑定返回材料仍验证完整预期域。在线资源保留已有契约。
+
+TFHE 的高级 `PbsParameters::try_new(external_lwe, blind_rotation, key_switching)` 接收外部 `LweEncryptionParameters`、BR `NlevParameters` 和返回 KS 的 `GadgetEncryptionConfig`（分解配置与噪声）。`accumulator_ntru()` 借用 BR 内的 `NtruEncryptionParameters`，TFHE 不另存普通 accumulator 参数或 codec。构造时检查外部 binary/ternary 控制秘密、2N 可表示性，并在外部 q 下构造返回 KS basis 和采样状态。
 
 消息 t 和 codec 在 client、LUT/CBS 程序绑定时确定，密钥参数构造不检查共同 t；具体归属见[NTRU TFHE 的密钥域与消息程序](#ntru-tfhe-的密钥域与消息程序)。CBS trace/scheme-switch 通过 `try_with_new_basis` 从 BR 派生无 codec 的 NLev，共享已有 NTRU 环/采样状态；各 basis 与随机采样独立。构造分配、保留内存与在线加密的历史对比见[采样状态共享测量](workspaces-and-storage.md#ntru-parameter-sharing)。
 
@@ -128,16 +132,16 @@ PBS trait、四后端、Boolean 门、双输入打包、CBS、one-hot 与 MVB �
 
 ## GLWE TFHE 的密钥域与消息程序
 
-`TfheParameters` 不保存明文模数或 codec。`TfheConfig.small_lwe` 使用 `LweEncryptionParameters`；直接构造入口接受 small LWE core、`GgswParameters` 和返回 KS basis。`blind_rotation_ggsw()` 同时提供累加环布局与 BR gadget 配置。普通 LWE 仍用 `LweParameters` 绑定 codec，密钥生成传入其 `encryption_parameters()`。
+`PbsParameters` 不保存明文模数或 codec。`BlindRotationConfig.small_lwe` 使用数值 `LweConfig`；`PbsParameters::try_new` 直接接受 small LWE core、`GgswParameters` 和返回 KS basis。`blind_rotation_ggsw()` 同时提供累加环布局与 BR gadget 配置。普通 LWE 仍用 `LweParameters` 绑定 codec，密钥生成传入其 `encryption_parameters()`。
 
 | 数据或检查 | 唯一归属与使用时机 |
 | --- | --- |
 | small LWE 的 n、q、秘密分布、fresh noise；累加环 k、N、q 和采样状态 | codec-free 参数构造；检查 n≤kN、binary/ternary 控制秘密和模数配对 |
 | BR/环 KS basis 与密钥噪声 | TFHE 密钥参数；BR 使用 accumulator noise，环 KS 使用独立 key-switching noise |
-| CBS output/trace/SS basis、布局与继承的 accumulator noise | `CircuitBootstrapParameters`；不依赖输入明文模数 |
+| CBS output/trace/SS basis、布局与继承的 accumulator noise | `CbsParameters`；不依赖输入明文模数 |
 | Rounded 消息编码及 external fresh noise | client 工厂接收 `&RoundedCodec`，检查 codec 的 q；BR→KS 使用 small noise，KS→BR 使用 accumulator noise |
 | 普通环消息 Scaled 编码 | `accumulator_client(client, codec)` 一次绑定；复用 gadget 共享采样状态，不复制 Gaussian 预计算 |
-| CBS 输入与候选环消息编码准备 | `TfheParameters::circuit_bootstrap_codecs(t_in, t_ring)` 返回 Rounded 输入与 Scaled 环消息；两个明文域独立，共用 q=Q；不表示 gadget 输出 |
+| CBS 输入与候选环消息编码准备 | `PbsParameters::circuit_bootstrap_codecs(t_in, t_ring)` 返回 Rounded 输入与 Scaled 环消息；两个明文域独立，共用 q=Q；不表示 gadget 输出 |
 | 输入 t、编程域、单表/ManyLUT 的中心、输出编码和容量 | 普通 LUT compiler / factorized compiler；CBS 由 `compile_lookup_table(&input_codec)` 在 evaluator 构造时检查 |
 | online ciphertext 与所选程序的消息编码一致、实际噪声余量 | 调用方契约；raw 密文没有编码/噪声元数据，不能据布局判定 |
 
@@ -145,16 +149,16 @@ PBS trait、四后端、Boolean 门、双输入打包、CBS、one-hot 与 MVB �
 
 ## NTRU TFHE 的密钥域与消息程序
 
-`TfheConfig.external_lwe` 使用 `LweEncryptionParameters`；直接组合入口接受 external LWE core、BR `NlevParameters` 和 q 下的返回 KS 配置。`accumulator_ntru()` 只借用 BR gadget 内的 `NtruEncryptionParameters`，没有第二份普通参数或 codec。`NtruParameters::try_from_nlev` 在 accumulator client 绑定 Scaled codec 时共享 Arc 采样状态。
+`BlindRotationConfig.external_lwe` 使用数值 `LweConfig`；`PbsParameters::try_new` 直接接受 external LWE core、BR `NlevParameters` 和 q 下的返回 KS 配置。`accumulator_ntru()` 只借用 BR gadget 内的 `NtruEncryptionParameters`，没有第二份普通参数或 codec。`NtruParameters::try_from_nlev` 在 accumulator client 绑定 Scaled codec 时共享 Arc 采样状态。
 
 | 数据或检查 | 唯一归属与使用时机 |
 | --- | --- |
 | 外部 n、q、s 分布及 fresh noise；累加 N、Q、f 分布及 BR noise | 密钥参数构造；保持 binary/ternary 控制域、2N 可表示性，n 与 N、q 与 Q 相互独立 |
 | f→s 返回 key 的 basis 与 noise | 密钥参数与返回 key 构造，均在 q 下；目标 LWE 参数不再构造无用 codec |
-| CBS output/trace/SS basis、布局与继承的 accumulator noise | `CircuitBootstrapParameters`；scheme-switch key 继续绑定完整 output basis |
+| CBS output/trace/SS basis、布局与继承的 accumulator noise | `CbsParameters`；scheme-switch key 继续绑定完整 output basis |
 | Rounded 输入 t/q、默认或独立输出 t/Q | client/compiler 绑定；输入 q 不符拒绝；默认输出 codec 在 Q 无法构造时返回 `OutputEncoding` |
 | CBS 输入域和 ManyLUT 容量 | CBS LUT 编译/绑定；独立 CBS 参数只拥有 Q，输入 q 由后端绑定检查 |
-| CBS/one-hot 输入与候选环消息编码准备 | `TfheParameters::circuit_bootstrap_codecs(t_in, t_ring)` 仅准备 Rounded(t_in,q) 和 Scaled(t_ring,Q)，不准备无用的 Scaled(t_ring,q)；后续绑定仍检查实际资源组合 |
+| CBS/one-hot 输入与候选环消息编码准备 | `PbsParameters::circuit_bootstrap_codecs(t_in, t_ring)` 仅准备 Rounded(t_in,q) 和 Scaled(t_ring,Q)，不准备无用的 Scaled(t_ring,q)；后续绑定仍检查实际资源组合 |
 | one-hot 的 t=2M、W、stride、非空 guard 与存储长度 | `OneHotLookupTable::try_new(tfhe, cbs, &input_codec)`；后端支持 classic binary/ternary 与 sparse fixed-weight binary |
 | 高精度 chunk 位宽、数量、`M^d≤N`、表枚举和存储长度 | `HighPrecisionLookupTable::try_new(poly_length, ring_modulus, &input_codec, config, function)`；表保存 t/q/Q，evaluator 按表中 t 绑定 one-hot 并验证容量 |
 | 在线输入的实际编码和噪声、返回输出的 q 域 decoder | 调用方契约；表在 Q 编码，Q→q 仍为最近舍入，不重新编码 |
@@ -189,7 +193,7 @@ GLWE raw sparse BR 由既有 `SparseGlweBlindRotationWorkspace` 执行，调用 
 
 NTRU `BlindRotationKey` 持有 classic/sparse 材料、BR basis 与输入分布；`ServerKey` 再组合该 owner、返回密钥与可选 CBS 密钥。`BlindRotationKey::classic_controls()` 返回借用的 `ClassicControls`，sparse 返回 `None`。视图集中 NLEV initializer、首坐标 NLEV 的正/可选负 bit，以及后续 NGSW bit 的语义迭代器。BR 构造时选择 binary/ternary/sparse 及其 scratch，在线提升不再重新分派服务端密钥或调用可能在 sparse 下 panic 的 initializer。
 
-NTRU 的 BR、返回和 CBS 材料可分别生成和持有：`KeyGenerator::try_generate_blind_rotation_key(client, config, rng)` 需要两个秘密角色，`TfheParameters::try_generate_lwe_return_key` 需要完整返回配对，`try_generate_circuit_bootstrap_key` 只接收累加秘密。`ServerKey::new` / `into_parts` 移动各组件而不复制密文数组；独立生成可能重复转换累加秘密，完整成对生成仍复用已转换表示。
+NTRU 的 BR、返回和 CBS 材料可分别生成和持有：`KeyGenerator::try_generate_blind_rotation_key(client, config, rng)` 需要两个秘密角色，`PbsParameters::try_generate_lwe_return_key` 需要完整返回配对，`try_generate_circuit_bootstrap_key` 只接收累加秘密。`ServerKey::new` / `into_parts` 移动各组件而不复制密文数组；独立生成可能重复转换累加秘密，完整成对生成仍复用已转换表示。
 
 高精度公开提升另由 `KeyGenerator::try_generate_public_lift_key(secret, &nlev_parameters, rng)` 按需生成 NLEV[1]，只接收累加秘密和独立 basis/噪声参数，不存入普通 ServerKey。查表 `try_new(context, server_key, table)` 按需复用 classic initializer；独立材料由 `try_with_public_lift(context, server_key, table, public_lift)` 显式传入。高级 `try_from_parts` 也按需回退到 classic initializer；sparse 仅在编译表含 `Lift` 时需要独立提升材料。表可用原始 N/Q/codec 离线编译，也可在 LUT 后端 feature 下用 `HighPrecisionLookupTable::try_from_parameters` 提取 N/Q/q，编译前检查 codec 的外部 q。基础 TFHE 家族不依赖 LUT。
 
@@ -202,7 +206,7 @@ NTRU 的 BR、返回和 CBS 材料可分别生成和持有：`KeyGenerator::try_
 
 BR 不依赖返回 basis；位控制也不绑定外部 q。外部模数由输入程序和返回材料绑定。独立 BR/CBS 生成不检查 f 在返回 q 下的幅度界，完整 PBS 及返回密钥生成保留该要求。各入口检查一次，在线不再解包可选材料或扫描秘密。相同布局/模数不能证明独立材料的实际秘密身份。
 
-四个后端的 `KeyGenerator::try_generate_server_key(client, blind_rotation, cbs, rng)` 在生成边界按 `BlindRotationConfig::{Classic, Sparse { copy_count, bucket_count }}` 选择材料。配置不改变秘密分布，也不决定 CBS、返回或提升的所有权；不支持的秘密或匹配失败仍返回原有错误，不回退到 classic。独立 BR 推荐入口为 `try_generate_blind_rotation_key(client, blind_rotation, rng)`，复用同一配置且不生成返回/CBS 材料；需要具体算法材料时仍可调用 classic/sparse 专用入口。GLWE 组合 BR 类型与 NTRU 同名为 `BlindRotationKey`；具体底层密文和环 KS/LWE 返回类型保留不同表示与域。成对生成 `context.try_generate_keys(blind_rotation, cbs, rng)` / `generator.try_generate(blind_rotation, cbs, rng)` 使用同一显式算法选择，并复用转换后的秘密。GLWE 复用家族客户端采样入口；NTRU 保留拒绝采样得到的变换及逆，避免重新转换。新生成路径不重复扫描采样器已保证的普通密钥条件；NTRU 返回 q 的幅度条件由采样器上界保证，否则检查实际接受的 f。独立环输出 BR/CBS 不承担返回 q 限制。CBS、sparse 配置及存储界在秘密采样前准备，matching 只重试公开 map。现有 `Option<CircuitBootstrapConfig>` 与独立 lift 已能表达实际需求，不引入材料全排列配置或通用 owner。
+四个后端的 `KeyGenerator::try_generate_server_key(client, blind_rotation, cbs, rng)` 在生成边界按 `BlindRotationAlgorithm::{Classic, Sparse { copy_count, bucket_count }}` 选择材料。配置不改变秘密分布，也不决定 CBS、返回或提升的所有权；不支持的秘密或匹配失败仍返回原有错误，不回退到 classic。独立 BR 推荐入口为 `try_generate_blind_rotation_key(client, blind_rotation, rng)`，复用同一配置且不生成返回/CBS 材料；需要具体算法材料时仍可调用 classic/sparse 专用入口。GLWE 组合 BR 类型与 NTRU 同名为 `BlindRotationKey`；具体底层密文和环 KS/LWE 返回类型保留不同表示与域。成对生成 `context.try_generate_keys(blind_rotation, cbs, rng)` / `generator.try_generate(blind_rotation, cbs, rng)` 使用同一显式算法选择，并复用转换后的秘密。GLWE 复用家族客户端采样入口；NTRU 保留拒绝采样得到的变换及逆，避免重新转换。新生成路径不重复扫描采样器已保证的普通密钥条件；NTRU 返回 q 的幅度条件由采样器上界保证，否则检查实际接受的 f。独立环输出 BR/CBS 不承担返回 q 限制。CBS、sparse 配置及存储界在秘密采样前准备，matching 只重试公开 map。现有 `Option<CbsGadgetConfig>` 与独立 lift 已能表达实际需求，不引入材料全排列配置或通用 owner。
 
 四后端的环输出成对入口 `try_generate_circuit_bootstrap_keys(blind_rotation, cbs_config, rng)` 返回 `CircuitBootstrapServerKey`：CBS 必需，BR/CBS 共用一次主秘密变换；GLWE 仅 KS→BR 生成输入 KS，NTRU 与 GLWE BR→KS 不生成返回密钥。NTRU 成组生成不检查 f 的返回 q 幅度界；仅做原有环可逆性/数值接受条件。`server.bootstrap_resources(context)` 复用现有资源边界，仅绑定 BR/输入准备，CBS evaluator 再绑定非可选的 circuit key。`new` / `into_parts` 移动已有组件，不证明实际秘密身份；普通 PBS/MVB 及高精度 LUT 仍使用含必要返回路径的 `ServerKey`。
 
@@ -275,11 +279,11 @@ NTT 与 native Fourier 的 reverse trace 归一化契约不同：前者使用模
 | `SecretKeySampler::validate_modulus` | 秘密支持范围是否适配输出模数；`T::MAX` 作为 modulus-minus-one 表示 native | `SecretKeySamplerError::ModulusTooSmall`，携带支持上界和 modulus-minus-one |
 | `LweEncryptionParameters::try_new` | LWE 维数、秘密支持集/重量和噪声；不构造 codec | `LweParameterError` 的 `SecretKey` / `Noise` |
 | `LweParameters::try_new` / `GlweParameters::try_new` / `NtruParameters::try_new` | 布局、codec、秘密支持集/重量、噪声 sampler；复用上述检查 | 家族各自的 `*ParameterError`；`SecretKey` 保留 `SecretKeySamplerError`，`Noise` 保留 `GaussianError` |
-| `TfheParameters::try_from_config` / `try_new` | BR/KS 域及分解、控制秘密类别、维数容量、2N 可表示性 | `TfheParameterError`；累加环错误为 `AccumulatorParameters`，NTRU 返回加密错误为 `KeySwitchingEncryption` |
+| `PbsConfig::try_prepare` / `CbsConfig::try_prepare` / `PbsParameters::try_new` | BR/KS 域及分解、控制秘密类别、维数容量、2N 可表示性 | `TfheParameterError`；纯数值输入错误为 `InputParameters`、NTRU 的 Q 表示错误为 `AccumulatorModulus`，累加环错误为 `AccumulatorParameters`，NTRU 返回加密错误为 `KeySwitchingEncryption` |
 | 两家族 client / `lookup_table_compiler(&codecs)` / CBS evaluator | 输入 codec 与密钥 q 一致；独立 NTRU CBS 编译器只拥有 Q，绑定时核对 q | `ClientError::CodecModulusMismatch` / `LookupTableError::InputModulusMismatch` |
 | `LookupTableCompiler::try_new` / `try_with_output_codec` | 输出 codec 的密文模数等于累加模数；保存独立编码状态 | `LookupTableError::OutputModulusMismatch` |
 | `LookupTableCompiler::compile_*` | 程序容量、切片长度、旋转中心与输出范围；复用原始 LUT 编译内核 | `LookupTableError` |
-| `CircuitBootstrapParameters::try_from_config` / `try_new` | output/trace/SS basis、环布局和组合长度；trace/SS 噪声。两家族消息容量均由 CBS LUT 编译检查 | `CircuitBootstrapParameterError`，`EncryptionParameters` 标明 key role 和原错误 |
+| `CbsParameters::try_from_config` / `try_new` | output/trace/SS basis、环布局和组合长度；trace/SS 噪声。两家族消息容量均由 CBS LUT 编译检查 | `CircuitBootstrapParameterError`，`EncryptionParameters` 标明 key role 和原错误 |
 | Context / key generation / evaluator | 表、秘密实际可用性、选定能力及密钥布局绑定 | 各层已有的 context/key/evaluation errors |
 
 底层 `new` 是在相同校验错误下主动 panic 的便捷形式，适合已知有效的常量配置；其实现复用 `try_new`，没有第二套校验。`GlweEncryptionParameters` 不持有布局，固定重量检查由普通/gadget 参数与布局的组合入口或实际采样入口完成。公开 sampler 接受不同输出长度时仍需检查实际长度。
@@ -310,7 +314,7 @@ RNS GLWE 提供 `CrtGlweParameters::try_new`，其 `new` 是调用同一校验�
 
 ## 自定义 CBS 程序
 
-`CircuitBootstrapParameters::compile_lookup_table_fn`（或 `_slice`）在完整 unsigned
+`CbsParameters::compile_lookup_table_fn`（或 `_slice`）在完整 unsigned
 Rounded 前半区编译一个整数函数 F。各层包含 `g_j * F(m) mod Q`，交错 padding
 由输出 basis 决定。`CircuitBootstrapLookupTable` 保留该 basis 和已编译的 q/Q/N 域；
 四个后端的 `CircuitBootstrapEvaluator::try_with_lookup_table` 在 setup 时验证配对。

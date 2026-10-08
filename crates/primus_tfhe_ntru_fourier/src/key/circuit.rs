@@ -3,9 +3,9 @@
 use primus_fft::{FftTable, TorusFftValue};
 
 use crate::{
-    BlindRotationConfig, BlindRotationKey, BootstrapResources, CircuitBootstrapConfig,
-    CircuitBootstrapKey, CircuitBootstrapParameters, ClientKey, KeyGenerationError, KeyGenerator,
-    TfheContext, TfheEvaluationError,
+    BlindRotationAlgorithm, BlindRotationKey, BootstrapResources, CbsGadgetConfig, CbsParameters,
+    CircuitBootstrapKey, ClientKey, KeyGenerationError, KeyGenerator, TfheContext,
+    TfheEvaluationError,
 };
 
 /// Evaluation material for ring-output circuit bootstrapping.
@@ -86,14 +86,12 @@ where
     /// key is generated, and the accepted ring secret is not checked against q.
     pub fn try_generate_circuit_bootstrap_keys<R: rand::Rng + rand::CryptoRng>(
         &mut self,
-        blind_rotation: BlindRotationConfig,
-        circuit_bootstrap: CircuitBootstrapConfig,
+        blind_rotation: BlindRotationAlgorithm,
+        circuit_bootstrap: CbsGadgetConfig,
         rng: &mut R,
     ) -> Result<(ClientKey<T>, CircuitBootstrapServerKey<T>), KeyGenerationError> {
-        let parameters = CircuitBootstrapParameters::try_from_config(
-            self.context.parameters(),
-            circuit_bootstrap,
-        )?;
+        let parameters =
+            CbsParameters::try_from_config(self.context.parameters(), circuit_bootstrap)?;
         let sparse_layout = self.prepare_blind_rotation(blind_rotation)?;
         let (client, transformed) = self.generate_client_key_with_main(rng)?;
         let blind_rotation =
@@ -122,8 +120,8 @@ where
     /// Inherits [`KeyGenerator::try_generate_circuit_bootstrap_keys`]'s contracts.
     pub fn try_generate_circuit_bootstrap_keys<R: rand::Rng + rand::CryptoRng>(
         &self,
-        blind_rotation: BlindRotationConfig,
-        circuit_bootstrap: CircuitBootstrapConfig,
+        blind_rotation: BlindRotationAlgorithm,
+        circuit_bootstrap: CbsGadgetConfig,
         rng: &mut R,
     ) -> Result<(ClientKey<T>, CircuitBootstrapServerKey<T>), KeyGenerationError> {
         KeyGenerator::new(self).try_generate_circuit_bootstrap_keys(

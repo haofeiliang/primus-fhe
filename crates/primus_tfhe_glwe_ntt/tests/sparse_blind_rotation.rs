@@ -13,8 +13,8 @@ use primus_poly::{PolyLength, Polynomial};
 use primus_tfhe::PbsMessageConfig;
 use primus_tfhe_glwe_ntt::{
     ClientKey, GadgetEncryptionConfig, KeyGenerator, NttGlweBlindRotationWorkspace,
-    NttGlweBootstrappingKey, PbsOrder, SparseGlweBlindRotationWorkspace, TfheContext,
-    TfheParameters,
+    NttGlweBootstrappingKey, PbsOrder, PbsParameters, SparseGlweBlindRotationWorkspace,
+    TfheContext,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -82,7 +82,7 @@ fn sparse_rotation_matches_direct_phase_and_classic_with_reused_scratch() {
                 Some(DecompositionLevelCount::new(3)),
             )
         };
-        let parameters = TfheParameters::try_new(
+        let parameters = PbsParameters::try_new(
             lwe.into_encryption_parameters(),
             primus_glwe::GgswParameters::try_with_basis(&glwe, basis.clone()).unwrap(),
             GadgetEncryptionConfig {

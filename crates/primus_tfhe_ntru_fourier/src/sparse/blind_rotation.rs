@@ -1,7 +1,7 @@
 //! Bucket aggregation and reusable sparse blind-rotation workspace.
 
 use super::SparseNtruBootstrappingKey;
-use crate::TfheParameters;
+use crate::PbsParameters;
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
 use primus_lattice::{
@@ -21,7 +21,7 @@ pub(crate) struct SparseWorkspace<T: TorusFftValue> {
 
 impl<T: TorusFftValue> SparseWorkspace<T> {
     pub(crate) fn new<LM: primus_reduce::RingContext<T>>(
-        parameters: &TfheParameters<T, LM>,
+        parameters: &PbsParameters<T, LM>,
     ) -> Self {
         Self {
             exponents: vec![0; parameters.external_lwe_dimension().get()],
@@ -44,7 +44,7 @@ pub struct SparseBlindRotationPairWorkspace<T: TorusFftValue> {
 
 impl<T: TorusFftValue> SparseBlindRotationPairWorkspace<T> {
     pub(crate) fn new<LM: primus_reduce::RingContext<T>>(
-        parameters: &TfheParameters<T, LM>,
+        parameters: &PbsParameters<T, LM>,
     ) -> Self {
         Self {
             exponents: vec![0; parameters.external_lwe_dimension().get()],

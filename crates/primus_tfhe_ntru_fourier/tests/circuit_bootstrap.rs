@@ -14,8 +14,8 @@ use primus_ntru::{FourierNgswCiphertext, FourierNtruSecretKey, NtruParameters, S
 use primus_poly::{PolyLength, Polynomial};
 use primus_tfhe::PbsMessageConfig;
 use primus_tfhe_ntru_fourier::{
-    BlindRotationConfig, CircuitBootstrapConfig, CircuitBootstrapEvaluator, DecompositionConfig,
-    GadgetEncryptionConfig, TfheContext, TfheParameters,
+    BlindRotationAlgorithm, CbsGadgetConfig, CircuitBootstrapEvaluator, DecompositionConfig,
+    GadgetEncryptionConfig, PbsParameters, TfheContext,
 };
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 
@@ -44,7 +44,7 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr, sparse: bool) {
         None,
     );
 
-    let tfhe = TfheParameters::try_new(
+    let tfhe = PbsParameters::try_new(
         lwe.into_encryption_parameters(),
         NlevParameters::try_with_basis(&accumulator, blind_rotation_basis).unwrap(),
         GadgetEncryptionConfig {
@@ -61,7 +61,7 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr, sparse: bool) {
     let mut rng = StdRng::seed_from_u64(0x004e_5454_5f43_4253);
     // Three gadget levels exercise multiple scales and an internal padding slot.
     let levels = 3;
-    let cbs_config = CircuitBootstrapConfig {
+    let cbs_config = CbsGadgetConfig {
         output: DecompositionConfig {
             log_basis: DecompositionBaseLog::new(8),
             level_count: Some(DecompositionLevelCount::new(levels)),
@@ -78,12 +78,12 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr, sparse: bool) {
     // CBS-only material can be generated and bound before any return key exists.
     let mut generator = primus_tfhe_ntru_fourier::KeyGenerator::new(&context);
     let blind_rotation = if sparse {
-        BlindRotationConfig::Sparse {
+        BlindRotationAlgorithm::Sparse {
             copy_count: 3,
             bucket_count: 8,
         }
     } else {
-        BlindRotationConfig::Classic
+        BlindRotationAlgorithm::Classic
     };
     let (client, ring_server) = generator
         .try_generate_circuit_bootstrap_keys(blind_rotation, cbs_config, &mut rng)
@@ -404,14 +404,13 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
 #[test]
 fn independent_cbs_material_does_not_require_a_return_key() {
     use primus_tfhe_ntru_fourier::{
-        CircuitBootstrapParameters, ClientKey, KeyGenerator, OneHotCircuitBootstrapEvaluator,
-        TfheKeyError,
+        CbsParameters, ClientKey, KeyGenerator, OneHotCircuitBootstrapEvaluator, TfheKeyError,
     };
     let full = DecompositionConfig {
         log_basis: DecompositionBaseLog::new(4),
         level_count: None,
     };
-    let cbs_config = CircuitBootstrapConfig {
+    let cbs_config = CbsGadgetConfig {
         output: DecompositionConfig {
             log_basis: DecompositionBaseLog::new(4),
             level_count: Some(DecompositionLevelCount::new(1)),
@@ -419,47 +418,52 @@ fn independent_cbs_material_does_not_require_a_return_key() {
         trace: full,
         scheme_switch: full,
     };
-    let config = primus_tfhe_ntru_fourier::TfheConfig {
-        external_lwe: primus_lwe::LweEncryptionParameters::new(
-            LweDimension::new(2),
-            primus_modulus::PowOf2Modulus::new(16u32),
-            SecretKeyDistr::UniformBinary,
-            0.7,
-        ),
-        accumulator_modulus: primus_modulus::NativeModulus::<u32>::new(),
-        poly_length: PolyLength::new(32),
-        accumulator_secret_key_distr: SecretKeyDistr::gaussian(3.2),
-        blind_rotation: GadgetEncryptionConfig {
-            decomposition: full,
-            noise_standard_deviation: 0.7,
-        },
-        key_switching: GadgetEncryptionConfig {
-            decomposition: DecompositionConfig {
-                log_basis: DecompositionBaseLog::new(2),
-                level_count: None,
+    use primus_tfhe_ntru_fourier::{BlindRotationConfig, CbsConfig, LweConfig, ModulusConfig};
+    let config = CbsConfig::<u32, primus_modulus::PowOf2Modulus<u32>> {
+        blind_rotation: BlindRotationConfig {
+            external_lwe: LweConfig {
+                dimension: LweDimension::new(2),
+                cipher_modulus: ModulusConfig::Explicit(16u32),
+                secret_key_distr: SecretKeyDistr::UniformBinary,
+                noise_standard_deviation: 0.7,
             },
-            noise_standard_deviation: 0.7,
+            acc_modulus: ModulusConfig::Native,
+            acc_poly_length: PolyLength::new(32),
+            bsk_secret_distr: SecretKeyDistr::gaussian(3.2),
+            bsk_gadget: GadgetEncryptionConfig {
+                decomposition: full,
+                noise_standard_deviation: 0.7,
+            },
+            algorithm: BlindRotationAlgorithm::Classic,
         },
+        gadget: cbs_config,
+        input_modulus: 4,
+    };
+    let return_config = GadgetEncryptionConfig {
+        decomposition: DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(2),
+            level_count: None,
+        },
+        noise_standard_deviation: 0.7,
     };
     // Generated keys also need the q bound when the sampler support is wider.
     // Fixed seeds cover both rejection and an accepted sample below that support bound.
     for (q, accepted) in [(16u32, false), (64, true)] {
-        let mut candidate = config.clone();
-        candidate.accumulator_secret_key_distr = SecretKeyDistr::gaussian(12.8);
-        candidate.external_lwe = primus_lwe::LweEncryptionParameters::new(
-            LweDimension::new(2),
-            primus_modulus::PowOf2Modulus::new(q),
-            SecretKeyDistr::UniformBinary,
-            0.7,
-        );
+        let mut candidate = config;
+        candidate.blind_rotation.bsk_secret_distr = SecretKeyDistr::gaussian(12.8);
+        candidate.blind_rotation.external_lwe.cipher_modulus = ModulusConfig::Explicit(q);
         let candidate = TfheContext::<_, primus_fft::RustFftTable, _>::from_parameters(
-            TfheParameters::try_from_config(candidate).unwrap(),
+            candidate
+                .try_prepare()
+                .unwrap()
+                .try_with_key_switching(return_config)
+                .unwrap(),
         );
         let mut generator = KeyGenerator::new(&candidate);
         let mut sample_rng = StdRng::seed_from_u64(42);
         let (sample, ring_server) = generator
             .try_generate_circuit_bootstrap_keys(
-                BlindRotationConfig::Classic,
+                BlindRotationAlgorithm::Classic,
                 cbs_config,
                 &mut sample_rng,
             )
@@ -479,7 +483,7 @@ fn independent_cbs_material_does_not_require_a_return_key() {
             .all(|s| s.unsigned_abs() < q);
         assert_eq!(fits, accepted);
         let result = generator.try_generate(
-            BlindRotationConfig::Classic,
+            BlindRotationAlgorithm::Classic,
             None,
             &mut StdRng::seed_from_u64(42),
         );
@@ -490,7 +494,8 @@ fn independent_cbs_material_does_not_require_a_return_key() {
             ),)
         );
     }
-    let parameters = TfheParameters::try_from_config(config).unwrap();
+    let parameters = config.try_prepare().unwrap();
+    assert!(parameters.key_switching_lwe().is_none());
     let context = TfheContext::<_, primus_fft::RustFftTable, _>::from_parameters(parameters);
     let input_codec = RoundedCodec::new(4, context.parameters().external_lwe().cipher_modulus());
     let mut f = vec![0; 32];
@@ -507,18 +512,37 @@ fn independent_cbs_material_does_not_require_a_return_key() {
     let mut untouched = StdRng::seed_from_u64(0x4342535f4f4e4c59);
     assert_eq!(
         context
+            .try_generate_keys(BlindRotationAlgorithm::Classic, None, &mut rng)
+            .err(),
+        Some(primus_tfhe_ntru::KeyGenerationError::MissingKeySwitchingParameters)
+    );
+    assert_eq!(
+        context
             .parameters()
             .try_generate_lwe_return_key(&client, &mut rng)
             .err(),
-        Some(TfheKeyError::AccumulatorSecretOutsideLweModulus)
+        Some(primus_tfhe_ntru::KeyGenerationError::MissingKeySwitchingParameters)
+    );
+    // Adding only return state restores the original q-magnitude check.
+    let returning = context
+        .parameters()
+        .clone()
+        .try_with_key_switching(return_config)
+        .unwrap();
+    assert_eq!(
+        returning
+            .try_generate_lwe_return_key(&client, &mut rng)
+            .err(),
+        Some(primus_tfhe_ntru::KeyGenerationError::ClientKey(
+            TfheKeyError::AccumulatorSecretOutsideLweModulus
+        ))
     );
     assert_eq!(rng.random::<u64>(), untouched.random::<u64>());
     let mut generator = KeyGenerator::new(&context);
     let br = generator
         .try_generate_classic_blind_rotation_key(&client, &mut rng)
         .unwrap();
-    let cbs_parameters =
-        CircuitBootstrapParameters::try_from_config(context.parameters(), cbs_config).unwrap();
+    let cbs_parameters = CbsParameters::try_from_config(context.parameters(), cbs_config).unwrap();
     let (_, accumulator) = client.into_parts();
     let circuit = generator
         .try_generate_circuit_bootstrap_key(&accumulator, cbs_parameters, &mut rng)

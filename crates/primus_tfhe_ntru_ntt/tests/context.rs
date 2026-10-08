@@ -10,7 +10,7 @@ use primus_ntru::{NtruParameters, SecretKeyDistr};
 use primus_ntt::{NttTable, U32NttTable};
 use primus_poly::PolyLength;
 use primus_tfhe_ntru_ntt::{
-    BlindRotationConfig, GadgetEncryptionConfig, TfheContext, TfheEvaluationError, TfheParameters,
+    BlindRotationAlgorithm, GadgetEncryptionConfig, PbsParameters, TfheContext, TfheEvaluationError,
 };
 use rand::{SeedableRng, rngs::StdRng};
 use std::error::Error;
@@ -24,7 +24,7 @@ fn parameters(
     cipher_modulus: u32,
     bootstrapping_log_basis: u32,
     key_switching_log_basis: u32,
-) -> TfheParameters<u32> {
+) -> PbsParameters<u32> {
     let modulus = BarrettModulus::new(cipher_modulus);
     let external_lwe = LweParameters::new(
         LweDimension::new(LWE_DIMENSION),
@@ -46,7 +46,7 @@ fn parameters(
         None,
     );
 
-    TfheParameters::try_new(
+    PbsParameters::try_new(
         external_lwe.into_encryption_parameters(),
         NlevParameters::try_with_basis(&accumulator, blind_rotation_basis).unwrap(),
         GadgetEncryptionConfig {
@@ -71,7 +71,7 @@ fn rejects_server_keys_with_same_layout_but_different_bases_or_modulus() {
     let context = TfheContext::try_new(original, table).unwrap();
     let mut rng = StdRng::seed_from_u64(0x4e54_5255_4241_5349);
     let (_, server_key) = context
-        .try_generate_keys(BlindRotationConfig::Classic, None, &mut rng)
+        .try_generate_keys(BlindRotationAlgorithm::Classic, None, &mut rng)
         .unwrap();
     assert!(server_key.circuit_bootstrap_key().is_none());
     assert!(context.evaluator(&server_key).is_ok());
@@ -93,10 +93,15 @@ fn rejects_server_keys_with_same_layout_but_different_bases_or_modulus() {
             context.parameters().blind_rotation().nlev_len()
         );
         assert_eq!(
-            candidate.key_switching_basis().decompose_length().get(),
+            candidate
+                .key_switching_basis()
+                .expect("PBS parameters include key switching")
+                .decompose_length()
+                .get(),
             context
                 .parameters()
                 .key_switching_basis()
+                .expect("PBS parameters include key switching")
                 .decompose_length()
                 .get()
         );
@@ -179,7 +184,7 @@ fn construction_errors_preserve_transform_sources() {
     let error = KeyGenerator::new(&context)
         .try_generate_server_key(
             &client,
-            BlindRotationConfig::Classic,
+            BlindRotationAlgorithm::Classic,
             None,
             &mut StdRng::seed_from_u64(42),
         )

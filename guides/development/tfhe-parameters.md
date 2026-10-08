@@ -2,6 +2,8 @@
 
 These profiles are reproducible functional and performance fixtures. They have no security or failure-probability assessment. Two fixed seeds establish observations, not a probabilistic guarantee. Shared geometry does not make NTT, Fourier, GLWE and NTRU equally secure or their costs directly comparable.
 
+Inventory reviewed on 2026-10-08 against source revision `9a80c506`. The numerical choices below are local arithmetic fixtures, versioned by their source revision. Historical measurements retain their own dates; this inventory review did not rerun the numerical matrix. Construction validity, sampled functional correctness, security estimates and decryption-failure bounds are separate evidence.
+
 Validation and benchmark constructors live in [benchmark parameters](../../benchmarks/tfhe/src/parameters/mod.rs), split into [GLWE](../../benchmarks/tfhe/src/parameters/glwe.rs) and [NTRU](../../benchmarks/tfhe/src/parameters/ntru.rs). They use the existing family parameter types; no backend abstraction or production preset registry is added. Ordinary integration tests keep small parameters. The [validation executable](../../benchmarks/tfhe/src/bin/validate_parameters.rs) is an explicitly invoked numerical diagnostic.
 
 The opt-in GLWE NTT [paper comparison](../performance/sparse-paper-comparison.md) defines its
@@ -21,37 +23,39 @@ the parameter-validation matrix, or ordinary test parameters.
 
 All three NTT primes satisfy Q mod 4096 = 1 and the existing NTT table constructors accept N=1024/2048. Each fits the Barrett bound Q<2^(BITS−2). `NativeModulus` never constructs an unrepresentable `1 << BITS`. Explicit powers of two use `PowOf2Modulus`; all NTRU examples use independent external q=2^24.
 
-The plaintext moduli below describe benchmark/diagnostic workloads, not key parameters. Examples use the same arithmetic profiles but ordinary CBS chooses t_in=8 for a custom predicate; the identity benchmark/diagnostic remains t_in=4. Family factories prepare the workload codecs when binding clients and compiling programs; CBS and factorized compilation check message capacity at that point.
+Key geometry and message configuration are separate. The [teaching workloads](#teaching-examples) and [benchmark inventory](#benchmark-inventory) below identify their actual message domains. Family factories prepare workload codecs when binding clients and compiling programs; this establishes encoding and layout conditions, not a noise budget.
 
 All geometries below run with u32 and u64. Fourier validation includes both RustFFT and TFHE-FFT. GLWE always has k=1 and validates both `BootstrapKeyswitch` and `KeyswitchBootstrap`. Here n is the small LWE dimension: in `KeyswitchBootstrap`, the external client domain has kN coefficients, not n. GLWE uses q=Q. NTRU has independent external LWE and ring secrets and returns Q→q24→LWE KS.
 
-| Profile | n / N | t (includes padding) | External/small secret | Ring secret |
-| --- | --- | --- | --- | --- |
-| GLWE dense Boolean PBS | 800 / 1024 | 4 | uniform binary | uniform binary |
-| GLWE dense 2+2 bit PBS | 866 / 2048 | 32 | uniform binary | uniform binary |
-| GLWE circuit / ternary PBS | 800 / 1024 | 4 | uniform binary or uniform ternary | uniform ternary |
-| GLWE fixed-weight / sparse | 728 / 1024 | 8 for single-output PBS; 16 for ManyLUT; 4 for CBS | fixed-weight binary, h=32 | sparse ternary |
-| GLWE MVB | 728 / 1024 | 128 | fixed-weight binary, h=32 | sparse ternary |
-| NTRU dense Boolean / 2+2 bit PBS | 800 / 1024; 866 / 2048 | 4; 32 | uniform binary or uniform ternary | sparse ternary |
-| NTRU fixed-weight / sparse / MVB | 728 / 1024 | 16 for PBS; 4 for CBS; 8 for one-hot; 128 for MVB | fixed-weight binary, h=32 | sparse ternary |
-| NTRU ordinary CBS | 800 / 1024 | 4 | uniform binary or uniform ternary | sparse ternary |
-| NTRU one-hot / lookup | 800 / 1024 | 8, radix M=4 | uniform binary or uniform ternary | sparse ternary |
+| Key profile | n / N | External/small secret | Ring secret |
+| --- | --- | --- | --- |
+| GLWE dense Boolean / 2+2 bit PBS | 800 / 1024; 866 / 2048 | uniform binary | uniform binary |
+| GLWE circuit / ternary PBS | 800 / 1024 | uniform binary or uniform ternary | uniform ternary |
+| GLWE fixed-weight / sparse / MVB | 728 / 1024 | fixed-weight binary, h=32 | sparse ternary |
+| NTRU dense Boolean / 2+2 bit PBS | 800 / 1024; 866 / 2048 | uniform binary or uniform ternary | sparse ternary |
+| NTRU fixed-weight / sparse / MVB | 728 / 1024 | fixed-weight binary, h=32 | sparse ternary |
+| NTRU circuit / one-hot / lookup diagnostic | 800 / 1024 | uniform binary or uniform ternary | sparse ternary |
+| NTRU teaching one-hot / teaching and benchmark lookup | 800 / 1024 | fixed-weight binary, h=32 | sparse ternary |
 
-`SparseTernary` is the existing distribution with probabilities (−1,0,+1)=(1/4,1/2,1/4), not an exact-weight ring key. NTRU still screens f for the backend's invertibility requirements. The 728/h32 geometry is retained specifically to exercise fixed-weight/sparse algorithms and narrow MVB input cells. Sparse keys use copy_count=3 and bucket_count=64. Their map-generation retry does not replace the client secret or search for successful numerical seeds.
+`SparseTernary` is the existing distribution with probabilities (−1,0,+1)=(1/4,1/2,1/4), not an exact-weight ring key. NTRU samples f directly from this signed distribution, then screens it for the backend's invertibility requirements; do not reinterpret it as an unimplemented `1+2F` secret distribution. Its external LWE secret is independent. The 728/h32 geometry exercises fixed-weight/sparse algorithms and narrow MVB input cells. Sparse keys use copy_count=3 and bucket_count=64. Their map-generation retry does not replace the client secret or search for successful numerical seeds.
 
 ## Noise by key role
 
 All constructor arguments are **coefficient-domain standard deviations under the role's own modulus**. Let α=2.046151696979124e−6 and β=2.845267479601915e−15, the constants already used by the dense GLWE PBS fixtures. Keeping these constants does not import a security claim from another parameter set.
 
-| Profile | Small/external LWE σ | Ring encryption / BR σ | Return KS σ | Trace / scheme-switch σ |
+| Profile | Small/external LWE σ | Ring encryption / BR σ | KS material σ | Trace / scheme-switch σ |
 | --- | --- | --- | --- | --- |
 | GLWE dense PBS | αQ | max(βQ,6.4) | max(βQ,6.4), the shared GLWE KS key noise | not used |
 | GLWE circuit / ternary | αQ | 6.4 | 6.4, the shared GLWE KS key noise | 6.4 / 6.4 |
 | GLWE fixed-weight / sparse / MVB | 3.2Q/16384 | 6.4 | 6.4, the shared GLWE KS key noise | 6.4 / 6.4 when CBS is requested |
-| NTRU dense / circuit / lookup | α·2^24 ≈34.328 | 0.7 | 3.2 at q24 | 0.7 / 0.7 when CBS is requested |
+| NTRU dense / circuit / n800-h32 lookup | α·2^24 ≈34.328 | 0.7 | 3.2 at q24 | 0.7 / 0.7 when CBS is requested |
 | NTRU fixed-weight / sparse / MVB | 3.2·2^24/16384 =3276.8 | 0.7 | 3.2 at q24 | 0.7 / 0.7 when CBS is requested |
 
-Both GLWE orders use the same GLWE KS key and accumulator-derived noise; order changes where it is applied. The small-LWE σ is the input-encryption noise for PBS→KS; KS→PBS external inputs use the accumulator-derived LWE parameters. See the [domain and return-path guide](tfhe-parameters-and-boundaries.md). The fixed-weight NTRU diagnostic retains the existing MVB normalized input noise after changing the external modulus to q24. NTRU retains its previous ring/CBS σ=0.7; it does not reuse that value for independent LWE and return-key noise. The NTRU ring budget is small because CBS and NGSW products amplify errors through f and f². Increasing dimensions or noise calls for revalidation of the entire chain, not just a key constructor.
+Both GLWE orders use the same kind of GLWE KS material; order changes where it is applied. BR and KS have independent configuration fields. These fixtures happen to give them equal σ; this is not an API requirement. The small-LWE σ is the fresh input-encryption noise for PBS→KS. KS→PBS external inputs use the extracted ring-secret domain and BR/accumulator-derived LWE noise, not the KS key's noise. See the [domain and return-path guide](tfhe-parameters-and-boundaries.md).
+
+`CbsGadgetConfig` supplies three decompositions. Its trace and scheme-switch parameters inherit the accumulator encryption parameters, including σ; advanced direct CBS construction can instead supply compatible parameters with independent noise. The generated keys are independently sampled. NTRU keeps ring/CBS σ=0.7 separate from external LWE and return KS noise. Its n800/h32 teaching lookup uses αq24, whereas n728/h32 diagnostics use σ=3276.8: equal Hamming weight does not make those profiles interchangeable. CBS and NGSW products amplify errors through f and f²; changing dimensions, distributions or noise needs a joint budget.
+
+The [default noise sampler](../../crates/primus_distr/src/discrete_gaussian/mod.rs) is a centered, truncated discrete Gaussian, represented as canonical residues. Its inclusive magnitude bound is `max(1, floor(12σ))`; it selects a 64-bit CDT for maximum magnitude ≤255 and a discrete Ziggurat otherwise. Here σ is the sampler parameter, not a measured standard deviation of evaluated ciphertexts. The optional precise CDT is a separate sampler, not an automatic consequence of enabling `high_precision`. Security or tail analyses must account for this sampling model, its approximation and NTRU's accepted-key conditioning. A normalized constant copied from another implementation does not transfer that implementation's claims to these secrets, moduli, samplers and algorithms.
 
 ## Decomposition by operation
 
@@ -106,6 +110,157 @@ and checks the actual left-closed guard `−A ≤ e < A`. This includes rounding
 
 The 27-bit u32 candidate did not provide a sufficient joint CBS/product budget at n=800. Q30 alone with a coarse three-level output also failed. Small internal digits and four output levels balance selector error against product decomposition error. The selected profiles retain the existing NTRU secret distribution, dimensions and ring noise, without seed selection or relaxed acceptance thresholds. Intermediate trials with larger ring noise are not supported presets.
 
+## Operation conditions and error budgets
+
+Here `t_in/t_out` denote message moduli, `q/Q` denote external/ring ciphertext moduli, and `D` is the programmed input count. For the ordinary padded input, `D=ceil(t_in/2)` and messages lie in `0..D`; low-level prefix compilers can choose a smaller nonempty D. Odd full-domain LUTs have a separate contract. A capacity check alone does not establish a usable rotation margin.
+
+| Operation | Encoding and construction conditions | Error budget still required |
+| --- | --- | --- |
+| Single-output PBS | Unsigned Rounded input/output; `D<=N`; `F(m)<t_out`. Each front-half plateau uses the actual encoded and switched message center | Input noise and per-mask switching error must stay in the correct plateau; BR error, output encoding and return error must fit the output decoder |
+| Interleaved ManyLUT | Same input, k positive outputs; `s=next_power_of_two(k)`, `D<=N/s`; slots k..s are padding, not extra outputs | Rotation is quantized to step s. Larger s changes plateau margins and mask-rounding error even when the input codec is unchanged |
+| Factorized MVB | Unsigned Rounded input, Scaled outputs; `D<=N`; k positive unpadded factors; explicit odd ring Q or Native with even output scale | Each signed integer factor amplifies BR error; Scaled recovery and the complete return path must fit jointly. k alone is not an applicability bound |
+| Ordinary CBS | Rounded selector input; L gadget levels interleaved at `W=next_power_of_two(L)`, `D<=N/W`; program stores `g_j*F(m) mod Q` and binds the exact output basis | BR, reverse trace, scheme-switch and subsequent gadget consumption. CMux requires F to be a bit over the entire programmed domain; general integer external products need their own budget |
+| NTRU one-hot CBS | `t_in=2M`, `M=2^tau>=2`; `2MW<=N`; full selectors r=0..M−1 or a compact nonzero batch r=1..M−1 | Actual quantized phase must satisfy the left-closed guard; NLEV/NGSW conversion and consumption require a further output budget |
+| High-precision NTRU lookup | Uniform tau, positive input/output counts c/o, `0<=d<=c`, `M^d<=N`; full enumerated input domain fits host indexing; each output chunk is below M | One-hot guards for all chunks, selection products, aggregate rotations, any public lift, f/f² amplification and Q→q/KS return. Shared selectors make errors correlated |
+
+### Rotation margins and returned phases
+
+The [front-half compiler](../../crates/primus_tfhe/src/lookup_table/compile/front_half.rs) first computes `E(m)=round(m*q/t_in)` and then the rotation center, both with upward ties. It fills nearest-center plateaus, with a midpoint belonging to the higher center. For interleaving, switching each b/a coefficient uses
+
+`rho_s(x)=s*round(x*2N/(s*q))`, `u_bar=rho_s(b)−sum_i rho_s(a_i)*s_i`.
+
+Blind rotation uses `−u_bar`. Quantizing a decrypted phase once is not equivalent to this per-coefficient switching; secret magnitude, weight and dimension affect the accumulated rounding error. Besides `D<=N/s`, the compiler checks distinct centers. The runtime error must stay within the appropriate plateau, including endpoints and its negative negacyclic extension.
+
+GLWE keeps `q=Q`. `BootstrapKeyswitch` applies BR→ring KS→compact extraction, with an external small-LWE secret of dimension n. `KeyswitchBootstrap` applies ring KS→compact extraction→BR→full extraction, with an external extracted-ring secret of dimension kN. Fresh input σ also changes with this order as described above. These are distinct client domains, not interchangeable order labels.
+
+NTRU uses independent q and Q. LUT coefficients are encoded at Q; the current ordinary return performs coefficient Q→q switching, sample extraction, then LWE KS. Rounding is not exact re-encoding at q. Output-codec capacity and error must be checked at the actual returned modulus, including the return-key noise. Ring-output CBS/one-hot can use ring-only material; full high-precision evaluation needs the return material.
+
+### Factorized output recovery
+
+For the [MVB compiler](../../crates/primus_tfhe/src/lookup_table/factorized.rs), the common polynomial is `V=(Delta_Q/2)*(1+X+...+X^(N−1))` and each factor is `W_i=(1−X)*p_i`, where p_i is the signed unscaled LUT. Thus `V*W_i=Delta_Q*p_i`. Modular division by two under odd Q applies only to noiseless V. Native uses ordinary halving of an even scale; explicit even ring moduli are not supported here.
+
+The bound `||W_i*e_BR||_infinity <= ||W_i||_1*||e_BR||_infinity` uses the signed integer lift of each factor, not large canonical residues. Arbitrary functions can have much larger norms than threshold functions with the same number of outputs. For the [Scaled codec](../../crates/primus_encoding/src/scaled.rs), let `epsilon=t_out*Delta_Q−Q`; a sufficient recovery condition for integer output y and total ring error e is `abs(epsilon*y+t_out*e)<Q/2`. NTRU must additionally include return scaling/rounding and KS error relative to `y*Delta_q` at q. Finite observations at `t_out=2` do not validate a larger output domain.
+
+`PbsMessageConfig` defaults to equal input/output moduli, and explicit output overrides remain valid configuration choices. An override changes the encoding and available error margin; codec construction alone does not validate the new joint budget. Scaled threshold flags also do not have the Rounded t=4 encoding used by Boolean PBS. Reconsumption requires the receiving operation's actual encoding and input-domain contract.
+
+### CBS, one-hot and lookup consumption
+
+Ordinary CBS has three independent roles: selector input encoding at q, integer gadget output under Q, and the candidate ring-message encoding under Q. The `t_ring` passed to `circuit_bootstrap_codecs` prepares the last role, not a gadget-output message modulus. A compiled custom function binds every scalar of the output basis; equal level counts do not establish basis compatibility. A custom predicate uses the same single BR as the identity program. Neither compilation nor a successful CMux observation proves the budget for another function or candidate distribution.
+
+The [one-hot contract](../../crates/primus_tfhe_ntru/src/one_hot.rs) uses `S=N/M`, `A=N/(2MW)` and `u_bar=m*S+W*e mod 2N`, requiring `−A<=e<A`. For current `N=1024,M=4,W=4`, A=32 and the physical exponent error lies in `[−128,128)`. This includes fresh-input noise, encoding and per-mask switching. The server cannot check this secret-dependent guard from shape information. Fourier's coefficient-halving reverse trace has rounding error; NTT's modular inverse-of-two contract does not replace it.
+
+The [lookup layout](../../crates/primus_tfhe_ntru_lut/src/lookup_table.rs) uses low d chunks to select coefficients (`K=M^d`) and high c−d chunks to select among `P=M^(c−d)` polynomials per output. Aggregate controls encrypt `X^(−m_i*M^i)`; they rotate the selected data polynomial without ordinary PBS plateau repetition. Noise tolerance comes first from one-hot CBS and then from the product chain, not from that absence of repetition. Table sharing/pruning depends on the function and changes actual selection work. Storage and plan statistics are not a noise analysis.
+
+Classic and sparse are alternative BR implementations available to all four backends' ordinary PBS, ManyLUT, MVB and CBS. NTRU also supports either BR for one-hot and high-precision evaluation. Sparse requires its fixed-weight binary secret and matching material; it cannot be substituted for a dense binary/ternary key. Sparse lookup needs an independent NLEV[1] public-lift key only when the compiled plan contains a reachable Lift; classic can use its initializer. The [material guide](../../crates/primus_tfhe_ntru_lut/README.md#evaluation-and-workspace) describes binding. API availability does not establish numerical evidence for every combination; the large parameter diagnostic does not exercise NTRU sparse CBS.
+
+## Scope of paired parameter entries
+
+The following small catalogue describes **experimental u64** pairings available from each backend's `experimental` module. It pairs existing key profiles with the actual teaching domains and explicit algorithm/order. It is not a list of production security presets or a promise that other functions have the same error budget. u32, ternary and alternate engines/orders remain available through explicit parameters, benchmarks and focused tests; silently converting bases between word widths is inappropriate.
+
+| Paired workflow | Key profile / algorithm | Message and operation configuration |
+| --- | --- | --- |
+| Basic PBS, four backends | Dense n866/N2048, classic binary; GLWE BR→KS | Rounded `t_in=t_out=32`, inputs 0..16, example F=x mod 4 |
+| Sparse PBS, four backends | Fixed n728/h32/N1024, sparse copies=3/buckets=64; GLWE BR→KS | Rounded 32→32, inputs 0..16, F=x mod 4 |
+| ManyLUT, four backends | Fixed n728/h32/N1024, classic; GLWE BR→KS | Rounded 16→8, inputs 0..8, two outputs, stride 2; F=(x mod 4, floor(x/4)) |
+| Threshold MVB, four backends | Fixed n728/h32/N1024, classic; GLWE KS→BR | Rounded input 128, inputs 0..64; 17 Scaled outputs at t_out=2 with the example's thresholds |
+| Ordinary CBS, four backends | Circuit n800/N1024, classic binary; GLWE BR→KS | Selector Rounded t_in=8, inputs 0..4; predicate F=[m>=2]; Scaled ring candidates t_ring=8; output basis above |
+| Sparse CBS, two GLWE backends | Fixed n728/h32/N1024, sparse copies=3/buckets=64, BR→KS | Same predicate/input/candidate domains as ordinary CBS; GLWE output basis above |
+| One-hot, two NTRU backends | Circuit n800/h32/N1024 with external σ=αq24, classic | Selector t_in=8/M=4, Scaled ring candidates t_ring=8; output L=3/W=4, full four-selector batch |
+| High-precision lookup, two NTRU evaluators | Same n800/h32 key profile as one-hot, classic, full return material | tau=2, c=8/d=5/o=8; 16-bit input/output; example F=(x²+3x+7) mod 65536 |
+
+All entries use Q50 for NTT, Native64 for Fourier and independent q24 for NTRU. The noise and decomposition tables above are part of each entry, not defaults inferred from N alone. The workflow table refers to existing [examples](#teaching-examples); the existing low-level configuration APIs continue to express general plaintext moduli, independent output moduli and independent chunk counts.
+
+Operation configs are pure numerical descriptions, separate from runtime state:
+
+| Type | Composition and role |
+| --- | --- |
+| `ModulusConfig<M>` / `LweConfig<M>` | Constant-friendly modulus/dimension/distribution/noise choices; M keeps Native, PowOf2 and Barrett representations distinct; standard `TryFrom` prepares a reducer at setup |
+| `BlindRotationAlgorithm` | Classic/Sparse choice with algorithm-specific sparse bucket geometry; no encryption parameters |
+| Family `BlindRotationConfig` | LWE domain, shared accumulator/BSK ring layout via `acc_*`, BSK encryption secret via `bsk_secret_distr`, `bsk_gadget` decomposition/noise and explicit `algorithm`; GLWE shares q, NTRU separates q/Q |
+| Family `PbsConfig` | Shared `blind_rotation` config, independent KS, `PbsMessageConfig`, and GLWE order; ordinary PBS/ManyLUT/MVB choose their compiler and output encoding |
+| Family `CbsConfig` | Shared `blind_rotation` config, `CbsGadgetConfig` and selector-input t; GLWE `CbsInput` adds only required KS→BR input material |
+| `HighPrecLutConfig` | NTRU CBS config as `one_hot`, independent return-KS and public chunk-count/partition layout; tau derives from one-hot input t |
+| `PbsParameters` | Prepared PBS input/accumulator domains, BR and optional KS sampling state; CBS/one-hot/lookup reuse their PBS stage; no unique message codec or function |
+| `CbsParameters` | Additional trace/scheme-switch/output gadget state for CBS; shares the accumulator's encryption parameters with `PbsParameters` |
+| `PbsParameters::try_new` / `try_without_key_switching` | Existing prepared LWE parameters or bases, without a raw-config round trip |
+
+In `BlindRotationConfig`, GLWE uses `acc_dimension`/`acc_poly_length` and NTRU uses
+`acc_modulus`/`acc_poly_length`. `bsk_secret_distr` samples the ring secret used
+to encrypt BSK ciphertexts and decrypt BR output; the input LWE secret remains
+in `small_lwe` or `external_lwe`. GLWE's public `(0, LUT * X^(-b))` initializer
+needs no secret and samples no encryption noise. NTRU lifting propagates noise
+from its key material. `bsk_gadget` also supplies ring clients' encryption noise.
+
+Each concrete backend defines `experimental::CLASSIC_PBS_U64`,
+`SPARSE_PBS_U64`, `CLASSIC_MANY_LUT_U64`, `CLASSIC_THRESHOLD_MVB_U64`,
+`CLASSIC_CBS_U64`, plus GLWE's `SPARSE_CBS_U64` or NTRU's
+`CLASSIC_ONE_HOT_U64`. Family crates provide shared configuration types;
+backend constants use the actual Barrett/Native representation and numerical choices.
+These constants have no assessed security or failure-probability guarantee.
+They carry their actual BR choice and message domains; there is no registry or
+online algorithm/config dispatch.
+
+```rust,ignore
+let config = primus_tfhe_ntru_ntt::experimental::CLASSIC_PBS_U64;
+let parameters = config.try_prepare()?;
+let messages = config.messages.with_output_modulus(8); // Optional independent output.
+let codecs = parameters.pbs_codecs(messages)?;
+// Pass config.blind_rotation.algorithm explicitly when generating keys.
+```
+
+`PbsMessageConfig::new(t)` defaults to equal input/output moduli.
+`from_input_bits(b)` describes 2^b padded inputs and codec t=2^(b+1),
+with that same default full output modulus; it does not imply output padding or
+PBS reconsumption. Teaching constants use 32→32, 16→8 and 128→2;
+MVB uses `factorized_pbs_codecs` for Scaled outputs. `try_prepare()` builds key
+sampling state; message encodings and function/geometry checks belong to codec
+preparation, compilation and binding. Key parameters retain no unique codec.
+
+CBS and one-hot share `CbsConfig`; one-hot derives selector count, stride and
+guard from t/N/output levels. BR→KS GLWE CBS and NTRU ring-output CBS prepare
+**no return-KS basis or sampler**. GLWE KS→BR CBS explicitly uses
+`CbsInput::Keyswitch { key_switching }`. Ordinary PBS/key-switch generation
+rejects missing KS parameters before RNG consumption. CBS input is
+`config.input_modulus`; a CMux consumer independently chooses t_ring, using
+`parameters.circuit_bootstrap_codecs(config.input_modulus, t_ring)`.
+`CbsGadgetConfig` and prepared `CbsParameters` describe the gadget output,
+which is not an ordinarily encoded LWE message. The public function remains
+an explicit compilation argument.
+
+Numerical sources belong to the four concrete backends:
+[GLWE NTT](../../crates/primus_tfhe_glwe_ntt/src/experimental.rs),
+[GLWE Fourier](../../crates/primus_tfhe_glwe_fourier/src/experimental.rs),
+[NTRU NTT](../../crates/primus_tfhe_ntru_ntt/src/experimental.rs) and
+[NTRU Fourier](../../crates/primus_tfhe_ntru_fourier/src/experimental.rs).
+With a backend enabled, [LUT experimental configs](../../crates/primus_tfhe_ntru_lut/src/experimental.rs)
+provide `NTT_CLASSIC_LOOKUP_U64` and `FOURIER_CLASSIC_LOOKUP_U64`.
+Each combines the corresponding one-hot `CbsConfig`, required return choices,
+and c8/d5/o8 layout. `config.try_chunk_format()` derives tau=2 from input t=8,
+without a second width setting. `config.try_prepare()` adds return state;
+key generation takes `config.one_hot.blind_rotation.algorithm` and
+`config.one_hot.gadget`. No unused CMux candidate codec is created.
+Prepare chunk codecs with
+`parameters.pbs_codecs(PbsMessageConfig::new(config.one_hot.input_modulus))`;
+the function and independent chunk counts remain explicit compilation inputs.
+
+### Reusing material and changing a workload
+
+The same keys can serve another compatible public program or message codec without key generation merely for a new t. Reuse still requires the same actual secrets, dimensions, q/Q, key decompositions and transform representation. CBS additionally needs compatible trace/scheme-switch material and exact program/output-basis pairing; lookup may need lift and return keys. Public metadata equality alone does not identify a secret or an NTT root/order.
+
+Changing t, lane count, output domain, CBS function, candidate values or lookup partition changes the error conditions even if the keys remain compatible. It leaves the sampled workload listed above. Changing GLWE order changes the external client domain; changing classic/sparse requires the corresponding BR material and accepted secret distribution. Independent external input/output LWE dimensions remain outside these entries.
+
+### Evidence and remaining gaps
+
+| Evidence | What is available | What it does not establish |
+| --- | --- | --- |
+| Parameter provenance | Local constructors and example helpers at the reviewed revision; dense GLWE α/β are recorded as reference constants in [benchmark source](../../benchmarks/tfhe/src/benchmark.rs) | Imported security/DFR claims after changing geometry, noise floors, modulus, sampler, order or algorithm |
+| Construction and representation | Existing parameter/table, codec and operation-binding checks; capacities and exact q/Q/basis/layout pairing | Rotation guards, accumulated noise, secret identity or a security level |
+| Functional observations | Small contract tests; example known-result checks; explicit fixed-seed diagnostics and dated observations below | Worst-case noise, tail probabilities or a target failure rate; paths absent from a diagnostic remain absent |
+| Security estimate | **Unassessed for every listed entry** | LWE/GLWE/NTRU hardness under the actual distributions, fixed weight, accepted NTRU keys and exposed evaluation material |
+| Complete failure bound | **Unassessed for every listed entry** | Joint per-mask switching, decomposition, sparse bucket accumulation, FFT/trace, gadget-consumer and return errors, including correlation |
+
+Any future supported security/DFR claim must specify its estimator/model and version, exact secret/sampler assumptions, applicable operation/function bounds and error accounting for the complete request. NTRU invertibility/numerical screening and sparse public-map construction need their actual conditioning assumptions. Private-key fixture observations also do not validate a public-key encryption noise distribution. Until such evidence exists, paired entries must remain explicitly experimental arithmetic examples. Setup can reject encoding/layout violations using the existing owning boundary; no unproved probability threshold should be presented as a validator or added to online kernels.
+
 ## Validation and observations
 
 Run the full matrix explicitly:
@@ -128,7 +283,7 @@ The fixed seeds are 42 and 4242. Validation covers:
 
 The acceptance thresholds were fixed before parameter experiments. Decoded outputs require circular phase error < q/(4t), half the decoding radius; raw gadget coefficients require error < scalar/8; lookup outputs require error < q24/32=524288. Reports show the largest fraction of the corresponding budget, not a noise standard deviation or a failure-rate estimate. CMux coefficients are checked individually. Samples with errors are rejected rather than counted as successful because another seed works.
 
-Validated on 2026-09-28, AMD Ryzen 9 9955HX3D, x86_64 Linux, repository `target-cpu=native`: stable rustc 1.98.0 (88d9e12ae), and nightly 1.100.0 (bff8e12ff) with SIMD. Both configurations passed the entire supported matrix. After restoring the fixed-weight NTRU profile's original normalized input noise, all NTRU profiles were rerun in both configurations. The table is the maximum over both seeds, applicable secrets/orders and the two configurations.
+Historical observation from 2026-09-28: AMD Ryzen 9 9955HX3D, x86_64 Linux, repository `target-cpu=native`; stable rustc 1.98.0 (88d9e12ae), and nightly 1.100.0 (bff8e12ff) with SIMD. Both configurations passed the matrix registered at that time. After restoring the fixed-weight NTRU profile's original normalized input noise, all NTRU profiles were rerun in both configurations. The table is the maximum over both seeds, applicable secrets/orders and the two configurations. It is not a new validation of the source revision reviewed above or of all teaching functions/domains.
 
 | Family / backend / word | Max decoded budget fraction | Max gadget budget fraction | Max lookup error at q24 |
 | --- | ---: | ---: | ---: |
@@ -145,51 +300,58 @@ Validated on 2026-09-28, AMD Ryzen 9 9955HX3D, x86_64 Linux, repository `target-
 | NTRU TFHE-FFT u32 | 0.016991 | 0.177925 | 128544 |
 | NTRU TFHE-FFT u64 | 0.014793 | 0.000290 | 1595 |
 
-These are maxima of finite observations under explicitly selected bounds. They do not establish worst-case noise, a target decryption-failure probability, or security. The changed GLWE PBS benchmark constructors also passed Criterion smoke; the corrected NTRU basic examples ran successfully. Existing default/all-feature numerical tests remained at 380/393, with no large profile added to ordinary CI execution. No latency or memory improvement is claimed by this parameter change.
+These are maxima of finite observations under explicitly selected bounds. They do not establish worst-case noise, a target decryption-failure probability, or security. Ordinary CI keeps small contract tests; this diagnostic is opt-in. Current test commands and coverage belong to the [testing guide](testing.md), rather than a historical test count here. No latency or memory improvement is inferred from this inventory review.
 
 ## Benchmark inventory
 
-The four backends and high-precision LUT now register their 22 Cargo targets
-in [`primus_tfhe_benchmarks`](../../benchmarks/tfhe/README.md#targets).
-The mapping changes package/target names only; profiles and Criterion IDs remain
-unchanged. The counts below also include `primus_tfhe/lookup_table`, which stays
-in its original crate.
+The four backends and high-precision LUT share **seven** Cargo targets
+in [`primus_tfhe_benchmarks`](../../benchmarks/tfhe/README.md#targets):
 
-The five ordinary benchmark targets use selected profiles above; the four backend
-families each have `pbs`, `sparse_pbs`, `mvb` and `circuit_bootstrap`, alongside
-public LUT compilation and the complete high-precision pipeline. The reduced suite retains representative word, FFT-engine and GLWE-order
-comparisons instead of crossing every axis for every operation. Four explicit
-`setup` targets keep u64 keygen and GLWE stage diagnostics, and GLWE NTT
-`sparse_paper` keeps the paper/candidate comparisons.
+| Target | Actual message/workload scope |
+| --- | --- |
+| `pbs` | Dense Boolean 4→4 and shortint 32→32; representative binary/ternary, word, FFT and GLWE-order cases |
+| `sparse_pbs` | Fixed n728/h32, Rounded 8→8 in all four backends; paired classic/sparse |
+| `cbs` | Fixed n728/h32, identity selector t=4 with ring candidates t=4; NTRU also full/nonzero one-hot at t=8, candidates t=8, classic/sparse |
+| `mvb` | Fixed n728/h32; input 16/output 2, D8/k3 compares three paths with classic/sparse; input 128/output 2, D64/k17 keeps classic independent/factorized paths |
+| `setup` | u64 key generation and GLWE stage diagnostics, separated from complete-request timings |
+| `high_precision_lut` | n800/h32, tau2/c8/d5/o8, classic/sparse; separate public LUT creation and homomorphic evaluation; polynomial, dense and shared-function workloads |
+| `sparse_paper` | Opt-in GLWE NTT paper/candidate profiles and benchmark-only small-q adapter, kept outside the shared fixture catalogue |
+
+The reduced suite retains representative comparisons instead of crossing every
+axis for every operation. Public low-level compilation also has a separate
+`primus_tfhe/lookup_table` target in its own crate.
 The [benchmark guide](../../benchmarks/tfhe/BENCHMARKS.md) maps targets to
 operations, geometry and timing boundaries. The [measurement record](../performance/tfhe-baseline.md)
 tracks the current baseline and the effect of removing eager fixture setup.
 
-The ternary targets were merged into dense PBS; duplicate ManyLUT comparisons
-now live in MVB, including sparse NTRU's independent/interleaved/factorized paths.
-Ordinary CBS and NTRU full/compact one-hot share the CBS target. The public LUT
-compiler covers u64 Native and explicit PowOf2 q24, plus u32/u64 Barrett primes.
-The lookup benchmark now matches the c8/d5/o8 teaching workload at n800/N1024;
-the c7/d5/o3 parameter diagnostic remains a separate finite validation fixture.
+Benchmarks, numerical diagnostics and examples are different workloads. In
+particular, fixed-weight PBS diagnostics use t=8 for GLWE and t=16 for NTRU;
+their teaching sparse examples use t=32. CBS teaching predicates use t_in=8 and
+t_ring=8, whereas the identity diagnostic/benchmark uses 4/4. The one-hot
+benchmark uses n728/h32 with the diagnostic noise, not the teaching n800/h32
+profile. The standalone lookup diagnostic uses c7/d5/o3 and classic uniform
+binary/ternary input secrets; the teaching/benchmark lookup uses c8/d5/o8 and
+fixed-weight secrets. These finite observations and timings cannot be assigned
+to one undifferentiated profile.
 
 ## Teaching examples
 
-TFHE examples fix `Word = u64`, with `U64NttTable` for NTT and `RustFftTable` for Fourier. They retain the existing u64 profiles: Barrett Q50 for TFHE NTT, Native64 for Fourier, and independent PowOf2 q24 for NTRU returns. Each file contains its own explicit `parameters()` function with one set of modulus, decomposition and coefficient-noise choices; CBS adds a local `circuit_config()`. Ordinary CBS examples use t_in=8 and compute the predicate m >= 2 inside the same BR; CBS benchmarks and parameter diagnostics retain their identity t_in=4 workload. CBS/one-hot examples obtain their Rounded input and Scaled candidate ring codecs from `parameters.circuit_bootstrap_codecs(t_in, t_ring)`, keeping the two plaintext domains independent without manually choosing q/Q. This does not establish a noise budget. GLWE basic/CBS/ManyLUT examples fix BR→KS, and factorized MVB fixes KS→BR. Word-width comparisons remain in tests, benchmarks and parameter diagnostics. The LWE basic and NTRU automorphism examples also use u64; the latter retains its small Q27 prime and `log_basis=3` decomposition. Application bytes, indexes and floating-point values keep their own types.
+TFHE examples fix `Word = u64`, with `U64NttTable` for NTT and `RustFftTable` for Fourier. They retain the existing u64 profiles: Barrett Q50 for TFHE NTT, Native64 for Fourier, and independent PowOf2 q24 for NTRU returns. The four basic PBS examples select their backend's `experimental::CLASSIC_PBS_U64`, prepare parameters with `config.try_prepare()` and codecs with `config.messages`; other examples currently retain local explicit parameter helpers, with CBS adding `circuit_config()`. Ordinary CBS examples use t_in=8 and compute the predicate m >= 2 inside the same BR; CBS benchmarks and parameter diagnostics retain their identity t_in=4 workload. CBS/one-hot examples obtain their Rounded input and Scaled candidate ring codecs from `parameters.circuit_bootstrap_codecs(t_in, t_ring)`, keeping the two plaintext domains independent without manually choosing q/Q. This does not establish a noise budget. GLWE basic/CBS/ManyLUT examples fix BR→KS, and factorized MVB fixes KS→BR. Word-width comparisons remain in tests, benchmarks and parameter diagnostics. The LWE basic and NTRU automorphism examples also use u64; the latter retains its small Q27 prime and `log_basis=3` decomposition. Application bytes, indexes and floating-point values keep their own types.
 
-Examples do not import benchmark parameter factories. Their local configuration functions make every numerical choice inspectable without leaving the file. The recommended workflow appears in `main` before parameter helpers. Client and server stages appear directly in `main`, identified by comments. Server setup uses public context, encoding and evaluation keys; CBS/one-hot candidates are encrypted by the client. High-precision lookup compiles the public function separately from key generation and evaluation. Each workload makes two requests with reused buffers. No example imports code from `benches/` or `tests/`.
+Examples do not import benchmark parameter factories. Typed constants centralize the basic fixtures; the remaining local configuration functions keep their numerical choices explicit. The workflow appears in `main` before any parameter helpers. Client and server stages appear directly in `main`, identified by comments. Server setup uses public context, encoding and evaluation keys; CBS/one-hot candidates are encrypted by the client. High-precision lookup compiles the public function separately from key generation and evaluation. Each workload makes two requests with reused buffers. No example imports code from `benches/` or `tests/`.
 
 | Workflow | Geometry and encoding | Complete examples |
 | --- | --- | --- |
 | Basic PBS | n=866/N=2048/t32; `x % 4`, padded input 0..16 and default output codec | GLWE [NTT](../../crates/primus_tfhe_glwe_ntt/examples/ntt_basic.rs) / [Fourier](../../crates/primus_tfhe_glwe_fourier/examples/fourier_basic.rs); NTRU [NTT](../../crates/primus_tfhe_ntru_ntt/examples/ntru_ntt_basic.rs) / [Fourier](../../crates/primus_tfhe_ntru_fourier/examples/ntru_fourier_basic.rs) |
-| CBS → CMux | n=800/N=1024; selector Rounded t4, ring messages Scaled t8; client encrypts the two ring candidates, server derives the gadget control | GLWE [NTT](../../crates/primus_tfhe_glwe_ntt/examples/ntt_circuit_bootstrap.rs) / [Fourier](../../crates/primus_tfhe_glwe_fourier/examples/fourier_circuit_bootstrap.rs); NTRU [NTT](../../crates/primus_tfhe_ntru_ntt/examples/ntru_ntt_circuit_bootstrap.rs) / [Fourier](../../crates/primus_tfhe_ntru_fourier/examples/ntru_fourier_circuit_bootstrap.rs) |
+| CBS → CMux | n=800/N=1024; selector Rounded t8, ring messages Scaled t8; client encrypts the two ring candidates, server derives the predicate control | GLWE [NTT](../../crates/primus_tfhe_glwe_ntt/examples/ntt_circuit_bootstrap.rs) / [Fourier](../../crates/primus_tfhe_glwe_fourier/examples/fourier_circuit_bootstrap.rs); NTRU [NTT](../../crates/primus_tfhe_ntru_ntt/examples/ntru_ntt_circuit_bootstrap.rs) / [Fourier](../../crates/primus_tfhe_ntru_fourier/examples/ntru_fourier_circuit_bootstrap.rs) |
 | MVB thresholds | n=728/h32/N=1024/t128; 64 inputs, 17 outputs with Scaled t_out=2. NTRU compiles at Q and decodes at q24 with separate codecs | GLWE [NTT](../../crates/primus_tfhe_glwe_ntt/examples/mvb_thresholds.rs) / [Fourier](../../crates/primus_tfhe_glwe_fourier/examples/fourier_mvb_thresholds.rs); NTRU [NTT](../../crates/primus_tfhe_ntru_ntt/examples/ntru_ntt_mvb_thresholds.rs) / [Fourier](../../crates/primus_tfhe_ntru_fourier/examples/ntru_fourier_mvb_thresholds.rs) |
 | Sparse PBS | n=728/h32/N=1024/t32; `x % 4` with equal message moduli. Sparse BR uses three copies and 64 buckets with a fixed-weight secret | GLWE [NTT](../../crates/primus_tfhe_glwe_ntt/examples/ntt_sparse.rs) / [Fourier](../../crates/primus_tfhe_glwe_fourier/examples/fourier_sparse.rs); NTRU [NTT](../../crates/primus_tfhe_ntru_ntt/examples/ntru_ntt_sparse.rs) / [Fourier](../../crates/primus_tfhe_ntru_fourier/examples/ntru_fourier_sparse.rs) |
 | Interleaved ManyLUT | n=728/h32/N=1024; one padded Rounded t16 input, two Rounded t_out=8 outputs: `x % 4` and `x / 4`. Classic BR; NTRU compiles at Q and returns at q24 | GLWE [NTT](../../crates/primus_tfhe_glwe_ntt/examples/ntt_many_lut.rs) / [Fourier](../../crates/primus_tfhe_glwe_fourier/examples/fourier_many_lut.rs); NTRU [NTT](../../crates/primus_tfhe_ntru_ntt/examples/ntru_ntt_many_lut.rs) / [Fourier](../../crates/primus_tfhe_ntru_fourier/examples/ntru_fourier_many_lut.rs) |
-| Sparse CBS → CMux | n=728/h32/N=1024; selector Rounded t4, ring messages Scaled t8; explicit sparse key generation with CBS material | GLWE [NTT](../../crates/primus_tfhe_glwe_ntt/examples/ntt_sparse_circuit_bootstrap.rs) / [Fourier](../../crates/primus_tfhe_glwe_fourier/examples/fourier_sparse_circuit_bootstrap.rs) |
+| Sparse CBS → CMux | n=728/h32/N=1024; selector Rounded t8, ring messages Scaled t8; explicit sparse key generation with CBS material and predicate | GLWE [NTT](../../crates/primus_tfhe_glwe_ntt/examples/ntt_sparse_circuit_bootstrap.rs) / [Fourier](../../crates/primus_tfhe_glwe_fourier/examples/fourier_sparse_circuit_bootstrap.rs) |
 | One-hot CBS → CMux | n=800/h32/N=1024/t8; four NGSWs for delta_r=[m=r], select public r=2 using the selector view | NTRU [NTT](../../crates/primus_tfhe_ntru_ntt/examples/ntru_ntt_one_hot.rs) / [Fourier](../../crates/primus_tfhe_ntru_fourier/examples/ntru_fourier_one_hot.rs) |
 | High-precision lookup | n=800/h32/N=1024/t8; c8/d5/o8, two-bit chunks, `(x*x+3*x+7) mod 65536`; 16-bit input/output, all coefficient slots filled and 64 polynomials per output | [NTT](../../crates/primus_tfhe_ntru_lut/examples/ntt_lookup.rs) / [Fourier](../../crates/primus_tfhe_ntru_lut/examples/fourier_lookup.rs) |
 
-All examples are arithmetic demonstrations, not assessed security presets. NTRU consistently uses independent LWE q24 and a separate ring Q; its ordinary return path and MVB scaled-output distinction are visible in the code. The explicit local configurations mirror the validated profiles above; their noise and decomposition choices remain specific to the workflow.
+All examples are arithmetic demonstrations, not assessed security presets. NTRU consistently uses independent LWE q24 and a separate ring Q; its ordinary return path and MVB scaled-output distinction are visible in the code. The paired entries and remaining explicit configurations reproduce the recorded profiles above; their noise and decomposition choices remain specific to the workflow.
 
 All four backends have separate classic PBS, sparse PBS, interleaved ManyLUT, ordinary CBS and factorized MVB entries. Each example fixes one algorithm: basic, ManyLUT, CBS, one-hot, MVB and high-precision use classic BR; the dedicated sparse files use sparse BR. GLWE sparse CBS retains its separate entry. NTRU sparse CBS/one-hot remain available through the backend key-generation API; the [LUT material guide](../../crates/primus_tfhe_ntru_lut/README.md#evaluation-and-workspace) gives the advanced sparse/public-lift flow. Algorithm choices no longer turn each teaching file into another comparison matrix. One-hot and the full high-precision pipeline are NTRU extensions. ManyLUT and factorized MVB are distinct multi-output algorithms.
 
@@ -199,7 +361,7 @@ Boolean gates, bivariate LUTs and odd full-domain LUTs are derived encoding/comp
 
 The two teaching examples use eight two-bit input chunks and eight output chunks (16 bits each), with d=5 and N=1024. Their polynomial function `(x*x+3*x+7) mod 65536` depends on high input chunks as well as low ones. The cleartext intermediate uses u64 to avoid overflowing u32. These examples are separate from the c7/d5/o3 parameter-diagnostic fixture above.
 
-With output count equal to input count, the complete data table costs `c * 4^c * sizeof(Word)` bytes. This is the public coefficient table only, excluding keys, evaluators and outputs:
+With output count equal to input count and K=N, the worst-case complete data table costs `c * 4^c * sizeof(Word)` bytes before polynomial sharing and selection pruning. This is public coefficient storage only, excluding plan metadata, keys, evaluators and outputs; the example function can use less:
 
 | Input/output chunks | Input/output bits | Table-selection chunks | Polynomials per output | Data LUT, u32 / u64 |
 | ---: | ---: | ---: | ---: | ---: |

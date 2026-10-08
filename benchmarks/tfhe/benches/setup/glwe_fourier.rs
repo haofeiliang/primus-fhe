@@ -19,7 +19,7 @@ use primus_lwe::LweCiphertext;
 use primus_modulus::NativeModulus;
 use primus_tfhe_benchmarks::{benchmark::PBS_WORKLOADS, parameters::glwe};
 use primus_tfhe_glwe_fourier::{
-    BlindRotationConfig, BlindRotationKey, FourierGlweBlindRotationWorkspace,
+    BlindRotationAlgorithm, BlindRotationKey, FourierGlweBlindRotationWorkspace,
 };
 use primus_tfhe_glwe_fourier::{ClientKey, KeyGenerator, PbsOrder, TfheContext};
 use rand::{SeedableRng, rngs::StdRng};
@@ -70,7 +70,7 @@ where
                 generator
                     .try_generate_server_key(
                         black_box(client),
-                        BlindRotationConfig::Classic,
+                        BlindRotationAlgorithm::Classic,
                         None,
                         &mut rng,
                     )
@@ -92,7 +92,7 @@ fn stages<T: TorusFftValue, Table: FftTable>(c: &mut Group<'_>, backend: &str) {
         ));
         let mut rng = StdRng::seed_from_u64(42);
         let (client, server) = context
-            .try_generate_keys(BlindRotationConfig::Classic, None, &mut rng)
+            .try_generate_keys(BlindRotationAlgorithm::Classic, None, &mut rng)
             .unwrap();
         (context, client, server)
     });
@@ -125,13 +125,21 @@ fn stages<T: TorusFftValue, Table: FftTable>(c: &mut Group<'_>, backend: &str) {
             let modulus = parameters.blind_rotation_ggsw().cipher_modulus();
             let mut fft = context.new_fft_engine();
             let mut blind_rotation = FourierGlweBlindRotationWorkspace::new(bootstrapping_key);
-            let key_switching_parameters = parameters.glwe_key_switching().output();
+            let key_switching_parameters = parameters
+                .glwe_key_switching()
+                .expect("PBS parameters include key switching")
+                .output();
             let mut key_switching =
                 FourierGlweKeySwitchingWorkspace::new(key_switching_parameters.glwe_size());
             let mut main_glwe: GlweCiphertext<Vec<T>> =
                 GlweCiphertext::zero(parameters.blind_rotation_ggsw().glwe_len());
-            let mut switched: GlweCiphertext<Vec<T>> =
-                GlweCiphertext::zero(parameters.glwe_key_switching().output().glwe_len());
+            let mut switched: GlweCiphertext<Vec<T>> = GlweCiphertext::zero(
+                parameters
+                    .glwe_key_switching()
+                    .expect("PBS parameters include key switching")
+                    .output()
+                    .glwe_len(),
+            );
             let mut small_lwe: LweCiphertext<T> =
                 LweCiphertext::zero(parameters.small_lwe().dimension().get());
 

@@ -8,13 +8,13 @@
 use primus_decompose::DecompositionBaseLog;
 use primus_fft::RustFftTable as Table;
 use primus_lattice::LweDimension;
-use primus_lwe::LweEncryptionParameters;
 use primus_modulus::{NativeModulus, PowOf2Modulus};
 use primus_ntru::SecretKeyDistr;
 use primus_poly::PolyLength;
+use primus_tfhe_ntru::{BlindRotationConfig, LweConfig};
 use primus_tfhe_ntru_fourier::{
-    BlindRotationConfig, DecompositionConfig, GadgetEncryptionConfig, PbsMessageConfig, TfheConfig,
-    TfheContext, TfheParameters,
+    BlindRotationAlgorithm, DecompositionConfig, GadgetEncryptionConfig, PbsMessageConfig,
+    PbsParameters, TfheContext,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -36,7 +36,7 @@ fn main() {
     // Client: keep the external secret; send server_key to the server.
     let mut rng = StdRng::seed_from_u64(42);
     let (client_key, server_key) = context
-        .try_generate_keys(BlindRotationConfig::Classic, None, &mut rng)
+        .try_generate_keys(BlindRotationAlgorithm::Classic, None, &mut rng)
         .unwrap();
     // Ordinary messages borrow only the external secret from the setup bundle.
     let external_secret = client_key.external_lwe_secret_key();
@@ -86,7 +86,7 @@ fn main() {
 
 // Key parameters: n=728, N=1024; independent external LWE q=2^24.
 // Noise sigmas below are in coefficient units; these are arithmetic examples, not security presets.
-fn parameters() -> TfheParameters<Word, PowOf2Modulus<Word>> {
+fn parameters() -> PbsParameters<Word, PowOf2Modulus<Word>> {
     let modulus = NativeModulus::<Word>::new();
     let lwe_modulus: Word = 1 << 24;
 
@@ -96,28 +96,32 @@ fn parameters() -> TfheParameters<Word, PowOf2Modulus<Word>> {
         level_count: None,
     };
 
-    TfheParameters::try_from_config(TfheConfig {
-        external_lwe: LweEncryptionParameters::new(
-            LweDimension::new(728),
-            PowOf2Modulus::new(lwe_modulus),
-            SecretKeyDistr::fixed_hamming_weight_binary(728, 32),
-            3.2 * lwe_modulus as f64 / 16384.0,
-        ),
-        accumulator_modulus: modulus, // Ring Q; distinct from the external LWE q.
-        poly_length: PolyLength::new(N),
-        accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
-        blind_rotation: GadgetEncryptionConfig {
+    BlindRotationConfig {
+        external_lwe: LweConfig {
+            dimension: LweDimension::new(728),
+            cipher_modulus: PowOf2Modulus::new(lwe_modulus).into(),
+            secret_key_distr: SecretKeyDistr::fixed_hamming_weight_binary(728, 32),
+            noise_standard_deviation: 3.2 * lwe_modulus as f64 / 16384.0,
+        },
+        acc_modulus: modulus.into(),
+        acc_poly_length: PolyLength::new(N),
+        bsk_secret_distr: SecretKeyDistr::SparseTernary,
+        bsk_gadget: GadgetEncryptionConfig {
             decomposition: full,
             noise_standard_deviation: 0.7,
         },
-        // Return key switch in the q domain.
-        key_switching: GadgetEncryptionConfig {
+        algorithm: BlindRotationAlgorithm::Classic,
+    }
+    .try_prepare()
+    .and_then(|parameters| {
+        // Return key switch in the external q domain.
+        parameters.try_with_key_switching(GadgetEncryptionConfig {
             decomposition: DecompositionConfig {
                 log_basis: DecompositionBaseLog::new(3),
                 level_count: None,
             },
             noise_standard_deviation: 3.2,
-        },
+        })
     })
     .unwrap()
 }

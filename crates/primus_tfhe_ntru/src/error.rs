@@ -6,6 +6,12 @@ use primus_ntru::NlevParameterError;
 /// An invalid combination of NTRU-based TFHE parameters.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum TfheParameterError {
+    /// The numerical external LWE description or fresh encryption sampler is invalid.
+    #[error("invalid external LWE configuration")]
+    InputParameters(#[source] primus_tfhe::LweConfigError),
+    /// The ring-Q description does not fit its selected reduction representation.
+    #[error("invalid accumulator modulus configuration")]
+    AccumulatorModulus(#[source] primus_tfhe::ModulusConfigError),
     /// Return-key encryption at external q has invalid sampling parameters.
     #[error("invalid return-key encryption parameters")]
     KeySwitchingEncryption(#[source] primus_lwe::LweParameterError),
@@ -107,6 +113,9 @@ pub enum CircuitBootstrapParameterError {
 /// Failure to generate classic, sparse or circuit-bootstrap keys for this TFHE family.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum KeyGenerationError {
+    /// PBS/LUT return generation needs a return-q domain; ring-output CBS can omit it.
+    #[error("this operation requires key-switching parameters")]
+    MissingKeySwitchingParameters,
     /// Sparse blind-rotation key generation failed.
     #[error(transparent)]
     SparseBootstrapping(#[from] SparseBootstrappingKeyError),
@@ -115,7 +124,7 @@ pub enum KeyGenerationError {
     ClientKey(#[from] TfheKeyError),
     /// The requested CBS configuration cannot be prepared.
     #[error(transparent)]
-    CircuitBootstrapParameters(#[from] CircuitBootstrapParameterError),
+    CbsParameters(#[from] CircuitBootstrapParameterError),
     /// Prepared CBS parameters belong to another accumulator or input domain.
     #[error("circuit-bootstrap parameters do not match this TFHE context")]
     IncompatibleCircuitBootstrapParameters,

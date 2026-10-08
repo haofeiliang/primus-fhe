@@ -7,10 +7,11 @@ use primus_lwe::{LweCiphertext, LweParameters, LwePublicKey, LweSecretKey, LweSe
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_poly::PolyLength;
 use primus_reduce::RingContext;
+use primus_tfhe::BlindRotationAlgorithm;
+use primus_tfhe_glwe::{BlindRotationConfig, LweConfig};
 use primus_tfhe_glwe::{
     BooleanDecryptor, BooleanEncryptor, BooleanError, ClientError, ClientKey, EncryptionKey,
-    Encryptor, GadgetEncryptionConfig, Lwe, PbsOrder, TfheClientError, TfheKeyError,
-    TfheParameters,
+    Encryptor, GadgetEncryptionConfig, Lwe, PbsOrder, PbsParameters, TfheClientError, TfheKeyError,
 };
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
@@ -38,7 +39,7 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
             DecompositionBaseLog::new(8),
             None,
         );
-        let params = TfheParameters::try_new(
+        let params = PbsParameters::try_new(
             small.into_encryption_parameters(),
             primus_glwe::GgswParameters::try_with_basis(&glwe, bsk).unwrap(),
             GadgetEncryptionConfig {
@@ -266,7 +267,7 @@ fn boolean_clients_reject_other_plaintext_moduli() {
     let modulus = NativeModulus::<u32>::new();
     for t in [3, 5] {
         let codec = RoundedCodec::new(t, modulus);
-        let parameters = TfheParameters::try_new(
+        let parameters = PbsParameters::try_new(
             (LweParameters::new(
                 LweDimension::new(4),
                 t,
@@ -326,7 +327,7 @@ fn external_binding_checks_small_secret_coefficients_without_an_accumulator() {
             SecretKeyDistr::UniformBinary,
             SecretKeyDistr::UniformTernary,
         ] {
-            let parameters = TfheParameters::try_new(
+            let parameters = PbsParameters::try_new(
                 (LweParameters::new(LweDimension::new(4), 4, modulus, distr, 0.7))
                     .into_encryption_parameters(),
                 primus_glwe::GgswParameters::try_with_basis(
@@ -391,7 +392,7 @@ enum Encoding {
 }
 
 fn check_reused_output<M, Key>(
-    parameters: &TfheParameters<u32, M>,
+    parameters: &PbsParameters<u32, M>,
     client: &ClientKey<u32>,
     codec: &RoundedCodec<u32, M>,
     encryptor: Encryptor<'_, u32, M, Key>,
@@ -466,33 +467,38 @@ fn check_reused_output<M, Key>(
 
 #[test]
 fn message_codec_must_match_the_key_ciphertext_modulus() {
-    use primus_lwe::LweEncryptionParameters;
-    use primus_tfhe_glwe::{DecompositionConfig, LookupTableError, TfheConfig};
-    let parameters = TfheParameters::try_from_config(TfheConfig {
-        small_lwe: LweEncryptionParameters::new(
-            LweDimension::new(4),
-            BarrettModulus::new(132_120_577u32),
-            SecretKeyDistr::UniformBinary,
-            0.7,
-        ),
-        accumulator_dimension: GlweDimension::new(1),
-        poly_length: PolyLength::new(32),
-        accumulator_secret_key_distr: SecretKeyDistr::UniformTernary,
-        blind_rotation: GadgetEncryptionConfig {
+    use primus_tfhe_glwe::{DecompositionConfig, LookupTableError};
+    let parameters = BlindRotationConfig {
+        small_lwe: LweConfig {
+            dimension: LweDimension::new(4),
+            cipher_modulus: BarrettModulus::new(132_120_577u32).into(),
+            secret_key_distr: SecretKeyDistr::UniformBinary,
+            noise_standard_deviation: 0.7,
+        },
+        acc_dimension: GlweDimension::new(1),
+        acc_poly_length: PolyLength::new(32),
+        bsk_secret_distr: SecretKeyDistr::UniformTernary,
+        bsk_gadget: GadgetEncryptionConfig {
             decomposition: DecompositionConfig {
                 log_basis: DecompositionBaseLog::new(8),
                 level_count: None,
             },
             noise_standard_deviation: 0.7,
         },
-        key_switching: GadgetEncryptionConfig {
-            decomposition: DecompositionConfig {
-                log_basis: DecompositionBaseLog::new(8),
-                level_count: None,
+        algorithm: BlindRotationAlgorithm::Classic,
+    }
+    .try_prepare()
+    .and_then(|parameters| {
+        parameters.try_with_key_switching(
+            GadgetEncryptionConfig {
+                decomposition: DecompositionConfig {
+                    log_basis: DecompositionBaseLog::new(8),
+                    level_count: None,
+                },
+                noise_standard_deviation: 0.7,
             },
-            noise_standard_deviation: 0.7,
-        },
-        pbs_order: PbsOrder::BootstrapKeyswitch,
+            PbsOrder::BootstrapKeyswitch,
+        )
     })
     .unwrap();
     let mut rng = StdRng::seed_from_u64(0x434f_4445_4351);

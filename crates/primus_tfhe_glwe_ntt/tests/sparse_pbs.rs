@@ -16,8 +16,8 @@ use primus_ntt::{NttTable, U32NttTable};
 use primus_poly::PolyLength;
 use primus_tfhe::{BivariateLookupTable, ProgrammableBootstrap, ProgrammableBootstrapInterleaved};
 use primus_tfhe_glwe_ntt::{
-    BlindRotationConfig, ClientKey, GadgetEncryptionConfig, KeyGenerator, PbsOrder, TfheContext,
-    TfheEvaluationError, TfheParameters,
+    BlindRotationAlgorithm, ClientKey, GadgetEncryptionConfig, KeyGenerator, PbsOrder,
+    PbsParameters, TfheContext, TfheEvaluationError,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -31,7 +31,7 @@ fn context(
     log_basis: u32,
 ) -> TfheContext<u32, U32NttTable> {
     let modulus = BarrettModulus::new(Q);
-    let parameters = TfheParameters::try_new(
+    let parameters = PbsParameters::try_new(
         (LweParameters::new(
             LweDimension::new(16),
             plaintext_modulus,
@@ -80,7 +80,7 @@ fn sparse_pbs_preserves_external_secret_and_interleaved_outputs_in_both_orders()
         let mut rng = StdRng::seed_from_u64(0x5035_5042);
         let (client, sparse_key) = generator
             .try_generate(
-                BlindRotationConfig::Sparse {
+                BlindRotationAlgorithm::Sparse {
                     copy_count: 3,
                     bucket_count: 8,
                 },
@@ -89,7 +89,7 @@ fn sparse_pbs_preserves_external_secret_and_interleaved_outputs_in_both_orders()
             )
             .unwrap();
         let classic_key = generator
-            .try_generate_server_key(&client, BlindRotationConfig::Classic, None, &mut rng)
+            .try_generate_server_key(&client, BlindRotationAlgorithm::Classic, None, &mut rng)
             .unwrap();
         let mut sparse = context.evaluator(&sparse_key).unwrap();
         let mut classic = context.evaluator(&classic_key).unwrap();
@@ -202,7 +202,7 @@ fn sparse_boolean_gates_chain_in_both_orders() {
         let server = KeyGenerator::new(&context)
             .try_generate_server_key(
                 &client,
-                BlindRotationConfig::Sparse {
+                BlindRotationAlgorithm::Sparse {
                     copy_count: 3,
                     bucket_count: 8,
                 },
@@ -258,7 +258,7 @@ fn sparse_bivariate_and_odd_full_domain_respect_input_margins_in_both_orders() {
         let server = KeyGenerator::new(&context)
             .try_generate_server_key(
                 &client,
-                BlindRotationConfig::Sparse {
+                BlindRotationAlgorithm::Sparse {
                     copy_count: 3,
                     bucket_count: 8,
                 },

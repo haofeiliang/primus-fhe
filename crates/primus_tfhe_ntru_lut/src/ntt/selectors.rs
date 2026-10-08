@@ -6,7 +6,7 @@ use primus_ntru::NttNgswCiphertext;
 use primus_ntt::MonomialNttTable;
 use primus_poly::PolynomialIterMut;
 use primus_reduce::RingContext;
-use primus_tfhe_ntru::CircuitBootstrapParameters;
+use primus_tfhe_ntru::CbsParameters;
 use primus_tfhe_ntru_ntt::TfheContext;
 
 use super::aggregate_rotation_control_to;
@@ -35,7 +35,7 @@ impl<T: FheUint> SelectorBuffers<'_, T> {
         chunk: SelectorChunk,
         layout: Layout,
         rotation_factors: &[T],
-        parameters: &CircuitBootstrapParameters<T, BarrettModulus<T>>,
+        parameters: &CbsParameters<T, BarrettModulus<T>>,
         context: &TfheContext<T, Table, LM>,
         project: impl FnOnce(Option<&mut [T]>, Option<&mut [T]>),
     ) {

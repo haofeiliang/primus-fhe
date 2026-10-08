@@ -4,9 +4,9 @@ use primus_lwe::{LwePublicKey, LweSecretKey};
 use primus_reduce::RingContext;
 use primus_tfhe::{ClientError, Decryptor, Encryptor, LweClientParameters};
 
-use crate::{TfheClientError, TfheKeyError, TfheParameters};
+use crate::{PbsParameters, TfheClientError, TfheKeyError};
 
-impl<T: FheUint, M: RingContext<T>, LM: RingContext<T>> TfheParameters<T, M, LM> {
+impl<T: FheUint, M: RingContext<T>, LM: RingContext<T>> PbsParameters<T, M, LM> {
     /// Binds the active external secret to a message codec at the same ciphertext modulus.
     /// Only this external secret is checked; no other setup secret is required.
     /// A new codec reuses the same key; noise and programmable capacity remain caller requirements.

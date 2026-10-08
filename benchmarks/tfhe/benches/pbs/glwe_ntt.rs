@@ -4,7 +4,7 @@
 //! Fixtures are initialized only for selected IDs, then reused across samples.
 //! Run: cargo bench -p primus_tfhe_benchmarks --bench pbs --features glwe-ntt
 
-use primus_tfhe::BlindRotationConfig;
+use primus_tfhe::BlindRotationAlgorithm;
 use primus_tfhe::{PbsMessageConfig, RoundedPbsCodecs};
 use std::hint::black_box;
 
@@ -121,14 +121,14 @@ impl<T: FheUint, Table: MonomialNttTable<ValueT = T>> Fixture<T, Table> {
     /// Builds the fixed-seed request outside timing; key-generation order is
     /// preserved so the baseline keeps identical client and encryption randomness.
     fn new(
-        parameters: primus_tfhe_glwe_ntt::TfheParameters<T>,
+        parameters: primus_tfhe_glwe_ntt::PbsParameters<T>,
         codecs: RoundedPbsCodecs<T, primus_modulus::BarrettModulus<T>>,
         workload: PbsWorkload,
     ) -> Self {
         let context = TfheContext::<T, Table>::try_from_parameters(parameters).unwrap();
         let mut rng = StdRng::seed_from_u64(42);
         let (client, server) = context
-            .try_generate_keys(BlindRotationConfig::Classic, None, &mut rng)
+            .try_generate_keys(BlindRotationAlgorithm::Classic, None, &mut rng)
             .unwrap();
         let input = context
             .encryptor(client.external_lwe_secret_key(), codecs.input_codec())

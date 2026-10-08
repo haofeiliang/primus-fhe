@@ -8,10 +8,12 @@
 use primus_decompose::{DecompositionBaseLog, DecompositionConfig, DecompositionLevelCount};
 use primus_glwe::{GlweDimension, SecretKeyDistr};
 use primus_integer::FheUint;
-use primus_lwe::{LweDimension, LweEncryptionParameters};
+use primus_lwe::LweDimension;
 use primus_modulus::BarrettModulus;
 use primus_poly::PolyLength;
-use primus_tfhe_glwe::{GadgetEncryptionConfig, PbsOrder, TfheConfig, TfheParameters};
+use primus_tfhe::BlindRotationAlgorithm;
+use primus_tfhe_glwe::{BlindRotationConfig, LweConfig};
+use primus_tfhe_glwe::{GadgetEncryptionConfig, PbsOrder, PbsParameters};
 
 /// Geometry quoted by the paper and arithmetic choices resolved for this backend.
 #[derive(Clone, Copy)]
@@ -138,23 +140,24 @@ impl Case {
     /// OpenFHE's cited revision uses sigma=3.19 in coefficient units. Only
     /// the small-LWE sampler description is rescaled here: actual inputs are
     /// sampled at q in the harness. BR and our ring KS both use sigma=3.19 at Q.
-    pub fn parameters<T: FheUint>(self, mode: Mode) -> TfheParameters<T, BarrettModulus<T>> {
+    pub fn parameters<T: FheUint>(self, mode: Mode) -> PbsParameters<T, BarrettModulus<T>> {
         let modulus = BarrettModulus::new(T::as_from(self.ring_modulus));
         let decomposition = |base_log| DecompositionConfig {
             log_basis: DecompositionBaseLog::new(base_log),
             level_count: None,
         };
-        TfheParameters::try_from_config(TfheConfig {
-            small_lwe: LweEncryptionParameters::new(
-                LweDimension::new(self.dimension(mode)),
-                modulus,
-                self.secret(mode),
-                3.19 * self.ring_modulus as f64 / f64::from(self.lwe_modulus),
-            ),
-            accumulator_dimension: GlweDimension::new(1),
-            poly_length: PolyLength::new(self.poly_length),
-            accumulator_secret_key_distr: SecretKeyDistr::UniformTernary,
-            blind_rotation: GadgetEncryptionConfig {
+        BlindRotationConfig {
+            small_lwe: LweConfig {
+                dimension: LweDimension::new(self.dimension(mode)),
+                cipher_modulus: modulus.into(),
+                secret_key_distr: self.secret(mode),
+                noise_standard_deviation: 3.19 * self.ring_modulus as f64
+                    / f64::from(self.lwe_modulus),
+            },
+            acc_dimension: GlweDimension::new(1),
+            acc_poly_length: PolyLength::new(self.poly_length),
+            bsk_secret_distr: SecretKeyDistr::UniformTernary,
+            bsk_gadget: GadgetEncryptionConfig {
                 decomposition: DecompositionConfig {
                     log_basis: DecompositionBaseLog::new(self.br_base_log),
                     level_count: match mode {
@@ -167,11 +170,23 @@ impl Case {
                 },
                 noise_standard_deviation: 3.19,
             },
-            key_switching: GadgetEncryptionConfig {
-                decomposition: decomposition(self.ks_base_log),
-                noise_standard_deviation: 3.19,
+            algorithm: match mode.sparse_counts(self) {
+                Some((copy_count, bucket_count)) => BlindRotationAlgorithm::Sparse {
+                    copy_count,
+                    bucket_count,
+                },
+                None => BlindRotationAlgorithm::Classic,
             },
-            pbs_order: PbsOrder::BootstrapKeyswitch,
+        }
+        .try_prepare()
+        .and_then(|parameters| {
+            parameters.try_with_key_switching(
+                GadgetEncryptionConfig {
+                    decomposition: decomposition(self.ks_base_log),
+                    noise_standard_deviation: 3.19,
+                },
+                PbsOrder::BootstrapKeyswitch,
+            )
         })
         .unwrap()
     }

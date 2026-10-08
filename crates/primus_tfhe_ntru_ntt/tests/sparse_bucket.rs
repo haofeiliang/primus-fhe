@@ -14,8 +14,8 @@ use primus_ntru::{
 use primus_ntt::{MonomialNttTable, U32NttTable, U64NttTable};
 use primus_poly::{PolyLength, Polynomial};
 use primus_tfhe_ntru_ntt::{
-    BlindRotationConfig, ClientKey, GadgetEncryptionConfig, KeyGenerator, TfheContext,
-    TfheParameters,
+    BlindRotationAlgorithm, ClientKey, GadgetEncryptionConfig, KeyGenerator, PbsParameters,
+    TfheContext,
 };
 use rand::{SeedableRng, rngs::StdRng};
 use zeroize::Zeroizing;
@@ -104,7 +104,7 @@ fn check_bucket<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, level_cou
         level_count.map(DecompositionLevelCount::new),
     );
     let context = TfheContext::try_new(
-        TfheParameters::try_new(
+        PbsParameters::try_new(
             LweEncryptionParameters::new(
                 LweDimension::new(DIM),
                 modulus,
@@ -179,7 +179,7 @@ fn check_bucket<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, level_cou
         let server = KeyGenerator::new(&context)
             .try_generate_server_key(
                 &imported,
-                BlindRotationConfig::Sparse {
+                BlindRotationAlgorithm::Sparse {
                     copy_count: copies,
                     bucket_count: buckets,
                 },

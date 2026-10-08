@@ -7,9 +7,15 @@ English | [简体中文](README.zh_CN.md)
 
 High-precision lookup over already encrypted NTRU-TFHE chunks, using one-hot CBS, public and encrypted table selection, negative rotation and return to an independent LWE secret.
 
+## Experimental paired parameters
+
+With `ntt` / `fourier`, `experimental::NTT_CLASSIC_LOOKUP_U64` / `FOURIER_CLASSIC_LOOKUP_U64` are `HighPrecLutConfig` constants. Each composes NTRU's n800/h32 `CbsConfig` as `one_hot`, independent `key_switching`, and c8/d5/o8 `layout`. `config.try_chunk_format()?` derives tau=2 from one-hot's t=8, avoiding a second independent chunk-width setting. `config.try_prepare()?` prepares BR and the required return state; key generation uses `config.one_hot.blind_rotation.algorithm` and `config.one_hot.gadget`. No candidate CMux codec is created.
+
+Prepare chunk codecs with `parameters.pbs_codecs(PbsMessageConfig::new(config.one_hot.input_modulus))?`: input/return use q24, LUT output uses Q. Input/output counts remain independent in `config.layout`; callers supply the public function. These are 16-bit arithmetic teaching configurations with unassessed security/failure probability; changed functions or partitions need their own complete budget. See the [parameter guide](../../guides/development/tfhe-parameters.md#scope-of-paired-parameter-entries). Default compiler-only features do not enable configs or key dependencies.
+
 ## Workflow
 
-Both [NTT](../primus_tfhe_ntru_ntt/README.md) and [Fourier](../primus_tfhe_ntru_fourier/README.md) support classic binary/ternary and sparse fixed-weight binary lookup. Generate evaluation material with `generator.try_generate_server_key(&client, blind_rotation, Some(cbs_config), rng)`, choosing `BlindRotationConfig::Classic` or `Sparse { copy_count, bucket_count }`. CBS material is required. Generate and encrypt input chunks on the client with `encrypt_padded`. The basic examples fix classic BR and keep one eight-chunk workflow. Sparse/public-lift setup is shown below under [Evaluation and workspace](#evaluation-and-workspace).
+Both [NTT](../primus_tfhe_ntru_ntt/README.md) and [Fourier](../primus_tfhe_ntru_fourier/README.md) support classic binary/ternary and sparse fixed-weight binary lookup. Generate evaluation material with `generator.try_generate_server_key(&client, blind_rotation, Some(cbs_config), rng)`, choosing `BlindRotationAlgorithm::Classic` or `Sparse { copy_count, bucket_count }`. CBS material is required. Generate and encrypt input chunks on the client with `encrypt_padded`. The basic examples fix classic BR and keep one eight-chunk workflow. Sparse/public-lift setup is shown below under [Evaluation and workspace](#evaluation-and-workspace).
 
 `HighPrecisionLookupTable::try_new(poly_length, ring_modulus, &input_codec, config, function)` compiles the public table using only N, Q and the codec’s q/t, without TFHE parameters, secrets or transforms. With `ntt` or `fourier` enabled, `try_from_parameters(parameters, &input_codec, config, function)` takes N/Q/q from existing parameters and checks the codec’s q before compilation. Both entries use the same compiler and need no keys or transform tables. The callback receives `(full_input_index, output_chunk_index)` and returns one digit. Bind `NttLookupTableEvaluator::try_new(context, server_key, table)` or `FourierLookupTableEvaluator::try_new(context, server_key, table)`, call `allocate_output()` once, then reuse `evaluate_to(input_chunks, output_chunks)`. Decode each result with `context.decryptor(client.external_lwe_secret_key(), &input_codec)`. The table owns its chunk encoding; keys are independent of t. The evaluator borrows its context, server key and table; no client secret is needed for evaluation.
 
@@ -43,7 +49,7 @@ evaluator.evaluate_to(&encrypted_chunks, &mut output);
 
 Complete runnable workflows are in [ntt_lookup.rs](examples/ntt_lookup.rs) and [fourier_lookup.rs](examples/fourier_lookup.rs). They use n=800/N=1024 and eight two-bit chunks for both the 16-bit input and 16-bit result. Five low input chunks select coefficients; three high chunks select one of 64 candidate polynomials. The output chunk count remains independently configurable. Input `0b10_10_10_11_11_00_11_01` returns `0b10_00_01_01_10_01_01_11`, then zero returns 7, reusing the same evaluator and buffers.
 
-Both examples use `Word = u64`; NTT uses `U64NttTable`. Each workflow keeps one explicit parameter set; library tests and diagnostics retain u32 coverage. The Fourier example selects RustFFT; use `TfheFftTable as Table` for TFHE-FFT. When switching FFT engines, also update the example target’s `required-features` and use `--features tfhe-fft`. Each file explicitly builds `TfheConfig` and `CircuitBootstrapConfig` in local `parameters()` and `circuit_config()` functions, showing dimensions, noise, u64 decomposition bases, prime/native ring modulus and independent PowOf2 q=2^24; see the [arithmetic profiles](../../guides/development/tfhe-parameters.md).
+Both examples use `Word = u64`; NTT uses `U64NttTable`. Each workflow keeps one explicit parameter set; library tests and diagnostics retain u32 coverage. The Fourier example selects RustFFT; use `TfheFftTable as Table` for TFHE-FFT. When switching FFT engines, also update the example target’s `required-features` and use `--features tfhe-fft`. Each file explicitly prepares `BlindRotationConfig` plus return KS, and `CbsGadgetConfig` in local `parameters()` and `circuit_config()` functions, showing dimensions, noise, u64 decomposition bases, prime/native ring modulus and independent PowOf2 q=2^24; see the [arithmetic profiles](../../guides/development/tfhe-parameters.md).
 
 ```sh
 cargo run --release -p primus_tfhe_ntru_lut --example ntt_lookup --features ntt
@@ -100,7 +106,7 @@ For sparse setup, use a fixed-weight binary external secret and matched CBS para
 ```rust,no_run
 use primus_modulus::PowOf2Modulus;
 use primus_ntt::U64NttTable as Table;
-use primus_tfhe::{BlindRotationConfig, CircuitBootstrapConfig, LweCiphertext};
+use primus_tfhe::{BlindRotationAlgorithm, CbsGadgetConfig, LweCiphertext};
 use primus_tfhe_ntru::ClientKey;
 use primus_tfhe_ntru_ntt::{KeyGenerator, TfheContext};
 use primus_tfhe_ntru_lut::{HighPrecisionLookupTable, NttLookupTableEvaluator as LookupEvaluator};
@@ -111,7 +117,7 @@ use rand::rngs::StdRng;
 fn sparse_setup_and_request(
     context: &TfheContext<u64, Table, PowOf2Modulus<u64>>,
     client: &ClientKey<u64>,
-    cbs_config: CircuitBootstrapConfig,
+    cbs_config: CbsGadgetConfig,
     table: &HighPrecisionLookupTable<u64>,
     inputs: &[LweCiphertext<u64>],
     rng: &mut StdRng,
@@ -120,7 +126,7 @@ fn sparse_setup_and_request(
     let mut generator = KeyGenerator::new(context);
     let server_key = generator.try_generate_server_key(
         client,
-        BlindRotationConfig::Sparse { copy_count: 3, bucket_count: 64 },
+        BlindRotationAlgorithm::Sparse { copy_count: 3, bucket_count: 64 },
         Some(cbs_config),
         rng,
     ).unwrap();

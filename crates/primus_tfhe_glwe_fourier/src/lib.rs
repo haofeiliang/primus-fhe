@@ -2,15 +2,17 @@
 //!
 //! # Start here
 //!
-//! 1. Check mathematical choices with [`TfheParameters::try_from_config`].
+//! 1. Select [`experimental::CLASSIC_PBS_U64`], a numerical [`PbsConfig`], and
+//!    call [`PbsConfig::try_prepare`] to prepare sampling state. For existing
+//!    LWE parameters/bases, use [`PbsParameters::try_new`].
 //! 2. Create a [`TfheContext`] and paired [`ClientKey`]/[`ServerKey`] with
-//!    [`TfheContext::try_generate_keys`] and an explicit [`BlindRotationConfig`];
+//!    [`TfheContext::try_generate_keys`] and the config's `blind_rotation.algorithm`;
 //!    `None` selects ordinary PBS material.
-//! 3. Prepare codecs with [`TfheParameters::pbs_codecs`] and [`PbsMessageConfig`].
+//! 3. Prepare codecs with [`PbsParameters::pbs_codecs`] and [`PbsMessageConfig`].
 //!    Bind [`Encryptor`] to the input codec and [`Decryptor`] to the output codec;
 //!    create an [`Evaluator`] from the context. Output message moduli default to
 //!    the input choice and can be overridden before preparation.
-//! 4. Pass the prepared codec pair to [`TfheParameters::lookup_table_compiler`].
+//! 4. Pass the prepared codec pair to [`PbsParameters::lookup_table_compiler`].
 //!    Call [`LookupTableCompiler::compile_fn`] and reuse
 //!    [`Evaluator::apply_lookup_table_to`] with caller-owned LWE output storage.
 //!    Prepared codecs distinguish accumulator-Q LUT output from external-q decoding.
@@ -22,7 +24,7 @@
 //! - [`boolean`]: Boolean clients and gates with plaintext modulus four.
 //! - [`circuit_bootstrap`]: optional trace/scheme-switch material and
 //!   [`CircuitBootstrapEvaluator`], producing accumulator-secret gadget controls for CMUX.
-//! - [`sparse`]: fixed-weight binary bucket material; choose [`BlindRotationConfig::Sparse`]
+//! - [`sparse`]: fixed-weight binary bucket material; choose [`BlindRotationAlgorithm::Sparse`]
 //!   with [`KeyGenerator::try_generate_server_key`] for an existing client.
 //!
 //! [`Evaluator`] owns common [`BootstrapResources`] and the ordinary return stage.
@@ -31,9 +33,9 @@
 //! The specialized constructors document their allocation and borrowing contracts.
 //!
 //! Ring-output CBS can use [`TfheContext::try_generate_circuit_bootstrap_keys`]
-//! without ordinary return material. [`TfheParameters::circuit_bootstrap_codecs`]
+//! without ordinary return material. [`PbsParameters::circuit_bootstrap_codecs`]
 //! prepares the independent input and candidate ring-message encodings. Compile F
-//! with [`CircuitBootstrapParameters::compile_lookup_table_fn`] and bind the program
+//! with [`CbsParameters::compile_lookup_table_fn`] and bind the program
 //! with [`CircuitBootstrapEvaluator::try_with_lookup_table`]. CBS output uses its
 //! gadget basis; CMux requires bit-valued F across the programmed input domain.
 //!
@@ -50,6 +52,12 @@
 //! Raw ciphertexts do not record secret identity, encoding or noise margins.
 
 #![deny(missing_docs)]
+
+/// Experimental u64 arithmetic fixtures paired with message/operation choices.
+///
+/// Security and failure probability are unassessed; this module records the
+/// source revision and operation contracts. Each constant contains the BR choice.
+pub mod experimental;
 
 use primus_modulus::NativeModulus;
 
@@ -84,7 +92,7 @@ pub use bootstrapping_key::FourierGlweBootstrappingKey;
 #[doc(no_inline)]
 pub use circuit_bootstrap::CircuitBootstrapKey;
 #[doc(inline)]
-pub use circuit_bootstrap::{CircuitBootstrapEvaluator, CircuitBootstrapParameters};
+pub use circuit_bootstrap::{CbsParameters, CircuitBootstrapEvaluator};
 pub use context::TfheContext;
 #[doc(inline)]
 pub use evaluator::Evaluator;
@@ -95,7 +103,7 @@ pub use key::BlindRotationKey;
 #[doc(inline)]
 pub use key::{CircuitBootstrapServerKey, KeyGenerator, ServerKey};
 pub use primus_tfhe::{
-    BivariateLookupTable, BlindRotationConfig, CircuitBootstrapCodecs, CircuitBootstrapConfig,
+    BivariateLookupTable, BlindRotationAlgorithm, CbsGadgetConfig, CircuitBootstrapCodecs,
     CircuitBootstrapLookupTable, ClientError, DecompositionConfig, FactorizedLookupTable,
     FactorizedPbsCodecs, GadgetEncryptionConfig, InterleavedLookupTable, LookupTable,
     LookupTableCompiler, Lwe, LweCiphertext, LweSecretKeyRef, PbsCodecs, PbsMessageConfig,
@@ -120,7 +128,15 @@ pub type Encryptor<'a, T, Key = LweSecretKeyRef<'a, T>> =
 pub type Decryptor<'a, T> = primus_tfhe_glwe::Decryptor<'a, T, NativeModulus<T>>;
 
 /// GLWE-TFHE parameters for the native-torus Fourier backend.
-pub type TfheParameters<T> = primus_tfhe_glwe::TfheParameters<T, NativeModulus<T>>;
+pub type PbsParameters<T> = primus_tfhe_glwe::PbsParameters<T, NativeModulus<T>>;
 
-/// Named mathematical choices for this backend; moduli are derived from the LWE parameters.
-pub type TfheConfig<T> = primus_tfhe_glwe::TfheConfig<T, NativeModulus<T>>;
+/// Shared numerical blind-rotation choices for this backend.
+pub type BlindRotationConfig<T> = primus_tfhe_glwe::BlindRotationConfig<NativeModulus<T>>;
+
+/// Complete numerical PBS choices for this backend.
+pub type PbsConfig<T> = primus_tfhe_glwe::PbsConfig<T, NativeModulus<T>>;
+
+/// Complete numerical CBS choices for this backend.
+pub type CbsConfig<T> = primus_tfhe_glwe::CbsConfig<T, NativeModulus<T>>;
+
+pub use primus_tfhe_glwe::{CbsInput, LweConfig, ModulusConfig, ModulusConfigError};

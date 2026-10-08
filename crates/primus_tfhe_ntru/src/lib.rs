@@ -2,33 +2,36 @@
 //!
 //! # Role in the backend workflow
 //!
-//! [`TfheConfig`] names mathematical choices; [`TfheParameters`] validates them and
+//! [`PbsConfig`] / [`CbsConfig`] compose numerical operation choices;
+//! [`PbsParameters`] owns prepared key domains and sampling state and
 //! provides a [`LookupTableCompiler`] for Rounded LUTs. [`ClientKey`] owns the
 //! complete setup secrets; [`Encryptor`] and [`Decryptor`] borrow only the external
 //! message secret and bind its codec. Choose the NTT/Fourier
 //! backend for transform tables, key generation and evaluators. Shared sparse
 //! coefficient storage is provided by [`SparseNtruBootstrappingKey`].
+//! Concrete backends provide experimental u64 operation/message configurations.
+//! This family supplies the shared numerical configuration types and sampling state.
 //! [`KeyGenerationError`] and [`TfheClientError`] report key generation and family
 //! client construction; operations return shared [`ClientError`] or [`BooleanError`].
 //!
-//! [`TfheParameters::pbs_codecs`] defaults to equal input/output message moduli
+//! [`PbsParameters::pbs_codecs`] defaults to equal input/output message moduli
 //! through [`PbsMessageConfig`]; its output override preserves independent domains.
-//! [`TfheParameters::factorized_pbs_codecs`] instead prepares Scaled MVB outputs.
+//! [`PbsParameters::factorized_pbs_codecs`] instead prepares Scaled MVB outputs.
 //! Bind returned LWE decryption to the prepared output codec, not the input codec.
-//! For CBS, [`TfheParameters::circuit_bootstrap_codecs`] prepares input and candidate
-//! ring-message codecs; [`CircuitBootstrapParameters::compile_lookup_table_fn`]
+//! For CBS, [`PbsParameters::circuit_bootstrap_codecs`] prepares input and candidate
+//! ring-message codecs; [`CbsParameters::compile_lookup_table_fn`]
 //! programs gadget-scaled integers independently of those candidate messages.
 //!
 //! # Public-key clients
 //!
-//! [`TfheParameters::try_generate_public_key`] returns an [`LwePublicKey`] under
+//! [`PbsParameters::try_generate_public_key`] returns an [`LwePublicKey`] under
 //! the independent binary or ternary external secret. Pass it to
-//! [`TfheParameters::public_encryptor`] or a backend context's `public_encryptor`; keep the paired
+//! [`PbsParameters::public_encryptor`] or a backend context's `public_encryptor`; keep the paired
 //! external secret for decryption.
 //!
 //! Public-key identity and combined-noise requirements are documented on
 //! [`EncryptionKey`]; generation parameters and storage size are documented
-//! on [`TfheParameters::try_generate_public_key`].
+//! on [`PbsParameters::try_generate_public_key`].
 //!
 //! # Reusing client ciphertext storage
 //!
@@ -50,6 +53,7 @@
 
 mod circuit_bootstrap;
 mod client;
+mod config;
 mod error;
 mod key;
 mod lookup_table;
@@ -58,7 +62,8 @@ mod one_hot;
 mod parameters;
 mod sparse;
 
-pub use circuit_bootstrap::CircuitBootstrapParameters;
+pub use circuit_bootstrap::CbsParameters;
+pub use config::{BlindRotationConfig, CbsConfig, PbsConfig};
 pub use error::{
     CircuitBootstrapParameterError, KeyGenerationError, SparseBootstrappingKeyError,
     TfheClientError, TfheKeyError, TfheParameterError,
@@ -66,13 +71,14 @@ pub use error::{
 pub use key::ClientKey;
 pub use lwe_return::{LweReturnBatchWorkspace, LweReturnEvaluator};
 pub use one_hot::{NlevSelectors, OneHotBootstrapError, OneHotLookupTable};
-pub use parameters::{TfheConfig, TfheParameters};
+pub use parameters::PbsParameters;
+pub use primus_tfhe::{LweConfig, ModulusConfig, ModulusConfigError};
 pub use sparse::SparseNtruBootstrappingKey;
 
 pub use primus_ntru::{NlevParameters, NtruParameters, NtruSecretKey};
 pub use primus_tfhe::{
     BOOLEAN_PLAINTEXT_BITS, BivariateLookupTable, BooleanDecryptor, BooleanEncryptor, BooleanError,
-    BooleanEvaluator, BooleanGate, CircuitBootstrapCodecs, CircuitBootstrapConfig,
+    BooleanEvaluator, BooleanGate, CbsGadgetConfig, CircuitBootstrapCodecs,
     CircuitBootstrapLookupTable, ClientError, DecompositionConfig, Decryptor, EncryptionKey,
     Encryptor, FactorizedPbsCodecs, GadgetEncryptionConfig, InterleavedLookupTable, LookupTable,
     LookupTableCompiler, LookupTableError, Lwe, LweCiphertext, LweSecretKeyRef, PbsCodecs,

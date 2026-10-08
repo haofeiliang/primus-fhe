@@ -18,8 +18,8 @@ use primus_ntt::MonomialNttTable;
 use zeroize::Zeroizing;
 
 use crate::{
-    BlindRotationConfig, CircuitBootstrapConfig, CircuitBootstrapKey, CircuitBootstrapParameters,
-    ClientKey, KeyGenerationError, TfheContext,
+    BlindRotationAlgorithm, CbsGadgetConfig, CbsParameters, CircuitBootstrapKey, ClientKey,
+    KeyGenerationError, TfheContext,
 };
 
 /// Owning PBS bundle: blind rotation, LWE return, and optional CBS material.
@@ -163,13 +163,17 @@ where
     pub fn try_generate_server_key<R>(
         &mut self,
         client_key: &ClientKey<T>,
-        blind_rotation: BlindRotationConfig,
-        circuit_bootstrap: Option<CircuitBootstrapConfig>,
+        blind_rotation: BlindRotationAlgorithm,
+        circuit_bootstrap: Option<CbsGadgetConfig>,
         rng: &mut R,
     ) -> Result<ServerKey<T>, KeyGenerationError>
     where
         R: rand::Rng + rand::CryptoRng,
     {
+        self.context
+            .parameters()
+            .key_switching_lwe()
+            .ok_or(KeyGenerationError::MissingKeySwitchingParameters)?;
         let circuit_parameters = self.prepare_circuit_bootstrap(circuit_bootstrap)?;
         client_key.check_compatible(self.context.parameters())?;
         let sparse_layout = self.prepare_blind_rotation(blind_rotation)?;
@@ -222,7 +226,7 @@ where
         client_key: &ClientKey<T>,
         accumulator_ntt: NttNtruSecretKey<T>,
         sparse_layout: Option<crate::sparse::SparseKeyLayout>,
-        circuit_parameters: Option<CircuitBootstrapParameters<T>>,
+        circuit_parameters: Option<CbsParameters<T>>,
         rng: &mut R,
     ) -> Result<ServerKey<T>, KeyGenerationError>
     where
@@ -248,8 +252,13 @@ where
             client_key.accumulator_ntru_secret_key(),
             parameters.accumulator_ntru().cipher_modulus(),
             client_key.external_lwe_secret_key(),
-            parameters.key_switching_lwe(),
-            parameters.key_switching_basis().clone(),
+            parameters
+                .key_switching_lwe()
+                .expect("return parameters were checked before key generation"),
+            parameters
+                .key_switching_basis()
+                .expect("return sampler and basis are stored together")
+                .clone(),
             rng,
         );
         Ok(ServerKey::new(
@@ -274,17 +283,17 @@ where
     pub fn try_generate_blind_rotation_key<R>(
         &mut self,
         client_key: &ClientKey<T>,
-        blind_rotation: BlindRotationConfig,
+        blind_rotation: BlindRotationAlgorithm,
         rng: &mut R,
     ) -> Result<BlindRotationKey<T>, KeyGenerationError>
     where
         R: rand::Rng + rand::CryptoRng,
     {
         match blind_rotation {
-            BlindRotationConfig::Classic => {
+            BlindRotationAlgorithm::Classic => {
                 self.try_generate_classic_blind_rotation_key(client_key, rng)
             }
-            BlindRotationConfig::Sparse {
+            BlindRotationAlgorithm::Sparse {
                 copy_count,
                 bucket_count,
             } => self.try_generate_sparse_blind_rotation_key(
@@ -506,13 +515,17 @@ where
     /// have coefficient magnitudes below an explicit return modulus q.
     pub fn try_generate<R>(
         &mut self,
-        blind_rotation: BlindRotationConfig,
-        circuit_bootstrap: Option<CircuitBootstrapConfig>,
+        blind_rotation: BlindRotationAlgorithm,
+        circuit_bootstrap: Option<CbsGadgetConfig>,
         rng: &mut R,
     ) -> Result<(ClientKey<T>, ServerKey<T>), KeyGenerationError>
     where
         R: rand::Rng + rand::CryptoRng,
     {
+        self.context
+            .parameters()
+            .key_switching_lwe()
+            .ok_or(KeyGenerationError::MissingKeySwitchingParameters)?;
         let circuit_parameters = self.prepare_circuit_bootstrap(circuit_bootstrap)?;
         let sparse_layout = self.prepare_blind_rotation(blind_rotation)?;
         let (client_key, transformed) = self.generate_client_key_with_main(rng)?;
@@ -541,11 +554,11 @@ where
     /// Prepares the selected BR layout before sampling: `None` denotes classic.
     fn prepare_blind_rotation(
         &self,
-        blind_rotation: BlindRotationConfig,
+        blind_rotation: BlindRotationAlgorithm,
     ) -> Result<Option<crate::sparse::SparseKeyLayout>, KeyGenerationError> {
         Ok(match blind_rotation {
-            BlindRotationConfig::Classic => None,
-            BlindRotationConfig::Sparse {
+            BlindRotationAlgorithm::Classic => None,
+            BlindRotationAlgorithm::Sparse {
                 copy_count,
                 bucket_count,
             } => Some(self.prepare_sparse_layout(copy_count, bucket_count)?),
@@ -555,12 +568,10 @@ where
     /// Prepares optional CBS bases before any secret or evaluation-key sampling.
     fn prepare_circuit_bootstrap(
         &self,
-        circuit_bootstrap: Option<CircuitBootstrapConfig>,
-    ) -> Result<Option<CircuitBootstrapParameters<T>>, KeyGenerationError> {
+        circuit_bootstrap: Option<CbsGadgetConfig>,
+    ) -> Result<Option<CbsParameters<T>>, KeyGenerationError> {
         circuit_bootstrap
-            .map(|config| {
-                CircuitBootstrapParameters::try_from_config(self.context.parameters(), config)
-            })
+            .map(|config| CbsParameters::try_from_config(self.context.parameters(), config))
             .transpose()
             .map_err(Into::into)
     }
@@ -580,8 +591,8 @@ where
     /// Distribution and fixed-weight validity is established by parameter construction.
     pub fn try_generate_keys<R>(
         &self,
-        blind_rotation: BlindRotationConfig,
-        circuit_bootstrap: Option<CircuitBootstrapConfig>,
+        blind_rotation: BlindRotationAlgorithm,
+        circuit_bootstrap: Option<CbsGadgetConfig>,
         rng: &mut R,
     ) -> Result<(ClientKey<T>, ServerKey<T>), KeyGenerationError>
     where
@@ -596,8 +607,8 @@ where
     pub fn try_generate_server_key<R: rand::Rng + rand::CryptoRng>(
         &self,
         client_key: &ClientKey<T>,
-        blind_rotation: BlindRotationConfig,
-        circuit_bootstrap: Option<CircuitBootstrapConfig>,
+        blind_rotation: BlindRotationAlgorithm,
+        circuit_bootstrap: Option<CbsGadgetConfig>,
         rng: &mut R,
     ) -> Result<ServerKey<T>, KeyGenerationError> {
         KeyGenerator::new(self).try_generate_server_key(

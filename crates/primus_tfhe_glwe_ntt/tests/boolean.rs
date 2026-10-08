@@ -11,10 +11,10 @@ use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
 use primus_poly::PolyLength;
-use primus_tfhe::BlindRotationConfig;
+use primus_tfhe::BlindRotationAlgorithm;
 use primus_tfhe_glwe_ntt::{
-    BooleanError, BooleanGate, GadgetEncryptionConfig, LweCiphertext, PbsOrder, TfheContext,
-    TfheParameters,
+    BooleanError, BooleanGate, GadgetEncryptionConfig, LweCiphertext, PbsOrder, PbsParameters,
+    TfheContext,
 };
 use rand::{SeedableRng, rngs::StdRng};
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -23,7 +23,7 @@ const POLY_LENGTH: usize = 32;
 const MODULUS: u32 = 132_120_577;
 
 /// Small parameters for client factories and both PBS orders.
-fn parameters(pbs_order: PbsOrder) -> TfheParameters<u32> {
+fn parameters(pbs_order: PbsOrder) -> PbsParameters<u32> {
     let modulus = BarrettModulus::new(MODULUS);
     let lwe = LweParameters::new(
         LweDimension::new(4),
@@ -45,7 +45,7 @@ fn parameters(pbs_order: PbsOrder) -> TfheParameters<u32> {
         DecompositionBaseLog::new(8),
         Some(DecompositionLevelCount::new(3)),
     );
-    TfheParameters::try_new(
+    PbsParameters::try_new(
         lwe.into_encryption_parameters(),
         primus_glwe::GgswParameters::try_with_basis(&glwe, bootstrapping).unwrap(),
         GadgetEncryptionConfig {
@@ -72,7 +72,7 @@ fn boolean_factories_support_truth_tables_and_reused_output_in_both_orders() {
             primus_encoding::RoundedCodec::new(4, context.parameters().cipher_modulus());
         let mut rng = StdRng::seed_from_u64(42);
         let (client_key, server_key) = context
-            .try_generate_keys(BlindRotationConfig::Classic, None, &mut rng)
+            .try_generate_keys(BlindRotationAlgorithm::Classic, None, &mut rng)
             .unwrap();
         let encryptor = context
             .boolean_encryptor(client_key.external_lwe_secret_key(), &input_codec)

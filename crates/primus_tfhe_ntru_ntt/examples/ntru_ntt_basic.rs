@@ -3,38 +3,26 @@
 //! Run: `cargo run --release -p primus_tfhe_ntru_ntt --example ntru_ntt_basic`
 //! Arithmetic profiles: guides/development/tfhe-parameters.md (not security presets).
 
-use primus_decompose::DecompositionBaseLog;
-use primus_lattice::LweDimension;
-use primus_lwe::LweEncryptionParameters;
-use primus_modulus::{BarrettModulus, PowOf2Modulus};
-use primus_ntru::SecretKeyDistr;
 use primus_ntt::U64NttTable as Table;
-use primus_poly::PolyLength;
-use primus_tfhe::BlindRotationConfig;
-use primus_tfhe_ntru_ntt::{
-    DecompositionConfig, GadgetEncryptionConfig, PbsMessageConfig, TfheConfig, TfheContext,
-    TfheParameters,
-};
+use primus_tfhe_ntru_ntt::{TfheContext, experimental};
 use rand::{SeedableRng, rngs::StdRng};
 
-// This example uses u64 coefficients with the explicit parameters below.
+// The paired experimental entry fixes u64 coefficients and the input/output domains.
 type Word = u64;
-const N: usize = 2048;
 
 fn main() {
-    let parameters = parameters();
+    let config = experimental::CLASSIC_PBS_U64;
+    let parameters = config.try_prepare().unwrap();
     let context = TfheContext::<Word, Table, _>::try_from_parameters(parameters).unwrap();
 
     // Input and output messages both use t=32, independently of the keys.
-    let codecs = context
-        .parameters()
-        .pbs_codecs(PbsMessageConfig::new(32))
-        .unwrap();
+    // To change only the output domain, use config.messages.with_output_modulus(t_out) here.
+    let codecs = context.parameters().pbs_codecs(config.messages).unwrap();
 
     // Client: keep client_key secret; send only server_key to the server.
     let mut rng = StdRng::seed_from_u64(42);
     let (client_key, server_key) = context
-        .try_generate_keys(BlindRotationConfig::Classic, None, &mut rng)
+        .try_generate_keys(config.blind_rotation.algorithm, None, &mut rng)
         .unwrap();
     // Ordinary messages borrow only the external secret from the setup bundle.
     let external_secret = client_key.external_lwe_secret_key();
@@ -66,44 +54,4 @@ fn main() {
         assert_eq!(result, message % 4);
         println!("f({message}) = {result}");
     }
-}
-
-// Key parameters: n=866, N=2048; independent external LWE q=2^24.
-// Noise sigmas below are in coefficient units; these are arithmetic examples, not security presets.
-fn parameters() -> TfheParameters<Word, PowOf2Modulus<Word>> {
-    // NTT requires a prime admitting a 2N-th root, rather than a power-of-two modulus.
-    let ring_modulus: Word = 1_125_899_906_826_241;
-    let modulus = BarrettModulus::new(ring_modulus);
-    let lwe_modulus: Word = 1 << 24;
-
-    // None retains floor(modulus_bits / log_basis) levels; it need not cover every low bit.
-    let full = DecompositionConfig {
-        log_basis: DecompositionBaseLog::new(8),
-        level_count: None,
-    };
-
-    TfheParameters::try_from_config(TfheConfig {
-        external_lwe: LweEncryptionParameters::new(
-            LweDimension::new(866),
-            PowOf2Modulus::new(lwe_modulus),
-            SecretKeyDistr::UniformBinary,
-            lwe_modulus as f64 * 2.046151696979124e-6,
-        ),
-        accumulator_modulus: modulus, // Ring Q; distinct from the external LWE q.
-        poly_length: PolyLength::new(N),
-        accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
-        blind_rotation: GadgetEncryptionConfig {
-            decomposition: full,
-            noise_standard_deviation: 0.7,
-        },
-        // Return key switch in the q domain.
-        key_switching: GadgetEncryptionConfig {
-            decomposition: DecompositionConfig {
-                log_basis: DecompositionBaseLog::new(3),
-                level_count: None,
-            },
-            noise_standard_deviation: 3.2,
-        },
-    })
-    .unwrap()
 }

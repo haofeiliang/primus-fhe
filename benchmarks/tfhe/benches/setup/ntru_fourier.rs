@@ -15,7 +15,7 @@ use primus_modulus::NativeModulus;
 use primus_modulus::PowOf2Modulus;
 use primus_ntru::SecretKeyDistr;
 use primus_tfhe_benchmarks::{benchmark::PBS_WORKLOADS, parameters::ntru};
-use primus_tfhe_ntru_fourier::{BlindRotationConfig, KeyGenerator, TfheContext};
+use primus_tfhe_ntru_fourier::{BlindRotationAlgorithm, KeyGenerator, TfheContext};
 use rand::{SeedableRng, rngs::StdRng};
 
 // Keygen keeps one Boolean-sized fixture per secret distribution.
@@ -57,7 +57,7 @@ fn keygen<T: TorusFftValue, Table: FftTable>(c: &mut Group<'_>, backend: &str, t
                 generator
                     .try_generate_server_key(
                         black_box(client),
-                        BlindRotationConfig::Classic,
+                        BlindRotationAlgorithm::Classic,
                         None,
                         &mut rng,
                     )

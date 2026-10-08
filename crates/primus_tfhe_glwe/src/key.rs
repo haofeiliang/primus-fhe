@@ -3,7 +3,7 @@ use primus_integer::FheUint;
 use primus_lattice::{GlweDimension, GlweSize};
 use primus_reduce::RingContext;
 
-use crate::{GlweSecretKey, LweSecretKey, PbsOrder, TfheKeyError, TfheParameters};
+use crate::{GlweSecretKey, LweSecretKey, PbsOrder, PbsParameters, TfheKeyError};
 
 mod external;
 
@@ -27,7 +27,7 @@ impl<T: FheUint> ClientKey<T> {
     ///
     /// Distribution and fixed-weight validity is established by parameter construction.
     #[must_use]
-    pub fn generate<M, R>(parameters: &TfheParameters<T, M>, rng: &mut R) -> Self
+    pub fn generate<M, R>(parameters: &PbsParameters<T, M>, rng: &mut R) -> Self
     where
         M: RingContext<T>,
         R: rand::Rng + rand::CryptoRng,
@@ -105,7 +105,7 @@ impl<T: FheUint> ClientKey<T> {
     #[must_use]
     pub fn padded_small_glwe_secret_key<M>(
         &self,
-        parameters: &TfheParameters<T, M>,
+        parameters: &PbsParameters<T, M>,
     ) -> GlweSecretKey<T>
     where
         M: RingContext<T>,
@@ -163,7 +163,7 @@ impl<T: FheUint> ClientKey<T> {
     /// Imported small-LWE coefficients must be `0/1`, or also `q-1` for ternary
     /// distributions. This does not validate fixed weights or the accumulator's
     /// coefficient magnitudes; transform backends retain their range contracts.
-    pub fn check_compatible<M>(&self, parameters: &TfheParameters<T, M>) -> Result<(), TfheKeyError>
+    pub fn check_compatible<M>(&self, parameters: &PbsParameters<T, M>) -> Result<(), TfheKeyError>
     where
         M: RingContext<T>,
     {
@@ -189,7 +189,7 @@ impl<T: FheUint> ClientKey<T> {
     }
 }
 
-impl<T: FheUint, M: RingContext<T>> TfheParameters<T, M> {
+impl<T: FheUint, M: RingContext<T>> PbsParameters<T, M> {
     /// Checks the small secret at setup or external-client binding, before raw views.
     pub(crate) fn check_small_lwe_secret_key(
         &self,

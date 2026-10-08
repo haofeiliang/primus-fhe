@@ -6,9 +6,9 @@ use primus_tfhe::{
     LookupTableError, PbsMessageConfig, RoundedPbsCodecs,
 };
 
-use crate::TfheParameters;
+use crate::PbsParameters;
 
-impl<T: FheUint, M: RingContext<T>> TfheParameters<T, M> {
+impl<T: FheUint, M: RingContext<T>> PbsParameters<T, M> {
     /// Prepares `(input_codec, ring_message_codec)` for CBS followed by CMux.
     ///
     /// The Rounded input and Scaled candidate ring messages have independent

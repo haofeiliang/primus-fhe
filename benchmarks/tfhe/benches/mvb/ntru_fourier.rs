@@ -100,7 +100,7 @@ struct Fixture<T: TorusFftValue, Table: FftTable> {
 impl<T: TorusFftValue, Table: FftTable> Fixture<T, Table> {
     /// Preserve the seed and key-generation sequence of the matched workloads.
     fn new(
-        parameters: primus_tfhe_ntru_fourier::TfheParameters<T, PowOf2Modulus<T>>,
+        parameters: primus_tfhe_ntru_fourier::PbsParameters<T, PowOf2Modulus<T>>,
         codecs: FactorizedPbsCodecs<T, primus_modulus::NativeModulus<T>, PowOf2Modulus<T>>,
         workload: ThresholdWorkload,
     ) -> Self {

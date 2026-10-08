@@ -39,7 +39,7 @@ Raw 系数、NTT、Fourier 和 CRT/DCRT 多项式的 `len()` / `is_empty()` 统�
 
 [PolyLength](../../crates/primus_poly/src/poly_length.rs) 属于 `primus_poly`，集中检查 FHE 共用的 `32..=2^17` 二次幂范围。`get()`、`log_n()`、`fourier_poly_len()` 分别返回 `N`、`log2(N)` 和 `N/2` 个复数元素。GLWE/NTRU 参数、checked size、工作区、公共 TFHE LUT 和 NTT/FFT 表直接传递同一个类型，不重复检查上界。
 
-该范围保证 `2N` 可由 `usize` 表示；组合存储长度仍由拥有布局的边界检查。FFT 构造直接接受该支持范围；NTT 保留模数、单位根和 degree 的条件。两个 TFHE 家族的 `TfheConfig` 都接收 `PolyLength`；raw 缓冲区、批次数量及数值内核使用整数，依赖调用方满足布局契约。
+该范围保证 `2N` 可由 `usize` 表示；组合存储长度仍由拥有布局的边界检查。FFT 构造直接接受该支持范围；NTT 保留模数、单位根和 degree 的条件。两个 TFHE 家族的 `BlindRotationConfig::acc_poly_length` 都接收 `PolyLength`；raw 缓冲区、批次数量及数值内核使用整数，依赖调用方满足布局契约。
 
 lattice 的 `LweDimension` 和 `GlweDimension` 检查正的 mask 计数及可表示的含 body 计数；`ciphertext_len()` 返回 `n+1`，`component_count()` 返回 `k+1`。`GlweSize` 保存 GLWE 几何尺寸和扁平长度，通过 `LweDimension::from(glwe_size)` 显式派生经过验证的 `kN`；NTRU 提取使用 `LweDimension::from(poly_length)`。原始切片保留整数维数，允许零维。
 
@@ -167,7 +167,7 @@ assert_eq!(level_count, 9); // (k+1) 行 * L 层
 
 明确区分消息、已编码明文和提取出的系数域 phase。编码选择 codec 与 embedding，加密对已编码数据加入噪声，phase 提取不解码。诊断时用 [`phase_error_magnitude` / `phase_error_magnitude_slice_to`](../../crates/primus_encoding/README.zh_CN.md#相位误差诊断) 比较实际 phase 与**预期消息**的编码；不能用解码后重编码值代替参考，也不能将 NTT/Fourier 存储直接当成系数 phase。消息恢复是否正确与相位误差幅度回答不同的问题。LWE、单模数 GLWE 和 NTRU 用 `encrypt_message*` / `decrypt_message*`、`encrypt_encoded*` 和 `decrypt_phase*` 区分这三层，消息加密始终显式选择 `PlaintextEmbedding`。LWE 独立 `*_batch` 与共享掩码 `*_packed` 的布局不同，见 [LWE 工作流](../../crates/primus_lwe/README.zh_CN.md#独立-batch-与-packed-消息)。
 
-[TFHE 参数与边界指南](tfhe-parameters-and-boundaries.md) 说明 q/Q、秘密域、PBS/CBS/MVB/one-hot/查表链路及构造错误归属。 [参数矩阵](tfhe-parameters.md) 列出按操作、字宽和后端验证的实际尺寸配置，以及独立的大参数验证入口；普通测试仍使用小参数。
+[TFHE 参数与边界指南](tfhe-parameters-and-boundaries.md) 说明 q/Q、秘密域、PBS/CBS/MVB/one-hot/查表链路及构造错误归属。[参数矩阵](tfhe-parameters.md) 列出实际密钥/消息配置、操作条件、同钥复用、证据缺口及独立的大参数验证入口。这些是安全性与失败概率尚未评估的算术样例；普通测试仍使用小参数。
 
 从拥有该运算的最低层开始。下面的快速开始均包含 message 加密/解密和 encoded/phase 原语，无需从 gadget 或 TFHE 入手。
 

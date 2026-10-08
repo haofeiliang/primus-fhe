@@ -6,7 +6,7 @@ use primus_integer::FheUint;
 use primus_poly::PolynomialOwned;
 use primus_reduce::RingContext;
 
-use crate::{CircuitBootstrapParameters, TfheEvaluationError, TfheParameters};
+use crate::{CbsParameters, PbsParameters, TfheEvaluationError};
 
 mod selectors;
 pub use selectors::NlevSelectors;
@@ -55,8 +55,8 @@ impl<T: FheUint> OneHotLookupTable<T> {
     /// condition on [`Self`]; shape checks do not establish that margin.
     /// NTRU evaluation errors require a separate output-noise budget.
     pub fn try_new<M, LM>(
-        tfhe: &TfheParameters<T, M, LM>,
-        cbs: &CircuitBootstrapParameters<T, M>,
+        tfhe: &PbsParameters<T, M, LM>,
+        cbs: &CbsParameters<T, M>,
         input_codec: &RoundedCodec<T, LM>,
     ) -> Result<Self, OneHotBootstrapError>
     where

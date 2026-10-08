@@ -9,8 +9,8 @@ use primus_ntru::NlevParameters;
 use primus_ntru::{NtruParameters, NtruSecretKey, SecretKeyDistr};
 use primus_poly::PolyLength;
 use primus_tfhe_ntru::{
-    ClientKey, DecompositionConfig, GadgetEncryptionConfig, TfheClientError, TfheKeyError,
-    TfheParameters,
+    ClientKey, DecompositionConfig, GadgetEncryptionConfig, PbsParameters, TfheClientError,
+    TfheKeyError,
 };
 use rand::{RngExt, SeedableRng};
 
@@ -29,7 +29,7 @@ fn imported_external_residues_must_match_the_control_domain() {
         SecretKeyDistr::UniformBinary,
         SecretKeyDistr::UniformTernary,
     ] {
-        let parameters = TfheParameters::try_new(
+        let parameters = PbsParameters::try_new(
             LweEncryptionParameters::new(LweDimension::new(4), modulus, distr, 0.7),
             NlevParameters::try_with_basis(
                 &accumulator,
@@ -107,7 +107,7 @@ fn return_key_rejects_accumulator_magnitudes_outside_external_modulus() {
         distr,
         0.7,
     );
-    let parameters = TfheParameters::try_new(
+    let parameters = PbsParameters::try_new(
         LweEncryptionParameters::new(
             LweDimension::new(1),
             PowOf2Modulus::new(16),
@@ -154,6 +154,8 @@ fn return_key_rejects_accumulator_magnitudes_outside_external_modulus() {
         assert_eq!(
             parameters.try_generate_lwe_return_key(&key, &mut rng).err(),
             expected
+                .clone()
+                .map(primus_tfhe_ntru::KeyGenerationError::ClientKey)
         );
         if expected.is_some() {
             assert_eq!(rng.random::<u64>(), untouched.random::<u64>());

@@ -6,13 +6,13 @@
 use primus_decompose::DecompositionBaseLog;
 use primus_glwe::SecretKeyDistr;
 use primus_lattice::{GlweDimension, LweDimension};
-use primus_lwe::LweEncryptionParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntt::U64NttTable as Table;
 use primus_poly::PolyLength;
+use primus_tfhe_glwe::{BlindRotationConfig, LweConfig};
 use primus_tfhe_glwe_ntt::{
-    BlindRotationConfig, DecompositionConfig, GadgetEncryptionConfig, PbsMessageConfig, PbsOrder,
-    TfheConfig, TfheContext, TfheParameters,
+    BlindRotationAlgorithm, DecompositionConfig, GadgetEncryptionConfig, PbsMessageConfig,
+    PbsOrder, PbsParameters, TfheContext,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -35,7 +35,7 @@ fn main() {
     // Three copies, 64 buckets. Map retries retain the same client secret.
     let (client_key, server_key) = context
         .try_generate_keys(
-            BlindRotationConfig::Sparse {
+            BlindRotationAlgorithm::Sparse {
                 copy_count: 3,
                 bucket_count: 64,
             },
@@ -77,7 +77,7 @@ fn main() {
 
 // Key parameters: n=728, N=1024; LWE and GLWE share the ciphertext modulus.
 // Noise sigmas below are in coefficient units; these are arithmetic examples, not security presets.
-fn parameters() -> TfheParameters<Word> {
+fn parameters() -> PbsParameters<Word> {
     // NTT requires a prime admitting a 2N-th root, rather than a power-of-two modulus.
     let ring_modulus: Word = 1_125_899_906_826_241;
     let modulus = BarrettModulus::new(ring_modulus);
@@ -89,25 +89,34 @@ fn parameters() -> TfheParameters<Word> {
         level_count: None,
     };
 
-    TfheParameters::try_from_config(TfheConfig {
-        small_lwe: LweEncryptionParameters::new(
-            LweDimension::new(728),
-            modulus,
-            SecretKeyDistr::fixed_hamming_weight_binary(728, 32),
-            3.2 * q / 16384.0,
-        ),
-        accumulator_dimension: GlweDimension::new(1),
-        poly_length: PolyLength::new(N),
-        accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
-        blind_rotation: GadgetEncryptionConfig {
+    BlindRotationConfig {
+        small_lwe: LweConfig {
+            dimension: LweDimension::new(728),
+            cipher_modulus: modulus.into(),
+            secret_key_distr: SecretKeyDistr::fixed_hamming_weight_binary(728, 32),
+            noise_standard_deviation: 3.2 * q / 16384.0,
+        },
+        acc_dimension: GlweDimension::new(1),
+        acc_poly_length: PolyLength::new(N),
+        bsk_secret_distr: SecretKeyDistr::SparseTernary,
+        bsk_gadget: GadgetEncryptionConfig {
             decomposition: full,
             noise_standard_deviation: 6.4,
         },
-        key_switching: GadgetEncryptionConfig {
-            decomposition: full,
-            noise_standard_deviation: 6.4,
+        algorithm: BlindRotationAlgorithm::Sparse {
+            copy_count: 3,
+            bucket_count: 64,
         },
-        pbs_order: PbsOrder::BootstrapKeyswitch,
+    }
+    .try_prepare()
+    .and_then(|parameters| {
+        parameters.try_with_key_switching(
+            GadgetEncryptionConfig {
+                decomposition: full,
+                noise_standard_deviation: 6.4,
+            },
+            PbsOrder::BootstrapKeyswitch,
+        )
     })
     .unwrap()
 }

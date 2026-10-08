@@ -10,8 +10,7 @@ use primus_tfhe::CircuitBootstrapLookupTable;
 use super::key::CircuitBootstrapBinding;
 
 use crate::{
-    BootstrapResources, CircuitBootstrapKey, CircuitBootstrapParameters, Lwe, TfheContext,
-    TfheEvaluationError,
+    BootstrapResources, CbsParameters, CircuitBootstrapKey, Lwe, TfheContext, TfheEvaluationError,
 };
 
 /// Classic binary/ternary or sparse binary CBS producing Fourier GGSW controls.
@@ -71,7 +70,7 @@ where
     /// or a noise margin; see [`primus_glwe::FourierGlweSchemeSwitchKey::apply_to`].
     pub fn try_with_parameters(
         resources: &BootstrapResources<'a, T, Table>,
-        parameters: &'a CircuitBootstrapParameters<T>,
+        parameters: &'a CbsParameters<T>,
         circuit_key: &'a CircuitBootstrapKey<T>,
         input_codec: &RoundedCodec<T, NativeModulus<T>>,
     ) -> Result<Self, TfheEvaluationError> {
@@ -114,7 +113,7 @@ where
     /// [`Self::try_with_parameters`]'s secret, representation and noise requirements.
     pub fn try_with_parameters_and_lookup_table(
         resources: &BootstrapResources<'a, T, Table>,
-        parameters: &'a CircuitBootstrapParameters<T>,
+        parameters: &'a CbsParameters<T>,
         circuit_key: &'a CircuitBootstrapKey<T>,
         lookup_table: CircuitBootstrapLookupTable<T>,
     ) -> Result<Self, TfheEvaluationError> {
@@ -180,7 +179,7 @@ where
     /// is the selected input codec's plaintext modulus. Noise must fit the coarser interleaved-LUT
     /// rotation intervals. Trace and scheme-switch errors, including native
     /// halving and FFT rounding, must fit the independent CBS error budget;
-    /// see [`CircuitBootstrapParameters`]. Sparse keys also require aggregation
+    /// see [`CbsParameters`]. Sparse keys also require aggregation
     /// noise from every bucket, including zero selections and dummies, and the
     /// aggregate FFT error to fit that budget. CMux requires `F(m)` in `{0, 1}`
     /// throughout the programmed domain. The default identity uses `F(m)=m`.

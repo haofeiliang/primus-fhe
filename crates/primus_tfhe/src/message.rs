@@ -23,16 +23,41 @@ pub struct PbsMessageConfig<T: FheUint> {
 impl<T: FheUint> PbsMessageConfig<T> {
     /// Chooses the same plaintext modulus for input and all outputs.
     #[must_use]
-    pub fn new(plaintext_modulus: T) -> Self {
+    pub const fn new(plaintext_modulus: T) -> Self {
         Self {
             input_modulus: plaintext_modulus,
             output_modulus: plaintext_modulus,
         }
     }
 
+    /// Chooses a padded input domain of `2^input_bits` values and equal codec moduli.
+    ///
+    /// The codec modulus is `2^(input_bits+1)`: one extra bit provides the
+    /// ordinary PBS padding. The full output domain has that same modulus;
+    /// output padding and reconsumption are not implied. Zero input bits describe
+    /// the singleton domain. Ciphertext-modulus and LUT-capacity checks remain
+    /// with codec preparation and program compilation.
+    ///
+    /// # Panics
+    /// Panics if the codec modulus does not fit the coefficient word.
+    #[must_use]
+    pub fn from_input_bits(input_bits: u32) -> Self {
+        Self::try_from_input_bits(input_bits).unwrap_or_else(|error| panic!("{error}"))
+    }
+
+    /// Prepares the padded message choice described by [`Self::from_input_bits`].
+    /// Returns [`LookupTableError::InvalidInputEncoding`] if the codec modulus
+    /// does not fit the word. This does not validate a noise or security budget.
+    pub fn try_from_input_bits(input_bits: u32) -> Result<Self, LookupTableError> {
+        if input_bits >= T::BITS - 1 {
+            return Err(LookupTableError::InvalidInputEncoding);
+        }
+        Ok(Self::new(T::ONE << (input_bits + 1)))
+    }
+
     /// Changes the output plaintext modulus without changing the input domain.
     #[must_use]
-    pub fn with_output_modulus(mut self, plaintext_modulus: T) -> Self {
+    pub const fn with_output_modulus(mut self, plaintext_modulus: T) -> Self {
         self.output_modulus = plaintext_modulus;
         self
     }

@@ -95,7 +95,7 @@ struct Fixture<T: FheUint, Table: MonomialNttTable<ValueT = T>> {
 impl<T: FheUint, Table: MonomialNttTable<ValueT = T>> Fixture<T, Table> {
     /// Preserve the seed and key-generation sequence of the matched workloads.
     fn new(
-        parameters: primus_tfhe_glwe_ntt::TfheParameters<T>,
+        parameters: primus_tfhe_glwe_ntt::PbsParameters<T>,
         codecs: FactorizedPbsCodecs<T, primus_modulus::BarrettModulus<T>>,
         workload: ThresholdWorkload,
     ) -> Self {

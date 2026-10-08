@@ -45,11 +45,11 @@ Sparse mode requires explicit key generation; sparse ternary is unsupported. NTR
 
 ## Selecting blind rotation
 
-All four backends re-export `BlindRotationConfig`. Select the algorithm independently of the secret distribution and optional CBS material:
+All four backends re-export `BlindRotationAlgorithm`. Select the algorithm independently of the secret distribution and optional CBS material:
 
 ```rust,ignore
-let blind_rotation = BlindRotationConfig::Sparse { copy_count: 3, bucket_count: 64 };
-// Use BlindRotationConfig::Classic for per-coordinate CMux controls.
+let blind_rotation = BlindRotationAlgorithm::Sparse { copy_count: 3, bucket_count: 64 };
+// Use BlindRotationAlgorithm::Classic for per-coordinate CMux controls.
 let (client, server) = context.try_generate_keys(blind_rotation, None, rng)?;
 ```
 
@@ -170,9 +170,9 @@ All backends prepare storage at construction; online `_to` operations never allo
 
 ## LUTs and resource lifetime
 
-Backends accept named `TfheConfig` choices and derive shared ring parameters; `TfheContext::try_from_parameters` creates the selected transform table. This crate re-exports `DecompositionConfig` (radix and retained levels) from [`primus_decompose`](../primus_decompose/README.md). `GadgetEncryptionConfig { decomposition, noise_standard_deviation }` groups the independent choices for blind rotation or PBS key switching. `CircuitBootstrapConfig` contains three `DecompositionConfig` choices: `output`, `trace` and `scheme_switch`. Trace and scheme-switch rows inherit the accumulator encryption noise and share its immutable sampler state; their bases and random draws remain independent. Backends bind these choices to their own modulus, layout and representation. `Option<CircuitBootstrapConfig>` selects optional CBS during paired key generation; the server key owns its parameters and material, while each evaluator owns only its own workspace.
+Backends accept numerical `PbsConfig` / `CbsConfig` choices and derive shared ring parameters; `TfheContext::try_from_parameters` creates the selected transform table. This crate re-exports `DecompositionConfig` (radix and retained levels) from [`primus_decompose`](../primus_decompose/README.md). `GadgetEncryptionConfig { decomposition, noise_standard_deviation }` groups the independent choices for blind rotation or PBS key switching. `CbsGadgetConfig` contains three `DecompositionConfig` choices: `output`, `trace` and `scheme_switch`. Trace and scheme-switch rows inherit the accumulator encryption noise and share its immutable sampler state; their bases and random draws remain independent. Backends bind these choices to their own modulus, layout and representation. `Option<CbsGadgetConfig>` selects optional CBS during paired key generation; the server key owns its parameters and material, while each evaluator owns only its own workspace.
 
-`GadgetEncryptionConfig<D = DecompositionConfig>` defaults to decomposition choices; the direct GLWE constructor instead accepts a prepared `ApproxSignedBasis<T>` as `D` and moves it without rebuilding it. Noise is in coefficient units at the key's modulus: common q for GLWE BR/KS, accumulator Q for NTRU BR and CBS trace/scheme switching, and external q for NTRU return KS. The config itself is unchecked; existing parameter constructors validate it. The noise in `TfheConfig::blind_rotation` also serves accumulator encryption and, for GLWE KS→BR, fresh external LWE encryption. KS noise remains independently configurable; CBS trace/scheme-switch rows inherit accumulator noise.
+`GadgetEncryptionConfig<D = DecompositionConfig>` defaults to decomposition choices; the direct GLWE constructor instead accepts a prepared `ApproxSignedBasis<T>` as `D` and moves it without rebuilding it. Noise is in coefficient units at the key's modulus: common q for GLWE BR/KS, accumulator Q for NTRU BR and CBS trace/scheme switching, and external q for NTRU return KS. The config itself is unchecked; existing parameter constructors validate it. The noise in `BlindRotationConfig::bsk_gadget` also serves accumulator encryption and, for GLWE KS→BR, fresh external LWE encryption. KS noise remains independently configurable; CBS trace/scheme-switch rows inherit accumulator noise.
 
 1. A family parameter set describes the external LWE and accumulator ring.
 2. A backend context binds those parameters to an NTT/FFT table and generates paired client/server keys.
@@ -214,6 +214,8 @@ The minimal traits are `ProgrammableBootstrap` and `ProgrammableBootstrapInterle
 ### Choosing the output encoding
 
 Describe message domains once with `PbsMessageConfig::new(t_in)`. It defaults to `t_out=t_in`; `.with_output_modulus(t_out)` explicitly changes the output domain without changing input encoding or keys. All ManyLUT lanes and MVB outputs share this output modulus. Odd plaintext moduli remain supported where the operation permits them.
+
+For a binary input width, `PbsMessageConfig::from_input_bits(4)` selects 16 valid padded inputs and codec modulus 32. One codec bit is padding; the default full output modulus is still 32, so output padding or reconsumption is not implied. `try_from_input_bits(u32)` rejects an unrepresentable modulus; ciphertext compatibility and LUT capacity remain setup checks. General/odd moduli still use `new(t)`.
 
 Prepare the codecs from either family's parameters; all four backends re-export the configuration:
 

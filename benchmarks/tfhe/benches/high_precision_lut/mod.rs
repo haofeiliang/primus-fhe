@@ -7,7 +7,7 @@ use primus_encoding::RoundedCodec;
 use primus_integer::FheUint;
 use primus_reduce::RingContext;
 use primus_tfhe_benchmarks::measurement::{Case, Group, metadata};
-use primus_tfhe_ntru::TfheParameters;
+use primus_tfhe_ntru::PbsParameters;
 use primus_tfhe_ntru_lut::{ChunkFormat, HighPrecisionLookupTable, LookupTableConfig};
 
 mod diagnostics;
@@ -107,7 +107,7 @@ pub fn check_repetition<T: FheUint>(table: &HighPrecisionLookupTable<T>, workloa
 pub fn benchmark_lut_creation<T: FheUint, M: RingContext<T>, LM: RingContext<T>>(
     c: &mut Group<'_>,
     case: &Case<'_>,
-    parameters: &TfheParameters<T, M, LM>,
+    parameters: &PbsParameters<T, M, LM>,
     workload: Workload,
 ) {
     let input_codec = RoundedCodec::new(

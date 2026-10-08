@@ -24,9 +24,10 @@ pub struct GadgetEncryptionConfig<D = DecompositionConfig> {
 /// binary secret can use either algorithm; selecting sparse with an unsupported distribution
 /// is an error, never a request to resample the secret or fall back to classic.
 /// Backend key generation validates bucket geometry against the actual secret and ciphertext
-/// layout. This configuration carries no keys, return policy, CBS material or runtime scratch.
+/// layout. This algorithm choice carries no encryption parameters, keys, return policy,
+/// CBS material or runtime scratch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BlindRotationConfig {
+pub enum BlindRotationAlgorithm {
     /// Per-coordinate binary or ternary CMux controls, including fixed-weight distributions.
     Classic,
     /// Bucketed controls for a fixed-weight binary secret with weight `0 < h < n`.
@@ -46,7 +47,7 @@ pub enum BlindRotationConfig {
 /// is shared with blind rotation; bases and random draws remain independent.
 /// The consuming parameters still require a CBS noise/security analysis.
 #[derive(Debug, Clone, Copy)]
-pub struct CircuitBootstrapConfig {
+pub struct CbsGadgetConfig {
     /// Reverse-trace key decomposition at the accumulator modulus.
     pub trace: DecompositionConfig,
     /// Scheme-switch key decomposition at the accumulator modulus.

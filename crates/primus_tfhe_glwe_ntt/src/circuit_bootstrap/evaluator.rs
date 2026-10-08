@@ -13,8 +13,7 @@ use primus_tfhe::CircuitBootstrapLookupTable;
 use super::key::CircuitBootstrapBinding;
 
 use crate::{
-    BootstrapResources, CircuitBootstrapKey, CircuitBootstrapParameters, Lwe, TfheContext,
-    TfheEvaluationError,
+    BootstrapResources, CbsParameters, CircuitBootstrapKey, Lwe, TfheContext, TfheEvaluationError,
 };
 
 /// Classic binary/ternary or sparse binary CBS producing NTT GGSW controls.
@@ -76,7 +75,7 @@ where
     /// or a noise margin; see [`primus_glwe::NttGlweSchemeSwitchKey::apply_to`].
     pub fn try_with_parameters(
         resources: &BootstrapResources<'a, T, Table>,
-        parameters: &'a CircuitBootstrapParameters<T>,
+        parameters: &'a CbsParameters<T>,
         circuit_key: &'a CircuitBootstrapKey<T>,
         input_codec: &RoundedCodec<T, BarrettModulus<T>>,
     ) -> Result<Self, TfheEvaluationError> {
@@ -119,7 +118,7 @@ where
     /// [`Self::try_with_parameters`]'s secret, representation and noise requirements.
     pub fn try_with_parameters_and_lookup_table(
         resources: &BootstrapResources<'a, T, Table>,
-        parameters: &'a CircuitBootstrapParameters<T>,
+        parameters: &'a CbsParameters<T>,
         circuit_key: &'a CircuitBootstrapKey<T>,
         lookup_table: CircuitBootstrapLookupTable<T>,
     ) -> Result<Self, TfheEvaluationError> {
@@ -198,7 +197,7 @@ where
     /// plaintext in `0..ceil(t/2)` and canonical residues, where `t` is the selected
     /// input codec's plaintext modulus. Noise must fit the coarser ManyLUT rotation intervals;
     /// trace and scheme-switching errors must also fit the independent CBS
-    /// budget described by [`CircuitBootstrapParameters`]. For sparse keys, include
+    /// budget described by [`CbsParameters`]. For sparse keys, include
     /// aggregation noise from every bucket, including zero selections and dummies.
     /// CMux requires `F(m)` in `{0, 1}` throughout the programmed domain.
     /// The output remains under the accumulator GLWE

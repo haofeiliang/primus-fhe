@@ -1,13 +1,13 @@
 use primus_decompose::DecompositionBaseLog;
 use primus_fft::{FftTable, RustFftTable, TfheFftTable, TorusFftValue};
 use primus_lattice::LweDimension;
-use primus_lwe::LweEncryptionParameters;
 use primus_modulus::NativeModulus;
 use primus_poly::PolyLength;
 use primus_tfhe::PbsMessageConfig;
+use primus_tfhe_ntru::{BlindRotationConfig, LweConfig, PbsConfig};
 use primus_tfhe_ntru_fourier::{
-    BlindRotationConfig, DecompositionConfig, GadgetEncryptionConfig, TfheConfig, TfheContext,
-    TfheEvaluationError, TfheParameters,
+    BlindRotationAlgorithm, DecompositionConfig, GadgetEncryptionConfig, TfheContext,
+    TfheEvaluationError,
 };
 
 use primus_encoding::RoundedCodec;
@@ -29,43 +29,45 @@ fn check<T: TorusFftValue, Table: FftTable>() {
             log_basis: DecompositionBaseLog::new(5),
             level_count: None,
         };
-        let config = TfheConfig {
-            external_lwe: LweEncryptionParameters::new(
-                LweDimension::new(DIM),
-                external_modulus,
-                distr,
-                0.7,
-            ),
-            accumulator_modulus: NativeModulus::new(),
-            poly_length: PolyLength::new(N),
-            accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
-            blind_rotation: GadgetEncryptionConfig {
-                decomposition: DecompositionConfig {
-                    log_basis: DecompositionBaseLog::new(8),
-                    level_count: None,
+        let config = PbsConfig {
+            blind_rotation: BlindRotationConfig {
+                external_lwe: LweConfig {
+                    dimension: LweDimension::new(DIM),
+                    cipher_modulus: external_modulus.into(),
+                    secret_key_distr: distr,
+                    noise_standard_deviation: 0.7,
                 },
-                noise_standard_deviation: 0.7,
+                acc_modulus: NativeModulus::new().into(),
+                acc_poly_length: PolyLength::new(N),
+                bsk_secret_distr: SecretKeyDistr::SparseTernary,
+                bsk_gadget: GadgetEncryptionConfig {
+                    decomposition: DecompositionConfig {
+                        log_basis: DecompositionBaseLog::new(8),
+                        level_count: None,
+                    },
+                    noise_standard_deviation: 0.7,
+                },
+                algorithm: BlindRotationAlgorithm::Classic,
             },
             key_switching: GadgetEncryptionConfig {
                 decomposition,
                 noise_standard_deviation: 0.7,
             },
+            messages: PbsMessageConfig::new(T::as_from(4u32)),
         };
-        let context = TfheContext::<_, Table, _>::from_parameters(
-            TfheParameters::try_from_config(config.clone()).unwrap(),
-        );
+        let context = TfheContext::<_, Table, _>::from_parameters(config.try_prepare().unwrap());
         let input_codec = RoundedCodec::new(
             T::as_from(4u32),
             context.parameters().external_lwe().cipher_modulus(),
         );
         let mut rng = StdRng::seed_from_u64(0x513251);
         let blind_rotation = if distr.is_binary() {
-            BlindRotationConfig::Sparse {
+            BlindRotationAlgorithm::Sparse {
                 copy_count: 3,
                 bucket_count: 8,
             }
         } else {
-            BlindRotationConfig::Classic
+            BlindRotationAlgorithm::Classic
         };
         let (client, server) = context
             .try_generate_keys(blind_rotation, None, &mut rng)
@@ -185,7 +187,7 @@ fn check<T: TorusFftValue, Table: FftTable>() {
             let sparse_server = context
                 .try_generate_server_key(
                     &client,
-                    BlindRotationConfig::Sparse {
+                    BlindRotationAlgorithm::Sparse {
                         copy_count: 3,
                         bucket_count: 8,
                     },
@@ -223,15 +225,9 @@ fn check<T: TorusFftValue, Table: FftTable>() {
         }
         // Changing only q must reject a server key before online work.
         let mut wrong = config;
-        wrong.external_lwe = LweEncryptionParameters::new(
-            LweDimension::new(DIM),
-            PowOf2Modulus::new(q / T::as_from(2u32)),
-            distr,
-            0.7,
-        );
-        let wrong = TfheContext::<_, Table, _>::from_parameters(
-            TfheParameters::try_from_config(wrong).unwrap(),
-        );
+        wrong.blind_rotation.external_lwe.cipher_modulus =
+            PowOf2Modulus::new(q / T::as_from(2u32)).into();
+        let wrong = TfheContext::<_, Table, _>::from_parameters(wrong.try_prepare().unwrap());
         assert_eq!(
             wrong.evaluator(&server).err(),
             Some(TfheEvaluationError::IncompatibleLweReturnKey)

@@ -48,14 +48,14 @@ pub const GLWE_STD_DEV: f64 = 2.845_267_479_601_915e-15;
 /// Matched sparse diagnostics use the same mapping in every consumer.
 /// Paper-specific copies/buckets remain in the paper profile.
 #[must_use]
-pub fn blind_rotation(sparse: bool) -> primus_tfhe::BlindRotationConfig {
+pub fn blind_rotation(sparse: bool) -> primus_tfhe::BlindRotationAlgorithm {
     if sparse {
-        primus_tfhe::BlindRotationConfig::Sparse {
+        primus_tfhe::BlindRotationAlgorithm::Sparse {
             copy_count: 3,
             bucket_count: 64,
         }
     } else {
-        primus_tfhe::BlindRotationConfig::Classic
+        primus_tfhe::BlindRotationAlgorithm::Classic
     }
 }
 

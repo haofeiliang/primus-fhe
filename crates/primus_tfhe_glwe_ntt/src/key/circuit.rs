@@ -5,9 +5,9 @@ use primus_integer::FheUint;
 use primus_ntt::MonomialNttTable;
 
 use crate::{
-    BlindRotationConfig, BlindRotationKey, BootstrapResources, CircuitBootstrapConfig,
-    CircuitBootstrapKey, CircuitBootstrapParameters, ClientKey, KeyGenerationError, KeyGenerator,
-    TfheContext, TfheEvaluationError,
+    BlindRotationAlgorithm, BlindRotationKey, BootstrapResources, CbsGadgetConfig, CbsParameters,
+    CircuitBootstrapKey, ClientKey, KeyGenerationError, KeyGenerator, TfheContext,
+    TfheEvaluationError,
 };
 
 /// Evaluation material for ring-output circuit bootstrapping.
@@ -103,14 +103,12 @@ where
     /// [`Self::try_generate`] for the selected algorithm; no output KS is generated.
     pub fn try_generate_circuit_bootstrap_keys<R: rand::Rng + rand::CryptoRng>(
         &mut self,
-        blind_rotation: BlindRotationConfig,
-        circuit_bootstrap: CircuitBootstrapConfig,
+        blind_rotation: BlindRotationAlgorithm,
+        circuit_bootstrap: CbsGadgetConfig,
         rng: &mut R,
     ) -> Result<(ClientKey<T>, CircuitBootstrapServerKey<T>), KeyGenerationError> {
-        let parameters = CircuitBootstrapParameters::try_from_config(
-            self.context.parameters(),
-            circuit_bootstrap,
-        )?;
+        let parameters =
+            CbsParameters::try_from_config(self.context.parameters(), circuit_bootstrap)?;
         let sparse_layout = self.prepare_blind_rotation(blind_rotation)?;
         let client = ClientKey::generate(self.context.parameters(), rng);
         let transformed =
@@ -146,8 +144,8 @@ where
     /// Inherits [`KeyGenerator::try_generate_circuit_bootstrap_keys`]'s contracts.
     pub fn try_generate_circuit_bootstrap_keys<R: rand::Rng + rand::CryptoRng>(
         &self,
-        blind_rotation: BlindRotationConfig,
-        circuit_bootstrap: CircuitBootstrapConfig,
+        blind_rotation: BlindRotationAlgorithm,
+        circuit_bootstrap: CbsGadgetConfig,
         rng: &mut R,
     ) -> Result<(ClientKey<T>, CircuitBootstrapServerKey<T>), KeyGenerationError> {
         KeyGenerator::new(self).try_generate_circuit_bootstrap_keys(

@@ -12,5 +12,4 @@ pub use one_hot::{
     OneHotLookupTable, OneHotProjection,
 };
 /// Shared CBS parameters specialized to this backend's modulus domain.
-pub type CircuitBootstrapParameters<T> =
-    primus_tfhe_ntru::CircuitBootstrapParameters<T, primus_modulus::NativeModulus<T>>;
+pub type CbsParameters<T> = primus_tfhe_ntru::CbsParameters<T, primus_modulus::NativeModulus<T>>;

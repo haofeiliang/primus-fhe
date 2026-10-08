@@ -2,7 +2,7 @@ use primus_integer::FheUint;
 use primus_ntru::NtruCiphertext;
 use primus_ntt::MonomialNttTable;
 
-use crate::{LweCiphertext, TfheContextError, TfheParameters};
+use crate::{LweCiphertext, PbsParameters, TfheContextError};
 
 /// Validated binding between NTRU TFHE parameters and one exact NTT table.
 pub struct TfheContext<T, Table, LM = primus_modulus::BarrettModulus<T>>
@@ -11,7 +11,7 @@ where
     Table: MonomialNttTable<ValueT = T>,
     LM: primus_reduce::RingContext<T>,
 {
-    parameters: TfheParameters<T, LM>,
+    parameters: PbsParameters<T, LM>,
     table: Table,
 }
 
@@ -26,7 +26,7 @@ where
     /// Preserves table-construction errors, including an unavailable primitive
     /// root or unsupported modulus. Use [`Self::try_new`] to inject an existing table.
     pub fn try_from_parameters(
-        parameters: TfheParameters<T, LM>,
+        parameters: PbsParameters<T, LM>,
     ) -> Result<Self, TfheContextError<T>> {
         let accumulator = parameters.accumulator_ntru();
         let table = Table::new(accumulator.poly_length(), accumulator.cipher_modulus())?;
@@ -35,7 +35,7 @@ where
 
     /// Binds parameters to a compatible NTT table.
     pub fn try_new(
-        parameters: TfheParameters<T, LM>,
+        parameters: PbsParameters<T, LM>,
         table: Table,
     ) -> Result<Self, TfheContextError<T>> {
         let expected = parameters.poly_length().get();
@@ -54,7 +54,7 @@ where
     /// Returns the validated mathematical parameters.
     #[must_use]
     #[inline]
-    pub fn parameters(&self) -> &TfheParameters<T, LM> {
+    pub fn parameters(&self) -> &PbsParameters<T, LM> {
         &self.parameters
     }
 
@@ -82,7 +82,7 @@ where
     /// Decomposes this context into parameters and its NTT table.
     #[must_use]
     #[inline]
-    pub fn into_parts(self) -> (TfheParameters<T, LM>, Table) {
+    pub fn into_parts(self) -> (PbsParameters<T, LM>, Table) {
         (self.parameters, self.table)
     }
 }

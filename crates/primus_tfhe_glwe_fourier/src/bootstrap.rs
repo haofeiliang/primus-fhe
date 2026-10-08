@@ -23,15 +23,17 @@ pub(crate) struct KeySwitchingResources<'a, T: TorusFftValue> {
 impl<'a, T: TorusFftValue> KeySwitchingResources<'a, T> {
     #[must_use]
     pub(crate) fn new(
-        parameters: &crate::TfheParameters<T>,
+        parameters: &crate::PbsParameters<T>,
         key: &'a FourierGlweKeySwitchingKey<T>,
     ) -> Self {
+        let output = parameters
+            .glwe_key_switching()
+            .expect("KS parameters were checked before resource allocation")
+            .output();
         Self {
             key,
-            scratch: FourierGlweKeySwitchingWorkspace::new(
-                parameters.glwe_key_switching().output().glwe_size(),
-            ),
-            switched: GlweCiphertext::zero(parameters.glwe_key_switching().output().glwe_len()),
+            scratch: FourierGlweKeySwitchingWorkspace::new(output.glwe_size()),
+            switched: GlweCiphertext::zero(output.glwe_len()),
         }
     }
 }

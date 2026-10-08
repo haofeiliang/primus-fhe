@@ -248,7 +248,7 @@ impl<T: FheUint> HighPrecisionLookupTable<T> {
     /// [`Self::try_new`] for offline compilation without TFHE parameters.
     #[cfg(any(feature = "ntt", feature = "fourier"))]
     pub fn try_from_parameters<M, LM, F>(
-        parameters: &primus_tfhe_ntru::TfheParameters<T, M, LM>,
+        parameters: &primus_tfhe_ntru::PbsParameters<T, M, LM>,
         input_codec: &RoundedCodec<T, LM>,
         config: LookupTableConfig,
         function: F,

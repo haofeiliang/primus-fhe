@@ -1,7 +1,7 @@
 use primus_fft::{FftEngine, FftTable, TorusFftValue};
 use primus_glwe::GlweCiphertext;
 
-use crate::{LweCiphertext, TfheContextError, TfheParameters};
+use crate::{LweCiphertext, PbsParameters, TfheContextError};
 
 /// A validated binding between native-torus TFHE parameters and an FFT table.
 ///
@@ -13,7 +13,7 @@ where
     T: TorusFftValue,
     Table: FftTable,
 {
-    parameters: TfheParameters<T>,
+    parameters: PbsParameters<T>,
     table: Table,
 }
 
@@ -27,13 +27,13 @@ where
     /// Use [`Self::try_new`] to inject an existing table instead; all transformed
     /// keys must use the bound table. The parameters already establish its length.
     #[must_use]
-    pub fn from_parameters(parameters: TfheParameters<T>) -> Self {
+    pub fn from_parameters(parameters: PbsParameters<T>) -> Self {
         let table = Table::new(parameters.blind_rotation_ggsw().poly_length());
         Self { parameters, table }
     }
 
     /// Binds TFHE parameters to a compatible Fourier table.
-    pub fn try_new(parameters: TfheParameters<T>, table: Table) -> Result<Self, TfheContextError> {
+    pub fn try_new(parameters: PbsParameters<T>, table: Table) -> Result<Self, TfheContextError> {
         let expected = parameters.blind_rotation_ggsw().poly_length().get();
         let actual = table.poly_length().get();
         if actual != expected {
@@ -45,7 +45,7 @@ where
     /// Returns the validated TFHE parameters.
     #[must_use]
     #[inline]
-    pub fn parameters(&self) -> &TfheParameters<T> {
+    pub fn parameters(&self) -> &PbsParameters<T> {
         &self.parameters
     }
 
@@ -80,7 +80,7 @@ where
     /// Decomposes this context into its parameters and Fourier table.
     #[must_use]
     #[inline]
-    pub fn into_parts(self) -> (TfheParameters<T>, Table) {
+    pub fn into_parts(self) -> (PbsParameters<T>, Table) {
         (self.parameters, self.table)
     }
 }

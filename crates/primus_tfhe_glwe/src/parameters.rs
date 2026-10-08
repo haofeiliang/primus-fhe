@@ -23,91 +23,28 @@ pub enum PbsOrder {
     KeyswitchBootstrap,
 }
 
-/// GLWE-TFHE key-generation choices with one ciphertext modulus domain.
-///
-/// The accumulator inherits `q` from `small_lwe`. Message codecs are selected
-/// when constructing clients or compiling programs. BR and ring-KS noise are
-/// selected independently, as in [`TfheParameters::try_new`].
-#[derive(Clone)]
-pub struct TfheConfig<T: FheUint, M: RingContext<T>> {
-    /// Small BR-control secret, dimension, ciphertext modulus and fresh LWE noise.
-    /// This is the external domain only for [`PbsOrder::BootstrapKeyswitch`].
-    pub small_lwe: LweEncryptionParameters<T, M>,
-    /// Number of secret polynomials in the accumulator.
-    pub accumulator_dimension: GlweDimension,
-    /// Accumulator polynomial length `N`.
-    pub poly_length: PolyLength,
-    /// Coefficient distribution of the accumulator secret.
-    pub accumulator_secret_key_distr: SecretKeyDistr,
-    /// Blind-rotation GGSW decomposition and row noise at the common ciphertext modulus.
-    /// The coefficient-unit noise also serves accumulator encryption and fresh
-    /// external LWE encryption for [`PbsOrder::KeyswitchBootstrap`].
-    pub blind_rotation: GadgetEncryptionConfig,
-    /// Ring-KS decomposition and row noise at the common ciphertext modulus in
-    /// both PBS orders, independent of accumulator and fresh small-LWE noise.
-    pub key_switching: GadgetEncryptionConfig,
-    /// Order determining the external LWE secret domain.
-    pub pbs_order: PbsOrder,
-}
-
-impl<T: FheUint, M: RingContext<T>> TfheParameters<T, M> {
-    /// Derives accumulator and gadget parameters from named independent choices.
-    ///
-    /// Returns accumulator/KS construction errors and the compatibility/basis
-    /// errors of [`Self::try_new`]. This does not validate a noise/security budget.
-    pub fn try_from_config(config: TfheConfig<T, M>) -> Result<Self, TfheParameterError> {
-        let modulus = config.small_lwe.cipher_modulus();
-        let size = GlweSize::try_new(config.accumulator_dimension, config.poly_length)
-            .map_err(TfheParameterError::AccumulatorLayout)?;
-        let inner = GlweEncryptionParameters::try_new(
-            modulus,
-            config.accumulator_secret_key_distr,
-            config.blind_rotation.noise_standard_deviation,
-        )
-        .map_err(TfheParameterError::AccumulatorParameters)?;
-        let blind_rotation = config
-            .blind_rotation
-            .decomposition
-            .try_build(modulus.explicit_value())
-            .map_err(|error| TfheParameterError::BootstrappingParameters(error.into()))?;
-        let key_switching_basis = config
-            .key_switching
-            .decomposition
-            .try_build(modulus.explicit_value())
-            .map_err(|error| TfheParameterError::KeySwitchingParameters(error.into()))?;
-        let blind_rotation = GgswParameters::try_from_parts(size, Arc::new(inner), blind_rotation)
-            .map_err(TfheParameterError::BootstrappingParameters)?;
-        Self::try_new(
-            config.small_lwe,
-            blind_rotation,
-            GadgetEncryptionConfig {
-                decomposition: key_switching_basis,
-                noise_standard_deviation: config.key_switching.noise_standard_deviation,
-            },
-            config.pbs_order,
-        )
-    }
-}
-
-/// Checked execution domains and sampling state for GLWE-based TFHE keys.
+/// Checked programmable-bootstrapping domains and sampling state for GLWE-based TFHE.
 ///
 /// This type is independent of the Fourier or NTT execution backend. A
 /// backend-specific context binds it to an FFT/NTT table. No plaintext modulus
 /// or message codec is retained: the same keys can serve compatible programs
 /// with different encodings. Programs establish their own geometry and noise budget.
+/// CBS reuses these PBS-stage domains and adds [`crate::CbsParameters`].
+/// Ring-KS state is optional for BR→KS ring-output CBS; ordinary PBS and
+/// KS→BR input preparation require it before material generation or binding.
 #[derive(Clone)]
-pub struct TfheParameters<T, M>
+pub struct PbsParameters<T, M>
 where
     T: FheUint,
     M: RingContext<T>,
 {
     small_lwe: LweEncryptionParameters<T, M>,
     blind_rotation_ggsw: GgswParameters<T, M>,
-    glwe_key_switching: GlweKeySwitchingParameters<T, M>,
+    glwe_key_switching: Option<GlweKeySwitchingParameters<T, M>>,
     pbs_order: PbsOrder,
 }
 
-impl<T, M> TfheParameters<T, M>
+impl<T, M> PbsParameters<T, M>
 where
     T: FheUint,
     M: RingContext<T>,
@@ -132,6 +69,59 @@ where
         key_switching: GadgetEncryptionConfig<ApproxSignedBasis<T>>,
         pbs_order: PbsOrder,
     ) -> Result<Self, TfheParameterError> {
+        let mut parameters = Self::try_bootstrap(small_lwe, blind_rotation_ggsw, pbs_order)?;
+        parameters.glwe_key_switching = Some(Self::derive_glwe_key_switching(
+            parameters.small_lwe.dimension(),
+            parameters.small_lwe.secret_key_distr(),
+            &parameters.blind_rotation_ggsw,
+            key_switching,
+        )?);
+        Ok(parameters)
+    }
+
+    /// Prepares BR→KS's ring-output prefix without an unused output key switch.
+    ///
+    /// Used by CBS/CMux workflows. Ordinary PBS needs [`Self::try_new`];
+    /// KS→BR CBS also needs its input KS. Validates the same BR domains as that constructor.
+    pub fn try_without_key_switching(
+        small_lwe: LweEncryptionParameters<T, M>,
+        blind_rotation_ggsw: GgswParameters<T, M>,
+    ) -> Result<Self, TfheParameterError> {
+        Self::try_bootstrap(small_lwe, blind_rotation_ggsw, PbsOrder::BootstrapKeyswitch)
+    }
+
+    /// Adds or replaces ring KS in an already checked BR domain and selects the PBS order.
+    ///
+    /// Checks only the new basis and KS sampler/layout; it does not rescan the
+    /// established input-secret support or rebuild the BR sampler.
+    pub fn try_with_key_switching(
+        mut self,
+        key_switching: GadgetEncryptionConfig,
+        order: PbsOrder,
+    ) -> Result<Self, TfheParameterError> {
+        let basis = key_switching
+            .decomposition
+            .try_build(self.cipher_modulus().explicit_value())
+            .map_err(|error| TfheParameterError::KeySwitchingParameters(error.into()))?;
+        self.glwe_key_switching = Some(Self::derive_glwe_key_switching(
+            self.small_lwe.dimension(),
+            self.small_lwe.secret_key_distr(),
+            &self.blind_rotation_ggsw,
+            GadgetEncryptionConfig {
+                decomposition: basis,
+                noise_standard_deviation: key_switching.noise_standard_deviation,
+            },
+        )?);
+        self.pbs_order = order;
+        Ok(self)
+    }
+
+    /// Checks the shared BR domain once; KS preparation only adds its own basis/sampler.
+    fn try_bootstrap(
+        small_lwe: LweEncryptionParameters<T, M>,
+        blind_rotation_ggsw: GgswParameters<T, M>,
+        pbs_order: PbsOrder,
+    ) -> Result<Self, TfheParameterError> {
         let distribution = small_lwe.secret_key_distr();
         if !distribution.is_binary() && !distribution.is_ternary() {
             return Err(TfheParameterError::UnsupportedInputLweSecretKey);
@@ -151,16 +141,10 @@ where
         if T::try_from(blind_rotation_ggsw.poly_length().get() * 2).is_err() {
             return Err(TfheParameterError::RotationDomainTooLarge);
         }
-        let glwe_key_switching = Self::derive_glwe_key_switching(
-            small_lwe.dimension(),
-            small_lwe.secret_key_distr(),
-            &blind_rotation_ggsw,
-            key_switching,
-        )?;
         Ok(Self {
             small_lwe,
             blind_rotation_ggsw,
-            glwe_key_switching,
+            glwe_key_switching: None,
             pbs_order,
         })
     }
@@ -214,11 +198,11 @@ where
         &self.blind_rotation_ggsw
     }
 
-    /// Returns the GLWE key-switching parameters shared by both PBS orders.
+    /// Borrows ring-KS parameters, absent in a BR→KS ring-output CBS setup.
     #[must_use]
     #[inline]
-    pub fn glwe_key_switching(&self) -> &GlweKeySwitchingParameters<T, M> {
-        &self.glwe_key_switching
+    pub fn glwe_key_switching(&self) -> Option<&GlweKeySwitchingParameters<T, M>> {
+        self.glwe_key_switching.as_ref()
     }
 
     /// Returns the selected PBS execution order.
@@ -246,4 +230,24 @@ where
     pub fn cipher_modulus(&self) -> M {
         self.small_lwe.cipher_modulus()
     }
+}
+
+/// Prepares the common ring/GGSW state for numerical blind-rotation configs.
+pub(crate) fn prepare_blind_rotation<T: FheUint, M: RingContext<T>>(
+    modulus: M,
+    dimension: GlweDimension,
+    poly_length: PolyLength,
+    secret: SecretKeyDistr,
+    gadget: GadgetEncryptionConfig,
+) -> Result<GgswParameters<T, M>, TfheParameterError> {
+    let size =
+        GlweSize::try_new(dimension, poly_length).map_err(TfheParameterError::AccumulatorLayout)?;
+    let inner = GlweEncryptionParameters::try_new(modulus, secret, gadget.noise_standard_deviation)
+        .map_err(TfheParameterError::AccumulatorParameters)?;
+    let basis = gadget
+        .decomposition
+        .try_build(modulus.explicit_value())
+        .map_err(|error| TfheParameterError::BootstrappingParameters(error.into()))?;
+    GgswParameters::try_from_parts(size, Arc::new(inner), basis)
+        .map_err(TfheParameterError::BootstrappingParameters)
 }

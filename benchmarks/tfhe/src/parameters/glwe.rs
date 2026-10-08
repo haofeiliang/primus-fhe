@@ -2,8 +2,8 @@
 //! NTT uses an explicit prime; Fourier uses the native torus modulus for every
 //! key role. PBS, circuit and fixed-weight profiles have distinct noise budgets.
 
-use primus_glwe::GlweDimension;
 use primus_glwe::SecretKeyDistr;
+use primus_glwe::{GgswParameters, GlweDimension, GlweEncryptionParameters, GlweSize};
 use primus_integer::FheUint;
 use primus_lwe::LweDimension;
 use primus_lwe::LweEncryptionParameters;
@@ -12,9 +12,9 @@ use primus_reduce::RingContext;
 use primus_tfhe::PolyLength;
 use primus_tfhe::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_tfhe_glwe::{
-    CircuitBootstrapConfig, DecompositionConfig, GadgetEncryptionConfig, PbsOrder, TfheConfig,
-    TfheParameters,
+    CbsGadgetConfig, DecompositionConfig, GadgetEncryptionConfig, PbsOrder, PbsParameters,
 };
+use std::sync::Arc;
 
 use super::{DIMENSION, N, SPARSE_DIMENSION, SPARSE_WEIGHT, ntt_modulus};
 use crate::benchmark::{GLWE_STD_DEV, LWE_STD_DEV, PbsWorkload};
@@ -35,7 +35,7 @@ fn decomposition(log_basis: u32, level_count: Option<usize>) -> DecompositionCon
 pub fn ntt_pbs<T: FheUint>(
     order: PbsOrder,
     workload: PbsWorkload,
-) -> TfheParameters<T, BarrettModulus<T>> {
+) -> PbsParameters<T, BarrettModulus<T>> {
     let modulus = ntt_modulus();
     let (br, ks) = if T::BITS == 32 {
         ((5, 5), (2, 13))
@@ -54,7 +54,7 @@ pub fn ntt_pbs<T: FheUint>(
 pub fn fourier_pbs<T: FheUint>(
     order: PbsOrder,
     workload: PbsWorkload,
-) -> TfheParameters<T, NativeModulus<T>> {
+) -> PbsParameters<T, NativeModulus<T>> {
     let (br, ks) = if T::BITS == 32 {
         ((8, 3), (2, 13))
     } else {
@@ -72,7 +72,7 @@ fn pbs<T, M>(
     workload: PbsWorkload,
     blind_rotation: (u32, usize),
     key_switching: (u32, usize),
-) -> TfheParameters<T, M>
+) -> PbsParameters<T, M>
 where
     T: FheUint,
     M: RingContext<T>,
@@ -81,27 +81,33 @@ where
     let q = modulus
         .explicit_value()
         .map_or(2f64.powi(T::BITS as i32), |q| q.as_into());
-    TfheParameters::try_from_config(TfheConfig {
-        small_lwe: LweEncryptionParameters::new(
-            LweDimension::new(workload.lwe_dimension),
-            modulus,
-            SecretKeyDistr::UniformBinary,
-            q * LWE_STD_DEV,
-        ),
-        accumulator_dimension: GlweDimension::new(1),
-        poly_length: PolyLength::new(workload.poly_length),
-        accumulator_secret_key_distr: SecretKeyDistr::UniformBinary,
-        blind_rotation: GadgetEncryptionConfig {
-            decomposition: decomposition(blind_rotation.0, Some(blind_rotation.1)),
-            noise_standard_deviation: (q * GLWE_STD_DEV).max(6.4),
-        },
-        key_switching: GadgetEncryptionConfig {
-            decomposition: decomposition(key_switching.0, Some(key_switching.1)),
-            noise_standard_deviation: (q * GLWE_STD_DEV).max(6.4),
-        },
-        pbs_order: order,
-    })
-    .unwrap()
+    let small_lwe = LweEncryptionParameters::new(
+        LweDimension::new(workload.lwe_dimension),
+        modulus,
+        SecretKeyDistr::UniformBinary,
+        q * LWE_STD_DEV,
+    );
+    let modulus = small_lwe.cipher_modulus();
+    let bsk_gadget = GadgetEncryptionConfig {
+        decomposition: decomposition(blind_rotation.0, Some(blind_rotation.1)),
+        noise_standard_deviation: (q * GLWE_STD_DEV).max(6.4),
+    };
+    let blind_rotation = blind_rotation_parameters(
+        modulus,
+        GlweSize::new(GlweDimension::new(1), PolyLength::new(workload.poly_length)),
+        SecretKeyDistr::UniformBinary,
+        bsk_gadget,
+    );
+    PbsParameters::try_without_key_switching(small_lwe, blind_rotation)
+        .unwrap()
+        .try_with_key_switching(
+            GadgetEncryptionConfig {
+                decomposition: decomposition(key_switching.0, Some(key_switching.1)),
+                noise_standard_deviation: (q * GLWE_STD_DEV).max(6.4),
+            },
+            order,
+        )
+        .unwrap()
 }
 
 /// Dense CBS/ternary profile; coefficient sigma=6.4 is distinct from dense PBS.
@@ -111,7 +117,7 @@ where
 /// Panics unless the coefficient word is u32 or u64. The family parameter
 /// constructor also rejects invalid geometry or basis/modulus combinations.
 #[must_use]
-pub fn circuit<T, M>(modulus: M, order: PbsOrder, secret: SecretKeyDistr) -> TfheParameters<T, M>
+pub fn circuit<T, M>(modulus: M, order: PbsOrder, secret: SecretKeyDistr) -> PbsParameters<T, M>
 where
     T: FheUint,
     M: RingContext<T>,
@@ -120,27 +126,33 @@ where
     let q = modulus
         .explicit_value()
         .map_or(2f64.powi(T::BITS as i32), |q| q.as_into());
-    TfheParameters::try_from_config(TfheConfig {
-        small_lwe: LweEncryptionParameters::new(
-            LweDimension::new(DIMENSION),
-            modulus,
-            secret,
-            q * LWE_STD_DEV,
-        ),
-        accumulator_dimension: GlweDimension::new(1),
-        poly_length: PolyLength::new(N),
-        accumulator_secret_key_distr: SecretKeyDistr::UniformTernary,
-        blind_rotation: GadgetEncryptionConfig {
-            decomposition: decomposition(if T::BITS == 32 { 2 } else { 8 }, None),
-            noise_standard_deviation: 6.4,
-        },
-        key_switching: GadgetEncryptionConfig {
-            decomposition: decomposition(if T::BITS == 32 { 2 } else { 8 }, None),
-            noise_standard_deviation: 6.4,
-        },
-        pbs_order: order,
-    })
-    .unwrap()
+    let small_lwe = LweEncryptionParameters::new(
+        LweDimension::new(DIMENSION),
+        modulus,
+        secret,
+        q * LWE_STD_DEV,
+    );
+    let modulus = small_lwe.cipher_modulus();
+    let bsk_gadget = GadgetEncryptionConfig {
+        decomposition: decomposition(if T::BITS == 32 { 2 } else { 8 }, None),
+        noise_standard_deviation: 6.4,
+    };
+    let blind_rotation = blind_rotation_parameters(
+        modulus,
+        GlweSize::new(GlweDimension::new(1), PolyLength::new(N)),
+        SecretKeyDistr::UniformTernary,
+        bsk_gadget,
+    );
+    PbsParameters::try_without_key_switching(small_lwe, blind_rotation)
+        .unwrap()
+        .try_with_key_switching(
+            GadgetEncryptionConfig {
+                decomposition: decomposition(if T::BITS == 32 { 2 } else { 8 }, None),
+                noise_standard_deviation: 6.4,
+            },
+            order,
+        )
+        .unwrap()
 }
 
 /// CBS output scales and full-length key decompositions.
@@ -148,10 +160,10 @@ where
 /// # Panics
 /// Panics unless the coefficient word is u32 or u64.
 #[must_use]
-pub fn cbs<T: FheUint>() -> CircuitBootstrapConfig {
+pub fn cbs<T: FheUint>() -> CbsGadgetConfig {
     super::require_word::<T>();
     let internal = decomposition(if T::BITS == 32 { 2 } else { 8 }, None);
-    CircuitBootstrapConfig {
+    CbsGadgetConfig {
         output: decomposition(
             if T::BITS == 32 { 3 } else { 8 },
             Some(if T::BITS == 32 { 3 } else { 2 }),
@@ -167,7 +179,7 @@ pub fn cbs<T: FheUint>() -> CircuitBootstrapConfig {
 /// Panics unless the coefficient word is u32 or u64. The family parameter
 /// constructor also rejects invalid geometry or basis/modulus combinations.
 #[must_use]
-pub fn diagnostic<T, M>(modulus: M, order: PbsOrder) -> TfheParameters<T, M>
+pub fn diagnostic<T, M>(modulus: M, order: PbsOrder) -> PbsParameters<T, M>
 where
     T: FheUint,
     M: RingContext<T>,
@@ -176,25 +188,51 @@ where
     let q = modulus
         .explicit_value()
         .map_or(2f64.powi(T::BITS as i32), |q| q.as_into());
-    TfheParameters::try_from_config(TfheConfig {
-        small_lwe: LweEncryptionParameters::new(
-            LweDimension::new(SPARSE_DIMENSION),
-            modulus,
-            SecretKeyDistr::fixed_hamming_weight_binary(SPARSE_DIMENSION, SPARSE_WEIGHT),
-            3.2 * q / 16384.0,
-        ),
-        accumulator_dimension: GlweDimension::new(1),
-        poly_length: PolyLength::new(N),
-        accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
-        blind_rotation: GadgetEncryptionConfig {
-            decomposition: decomposition(if T::BITS == 32 { 2 } else { 8 }, None),
-            noise_standard_deviation: 6.4,
-        },
-        key_switching: GadgetEncryptionConfig {
-            decomposition: decomposition(if T::BITS == 32 { 2 } else { 8 }, None),
-            noise_standard_deviation: 6.4,
-        },
-        pbs_order: order,
-    })
-    .unwrap()
+    let small_lwe = LweEncryptionParameters::new(
+        LweDimension::new(SPARSE_DIMENSION),
+        modulus,
+        SecretKeyDistr::fixed_hamming_weight_binary(SPARSE_DIMENSION, SPARSE_WEIGHT),
+        3.2 * q / 16384.0,
+    );
+    let modulus = small_lwe.cipher_modulus();
+    let bsk_gadget = GadgetEncryptionConfig {
+        decomposition: decomposition(if T::BITS == 32 { 2 } else { 8 }, None),
+        noise_standard_deviation: 6.4,
+    };
+    let blind_rotation = blind_rotation_parameters(
+        modulus,
+        GlweSize::new(GlweDimension::new(1), PolyLength::new(N)),
+        SecretKeyDistr::SparseTernary,
+        bsk_gadget,
+    );
+    PbsParameters::try_without_key_switching(small_lwe, blind_rotation)
+        .unwrap()
+        .try_with_key_switching(
+            GadgetEncryptionConfig {
+                decomposition: decomposition(if T::BITS == 32 { 2 } else { 8 }, None),
+                noise_standard_deviation: 6.4,
+            },
+            order,
+        )
+        .unwrap()
+}
+
+/// Prepares benchmark BSK state from an already built reducer, without a codec
+/// or raw-config round trip. All callers pass their profile's ring and row noise.
+fn blind_rotation_parameters<T: FheUint, M: RingContext<T>>(
+    modulus: M,
+    size: GlweSize,
+    secret: SecretKeyDistr,
+    gadget: GadgetEncryptionConfig,
+) -> GgswParameters<T, M> {
+    let encryption = Arc::new(GlweEncryptionParameters::new(
+        modulus,
+        secret,
+        gadget.noise_standard_deviation,
+    ));
+    let basis = gadget
+        .decomposition
+        .try_build(modulus.explicit_value())
+        .unwrap();
+    GgswParameters::try_from_parts(size, encryption, basis).unwrap()
 }

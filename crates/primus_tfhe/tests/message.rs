@@ -7,6 +7,29 @@ use primus_tfhe::{
 };
 
 #[test]
+fn padded_bit_width_has_one_extra_codec_bit() {
+    // Freeze the distinction between useful input bits and the full output modulus.
+    for (bits, modulus) in [(0, 2), (1, 4), (4, 32), (30, 1u32 << 31)] {
+        let messages = PbsMessageConfig::<u32>::try_from_input_bits(bits).unwrap();
+        assert_eq!(messages.input_modulus, modulus);
+        assert_eq!(messages.output_modulus, modulus);
+        assert_eq!(messages.with_output_modulus(8).input_modulus, modulus);
+    }
+    let messages = PbsMessageConfig::<u64>::from_input_bits(62);
+    assert_eq!(messages.input_modulus, 1u64 << 63);
+    for bits in [31, 32, u32::MAX] {
+        assert_eq!(
+            PbsMessageConfig::<u32>::try_from_input_bits(bits),
+            Err(LookupTableError::InvalidInputEncoding),
+        );
+    }
+    assert_eq!(
+        PbsMessageConfig::<u64>::try_from_input_bits(63),
+        Err(LookupTableError::InvalidInputEncoding),
+    );
+}
+
+#[test]
 fn configured_domains_drive_rounded_and_factorized_programs() {
     let external = PowOf2Modulus::new(1024u32);
     let accumulator = BarrettModulus::new(97);

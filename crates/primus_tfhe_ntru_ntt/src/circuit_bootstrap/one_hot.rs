@@ -13,9 +13,7 @@ pub use pair::OneHotProjection;
 mod selectors;
 pub use selectors::NttNgswSelectors;
 
-use crate::{
-    BootstrapResources, CircuitBootstrapKey, CircuitBootstrapParameters, Lwe, TfheContext,
-};
+use crate::{BootstrapResources, CbsParameters, CircuitBootstrapKey, Lwe, TfheContext};
 
 /// One-hot extension of CBS for classic binary/ternary and sparse binary BR.
 ///
@@ -88,7 +86,7 @@ where
 
     /// Returns the shared CBS bases and accumulator layouts.
     #[must_use]
-    pub fn parameters(&self) -> &'a CircuitBootstrapParameters<T> {
+    pub fn parameters(&self) -> &'a CbsParameters<T> {
         self.circuit_key.parameters()
     }
 
@@ -221,7 +219,7 @@ where
     /// The BR basis must resolve the smallest output gadget scale. Budget trace,
     /// decomposition and scheme-switch f/f² amplification separately. NTT trace
     /// uses modular inverse halving. Geometry checks are not noise or security
-    /// certification. See [`CircuitBootstrapParameters`].
+    /// certification. See [`CbsParameters`].
     ///
     /// # Panics
     /// Rejects a different context binding, input dimension or exact output

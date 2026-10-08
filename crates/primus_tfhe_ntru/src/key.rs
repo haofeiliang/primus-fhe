@@ -2,7 +2,7 @@ use primus_integer::{FheUint, SignedInteger};
 use primus_ntru::NtruSecretKey;
 use primus_reduce::RingContext;
 
-use crate::{TfheKeyError, TfheParameters};
+use crate::{PbsParameters, TfheKeyError};
 
 /// Independent external LWE and accumulator NTRU secrets for TFHE setup.
 /// Ordinary clients need only [`Self::external_lwe_secret_key`]; ring clients
@@ -56,7 +56,7 @@ impl<T: FheUint> ClientKey<T> {
     /// Accumulator invertibility is checked by the backend when preparing its secret.
     pub fn check_compatible<M: RingContext<T>, LM: RingContext<T>>(
         &self,
-        parameters: &TfheParameters<T, M, LM>,
+        parameters: &PbsParameters<T, M, LM>,
     ) -> Result<(), TfheKeyError> {
         self.check_blind_rotation_compatible(parameters)?;
         self.check_accumulator_return_modulus(parameters.external_lwe().cipher_modulus())
@@ -89,7 +89,7 @@ impl<T: FheUint> ClientKey<T> {
     /// Backend conversion still owns the accumulator's representation requirements.
     pub fn check_blind_rotation_compatible<M: RingContext<T>, LM: RingContext<T>>(
         &self,
-        parameters: &TfheParameters<T, M, LM>,
+        parameters: &PbsParameters<T, M, LM>,
     ) -> Result<(), TfheKeyError> {
         parameters.check_external_secret_key(&self.external_lwe_secret_key)?;
         parameters.check_accumulator_secret_key(&self.accumulator_ntru_secret_key)
@@ -105,7 +105,7 @@ impl<T: FheUint> ClientKey<T> {
     }
 }
 
-impl<T: FheUint, M: RingContext<T>, LM: RingContext<T>> TfheParameters<T, M, LM> {
+impl<T: FheUint, M: RingContext<T>, LM: RingContext<T>> PbsParameters<T, M, LM> {
     /// Generates only the Q→q, f→s return material, with no transform workspace.
     /// Checks the full secret pair including the magnitude of f at external q.
     /// Independent BR/CBS material must use the same actual secrets; layout and
@@ -114,14 +114,20 @@ impl<T: FheUint, M: RingContext<T>, LM: RingContext<T>> TfheParameters<T, M, LM>
         &self,
         client_key: &ClientKey<T>,
         rng: &mut R,
-    ) -> Result<primus_ntru::NtruLweKeySwitchingKey<T>, TfheKeyError> {
+    ) -> Result<primus_ntru::NtruLweKeySwitchingKey<T>, crate::KeyGenerationError> {
+        let output = self
+            .key_switching_lwe()
+            .ok_or(crate::KeyGenerationError::MissingKeySwitchingParameters)?;
+        let basis = self
+            .key_switching_basis()
+            .expect("return sampler and basis are stored together");
         client_key.check_compatible(self)?;
         Ok(primus_ntru::NtruLweKeySwitchingKey::generate(
             client_key.accumulator_ntru_secret_key(),
             self.accumulator_ntru().cipher_modulus(),
             client_key.external_lwe_secret_key(),
-            self.key_switching_lwe(),
-            self.key_switching_basis().clone(),
+            output,
+            basis.clone(),
             rng,
         ))
     }
@@ -136,7 +142,7 @@ impl<T: FheUint, M: RingContext<T>, LM: RingContext<T>> TfheParameters<T, M, LM>
         if key.poly_length() != self.poly_length().get()
             || key.input_modulus() != self.accumulator_ntru().cipher_modulus_value()
             || key.output_dimension() != self.external_lwe_dimension()
-            || key.basis() != self.key_switching_basis()
+            || Some(key.basis()) != self.key_switching_basis()
         {
             return Err(primus_tfhe::TfheEvaluationError::IncompatibleLweReturnKey);
         }

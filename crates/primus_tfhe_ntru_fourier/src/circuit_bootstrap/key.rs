@@ -3,14 +3,14 @@
 use primus_fft::{FftTable, TorusFftValue};
 use primus_ntru::{FourierNtruSchemeSwitchKey, FourierNtruSecretKey, FourierNtruTraceKey};
 
-use crate::{CircuitBootstrapParameters, KeyGenerationError, KeyGenerator, TfheContext};
+use crate::{CbsParameters, KeyGenerationError, KeyGenerator, TfheContext};
 
 /// Additional keys for NTRU CBS; ordinary BR material is owned by [`crate::BlindRotationKey`].
 /// Both keys use the accumulator secret, not the post-PBS client secret.
 /// Publishing the scheme-switch material requires the secret-dependent-message
 /// security assumption documented on [`FourierNtruSchemeSwitchKey`].
 pub struct CircuitBootstrapKey<T: TorusFftValue> {
-    parameters: CircuitBootstrapParameters<T>,
+    parameters: CbsParameters<T>,
     trace: FourierNtruTraceKey<T>,
     scheme_switch: FourierNtruSchemeSwitchKey<T>,
 }
@@ -21,7 +21,7 @@ impl<T: TorusFftValue> CircuitBootstrapKey<T> {
     /// establish actual secret or transform identity.
     pub(super) fn check_parameters<LM: primus_reduce::RingContext<T>>(
         &self,
-        tfhe: &crate::TfheParameters<T, LM>,
+        tfhe: &crate::PbsParameters<T, LM>,
     ) -> Result<(), crate::TfheEvaluationError> {
         if !self.parameters.is_compatible(tfhe) {
             return Err(crate::TfheEvaluationError::IncompatibleCircuitBootstrapParameters);
@@ -31,7 +31,7 @@ impl<T: TorusFftValue> CircuitBootstrapKey<T> {
 
     /// Returns the CBS parameters selected when this material was generated.
     #[must_use]
-    pub fn parameters(&self) -> &CircuitBootstrapParameters<T> {
+    pub fn parameters(&self) -> &CbsParameters<T> {
         &self.parameters
     }
 
@@ -58,12 +58,12 @@ where
     ///
     /// Checks parameters and the accumulator layout/distribution before sampling. The caller
     /// selects the CBS decomposition and noise/security budgets described on
-    /// [`CircuitBootstrapParameters`]. Actual secret identity must be shared with
+    /// [`CbsParameters`]. Actual secret identity must be shared with
     /// the server key later used by the evaluator, as must the FFT table instance.
     pub fn try_generate_circuit_bootstrap_key<R>(
         &mut self,
         secret: &primus_ntru::NtruSecretKey<T>,
-        parameters: CircuitBootstrapParameters<T>,
+        parameters: CbsParameters<T>,
         rng: &mut R,
     ) -> Result<CircuitBootstrapKey<T>, KeyGenerationError>
     where
@@ -84,7 +84,7 @@ where
         &mut self,
         secret: &primus_ntru::NtruSecretKey<T>,
         transformed: &FourierNtruSecretKey,
-        parameters: CircuitBootstrapParameters<T>,
+        parameters: CbsParameters<T>,
         rng: &mut R,
     ) -> CircuitBootstrapKey<T>
     where
@@ -126,7 +126,7 @@ where
     pub fn try_generate_circuit_bootstrap_key<R: rand::Rng + rand::CryptoRng>(
         &self,
         secret: &primus_ntru::NtruSecretKey<T>,
-        parameters: crate::CircuitBootstrapParameters<T>,
+        parameters: crate::CbsParameters<T>,
         rng: &mut R,
     ) -> Result<crate::CircuitBootstrapKey<T>, crate::KeyGenerationError> {
         KeyGenerator::new(self).try_generate_circuit_bootstrap_key(secret, parameters, rng)
