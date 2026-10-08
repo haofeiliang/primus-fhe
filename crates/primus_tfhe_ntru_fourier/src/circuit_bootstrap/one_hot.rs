@@ -61,7 +61,8 @@ where
         circuit_key: &'a CircuitBootstrapKey<T>,
         input_codec: &RoundedCodec<T, LM>,
     ) -> Result<Self, OneHotBootstrapError> {
-        circuit_key.check_parameters(resources.context.parameters())?;
+        // The packed LUT constructor checks the key's CBS domain against these
+        // TFHE parameters, as well as input encoding and selector geometry.
         let lookup_table = OneHotLookupTable::try_new(
             resources.context.parameters(),
             circuit_key.parameters(),

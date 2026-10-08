@@ -56,6 +56,16 @@ where
         encryption_parameters
             .secret_key_sampler()
             .validate_length(glwe_size.mask_len())?;
+        Self::try_from_matching_parts(glwe_size, encryption_parameters, basis)
+    }
+
+    /// Derives only the new gadget layout. The caller has established matching
+    /// basis/modulus and secret weight/layout pairs; sampler state is unchanged.
+    fn try_from_matching_parts(
+        glwe_size: GlweSize,
+        encryption_parameters: Arc<GlweEncryptionParameters<T, M>>,
+        basis: ApproxSignedBasis<T>,
+    ) -> Result<Self, GlevParameterError> {
         Ok(Self {
             size: GadgetSize::try_new(glwe_size, basis.decompose_length())?,
             encryption_parameters,
@@ -68,6 +78,7 @@ where
     /// Takes ownership of the basis, preserving its levels and precomputation,
     /// and shares the source parameters' prepared samplers without copying them.
     /// Both native (`None`) and explicit modulus representations must match.
+    /// The unchanged secret weight/layout pairing is inherited from `glwe_params`.
     ///
     /// # Errors
     ///
@@ -76,7 +87,10 @@ where
         glwe_params: &GlweParameters<T, M>,
         basis: ApproxSignedBasis<T>,
     ) -> Result<Self, GlevParameterError> {
-        Self::try_from_parts(
+        if basis.modulus() != glwe_params.cipher_modulus().explicit_value() {
+            return Err(GlevParameterError::BasisModulusMismatch);
+        }
+        Self::try_from_matching_parts(
             glwe_params.size(),
             Arc::clone(&glwe_params.encryption_parameters),
             basis,
@@ -100,11 +114,11 @@ where
         }
         // Only the basis changes: secret weight was already checked against
         // this unchanged GLWE layout when the source parameters were built.
-        Ok(Self {
-            size: GadgetSize::try_new(self.glwe_size(), basis.decompose_length())?,
-            encryption_parameters: Arc::clone(&self.encryption_parameters),
+        Self::try_from_matching_parts(
+            self.glwe_size(),
+            Arc::clone(&self.encryption_parameters),
             basis,
-        })
+        )
     }
 
     /// Creates GLev/GGSW parameters from matching GLWE parameters.
@@ -125,6 +139,8 @@ where
 
     /// Tries to create GLev/GGSW parameters and their decomposition basis from
     /// one GLWE modulus domain.
+    /// Reuses the checked secret weight/layout pairing; only the new basis and
+    /// gadget layout are validated.
     ///
     /// # Errors
     ///
@@ -137,7 +153,11 @@ where
     ) -> Result<Self, GlevParameterError> {
         let basis =
             ApproxSignedBasis::try_new(glwe_params.cipher_modulus_value(), log_basis, level_count)?;
-        Self::try_with_basis(glwe_params, basis)
+        Self::try_from_matching_parts(
+            glwe_params.size(),
+            Arc::clone(&glwe_params.encryption_parameters),
+            basis,
+        )
     }
 
     /// Returns the parameters shared by GLWE and its gadget ciphertexts.

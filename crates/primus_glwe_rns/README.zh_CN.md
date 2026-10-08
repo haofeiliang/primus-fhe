@@ -65,7 +65,7 @@ m 个模数下，普通密文包含 `(k+1)*m*N` 个元素，顺序为 `[componen
 - `CrtGlevParameters::try_from_parts(shared_encryption, base_q, basis)` 将有序 `RNSBase` 和 `BigUintApproxSignedBasis` 移入 gadget 参数。缓存各层权重前，检查采样器的有序模数、basis 的精确乘积模数及 limb 宽度、radix < 每个 q_i，以及组合 gadget 长度；无需 BFV codec。
 - `CrtGlweParameters::try_from_parts(shared_encryption, codec)` 绑定普通 BFV 编码，检查 codec 的有序模数及新鲜私钥密文恢复余量。Codec 拥有自己的 RNS 基与转换数据，共享采样状态不再保存另一份 base 或转换器。
 
-`CrtGlweParameters::try_new` 和 `try_from_parts` 通过 `CrtGlweParametersError<T>` 报告错误并保留底层原因。`CrtGlevParameters::try_with_glwe_params` 仍可便捷地从已有普通参数派生 gadget，并共享其采样器。Gadget 构造返回 `CrtGlevParametersError`，其中 `Layout` 变体报告长度溢出。不同噪声角色需要独立准备采样状态。
+`CrtGlweParameters::try_new` 和 `try_from_parts` 通过 `CrtGlweParametersError<T>` 报告错误并保留底层原因。`try_new` 从同一有序基创建 codec 和采样器，不再次比较它们的配对，仍检查新鲜 BFV 恢复条件。`CrtGlevParameters::try_with_glwe_params` 复用已验证的采样器/基配对，在相同乘积模数及 limb 表示下构造 basis；准备权重前，仍检查新 radix 与每个 q_i 的关系和新 gadget 布局。Gadget 构造返回 `CrtGlevParametersError`，其中 `Layout` 变体报告长度溢出。不同噪声角色需要独立准备采样状态。
 
 派生 gadget 还与普通 codec 共享不可变的 `RNSBase` 表及模数值缓存，codec 内部转换器也共享该基。BFV 的 `floor(Q/t)` 因子与 gadget 的各层重组 residues 用途不同，仍分别保存。参数克隆共享采样器和基表，但仍复制 codec 或 gadget 专用的权重。普通加密直接使用 `delta_factor_mod_q()`，不再缓存另一份原始 delta residues。
 

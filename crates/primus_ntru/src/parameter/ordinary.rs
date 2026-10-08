@@ -80,7 +80,10 @@ where
             secret_key_distr,
             noise_standard_deviation,
         )?;
-        Self::try_from_parts(Arc::new(encryption_parameters), plaintext_codec)
+        Ok(Self::from_matching_parts(
+            Arc::new(encryption_parameters),
+            plaintext_codec,
+        ))
     }
 
     /// Binds shared NTRU sampling state to ordinary message encoding.
@@ -96,10 +99,22 @@ where
         if encryption_parameters.cipher_modulus() != plaintext_codec.ciphertext_modulus() {
             return Err(NtruParameterError::CodecModulusMismatch);
         }
-        Ok(Self {
+        Ok(Self::from_matching_parts(
             encryption_parameters,
             plaintext_codec,
-        })
+        ))
+    }
+
+    /// Both components already use the same modulus, by construction or by the
+    /// public parts check; ring/sampling and codec invariants belong to their owners.
+    fn from_matching_parts(
+        encryption_parameters: Arc<NtruEncryptionParameters<T, M>>,
+        plaintext_codec: ScaledCodec<T, M>,
+    ) -> Self {
+        Self {
+            encryption_parameters,
+            plaintext_codec,
+        }
     }
 
     /// Binds a Scaled message codec to an existing gadget's ring and samplers.

@@ -46,6 +46,15 @@ where
         if basis.modulus() != encryption_parameters.cipher_modulus_value() {
             return Err(NlevParameterError::BasisModulusMismatch);
         }
+        Self::try_from_matching_parts(encryption_parameters, basis)
+    }
+
+    /// Derives N*L after the caller establishes the basis modulus, either from
+    /// the same ring's basis constructor or by checking an independent basis.
+    fn try_from_matching_parts(
+        encryption_parameters: Arc<NtruEncryptionParameters<T, M>>,
+        basis: ApproxSignedBasis<T>,
+    ) -> Result<Self, NlevParameterError> {
         let nlev_len = basis
             .decompose_length()
             .get()
@@ -115,7 +124,7 @@ where
     ) -> Result<Self, NlevParameterError> {
         let basis =
             ApproxSignedBasis::try_new(ntru.cipher_modulus_value(), log_basis, level_count)?;
-        Self::try_with_basis(ntru, basis)
+        Self::try_from_matching_parts(Arc::clone(&ntru.encryption_parameters), basis)
     }
 
     /// Returns the shared ring and sampling state, without ordinary message encoding.

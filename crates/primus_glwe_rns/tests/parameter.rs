@@ -108,19 +108,33 @@ fn fresh_private_key_recovery_uses_complete_noise_support() {
             CrtGlevParameters::try_from_parts(Arc::clone(&inner), base_q.clone(), basis).unwrap();
         assert!(std::ptr::eq(gadget.encryption_parameters(), inner.as_ref()));
         let codec = BfvRnsCodec::new(BarrettModulus::new(3), base_q, BarrettModulus::new(gamma));
-        let result = CrtGlweParameters::try_from_parts(inner, codec);
-        if valid {
-            assert!(result.is_ok());
-        } else {
-            assert!(matches!(
-                result,
-                Err(CrtGlweParametersError::Encoding(
-                    BfvRnsCodecError::InsufficientNoiseRecovery {
-                        maximum_noise_magnitude,
-                        embedding: PlaintextEmbedding::Unsigned,
-                    }
-                )) if maximum_noise_magnitude == magnitude
-            ));
+        // Both an independent codec binding and internally created parts must
+        // check joint BFV recovery, even when their ordered Q is already known.
+        for result in [
+            CrtGlweParameters::try_from_parts(inner, codec),
+            CrtGlweParameters::try_new(
+                GlweDimension::new(1),
+                PolyLength::new(32),
+                BarrettModulus::new(3),
+                BarrettModulus::new(gamma),
+                &moduli,
+                SecretKeyDistr::UniformBinary,
+                sigma,
+            ),
+        ] {
+            if valid {
+                assert!(result.is_ok());
+            } else {
+                assert!(matches!(
+                    result,
+                    Err(CrtGlweParametersError::Encoding(
+                        BfvRnsCodecError::InsufficientNoiseRecovery {
+                            maximum_noise_magnitude,
+                            embedding: PlaintextEmbedding::Unsigned,
+                        }
+                    )) if maximum_noise_magnitude == magnitude
+                ));
+            }
         }
     }
 }

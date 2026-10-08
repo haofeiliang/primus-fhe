@@ -103,7 +103,7 @@ where
             secret_key_distr,
             noise_standard_deviation,
         )?;
-        Self::try_from_parts(Arc::new(encryption_parameters), codec)
+        Self::try_from_matching_parts(Arc::new(encryption_parameters), codec)
     }
 
     /// Binds prepared layout/samplers to ordinary BFV encoding without rebuilding them.
@@ -118,6 +118,15 @@ where
         codec: BfvRnsCodec<T, M>,
     ) -> Result<Self, CrtGlweParametersError<T>> {
         encryption_parameters.validate_base(codec.base_q())?;
+        Self::try_from_matching_parts(encryption_parameters, codec)
+    }
+
+    /// The ordered base matches by construction or by the public parts check.
+    /// Fresh BFV recovery is a new codec/noise condition and still needs checking.
+    fn try_from_matching_parts(
+        encryption_parameters: Arc<CrtGlweEncryptionParameters<T>>,
+        codec: BfvRnsCodec<T, M>,
+    ) -> Result<Self, CrtGlweParametersError<T>> {
         // Every modulus already contains the signed support, so the magnitude
         // fits T. For private-key plaintext encryption it bounds the phase noise.
         let maximum_noise_magnitude =

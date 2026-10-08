@@ -73,7 +73,7 @@ NLev 与 NGSW 存储的行数相同，但数学角色不同。`NLev[1]` 可通�
 
 `NtruParameters::try_new` 对固定尺度编码、秘密支持集/重量和噪声采样错误返回 `NtruParameterError`，固定重量不得超过 N；`new` 在相同错误下 panic。这些检查不证明采样秘密可逆、变换可用或噪声/安全预算成立。 `NtruParameterError::SecretKey` 以 `SecretKeySamplerError` 保留采样配置、重量或模数适配的具体原因；`Noise` 保留 `GaussianError`。
 
-`NtruEncryptionParameters::try_new(poly_length, modulus, secret_distribution, noise)` 不依赖明文域，直接准备环和采样器。仅使用 gadget 时，将它放入 `Arc`，调用 `NlevParameters::try_from_parts(shared_encryption, basis)`；需要普通加密时才调用 `NtruParameters::try_from_parts(shared_encryption, codec)`。组合入口检查 basis 或 codec 的模数与加密参数一致。已有 `NlevParameters::with_ntru_params` / `try_with_basis` 同样共享普通参数的加密状态，不保留其 codec。`gadget.try_with_new_basis(basis)` 在同一环中派生另一组 gadget 参数，共享采样状态，不复制旧 basis 或转换密文。
+`NtruEncryptionParameters::try_new(poly_length, modulus, secret_distribution, noise)` 不依赖明文域，直接准备环和采样器。仅使用 gadget 时，将它放入 `Arc`，调用 `NlevParameters::try_from_parts(shared_encryption, basis)`；需要普通加密时才调用 `NtruParameters::try_from_parts(shared_encryption, codec)`。这些 parts 入口检查独立传入的 basis 或 codec 模数。直接构造及 `NlevParameters::with_ntru_params` 复用组件创建时建立的相同模数保证，仍检查新 gadget 布局；`try_with_basis` 同样共享普通参数的加密状态，检查传入的 basis，不保留 codec。`gadget.try_with_new_basis(basis)` 在同一环中派生另一组 gadget 参数，共享采样状态，不复制旧 basis 或转换密文。
 
 两种参数均通过 `encryption_parameters()` 为密钥生成、raw/零加密提供采样状态。消息加密与解密接收 `NtruParameters`；`encrypt_message` / `encrypt_message_to` 显式选择 `PlaintextEmbedding`。克隆普通或 gadget 参数共享不可变采样表，gadget basis 仍独立拥有。不同噪声分布应使用独立的加密参数；相同的采样参数可跨密钥角色共享。共享内容是分布预计算，不包含秘密系数或可变 RNG 状态。
 

@@ -57,6 +57,8 @@ where
 
     /// Creates a [`CrtGlevParameters<T, M>`] with checked decomposition and layout.
     /// It uses the ordered RNS base owned by `glwe_params`.
+    /// The sampler/base pairing is inherited; the new radix and gadget layout
+    /// are still validated before computing level weights.
     ///
     /// The radix `2^log_basis` must be strictly smaller than every RNS modulus,
     /// as required by the fast centered lift used by CRT/DCRT gadget products.
@@ -76,7 +78,7 @@ where
             log_basis,
             level_count,
         )?;
-        Self::try_from_parts(
+        Self::try_from_matching_parts(
             Arc::clone(&glwe_params.encryption_parameters),
             glwe_params.base_q().clone(),
             basis,
@@ -100,6 +102,17 @@ where
         if basis.modulus() != base_q.moduli_product().0 {
             return Err(CrtGlevParametersError::BasisModulusMismatch);
         }
+        Self::try_from_matching_parts(encryption_parameters, base_q, basis)
+    }
+
+    /// Sampler order and basis product/limb representation already match this Q.
+    /// The new radix still has to fit every q_i for centered gadget lifting;
+    /// validate that and the complete layout before allocating level weights.
+    fn try_from_matching_parts(
+        encryption_parameters: Arc<CrtGlweEncryptionParameters<T>>,
+        base_q: RNSBase<T, M>,
+        basis: BigUintApproxSignedBasis<T>,
+    ) -> Result<Self, CrtGlevParametersError<T>> {
         for (index, modulus) in base_q.moduli().iter().map(|q| q.value()).enumerate() {
             if basis.basis_value() >= modulus {
                 return Err(CrtGlevParametersError::BasisNotSmallerThanModulus {

@@ -37,7 +37,9 @@ impl<'a, T: TorusFftValue> CircuitBootstrapBinding<'a, T> {
         if !parameters.is_compatible(tfhe) {
             return Err(crate::TfheEvaluationError::IncompatibleCircuitBootstrapParameters);
         }
-        if !key.is_compatible(parameters) {
+        // Generation establishes the key's own retained parameter binding.
+        // Only an independently supplied parameter object needs comparison.
+        if !core::ptr::eq(parameters, key.parameters()) && !key.is_compatible(parameters) {
             return Err(crate::TfheEvaluationError::IncompatibleCircuitBootstrapKey);
         }
         Ok(Self { key, parameters })

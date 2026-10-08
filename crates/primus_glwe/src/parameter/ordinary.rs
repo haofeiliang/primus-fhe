@@ -74,7 +74,14 @@ where
             secret_key_distr,
             noise_standard_deviation,
         )?;
-        Self::try_from_parts(size, Arc::new(encryption_parameters), plaintext_codec)
+        encryption_parameters
+            .secret_key_sampler()
+            .validate_length(size.mask_len())?;
+        Ok(Self::from_matching_parts(
+            size,
+            Arc::new(encryption_parameters),
+            plaintext_codec,
+        ))
     }
 
     /// Binds a GLWE layout and prepared sampling state to ordinary message encoding.
@@ -98,11 +105,11 @@ where
         encryption_parameters
             .secret_key_sampler()
             .validate_length(size.mask_len())?;
-        Ok(Self {
+        Ok(Self::from_matching_parts(
             size,
             encryption_parameters,
             plaintext_codec,
-        })
+        ))
     }
 
     /// Binds an ordinary message codec to an existing gadget's GLWE domain.
@@ -118,11 +125,25 @@ where
             return Err(GlweParameterError::CodecModulusMismatch);
         }
         // The gadget already checked fixed secret weights against this layout.
-        Ok(Self {
-            size: gadget.glwe_size(),
-            encryption_parameters: Arc::clone(&gadget.encryption_parameters),
+        Ok(Self::from_matching_parts(
+            gadget.glwe_size(),
+            Arc::clone(&gadget.encryption_parameters),
             plaintext_codec,
-        })
+        ))
+    }
+
+    /// Assembles state after the caller establishes the codec modulus and
+    /// secret weight/layout pairing, either by construction or by validation.
+    fn from_matching_parts(
+        size: GlweSize,
+        encryption_parameters: Arc<GlweEncryptionParameters<T, M>>,
+        plaintext_codec: ScaledCodec<T, M>,
+    ) -> Self {
+        Self {
+            size,
+            encryption_parameters,
+            plaintext_codec,
+        }
     }
 
     /// Returns the parameters shared by GLWE and its gadget ciphertexts.
