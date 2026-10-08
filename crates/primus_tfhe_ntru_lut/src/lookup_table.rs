@@ -230,6 +230,39 @@ impl<T: FheUint> HighPrecisionLookupTable<T> {
         Self::compile(ring_modulus, input_codec, layout, function)
     }
 
+    /// Compiles using the accumulator N/Q and external q from TFHE parameters.
+    /// The codec's q must match the external LWE domain; a mismatch is rejected
+    /// before allocation or callbacks. This needs no context, keys or transforms
+    /// and delegates to [`Self::try_new`] without creating another codec.
+    ///
+    /// Available with `ntt` or `fourier`. The backend-independent entry remains
+    /// [`Self::try_new`] for offline compilation without TFHE parameters.
+    #[cfg(any(feature = "ntt", feature = "fourier"))]
+    pub fn try_from_parameters<M, LM, F>(
+        parameters: &primus_tfhe_ntru::TfheParameters<T, M, LM>,
+        input_codec: &RoundedCodec<T, LM>,
+        config: LookupTableConfig,
+        function: F,
+    ) -> Result<Self, LookupTableError>
+    where
+        M: RingContext<T>,
+        LM: RingContext<T>,
+        F: FnMut(usize, usize) -> T,
+    {
+        if input_codec.ciphertext_modulus().explicit_value()
+            != parameters.external_lwe().cipher_modulus().explicit_value()
+        {
+            return Err(LookupTableError::IncompatibleParameters);
+        }
+        Self::try_new(
+            parameters.poly_length(),
+            parameters.accumulator_ntru().cipher_modulus(),
+            input_codec,
+            config,
+            function,
+        )
+    }
+
     /// Returns the common input/output chunk plaintext modulus t=2*M.
     /// Input and returned ciphertexts use this Rounded encoding at external q;
     /// public table coefficients are encoded at accumulator Q.

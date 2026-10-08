@@ -65,9 +65,11 @@ source. Remaining operations have three distinct forms:
 `needs_public_lift()` scans the compiled reachable nodes for `Lift`; public choices
 already lift through their one-hot NLEV selectors. Evaluator binding requires
 NLEV[1] and its `NlevParameters` only when that scan succeeds, validating the
-ring and exact transformed length once. Both `try_new` and `try_from_parts` accept
-optional independent lift material. If omitted, `try_new` can borrow the classic
-initializer and BR parameters. Sparse plans with a lift require explicit material.
+ring and exact transformed length once. `try_new` borrows the classic initializer
+and BR parameters when needed; `try_with_public_lift` supplies explicit material.
+The advanced `try_from_parts` accepts an optional lift with the same classic fallback.
+All entries share this binding implementation. Sparse plans with a lift require
+explicit material; plans without a lift ignore surplus material.
 Online `Lift` reads this binding directly, without querying one-hot BR controls.
 The backend `KeyGenerator::try_generate_public_lift_key` encrypts one independently
 under the supplied accumulator secret and `NlevParameters`; no bucket-derived
@@ -103,8 +105,8 @@ K=M^d meaningful entries in N coefficients. L is the CBS output gadget level
 count; transformed row length R is N for NTT and N/2 for Fourier.
 
 ```text
-try_new
-  validate binding and lengths; allocate compiled workspace
+try_new / try_with_public_lift -> try_from_parts
+  choose required lift; validate binding and lengths; allocate compiled workspace
   prepare_rotation_constants
 evaluate_to
   validate all input/output shapes before writes

@@ -76,13 +76,15 @@ fn benchmark_workload<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
             lift,
             input,
         } = &*fixture;
-        let mut evaluator = NttLookupTableEvaluator::try_new(
-            context,
-            server,
-            lift.as_ref()
-                .map(|key| (key.as_view(), context.parameters().blind_rotation())),
-            table,
-        )
+        let mut evaluator = match lift {
+            Some(key) => NttLookupTableEvaluator::try_with_public_lift(
+                context,
+                server,
+                table,
+                (key.as_view(), context.parameters().blind_rotation()),
+            ),
+            None => NttLookupTableEvaluator::try_new(context, server, table),
+        }
         .unwrap();
         let mut output = evaluator.allocate_output();
         if !verified {

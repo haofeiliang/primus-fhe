@@ -71,16 +71,16 @@ fn main() {
     let mut output_digits = vec![Word::default(); CONFIG.output_chunk_count];
 
     // Server: compile the public function independently of client secrets.
-    let table = compile_table(context.parameters(), &input_codec);
-
-    // Server: bind public material once and reuse all online buffers.
-    let mut evaluator = NttLookupTableEvaluator::try_new(
-        &context,
-        &server_key,
-        None, // Classic BR supplies the initializer for public polynomial lifts.
-        &table,
+    let table = HighPrecisionLookupTable::try_from_parameters(
+        context.parameters(),
+        &input_codec,
+        CONFIG,
+        |x, output| CHUNKS.chunk(function(x as Word), output),
     )
     .unwrap();
+
+    // Server: bind public material once and reuse all online buffers.
+    let mut evaluator = NttLookupTableEvaluator::try_new(&context, &server_key, &table).unwrap();
     let mut output = evaluator.allocate_output();
 
     // Eight two-bit chunks, written most-significant first.
@@ -104,22 +104,6 @@ fn main() {
         assert_eq!(result, function(x));
         println!("f({x}) = {result}");
     }
-}
-
-// Public table compilation needs parameters and the agreed encoding, not a secret.
-// The callback returns one output chunk for each complete input value.
-fn compile_table(
-    parameters: &TfheParameters<Word, PowOf2Modulus<Word>>,
-    input_codec: &RoundedCodec<Word, PowOf2Modulus<Word>>,
-) -> HighPrecisionLookupTable<Word> {
-    HighPrecisionLookupTable::try_new(
-        parameters.poly_length(),
-        parameters.accumulator_ntru().cipher_modulus(),
-        input_codec,
-        CONFIG,
-        |x, output| CHUNKS.chunk(function(x as Word), output),
-    )
-    .unwrap()
 }
 
 // Return 16 bits and retain dependence on the high input chunks. Input and output

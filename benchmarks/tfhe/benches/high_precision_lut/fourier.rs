@@ -75,13 +75,15 @@ fn benchmark_workload<T: TorusFftValue, Table: FftTable>(
             lift,
             input,
         } = &*fixture;
-        let mut evaluator = FourierLookupTableEvaluator::try_new(
-            context,
-            server,
-            lift.as_ref()
-                .map(|key| (key.as_view(), context.parameters().blind_rotation())),
-            table,
-        )
+        let mut evaluator = match lift {
+            Some(key) => FourierLookupTableEvaluator::try_with_public_lift(
+                context,
+                server,
+                table,
+                (key.as_view(), context.parameters().blind_rotation()),
+            ),
+            None => FourierLookupTableEvaluator::try_new(context, server, table),
+        }
         .unwrap();
         let mut output = evaluator.allocate_output();
         if !verified {

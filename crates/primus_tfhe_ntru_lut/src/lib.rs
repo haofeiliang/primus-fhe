@@ -51,6 +51,8 @@
 //! Default features are empty: public table compilation and inspection need no
 //! transform or evaluator. `ntt` / `fourier` enable the corresponding evaluator;
 //! `fourier` is generic over an FFT table without choosing its implementation.
+//! Either backend feature also enables `HighPrecisionLookupTable::try_from_parameters`,
+//! which compiles with existing N/Q/q parameters without needing a context or keys.
 //! `rustfft` / `tfhe-fft` enable `fourier` and the selected FFT implementation.
 //! Features are additive. `simd` propagates nightly SIMD to active arithmetic
 //! dependencies without activating an evaluator or FFT implementation.

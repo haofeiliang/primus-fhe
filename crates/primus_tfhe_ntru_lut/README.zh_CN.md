@@ -11,7 +11,7 @@
 
 [NTT](../primus_tfhe_ntru_ntt/README.zh_CN.md) 和 [Fourier](../primus_tfhe_ntru_fourier/README.zh_CN.md) 均支持 classic binary/ternary 和 sparse fixed-weight binary 查表。使用 `generator.try_generate_server_key(&client, blind_rotation, Some(cbs_config), rng)` 生成求值材料，算法选择 `BlindRotationConfig::Classic` 或 `Sparse { copy_count, bucket_count }`；CBS 材料为必需项。客户端生成 chunks，再用 `encrypt_padded` 分别加密。基础示例固定 classic BR，保留一条八 chunk 工作流；sparse/public-lift 用法见下文[求值与工作区](#求值与工作区)。
 
-`HighPrecisionLookupTable::try_new(poly_length, ring_modulus, &input_codec, config, function)` 仅用 N、Q 和 codec 的 q/t 编译公开表，不需要 TFHE 参数、秘密或变换。回调接收 `(完整输入索引, 输出 chunk 索引)`，返回一个 digit。用 `NttLookupTableEvaluator::try_new(context, server_key, None, table)` 或 `FourierLookupTableEvaluator::try_new(context, server_key, None, table)` 绑定资源，调用一次 `allocate_output()`，随后重复调用 `evaluate_to(input_chunks, output_chunks)`。输出逐个使用 `context.decryptor(client.external_lwe_secret_key(), &input_codec)` 解码。表拥有 chunk 编码，密钥不依赖 t。Evaluator 借用 context、服务端密钥和表，求值不需要客户端秘密。
+`HighPrecisionLookupTable::try_new(poly_length, ring_modulus, &input_codec, config, function)` 仅用 N、Q 和 codec 的 q/t 编译公开表，不需要 TFHE 参数、秘密或变换。启用 `ntt` 或 `fourier` 后，`try_from_parameters(parameters, &input_codec, config, function)` 可从已有参数取得 N/Q/q，并在编译前检查 codec 的 q。两个入口共用同一编译实现，均不需要密钥或变换表。回调接收 `(完整输入索引, 输出 chunk 索引)`，返回一个 digit。用 `NttLookupTableEvaluator::try_new(context, server_key, table)` 或 `FourierLookupTableEvaluator::try_new(context, server_key, table)` 绑定资源，调用一次 `allocate_output()`，随后重复调用 `evaluate_to(input_chunks, output_chunks)`。输出逐个使用 `context.decryptor(client.external_lwe_secret_key(), &input_codec)` 解码。表拥有 chunk 编码，密钥不依赖 t。Evaluator 借用 context、服务端密钥和表，求值不需要客户端秘密。
 
 对于 u64、`t=8`、`N=1024` 的 context，八个两位 chunks 表示一个 16 位输入。以下片段计算 `(x*x+3*x+7) mod 65536`，返回八个 chunks：
 
@@ -22,9 +22,8 @@ use primus_tfhe_ntru_lut::{
 
 let chunks = ChunkFormat::new(2);
 let input_codec = primus_encoding::RoundedCodec::new(chunks.plaintext_modulus(), context.parameters().external_lwe().cipher_modulus());
-let table = HighPrecisionLookupTable::try_new(
-    context.parameters().poly_length(),
-    context.parameters().accumulator_ntru().cipher_modulus(),
+let table = HighPrecisionLookupTable::try_from_parameters(
+    context.parameters(),
     &input_codec,
     LookupTableConfig {
         input_chunk_count: 8,
@@ -37,7 +36,7 @@ let table = HighPrecisionLookupTable::try_new(
         chunks.chunk(value, output)
     },
 )?;
-let mut evaluator = NttLookupTableEvaluator::try_new(&context, &server, None, &table)?;
+let mut evaluator = NttLookupTableEvaluator::try_new(&context, &server, &table)?;
 let mut output = evaluator.allocate_output();
 evaluator.evaluate_to(&encrypted_chunks, &mut output);
 ```
@@ -90,11 +89,11 @@ cargo run --release -p primus_tfhe_ntru_lut --example fourier_lookup --features 
 
 两个 evaluator 独立持有各自后端的公共 `BootstrapResources` 与 one-hot 操作状态；表选择、旋转与 CBS 依次借用同一外积工作区，Fourier 还复用其中同一个 FFT engine。返回绑定独立于 one-hot：NTT 只分配 scalar 返回缓冲，Fourier 只分配 batch 返回缓冲。
 
-两个 evaluator 均可通过 `try_new(context, server_key, public_lift, lookup_table)` 接收完整 `ServerKey`，或通过 `try_from_parts(context, blind_rotation_key, return_key, circuit_key, public_lift, lookup_table)` 借用独立材料。可用 `ServerKey::into_parts()` 移出组件而不复制密文缓冲。此流程输出 LWE，始终需要 Q→q、f→s 返回密钥；独立 CBS/one-hot 则无需该密钥。各项材料在绑定时检查，实际秘密和变换身份仍由调用方保证。
+两个 evaluator 均可通过 `try_new(context, server_key, lookup_table)` 绑定完整 `ServerKey`。独立 lift 使用 `try_with_public_lift(context, server_key, lookup_table, (nlev_view, &nlev_parameters))`。高级调用方可用 `try_from_parts(context, blind_rotation_key, return_key, circuit_key, public_lift, lookup_table)` 借用分开的材料，此处 `public_lift` 为可选项。可用 `ServerKey::into_parts()` 移出组件而不复制密文缓冲。此流程输出 LWE，始终需要 Q→q、f→s 返回密钥；独立 CBS/one-hot 则无需该密钥。各项材料在绑定时检查，实际秘密和变换身份仍由调用方保证。
 
-`table.needs_public_lift()` 表示剪枝后的选表计划是否包含显式 `Lift`。需要时，`try_from_parts` 的 `public_lift` 必须传入 `Some((nlev_view, &nlev_parameters))`，即 NTT/Fourier 的 NLEV[1] 视图及生成它时使用的 `NlevParameters`。`NttPublicLift` / `FourierPublicLift` 是这两个借用元组的类型别名，没有新增 owner 或构造器。Evaluator 检查 N、Q 和变换域存储长度，随后使用该材料自己的 basis，允许其不同于 BR/CBS。材料必须使用相同 accumulator 秘密和变换表示（Fourier 使用同一 table 实例）；所声明的明文、basis 和噪声预算仍由调用方保证。无 `Lift` 时传 `None`；多余材料会被忽略，不予保留。
+`table.needs_public_lift()` 表示剪枝后的选表计划是否包含显式 `Lift`。各绑定入口共用同一选择规则：显式 lift 优先，否则需要时借用 classic initializer 及其 BR 参数。Sparse 计划包含 `Lift` 却没有独立材料时返回 `MissingPublicLiftKey`。无 `Lift` 的计划忽略多余材料，不予保留。One-hot evaluator 不暴露 BR controls。
 
-`public_lift=None` 时，`try_new` 按需借用 classic initializer 及其 BR 参数。显式材料优先，因此 classic 也可使用独立的 lift basis/噪声。Sparse 计划含 `Lift` 且未提供独立材料时返回 `MissingPublicLiftKey`；无 `Lift` 则无需提供。One-hot evaluator 不暴露 BR controls。
+`NttPublicLift` / `FourierPublicLift` 是 NTT/Fourier NLEV[1] 视图和生成时使用的 `NlevParameters` 的借用元组别名，没有新增 owner 或构造器。Evaluator 检查 N、Q 和变换域存储长度，随后使用该材料自己的 basis，允许其不同于 BR/CBS。材料必须使用相同 accumulator 秘密和变换表示（Fourier 使用同一 table 实例）；所声明的明文、basis 和噪声预算仍由调用方保证。
 
 Sparse 要求固定重量 binary 外部秘密与匹配的 CBS 参数，可沿用查表示例的 n=800、h=32、N=1024、q24。调用方使用同一 context/编码编译公开表并加密输入 chunks。以下 NTT 片段接收这些已准备的值，避免复制整套参数：client 生成计算密钥，并按表的实际需要生成 NLEV[1]；server 绑定材料并返回密文。
 
@@ -135,10 +134,12 @@ fn sparse_setup_and_request(
     });
 
     // Server：接收计算密钥/提升密文、公开参数/表，以及输入密文 chunks。
-    let mut evaluator = LookupEvaluator::try_new(
-        context, &server_key,
-        lift.as_ref().map(|key| (key.as_view(), lift_parameters)), table,
-    ).unwrap();
+    let mut evaluator = match &lift {
+        Some(key) => LookupEvaluator::try_with_public_lift(
+            context, &server_key, table, (key.as_view(), lift_parameters),
+        ),
+        None => LookupEvaluator::try_new(context, &server_key, table),
+    }.unwrap();
     let mut outputs = evaluator.allocate_output();
     evaluator.evaluate_to(inputs, &mut outputs);
     // 后续请求复用此 evaluator，并覆盖同一输出缓冲。

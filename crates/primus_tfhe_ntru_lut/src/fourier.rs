@@ -94,15 +94,38 @@ where
     LM: RingContext<T>,
 {
     /// Checks table encoding, one-hot geometry and server resources, then allocates scratch.
-    /// Requires CBS material for either classic or sparse BR. When the plan needs
-    /// a public lift, uses `public_lift` if supplied, otherwise borrows the classic
-    /// initializer. Sparse BR must supply an independent lift for those plans.
-    /// Unused lift material is ignored. See [`Self::try_from_parts`] for its contract.
+    /// Requires CBS material for either classic or sparse BR. A plan needing a public
+    /// lift borrows the classic initializer. Sparse BR requires explicit material via
+    /// [`Self::try_with_public_lift`] for those plans.
     ///
     /// # Correctness
     /// The server key must belong to this context's secrets and exact FFT table instance,
     /// as required by [`OneHotCircuitBootstrapEvaluator::try_new`].
     pub fn try_new(
+        context: &'a TfheContext<T, Table, LM>,
+        server_key: &'a ServerKey<T>,
+        lookup_table: &'a HighPrecisionLookupTable<T>,
+    ) -> Result<Self, LookupTableError> {
+        Self::try_from_server_key(context, server_key, None, lookup_table)
+    }
+
+    /// Binds an explicit `NLEV[1]` with its own generation basis and noise parameters.
+    /// This material takes precedence over the classic initializer when needed;
+    /// plans without a public lift ignore it and do not retain it.
+    ///
+    /// # Correctness
+    /// The server key must satisfy [`Self::try_new`]'s contract and the lift must
+    /// satisfy [`Self::try_from_parts`]'s secret, encoding and representation contract.
+    pub fn try_with_public_lift(
+        context: &'a TfheContext<T, Table, LM>,
+        server_key: &'a ServerKey<T>,
+        lookup_table: &'a HighPrecisionLookupTable<T>,
+        public_lift: FourierPublicLift<'a, T>,
+    ) -> Result<Self, LookupTableError> {
+        Self::try_from_server_key(context, server_key, Some(public_lift), lookup_table)
+    }
+
+    fn try_from_server_key(
         context: &'a TfheContext<T, Table, LM>,
         server_key: &'a ServerKey<T>,
         public_lift: Option<FourierPublicLift<'a, T>>,
@@ -113,21 +136,6 @@ where
                 primus_tfhe::TfheEvaluationError::MissingCircuitBootstrapKey,
             ),
         )?;
-        let public_lift = if lookup_table.needs_public_lift() {
-            public_lift.or_else(|| {
-                server_key
-                    .blind_rotation_key()
-                    .classic_controls()
-                    .map(|controls| {
-                        (
-                            controls.initializer(),
-                            context.parameters().blind_rotation(),
-                        )
-                    })
-            })
-        } else {
-            None
-        };
         Self::try_from_parts(
             context,
             server_key.blind_rotation_key(),
@@ -140,8 +148,10 @@ where
 
     /// Binds BR, LWE return, CBS and optional public-lift material to this table.
     /// `public_lift` pairs a transformed `NLEV[1]` view with its generation parameters.
-    /// It is required only when [`HighPrecisionLookupTable::needs_public_lift`] is true;
-    /// otherwise it is ignored and not retained. Its basis may differ from BR/CBS.
+    /// When [`HighPrecisionLookupTable::needs_public_lift`] is true, an explicit lift
+    /// takes precedence; `None` borrows the classic initializer and its BR parameters.
+    /// Sparse BR has no initializer and requires an explicit lift for those plans.
+    /// Otherwise lift material is ignored and not retained. Its basis may differ from BR/CBS.
     /// Checks the lift's ring, modulus and exact transformed storage length.
     ///
     /// # Correctness
@@ -166,7 +176,16 @@ where
             return Err(LookupTableError::IncompatibleParameters);
         }
         let public_lift = if lookup_table.needs_public_lift() {
-            let (key, parameters) = public_lift.ok_or(LookupTableError::MissingPublicLiftKey)?;
+            let (key, parameters) = public_lift
+                .or_else(|| {
+                    blind_rotation_key.classic_controls().map(|controls| {
+                        (
+                            controls.initializer(),
+                            context.parameters().blind_rotation(),
+                        )
+                    })
+                })
+                .ok_or(LookupTableError::MissingPublicLiftKey)?;
             if parameters.poly_length() != context.parameters().poly_length()
                 || parameters.encryption_parameters().cipher_modulus_value()
                     != context

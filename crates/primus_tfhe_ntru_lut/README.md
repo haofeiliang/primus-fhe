@@ -11,7 +11,7 @@ High-precision lookup over already encrypted NTRU-TFHE chunks, using one-hot CBS
 
 Both [NTT](../primus_tfhe_ntru_ntt/README.md) and [Fourier](../primus_tfhe_ntru_fourier/README.md) support classic binary/ternary and sparse fixed-weight binary lookup. Generate evaluation material with `generator.try_generate_server_key(&client, blind_rotation, Some(cbs_config), rng)`, choosing `BlindRotationConfig::Classic` or `Sparse { copy_count, bucket_count }`. CBS material is required. Generate and encrypt input chunks on the client with `encrypt_padded`. The basic examples fix classic BR and keep one eight-chunk workflow. Sparse/public-lift setup is shown below under [Evaluation and workspace](#evaluation-and-workspace).
 
-`HighPrecisionLookupTable::try_new(poly_length, ring_modulus, &input_codec, config, function)` compiles the public table using only N, Q and the codec’s q/t, without TFHE parameters, secrets or transforms. The callback receives `(full_input_index, output_chunk_index)` and returns one digit. Bind `NttLookupTableEvaluator::try_new(context, server_key, None, table)` or `FourierLookupTableEvaluator::try_new(context, server_key, None, table)`, call `allocate_output()` once, then reuse `evaluate_to(input_chunks, output_chunks)`. Decode each result with `context.decryptor(client.external_lwe_secret_key(), &input_codec)`. The table owns its chunk encoding; keys are independent of t. The evaluator borrows its context, server key and table; no client secret is needed for evaluation.
+`HighPrecisionLookupTable::try_new(poly_length, ring_modulus, &input_codec, config, function)` compiles the public table using only N, Q and the codec’s q/t, without TFHE parameters, secrets or transforms. With `ntt` or `fourier` enabled, `try_from_parameters(parameters, &input_codec, config, function)` takes N/Q/q from existing parameters and checks the codec’s q before compilation. Both entries use the same compiler and need no keys or transform tables. The callback receives `(full_input_index, output_chunk_index)` and returns one digit. Bind `NttLookupTableEvaluator::try_new(context, server_key, table)` or `FourierLookupTableEvaluator::try_new(context, server_key, table)`, call `allocate_output()` once, then reuse `evaluate_to(input_chunks, output_chunks)`. Decode each result with `context.decryptor(client.external_lwe_secret_key(), &input_codec)`. The table owns its chunk encoding; keys are independent of t. The evaluator borrows its context, server key and table; no client secret is needed for evaluation.
 
 For a u64 context with `t=8` and `N=1024`, eight two-bit chunks represent a 16-bit input. This fragment evaluates `(x*x+3*x+7) mod 65536` and returns eight chunks:
 
@@ -22,9 +22,8 @@ use primus_tfhe_ntru_lut::{
 
 let chunks = ChunkFormat::new(2);
 let input_codec = primus_encoding::RoundedCodec::new(chunks.plaintext_modulus(), context.parameters().external_lwe().cipher_modulus());
-let table = HighPrecisionLookupTable::try_new(
-    context.parameters().poly_length(),
-    context.parameters().accumulator_ntru().cipher_modulus(),
+let table = HighPrecisionLookupTable::try_from_parameters(
+    context.parameters(),
     &input_codec,
     LookupTableConfig {
         input_chunk_count: 8,
@@ -37,7 +36,7 @@ let table = HighPrecisionLookupTable::try_new(
         chunks.chunk(value, output)
     },
 )?;
-let mut evaluator = NttLookupTableEvaluator::try_new(&context, &server, None, &table)?;
+let mut evaluator = NttLookupTableEvaluator::try_new(&context, &server, &table)?;
 let mut output = evaluator.allocate_output();
 evaluator.evaluate_to(&encrypted_chunks, &mut output);
 ```
@@ -90,11 +89,11 @@ After compiling each candidate d, `table.stats()` reports input/output bits, log
 
 Each evaluator owns its backend's common `BootstrapResources` separately from one-hot operation state. Selection, rotation and CBS borrow the same external-product workspace in sequence; Fourier also reuses the same FFT engine inside those resources. The return binding is independent of one-hot: NTT allocates only scalar return scratch, Fourier only batch return scratch.
 
-Both evaluators accept a complete `ServerKey` through `try_new(context, server_key, public_lift, lookup_table)`, or borrow independent material with `try_from_parts(context, blind_rotation_key, return_key, circuit_key, public_lift, lookup_table)`. Components can come from `ServerKey::into_parts()` without copying ciphertext buffers. Unlike standalone CBS/one-hot, this workflow always requires the Q→q, f→s return key for its LWE outputs. Components are checked when binding; actual shared secrets and transform identity remain caller contracts.
+Both evaluators bind a complete `ServerKey` with `try_new(context, server_key, lookup_table)`. Use `try_with_public_lift(context, server_key, lookup_table, (nlev_view, &nlev_parameters))` for an independent lift. Advanced callers can borrow separate material through `try_from_parts(context, blind_rotation_key, return_key, circuit_key, public_lift, lookup_table)`, where `public_lift` is optional. Components can come from `ServerKey::into_parts()` without copying ciphertext buffers. Unlike standalone CBS/one-hot, this workflow always requires the Q→q, f→s return key for its LWE outputs. Components are checked when binding; actual shared secrets and transform identity remain caller contracts.
 
-`table.needs_public_lift()` reports whether the pruned selection plan contains an explicit `Lift`. If so, `try_from_parts` requires `public_lift=Some((nlev_view, &nlev_parameters))`: an NTT/Fourier NLEV encryption of one and the `NlevParameters` used to generate it. `NttPublicLift` / `FourierPublicLift` name these borrowed tuples; they add no owner or constructor. The evaluator checks N, Q and transformed length, then uses that material's basis, which may differ from BR/CBS. The material must use the same accumulator secret and transform representation (the same table instance for Fourier); its claimed plaintext/basis and noise budget remain caller contracts. Without `Lift`, pass `None`; unused material is ignored and not retained.
+`table.needs_public_lift()` reports whether the pruned selection plan contains an explicit `Lift`. All binding entries share the same selection rule: an explicit lift takes precedence; otherwise a classic initializer and its BR parameters are borrowed when needed. Sparse plans containing `Lift` return `MissingPublicLiftKey` unless independent material is supplied. Plans without `Lift` ignore surplus lift material and do not retain it. One-hot evaluators do not expose BR controls.
 
-With `public_lift=None`, `try_new` borrows the classic initializer and its BR parameters when needed. Explicit material takes precedence, allowing a separate lift basis/noise even with classic BR. A sparse plan with `Lift` returns `MissingPublicLiftKey` unless independent material is supplied; plans without `Lift` require none. One-hot evaluators do not expose BR controls.
+`NttPublicLift` / `FourierPublicLift` name borrowed tuples of an NTT/Fourier NLEV encryption of one and its generation `NlevParameters`; they add no owner or constructor. The evaluator checks N, Q and transformed length, then uses that material's basis, which may differ from BR/CBS. The material must use the same accumulator secret and transform representation (the same table instance for Fourier); its claimed plaintext/basis and noise budget remain caller contracts.
 
 For sparse setup, use a fixed-weight binary external secret and matched CBS parameters, as in the lookup examples (n=800, h=32, N=1024, q24). The caller compiles the public table and encrypts its chunks with the same context/encoding. This typed NTT snippet takes those prepared inputs rather than duplicating the full parameter fixture. Client setup produces keys and, only when required by the table, NLEV[1]; the server block binds them and returns ciphertexts:
 
@@ -135,10 +134,12 @@ fn sparse_setup_and_request(
     });
 
     // Server: receive the keys/lift, public parameters/table and encrypted chunks.
-    let mut evaluator = LookupEvaluator::try_new(
-        context, &server_key,
-        lift.as_ref().map(|key| (key.as_view(), lift_parameters)), table,
-    ).unwrap();
+    let mut evaluator = match &lift {
+        Some(key) => LookupEvaluator::try_with_public_lift(
+            context, &server_key, table, (key.as_view(), lift_parameters),
+        ),
+        None => LookupEvaluator::try_new(context, &server_key, table),
+    }.unwrap();
     let mut outputs = evaluator.allocate_output();
     evaluator.evaluate_to(inputs, &mut outputs);
     // Further requests reuse this evaluator and overwrite the same output buffer.

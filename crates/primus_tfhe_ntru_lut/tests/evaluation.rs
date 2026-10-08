@@ -407,9 +407,8 @@ fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T) {
                 .decryptor(client.external_lwe_secret_key(), &input_codec)
                 .unwrap();
             for (config, mapping) in cases(radix) {
-                let table = HighPrecisionLookupTable::try_new(
-                    context.parameters().poly_length(),
-                    context.parameters().accumulator_ntru().cipher_modulus(),
+                let table = HighPrecisionLookupTable::try_from_parameters(
+                    context.parameters(),
                     &input_codec,
                     config,
                     |x, o| T::as_from(mapping.digit(x, o, radix)),
@@ -420,7 +419,7 @@ fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T) {
                     assert!(table.needs_public_lift());
                     if sparse {
                         assert!(matches!(
-                            NttLookupTableEvaluator::try_new(&context, &server, None, &table),
+                            NttLookupTableEvaluator::try_new(&context, &server, &table),
                             Err(LookupTableError::MissingPublicLiftKey)
                         ));
                     }
@@ -434,10 +433,12 @@ fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T) {
                             &table,
                         )
                     };
-                    assert!(matches!(
-                        bind(None),
-                        Err(LookupTableError::MissingPublicLiftKey)
-                    ));
+                    if sparse {
+                        assert!(matches!(
+                            bind(None),
+                            Err(LookupTableError::MissingPublicLiftKey)
+                        ));
+                    }
                     let short = primus_ntru::NttNlevCiphertext::new(
                         &lift.as_ref()[..lift.as_ref().len() - 1],
                     );
@@ -480,28 +481,40 @@ fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T) {
                 if matches!(mapping, Mapping::Distinct) {
                     assert!(!table.needs_public_lift());
                 }
-                let mut evaluator = if radix == 2 {
+                // The pruned constant case checks classic fallback in parts numerically.
+                // Distinct needs no lift: even malformed surplus material is ignored.
+                let mut evaluator = if matches!(mapping, Mapping::Distinct) {
+                    NttLookupTableEvaluator::try_with_public_lift(
+                        &context,
+                        &server,
+                        &table,
+                        (primus_ntru::NttNlevCiphertext::new(&[][..]), &lift_params),
+                    )
+                } else if radix == 2 {
                     NttLookupTableEvaluator::try_from_parts(
                         &context,
                         server.blind_rotation_key(),
                         server.key_switching_key(),
                         server.circuit_bootstrap_key().unwrap(),
-                        table
-                            .needs_public_lift()
-                            .then(|| (lift.as_view(), &lift_params)),
+                        (table.needs_public_lift()
+                            && (sparse || !matches!(mapping, Mapping::Constant)))
+                        .then(|| (lift.as_view(), &lift_params)),
                         &table,
                     )
-                    .unwrap()
-                } else {
-                    NttLookupTableEvaluator::try_new(
+                } else if table.needs_public_lift()
+                    && (sparse || config.coefficient_chunk_count == config.input_chunk_count)
+                {
+                    // Explicit material also overrides classic BR's initializer.
+                    NttLookupTableEvaluator::try_with_public_lift(
                         &context,
                         &server,
-                        (sparse && table.needs_public_lift())
-                            .then(|| (lift.as_view(), &lift_params)),
                         &table,
+                        (lift.as_view(), &lift_params),
                     )
-                    .unwrap()
-                };
+                } else {
+                    NttLookupTableEvaluator::try_new(&context, &server, &table)
+                }
+                .unwrap();
                 let case = format!(
                     "{}/{}, {distr:?}",
                     std::any::type_name::<Table>(),
@@ -522,6 +535,19 @@ fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T) {
                 continue;
             }
             let config = cases(radix)[0].0;
+            let foreign_codec = RoundedCodec::new(
+                input_codec.plaintext_modulus(),
+                PowOf2Modulus::new(T::ONE << 25u32),
+            );
+            assert!(matches!(
+                HighPrecisionLookupTable::try_from_parameters(
+                    context.parameters(),
+                    &foreign_codec,
+                    config,
+                    |_, _| panic!("incompatible codec must be rejected before compilation"),
+                ),
+                Err(LookupTableError::IncompatibleParameters)
+            ));
             let other = primus_tfhe_ntru_ntt::TfheContext::<_, Table, _>::try_from_parameters(
                 parameters(BarrettModulus::new(q), distr, dimension + 1),
             )
@@ -535,7 +561,7 @@ fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T) {
             )
             .unwrap();
             assert!(matches!(
-                NttLookupTableEvaluator::try_new(&other, &server, None, &table),
+                NttLookupTableEvaluator::try_new(&other, &server, &table),
                 Err(LookupTableError::Evaluation(
                     primus_tfhe::TfheEvaluationError::IncompatibleLweReturnKey
                 ))
@@ -549,7 +575,7 @@ fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T) {
             )
             .unwrap();
             assert!(matches!(
-                NttLookupTableEvaluator::try_new(&context, &server, None, &table),
+                NttLookupTableEvaluator::try_new(&context, &server, &table),
                 Err(LookupTableError::IncompatibleParameters)
             ));
         }
@@ -604,9 +630,8 @@ fn fourier<T: TorusFftValue, Table: FftTable>() {
                 .decryptor(client.external_lwe_secret_key(), &input_codec)
                 .unwrap();
             for (config, mapping) in cases(radix) {
-                let table = HighPrecisionLookupTable::try_new(
-                    context.parameters().poly_length(),
-                    context.parameters().accumulator_ntru().cipher_modulus(),
+                let table = HighPrecisionLookupTable::try_from_parameters(
+                    context.parameters(),
                     &input_codec,
                     config,
                     |x, o| T::as_from(mapping.digit(x, o, radix)),
@@ -617,7 +642,7 @@ fn fourier<T: TorusFftValue, Table: FftTable>() {
                     assert!(table.needs_public_lift());
                     if sparse {
                         assert!(matches!(
-                            FourierLookupTableEvaluator::try_new(&context, &server, None, &table),
+                            FourierLookupTableEvaluator::try_new(&context, &server, &table),
                             Err(LookupTableError::MissingPublicLiftKey)
                         ));
                     }
@@ -631,10 +656,12 @@ fn fourier<T: TorusFftValue, Table: FftTable>() {
                             &table,
                         )
                     };
-                    assert!(matches!(
-                        bind(None),
-                        Err(LookupTableError::MissingPublicLiftKey)
-                    ));
+                    if sparse {
+                        assert!(matches!(
+                            bind(None),
+                            Err(LookupTableError::MissingPublicLiftKey)
+                        ));
+                    }
                     let short = primus_ntru::FourierNlevCiphertext::new(
                         &lift.as_ref()[..lift.as_ref().len() - 1],
                     );
@@ -664,28 +691,43 @@ fn fourier<T: TorusFftValue, Table: FftTable>() {
                 if matches!(mapping, Mapping::Distinct) {
                     assert!(!table.needs_public_lift());
                 }
-                let mut evaluator = if radix == 2 {
+                // The pruned constant case checks classic fallback in parts numerically.
+                // Distinct needs no lift: even malformed surplus material is ignored.
+                let mut evaluator = if matches!(mapping, Mapping::Distinct) {
+                    FourierLookupTableEvaluator::try_with_public_lift(
+                        &context,
+                        &server,
+                        &table,
+                        (
+                            primus_ntru::FourierNlevCiphertext::new(&[][..]),
+                            &lift_params,
+                        ),
+                    )
+                } else if radix == 2 {
                     FourierLookupTableEvaluator::try_from_parts(
                         &context,
                         server.blind_rotation_key(),
                         server.key_switching_key(),
                         server.circuit_bootstrap_key().unwrap(),
-                        table
-                            .needs_public_lift()
-                            .then(|| (lift.as_view(), &lift_params)),
+                        (table.needs_public_lift()
+                            && (sparse || !matches!(mapping, Mapping::Constant)))
+                        .then(|| (lift.as_view(), &lift_params)),
                         &table,
                     )
-                    .unwrap()
-                } else {
-                    FourierLookupTableEvaluator::try_new(
+                } else if table.needs_public_lift()
+                    && (sparse || config.coefficient_chunk_count == config.input_chunk_count)
+                {
+                    // Explicit material also overrides classic BR's initializer.
+                    FourierLookupTableEvaluator::try_with_public_lift(
                         &context,
                         &server,
-                        (sparse && table.needs_public_lift())
-                            .then(|| (lift.as_view(), &lift_params)),
                         &table,
+                        (lift.as_view(), &lift_params),
                     )
-                    .unwrap()
-                };
+                } else {
+                    FourierLookupTableEvaluator::try_new(&context, &server, &table)
+                }
+                .unwrap();
                 let case = format!(
                     "{}/{}, {distr:?}",
                     std::any::type_name::<Table>(),
@@ -706,6 +748,19 @@ fn fourier<T: TorusFftValue, Table: FftTable>() {
                 continue;
             }
             let config = cases(radix)[0].0;
+            let foreign_codec = RoundedCodec::new(
+                input_codec.plaintext_modulus(),
+                PowOf2Modulus::new(T::ONE << 25u32),
+            );
+            assert!(matches!(
+                HighPrecisionLookupTable::try_from_parameters(
+                    context.parameters(),
+                    &foreign_codec,
+                    config,
+                    |_, _| panic!("incompatible codec must be rejected before compilation"),
+                ),
+                Err(LookupTableError::IncompatibleParameters)
+            ));
             let other = primus_tfhe_ntru_fourier::TfheContext::<_, Table, _>::from_parameters(
                 parameters(NativeModulus::new(), distr, dimension + 1),
             );
@@ -718,7 +773,7 @@ fn fourier<T: TorusFftValue, Table: FftTable>() {
             )
             .unwrap();
             assert!(matches!(
-                FourierLookupTableEvaluator::try_new(&other, &server, None, &table),
+                FourierLookupTableEvaluator::try_new(&other, &server, &table),
                 Err(LookupTableError::Evaluation(
                     primus_tfhe::TfheEvaluationError::IncompatibleLweReturnKey
                 ))
@@ -732,7 +787,7 @@ fn fourier<T: TorusFftValue, Table: FftTable>() {
             )
             .unwrap();
             assert!(matches!(
-                FourierLookupTableEvaluator::try_new(&context, &server, None, &table),
+                FourierLookupTableEvaluator::try_new(&context, &server, &table),
                 Err(LookupTableError::IncompatibleParameters)
             ));
         }
