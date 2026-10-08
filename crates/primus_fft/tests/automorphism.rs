@@ -11,7 +11,7 @@ fn check_automorphism<Table: FftTable>() {
     // Check coefficient signs and packed conjugation. The private TFHE-FFT
     // test forces recursive layouts; a large auto-planned transform cannot
     // guarantee that the planner selects any particular layout.
-    for log_n in [5, 6] {
+    for log_n in [5u32, 6] {
         let table = Table::new(PolyLength::new(1usize << log_n));
         let mut fft = FftEngine::new(&table);
         let n = table.poly_length().get();

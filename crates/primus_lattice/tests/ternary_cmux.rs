@@ -55,7 +55,7 @@ fn check_fourier_rotation<T: TorusFftValue, Table: FftTable>() {
             })
             .collect::<Vec<_>>(),
     );
-    for levels in [T::BITS as usize / 8, T::BITS as usize / 8 - 1] {
+    for levels in [(T::BITS / 8) as usize, (T::BITS / 8 - 1) as usize] {
         let basis = ApproxSignedBasis::<T>::new(
             None,
             DecompositionBaseLog::new(8),

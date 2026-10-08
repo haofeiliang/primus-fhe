@@ -290,7 +290,7 @@ fn exercise<T: FheUint>(
     mut encrypt: impl FnMut(T) -> LweCiphertext<T>,
     decrypt_phase: impl Fn(&LweCiphertext<T>) -> T,
 ) {
-    let bits = table.chunk_bits();
+    let bits = table.chunk_bits() as usize;
     let radix = 1 << bits;
     let config = table.config();
     // Descending inputs require overwriting selectors, live result slots and outputs.

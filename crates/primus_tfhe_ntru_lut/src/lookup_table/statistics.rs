@@ -12,9 +12,9 @@ use super::{HighPrecisionLookupTable, LookupTableError, checked_allocation_len};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LookupTableStats {
     /// Total unsigned input bits, tau*c.
-    pub input_bits: usize,
+    pub input_bits: u32,
     /// Total unsigned output bits, tau*o.
-    pub output_bits: usize,
+    pub output_bits: u32,
     /// Polynomial count across all outputs before deduplication, o*M^(c-d).
     pub logical_polynomial_count: usize,
     /// Number of stored N-coefficient polynomials after deduplication.
@@ -60,10 +60,10 @@ impl<T: FheUint> HighPrecisionLookupTable<T> {
         let layout = self.layout;
         let selection = &self.selection;
         let d = layout.config.coefficient_chunk_count;
-        // Domain/storage construction bounds these counts and both bit products.
+        // Construction establishes the total widths and bounds the storage counts.
         LookupTableStats {
-            input_bits: layout.chunk_format.bits() as usize * layout.config.input_chunk_count,
-            output_bits: layout.chunk_format.bits() as usize * layout.config.output_chunk_count,
+            input_bits: layout.input_bits,
+            output_bits: layout.output_bits,
             logical_polynomial_count: layout.config.output_chunk_count
                 * layout.polynomials_per_output,
             unique_polynomial_count: self.unique_polynomial_count(),

@@ -53,7 +53,7 @@ where
         retained.map(DecompositionLevelCount::new),
     )
     .unwrap();
-    let levels = retained.unwrap_or((q.ilog2() + 1) as usize / log_basis as usize);
+    let levels = retained.unwrap_or(((q.ilog2() + 1) / log_basis) as usize);
     let drop_bits = q.ilog2() + 1 - levels as u32 * log_basis;
     let bound = if drop_bits == 0 {
         0

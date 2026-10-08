@@ -43,6 +43,8 @@ lattice 的 `LweDimension` 和 `GlweDimension` 检查正的 mask 计数及可表
 
 decompose 的 `DecompositionBaseLog` 和 `DecompositionLevelCount` 建立 `log_basis >= 2` 和 `L >= 1`。Basis 构造验证字宽/模数限制及两者的配对，不施加预设上限。已验证的参数、布局和工作区直接传递这些单位，在数值或存储边界提取整数。组合长度仍由拥有布局的边界检查。
 
+位宽、位数使用 `u32`，与 `T::BITS`、`leading_zeros` / `trailing_zeros` 一致。元素/字节数量、维数、分解层数、limb 数、chunk 数、数组索引和环单项式指数保留 `usize` 或已有语义类型。索引派生的偏移和循环计数用于移位时可以继续使用 `usize`，不为统一移位右侧类型而转换；混合类型计算或接口需要时才转换。SIMD 移位操作数及第三方 intrinsic 的立即数仍遵循其接口要求。
+
 GLWE 布局优先使用已有的 [size 类型](../../crates/primus_lattice/src/size.rs)：
 
 | 类型 | 描述内容 |

@@ -8,7 +8,7 @@ fn ntt_permutation_matches_coefficient_automorphism() {
     let modulus = BarrettModulus::new(Q);
     // All odd degrees at N=32/64 cover sign changes and bit-reversed indices.
     // Transform kernel dispatch is checked in ntt.rs, independently of this map.
-    for log_n in [5, 6] {
+    for log_n in [5u32, 6] {
         let n = 1 << log_n;
         let poly_length = PolyLength::new(n);
         let ntt = UintNttTable::new(poly_length, modulus).unwrap();

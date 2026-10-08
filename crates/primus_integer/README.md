@@ -74,7 +74,7 @@ The `simd` feature enables the `SimdInteger`, `SimdArray`, and related traits. I
 cargo +nightly test -p primus_integer --features simd
 ```
 
-The default vector types are selected from the target CPU features. Generic code should use the associated `SimdT`, `MaskT`, and `Array` types instead of spelling a lane count directly.
+The default vector types are selected from the target CPU features. `VECTOR_BITS` uses `u32`; `LANE_COUNT` uses `usize` for array lengths. Generic code should use the associated `SimdT`, `MaskT`, and `Array` types instead of spelling a lane count directly.
 
 ## License
 

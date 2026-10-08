@@ -45,8 +45,8 @@ pub enum LookupTableError {
     /// The coefficient suffix does not fit in one ring polynomial.
     #[error("coefficient selection domain exceeds the polynomial length")]
     InsufficientCapacity,
-    /// A domain, buffer length or byte size exceeds host indexing limits.
-    #[error("high-precision lookup domain or storage size overflow")]
+    /// A combined width exceeds u32, or a domain/buffer size exceeds host indexing.
+    #[error("high-precision lookup bit count, domain or storage size overflow")]
     StorageSizeOverflow,
     /// A callback returned a value outside the unsigned chunk domain.
     #[error("output chunk {output} at input {input} is outside 0..M")]
@@ -100,6 +100,10 @@ pub(crate) struct Layout {
     pub radix: usize,
     /// Uniform chunk format derived from the input codec's t=2*M.
     pub chunk_format: ChunkFormat,
+    /// Validated total unsigned input width tau*c, below usize::BITS.
+    pub input_bits: u32,
+    /// Validated total unsigned output width tau*o, which may exceed word capacity.
+    pub output_bits: u32,
     /// Ring degree N, including each polynomial's zero-padded tail.
     pub polynomial_length: usize,
     /// Complete input domain size M^c, which must fit in usize.
@@ -128,27 +132,30 @@ impl Layout {
         }
 
         let radix = chunk_format.radix();
-        let chunk_bits = chunk_format.bits() as usize;
-        let input_bit_count = chunk_bits
-            .checked_mul(config.input_chunk_count)
-            .filter(|&bits| bits < usize::BITS as usize)
+        let chunk_bits = chunk_format.bits();
+        let input_bits = chunk_format
+            .checked_bit_count(config.input_chunk_count)
+            .filter(|&bits| bits < usize::BITS)
             .ok_or(LookupTableError::StorageSizeOverflow)?;
         // The complete M^c-entry domain is enumerated. Its size, not just
         // its largest input value, must fit in usize.
-        let input_value_count = 1usize << input_bit_count;
+        let input_value_count = 1usize << input_bits;
         // d <= c makes this shift safe after the input-bit-count check.
-        let entries_per_polynomial = 1usize << (chunk_bits * config.coefficient_chunk_count);
+        let coefficient_bits = chunk_bits * config.coefficient_chunk_count as u32;
+        let entries_per_polynomial = 1usize << coefficient_bits;
         if entries_per_polynomial > polynomial_length {
             return Err(LookupTableError::InsufficientCapacity);
         }
         let polynomials_per_output = input_value_count / entries_per_polynomial;
-        chunk_bits
-            .checked_mul(config.output_chunk_count)
+        let output_bits = chunk_format
+            .checked_bit_count(config.output_chunk_count)
             .ok_or(LookupTableError::StorageSizeOverflow)?;
         Ok(Self {
             config,
             radix,
             chunk_format,
+            input_bits,
+            output_bits,
             polynomial_length,
             input_value_count,
             entries_per_polynomial,
@@ -212,7 +219,9 @@ impl<T: FheUint> HighPrecisionLookupTable<T> {
     /// All chunks use unsigned Rounded encoding with t=2*M from `input_codec`.
     /// The input value count M^c must fit in usize, so tau*c < usize::BITS.
     /// This is a limit of full table enumeration, not of the cryptographic
-    /// construction. Storage grows exponentially with input chunk count;
+    /// construction. Total input/output bit counts must fit u32; the output
+    /// need not fit one machine word. These limits precede table allocation.
+    /// Storage grows exponentially with input chunk count;
     /// representable sizes do not guarantee available memory.
     pub fn try_new<M, LM, F>(
         poly_length: PolyLength,
@@ -279,8 +288,8 @@ impl<T: FheUint> HighPrecisionLookupTable<T> {
 
     /// Returns tau, the common input and output chunk bit width.
     #[must_use]
-    pub fn chunk_bits(&self) -> usize {
-        self.layout.chunk_format.bits() as usize
+    pub fn chunk_bits(&self) -> u32 {
+        self.layout.chunk_format.bits()
     }
 
     /// Returns the uniform format fixed by this table's input codec.

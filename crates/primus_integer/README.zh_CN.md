@@ -74,7 +74,7 @@ cargo nextest run -p primus_integer --lib --tests --features serde
 cargo +nightly test -p primus_integer --features simd
 ```
 
-默认向量类型根据目标 CPU feature 选择。泛型代码应使用关联类型 `SimdT`、`MaskT` 和 `Array`，而不应直接指定 lane 数量。
+默认向量类型根据目标 CPU feature 选择。`VECTOR_BITS` 使用 `u32`，数组长度 `LANE_COUNT` 使用 `usize`。泛型代码应使用关联类型 `SimdT`、`MaskT` 和 `Array`，而不应直接指定 lane 数量。
 
 ## 许可证
 

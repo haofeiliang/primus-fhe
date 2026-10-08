@@ -43,6 +43,8 @@ This range guarantees that `2N` fits in `usize`; combined storage lengths remain
 
 `DecompositionBaseLog` and `DecompositionLevelCount` from decompose establish `log_basis >= 2` and `L >= 1`. Basis construction checks word/modulus limits and their pairing, without preset caps. Checked parameters, layouts and workspaces pass these units directly; unwrap once at numerical or storage boundaries. Composed lengths still require checks at the boundary owning the layout.
 
+Bit widths and bit counts use `u32`, matching `T::BITS` and `leading_zeros` / `trailing_zeros`. Element/byte counts, dimensions, decomposition levels, limb counts, chunk counts, array indices and ring monomial exponents keep `usize` or their existing semantic types. Index-derived offsets and loop counters may remain `usize` when used in shifts; do not cast them solely to change the shift operand type. Convert where mixed-type arithmetic or an API requires it. SIMD shift operands and third-party intrinsic immediates retain the representations required by their APIs.
+
 Use the existing [size descriptors](../../crates/primus_lattice/src/size.rs) for GLWE layouts:
 
 | Descriptor | Describes |

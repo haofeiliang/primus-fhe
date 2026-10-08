@@ -11,7 +11,7 @@ use primus_poly::PolyLength;
 fn roundtrip<Table: FftTable>() {
     // Minimum supported packing and a complete vector-sized buffer with offset slices.
     // Larger work buffers are exercised by zeroize.rs; convolution has its own oracle.
-    for log_n in [5, 6] {
+    for log_n in [5u32, 6] {
         let fft = Table::new(PolyLength::new(1usize << log_n));
         let mut engine = FftEngine::new(&fft);
         // Offset aligned allocations: public slices need only element alignment,

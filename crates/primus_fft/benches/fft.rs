@@ -6,7 +6,7 @@ use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable, Tor
 
 fn bench_forward<Table: FftTable>(c: &mut Criterion, name: &str) {
     let mut group = c.benchmark_group(name);
-    for log_n in [9, 10, 11, 12] {
+    for log_n in [9u32, 10, 11, 12] {
         let fft = Table::new(PolyLength::new(1usize << log_n));
         let mut engine = FftEngine::new(&fft);
         let input = (0..fft.poly_length().get())
@@ -26,7 +26,7 @@ fn bench_forward<Table: FftTable>(c: &mut Criterion, name: &str) {
 
 fn bench_inverse<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, name: &str) {
     let mut group = c.benchmark_group(name);
-    for log_n in [9, 10, 11, 12] {
+    for log_n in [9u32, 10, 11, 12] {
         let fft = Table::new(PolyLength::new(1usize << log_n));
         let mut engine = FftEngine::new(&fft);
         let input = (0..fft.poly_length().get())

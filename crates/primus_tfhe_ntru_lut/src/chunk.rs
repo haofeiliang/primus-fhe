@@ -80,10 +80,16 @@ impl ChunkFormat {
     /// whether a machine word, ring polynomial or full table can hold it.
     #[must_use]
     pub fn bit_count(self, chunk_count: usize) -> u32 {
+        self.checked_bit_count(chunk_count)
+            .expect("chunk bit count exceeds u32")
+    }
+
+    /// Checks the combined width at geometry/word-conversion boundaries.
+    /// Chunk counts stay host-sized; only the resulting bit count is narrowed.
+    pub(crate) fn checked_bit_count(self, chunk_count: usize) -> Option<u32> {
         u32::try_from(chunk_count)
             .ok()
             .and_then(|count| count.checked_mul(self.0))
-            .expect("chunk bit count exceeds u32")
     }
 
     /// Extracts one least-significant-first digit from a zero-extended word.

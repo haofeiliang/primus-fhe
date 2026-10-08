@@ -54,7 +54,7 @@ cargo run --release -p primus_tfhe_ntru_lut --example fourier_lookup --features 
 
 要求明文模数 `t=2*M`，其中 `M=2^tau>=2`。输入与输出 chunks 共用 tau，数量独立指定且均为正。两个密文切片都按低位在前排列：`x=sum_i m_i*M^i`。输入已经分别加密，API 不对单个高精度 LWE 做同态拆分。
 
-`ChunkFormat::new(tau)` 统一派生 `bits()`、`radix()`、`mask()` 和 `plaintext_modulus()`；用后者构造 Rounded codec。`bit_count(count)` 以 u32 返回各自的总位宽，超出范围时拒绝。编译器从 codec 派生相同格式，通过 `table.chunk_format()` 取得，编译时无需再传第二份位宽。格式本身不持有缓冲或 codec。
+`ChunkFormat::new(tau)` 统一派生 `bits()`、`radix()`、`mask()` 和 `plaintext_modulus()`；用后者构造 Rounded codec。`bit_count(count)` 以 u32 返回各自的总位宽，超出范围时拒绝。编译器从 codec 派生相同格式，通过 `table.chunk_format()` 取得，编译时无需再传第二份位宽。格式本身不持有缓冲或 codec。`table.chunk_bits()` 和 `LookupTableStats::input_bits/output_bits` 同样使用 `u32`，编译在分配或调用回调前拒绝超过 `u32::MAX` 的总位宽。Chunk 数量、表长度和索引仍使用 `usize`。
 
 明文机器字使用 `chunks.split_to(value, &mut digits)` 覆盖复用的低位在前切片，再用 `chunks.join(&digits)` 组合。工具拒绝容量超限、截断和非法 digit，允许恰好填满机器字。`chunks.chunk(value, index)` 提取单项 digit，超出机器字部分按零扩展，可用于表回调。机器字转换为可选功能：回调仍可分别提供总位宽超过 u64 或其他单个机器字的输出 digits；LUT 独立保留完整输入枚举与存储上限。
 

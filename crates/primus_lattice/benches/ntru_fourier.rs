@@ -100,7 +100,7 @@ fn fourier<T: TorusFftValue>(
 }
 
 fn benchmarks(c: &mut Criterion) {
-    for log_n in [10, 11] {
+    for log_n in [10u32, 11] {
         let poly_length = PolyLength::new(1usize << log_n);
         fourier::<u32>(c, "rustfft", RustFftTable::new(poly_length), 9, 3);
         fourier::<u64>(c, "rustfft", RustFftTable::new(poly_length), 9, 7);

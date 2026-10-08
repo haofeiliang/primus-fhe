@@ -187,6 +187,24 @@ fn compilation_rejects_invalid_domains_before_callbacks() {
         );
         assert_eq!(result.err(), Some(expected));
     }
+    // This bit product fits usize on 64-bit hosts but exceeds the u32 width
+    // contract. Reject it before allocating the table or calling user code.
+    let two_bit_codec = RoundedCodec::new(8, PowOf2Modulus::new(1 << 24));
+    assert_eq!(
+        HighPrecisionLookupTable::try_new(
+            PolyLength::new(64),
+            modulus,
+            &two_bit_codec,
+            LookupTableConfig {
+                input_chunk_count: 1,
+                output_chunk_count: (u32::MAX / 2) as usize + 1,
+                coefficient_chunk_count: 0,
+            },
+            |_, _| panic!("bit-count overflow must not invoke the callback"),
+        )
+        .err(),
+        Some(LookupTableError::StorageSizeOverflow),
+    );
     let config = LookupTableConfig {
         input_chunk_count: 2,
         output_chunk_count: 2,

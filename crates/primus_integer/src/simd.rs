@@ -21,11 +21,11 @@ use crate::{BorrowingSub, CarryingAdd, CarryingMul, Integer, UnsignedInteger, Wi
 
 /// Default SIMD vector width selected by this crate, in bits.
 #[cfg(target_feature = "avx512f")]
-pub const VECTOR_BITS: usize = 512;
+pub const VECTOR_BITS: u32 = 512;
 
 /// Default SIMD vector width selected by this crate, in bits.
 #[cfg(not(target_feature = "avx512f"))]
-pub const VECTOR_BITS: usize = 256;
+pub const VECTOR_BITS: u32 = 256;
 
 /// Fixed-size array of scalar lanes used to exchange data with SIMD vectors.
 pub trait LaneArray<T: Integer>: Copy + AsRef<[T]> + AsMut<[T]> + IntoIterator<Item = T> {
@@ -134,7 +134,7 @@ pub trait SimdInteger: Integer + SimdElement + SimdCast {
 macro_rules! impl_simd_integer {
     ($($t:ty)*) => ($(
         impl SimdInteger for $t {
-            const LANE_COUNT: usize = VECTOR_BITS / <$t>::BITS as usize;
+            const LANE_COUNT: usize = (VECTOR_BITS / <$t>::BITS) as usize;
             type Array = [$t; {Self::LANE_COUNT}];
             type Selector = [bool; {Self::LANE_COUNT}];
             type SimdT = Simd<$t, {Self::LANE_COUNT}>;

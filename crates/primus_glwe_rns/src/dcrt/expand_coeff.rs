@@ -79,7 +79,7 @@ impl<T: FheUint> DcrtGlweExpandCoeffKey<T> {
         let rns_poly_len = params.rns_poly_len();
         let moduli = params.cipher_moduli_value();
         let twice_poly_length = poly_length * 2;
-        let log_n = poly_length.trailing_zeros() as usize;
+        let log_n = params.poly_length().log_n();
 
         (0..log_n)
             .map(|i| {
@@ -107,7 +107,7 @@ impl<T: FheUint> DcrtGlweExpandCoeffKey<T> {
         M: FieldContext<T>,
     {
         let big_uint_value_len = params.big_uint_value_len();
-        let log_n = params.poly_length().log_n() as usize;
+        let log_n = params.poly_length().log_n();
 
         (0..=log_n)
             .map(|log_count| {

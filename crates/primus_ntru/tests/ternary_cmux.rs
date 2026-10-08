@@ -213,7 +213,7 @@ fn check_fourier_step<T: TorusFftValue, Table: FftTable>() {
     let gadget = NlevParameters::with_ntru_params(
         &params,
         DecompositionBaseLog::new(8),
-        Some(DecompositionLevelCount::new(T::BITS as usize / 8 - 1)),
+        Some(DecompositionLevelCount::new((T::BITS / 8 - 1) as usize)),
     );
     let basis = gadget.basis();
     let mut rng = StdRng::seed_from_u64(0xB703);
