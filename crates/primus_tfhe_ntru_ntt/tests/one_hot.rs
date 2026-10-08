@@ -382,17 +382,29 @@ fn selectors(distr: SecretKeyDistr, sparse: bool) {
             );
             accumulator.decrypt_to(&selected, &mut decoded);
             assert_eq!(decoded, vec![3 * bit; N]);
-            control.cmux_to(
+            // Consume r=0 from the full batch and r>0 from the compact one.
+            let control = if selector == 0 {
+                control
+            } else {
+                compact_controls.selector(selector).unwrap()
+            };
+            evaluator.cmux_to(
+                &control,
                 &choices[0],
                 &choices[1],
                 &mut selected,
-                evaluator.parameters().output_basis(),
-                modulus,
-                context.table(),
-                &mut ep,
+                pbs.bootstrap_resources_mut(),
             );
             accumulator.decrypt_to(&selected, &mut decoded);
             assert_eq!(decoded, vec![if bit == 0 { 1 } else { 3 }; N]);
+            evaluator.external_product_to(
+                &control,
+                &choices[1],
+                &mut selected,
+                pbs.bootstrap_resources_mut(),
+            );
+            accumulator.decrypt_to(&selected, &mut decoded);
+            assert_eq!(decoded, vec![3 * bit; N]);
         }
     }
     let input = encryptor.encrypt_padded(1u64, &mut rng).unwrap();
@@ -496,6 +508,33 @@ fn selectors(distr: SecretKeyDistr, sparse: bool) {
             .is_err()
         );
         assert!(ngsw.iter().all(|&v| v == 7));
+    }
+    // A whole batch wrapped as one control must be rejected before output writes.
+    let batch_control = primus_ntru::NttNgswCiphertext::new(ngsw.as_slice());
+    selected.as_mut().fill(7);
+    for cmux in [true, false] {
+        assert!(
+            catch_unwind(AssertUnwindSafe(|| {
+                if cmux {
+                    evaluator.cmux_to(
+                        &batch_control,
+                        &choices[0],
+                        &choices[1],
+                        &mut selected,
+                        pbs.bootstrap_resources_mut(),
+                    );
+                } else {
+                    evaluator.external_product_to(
+                        &batch_control,
+                        &choices[1],
+                        &mut selected,
+                        pbs.bootstrap_resources_mut(),
+                    );
+                }
+            }))
+            .is_err()
+        );
+        assert!(selected.as_ref().iter().all(|&value| value == 7));
     }
     // Circuit operations borrow the same resources; no owning conversion is needed.
     let mut ordinary =

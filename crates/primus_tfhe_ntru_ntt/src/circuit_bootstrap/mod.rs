@@ -1,5 +1,6 @@
 //! Optional circuit-bootstrap parameters, keys, and evaluation.
 
+mod control;
 mod evaluator;
 mod key;
 mod one_hot;

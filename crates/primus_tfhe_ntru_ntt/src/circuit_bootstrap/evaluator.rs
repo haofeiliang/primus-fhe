@@ -168,7 +168,7 @@ where
     /// Panics before output writes on a different context binding or a
     /// wrong ciphertext length.
     pub fn cmux_to<A, B, C, D>(
-        &mut self,
+        &self,
         control: &NttNgswCiphertext<A>,
         lhs: &NtruCiphertext<B>,
         rhs: &NtruCiphertext<C>,
@@ -181,30 +181,13 @@ where
         D: DataMut<Elem = T>,
     {
         resources.check_context(self.context);
-        let parameters = self.circuit_key.parameters();
-        let ring_len = resources.context.parameters().poly_length().get();
-        assert_eq!(
-            (
-                control.as_ref().len(),
-                lhs.as_ref().len(),
-                rhs.as_ref().len(),
-                output.as_ref().len()
-            ),
-            (parameters.output_nlev_len(), ring_len, ring_len, ring_len),
-            "CMUX ciphertext layout mismatch"
-        );
-        control.cmux_to(
-            lhs,
-            rhs,
-            output,
-            parameters.output_basis(),
-            resources
-                .context
-                .parameters()
-                .accumulator_ntru()
-                .cipher_modulus(),
-            resources.context.table(),
-            resources.workspace.rotation.external_product(),
+        super::control::cmux_to(
+            self.circuit_key.parameters(),
+            control.as_view(),
+            lhs.as_view(),
+            rhs.as_view(),
+            output.as_mut_view(),
+            resources,
         );
     }
 
@@ -220,7 +203,7 @@ where
     /// Panics before output writes on a different context binding or a
     /// wrong ciphertext length.
     pub fn external_product_to<A, B, C>(
-        &mut self,
+        &self,
         control: &NttNgswCiphertext<A>,
         input: &NtruCiphertext<B>,
         output: &mut NtruCiphertext<C>,
@@ -231,28 +214,12 @@ where
         C: DataMut<Elem = T>,
     {
         resources.check_context(self.context);
-        let parameters = self.circuit_key.parameters();
-        let ring_len = resources.context.parameters().poly_length().get();
-        assert_eq!(
-            (
-                control.as_ref().len(),
-                input.as_ref().len(),
-                output.as_ref().len()
-            ),
-            (parameters.output_nlev_len(), ring_len, ring_len),
-            "external-product ciphertext layout mismatch"
-        );
-        control.external_product_to(
-            input,
-            output,
-            parameters.output_basis(),
-            resources
-                .context
-                .parameters()
-                .accumulator_ntru()
-                .cipher_modulus(),
-            resources.context.table(),
-            resources.workspace.rotation.external_product(),
+        super::control::external_product_to(
+            self.circuit_key.parameters(),
+            control.as_view(),
+            input.as_view(),
+            output.as_mut_view(),
+            resources,
         );
     }
 }

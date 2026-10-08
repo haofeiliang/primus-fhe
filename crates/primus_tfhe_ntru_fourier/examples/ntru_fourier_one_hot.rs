@@ -62,7 +62,6 @@ fn main() {
     )
     .unwrap();
     let mut selectors = cbs.allocate_ngsw_output();
-    let cbs_parameters = cbs.parameters();
     let mut selected = context.allocate_accumulator_ciphertext();
 
     for message in [TARGET as Word, 0] {
@@ -74,15 +73,7 @@ fn main() {
         // Server: selector r encrypts [message == r]; r=0 is included in this full batch.
         cbs.one_hot_ngsw_to(input.as_view(), &mut selectors, &mut resources);
         let control = cbs.ngsw_selectors(&selectors).selector(TARGET).unwrap();
-        let (fft, external_product) = resources.external_product_workspaces();
-        control.cmux_to(
-            &lhs,
-            &rhs,
-            &mut selected,
-            cbs_parameters.output_basis(),
-            fft,
-            external_product,
-        );
+        cbs.cmux_to(&control, &lhs, &rhs, &mut selected, &mut resources);
 
         // Client: equality selects rhs=3; all other inputs select lhs=1.
         ring_client.decrypt_to(&selected, &mut decoded);

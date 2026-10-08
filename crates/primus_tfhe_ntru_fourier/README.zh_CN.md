@@ -113,6 +113,8 @@ let mut evaluator = context.evaluator(&server)?;
 `None`。视图检查精确批次长度，直接借用原缓冲，不复制、不分配。
 `cbs.nlev_selectors(&output)` 同样借用完整的系数域 NLEV 批次。
 
+取得单个 control 后，调用 `cbs.cmux_to(&control, &lhs, &rhs, &mut selected, &mut resources)`：δᵣ=0 选择 lhs，δᵣ=1 选择 rhs。`cbs.external_product_to(&control, &input, &mut output, &mut resources)` 则计算 selector 与环密文的乘积。两个入口复用已绑定的 output basis、变换环境和共享 scratch；候选的秘密、模数、编码与噪声仍须符合 CMux/外积契约。完整/非零批次使用相同消费接口，传入的是一个 selector。
+
 需要立即消费每个结果时，`new_sparse_pair_workspace(&resources)` 分配一个额外输入状态，`with_sparse_pair` 一起执行两个 sparse 输入的盲旋转。回调依次收到索引 0、1 和受限的 `OneHotProjection`；`project_to` 将完整 NLEV 和/或非零 NGSW 写入复用缓冲，每次回调内完成消费。高精度 LUT evaluator 自动使用此路径。 Fourier 投影返回借用的共享 FFT 引擎，供立即转换 NLEV。
 
 ## 高精度查表

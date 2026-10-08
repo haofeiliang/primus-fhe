@@ -1,8 +1,9 @@
 //! Packed one-hot selectors from one fused blind rotation.
 
+use primus_data::{Data, DataMut};
 use primus_encoding::RoundedCodec;
 use primus_integer::FheUint;
-use primus_ntru::{NlevCiphertext, NttNgswCiphertext};
+use primus_ntru::{NlevCiphertext, NtruCiphertext, NttNgswCiphertext};
 use primus_ntt::MonomialNttTable;
 pub use primus_tfhe_ntru::{NlevSelectors, OneHotBootstrapError, OneHotLookupTable};
 
@@ -24,7 +25,7 @@ use crate::{
 /// NLEV outputs are coefficient polynomials under accumulator secret f at Q;
 /// NGSW outputs use this backend's transform representation. Layout is `[selector][level][polynomial element]`,
 /// in natural selector order and output-basis scalar order, with no padding.
-/// Each call performs one BR and L full constant projections per selector.
+/// Each selector-generation call performs one BR and L full constant projections per selector.
 /// Online calls overwrite outputs, reuse BR external-product scratch, and allocate nothing.
 /// Owns only the packed LUT and projection buffers; common BR/EP resources are
 /// borrowed per operation and no return buffers are owned.
@@ -374,5 +375,81 @@ where
                 );
             }
         }
+    }
+}
+
+// Consume a borrowed selector with the same CBS binding as ordinary controls.
+impl<'a, T, Table, LM> OneHotCircuitBootstrapEvaluator<'a, T, Table, LM>
+where
+    T: FheUint,
+    Table: MonomialNttTable<ValueT = T>,
+    LM: primus_reduce::RingContext<T>,
+{
+    /// Selects `lhs` when delta_r is zero and `rhs` when delta_r is one.
+    /// Accepts one NGSW borrowed from a full or nonzero selector batch and
+    /// overwrites the coefficient-domain output using shared scratch, without allocating.
+    ///
+    /// # Correctness
+    /// `control` must use this evaluator's output basis, accumulator secret and
+    /// transform representation. Inherits the candidate encoding, residue and
+    /// noise requirements of [`crate::CircuitBootstrapEvaluator::cmux_to`].
+    ///
+    /// # Panics
+    /// Panics before output writes on a different context binding or a wrong
+    /// single-control/candidate/output length. Pass one selector, not a whole batch.
+    pub fn cmux_to<A, B, C, D>(
+        &self,
+        control: &NttNgswCiphertext<A>,
+        lhs: &NtruCiphertext<B>,
+        rhs: &NtruCiphertext<C>,
+        output: &mut NtruCiphertext<D>,
+        resources: &mut BootstrapResources<'a, T, Table, LM>,
+    ) where
+        A: Data<Elem = T>,
+        B: Data<Elem = T>,
+        C: Data<Elem = T>,
+        D: DataMut<Elem = T>,
+    {
+        resources.check_context(self.context);
+        super::control::cmux_to(
+            self.parameters(),
+            control.as_view(),
+            lhs.as_view(),
+            rhs.as_view(),
+            output.as_mut_view(),
+            resources,
+        );
+    }
+
+    /// Multiplies an accumulator ciphertext by one NGSW selector delta_r.
+    /// Overwrites output using shared scratch, without allocating.
+    ///
+    /// # Correctness
+    /// Inherits [`Self::cmux_to`]'s basis, secret and representation requirements
+    /// and [`crate::CircuitBootstrapEvaluator::external_product_to`]'s encoding,
+    /// residue and multiplication-noise requirements.
+    ///
+    /// # Panics
+    /// Panics before output writes on a different context binding or a wrong
+    /// single-control/input/output length.
+    pub fn external_product_to<A, B, C>(
+        &self,
+        control: &NttNgswCiphertext<A>,
+        input: &NtruCiphertext<B>,
+        output: &mut NtruCiphertext<C>,
+        resources: &mut BootstrapResources<'a, T, Table, LM>,
+    ) where
+        A: Data<Elem = T>,
+        B: Data<Elem = T>,
+        C: DataMut<Elem = T>,
+    {
+        resources.check_context(self.context);
+        super::control::external_product_to(
+            self.parameters(),
+            control.as_view(),
+            input.as_view(),
+            output.as_mut_view(),
+            resources,
+        );
     }
 }

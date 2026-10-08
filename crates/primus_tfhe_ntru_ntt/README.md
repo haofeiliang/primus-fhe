@@ -107,6 +107,8 @@ cover `1..M` and return `None` for `selector(0)`. These views check the exact
 batch length and borrow the existing buffer without copying or allocating.
 `cbs.nlev_selectors(&output)` similarly borrows a complete coefficient NLEV batch.
 
+After obtaining one control, call `cbs.cmux_to(&control, &lhs, &rhs, &mut selected, &mut resources)`: delta_r=0 selects lhs and delta_r=1 selects rhs. `cbs.external_product_to(&control, &input, &mut output, &mut resources)` multiplies the selector by a ring ciphertext. Both calls reuse the bound output basis, transform environment and shared scratch; candidates still require the CMux/product secret, modulus, encoding and noise contracts. Full and nonzero batches use the same consumption interface, with one selector per call.
+
 For a consumer that immediately processes each result, `new_sparse_pair_workspace(&resources)` allocates one additional input state and `with_sparse_pair` blind-rotates two sparse inputs together. Its callback receives index 0 then 1 and a scoped `OneHotProjection`: `project_to` writes full NLEV and/or nonzero NGSW into reusable buffers. Complete consumption within each callback; the high-precision LUT evaluator uses this path automatically.
 
 ## High-precision lookup

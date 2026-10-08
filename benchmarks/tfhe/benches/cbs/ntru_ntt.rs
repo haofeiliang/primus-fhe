@@ -248,11 +248,11 @@ impl<T: FheUint, Table: MonomialNttTable<ValueT = T>> Fixture<T, Table> {
     }
 
     /// Check each selector through a CMux, including the compact r-1 indexing.
-    fn check_one_hot(
+    fn check_one_hot<'a>(
         &self,
         output: &[T],
-        evaluator: &OneHotCircuitBootstrapEvaluator<'_, T, Table, PowOf2Modulus<T>>,
-        resources: &mut primus_tfhe_ntru_ntt::BootstrapResources<'_, T, Table, PowOf2Modulus<T>>,
+        evaluator: &OneHotCircuitBootstrapEvaluator<'a, T, Table, PowOf2Modulus<T>>,
+        resources: &mut primus_tfhe_ntru_ntt::BootstrapResources<'a, T, Table, PowOf2Modulus<T>>,
         compact: bool,
         input_codec: RoundedCodec<T, PowOf2Modulus<T>>,
     ) {
@@ -263,7 +263,6 @@ impl<T: FheUint, Table: MonomialNttTable<ValueT = T>> Fixture<T, Table> {
             rhs,
             ..
         } = self;
-        let parameters = evaluator.parameters();
         let mut selected = context.allocate_accumulator_ciphertext();
         let mut decoded = vec![T::ZERO; N];
         let mut ring = context
@@ -282,15 +281,7 @@ impl<T: FheUint, Table: MonomialNttTable<ValueT = T>> Fixture<T, Table> {
             evaluator.ngsw_selectors(output)
         };
         for (r, control) in selectors.iter() {
-            control.cmux_to(
-                lhs,
-                rhs,
-                &mut selected,
-                parameters.output_basis(),
-                context.parameters().accumulator_ntru().cipher_modulus(),
-                context.table(),
-                resources.external_product_workspace(),
-            );
+            evaluator.cmux_to(&control, lhs, rhs, &mut selected, resources);
             ring.decrypt_to(&selected, &mut decoded);
             let expected = if r == 2 { T::ONE } else { T::ZERO };
             assert!(decoded.iter().all(|&value| value == expected));
