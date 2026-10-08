@@ -3,45 +3,26 @@
 //! Run: `cargo run --release -p primus_tfhe_glwe_ntt --example ntt_sparse`
 //! Arithmetic profiles: guides/development/tfhe-parameters.md (not security presets).
 
-use primus_decompose::DecompositionBaseLog;
-use primus_glwe::SecretKeyDistr;
-use primus_lattice::{GlweDimension, LweDimension};
-use primus_modulus::BarrettModulus;
 use primus_ntt::U64NttTable as Table;
-use primus_poly::PolyLength;
-use primus_tfhe_glwe::{BlindRotationConfig, LweConfig};
-use primus_tfhe_glwe_ntt::{
-    BlindRotationAlgorithm, DecompositionConfig, GadgetEncryptionConfig, PbsMessageConfig,
-    PbsOrder, PbsParameters, TfheContext,
-};
+use primus_tfhe_glwe_ntt::{TfheContext, experimental};
 use rand::{SeedableRng, rngs::StdRng};
 
-// This example uses u64 coefficients with the explicit parameters below.
+// The paired experimental entry fixes u64 coefficients and the operation domains.
 type Word = u64;
-const N: usize = 1024;
 
 fn main() {
-    let parameters = parameters();
+    let config = experimental::SPARSE_PBS_U64;
+    let parameters = config.try_prepare().unwrap();
     let context = TfheContext::<Word, Table>::try_from_parameters(parameters).unwrap();
 
     // Like basic PBS, input and output use the same message modulus.
-    let codecs = context
-        .parameters()
-        .pbs_codecs(PbsMessageConfig::new(32))
-        .unwrap();
+    let codecs = context.parameters().pbs_codecs(config.messages).unwrap();
 
     // Client: generate sparse BR material from the fixed-weight secret.
     let mut rng = StdRng::seed_from_u64(42);
     // Three copies, 64 buckets. Map retries retain the same client secret.
     let (client_key, server_key) = context
-        .try_generate_keys(
-            BlindRotationAlgorithm::Sparse {
-                copy_count: 3,
-                bucket_count: 64,
-            },
-            None,
-            &mut rng,
-        )
+        .try_generate_keys(config.blind_rotation.algorithm, None, &mut rng)
         .unwrap();
     // Ordinary messages borrow only the external secret from the setup bundle.
     let external_secret = client_key.external_lwe_secret_key();
@@ -73,50 +54,4 @@ fn main() {
         assert_eq!(result, message % 4);
         println!("f({message}) = {result}");
     }
-}
-
-// Key parameters: n=728, N=1024; LWE and GLWE share the ciphertext modulus.
-// Noise sigmas below are in coefficient units; these are arithmetic examples, not security presets.
-fn parameters() -> PbsParameters<Word> {
-    // NTT requires a prime admitting a 2N-th root, rather than a power-of-two modulus.
-    let ring_modulus: Word = 1_125_899_906_826_241;
-    let modulus = BarrettModulus::new(ring_modulus);
-    let q = ring_modulus as f64;
-
-    // None retains floor(modulus_bits / log_basis) levels; it need not cover every low bit.
-    let full = DecompositionConfig {
-        log_basis: DecompositionBaseLog::new(8),
-        level_count: None,
-    };
-
-    BlindRotationConfig {
-        small_lwe: LweConfig {
-            dimension: LweDimension::new(728),
-            cipher_modulus: modulus.into(),
-            secret_key_distr: SecretKeyDistr::fixed_hamming_weight_binary(728, 32),
-            noise_standard_deviation: 3.2 * q / 16384.0,
-        },
-        acc_dimension: GlweDimension::new(1),
-        acc_poly_length: PolyLength::new(N),
-        bsk_secret_distr: SecretKeyDistr::SparseTernary,
-        bsk_gadget: GadgetEncryptionConfig {
-            decomposition: full,
-            noise_standard_deviation: 6.4,
-        },
-        algorithm: BlindRotationAlgorithm::Sparse {
-            copy_count: 3,
-            bucket_count: 64,
-        },
-    }
-    .try_prepare()
-    .and_then(|parameters| {
-        parameters.try_with_key_switching(
-            GadgetEncryptionConfig {
-                decomposition: full,
-                noise_standard_deviation: 6.4,
-            },
-            PbsOrder::BootstrapKeyswitch,
-        )
-    })
-    .unwrap()
 }

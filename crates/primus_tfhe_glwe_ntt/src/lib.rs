@@ -19,6 +19,9 @@
 //!
 //! # Other operations
 //!
+//! [`experimental`] pairs sparse PBS, ManyLUT, MVB and CBS with their teaching
+//! message domains. Each example prepares its matching config once.
+//!
 //! - [`InterleavedLookupTable`]: several functions of one input using ordinary PBS workspace.
 //! - [`factorized`]: a prepared MVB program and [`FactorizedEvaluator`], with Scaled outputs.
 //! - [`boolean`]: Boolean clients and gates with plaintext modulus four.

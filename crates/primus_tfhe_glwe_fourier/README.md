@@ -20,7 +20,7 @@ let codecs = parameters.pbs_codecs(config.messages)?;
 
 `PbsConfig` is one complete numerical description, containing BR/KS choices and input/output messages. `CbsConfig` describes ring-output CBS; its gadget output has no ordinary message codec. `experimental` also exports `SPARSE_PBS_U64`, `CLASSIC_MANY_LUT_U64`, `CLASSIC_THRESHOLD_MVB_U64`, `CLASSIC_CBS_U64` and `SPARSE_CBS_U64`. Use `config.blind_rotation.algorithm` during key generation. Configs are `Copy`, so field overrides and struct-update syntax work without preparing samplers first.
 
-These u64 constants are arithmetic examples, with unassessed security and failure probability. See the [family configs](../primus_tfhe_glwe/README.md#experimental-paired-parameters) for composition, independent message overrides and numerical contracts. The basic example uses this entry; other examples retain advanced explicit setup until their migration. Prepared `PbsParameters` remain reusable with compatible encodings; changing a workload still needs a new error budget.
+These u64 constants are arithmetic examples, with unassessed security and failure probability. See the [family configs](../primus_tfhe_glwe/README.md#experimental-paired-parameters) for composition, independent message overrides and numerical contracts. Every example starts from the matching operation config; advanced explicit composition remains available through the family constructors. Prepared `PbsParameters` remain reusable with compatible encodings; changing a workload still needs a new error budget.
 
 ## Quick start
 
@@ -32,18 +32,18 @@ cargo run -p primus_tfhe_glwe_fourier --release --example fourier_basic --featur
 
 The [basic example](examples/fourier_basic.rs) shows parameters → context → paired keys → clients → one compiled LUT → reused evaluator and ciphertext buffers. It computes `x % 4`, keeping `t=32` encoding for both input and output, and decodes with `decrypt`. `parameters.lookup_table_compiler(&codecs)?` binds the prepared input/output encodings; `compiler.compile_fn(function)` creates the LUT. Choose a different output message modulus with `PbsMessageConfig::with_output_modulus`; see [choosing the output encoding](../primus_tfhe/README.md#choosing-the-output-encoding). Public-key encryption starts with `context.public_encryptor(&public, codecs.input_codec())`; see the [family guide](../primus_tfhe_glwe/README.md#clients-and-luts).
 
-Examples use `Word = u64` and Native64, with one explicit parameter set per workflow. The library and numerical diagnostics still support both u32 and u64. Select TFHE-FFT by replacing the `RustFftTable as Table` import with `TfheFftTable as Table`. When changing engines, also update the example target’s `required-features` and use `--features tfhe-fft`. The basic example uses the paired entry; other files define `parameters()` using `BlindRotationConfig` plus the required KS configuration: dimensions, modulus types, secret distributions, noise and BR/KS decompositions are visible together. CBS examples also define `circuit_config()` for the output, trace and scheme-switch bases. The [parameter and validation guide](../../guides/development/tfhe-parameters.md) records numerical choices; each example handles two requests with the same buffers.
+Examples use `Word = u64` and the operation config listed below. Dimensions, modulus representation, secret distributions, noise and decompositions live in `experimental`; each `main` shows only preparation, the public function, clients and evaluation. CBS uses `config.gadget` and independently chooses the candidate ring-message domain. The Fourier examples select RustFFT; switch the `Table` import and the example target’s `required-features` to use TFHE-FFT with `--features tfhe-fft`. Explicit u32/u64 parameter composition remains available; see the [family configs](../primus_tfhe_glwe/README.md#experimental-paired-parameters) and [parameter guide](../../guides/development/tfhe-parameters.md).
 
-Examples start with `main`, followed by local parameters where needed; comments identify client and server stages. Basic and sparse both compute `x % 4` with equal input/output message moduli. The separate ManyLUT example computes `x % 4` and `x / 4`, sets `t_in=16` and `t_out=8`, and decrypts with the output codec. Each example reuses the LUT, evaluator and output buffers for two requests. See [client/server roles and buffer allocation](../primus_tfhe/README.md#client-and-server-roles).
+Comments identify client and server stages. Basic and sparse both compute `x % 4` with equal input/output message moduli. The separate ManyLUT example computes `x % 4` and `x / 4`, sets `t_in=16` and `t_out=8`, and decrypts with the output codec. Each example reuses the LUT, evaluator and output buffers for two requests. See [client/server roles and buffer allocation](../primus_tfhe/README.md#client-and-server-roles).
 
-| Operation | Complete example |
-| --- | --- |
-| Classic PBS | [basic](examples/fourier_basic.rs) |
-| Sparse PBS | [sparse](examples/fourier_sparse.rs) |
-| Interleaved ManyLUT with a separate output message modulus | [many_lut](examples/fourier_many_lut.rs) |
-| Classic CBS → CMux | [circuit_bootstrap](examples/fourier_circuit_bootstrap.rs) |
-| Sparse CBS → CMux | [sparse_circuit_bootstrap](examples/fourier_sparse_circuit_bootstrap.rs) |
-| Factorized MVB | [thresholds](examples/fourier_mvb_thresholds.rs) |
+| Operation | Config in `experimental` | Complete example |
+| --- | --- | --- |
+| Classic PBS | `CLASSIC_PBS_U64` | [basic](examples/fourier_basic.rs) |
+| Sparse PBS | `SPARSE_PBS_U64` | [sparse](examples/fourier_sparse.rs) |
+| Interleaved ManyLUT with a separate output message modulus | `CLASSIC_MANY_LUT_U64` | [many_lut](examples/fourier_many_lut.rs) |
+| Classic CBS → CMux | `CLASSIC_CBS_U64` | [circuit_bootstrap](examples/fourier_circuit_bootstrap.rs) |
+| Sparse CBS → CMux | `SPARSE_CBS_U64` | [sparse_circuit_bootstrap](examples/fourier_sparse_circuit_bootstrap.rs) |
+| Factorized MVB | `CLASSIC_THRESHOLD_MVB_U64` | [thresholds](examples/fourier_mvb_thresholds.rs) |
 
 ManyLUT interleaves outputs within one blind rotation; factorized MVB uses public factors and a different evaluation interface.
 

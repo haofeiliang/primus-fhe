@@ -17,25 +17,24 @@
 
 [NTT](../primus_tfhe_ntru_ntt/README.zh_CN.md) 和 [Fourier](../primus_tfhe_ntru_fourier/README.zh_CN.md) 均支持 classic binary/ternary 和 sparse fixed-weight binary 查表。使用 `generator.try_generate_server_key(&client, blind_rotation, Some(cbs_config), rng)` 生成求值材料，算法选择 `BlindRotationAlgorithm::Classic` 或 `Sparse { copy_count, bucket_count }`；CBS 材料为必需项。客户端生成 chunks，再用 `encrypt_padded` 分别加密。基础示例固定 classic BR，保留一条八 chunk 工作流；sparse/public-lift 用法见下文[求值与工作区](#求值与工作区)。
 
-`HighPrecisionLookupTable::try_new(poly_length, ring_modulus, &input_codec, config, function)` 仅用 N、Q 和 codec 的 q/t 编译公开表，不需要 TFHE 参数、秘密或变换。启用 `ntt` 或 `fourier` 后，`try_from_parameters(parameters, &input_codec, config, function)` 可从已有参数取得 N/Q/q，并在编译前检查 codec 的 q。两个入口共用同一编译实现，均不需要密钥或变换表。回调接收 `(完整输入索引, 输出 chunk 索引)`，返回一个 digit。用 `NttLookupTableEvaluator::try_new(context, server_key, table)` 或 `FourierLookupTableEvaluator::try_new(context, server_key, table)` 绑定资源，调用一次 `allocate_output()`，随后重复调用 `evaluate_to(input_chunks, output_chunks)`。输出逐个使用 `context.decryptor(client.external_lwe_secret_key(), &input_codec)` 解码。表拥有 chunk 编码，密钥不依赖 t。Evaluator 借用 context、服务端密钥和表，求值不需要客户端秘密。
+`HighPrecisionLookupTable::try_new(poly_length, ring_modulus, &input_codec, config, function)` 仅用 N、Q 和 codec 的 q/t 编译公开表，不需要 TFHE 参数、秘密或变换。启用 `ntt` 或 `fourier` 后，`try_from_parameters(parameters, &input_codec, config, function)` 可从已有参数取得 N/Q/q，并在编译前检查 codec 的 q。两个入口共用同一编译实现，均不需要密钥或变换表。回调接收 `(完整输入索引, 输出 chunk 索引)`，返回一个 digit。用 `NttLookupTableEvaluator::try_new(context, server_key, table)` 或 `FourierLookupTableEvaluator::try_new(context, server_key, table)` 绑定资源，调用一次 `allocate_output()`，随后重复调用 `evaluate_to(input_chunks, output_chunks)`。输出逐个使用 `context.decryptor(client.external_lwe_secret_key(), codecs.output_codec())` 解码。表拥有 chunk 编码，密钥不依赖 t。Evaluator 借用 context、服务端密钥和表，求值不需要客户端秘密。
 
-对于 u64、`t=8`、`N=1024` 的 context，八个两位 chunks 表示一个 16 位输入。以下片段计算 `(x*x+3*x+7) mod 65536`，返回八个 chunks：
+先用 `NTT_CLASSIC_LOOKUP_U64` 准备 context 与服务端密钥；八个两位 chunks 表示一个 16 位输入。以下片段计算 `(x*x+3*x+7) mod 65536`，返回八个 chunks：
 
 ```rust,ignore
+use primus_tfhe_ntru_ntt::PbsMessageConfig;
 use primus_tfhe_ntru_lut::{
-    ChunkFormat, HighPrecisionLookupTable, LookupTableConfig, NttLookupTableEvaluator,
+    HighPrecisionLookupTable, NttLookupTableEvaluator, experimental,
 };
 
-let chunks = ChunkFormat::new(2);
-let input_codec = primus_encoding::RoundedCodec::new(chunks.plaintext_modulus(), context.parameters().external_lwe().cipher_modulus());
+let config = experimental::NTT_CLASSIC_LOOKUP_U64;
+let chunks = config.try_chunk_format()?;
+let codecs = context.parameters()
+    .pbs_codecs(PbsMessageConfig::new(config.one_hot.input_modulus))?;
 let table = HighPrecisionLookupTable::try_from_parameters(
     context.parameters(),
-    &input_codec,
-    LookupTableConfig {
-        input_chunk_count: 8,
-        output_chunk_count: 8,
-        coefficient_chunk_count: 5,
-    },
+    codecs.input_codec(),
+    config.layout,
     |x, output| {
         let x = x as u64; // 明文中间结果可能超出 u32。
         let value = (x * x + 3 * x + 7) % 65536;
@@ -49,7 +48,7 @@ evaluator.evaluate_to(&encrypted_chunks, &mut output);
 
 完整可运行工作流见 [ntt_lookup.rs](examples/ntt_lookup.rs) 和 [fourier_lookup.rs](examples/fourier_lookup.rs)。它们使用 n=800/N=1024，以八个两位 chunks 加密 16 位输入，并返回八个 chunks 的 16 位结果。低五个输入 chunks 选择系数，高三个选择 64 个候选多项式之一；输出 chunk 数仍可独立设置。输入 `0b10_10_10_11_11_00_11_01` 返回 `0b10_00_01_01_10_01_01_11`，随后零输入返回 7，两次请求复用同一个 evaluator 和缓冲。
 
-两个示例均使用 `Word = u64`，NTT 使用 `U64NttTable`；每条工作流保留一套显式参数，库测试与诊断继续覆盖 u32。Fourier 示例默认 RustFFT，改用 `TfheFftTable as Table` 可选择 TFHE-FFT；切换 FFT 引擎时也要修改示例 target 的 `required-features`，并使用 `--features tfhe-fft`。每个文件的本地 `parameters()` 与 `circuit_config()` 构造 `BlindRotationConfig` 并按需添加 KS 配置 / `CbsGadgetConfig`，展示尺寸、噪声、u64 分解、prime/native 环模数和独立的 PowOf2 q=2^24，数值选择见[参数矩阵](../../guides/development/tfhe-parameters.md)。
+两个示例固定 `Word = u64`，从 `experimental` 取得对应的 `HighPrecLutConfig`。Chunk 位宽从 one-hot 输入 t 派生，输入输出数量及分区取自 `config.layout`，公开函数显式编写。配置准备 BR/返回状态，`config.one_hot.gadget` 用于 CBS 密钥生成。Prime/native Q 与独立 PowOf2 q=2^24 记录在[参数指南](../../guides/development/tfhe-parameters.md)，库测试与诊断继续覆盖 u32。NTT 使用 `U64NttTable`；Fourier 选择 RustFFT。需要 TFHE-FFT 时，同时切换 `Table` 导入、target 的 `required-features` 和 `--features tfhe-fft`。
 
 ```sh
 cargo run --release -p primus_tfhe_ntru_lut --example ntt_lookup --features ntt

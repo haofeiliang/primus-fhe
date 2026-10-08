@@ -20,7 +20,7 @@ let codecs = parameters.pbs_codecs(config.messages)?;
 
 `PbsConfig` 用一个纯数值类型组合 BR/KS 与输入输出消息配置；`CbsConfig` 表示环输出 CBS，其 gadget 输出不使用普通消息 codec。`experimental` 另导出 `SPARSE_PBS_U64`、`CLASSIC_MANY_LUT_U64`、`CLASSIC_THRESHOLD_MVB_U64`、`CLASSIC_CBS_U64` 和 `SPARSE_CBS_U64`。密钥生成使用 `config.blind_rotation.algorithm`。配置实现 `Copy`，可直接覆盖字段或使用 struct update，而无需先准备采样器。
 
-这些 u64 常量为算术样例，安全性与失败概率尚未评估。组合方式、独立消息覆盖和数值契约见[家族配置](../primus_tfhe_glwe/README.zh_CN.md#实验配套参数)。基础示例已使用该入口，其余示例在迁移前保留高级显式准备。`PbsParameters` 可供兼容编码复用；改变工作负载后仍须重新确定误差预算。
+这些 u64 常量为算术样例，安全性与失败概率尚未评估。组合方式、独立消息覆盖和数值契约见[家族配置](../primus_tfhe_glwe/README.zh_CN.md#实验配套参数)。所有示例均从对应操作配置开始；高级显式组合继续使用家族构造器。`PbsParameters` 可供兼容编码复用；改变工作负载后仍须重新确定误差预算。
 
 ## 快速开始
 
@@ -32,18 +32,18 @@ cargo run -p primus_tfhe_glwe_ntt --release --example ntt_basic
 
 [basic 示例](examples/ntt_basic.rs)展示参数 → context → 配对密钥 → 客户端 → 单个 LUT → 复用 evaluator 和密文缓冲。它计算 `x % 4`，输入和输出均采用 `t=32` 编码，直接用 `decrypt` 解码。 `parameters.lookup_table_compiler(&codecs)?` 直接绑定已准备的输入/输出编码，再用 `compiler.compile_fn(function)` 创建 LUT。通过 `PbsMessageConfig::with_output_modulus` 选择不同输出消息模数，见[选择输出编码](../primus_tfhe/README.zh_CN.md#选择输出编码)。 公钥加密通过 `context.public_encryptor(&public, codecs.input_codec())` 创建客户端，见[家族说明](../primus_tfhe_glwe/README.zh_CN.md#客户端与-lut)。
 
-示例使用 `Word = u64` 和 `U64NttTable`，每条工作流只保留一套显式参数；库与数值诊断仍支持 u32/u64。基础示例使用配套入口；其他文件内的 `parameters()` 构造 `BlindRotationConfig` 并按需添加 KS 配置，集中列出尺寸、模数类型、秘密分布、噪声和 BR/KS 分解；CBS 示例还用 `circuit_config()` 明确输出、trace 和 scheme-switch 的分解。[数值配置与验证](../../guides/development/tfhe-parameters.md)集中记录参数选择；每例复用同一组缓冲处理两次请求。
+示例固定 `Word = u64`，使用下表对应的操作配置。尺寸、模数表示、秘密分布、噪声和分解集中在 `experimental`；各个 `main` 只展示准备、公开函数、客户端和求值。CBS 使用 `config.gadget`，消费端独立选择候选环消息域。 高级显式组合仍支持 u32/u64，见[家族配置](../primus_tfhe_glwe/README.zh_CN.md#实验配套参数)和[数值参数指南](../../guides/development/tfhe-parameters.md)。
 
-示例先展示 `main`；需要时在后面列本地参数；用注释标明客户端和服务端阶段。Basic 与 sparse 都计算 `x % 4`，默认输入输出消息模数相同；独立 ManyLUT 示例同时计算 `x % 4` 和 `x / 4`，显式设置 `t_in=16`、`t_out=8`，并用输出 codec 解密。每例复用 LUT、evaluator 和输出缓冲处理两次请求。见[双方职责与缓冲分配](../primus_tfhe/README.zh_CN.md#客户端与服务端边界)。
+注释标明客户端和服务端阶段。Basic 与 sparse 都计算 `x % 4`，默认输入输出消息模数相同；独立 ManyLUT 示例同时计算 `x % 4` 和 `x / 4`，显式设置 `t_in=16`、`t_out=8`，并用输出 codec 解密。每例复用 LUT、evaluator 和输出缓冲处理两次请求。见[双方职责与缓冲分配](../primus_tfhe/README.zh_CN.md#客户端与服务端边界)。
 
-| 操作 | 完整示例 |
-| --- | --- |
-| Classic PBS | [basic](examples/ntt_basic.rs) |
-| Sparse PBS | [sparse](examples/ntt_sparse.rs) |
-| 交错多输出 ManyLUT，独立输出消息模数 | [many_lut](examples/ntt_many_lut.rs) |
-| Classic CBS → CMux | [circuit_bootstrap](examples/ntt_circuit_bootstrap.rs) |
-| Sparse CBS → CMux | [sparse_circuit_bootstrap](examples/ntt_sparse_circuit_bootstrap.rs) |
-| 分解式 MVB | [thresholds](examples/mvb_thresholds.rs) |
+| 操作 | `experimental` 配置 | 完整示例 |
+| --- | --- | --- |
+| Classic PBS | `CLASSIC_PBS_U64` | [basic](examples/ntt_basic.rs) |
+| Sparse PBS | `SPARSE_PBS_U64` | [sparse](examples/ntt_sparse.rs) |
+| 交错多输出 ManyLUT，独立输出消息模数 | `CLASSIC_MANY_LUT_U64` | [many_lut](examples/ntt_many_lut.rs) |
+| Classic CBS → CMux | `CLASSIC_CBS_U64` | [circuit_bootstrap](examples/ntt_circuit_bootstrap.rs) |
+| Sparse CBS → CMux | `SPARSE_CBS_U64` | [sparse_circuit_bootstrap](examples/ntt_sparse_circuit_bootstrap.rs) |
+| 分解式 MVB | `CLASSIC_THRESHOLD_MVB_U64` | [thresholds](examples/mvb_thresholds.rs) |
 
 ManyLUT 通过交错共享一次盲旋转；分解式 MVB 通过公共因子生成多输出，是不同的求值接口。
 

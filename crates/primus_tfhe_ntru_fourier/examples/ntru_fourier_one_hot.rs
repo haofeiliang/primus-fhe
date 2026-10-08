@@ -5,36 +5,31 @@
 //! required-features and the command above to tfhe-fft.
 //! Arithmetic profiles: guides/development/tfhe-parameters.md (not security presets).
 
-use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_fft::RustFftTable as Table;
-use primus_lattice::LweDimension;
-use primus_modulus::{NativeModulus, PowOf2Modulus};
-use primus_ntru::SecretKeyDistr;
-use primus_poly::PolyLength;
-use primus_tfhe_ntru::{BlindRotationConfig, LweConfig};
-use primus_tfhe_ntru_fourier::{
-    BlindRotationAlgorithm, CbsGadgetConfig, DecompositionConfig, GadgetEncryptionConfig,
-    OneHotCircuitBootstrapEvaluator, PbsParameters, TfheContext,
-};
+use primus_tfhe_ntru_fourier::{OneHotCircuitBootstrapEvaluator, TfheContext, experimental};
 use rand::{SeedableRng, rngs::StdRng};
 
-// This example uses u64 coefficients with the explicit parameters below.
+// The paired experimental entry fixes u64 coefficients and the operation domains.
 type Word = u64;
-const N: usize = 1024;
 const TARGET: usize = 2; // Public selector r in 0..4; delta_r encrypts [input == r].
 
 fn main() {
-    let context = TfheContext::<Word, Table, _>::from_parameters(parameters());
+    let config = experimental::CLASSIC_ONE_HOT_U64;
+    let parameters = config.try_prepare().unwrap();
+    let context = TfheContext::<Word, Table, _>::from_parameters(parameters);
+    let poly_length = config.blind_rotation.acc_poly_length.get();
     // Padded t=8 encodes four selector values independently of the ring messages.
-    let (selector_codec, ring_message_codec) =
-        context.parameters().circuit_bootstrap_codecs(8, 8).unwrap();
+    let (selector_codec, ring_message_codec) = context
+        .parameters()
+        .circuit_bootstrap_codecs(config.input_modulus, 8)
+        .unwrap();
 
     // Client: independent LWE/NTRU secrets; send evaluation material and both encrypted choices.
     let mut rng = StdRng::seed_from_u64(42);
     let (client_key, server_key) = context
         .try_generate_circuit_bootstrap_keys(
-            BlindRotationAlgorithm::Classic,
-            circuit_config(),
+            config.blind_rotation.algorithm,
+            config.gadget,
             &mut rng,
         )
         .unwrap();
@@ -46,10 +41,10 @@ fn main() {
     let mut ring_client = context
         .accumulator_client(client_key.accumulator_ntru_secret_key(), ring_message_codec)
         .unwrap();
-    let lhs = ring_client.encrypt(&vec![1; N], &mut rng);
-    let rhs = ring_client.encrypt(&vec![3; N], &mut rng);
+    let lhs = ring_client.encrypt(&vec![1; poly_length], &mut rng);
+    let rhs = ring_client.encrypt(&vec![3; poly_length], &mut rng);
     let mut input = context.allocate_lwe_ciphertext();
-    let mut decoded = vec![0; N];
+    let mut decoded = vec![0; poly_length];
 
     // Server: reserve one transformed NGSW per value in 0..4 and one ring result.
     let mut resources = server_key.bootstrap_resources(&context).unwrap();
@@ -78,53 +73,5 @@ fn main() {
         let expected = if message == TARGET as Word { 3 } else { 1 };
         assert!(decoded.iter().all(|&value| value == expected));
         println!("input {message}: delta_{TARGET} selected {expected}");
-    }
-}
-
-// Key parameters: n=800, N=1024; independent external LWE q=2^24.
-// Noise sigmas below are in coefficient units; these are arithmetic examples, not security presets.
-fn parameters() -> PbsParameters<Word, PowOf2Modulus<Word>> {
-    let modulus = NativeModulus::<Word>::new();
-    let lwe_modulus: Word = 1 << 24;
-
-    // None retains floor(modulus_bits / log_basis) levels; it need not cover every low bit.
-    let full = DecompositionConfig {
-        log_basis: DecompositionBaseLog::new(8),
-        level_count: None,
-    };
-
-    BlindRotationConfig {
-        external_lwe: LweConfig {
-            dimension: LweDimension::new(800),
-            cipher_modulus: PowOf2Modulus::new(lwe_modulus).into(),
-            secret_key_distr: SecretKeyDistr::fixed_hamming_weight_binary(800, 32),
-            noise_standard_deviation: lwe_modulus as f64 * 2.046151696979124e-6,
-        },
-        acc_modulus: modulus.into(),
-        acc_poly_length: PolyLength::new(N),
-        bsk_secret_distr: SecretKeyDistr::SparseTernary,
-        bsk_gadget: GadgetEncryptionConfig {
-            decomposition: full,
-            noise_standard_deviation: 0.7,
-        },
-        algorithm: BlindRotationAlgorithm::Classic,
-    }
-    .try_prepare()
-    .unwrap()
-}
-
-// CBS emits a gadget ciphertext; its output basis is separate from the two evaluation-key bases.
-fn circuit_config() -> CbsGadgetConfig {
-    let internal = DecompositionConfig {
-        log_basis: DecompositionBaseLog::new(8),
-        level_count: None,
-    };
-    CbsGadgetConfig {
-        output: DecompositionConfig {
-            log_basis: DecompositionBaseLog::new(8),
-            level_count: Some(DecompositionLevelCount::new(3)),
-        },
-        trace: internal,
-        scheme_switch: internal,
     }
 }

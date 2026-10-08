@@ -157,6 +157,14 @@ Classic and sparse are alternative BR implementations available to all four back
 
 The following small catalogue describes **experimental u64** pairings available from each backend's `experimental` module. It pairs existing key profiles with the actual teaching domains and explicit algorithm/order. It is not a list of production security presets or a promise that other functions have the same error budget. u32, ternary and alternate engines/orders remain available through explicit parameters, benchmarks and focused tests; silently converting bases between word widths is inappropriate.
 
+All 26 teaching examples start from the corresponding operation config. Prepare
+it once, then generate keys with its explicit algorithm and compile the public
+function. The examples retain separate client/server stages and reuse buffers
+for two requests. Numerical construction lives in the backend's `experimental`
+module; the examples keep operation choices such as lanes, thresholds, CBS
+predicates and lookup functions visible. Benchmark and diagnostic profiles
+remain separate, with their existing numerical choices and measurement boundaries.
+
 | Paired workflow | Key profile / algorithm | Message and operation configuration |
 | --- | --- | --- |
 | Basic PBS, four backends | Dense n866/N2048, classic binary; GLWE BR→KS | Rounded `t_in=t_out=32`, inputs 0..16, example F=x mod 4 |
@@ -208,6 +216,16 @@ let codecs = parameters.pbs_codecs(messages)?;
 // Pass config.blind_rotation.algorithm explicitly when generating keys.
 ```
 
+For explicit numerical customization, copy the operation config, override the
+relevant fields, then prepare it. For example, NTRU's
+`config.key_switching.noise_standard_deviation` changes return-key row noise;
+GLWE uses the same field for ring-KS row noise. It does not change fresh input or
+BR row noise. Alternatively, compose `PbsConfig` / `CbsConfig` from their raw
+fields, or use `PbsParameters::try_new` with already prepared LWE/gadget state.
+These entries retain the concrete modulus representation. Overrides must satisfy
+the constructor contracts and require their own security/error analysis; they
+do not inherit evidence for the teaching workload.
+
 `PbsMessageConfig::new(t)` defaults to equal input/output moduli.
 `from_input_bits(b)` describes 2^b padded inputs and codec t=2^(b+1),
 with that same default full output modulus; it does not imply output padding or
@@ -253,7 +271,7 @@ Changing t, lane count, output domain, CBS function, candidate values or lookup 
 
 | Evidence | What is available | What it does not establish |
 | --- | --- | --- |
-| Parameter provenance | Local constructors and example helpers at the reviewed revision; dense GLWE α/β are recorded as reference constants in [benchmark source](../../benchmarks/tfhe/src/benchmark.rs) | Imported security/DFR claims after changing geometry, noise floors, modulus, sampler, order or algorithm |
+| Parameter provenance | Local numerical constructors at the reviewed revision, now centralized in backend operation configs; dense GLWE α/β are recorded as reference constants in [benchmark source](../../benchmarks/tfhe/src/benchmark.rs) | Imported security/DFR claims after changing geometry, noise floors, modulus, sampler, order or algorithm |
 | Construction and representation | Existing parameter/table, codec and operation-binding checks; capacities and exact q/Q/basis/layout pairing | Rotation guards, accumulated noise, secret identity or a security level |
 | Functional observations | Small contract tests; example known-result checks; explicit fixed-seed diagnostics and dated observations below | Worst-case noise, tail probabilities or a target failure rate; paths absent from a diagnostic remain absent |
 | Security estimate | **Unassessed for every listed entry** | LWE/GLWE/NTRU hardness under the actual distributions, fixed weight, accepted NTRU keys and exposed evaluation material |
@@ -336,7 +354,7 @@ to one undifferentiated profile.
 
 ## Teaching examples
 
-TFHE examples fix `Word = u64`, with `U64NttTable` for NTT and `RustFftTable` for Fourier. They retain the existing u64 profiles: Barrett Q50 for TFHE NTT, Native64 for Fourier, and independent PowOf2 q24 for NTRU returns. The four basic PBS examples select their backend's `experimental::CLASSIC_PBS_U64`, prepare parameters with `config.try_prepare()` and codecs with `config.messages`; other examples currently retain local explicit parameter helpers, with CBS adding `circuit_config()`. Ordinary CBS examples use t_in=8 and compute the predicate m >= 2 inside the same BR; CBS benchmarks and parameter diagnostics retain their identity t_in=4 workload. CBS/one-hot examples obtain their Rounded input and Scaled candidate ring codecs from `parameters.circuit_bootstrap_codecs(t_in, t_ring)`, keeping the two plaintext domains independent without manually choosing q/Q. This does not establish a noise budget. GLWE basic/CBS/ManyLUT examples fix BR→KS, and factorized MVB fixes KS→BR. Word-width comparisons remain in tests, benchmarks and parameter diagnostics. The LWE basic and NTRU automorphism examples also use u64; the latter retains its small Q27 prime and `log_basis=3` decomposition. Application bytes, indexes and floating-point values keep their own types.
+TFHE examples fix `Word = u64`, with `U64NttTable` for NTT and `RustFftTable` for Fourier. They retain the existing u64 profiles: Barrett Q50 for TFHE NTT, Native64 for Fourier, and independent PowOf2 q24 for NTRU returns. All 26 TFHE/LUT examples select their matching `experimental` config and prepare parameters once with `config.try_prepare()`. Ordinary PBS/ManyLUT prepare codecs from `config.messages`; MVB uses the same message config with `factorized_pbs_codecs`. CBS/one-hot use `config.input_modulus` and `config.gadget`; high-precision lookup derives its chunk format from `config.one_hot.input_modulus` and takes counts/partition from `config.layout`. Ordinary CBS examples use t_in=8 and compute the predicate m >= 2 inside the same BR; CBS benchmarks and parameter diagnostics retain their identity t_in=4 workload. CBS/one-hot examples obtain their Rounded input and Scaled candidate ring codecs from `parameters.circuit_bootstrap_codecs(t_in, t_ring)`, keeping the two plaintext domains independent without manually choosing q/Q. This does not establish a noise budget. GLWE basic/CBS/ManyLUT examples fix BR→KS, and factorized MVB fixes KS→BR. Word-width comparisons remain in tests, benchmarks and parameter diagnostics. The LWE basic and NTRU automorphism examples also use u64; the latter retains its small Q27 prime and `log_basis=3` decomposition. Application bytes, indexes and floating-point values keep their own types.
 
 Examples do not import benchmark parameter factories. Typed constants centralize the basic fixtures; the remaining local configuration functions keep their numerical choices explicit. The workflow appears in `main` before any parameter helpers. Client and server stages appear directly in `main`, identified by comments. Server setup uses public context, encoding and evaluation keys; CBS/one-hot candidates are encrypted by the client. High-precision lookup compiles the public function separately from key generation and evaluation. Each workload makes two requests with reused buffers. No example imports code from `benches/` or `tests/`.
 

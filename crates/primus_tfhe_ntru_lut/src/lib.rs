@@ -7,6 +7,8 @@
 //! The runnable `ntt_lookup` and `fourier_lookup` examples demonstrate key
 //! generation, chunk encryption, table compilation, workspace reuse and decoding.
 //! The Fourier example selects one concrete FFT table implementation.
+//! With a backend enabled, both start from an `experimental` lookup config and
+//! derive the common chunk width from its one-hot input message modulus.
 //!
 //! The common chunk radix is M=t/2, where t is the input codec’s plaintext modulus.
 //! Coefficients encode output chunks at ring Q, using unsigned Rounded encoding.

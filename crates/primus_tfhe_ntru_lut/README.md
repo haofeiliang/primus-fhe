@@ -17,25 +17,24 @@ Prepare chunk codecs with `parameters.pbs_codecs(PbsMessageConfig::new(config.on
 
 Both [NTT](../primus_tfhe_ntru_ntt/README.md) and [Fourier](../primus_tfhe_ntru_fourier/README.md) support classic binary/ternary and sparse fixed-weight binary lookup. Generate evaluation material with `generator.try_generate_server_key(&client, blind_rotation, Some(cbs_config), rng)`, choosing `BlindRotationAlgorithm::Classic` or `Sparse { copy_count, bucket_count }`. CBS material is required. Generate and encrypt input chunks on the client with `encrypt_padded`. The basic examples fix classic BR and keep one eight-chunk workflow. Sparse/public-lift setup is shown below under [Evaluation and workspace](#evaluation-and-workspace).
 
-`HighPrecisionLookupTable::try_new(poly_length, ring_modulus, &input_codec, config, function)` compiles the public table using only N, Q and the codec’s q/t, without TFHE parameters, secrets or transforms. With `ntt` or `fourier` enabled, `try_from_parameters(parameters, &input_codec, config, function)` takes N/Q/q from existing parameters and checks the codec’s q before compilation. Both entries use the same compiler and need no keys or transform tables. The callback receives `(full_input_index, output_chunk_index)` and returns one digit. Bind `NttLookupTableEvaluator::try_new(context, server_key, table)` or `FourierLookupTableEvaluator::try_new(context, server_key, table)`, call `allocate_output()` once, then reuse `evaluate_to(input_chunks, output_chunks)`. Decode each result with `context.decryptor(client.external_lwe_secret_key(), &input_codec)`. The table owns its chunk encoding; keys are independent of t. The evaluator borrows its context, server key and table; no client secret is needed for evaluation.
+`HighPrecisionLookupTable::try_new(poly_length, ring_modulus, &input_codec, config, function)` compiles the public table using only N, Q and the codec’s q/t, without TFHE parameters, secrets or transforms. With `ntt` or `fourier` enabled, `try_from_parameters(parameters, &input_codec, config, function)` takes N/Q/q from existing parameters and checks the codec’s q before compilation. Both entries use the same compiler and need no keys or transform tables. The callback receives `(full_input_index, output_chunk_index)` and returns one digit. Bind `NttLookupTableEvaluator::try_new(context, server_key, table)` or `FourierLookupTableEvaluator::try_new(context, server_key, table)`, call `allocate_output()` once, then reuse `evaluate_to(input_chunks, output_chunks)`. Decode each result with `context.decryptor(client.external_lwe_secret_key(), codecs.output_codec())`. The table owns its chunk encoding; keys are independent of t. The evaluator borrows its context, server key and table; no client secret is needed for evaluation.
 
-For a u64 context with `t=8` and `N=1024`, eight two-bit chunks represent a 16-bit input. This fragment evaluates `(x*x+3*x+7) mod 65536` and returns eight chunks:
+Given a context and server key prepared from `NTT_CLASSIC_LOOKUP_U64`, eight two-bit chunks represent a 16-bit input. This fragment evaluates `(x*x+3*x+7) mod 65536` and returns eight chunks:
 
 ```rust,ignore
+use primus_tfhe_ntru_ntt::PbsMessageConfig;
 use primus_tfhe_ntru_lut::{
-    ChunkFormat, HighPrecisionLookupTable, LookupTableConfig, NttLookupTableEvaluator,
+    HighPrecisionLookupTable, NttLookupTableEvaluator, experimental,
 };
 
-let chunks = ChunkFormat::new(2);
-let input_codec = primus_encoding::RoundedCodec::new(chunks.plaintext_modulus(), context.parameters().external_lwe().cipher_modulus());
+let config = experimental::NTT_CLASSIC_LOOKUP_U64;
+let chunks = config.try_chunk_format()?;
+let codecs = context.parameters()
+    .pbs_codecs(PbsMessageConfig::new(config.one_hot.input_modulus))?;
 let table = HighPrecisionLookupTable::try_from_parameters(
     context.parameters(),
-    &input_codec,
-    LookupTableConfig {
-        input_chunk_count: 8,
-        output_chunk_count: 8,
-        coefficient_chunk_count: 5,
-    },
+    codecs.input_codec(),
+    config.layout,
     |x, output| {
         let x = x as u64; // The cleartext intermediate can exceed u32.
         let value = (x * x + 3 * x + 7) % 65536;
@@ -49,7 +48,7 @@ evaluator.evaluate_to(&encrypted_chunks, &mut output);
 
 Complete runnable workflows are in [ntt_lookup.rs](examples/ntt_lookup.rs) and [fourier_lookup.rs](examples/fourier_lookup.rs). They use n=800/N=1024 and eight two-bit chunks for both the 16-bit input and 16-bit result. Five low input chunks select coefficients; three high chunks select one of 64 candidate polynomials. The output chunk count remains independently configurable. Input `0b10_10_10_11_11_00_11_01` returns `0b10_00_01_01_10_01_01_11`, then zero returns 7, reusing the same evaluator and buffers.
 
-Both examples use `Word = u64`; NTT uses `U64NttTable`. Each workflow keeps one explicit parameter set; library tests and diagnostics retain u32 coverage. The Fourier example selects RustFFT; use `TfheFftTable as Table` for TFHE-FFT. When switching FFT engines, also update the example target’s `required-features` and use `--features tfhe-fft`. Each file explicitly prepares `BlindRotationConfig` plus return KS, and `CbsGadgetConfig` in local `parameters()` and `circuit_config()` functions, showing dimensions, noise, u64 decomposition bases, prime/native ring modulus and independent PowOf2 q=2^24; see the [arithmetic profiles](../../guides/development/tfhe-parameters.md).
+Both examples use `Word = u64` and the matching `HighPrecLutConfig` from `experimental`. Chunk width derives from one-hot input t; input/output counts and partition come from `config.layout`. The public function remains explicit. The config prepares BR/return state, and `config.one_hot.gadget` supplies CBS key generation. Prime/native Q and independent PowOf2 q=2^24 are recorded in the [parameter guide](../../guides/development/tfhe-parameters.md). Library tests and diagnostics retain u32 coverage. NTT uses `U64NttTable`; Fourier selects RustFFT. For TFHE-FFT, switch the `Table` import and the target’s `required-features`, then use `--features tfhe-fft`.
 
 ```sh
 cargo run --release -p primus_tfhe_ntru_lut --example ntt_lookup --features ntt

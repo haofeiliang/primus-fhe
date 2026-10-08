@@ -3,36 +3,30 @@
 //! Run: `cargo run --release -p primus_tfhe_ntru_ntt --example ntru_ntt_circuit_bootstrap`
 //! Arithmetic profiles: guides/development/tfhe-parameters.md (not security presets).
 
-use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
-use primus_lattice::LweDimension;
-use primus_modulus::{BarrettModulus, PowOf2Modulus};
-use primus_ntru::SecretKeyDistr;
 use primus_ntt::U64NttTable as Table;
-use primus_poly::PolyLength;
-use primus_tfhe_ntru::{BlindRotationConfig, LweConfig};
-use primus_tfhe_ntru_ntt::{
-    BlindRotationAlgorithm, CbsGadgetConfig, CircuitBootstrapEvaluator, DecompositionConfig,
-    GadgetEncryptionConfig, PbsParameters, TfheContext,
-};
+use primus_tfhe_ntru_ntt::{CircuitBootstrapEvaluator, TfheContext, experimental};
 use rand::{SeedableRng, rngs::StdRng};
 
-// This example uses u64 coefficients with the explicit parameters below.
+// The paired experimental entry fixes u64 coefficients and the operation domains.
 type Word = u64;
-const N: usize = 1024;
 
 fn main() {
-    let parameters = parameters();
+    let config = experimental::CLASSIC_CBS_U64;
+    let parameters = config.try_prepare().unwrap();
     let context = TfheContext::<Word, Table, _>::try_from_parameters(parameters).unwrap();
+    let poly_length = config.blind_rotation.acc_poly_length.get();
     // Padded t=8 accepts integers 0..4, independently of the candidate ring messages.
-    let (input_codec, ring_message_codec) =
-        context.parameters().circuit_bootstrap_codecs(8, 8).unwrap();
+    let (input_codec, ring_message_codec) = context
+        .parameters()
+        .circuit_bootstrap_codecs(config.input_modulus, 8)
+        .unwrap();
 
     // Client: generate BR and CBS material; this ring-output workflow needs no return key.
     let mut rng = StdRng::seed_from_u64(42);
     let (client_key, server_key) = context
         .try_generate_circuit_bootstrap_keys(
-            BlindRotationAlgorithm::Classic,
-            circuit_config(),
+            config.blind_rotation.algorithm,
+            config.gadget,
             &mut rng,
         )
         .unwrap();
@@ -45,12 +39,12 @@ fn main() {
         .accumulator_client(client_key.accumulator_ntru_secret_key(), ring_message_codec)
         .unwrap();
     // Encrypt both candidates with the accumulator secret used by the CBS output.
-    let lhs_message = vec![1; N];
-    let rhs_message = vec![3; N];
+    let lhs_message = vec![1; poly_length];
+    let rhs_message = vec![3; poly_length];
     let lhs = ring_client.encrypt(&lhs_message, &mut rng);
     let rhs = ring_client.encrypt(&rhs_message, &mut rng);
     let mut input = context.allocate_lwe_ciphertext();
-    let mut decoded = vec![0; N];
+    let mut decoded = vec![0; poly_length];
 
     // Server: receive the encrypted candidates; allocate the control and result.
     let mut resources = server_key.bootstrap_resources(&context).unwrap();
@@ -92,55 +86,5 @@ fn main() {
             "input {message}, predicate m >= 2: selected coefficients {}",
             decoded[0]
         );
-    }
-}
-
-// Key parameters: n=800, N=1024; independent external LWE q=2^24.
-// Noise sigmas below are in coefficient units; these are arithmetic examples, not security presets.
-fn parameters() -> PbsParameters<Word, PowOf2Modulus<Word>> {
-    // NTT requires a prime admitting a 2N-th root, rather than a power-of-two modulus.
-    let ring_modulus: Word = 1_125_899_906_826_241;
-    let modulus = BarrettModulus::new(ring_modulus);
-    let lwe_modulus: Word = 1 << 24;
-
-    // None retains floor(modulus_bits / log_basis) levels; it need not cover every low bit.
-    let full = DecompositionConfig {
-        log_basis: DecompositionBaseLog::new(8),
-        level_count: None,
-    };
-
-    BlindRotationConfig {
-        external_lwe: LweConfig {
-            dimension: LweDimension::new(800),
-            cipher_modulus: PowOf2Modulus::new(lwe_modulus).into(),
-            secret_key_distr: SecretKeyDistr::UniformBinary,
-            noise_standard_deviation: lwe_modulus as f64 * 2.046151696979124e-6,
-        },
-        acc_modulus: modulus.into(),
-        acc_poly_length: PolyLength::new(N),
-        bsk_secret_distr: SecretKeyDistr::SparseTernary,
-        bsk_gadget: GadgetEncryptionConfig {
-            decomposition: full,
-            noise_standard_deviation: 0.7,
-        },
-        algorithm: BlindRotationAlgorithm::Classic,
-    }
-    .try_prepare()
-    .unwrap()
-}
-
-// CBS emits a gadget ciphertext; its output basis is separate from the two evaluation-key bases.
-fn circuit_config() -> CbsGadgetConfig {
-    let internal = DecompositionConfig {
-        log_basis: DecompositionBaseLog::new(8),
-        level_count: None,
-    };
-    CbsGadgetConfig {
-        output: DecompositionConfig {
-            log_basis: DecompositionBaseLog::new(8),
-            level_count: Some(DecompositionLevelCount::new(3)),
-        },
-        trace: internal,
-        scheme_switch: internal,
     }
 }

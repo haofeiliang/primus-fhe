@@ -5,42 +5,32 @@
 //! required-features and the command above to tfhe-fft.
 //! Arithmetic profiles: guides/development/tfhe-parameters.md (not security presets).
 
-use primus_decompose::DecompositionBaseLog;
 use primus_fft::RustFftTable as Table;
-use primus_glwe::SecretKeyDistr;
-use primus_lattice::{GlweDimension, LweDimension};
-use primus_modulus::NativeModulus;
-use primus_poly::PolyLength;
-use primus_tfhe::BlindRotationAlgorithm;
-use primus_tfhe_glwe::{BlindRotationConfig, LweConfig};
-use primus_tfhe_glwe_fourier::{
-    DecompositionConfig, FactorizedEvaluator, GadgetEncryptionConfig, PbsMessageConfig, PbsOrder,
-    PbsParameters, TfheContext,
-};
+use primus_tfhe_glwe_fourier::{FactorizedEvaluator, TfheContext, experimental};
 use rand::{SeedableRng, rngs::StdRng};
 
-// This example uses u64 coefficients with the explicit parameters below.
+// The paired experimental entry fixes u64 coefficients and the operation domains.
 type Word = u64;
-const N: usize = 1024;
 
 const DOMAIN: usize = 64;
 const OUTPUTS: usize = 17;
 
 fn main() {
-    let parameters = parameters();
+    let config = experimental::CLASSIC_THRESHOLD_MVB_U64;
+    let parameters = config.try_prepare().unwrap();
     let context = TfheContext::<Word, Table>::from_parameters(parameters);
 
     // Numeric threshold flags use Scaled t=2; the input keeps Rounded t=128.
     let codecs = context
         .parameters()
-        .factorized_pbs_codecs(PbsMessageConfig::new(128).with_output_modulus(2))
+        .factorized_pbs_codecs(config.messages)
         .unwrap();
     let thresholds: Vec<_> = (1..=OUTPUTS).map(|i| i * DOMAIN / (OUTPUTS + 1)).collect();
 
     // Client: keep client_key and the decryptor; give server_key to the server.
     let mut rng = StdRng::seed_from_u64(42);
     let (client_key, server_key) = context
-        .try_generate_keys(BlindRotationAlgorithm::Classic, None, &mut rng)
+        .try_generate_keys(config.blind_rotation.algorithm, None, &mut rng)
         .unwrap();
     // Ordinary messages borrow only the external secret from the setup bundle.
     let external_secret = client_key.external_lwe_secret_key();
@@ -79,45 +69,4 @@ fn main() {
         }
         println!("score={score}, thresholds={thresholds:?}, flags={flags:?}");
     }
-}
-
-// Key parameters: n=728, N=1024; LWE and GLWE share the ciphertext modulus.
-// Noise sigmas below are in coefficient units; these are arithmetic examples, not security presets.
-fn parameters() -> PbsParameters<Word> {
-    let modulus = NativeModulus::<Word>::new();
-    let q = 2f64.powi(64); // Native u64 modulus, represented only for noise scaling.
-
-    // None retains floor(modulus_bits / log_basis) levels; it need not cover every low bit.
-    let full = DecompositionConfig {
-        log_basis: DecompositionBaseLog::new(8),
-        level_count: None,
-    };
-
-    BlindRotationConfig {
-        small_lwe: LweConfig {
-            dimension: LweDimension::new(728),
-            cipher_modulus: modulus.into(),
-            secret_key_distr: SecretKeyDistr::fixed_hamming_weight_binary(728, 32),
-            noise_standard_deviation: 3.2 * q / 16384.0,
-        },
-        acc_dimension: GlweDimension::new(1),
-        acc_poly_length: PolyLength::new(N),
-        bsk_secret_distr: SecretKeyDistr::SparseTernary,
-        bsk_gadget: GadgetEncryptionConfig {
-            decomposition: full,
-            noise_standard_deviation: 6.4,
-        },
-        algorithm: BlindRotationAlgorithm::Classic,
-    }
-    .try_prepare()
-    .and_then(|parameters| {
-        parameters.try_with_key_switching(
-            GadgetEncryptionConfig {
-                decomposition: full,
-                noise_standard_deviation: 6.4,
-            },
-            PbsOrder::KeyswitchBootstrap,
-        )
-    })
-    .unwrap()
 }
