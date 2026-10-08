@@ -70,7 +70,7 @@ These are the unchanged numerical profiles extracted from the two existing GLWE 
 
 ### GLWE circuit, ternary and fixed-weight diagnostics
 
-BR and KS use full-length base 2^2 for u32 and base 2^8 for u64. Trace and scheme-switch use the same respective full bases, with independent keys/noise. Q27 remains appropriate for fixed-weight PBS/MVB; **u32 CBS uses Q30**.
+BR and KS use full-length base 2^2 for u32 and base 2^8 for u64. Trace and scheme-switch use the same respective full bases and fresh accumulator noise distribution, with independently sampled keys. Q27 remains appropriate for fixed-weight PBS/MVB; **u32 CBS uses Q30**.
 
 | Word / modulus | Full internal basis | CBS output basis | Smallest CBS scalar |
 | --- | --- | --- | --- |

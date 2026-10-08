@@ -39,18 +39,19 @@ pub enum BlindRotationConfig {
     },
 }
 
-/// Independent choices for circuit-bootstrap output, trace and scheme switching.
+/// Independent decompositions for circuit-bootstrap output, trace and scheme switching.
 ///
-/// The backend derives the modulus, ring layout and secret distribution from
-/// its TFHE accumulator. Noise standard deviations are in coefficient units;
-/// no security or failure-rate defaults are supplied.
+/// Trace and scheme-switch rows use the TFHE accumulator's ring layout, modulus,
+/// secret distribution and fresh encryption noise. Their immutable sampler state
+/// is shared with blind rotation; bases and random draws remain independent.
+/// The consuming parameters still require a CBS noise/security analysis.
 #[derive(Debug, Clone, Copy)]
 pub struct CircuitBootstrapConfig {
+    /// Reverse-trace key decomposition at the accumulator modulus.
+    pub trace: DecompositionConfig,
+    /// Scheme-switch key decomposition at the accumulator modulus.
+    pub scheme_switch: DecompositionConfig,
     /// Gadget scalars encoded by the output GGSW/NGSW.
     /// This selects the output encoding, not a separate key's encryption noise.
     pub output: DecompositionConfig,
-    /// Reverse-trace key decomposition and noise at the accumulator modulus.
-    pub trace: GadgetEncryptionConfig,
-    /// Scheme-switch key decomposition and noise at the accumulator modulus.
-    pub scheme_switch: GadgetEncryptionConfig,
 }

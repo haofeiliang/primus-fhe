@@ -8,6 +8,9 @@ use primus_reduce::RingContext;
 
 use crate::{CircuitBootstrapParameters, TfheEvaluationError, TfheParameters};
 
+mod selectors;
+pub use selectors::NlevSelectors;
+
 /// Failure to bind one-hot CBS resources or compile its packed test polynomial.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum OneHotBootstrapError {
@@ -38,9 +41,10 @@ pub enum OneHotBootstrapError {
 #[derive(Clone, Debug)]
 pub struct OneHotLookupTable<T: FheUint> {
     polynomial: PolynomialOwned<T>,
-    selector_count: usize,
     level_count: DecompositionLevelCount,
-    output_nlev_len: usize,
+    selector_count: usize,
+    /// L*N coefficients in one selector, excluding gadget padding.
+    selector_len: usize,
 }
 
 impl<T: FheUint> OneHotLookupTable<T> {
@@ -84,8 +88,9 @@ impl<T: FheUint> OneHotLookupTable<T> {
         if selector_count > n / (2 * w) {
             return Err(OneHotBootstrapError::InsufficientCapacity);
         }
-        let output_nlev_len = selector_count
-            .checked_mul(cbs.output_nlev_len())
+        let selector_len = cbs.output_nlev_len();
+        selector_count
+            .checked_mul(selector_len)
             .filter(|&len| len <= isize::MAX as usize / size_of::<T>())
             .ok_or(OneHotBootstrapError::StorageSizeOverflow)?;
         let a = n / (2 * selector_count * w);
@@ -112,7 +117,7 @@ impl<T: FheUint> OneHotLookupTable<T> {
             polynomial,
             selector_count,
             level_count,
-            output_nlev_len,
+            selector_len,
         })
     }
 
@@ -156,6 +161,18 @@ impl<T: FheUint> OneHotLookupTable<T> {
     /// Layout is `[selector][level][coefficient]`, without gadget padding.
     #[must_use]
     pub fn output_nlev_len(&self) -> usize {
-        self.output_nlev_len
+        // The constructor checked this product and its allocation byte length.
+        self.selector_count * self.selector_len
+    }
+
+    /// Borrows a complete coefficient-domain selector batch with branches r=0..M-1.
+    /// The buffer must use this table's output basis and accumulator secret;
+    /// length checking does not establish these mathematical identities.
+    ///
+    /// # Panics
+    /// Panics if `output` does not contain exactly M*L*N coefficients.
+    #[must_use]
+    pub fn nlev_selectors<'a>(&self, output: &'a [T]) -> NlevSelectors<'a, T> {
+        NlevSelectors::new(output, self.selector_count, self.selector_len)
     }
 }

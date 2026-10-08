@@ -9,7 +9,6 @@ use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_encoding::{RoundedCodec, ScaledCodec};
 use primus_fft::RustFftTable as Table;
 use primus_lattice::LweDimension;
-use primus_lattice::ngsw::FourierNgswIter;
 use primus_lwe::LweEncryptionParameters;
 use primus_modulus::{NativeModulus, PowOf2Modulus};
 use primus_ntru::SecretKeyDistr;
@@ -64,7 +63,6 @@ fn main() {
     .unwrap();
     let mut selectors = cbs.allocate_ngsw_output();
     let cbs_parameters = cbs.parameters();
-    let selector_len = cbs.ngsw_selector_len(); // L*(N/2) complex values per NGSW.
     let mut selected = context.allocate_accumulator_ciphertext();
 
     for message in [TARGET as Word, 0] {
@@ -75,9 +73,7 @@ fn main() {
 
         // Server: selector r encrypts [message == r]; r=0 is included in this full batch.
         cbs.one_hot_ngsw_to(input.as_view(), &mut selectors, &mut resources);
-        let control = FourierNgswIter::new(&selectors, selector_len)
-            .nth(TARGET)
-            .unwrap();
+        let control = cbs.ngsw_selectors(&selectors).selector(TARGET).unwrap();
         let (fft, external_product) = resources.external_product_workspaces();
         control.cmux_to(
             &lhs,
@@ -145,13 +141,7 @@ fn circuit_config() -> CircuitBootstrapConfig {
             log_basis: DecompositionBaseLog::new(8),
             level_count: Some(DecompositionLevelCount::new(3)),
         },
-        trace: GadgetEncryptionConfig {
-            decomposition: internal,
-            noise_standard_deviation: 0.7,
-        },
-        scheme_switch: GadgetEncryptionConfig {
-            decomposition: internal,
-            noise_standard_deviation: 0.7,
-        },
+        trace: internal,
+        scheme_switch: internal,
     }
 }

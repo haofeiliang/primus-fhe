@@ -57,7 +57,7 @@ where
     /// Generates the optional trace and scheme-switch keys from only the accumulator secret.
     ///
     /// Checks parameters and the accumulator layout/distribution before sampling. The caller
-    /// selects the independent noise/decomposition/security budgets described on
+    /// selects the CBS decomposition and noise/security budgets described on
     /// [`CircuitBootstrapParameters`]. Actual secret identity must be shared with
     /// the server key later used by the evaluator, as must the FFT table instance.
     pub fn try_generate_circuit_bootstrap_key<R>(

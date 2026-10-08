@@ -134,13 +134,7 @@ fn circuit_config() -> CircuitBootstrapConfig {
             log_basis: DecompositionBaseLog::new(8),
             level_count: Some(DecompositionLevelCount::new(2)),
         },
-        trace: GadgetEncryptionConfig {
-            decomposition: internal,
-            noise_standard_deviation: 6.4,
-        },
-        scheme_switch: GadgetEncryptionConfig {
-            decomposition: internal,
-            noise_standard_deviation: 6.4,
-        },
+        trace: internal,
+        scheme_switch: internal,
     }
 }

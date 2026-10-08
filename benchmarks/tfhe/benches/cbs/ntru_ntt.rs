@@ -12,7 +12,6 @@ use primus_tfhe_benchmarks::measurement::{Case, Group, metadata};
 use std::hint::black_box;
 
 use primus_integer::FheUint;
-use primus_lattice::ngsw::NttNgswIter;
 use primus_modulus::PowOf2Modulus;
 use primus_ntt::{MonomialNttTable, U64NttTable};
 use primus_tfhe_benchmarks::parameters::ntt_circuit_modulus;
@@ -81,7 +80,7 @@ fn ordinary<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
             serde_json::json!({
                 "parameters": metadata::ntru(context.parameters()),
                 "blind_rotation": metadata::blind_rotation(sparse),
-                "cbs": metadata::cbs(ntru::cbs::<T>()),
+                "cbs": metadata::cbs(ntru::cbs::<T>(), context.parameters().accumulator_ntru().noise_distribution().standard_deviation()),
                 "encoding": "rounded_padded",
                 "plaintext_modulus": 4,
                 "outputs": 1,
@@ -155,7 +154,7 @@ fn one_hot<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
                 serde_json::json!({
                     "parameters": metadata::ntru(context.parameters()),
                     "blind_rotation": metadata::blind_rotation(sparse),
-                    "cbs": metadata::cbs(ntru::cbs::<T>()),
+                    "cbs": metadata::cbs(ntru::cbs::<T>(), context.parameters().accumulator_ntru().noise_distribution().standard_deviation()),
                     "encoding": "rounded_padded",
                     "plaintext_modulus": 8,
                     "outputs": if compact { 3 } else { 4 },
@@ -276,10 +275,13 @@ impl<T: FheUint, Table: MonomialNttTable<ValueT = T>> Fixture<T, Table> {
                 ),
             )
             .unwrap();
-        // Semantic ciphertext iteration keeps selector boundaries tied
-        // to the public CBS layout, including compact index r-1.
-        for (index, control) in NttNgswIter::new(output, evaluator.ngsw_selector_len()).enumerate()
-        {
+        // Both views iterate mathematical r, even when storage omits delta_0.
+        let selectors = if compact {
+            evaluator.nonzero_ngsw_selectors(output)
+        } else {
+            evaluator.ngsw_selectors(output)
+        };
+        for (r, control) in selectors.iter() {
             control.cmux_to(
                 lhs,
                 rhs,
@@ -290,11 +292,7 @@ impl<T: FheUint, Table: MonomialNttTable<ValueT = T>> Fixture<T, Table> {
                 resources.external_product_workspace(),
             );
             ring.decrypt_to(&selected, &mut decoded);
-            let expected = if index + usize::from(compact) == 2 {
-                T::ONE
-            } else {
-                T::ZERO
-            };
+            let expected = if r == 2 { T::ONE } else { T::ZERO };
             assert!(decoded.iter().all(|&value| value == expected));
         }
     }

@@ -58,14 +58,8 @@ fn parameters<M: RingContext<u64>>(
                 log_basis: DecompositionBaseLog::new(3),
                 level_count: Some(DecompositionLevelCount::new(levels)),
             },
-            trace: GadgetEncryptionConfig {
-                decomposition: full,
-                noise_standard_deviation: 0.7,
-            },
-            scheme_switch: GadgetEncryptionConfig {
-                decomposition: full,
-                noise_standard_deviation: 0.7,
-            },
+            trace: full,
+            scheme_switch: full,
         },
     )
     .unwrap();

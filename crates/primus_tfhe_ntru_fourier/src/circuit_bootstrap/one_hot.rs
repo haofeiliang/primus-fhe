@@ -3,10 +3,13 @@
 use primus_encoding::RoundedCodec;
 use primus_fft::{Complex64, FftTable, TorusFftValue};
 use primus_ntru::{FourierNgswCiphertext, NlevCiphertext};
-pub use primus_tfhe_ntru::{OneHotBootstrapError, OneHotLookupTable};
+pub use primus_tfhe_ntru::{NlevSelectors, OneHotBootstrapError, OneHotLookupTable};
 
 mod pair;
 pub use pair::OneHotProjection;
+
+mod selectors;
+pub use selectors::FourierNgswSelectors;
 
 use crate::{
     BootstrapResources, CircuitBootstrapKey, CircuitBootstrapParameters, Lwe, TfheContext,
@@ -102,6 +105,45 @@ where
     #[must_use]
     pub fn ngsw_batch_len(&self) -> usize {
         self.lookup_table.output_nlev_len() / 2
+    }
+
+    /// Borrows the complete coefficient-domain NLEV batch, indexed by branch r.
+    /// Inherits [`OneHotLookupTable::nlev_selectors`]'s shape and identity requirements.
+    #[must_use]
+    pub fn nlev_selectors<'b>(&self, output: &'b [T]) -> NlevSelectors<'b, T> {
+        self.lookup_table.nlev_selectors(output)
+    }
+
+    /// Borrows the full transformed NGSW batch with branches r=0..M-1.
+    /// Storage must come from compatible one-hot output; this view checks shape,
+    /// not the output basis, accumulator secret or transform identity.
+    ///
+    /// # Panics
+    /// Panics unless the buffer contains exactly M complete NGSW selectors.
+    #[must_use]
+    pub fn ngsw_selectors<'b>(&self, output: &'b [Complex64]) -> FourierNgswSelectors<'b> {
+        FourierNgswSelectors::new(
+            output,
+            0,
+            self.lookup_table.selector_count(),
+            self.ngsw_selector_len(),
+        )
+    }
+
+    /// Borrows the compact NGSW batch with branches r=1..M-1.
+    /// `selector(1)` accesses its first stored control; `selector(0)` returns
+    /// `None`. Inherits [`Self::ngsw_selectors`]'s representation requirements.
+    ///
+    /// # Panics
+    /// Panics unless the buffer contains exactly M-1 complete NGSW selectors.
+    #[must_use]
+    pub fn nonzero_ngsw_selectors<'b>(&self, output: &'b [Complex64]) -> FourierNgswSelectors<'b> {
+        FourierNgswSelectors::new(
+            output,
+            1,
+            self.lookup_table.selector_count() - 1,
+            self.ngsw_selector_len(),
+        )
     }
 
     /// Allocates M*L*N coefficients for all NLEV selectors. Reuse with [`Self::one_hot_nlev_to`].

@@ -57,7 +57,7 @@ pub use error::{
 };
 pub use key::ClientKey;
 pub use lwe_return::{LweReturnBatchWorkspace, LweReturnEvaluator};
-pub use one_hot::{OneHotBootstrapError, OneHotLookupTable};
+pub use one_hot::{NlevSelectors, OneHotBootstrapError, OneHotLookupTable};
 pub use parameters::{TfheConfig, TfheParameters};
 pub use sparse::SparseNtruBootstrappingKey;
 

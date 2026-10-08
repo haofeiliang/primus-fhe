@@ -17,9 +17,9 @@
 
 `TfheParameters<T, M>` 和客户端使用同一个密文模数类型 `M`；两后端的类型别名固定各自的模数实现。
 
-推荐使用 `TfheParameters::try_from_config(TfheConfig { .. })`：在 `small_lwe` 中传入不含 codec 的 `LweEncryptionParameters`，只指定一次 `q`，具名字段选择 accumulator 的维数、长度和秘密分布，以及盲旋转、密钥切换配置和 PBS order。`blind_rotation` 和 `key_switching` 均使用 `GadgetEncryptionConfig { decomposition, noise_standard_deviation }`，其中 `decomposition` 为 `DecompositionConfig { log_basis, level_count }`。`level_count: None` 选择支持的最大层数，仍可能丢弃低位（见[分解精度](../primus_decompose/README.zh_CN.md)）；各 basis 自动绑定同一模数。`blind_rotation.noise_standard_deviation` 指定 BR 与累加环加密噪声；`key_switching.noise_standard_deviation` 独立选择环 KS 噪声。补零的 KS 目标直接由 GLWE 布局、采样状态和 basis 构造，无需消息 codec。CBS 的 `trace` 和 `scheme_switch` 各自使用一个 `GadgetEncryptionConfig`；`output` 仍为 `DecompositionConfig`。已持有环参数或预计算 basis 时，使用下述直接入口。
+推荐使用 `TfheParameters::try_from_config(TfheConfig { .. })`：在 `small_lwe` 中传入不含 codec 的 `LweEncryptionParameters`，只指定一次 `q`，具名字段选择 accumulator 的维数、长度和秘密分布，以及盲旋转、密钥切换配置和 PBS order。`blind_rotation` 和 `key_switching` 均使用 `GadgetEncryptionConfig { decomposition, noise_standard_deviation }`，其中 `decomposition` 为 `DecompositionConfig { log_basis, level_count }`。`level_count: None` 选择支持的最大层数，仍可能丢弃低位（见[分解精度](../primus_decompose/README.zh_CN.md)）；各 basis 自动绑定同一模数。`blind_rotation.noise_standard_deviation` 指定 BR 与累加环加密噪声；`key_switching.noise_standard_deviation` 独立选择环 KS 噪声。补零的 KS 目标直接由 GLWE 布局、采样状态和 basis 构造，无需消息 codec。CBS 的 `output`、`trace` 和 `scheme_switch` 各选择一组 `DecompositionConfig`，trace 与 scheme-switch 密钥行继承 BR/累加环加密噪声。已持有环参数或预计算 basis 时，使用下述直接入口。
 
-调整 KS 噪声只影响环 KS 密钥生成，两种 PBS order 均如此。Accumulator 噪声也用于 KS→BR 的新鲜外部加密；新鲜 small-LWE 噪声和 CBS trace/scheme-switch 噪声仍可分别配置。所有标准差均以系数单位表示。非法 KS 采样参数在构造时返回 `TfheParameterError::KeySwitchingEncryption`。
+调整 KS 噪声只影响环 KS 密钥生成，两种 PBS order 均如此。Accumulator 噪声也用于 KS→BR 的新鲜外部加密；新鲜 small-LWE 噪声仍独立配置，CBS trace/scheme-switch 密钥行继承 accumulator 噪声。所有标准差均以系数单位表示。非法 KS 采样参数在构造时返回 `TfheParameterError::KeySwitchingEncryption`。
 
 维数选择使用 `LweDimension`，GLWE 另用 `GlweDimension`；分解选择使用 `DecompositionBaseLog` 和 `Option<DecompositionLevelCount>`。这些单位只构造一次，参数访问器返回的值直接传给工作区。在原始存储或内核边界用 `.get()` 提取整数；组合长度和 basis/模数兼容性仍由构造器检查。
 
@@ -65,6 +65,8 @@
 输入编码与 ManyLUT 容量在 CBS 程序绑定时检查：两后端均使用 `CircuitBootstrapEvaluator::try_new(&resources, key, &input_codec)`。默认构造使用密钥自带参数，`try_with_parameters` 显式选择兼容的替代输出 basis。同一套密钥可服务多个明文模数，前提是各程序满足容量与噪声余量。`accumulator_client(client.glwe_secret_key(), scaled_codec)` 独立绑定普通环消息，其 `ScaledCodec` 不必采用输入 LWE 的明文模数。
 
 CBS 是两个后端的可选能力，提供独立的 output basis、trace/scheme-switch 参数及密钥， 两种 PBS order 均支持经典 binary/ternary 和 sparse binary。CBS 输出留在 accumulator secret 下，使用 gadget 尺度。`CircuitBootstrapParameters<T, M>` 由公共层定义，后端提供具体模数别名； 同层数的不同输出 basis 可复用 scheme-switch key。噪声与变换要求见对应后端契约。
+
+`CircuitBootstrapParameters::try_from_config` 从 BR 派生 trace 与 scheme-switch 参数，保持相同 GLWE 布局，通过 `Arc` 共享不可变的采样状态。分解 basis 和随机采样仍然独立。
 
 后端可独立生成和持有 BR、环 KS 与 CBS 材料，也保留完整 `ServerKey` 的便捷生成。CBS 生成只接收累加器秘密；BR→KS 的独立 CBS 不需要环 KS，KS→BR 仍需用它处理输入。普通 PBS 在两种顺序下都需要 BR 和环 KS。接口及示例见对应后端说明。
 

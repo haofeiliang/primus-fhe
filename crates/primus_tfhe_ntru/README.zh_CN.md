@@ -19,7 +19,7 @@ NTRU-TFHE 的参数与 LWE 客户端层；[NTT](../primus_tfhe_ntru_ntt/README.z
 
 直接组合入口为 `TfheParameters::try_new(external_lwe, blind_rotation, key_switching)`。`external_lwe` 为不含 codec 的 `LweEncryptionParameters`，`blind_rotation` 为 `NlevParameters`。两个构造入口都接收 `key_switching: GadgetEncryptionConfig { decomposition, noise_standard_deviation }`，其中 `DecompositionConfig` 在外部 q 下构造 basis，返回密钥噪声以 q 下的系数单位独立选择。2N 必须能由 T 表示；外部维数 n 不要求小于等于 N。构造器返回带具体原因的参数错误，不验证安全性或完整噪声预算。
 
-`accumulator_ntru()` 借用盲旋转 gadget 在 Q 下的环与采样状态。密钥参数不保存消息 codec。CBS 的 `trace` 和 `scheme_switch` 各使用 Q 下的 `GadgetEncryptionConfig`，构造不含 codec 的 NLev 参数并独立选择噪声。CBS 的 `output` 仍为描述输出 gadget 标量的 `DecompositionConfig`。
+`accumulator_ntru()` 借用盲旋转 gadget 在 Q 下的环与采样状态。密钥参数不保存消息 codec。CBS 的 `output`、`trace` 和 `scheme_switch` 各使用 Q 下的 `DecompositionConfig`。`CircuitBootstrapParameters::try_from_config` 从 BR 派生不含 codec 的 trace/scheme-switch NLev 参数，通过 `Arc` 共享环与采样状态。所有密钥行使用累加环加密噪声，分解 basis 和随机采样仍然独立。
 
 `ClientKey` 保存独立 LWE 秘密 s 与 NTRU 环秘密 f。使用 `context.try_generate_keys(blind_rotation, cbs_config, rng)` 生成配套密钥，或用 `ClientKey::new(s, f)` 导入。只有 f 需要可逆性检查，Fourier 还检查逆稳定性；外部秘密不要求补零、可逆或奇数重量。`external_lwe_secret_key()` 返回 q 下的 LWE 秘密。绑定在借用 raw view 前检查该密钥记录的模数；即使 binary 系数相同，异模数也返回 `TfheKeyError::LweSecretKeyModulusMismatch`。
 
@@ -74,6 +74,14 @@ NTT reverse trace 使用模逆元，Fourier 使用原生整数减半并引入 FF
 只需要非零分支时，使用 `allocate_nonzero_ngsw_output` 和 `one_hot_nonzero_ngsw_to`；紧凑位置 r-1 对应 r=1..M-1，跳过 r=0 的投影与 scheme switch。输入 m=0 时所有目标 bit 为零。每次调用共享一次 BR，复用输出与工作区。两种完整表示用 `one_hot_to`；完整 NLEV 加非零 NGSW 用 `one_hot_nlev_and_nonzero_ngsw_to`，仅为 NLEV 投影零分支，省去其 scheme switch，其余分支共享投影。
 
 令 S=N/M、A=N/(2MW)。正确选择要求量化后的相位满足 `u_bar=S*m+W*e mod 2N` 且 `-A<=e<A`。窗口左闭右开，中点归较大的消息；e 包含输入噪声、编码舍入及逐坐标量化误差。形状校验不能证明该条件或输出可解码；推导见 [one-hot 归一化与保护区](../primus_tfhe/IMPLEMENTATION.md#one-hot-cbs)。
+
+访问分支时，通过 evaluator 的 `nlev_selectors`、`ngsw_selectors` 或
+`nonzero_ngsw_selectors` 借用原输出缓冲的已检查视图。
+`selector(r)` 使用数学分支编号，`iter()` 返回 `(r, ciphertext)`。
+非零批次从 r=1 开始，不包含 selector 零。系数域 NLEV 使用共享的
+`NlevSelectors`，两个后端分别提供 `NttNgswSelectors` 与
+`FourierNgswSelectors`。视图不分配，拒绝不完整或长度不匹配的批次；
+basis、秘密和变换身份仍由调用方保证。
 
 多 chunk 与多多项式流程由独立的 [primus_tfhe_ntru_lut](../primus_tfhe_ntru_lut/README.zh_CN.md) 提供。
 

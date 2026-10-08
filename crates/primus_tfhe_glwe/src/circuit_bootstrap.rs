@@ -1,21 +1,21 @@
 //! Backend-independent parameters for GLWE circuit bootstrapping.
 
-use primus_decompose::primitive::ApproxSignedBasis;
-use primus_glwe::{GadgetSize, GgswParameters, GlevParameters, GlweEncryptionParameters};
+use primus_decompose::{DecompositionConfig, primitive::ApproxSignedBasis};
+use primus_encoding::RoundedCodec;
+use primus_glwe::{GadgetSize, GgswParameters, GlevParameters};
 use primus_integer::FheUint;
 use primus_reduce::RingContext;
-use std::sync::Arc;
+use primus_tfhe::{InterleavedLookupTable, LookupTableError};
 
-use crate::{
-    CircuitBootstrapConfig, CircuitBootstrapParameterError, GadgetEncryptionConfig, TfheParameters,
-};
+use crate::{CircuitBootstrapConfig, CircuitBootstrapParameterError, TfheParameters};
 
 /// Independent parameters for GLWE circuit bootstrapping.
 ///
 /// The output basis controls GGSW gadget scalars; its layout comes from the TFHE
 /// accumulator. Input encoding and ManyLUT capacity are bound by the evaluator,
 /// allowing these keys to serve more than one message program.
-/// Trace and scheme switching retain independent bases and noise distributions.
+/// Trace and scheme switching retain independent bases. The config constructor
+/// shares their immutable encryption state with the TFHE accumulator.
 /// The scheme-switch key binds the output layout, so another
 /// output basis with the same level count can reuse it.
 ///
@@ -25,20 +25,23 @@ use crate::{
 /// their representation and numerical requirements.
 #[derive(Clone)]
 pub struct CircuitBootstrapParameters<T: FheUint, M: RingContext<T>> {
-    output_basis: ApproxSignedBasis<T>,
-    output_size: GadgetSize,
     trace: GlevParameters<T, M>,
     scheme_switch: GgswParameters<T, M>,
+    output_basis: ApproxSignedBasis<T>,
+    output_size: GadgetSize,
 }
 
 impl<T: FheUint, M: RingContext<T>> CircuitBootstrapParameters<T, M> {
-    /// Derives all CBS ring domains from TFHE, keeping bases and noise independent.
+    /// Derives CBS parameters from TFHE with independent gadget bases.
     ///
-    /// Returns basis, sampling or layout errors. Program capacity is checked at evaluation binding.
+    /// Reuses the accumulator's validated layout and sampler state without preparing
+    /// new samplers. All key rows use its fresh encryption noise and independent RNG draws.
+    /// The derived components already share one domain; only new gadget layouts are checked.
+    /// Returns basis or layout errors. Program capacity is checked at evaluation binding.
     /// The direct [`Self::try_new`] constructor also accepts prepared bases and
     /// independently constructed key parameters.
     ///
-    /// Invalid key noise/sampler parameters are returned with their key role.
+    /// Invalid trace and scheme-switch bases/layouts are returned with their key role.
     pub fn try_from_config(
         tfhe: &TfheParameters<T, M>,
         config: CircuitBootstrapConfig,
@@ -47,30 +50,20 @@ impl<T: FheUint, M: RingContext<T>> CircuitBootstrapParameters<T, M> {
         let output_basis = config
             .output
             .try_build(accumulator.cipher_modulus().explicit_value())?;
-        let key_parameters = |role, config: GadgetEncryptionConfig| {
-            // Trace and scheme-switch rows have independent noise roles. Reuse
-            // the accumulator layout, without constructing a message codec.
-            let inner = GlweEncryptionParameters::try_new(
-                accumulator.cipher_modulus(),
-                accumulator.secret_key_distr(),
-                config.noise_standard_deviation,
-            )
-            .map_err(|source| {
-                CircuitBootstrapParameterError::EncryptionParameters { role, source }
-            })?;
-            let basis = config
-                .decomposition
+        let key_parameters = |role, decomposition: DecompositionConfig| {
+            let basis = decomposition
                 .try_build(accumulator.cipher_modulus().explicit_value())
                 .map_err(|source| CircuitBootstrapParameterError::GadgetParameters {
                     role,
                     source: source.into(),
                 })?;
-            GlevParameters::try_from_parts(accumulator.glwe_size(), Arc::new(inner), basis)
+            accumulator
+                .try_with_new_basis(basis)
                 .map_err(|source| CircuitBootstrapParameterError::GadgetParameters { role, source })
         };
         let trace = key_parameters("trace", config.trace)?;
         let scheme_switch = key_parameters("scheme-switch", config.scheme_switch)?;
-        Self::try_new(tfhe, output_basis, trace, scheme_switch)
+        Self::try_from_matching_parts(output_basis, trace, scheme_switch)
     }
 
     /// Derives the output layout from the TFHE accumulator and `output_basis`.
@@ -98,8 +91,19 @@ impl<T: FheUint, M: RingContext<T>> CircuitBootstrapParameters<T, M> {
             }
         }
 
-        let output_size = GadgetSize::try_new(glwe.glwe_size(), output_basis.decompose_length())
-            .map_err(|_| CircuitBootstrapParameterError::OutputDecompositionTooLarge)?;
+        Self::try_from_matching_parts(output_basis, trace, scheme_switch)
+    }
+
+    /// Derives the output layout after the entry point has established a common
+    /// accumulator domain, either by construction or by checking supplied components.
+    fn try_from_matching_parts(
+        output_basis: ApproxSignedBasis<T>,
+        trace: GlevParameters<T, M>,
+        scheme_switch: GgswParameters<T, M>,
+    ) -> Result<Self, CircuitBootstrapParameterError> {
+        let output_size =
+            GadgetSize::try_new(trace.glwe_size(), output_basis.decompose_length())
+                .map_err(|_| CircuitBootstrapParameterError::OutputDecompositionTooLarge)?;
         Ok(Self {
             output_basis,
             output_size,
@@ -116,9 +120,9 @@ impl<T: FheUint, M: RingContext<T>> CircuitBootstrapParameters<T, M> {
     /// messages. Callers must budget input, trace and scheme-switch noise.
     pub fn compile_lookup_table(
         &self,
-        input_codec: &primus_encoding::RoundedCodec<T, M>,
-    ) -> Result<primus_tfhe::InterleavedLookupTable<T>, primus_tfhe::LookupTableError> {
-        use primus_tfhe::{InterleavedLookupTable, LookupTableError, front_half_domain_len};
+        input_codec: &RoundedCodec<T, M>,
+    ) -> Result<InterleavedLookupTable<T>, LookupTableError> {
+        use primus_tfhe::front_half_domain_len;
         let modulus = self.trace.cipher_modulus();
         if input_codec.ciphertext_modulus().explicit_value() != modulus.explicit_value() {
             return Err(LookupTableError::InputModulusMismatch);

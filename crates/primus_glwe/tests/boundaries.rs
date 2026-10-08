@@ -148,6 +148,33 @@ fn independent_parameter_parts_check_secret_weight_and_codec_domain() {
             ));
             assert_eq!(gadget.basis(), &basis);
             assert_eq!(ordinary.plain_modulus_value(), 4);
+
+            // Replacing the basis preserves the validated layout and sampler
+            // pairing while recomputing the gadget lengths for the new levels.
+            let new_basis = ApproxSignedBasis::new(
+                Some(257),
+                DecompositionBaseLog::new(4),
+                Some(DecompositionLevelCount::new(2)),
+            );
+            let derived = gadget.try_with_new_basis(new_basis.clone()).unwrap();
+            assert_eq!(derived.glwe_size(), size);
+            assert_eq!(derived.basis(), &new_basis);
+            assert_eq!(derived.glev_len(), size.glwe_len() * 2);
+            assert!(std::ptr::eq(
+                derived.encryption_parameters(),
+                inner.as_ref(),
+            ));
+            for foreign_modulus in [None, Some(769)] {
+                let foreign_basis = ApproxSignedBasis::new(
+                    foreign_modulus,
+                    DecompositionBaseLog::new(4),
+                    Some(DecompositionLevelCount::new(2)),
+                );
+                assert!(matches!(
+                    gadget.try_with_new_basis(foreign_basis),
+                    Err(GlevParameterError::BasisModulusMismatch)
+                ));
+            }
         }
     }
     assert!(matches!(

@@ -133,14 +133,8 @@ pub fn cbs<T: FheUint>() -> CircuitBootstrapConfig {
                 DecompositionLevelCount::new(3)
             }),
         },
-        trace: GadgetEncryptionConfig {
-            decomposition: internal,
-            noise_standard_deviation: 0.7,
-        },
-        scheme_switch: GadgetEncryptionConfig {
-            decomposition: internal,
-            noise_standard_deviation: 0.7,
-        },
+        trace: internal,
+        scheme_switch: internal,
     }
 }
 

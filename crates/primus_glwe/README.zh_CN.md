@@ -146,9 +146,9 @@ let codec = primus_encoding::ScaledCodec::try_new(plain_modulus, modulus)?;
 let ordinary = GlweParameters::try_from_parts(size, encryption, codec)?;
 ```
 
-普通参数组合入口检查 codec 与密文模数的一致性及固定秘密重量；布局、采样和固定尺度恢复条件由传入部件的构造器验证。`GlweParameters::try_new` 保留为直接构造普通加密参数的便捷入口。Mask/noise 采样器用于普通密文和求值密钥行的加密，secret sampler 用于秘密生成；不同噪声角色使用各自的预计算状态。
+普通参数组合入口检查 codec 与密文模数的一致性及固定秘密重量；布局、采样和固定尺度恢复条件由传入部件的构造器验证。`GlweParameters::try_new` 保留为直接构造普通加密参数的便捷入口。Mask/noise 采样器用于普通密文和求值密钥行的加密，secret sampler 用于秘密生成；不同噪声分布使用各自的预计算状态；相同的采样参数可跨密钥角色共享。
 
-已有普通参数时，`GlevParameters::try_with_basis(&glwe_params, basis)` 共享其预计算状态，`try_with_glwe_params` 还会根据基的对数和 level 数构造 basis。两者沿用相同的 gadget 绑定检查，均不读取普通 codec。参数 clone 共享不可变的模数/采样预计算。`encryption_parameters()` 返回借用的 `GlweEncryptionParameters`；布局、明文编码和 gadget basis 继续分别拥有。
+已有普通参数时，`GlevParameters::try_with_basis(&glwe_params, basis)` 共享其预计算状态，`try_with_glwe_params` 还会根据基的对数和 level 数构造 basis。两者沿用相同的 gadget 绑定检查，均不读取普通 codec。`gadget.try_with_new_basis(basis)` 派生另一组 gadget 参数，保持 GLWE 布局并共享采样状态，不复制旧 basis 或转换密文。参数 clone 共享不可变的模数/采样预计算。`encryption_parameters()` 返回借用的 `GlweEncryptionParameters`；布局、明文编码和 gadget basis 继续分别拥有。
 
 `encrypt_ggsw_constant_batch_to` 将环常数切片加密为连续的 GGSW，仅做一次批量检查，不分配临时缓冲区。NTT 接收规范剩余类，直接填充各层常数，输出长度为 `input.len() * params.ggsw_len()`；Fourier 接收原生环值，输出包含 `input.len() * params.fourier_ggsw_len()` 个复数。Fourier 保留逐 level 原生环缩放后再 FFT 的数值路径；批内相邻相同常数复用这些变换，因此准备耗时依赖输入序列。空批次仍检查共享资源，但不消耗随机数。
 

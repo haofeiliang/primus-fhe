@@ -100,8 +100,8 @@ pub use primus_tfhe_ntru::{
 pub use circuit_bootstrap::CircuitBootstrapKey;
 #[doc(inline)]
 pub use circuit_bootstrap::{
-    CircuitBootstrapEvaluator, CircuitBootstrapParameters, OneHotBootstrapError,
-    OneHotCircuitBootstrapEvaluator, OneHotLookupTable, OneHotProjection,
+    CircuitBootstrapEvaluator, CircuitBootstrapParameters, NlevSelectors, NttNgswSelectors,
+    OneHotBootstrapError, OneHotCircuitBootstrapEvaluator, OneHotLookupTable, OneHotProjection,
 };
 
 /// Secret-key or LWE public-key encryptor for the exact NTT NTRU backend.

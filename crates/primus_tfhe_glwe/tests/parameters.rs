@@ -353,44 +353,43 @@ fn check_circuit_parameters<M: primus_reduce::RingContext<u64>>(modulus: M, fore
             log_basis: DecompositionBaseLog::new(8),
             level_count: Some(DecompositionLevelCount::new(2)),
         },
-        trace: GadgetEncryptionConfig {
-            decomposition: DecompositionConfig {
-                log_basis: DecompositionBaseLog::new(9),
-                level_count: Some(DecompositionLevelCount::new(3)),
-            },
-            noise_standard_deviation: 1.25,
+        trace: DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(9),
+            level_count: Some(DecompositionLevelCount::new(3)),
         },
-        scheme_switch: GadgetEncryptionConfig {
-            decomposition: DecompositionConfig {
-                log_basis: DecompositionBaseLog::new(10),
-                level_count: Some(DecompositionLevelCount::new(4)),
-            },
-            noise_standard_deviation: 2.5,
+        scheme_switch: DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(10),
+            level_count: Some(DecompositionLevelCount::new(4)),
         },
     };
     let configured = CircuitBootstrapParameters::try_from_config(&tfhe, config).unwrap();
     assert_eq!(configured.output_size().glwe_size(), glwe.size());
+    assert_eq!(configured.output_basis().log_basis().get(), 8);
+    assert_eq!(
+        configured.output_size().glev_len(),
+        glwe.size().glwe_len() * 2
+    );
     assert_eq!(configured.trace().basis().log_basis().get(), 9);
     assert_eq!(configured.trace().basis().decompose_length().get(), 3);
-    assert_eq!(configured.trace().noise_standard_deviation(), 1.25);
     assert_eq!(configured.scheme_switch().basis().log_basis().get(), 10);
     assert_eq!(
         configured.scheme_switch().basis().decompose_length().get(),
         4
     );
-    assert_eq!(configured.scheme_switch().noise_standard_deviation(), 2.5);
+    // Both bases retain the accumulator's exact sampler state and noise.
+    for parameters in [configured.trace(), configured.scheme_switch()] {
+        assert!(std::ptr::eq(
+            parameters.encryption_parameters(),
+            tfhe.blind_rotation_ggsw().encryption_parameters(),
+        ));
+        assert_eq!(parameters.noise_standard_deviation(), 0.7);
+    }
     for role in ["output", "trace", "scheme-switch"] {
         let mut invalid = config;
         match role {
             "output" => invalid.output.level_count = Some(DecompositionLevelCount::new(usize::MAX)),
-            "trace" => {
-                invalid.trace.decomposition.level_count =
-                    Some(DecompositionLevelCount::new(usize::MAX))
-            }
-            _ => {
-                invalid.scheme_switch.decomposition.level_count =
-                    Some(DecompositionLevelCount::new(usize::MAX))
-            }
+            "trace" => invalid.trace.level_count = Some(DecompositionLevelCount::new(usize::MAX)),
+            _ => invalid.scheme_switch.level_count = Some(DecompositionLevelCount::new(usize::MAX)),
         }
         let error = CircuitBootstrapParameters::try_from_config(&tfhe, invalid)
             .err()
@@ -507,10 +506,7 @@ fn circuit_parameters_bind_bases_layout_noise_and_capacity() {
 #[test]
 fn configs_return_role_specific_sampling_errors() {
     use primus_glwe::GlweParameterError;
-    use primus_tfhe_glwe::{
-        CircuitBootstrapConfig, CircuitBootstrapParameterError, CircuitBootstrapParameters,
-        TfheParameterError,
-    };
+    use primus_tfhe_glwe::TfheParameterError;
     let basis = DecompositionConfig {
         log_basis: DecompositionBaseLog::new(4),
         level_count: Some(DecompositionLevelCount::new(2)),
@@ -579,49 +575,4 @@ fn configs_return_role_specific_sampling_errors() {
             GlweParameterError::SecretKey(_)
         ))
     ));
-
-    let cbs = CircuitBootstrapConfig {
-        output: basis,
-        trace: GadgetEncryptionConfig {
-            decomposition: basis,
-            noise_standard_deviation: 0.7,
-        },
-        scheme_switch: GadgetEncryptionConfig {
-            decomposition: basis,
-            noise_standard_deviation: 0.7,
-        },
-    };
-    assert!(CircuitBootstrapParameters::try_from_config(&tfhe, cbs).is_ok());
-    for role in ["trace", "scheme-switch"] {
-        let mut invalid = cbs;
-        if role == "trace" {
-            invalid.trace.noise_standard_deviation = 0.0;
-        } else {
-            invalid.scheme_switch.noise_standard_deviation = f64::INFINITY;
-        }
-        let error = CircuitBootstrapParameters::try_from_config(&tfhe, invalid)
-            .err()
-            .unwrap();
-        assert!(matches!(
-            &error,
-            CircuitBootstrapParameterError::EncryptionParameters { role: actual, source: GlweParameterError::Noise(_) } if *actual == role
-        ));
-        // Follow a real constructor failure through the public key-generation
-        // wrapper. Each frame keeps its role and prints only its own context.
-        use std::error::Error;
-        let error = primus_tfhe_glwe::KeyGenerationError::from(error);
-        assert_eq!(
-            error.to_string(),
-            format!("invalid circuit-bootstrap {role} encryption parameters")
-        );
-        let parameters = error.source().unwrap();
-        assert!(parameters.is::<GlweParameterError>());
-        assert_eq!(parameters.to_string(), "invalid GLWE noise distribution");
-        let sampler = parameters.source().unwrap();
-        assert!(matches!(
-            sampler.downcast_ref::<primus_distr::GaussianError>(),
-            Some(primus_distr::GaussianError::InvalidStandardDeviation { .. })
-        ));
-        assert!(sampler.source().is_none());
-    }
 }

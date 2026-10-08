@@ -179,26 +179,19 @@ fn one_hot<T: TorusFftValue, Table: FftTable>(
         // Lookup evaluation normally consumes them entirely on the server.
         // The packed output is [selector][gadget level][polynomial]. Its raw
         // phase is f*gadget_scalar for the selected index and zero otherwise.
-        for (j, row) in primus_poly::FourierPolynomialIter::new(&selectors, N / 2).enumerate() {
-            let scalar: i128 = scalars[j % scalars.len()].as_into();
-            ring_secret.decrypt_phase_to(
-                &primus_ntru::FourierNtruCiphertext::new(row.as_ref()),
-                &mut phase,
-                &mut fft,
-                &mut decrypt,
-            );
-            for (&actual, &f) in phase
-                .as_ref()
-                .iter()
-                .zip(client_key.accumulator_ntru_secret_key().as_slice())
-            {
-                let f: i128 = f.as_into();
-                let expected = if j / scalars.len() == message {
-                    scalar * f
-                } else {
-                    0
-                };
-                margin.gadget(actual, expected, modulus, scalar);
+        for (r, control) in one_hot.ngsw_selectors(&selectors).iter() {
+            for (row, &scalar) in control.iter_ntru(N / 2).zip(&scalars) {
+                let scalar: i128 = scalar.as_into();
+                ring_secret.decrypt_phase_to(&row, &mut phase, &mut fft, &mut decrypt);
+                for (&actual, &f) in phase
+                    .as_ref()
+                    .iter()
+                    .zip(client_key.accumulator_ntru_secret_key().as_slice())
+                {
+                    let f: i128 = f.as_into();
+                    let expected = if r == message { scalar * f } else { 0 };
+                    margin.gadget(actual, expected, modulus, scalar);
+                }
             }
         }
     }

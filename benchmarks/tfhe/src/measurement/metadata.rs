@@ -62,17 +62,18 @@ pub fn ntru<T: FheUint, M: RingContext<T>, LM: RingContext<T>>(
     })
 }
 
-/// CBS roles are independent of the PBS return key; null levels mean the full
-/// modulus-dependent decomposition selected by the actual parameter constructor.
-pub fn cbs(config: primus_tfhe::CircuitBootstrapConfig) -> Value {
+/// CBS bases are independent of the PBS return key; row noise comes from the
+/// accumulator. Null levels request the full modulus-dependent decomposition.
+/// Supply the actual accumulator sigma to preserve the recorded numerical profile.
+pub fn cbs(config: primus_tfhe::CircuitBootstrapConfig, coefficient_sigma: f64) -> Value {
     let decomposition = |d: primus_decompose::DecompositionConfig| {
         json!({
             "base_log": d.log_basis.get(), "levels": d.level_count.map(|l| l.get())
         })
     };
     json!({"output": decomposition(config.output),
-        "trace": {"decomposition": decomposition(config.trace.decomposition), "coefficient_sigma": config.trace.noise_standard_deviation},
-        "scheme_switch": {"decomposition": decomposition(config.scheme_switch.decomposition), "coefficient_sigma": config.scheme_switch.noise_standard_deviation}})
+        "trace": {"decomposition": decomposition(config.trace), "coefficient_sigma": coefficient_sigma},
+        "scheme_switch": {"decomposition": decomposition(config.scheme_switch), "coefficient_sigma": coefficient_sigma}})
 }
 
 /// One complete sparse mapping; dense/classic uses no copies or buckets.

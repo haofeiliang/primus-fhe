@@ -71,19 +71,13 @@ fn circuit_config() -> CircuitBootstrapConfig {
             log_basis: DecompositionBaseLog::new(8),
             level_count: Some(DecompositionLevelCount::new(3)),
         },
-        trace: GadgetEncryptionConfig {
-            decomposition: DecompositionConfig {
-                log_basis: DecompositionBaseLog::new(8),
-                level_count: Some(DecompositionLevelCount::new(7)),
-            },
-            noise_standard_deviation: 0.7,
+        trace: DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(8),
+            level_count: Some(DecompositionLevelCount::new(7)),
         },
-        scheme_switch: GadgetEncryptionConfig {
-            decomposition: DecompositionConfig {
-                log_basis: DecompositionBaseLog::new(10),
-                level_count: Some(DecompositionLevelCount::new(5)),
-            },
-            noise_standard_deviation: 0.7,
+        scheme_switch: DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(10),
+            level_count: Some(DecompositionLevelCount::new(5)),
         },
     }
 }
@@ -430,7 +424,7 @@ fn evaluator_rejects_resource_mismatches_and_checks_shapes_before_writes() {
     let mut generator = KeyGenerator::new(&context);
     // Invalid CBS choices fail before fresh client sampling.
     let mut invalid = circuit_config();
-    invalid.trace.noise_standard_deviation = -1.0;
+    invalid.trace.level_count = Some(DecompositionLevelCount::new(usize::MAX));
     let mut fresh_rng = StdRng::seed_from_u64(43);
     assert!(
         generator

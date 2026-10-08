@@ -124,15 +124,6 @@ pub enum TfheClientError {
 /// An invalid circuit-bootstrapping parameter set.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum CircuitBootstrapParameterError {
-    /// Trace or scheme-switch encryption parameters are invalid.
-    #[error("invalid circuit-bootstrap {role} encryption parameters")]
-    EncryptionParameters {
-        /// Key role: trace or scheme-switch.
-        role: &'static str,
-        /// Invalid secret or encryption-noise sampler configuration.
-        #[source]
-        source: primus_glwe::GlweParameterError,
-    },
     /// The configured output radix or retained-level count is invalid.
     #[error("invalid circuit-bootstrap output basis")]
     InvalidOutputBasis(#[from] ApproxSignedBasisError),

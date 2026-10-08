@@ -215,19 +215,13 @@ fn sparse_key_rejects_invalid_parameters_and_actual_secret_before_sampling() {
             log_basis: DecompositionBaseLog::new(8),
             level_count: Some(DecompositionLevelCount::new(usize::MAX)),
         },
-        trace: GadgetEncryptionConfig {
-            decomposition: primus_tfhe_glwe_ntt::DecompositionConfig {
-                log_basis: DecompositionBaseLog::new(8),
-                level_count: None,
-            },
-            noise_standard_deviation: 0.7,
+        trace: primus_tfhe_glwe_ntt::DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(8),
+            level_count: None,
         },
-        scheme_switch: GadgetEncryptionConfig {
-            decomposition: primus_tfhe_glwe_ntt::DecompositionConfig {
-                log_basis: DecompositionBaseLog::new(8),
-                level_count: None,
-            },
-            noise_standard_deviation: 0.7,
+        scheme_switch: primus_tfhe_glwe_ntt::DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(8),
+            level_count: None,
         },
     };
     // Fresh ring-output setup rejects CBS config before either secret is sampled.

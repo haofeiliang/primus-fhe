@@ -436,14 +436,11 @@ fn sparse_generation_rejects_invalid_secrets_buckets_and_cbs_before_sampling() {
             log_basis: DecompositionBaseLog::new(8),
             level_count: Some(DecompositionLevelCount::new(1)),
         },
-        trace: GadgetEncryptionConfig {
-            decomposition,
-            noise_standard_deviation: -1.0,
+        trace: DecompositionConfig {
+            level_count: Some(DecompositionLevelCount::new(usize::MAX)),
+            ..decomposition
         },
-        scheme_switch: GadgetEncryptionConfig {
-            decomposition,
-            noise_standard_deviation: 0.7,
-        },
+        scheme_switch: decomposition,
     };
     // Fresh CBS setup must also reject the config before sampling either secret.
     let mut fresh_rng = StdRng::seed_from_u64(43);

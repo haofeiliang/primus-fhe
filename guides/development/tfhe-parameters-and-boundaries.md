@@ -19,15 +19,15 @@
 | `GlevParameters` / `GgswParameters` | `GlweSize`、共享模数/采样状态、该运算的 basis | 固定秘密重量、basis 模数和 gadget 布局；无需普通消息 codec |
 | `NlevParameters` | 共享 NTRU 环/采样状态和该运算的 basis | basis 模数、N*L 布局和层序；无需普通消息 codec |
 | `TfheConfig` → `TfheParameters` | 家族特定的 LWE/环配置、BR/KS 各自的 `GadgetEncryptionConfig`、PBS order（GLWE） | 同域检查与派生返回布局；消息编码由程序/client 绑定；NTT/Fourier 表由后端 context 绑定 |
-| `CircuitBootstrapConfig` → `CircuitBootstrapParameters` | output 的 `DecompositionConfig`；trace、scheme-switch 各自的 `GadgetEncryptionConfig` | 环大小/模数继承累加环，输出布局由 output basis 派生；interleaved 容量由程序绑定检查 |
+| `CircuitBootstrapConfig` → `CircuitBootstrapParameters` | output、trace、scheme-switch 各自的 `DecompositionConfig` | 环大小/模数与密钥行噪声继承累加环，共享其采样状态；输出布局由 output basis 派生；interleaved 容量由程序绑定检查 |
 | `HighPrecisionLookupTable::try_new` | PolyLength N、累加模数 Q、输入 Rounded codec 的 q/t、chunk 配置 | 完整枚举、编码/去重/选择计划，无密钥或 TFHE 参数；evaluator 绑定时核对 N/q/Q 和 CBS；`stats()` 与部分工作区估算用于比较分区 |
 | `LookupTableConfig` | 输入 chunk 数 c、输出 chunk 数 o、低位系数 chunk 数 d | `M=t/2`、每个多项式的有效系数数 `M^d`、每输出多项式数 `M^(c-d)`，以及完整存储长度 |
 
 入口：[LWE](../../crates/primus_lwe/src/parameter.rs)、[GLWE](../../crates/primus_glwe/src/parameter/ordinary.rs)、[NTRU](../../crates/primus_ntru/src/parameter/ordinary.rs)、[分解](../../crates/primus_decompose/src/parameters.rs)、[GLWE TFHE](../../crates/primus_tfhe_glwe/src/parameters.rs)、[NTRU TFHE](../../crates/primus_tfhe_ntru/src/parameters.rs)。
 
-所有这些配置的噪声标准差均以对应模数下的**系数单位**表示；Fourier 内部将环系数转为归一化 torus，不改变配置输入的单位。BR、返回 KS、trace、scheme switch 的误差来源不同。两家族在 `blind_rotation.noise_standard_deviation` 中选择 BR 与累加环加密共用的噪声；GLWE 环 KS 独立选择共同密文模数下的噪声，NTRU 返回 KS 单独选择 q 下的噪声。CBS 的 trace 和 scheme-switch 噪声独立于普通 PBS。
+所有这些配置的噪声标准差均以对应模数下的**系数单位**表示；Fourier 内部将环系数转为归一化 torus，不改变配置输入的单位。BR、返回 KS、trace、scheme switch 的误差来源不同。两家族在 `blind_rotation.noise_standard_deviation` 中选择 BR 与累加环加密共用的噪声；GLWE 环 KS 独立选择共同密文模数下的噪声，NTRU 返回 KS 单独选择 q 下的噪声。CBS 配置中的 trace 和 scheme-switch 继承累加环的加密噪声；各运算仍须独立分析误差传播与完整正确性预算。
 
-`GadgetEncryptionConfig` 从 `primus_tfhe`、两个家族和四个具体后端入口导出。它只组合分解与噪声的配置选择；已有完整 GLev/NLev 参数的底层接口继续传递这些参数。BR 配置中的噪声也服务累加环普通加密，以及 GLWE KS→BR 的新鲜外部 LWE 加密；配置字段合并不改变这一共享关系。CBS output 没有独立密钥行噪声，仍只设置分解。
+`GadgetEncryptionConfig` 从 `primus_tfhe`、两个家族和四个具体后端入口导出。它只组合分解与噪声的配置选择；已有完整 GLev/NLev 参数的底层接口继续传递这些参数。BR 配置中的噪声也服务累加环普通加密，以及 GLWE KS→BR 的新鲜外部 LWE 加密；配置字段合并不改变这一共享关系。CBS output、trace、scheme-switch 都只设置分解，trace 与 scheme-switch 使用累加环的采样状态。
 
 ## GLWE 普通与 gadget 参数组合
 
@@ -41,7 +41,7 @@
 
 `GlevParameters::try_from_parts(size, Arc<GlweEncryptionParameters>, basis)` 可直接构造 GLev/GGSW 参数。`GlweParameters::try_from_parts(size, shared_encryption, codec)` 只在需要普通消息编码时组合 codec。两种入口都消费已经准备好的部件，不复制采样表、不重建 basis；独立布局与采样状态之间的固定重量检查仍由组合入口负责。既有 `try_with_basis` / `try_with_glwe_params` 适用于从已有普通参数派生 gadget，继续共享同一 Arc。
 
-TFHE 的 BSK 共享 accumulator 的布局和采样状态。KS 目标直接组合补零后的布局、small-secret 分布、独立 KS 噪声与 KS basis；不创建临时普通 GLWE codec。CBS trace 和 scheme-switch 同样直接组合 gadget 参数，分别准备各自噪声的状态。普通 GLWE 加密、client Rounded 编码与 LUT 几何各自的检查仍保留在原有边界。
+TFHE 的 BSK 共享 accumulator 的布局和采样状态。KS 目标直接组合补零后的布局、small-secret 分布、独立 KS 噪声与 KS basis；不创建临时普通 GLWE codec。CBS trace 和 scheme-switch 通过 `try_with_new_basis` 从已有 BR gadget 派生参数，保持 GLWE 布局并共享同一采样状态，不重建采样器。普通 GLWE 加密、client Rounded 编码与 LUT 几何各自的检查仍保留在原有边界。
 
 GLWE-TFHE 的 NTT/Fourier、classic/sparse 路径遵循相同的噪声来源：
 
@@ -50,7 +50,7 @@ GLWE-TFHE 的 NTT/Fourier、classic/sparse 路径遵循相同的噪声来源：
 | BR→KS 的新鲜外部 LWE 密文 | `small_lwe().noise_distribution()` |
 | 累加环加密、BR 密钥行、KS→BR 的新鲜外部 LWE 密文 | `blind_rotation_ggsw().noise_distribution()`；由 `blind_rotation.noise_standard_deviation` 构造 |
 | 两种 order 的环 KS 密钥行 | `glwe_key_switching().output().noise_distribution()`；由 `key_switching.noise_standard_deviation` 构造，KS basis 也独立 |
-| CBS trace 与 scheme-switch 密钥行 | `CircuitBootstrapConfig` 中 `trace.noise_standard_deviation` 与 `scheme_switch.noise_standard_deviation` |
+| CBS trace 与 scheme-switch 密钥行 | `blind_rotation_ggsw().noise_distribution()`；共享 accumulator 的新鲜加密噪声与采样状态 |
 
 这里的新鲜密文噪声指私钥加密直接采样的误差；公钥加密还包含公钥自身及组合误差，不能只用一个 sampler 标准差描述总噪声。GLWE-TFHE 的 `TfheConfig` 和直接 `TfheParameters::try_new` 均显式接收独立 KS 标准差；构造输出 GLev 的采样状态时验证该值，失败返回 `TfheParameterError::KeySwitchingEncryption`。完整 server key 与独立 KS 材料生成均消费这组输出参数，在线求值无需额外分派。调整 KS 噪声不改变 BR、新鲜 LWE 或 CBS 的采样状态；入口只验证采样器支持条件，不认证参数的安全等级。
 
@@ -62,7 +62,7 @@ GLWE-TFHE 的 NTT/Fourier、classic/sparse 路径遵循相同的噪声来源：
 
 TFHE 的 `TfheParameters::try_new(external_lwe, blind_rotation, key_switching)` 接收外部 `LweEncryptionParameters`、BR `NlevParameters` 和返回 KS 的 `GadgetEncryptionConfig`（分解配置与噪声）。`accumulator_ntru()` 借用 BR 内的 `NtruEncryptionParameters`，TFHE 不另存普通 accumulator 参数或 codec。构造时检查外部 binary/ternary 控制秘密、2N 可表示性，并在外部 q 下构造返回 KS basis 和采样状态。
 
-消息 t 和 codec 在 client、LUT/CBS 程序绑定时确定，密钥参数构造不检查共同 t；具体归属见[NTRU TFHE 的密钥域与消息程序](#ntru-tfhe-的密钥域与消息程序)。CBS trace/scheme-switch 直接构造无 codec 的 NLev，每个噪声角色独立准备加密参数。构造分配、保留内存与在线加密的历史对比见[采样状态共享测量](workspaces-and-storage.md#ntru-parameter-sharing)。
+消息 t 和 codec 在 client、LUT/CBS 程序绑定时确定，密钥参数构造不检查共同 t；具体归属见[NTRU TFHE 的密钥域与消息程序](#ntru-tfhe-的密钥域与消息程序)。CBS trace/scheme-switch 通过 `try_with_new_basis` 从 BR 派生无 codec 的 NLev，共享已有 NTRU 环/采样状态；各 basis 与随机采样独立。构造分配、保留内存与在线加密的历史对比见[采样状态共享测量](workspaces-and-storage.md#ntru-parameter-sharing)。
 
 ## RNS 普通与 gadget 参数组合
 
@@ -132,7 +132,7 @@ PBS trait、四后端、Boolean 门、双输入打包、CBS、one-hot 与 MVB �
 | --- | --- |
 | small LWE 的 n、q、秘密分布、fresh noise；累加环 k、N、q 和采样状态 | codec-free 参数构造；检查 n≤kN、binary/ternary 控制秘密和模数配对 |
 | BR/环 KS basis 与密钥噪声 | TFHE 密钥参数；BR 使用 accumulator noise，环 KS 使用独立 key-switching noise |
-| CBS output/trace/SS basis、布局、trace/SS noise | `CircuitBootstrapParameters`；不依赖输入明文模数 |
+| CBS output/trace/SS basis、布局与继承的 accumulator noise | `CircuitBootstrapParameters`；不依赖输入明文模数 |
 | Rounded 消息编码及 external fresh noise | client 工厂接收 `&RoundedCodec`，检查 codec 的 q；BR→KS 使用 small noise，KS→BR 使用 accumulator noise |
 | 普通环消息 Scaled 编码 | `accumulator_client(client, codec)` 一次绑定；复用 gadget 共享采样状态，不复制 Gaussian 预计算 |
 | 输入 t、编程域、单表/ManyLUT 的中心、输出编码和容量 | 普通 LUT compiler / factorized compiler；CBS 由 `compile_lookup_table(&input_codec)` 在 evaluator 构造时检查 |
@@ -148,7 +148,7 @@ PBS trait、四后端、Boolean 门、双输入打包、CBS、one-hot 与 MVB �
 | --- | --- |
 | 外部 n、q、s 分布及 fresh noise；累加 N、Q、f 分布及 BR noise | 密钥参数构造；保持 binary/ternary 控制域、2N 可表示性，n 与 N、q 与 Q 相互独立 |
 | f→s 返回 key 的 basis 与 noise | 密钥参数与返回 key 构造，均在 q 下；目标 LWE 参数不再构造无用 codec |
-| CBS output/trace/SS basis、布局和各自 noise | `CircuitBootstrapParameters`；scheme-switch key 继续绑定完整 output basis |
+| CBS output/trace/SS basis、布局与继承的 accumulator noise | `CircuitBootstrapParameters`；scheme-switch key 继续绑定完整 output basis |
 | Rounded 输入 t/q、默认或独立输出 t/Q | client/compiler 绑定；输入 q 不符拒绝；默认输出 codec 在 Q 无法构造时返回 `OutputEncoding` |
 | CBS 输入域和 ManyLUT 容量 | CBS LUT 编译/绑定；独立 CBS 参数只拥有 Q，输入 q 由后端绑定检查 |
 | one-hot 的 t=2M、W、stride、非空 guard 与存储长度 | `OneHotLookupTable::try_new(tfhe, cbs, &input_codec)`；后端支持 classic binary/ternary 与 sparse fixed-weight binary |
@@ -278,9 +278,9 @@ RNS GLWE 提供 `CrtGlweParameters::try_new`，其 `new` 是调用同一校验�
 
 `CrtGlevParameters::try_with_glwe_params` 复用已验证的布局/采样状态，另行检查多 limb 分解、centered lift 和 gadget 组合长度，通过 `CrtGlevParametersError` 保留原因。在线采样不重复这些参数检查。
 
-参数角色与底层失败原因分开表达。例如 CBS 的 trace 噪声错误沿 `CircuitBootstrapParameterError::EncryptionParameters { role, source }` → `NtruParameterError::Noise` → `GaussianError` 传播；`KeyGenerationError` 透明转发 CBS 错误。带上下文的 `Display` 只描述当前层，通过标准 `Error::source()` 逐层取得原因；透明包装同时委托显示及 source，不增加重复的报告层。只打印最外层 `Display` 会省略底层细节，报告器应遍历原因链；LWE/GLWE/NTRU 加密参数的 panicking 构造器通过 `expect` 保留嵌套采样错误的 Debug 信息。
+参数角色与底层失败原因分开表达。例如 accumulator 噪声错误沿 `TfheParameterError::AccumulatorParameters` → `NtruParameterError::Noise` → `GaussianError` 传播。CBS 配置复用已验证的采样状态，仅返回带 trace/scheme-switch 角色的分解与布局错误；`KeyGenerationError` 透明转发 CBS 错误。带上下文的 `Display` 只描述当前层，通过标准 `Error::source()` 逐层取得原因；透明包装同时委托显示及 source，不增加重复的报告层。只打印最外层 `Display` 会省略底层细节，报告器应遍历原因链；LWE/GLWE/NTRU 加密参数的 panicking 构造器通过 `expect` 保留嵌套采样错误的 Debug 信息。
 
-返回包含浮点输入的 sampler 错误后，两家族的 `TfheParameterError`、`CircuitBootstrapParameterError` 和 `KeyGenerationError` 保留 `PartialEq`，不实现 `Eq`。配置/形状检查成功不意味着支持的参数具有足够噪声余量；table 构造也不替代模数素性和秘密身份等调用方前提。
+包含浮点输入的 sampler 错误不能实现 `Eq`；持有这些错误的 `TfheParameterError` 因而保留 `PartialEq`。配置/形状检查成功不意味着支持的参数具有足够噪声余量；table 构造也不替代模数素性和秘密身份等调用方前提。
 
 ## 保留的分层与接口
 

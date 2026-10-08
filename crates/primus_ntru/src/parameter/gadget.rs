@@ -32,8 +32,9 @@ where
     M: RingContext<T>,
 {
     /// Binds shared NTRU ring/sampling state to an owned gadget basis, without a codec.
-    /// The state's noise encrypts gadget rows. Different key-noise roles need their
-    /// own prepared state; derivations with the same role can share it through Arc.
+    /// The state's noise encrypts gadget rows. Different noise distributions need
+    /// their own prepared state; identical ring/sampling parameters can share it
+    /// through Arc across key roles, without sharing random draws.
     ///
     /// # Errors
     /// Rejects a different explicit/native basis modulus or an overflowing N*L
@@ -67,6 +68,21 @@ where
         basis: ApproxSignedBasis<T>,
     ) -> Result<Self, NlevParameterError> {
         Self::try_from_parts(Arc::clone(&ntru.encryption_parameters), basis)
+    }
+
+    /// Derives gadget parameters with a new basis, preserving the NTRU ring.
+    ///
+    /// Shares the existing immutable ring and sampler state through `Arc`;
+    /// does not copy sampler tables or the old basis, or convert ciphertexts.
+    /// Each encryption still draws fresh randomness from its supplied RNG.
+    ///
+    /// # Errors
+    /// Rejects a basis modulus mismatch or an overflowing N*L ciphertext length.
+    pub fn try_with_new_basis(
+        &self,
+        basis: ApproxSignedBasis<T>,
+    ) -> Result<Self, NlevParameterError> {
+        Self::try_from_parts(Arc::clone(&self.encryption_parameters), basis)
     }
 
     /// Creates NLev/NGSW parameters from matching NTRU parameters.

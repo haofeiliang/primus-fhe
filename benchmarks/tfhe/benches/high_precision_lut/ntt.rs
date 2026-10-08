@@ -109,7 +109,7 @@ fn benchmark_workload<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
             serde_json::json!({
                 "parameters": metadata::ntru(context.parameters()),
                 "blind_rotation": metadata::blind_rotation(sparse),
-                "cbs": metadata::cbs(ntru::cbs::<T>()),
+                "cbs": metadata::cbs(ntru::cbs::<T>(), context.parameters().accumulator_ntru().noise_distribution().standard_deviation()),
                 "lut": workload.metadata(),
                 "unique_polynomials": table.unique_polynomial_count(),
                 "needs_public_lift": table.needs_public_lift(),

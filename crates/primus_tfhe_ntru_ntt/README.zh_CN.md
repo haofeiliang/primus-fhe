@@ -102,6 +102,13 @@ let mut evaluator = context.evaluator(&server)?;
 
 `ngsw_selector_len()` 返回单个变换域 NGSW selector 的长度；`ngsw_batch_len()` 返回包含分支零的完整批次长度。两者均以NTT 环元素个数计量，不是字节数。
 
+消费时通过 `cbs.ngsw_selectors(&output)` 或
+`cbs.nonzero_ngsw_selectors(&output)` 借用 `NttNgswSelectors`。
+`selector(r)` 按数学编号取得 δᵣ，`iter()` 返回 `(r, control)`。
+完整批次覆盖 `0..M`，紧凑批次覆盖 `1..M`，后者的 `selector(0)` 返回
+`None`。视图检查精确批次长度，直接借用原缓冲，不复制、不分配。
+`cbs.nlev_selectors(&output)` 同样借用完整的系数域 NLEV 批次。
+
 需要立即消费每个结果时，`new_sparse_pair_workspace(&resources)` 分配一个额外输入状态，`with_sparse_pair` 一起执行两个 sparse 输入的盲旋转。回调依次收到索引 0、1 和受限的 `OneHotProjection`；`project_to` 将完整 NLEV 和/或非零 NGSW 写入复用缓冲，每次回调内完成消费。高精度 LUT evaluator 自动使用此路径。
 
 ## 高精度查表

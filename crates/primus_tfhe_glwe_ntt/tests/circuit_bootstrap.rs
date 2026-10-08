@@ -95,19 +95,13 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
                 log_basis: DecompositionBaseLog::new(8),
                 level_count: Some(DecompositionLevelCount::new(levels)),
             },
-            trace: GadgetEncryptionConfig {
-                decomposition: DecompositionConfig {
-                    log_basis: DecompositionBaseLog::new(10),
-                    level_count: None,
-                },
-                noise_standard_deviation: 0.7,
+            trace: DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(10),
+                level_count: None,
             },
-            scheme_switch: GadgetEncryptionConfig {
-                decomposition: DecompositionConfig {
-                    log_basis: DecompositionBaseLog::new(10),
-                    level_count: None,
-                },
-                noise_standard_deviation: 0.7,
+            scheme_switch: DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(10),
+                level_count: None,
             },
         };
         let (client_key, ring_server) = context

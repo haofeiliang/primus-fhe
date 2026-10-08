@@ -102,6 +102,13 @@ See the [family one-hot contract](../primus_tfhe_ntru/README.md#one-hot-cbs) for
 
 `ngsw_selector_len()` returns the length of one transformed NGSW selector; `ngsw_batch_len()` returns the complete batch length, including branch zero. Both count complex values, not bytes.
 
+For consumption, borrow a `FourierNgswSelectors` with `cbs.ngsw_selectors(&output)` or
+`cbs.nonzero_ngsw_selectors(&output)`. Use `selector(r)` to access δᵣ, and
+`iter()` for `(r, control)` pairs. Full batches cover `0..M`; compact batches
+cover `1..M` and return `None` for `selector(0)`. These views check the exact
+batch length and borrow the existing buffer without copying or allocating.
+`cbs.nlev_selectors(&output)` similarly borrows a complete coefficient NLEV batch.
+
 For a consumer that immediately processes each result, `new_sparse_pair_workspace(&resources)` allocates one additional input state and `with_sparse_pair` blind-rotates two sparse inputs together. Its callback receives index 0 then 1 and a scoped `OneHotProjection`: `project_to` writes full NLEV and/or nonzero NGSW into reusable buffers. Complete consumption within each callback; the high-precision LUT evaluator uses this path automatically. Fourier projection returns the shared FFT engine for immediate NLEV conversion.
 
 ## High-precision lookup

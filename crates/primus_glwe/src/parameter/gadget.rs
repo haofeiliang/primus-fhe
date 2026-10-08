@@ -83,6 +83,30 @@ where
         )
     }
 
+    /// Derives gadget parameters with a new basis, preserving the GLWE layout.
+    ///
+    /// Shares the existing immutable modulus and sampler state through `Arc`;
+    /// does not copy sampler tables or the old basis, or convert ciphertexts.
+    /// Each encryption still draws fresh randomness from its supplied RNG.
+    ///
+    /// # Errors
+    /// Rejects a basis modulus mismatch or gadget layout overflow.
+    pub fn try_with_new_basis(
+        &self,
+        basis: ApproxSignedBasis<T>,
+    ) -> Result<Self, GlevParameterError> {
+        if basis.modulus() != self.basis.modulus() {
+            return Err(GlevParameterError::BasisModulusMismatch);
+        }
+        // Only the basis changes: secret weight was already checked against
+        // this unchanged GLWE layout when the source parameters were built.
+        Ok(Self {
+            size: GadgetSize::try_new(self.glwe_size(), basis.decompose_length())?,
+            encryption_parameters: Arc::clone(&self.encryption_parameters),
+            basis,
+        })
+    }
+
     /// Creates GLev/GGSW parameters from matching GLWE parameters.
     ///
     /// # Panics

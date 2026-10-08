@@ -156,14 +156,8 @@ pub fn cbs<T: FheUint>() -> CircuitBootstrapConfig {
             if T::BITS == 32 { 3 } else { 8 },
             Some(if T::BITS == 32 { 3 } else { 2 }),
         ),
-        trace: GadgetEncryptionConfig {
-            decomposition: internal,
-            noise_standard_deviation: 6.4,
-        },
-        scheme_switch: GadgetEncryptionConfig {
-            decomposition: internal,
-            noise_standard_deviation: 6.4,
-        },
+        trace: internal,
+        scheme_switch: internal,
     }
 }
 

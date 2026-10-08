@@ -7,8 +7,7 @@ use primus_lwe::LweEncryptionParameters;
 use primus_modulus::{BarrettModulus, PowOf2Modulus};
 use primus_ntru::NlevParameters;
 use primus_ntru::{
-    NtruCiphertext, NtruParameters, NttNgswCiphertext, NttNtruExternalProductWorkspace,
-    SecretKeyDistr,
+    NtruCiphertext, NtruParameters, NttNtruExternalProductWorkspace, SecretKeyDistr,
 };
 use primus_ntt::U64NttTable;
 use primus_poly::PolyLength;
@@ -95,14 +94,8 @@ fn selectors(distr: SecretKeyDistr, sparse: bool) {
             log_basis: DecompositionBaseLog::new(8),
             level_count: Some(DecompositionLevelCount::new(L)),
         },
-        trace: GadgetEncryptionConfig {
-            decomposition: full,
-            noise_standard_deviation: 0.7,
-        },
-        scheme_switch: GadgetEncryptionConfig {
-            decomposition: full,
-            noise_standard_deviation: 0.7,
-        },
+        trace: full,
+        scheme_switch: full,
     };
     let mut generator = primus_tfhe_ntru_ntt::KeyGenerator::new(&context);
     let blind_rotation = if sparse {
@@ -169,6 +162,45 @@ fn selectors(distr: SecretKeyDistr, sparse: bool) {
     assert_eq!(evaluator.ngsw_batch_len(), M * selector_len);
     assert_eq!(ngsw.len(), evaluator.ngsw_batch_len());
     assert_eq!(nonzero_ngsw.len(), (M - 1) * selector_len);
+    // Views distinguish branch numbers from compact slots and reject partial
+    // blocks before semantic iterators could silently discard a tail.
+    let full = evaluator.ngsw_selectors(&ngsw);
+    let nonzero = evaluator.nonzero_ngsw_selectors(&nonzero_ngsw);
+    let coefficient = evaluator.nlev_selectors(&nlev);
+    assert_eq!(full.selector_range(), 0..M);
+    assert_eq!(nonzero.selector_range(), 1..M);
+    assert_eq!(full.selector_count(), M);
+    assert_eq!(nonzero.selector_count(), M - 1);
+    assert_eq!(full.selector_len(), selector_len);
+    assert_eq!(coefficient.selector_range(), 0..M);
+    assert_eq!(coefficient.selector_count(), M);
+    assert_eq!(coefficient.selector_len(), L * N);
+    assert!(full.selector(M).is_none());
+    assert!(nonzero.selector(0).is_none());
+    assert!(nonzero.selector(usize::MAX).is_none());
+    assert!(coefficient.selector(M).is_none());
+    // Iterators borrow the output, so a temporary metadata view is sufficient.
+    {
+        let full_iter = evaluator.ngsw_selectors(&ngsw).iter();
+        let compact_iter = evaluator.nonzero_ngsw_selectors(&nonzero_ngsw).iter();
+        let coefficient_iter = evaluator.nlev_selectors(&nlev).iter();
+        assert_eq!(full_iter.len(), M);
+        assert_eq!(compact_iter.len(), M - 1);
+        assert_eq!(coefficient_iter.len(), M);
+    }
+    for (r, _) in nonzero.iter() {
+        assert!((1..M).contains(&r));
+    }
+    for malformed in [&ngsw[..ngsw.len() - 1], &nonzero_ngsw[..]] {
+        assert!(catch_unwind(AssertUnwindSafe(|| evaluator.ngsw_selectors(malformed))).is_err());
+    }
+    assert!(catch_unwind(AssertUnwindSafe(|| evaluator.nonzero_ngsw_selectors(&ngsw))).is_err());
+    assert!(
+        catch_unwind(AssertUnwindSafe(
+            || evaluator.nlev_selectors(&nlev[..nlev.len() - 1])
+        ))
+        .is_err()
+    );
     let mut coefficients = NtruCiphertext::<Vec<u64>>::zero(N);
     let mut selected = NtruCiphertext::<Vec<u64>>::zero(N);
     let mut ep = NttNtruExternalProductWorkspace::new(PolyLength::new(N));
@@ -298,12 +330,18 @@ fn selectors(distr: SecretKeyDistr, sparse: bool) {
                 .unwrap(),
             message as u64
         );
-        for selector in 0..M {
+        let controls = evaluator.ngsw_selectors(&ngsw);
+        let compact_controls = evaluator.nonzero_ngsw_selectors(&nonzero_ngsw);
+        for (selector, nlev_control) in evaluator.nlev_selectors(&nlev).iter() {
             let bit = u64::from(selector == message);
-            let nlev_rows = &nlev[selector * L * N..(selector + 1) * L * N];
-            let ngsw_len = L * N;
-            let control =
-                NttNgswCiphertext::new(&ngsw[selector * ngsw_len..(selector + 1) * ngsw_len]);
+            let nlev_rows = nlev_control.as_ref();
+            let control = controls.selector(selector).unwrap();
+            if selector != 0 {
+                assert_eq!(
+                    compact_controls.selector(selector).unwrap().as_ref(),
+                    control.as_ref()
+                );
+            }
             for (level, row) in nlev_rows.as_chunks::<N>().0.iter().enumerate() {
                 let mut expected = vec![0; N];
                 expected[0] = scalars[level] * bit;

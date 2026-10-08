@@ -214,11 +214,8 @@ fn rotation_domain_must_be_representable_by_input_coefficients() {
 }
 
 #[test]
-fn configs_return_accumulator_return_key_and_cbs_errors() {
+fn configs_return_accumulator_and_return_key_errors() {
     use primus_ntru::NtruParameterError;
-    use primus_tfhe_ntru::{
-        CircuitBootstrapConfig, CircuitBootstrapParameterError, CircuitBootstrapParameters,
-    };
     let basis = DecompositionConfig {
         log_basis: DecompositionBaseLog::new(4),
         level_count: Some(DecompositionLevelCount::new(1)),
@@ -242,7 +239,6 @@ fn configs_return_accumulator_return_key_and_cbs_errors() {
             noise_standard_deviation: 0.7,
         },
     };
-    let tfhe = TfheParameters::try_from_config(config.clone()).unwrap();
     let mut invalid = config.clone();
     invalid.blind_rotation.noise_standard_deviation = f64::NAN;
     assert!(matches!(
@@ -268,51 +264,6 @@ fn configs_return_accumulator_return_key_and_cbs_errors() {
             primus_lwe::LweParameterError::Noise(_)
         ))
     ));
-
-    let cbs = CircuitBootstrapConfig {
-        output: basis,
-        trace: GadgetEncryptionConfig {
-            decomposition: basis,
-            noise_standard_deviation: 0.7,
-        },
-        scheme_switch: GadgetEncryptionConfig {
-            decomposition: basis,
-            noise_standard_deviation: 0.7,
-        },
-    };
-    assert!(CircuitBootstrapParameters::try_from_config(&tfhe, cbs).is_ok());
-    for role in ["trace", "scheme-switch"] {
-        let mut invalid = cbs;
-        if role == "trace" {
-            invalid.trace.noise_standard_deviation = 0.0;
-        } else {
-            invalid.scheme_switch.noise_standard_deviation = f64::INFINITY;
-        }
-        let error = CircuitBootstrapParameters::try_from_config(&tfhe, invalid)
-            .err()
-            .unwrap();
-        assert!(matches!(
-            &error,
-            CircuitBootstrapParameterError::EncryptionParameters { role: actual, source: NtruParameterError::Noise(_) } if *actual == role
-        ));
-        // Follow a real constructor failure through the public key-generation
-        // wrapper. Each frame keeps its role and prints only its own context.
-        use std::error::Error;
-        let error = primus_tfhe_ntru::KeyGenerationError::from(error);
-        assert_eq!(
-            error.to_string(),
-            format!("invalid circuit-bootstrap {role} encryption parameters")
-        );
-        let parameters = error.source().unwrap();
-        assert!(parameters.is::<NtruParameterError>());
-        assert_eq!(parameters.to_string(), "invalid NTRU noise distribution");
-        let sampler = parameters.source().unwrap();
-        assert!(matches!(
-            sampler.downcast_ref::<primus_distr::GaussianError>(),
-            Some(primus_distr::GaussianError::InvalidStandardDeviation { .. })
-        ));
-        assert!(sampler.source().is_none());
-    }
 }
 
 // These constructors do not depend on a transform table or encrypted keys.
@@ -364,58 +315,47 @@ fn check_circuit_parameters<M: primus_reduce::RingContext<u64>>(
             log_basis: DecompositionBaseLog::new(8),
             level_count: Some(DecompositionLevelCount::new(2)),
         },
-        trace: GadgetEncryptionConfig {
-            decomposition: DecompositionConfig {
-                log_basis: DecompositionBaseLog::new(9),
-                level_count: Some(DecompositionLevelCount::new(3)),
-            },
-            noise_standard_deviation: 1.25,
+        trace: DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(9),
+            level_count: Some(DecompositionLevelCount::new(3)),
         },
-        scheme_switch: GadgetEncryptionConfig {
-            decomposition: DecompositionConfig {
-                log_basis: DecompositionBaseLog::new(10),
-                level_count: Some(DecompositionLevelCount::new(4)),
-            },
-            noise_standard_deviation: 2.5,
+        scheme_switch: DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(10),
+            level_count: Some(DecompositionLevelCount::new(4)),
         },
     };
     let configured = CircuitBootstrapParameters::try_from_config(&tfhe, config).unwrap();
     assert_eq!(configured.poly_length(), tfhe.poly_length());
     assert_eq!(configured.trace().basis().log_basis().get(), 9);
     assert_eq!(configured.trace().basis().decompose_length().get(), 3);
-    assert_eq!(
-        configured
-            .trace()
-            .encryption_parameters()
-            .noise_distribution()
-            .standard_deviation(),
-        1.25
-    );
     assert_eq!(configured.scheme_switch().basis().log_basis().get(), 10);
     assert_eq!(
         configured.scheme_switch().basis().decompose_length().get(),
         4
     );
-    assert_eq!(
-        configured
-            .scheme_switch()
-            .encryption_parameters()
-            .noise_distribution()
-            .standard_deviation(),
-        2.5
-    );
+    // Both bases retain the accumulator's exact sampler state and noise.
+    for parameters in [configured.trace(), configured.scheme_switch()] {
+        assert!(std::ptr::eq(
+            parameters.encryption_parameters(),
+            tfhe.accumulator_ntru(),
+        ));
+        assert_eq!(
+            parameters
+                .encryption_parameters()
+                .noise_distribution()
+                .standard_deviation(),
+            0.7,
+        );
+    }
+    assert_eq!(configured.trace().nlev_len(), N * 3);
+    assert_eq!(configured.scheme_switch().nlev_len(), N * 4);
+    assert_eq!(configured.output_nlev_len(), N * 2);
     for role in ["output", "trace", "scheme-switch"] {
         let mut invalid = config;
         match role {
             "output" => invalid.output.level_count = Some(DecompositionLevelCount::new(usize::MAX)),
-            "trace" => {
-                invalid.trace.decomposition.level_count =
-                    Some(DecompositionLevelCount::new(usize::MAX))
-            }
-            _ => {
-                invalid.scheme_switch.decomposition.level_count =
-                    Some(DecompositionLevelCount::new(usize::MAX))
-            }
+            "trace" => invalid.trace.level_count = Some(DecompositionLevelCount::new(usize::MAX)),
+            _ => invalid.scheme_switch.level_count = Some(DecompositionLevelCount::new(usize::MAX)),
         }
         let error = CircuitBootstrapParameters::try_from_config(&tfhe, invalid)
             .err()
@@ -504,4 +444,51 @@ fn circuit_parameters_check_capacity_ring_and_basis_domain() {
         Some(BarrettModulus::new(132_120_577)),
     );
     check_circuit_parameters(NativeModulus::<u64>::new(), None);
+
+    // An explicit power-of-two Q is valid for ordinary parameter construction,
+    // but CBS modular halving requires an odd modulus. Native remains supported.
+    use primus_tfhe_ntru::{
+        CircuitBootstrapConfig, CircuitBootstrapParameterError, CircuitBootstrapParameters,
+    };
+    let tfhe = TfheParameters::try_from_config(TfheConfig {
+        external_lwe: LweEncryptionParameters::new(
+            LweDimension::new(4),
+            NativeModulus::<u64>::new(),
+            SecretKeyDistr::UniformBinary,
+            0.7,
+        ),
+        accumulator_modulus: primus_modulus::PowOf2Modulus::new(1u64 << 16),
+        poly_length: PolyLength::new(N),
+        accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
+        blind_rotation: GadgetEncryptionConfig {
+            decomposition: DECOMPOSITION,
+            noise_standard_deviation: 0.7,
+        },
+        key_switching: GadgetEncryptionConfig {
+            decomposition: DECOMPOSITION,
+            noise_standard_deviation: 0.7,
+        },
+    })
+    .unwrap();
+    let config = CircuitBootstrapConfig {
+        output: DECOMPOSITION,
+        trace: DECOMPOSITION,
+        scheme_switch: DECOMPOSITION,
+    };
+    let trace = tfhe.blind_rotation();
+    // Both derived and independently supplied components retain this check.
+    for result in [
+        CircuitBootstrapParameters::try_from_config(&tfhe, config),
+        CircuitBootstrapParameters::try_new(
+            &tfhe,
+            trace.basis().clone(),
+            trace.clone(),
+            trace.clone(),
+        ),
+    ] {
+        assert_eq!(
+            result.err(),
+            Some(CircuitBootstrapParameterError::UnsupportedTraceModulus)
+        );
+    }
 }

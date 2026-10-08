@@ -192,26 +192,19 @@ fn one_hot<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
         // Lookup evaluation normally consumes them entirely on the server.
         // The packed output is [selector][gadget level][polynomial]. Its raw
         // phase is f*gadget_scalar for the selected index and zero otherwise.
-        for (j, row) in primus_poly::NttPolynomialIter::new(&selectors, N).enumerate() {
-            let scalar: i128 = scalars[j % scalars.len()].as_into();
-            ring_secret.decrypt_phase_to(
-                &primus_ntru::NttNtruCiphertext::new(row.as_ref()),
-                &mut phase,
-                modulus,
-                context.table(),
-            );
-            for (&actual, &f) in phase
-                .as_ref()
-                .iter()
-                .zip(client_key.accumulator_ntru_secret_key().as_slice())
-            {
-                let f: i128 = f.as_into();
-                let expected = if j / scalars.len() == message {
-                    scalar * f
-                } else {
-                    0
-                };
-                margin.gadget(actual, expected, modulus, scalar);
+        for (r, control) in one_hot.ngsw_selectors(&selectors).iter() {
+            for (row, &scalar) in control.iter_ntt_ntru(N).zip(&scalars) {
+                let scalar: i128 = scalar.as_into();
+                ring_secret.decrypt_phase_to(&row, &mut phase, modulus, context.table());
+                for (&actual, &f) in phase
+                    .as_ref()
+                    .iter()
+                    .zip(client_key.accumulator_ntru_secret_key().as_slice())
+                {
+                    let f: i128 = f.as_into();
+                    let expected = if r == message { scalar * f } else { 0 };
+                    margin.gadget(actual, expected, modulus, scalar);
+                }
             }
         }
     }

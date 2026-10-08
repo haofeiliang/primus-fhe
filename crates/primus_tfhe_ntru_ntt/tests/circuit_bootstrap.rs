@@ -68,19 +68,13 @@ fn circuit_bootstrap(distr: SecretKeyDistr, sparse: bool) {
             log_basis: DecompositionBaseLog::new(8),
             level_count: Some(DecompositionLevelCount::new(levels)),
         },
-        trace: GadgetEncryptionConfig {
-            decomposition: DecompositionConfig {
-                log_basis: DecompositionBaseLog::new(10),
-                level_count: None,
-            },
-            noise_standard_deviation: 0.7,
+        trace: DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(10),
+            level_count: None,
         },
-        scheme_switch: GadgetEncryptionConfig {
-            decomposition: DecompositionConfig {
-                log_basis: DecompositionBaseLog::new(10),
-                level_count: None,
-            },
-            noise_standard_deviation: 0.7,
+        scheme_switch: DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(10),
+            level_count: None,
         },
     };
     // CBS-only material can be generated and bound before any return key exists.
@@ -398,14 +392,8 @@ fn independent_cbs_material_does_not_require_a_return_key() {
             log_basis: DecompositionBaseLog::new(4),
             level_count: Some(DecompositionLevelCount::new(1)),
         },
-        trace: GadgetEncryptionConfig {
-            decomposition: full,
-            noise_standard_deviation: 0.7,
-        },
-        scheme_switch: GadgetEncryptionConfig {
-            decomposition: full,
-            noise_standard_deviation: 0.7,
-        },
+        trace: full,
+        scheme_switch: full,
     };
     let config = primus_tfhe_ntru_ntt::TfheConfig {
         external_lwe: primus_lwe::LweEncryptionParameters::new(

@@ -74,7 +74,7 @@ fn ordinary<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
             serde_json::json!({
                 "parameters": metadata::glwe(context.parameters()),
                 "blind_rotation": metadata::blind_rotation(sparse),
-                "cbs": metadata::cbs(glwe::cbs::<T>()),
+                "cbs": metadata::cbs(glwe::cbs::<T>(), context.parameters().blind_rotation_ggsw().noise_standard_deviation()),
                 "encoding": "rounded_padded",
                 "plaintext_modulus": 4,
                 "outputs": 1,

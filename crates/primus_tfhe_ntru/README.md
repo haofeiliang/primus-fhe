@@ -19,7 +19,7 @@ Dimension choices use `LweDimension`; decomposition choices use `DecompositionBa
 
 The direct composition entry is `TfheParameters::try_new(external_lwe, blind_rotation, key_switching)`. `external_lwe` is a codec-free `LweEncryptionParameters`; `blind_rotation` is `NlevParameters`. Both constructors take `key_switching: GadgetEncryptionConfig { decomposition, noise_standard_deviation }`, with `DecompositionConfig` built at external q and independently selected return-key noise in coefficient units at q. 2N must fit T; the external dimension n need not be at most N. Constructors report specific parameter errors but do not validate security or a complete noise budget.
 
-`accumulator_ntru()` borrows the ring/sampling state owned by the blind-rotation gadget at Q. Key parameters contain no message codec. CBS `trace` and `scheme_switch` each use an `GadgetEncryptionConfig` at Q to construct codec-free NLev parameters with independent noise. CBS `output` remains a `DecompositionConfig` for output gadget scalars.
+`accumulator_ntru()` borrows the ring/sampling state owned by the blind-rotation gadget at Q. Key parameters contain no message codec. CBS `output`, `trace` and `scheme_switch` each use a `DecompositionConfig` at Q. `CircuitBootstrapParameters::try_from_config` derives codec-free trace/scheme-switch NLev parameters from BR, sharing its ring and sampler state through `Arc`. All key rows use the accumulator encryption noise; gadget bases and random draws remain independent.
 
 `ClientKey` holds independent LWE secret s and NTRU ring secret f. Generate paired material with `context.try_generate_keys(blind_rotation, cbs_config, rng)`, or import it with `ClientKey::new(s, f)`. Only f requires invertibility checks and, for Fourier, inverse stability. External secrets require neither padding, invertibility nor odd weight. `external_lwe_secret_key()` returns the LWE secret at q. Binding checks its recorded modulus before borrowing a raw view; a different q returns `TfheKeyError::LweSecretKeyModulusMismatch`, even for identical binary coefficients.
 
@@ -74,6 +74,14 @@ Full-output APIs allocate with `allocate_nlev_output` / `allocate_ngsw_output`, 
 For nonzero branches only, use `allocate_nonzero_ngsw_output` and `one_hot_nonzero_ngsw_to`. Compact slot r-1 represents r=1..M-1, skipping r=0 projection and scheme switching. For m=0 all target bits are zero. Each call shares one BR and reuses output/workspace. Use `one_hot_to` for both full batches, or `one_hot_nlev_and_nonzero_ngsw_to` for full NLEV plus nonzero NGSW: it projects branch zero for NLEV and skips its scheme switch, sharing the other projections.
 
 Let S=N/M and A=N/(2MW). Correct selection requires the quantized phase to satisfy `u_bar=S*m+W*e mod 2N` with `-A<=e<A`. The window is left-closed/right-open and a midpoint belongs to the larger message. The error e includes input noise, encoding rounding and per-coordinate quantization. Shape checks prove neither this guard nor output decryptability; see the [one-hot normalization and guard derivation](../primus_tfhe/IMPLEMENTATION.md#one-hot-cbs).
+
+For branch access, use the evaluator's `nlev_selectors`, `ngsw_selectors` or
+`nonzero_ngsw_selectors` to borrow a checked view over the existing output.
+`selector(r)` uses the mathematical branch number; `iter()` yields
+`(r, ciphertext)`. The nonzero view starts at r=1 and has no selector zero.
+Coefficient NLEVs use the shared `NlevSelectors`; the backends expose distinct
+`NttNgswSelectors` and `FourierNgswSelectors`. Views allocate nothing and reject
+partial or mismatched batches. Basis, secret and transform identity remain caller contracts.
 
 The separate [primus_tfhe_ntru_lut](../primus_tfhe_ntru_lut/README.md) crate handles multiple chunks and multiple table polynomials.
 

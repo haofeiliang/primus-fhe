@@ -15,8 +15,9 @@ use crate::SecretKeyDistr;
 /// constructed independently from this state through [`std::sync::Arc`]; cloning
 /// this value directly still copies its sampler tables.
 /// Mask and noise samplers serve both ordinary encryption and evaluation-key
-/// row encryption; the secret sampler serves key generation. Separate noise
-/// roles use separate prepared states, even when layout and modulus agree.
+/// row encryption; the secret sampler serves key generation. Different noise
+/// distributions require separate prepared states. Identical sampler parameters
+/// can be shared across roles without sharing random draws.
 #[derive(Clone)]
 pub struct GlweEncryptionParameters<T, M>
 where

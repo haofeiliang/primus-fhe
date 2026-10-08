@@ -15,7 +15,6 @@ use primus_fft::RustFftTable;
 #[cfg(all(not(feature = "rustfft"), feature = "tfhe-fft"))]
 use primus_fft::TfheFftTable;
 use primus_fft::{FftTable, TorusFftValue};
-use primus_lattice::ngsw::FourierNgswIter;
 use primus_modulus::NativeModulus;
 use primus_modulus::PowOf2Modulus;
 use primus_tfhe_benchmarks::parameters::{N, ntru};
@@ -79,7 +78,7 @@ fn ordinary<T: TorusFftValue, Table: FftTable>(c: &mut Group<'_>, backend: &str,
             serde_json::json!({
                 "parameters": metadata::ntru(context.parameters()),
                 "blind_rotation": metadata::blind_rotation(sparse),
-                "cbs": metadata::cbs(ntru::cbs::<T>()),
+                "cbs": metadata::cbs(ntru::cbs::<T>(), context.parameters().accumulator_ntru().noise_distribution().standard_deviation()),
                 "encoding": "rounded_padded",
                 "plaintext_modulus": 4,
                 "outputs": 1,
@@ -150,7 +149,7 @@ fn one_hot<T: TorusFftValue, Table: FftTable>(c: &mut Group<'_>, backend: &str, 
                 serde_json::json!({
                     "parameters": metadata::ntru(context.parameters()),
                     "blind_rotation": metadata::blind_rotation(sparse),
-                    "cbs": metadata::cbs(ntru::cbs::<T>()),
+                    "cbs": metadata::cbs(ntru::cbs::<T>(), context.parameters().accumulator_ntru().noise_distribution().standard_deviation()),
                     "encoding": "rounded_padded",
                     "plaintext_modulus": 8,
                     "outputs": if compact { 3 } else { 4 },
@@ -284,11 +283,13 @@ impl<T: TorusFftValue, Table: FftTable> Fixture<T, Table> {
                 ),
             )
             .unwrap();
-        // Semantic ciphertext iteration keeps selector boundaries tied
-        // to the public CBS layout, including compact index r-1.
-        for (index, control) in
-            FourierNgswIter::new(output, evaluator.ngsw_selector_len()).enumerate()
-        {
+        // Both views iterate mathematical r, even when storage omits delta_0.
+        let selectors = if compact {
+            evaluator.nonzero_ngsw_selectors(output)
+        } else {
+            evaluator.ngsw_selectors(output)
+        };
+        for (r, control) in selectors.iter() {
             let (fft, product) = resources.external_product_workspaces();
             control.cmux_to(
                 lhs,
@@ -299,11 +300,7 @@ impl<T: TorusFftValue, Table: FftTable> Fixture<T, Table> {
                 product,
             );
             ring.decrypt_to(&selected, &mut decoded);
-            let expected = if index + usize::from(compact) == 2 {
-                T::ONE
-            } else {
-                T::ZERO
-            };
+            let expected = if r == 2 { T::ONE } else { T::ZERO };
             assert!(decoded.iter().all(|&value| value == expected));
         }
     }
