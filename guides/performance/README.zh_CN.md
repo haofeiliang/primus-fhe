@@ -24,7 +24,7 @@
 | [Benchmark 测量版本 2](tfhe-benchmark-schema2.md) | 集中执行/报告流程验证：六种负载、每种三个串行进程，仅 CPU 4 |
 | [TFHE 基线](tfhe-baseline.md) | 前轮整理中的基准覆盖、setup、对齐与容器测量 |
 | [Fourier 首项覆盖](fourier-first-write.md) | 最终 F0/F1 完整请求比较、资源成本、构建核验及保留 F0 的决定 |
-| [准备与工作区测量](workspace-measurements.md) | NTT 构造、NTRU trace 准备、借用资源、参数共享、返回缓冲与存储成本 |
+| [准备与工作区测量](workspace-measurements.md) | NTT 构造、NTRU/RNS 密钥集准备、借用资源、参数共享、返回缓冲与存储成本 |
 | [Sparse 基线](sparse-baseline.md) | 完整请求、阶段诊断、保留/峰值 heap 与 aggregate scratch |
 | [Sparse 算术](sparse-arithmetic.md) | Pair/四路累加、惰性范围与紧凑约简 |
 | [Sparse 布局与批处理](sparse-layout-and-batching.md) | Tiles、首桶、流式处理、源布局和 LUT 双输入旋转 |

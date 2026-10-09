@@ -49,11 +49,8 @@ impl<T: FheUint> CrtGlweExpandCoeffKey<T> {
     {
         let params = domain.parameters();
         let log_n = params.poly_length().log_n();
-        let auto_keys: Vec<CrtGlweAutoKeyData<T>> = (1..=log_n)
-            .rev()
-            .map(|x| (1usize << x) + 1)
-            .map(|degree| CrtGlweAutoKeyData::new(domain, degree, sk, dcrt_sk, rng))
-            .collect();
+        let degrees = (1..=log_n).rev().map(|x| (1usize << x) + 1);
+        let auto_keys = CrtGlweAutoKeyData::generate_key_set(domain, degrees, sk, dcrt_sk, rng);
 
         let base_q = params.base_q();
 

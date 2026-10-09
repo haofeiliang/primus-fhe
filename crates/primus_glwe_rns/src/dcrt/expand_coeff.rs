@@ -48,11 +48,8 @@ impl<T: FheUint> DcrtGlweExpandCoeffKey<T> {
     {
         let params = domain.parameters();
         let log_n = params.poly_length().log_n();
-        let auto_keys: Vec<DcrtGlweAutoKeyData<T>> = (1..=log_n)
-            .rev()
-            .map(|x| (1usize << x) + 1)
-            .map(|degree| DcrtGlweAutoKeyData::new(domain, degree, dcrt_sk, rng))
-            .collect();
+        let degrees = (1..=log_n).rev().map(|x| (1usize << x) + 1);
+        let auto_keys = DcrtGlweAutoKeyData::generate_key_set(domain, degrees, dcrt_sk, rng);
 
         let ntt_monomial_factors = Self::precompute_monomial_factors(params, domain.table());
         let inv_count_residues_by_level =

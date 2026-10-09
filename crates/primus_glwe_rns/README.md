@@ -99,6 +99,14 @@ evaluator.automorphism_to(&ciphertext, &mut output);
 
 `CrtGlweAutoEvaluator` uses coefficient ciphertexts; `DcrtGlweAutoEvaluator` uses NTT ciphertexts. Their kernels share the respective `CoeffAutomorphismPermutation` and `NttAutomorphismPermutation` across modulus components and key rows. Trace and expansion call these kernels under their existing binding, without rechecking or allocating per automorphism.
 
+Trace, reverse-trace and expansion key generation bind the secret to the gadget
+domain once per key set and reuse local `Zeroizing` scratch across degrees.
+CRT generation permutes the signed secret then encodes it into each modulus;
+DCRT generation permutes the existing NTT secret. Degree, row and gadget-level
+sampling order is preserved. Scratch is erased on return or unwind and is not
+added to online evaluators. Standalone automorphism generation retains its own
+binding and layout checks.
+
 `CrtGlweTraceEvaluator` / `DcrtGlweTraceEvaluator` expose `trace_to(&input, &mut output)` and return the ordinary ring trace, whose plaintext is `N*m[0]`. `DcrtGlweRevTraceEvaluator` exposes the same method but reverses the automorphism order and multiplies by `2^-1 mod q_i` at each step, retaining normalized output `m[0]`. Inputs remain unchanged; output and internal scratch are overwritten.
 
 Reverse trace keeps the same Q basis; modular `inv2` is not modulus switching or

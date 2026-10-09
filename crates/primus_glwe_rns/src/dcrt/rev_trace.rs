@@ -42,10 +42,8 @@ impl<T: FheUint> DcrtGlweRevTraceKey<T> {
         let log_n = params.poly_length().log_n();
 
         // Reversed order: degrees 3, 5, 9, ..., 2^logN + 1
-        let auto_keys: Vec<DcrtGlweAutoKeyData<T>> = (1..=log_n)
-            .map(|x| (1usize << x) + 1)
-            .map(|degree| DcrtGlweAutoKeyData::new(domain, degree, dcrt_sk, rng))
-            .collect();
+        let degrees = (1..=log_n).map(|x| (1usize << x) + 1);
+        let auto_keys = DcrtGlweAutoKeyData::generate_key_set(domain, degrees, dcrt_sk, rng);
 
         // Precompute 2^{-1} mod q_i for each RNS modulus.
         // For odd prime q_i, inv(2) = (q_i + 1) / 2.

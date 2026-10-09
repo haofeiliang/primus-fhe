@@ -421,3 +421,98 @@ fn automorphism_bindings_check_layout_order_and_decomposition() {
         }
     }
 }
+
+/// Batch preparation must reject foreign secrets before its first RNG draw.
+/// These are generation checks; evaluator radix/level rejection is covered above.
+#[test]
+fn automorphism_key_sets_reject_foreign_secrets_before_sampling() {
+    let n = PolyLength::new(32);
+    let q = [257u32, 769].map(BarrettModulus::new);
+    let params = parameters(1, n.get(), &q);
+    let table = UintDcrtTable::new(n, &q).unwrap();
+    let mut rng = StdRng::seed_from_u64(42);
+    let secret = GlweSecretKey::generate(params.glwe_size(), params.secret_key_sampler(), &mut rng);
+    let dcrt_secret = DcrtGlweSecretKey::from_coeff_secret_key(&secret, &table);
+
+    for (length, dimension, values) in [
+        (64, 1, &[257, 769][..]),
+        (32, 2, &[257, 769][..]),
+        (32, 1, &[257][..]),
+        (32, 1, &[769, 257][..]),
+        (32, 1, &[257, 1153][..]),
+    ] {
+        let moduli: Vec<_> = values.iter().copied().map(BarrettModulus::new).collect();
+        let foreign = parameters(dimension, length, &moduli);
+        let foreign_table = UintDcrtTable::new(foreign.poly_length(), &moduli).unwrap();
+        let gadget =
+            CrtGlevParameters::with_glwe_params(&foreign, DecompositionBaseLog::new(4), None);
+        let domain = DcrtGadgetDomain::try_new(&gadget, &foreign_table).unwrap();
+
+        type KeySetGenerator<'a> = (&'a str, &'a dyn Fn(&mut StdRng));
+        let generators: [KeySetGenerator<'_>; 5] = [
+            ("CRT trace", &|rng| {
+                let _ = CrtGlweTraceKey::new(&domain, &secret, &dcrt_secret, rng);
+            }),
+            ("DCRT trace", &|rng| {
+                let _ = DcrtGlweTraceKey::new(&domain, &dcrt_secret, rng);
+            }),
+            ("reverse trace", &|rng| {
+                let _ = DcrtGlweRevTraceKey::new(&domain, &dcrt_secret, rng);
+            }),
+            ("CRT expand", &|rng| {
+                let _ = CrtGlweExpandCoeffKey::new(&domain, &secret, &dcrt_secret, rng);
+            }),
+            ("DCRT expand", &|rng| {
+                let _ = DcrtGlweExpandCoeffKey::new(&domain, &dcrt_secret, rng);
+            }),
+        ];
+        for (operation, generate) in generators {
+            let mut rejected_rng = StdRng::seed_from_u64(4242);
+            let mut expected_rng = StdRng::seed_from_u64(4242);
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                generate(&mut rejected_rng)
+            }));
+            assert!(result.is_err(), "{operation}: foreign secret accepted");
+            assert_eq!(
+                rand::Rng::next_u64(&mut rejected_rng),
+                rand::Rng::next_u64(&mut expected_rng),
+                "{operation}: sampled before rejection"
+            );
+        }
+    }
+
+    // CRT generation also checks the coefficient secret when the DCRT binding is valid.
+    let foreign = parameters(2, n.get(), &q);
+    let foreign_secret =
+        GlweSecretKey::generate(foreign.glwe_size(), foreign.secret_key_sampler(), &mut rng);
+    let gadget = CrtGlevParameters::with_glwe_params(&params, DecompositionBaseLog::new(4), None);
+    let domain = DcrtGadgetDomain::try_new(&gadget, &table).unwrap();
+    for expand in [false, true] {
+        let mut rejected_rng = StdRng::seed_from_u64(4242);
+        let mut expected_rng = StdRng::seed_from_u64(4242);
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                if expand {
+                    let _ = CrtGlweExpandCoeffKey::new(
+                        &domain,
+                        &foreign_secret,
+                        &dcrt_secret,
+                        &mut rejected_rng,
+                    );
+                } else {
+                    let _ = CrtGlweTraceKey::new(
+                        &domain,
+                        &foreign_secret,
+                        &dcrt_secret,
+                        &mut rejected_rng,
+                    );
+                }
+            }))
+            .is_err()
+        );
+        assert_eq!(
+            rand::Rng::next_u64(&mut rejected_rng),
+            rand::Rng::next_u64(&mut expected_rng)
+        );
+    }
+}

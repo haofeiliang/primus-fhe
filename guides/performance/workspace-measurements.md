@@ -8,6 +8,83 @@ traffic, live peak, code size and latency are different metrics; a smaller buffe
 or fewer allocations alone do not prove faster evaluation. The original tables,
 regressions and rechecks remain below, with their own parameters and toolchains.
 
+## RNS key-set preparation, 2026-10-10
+
+Compared with `2fa5863d`, on AMD Ryzen 9 9955HX3D, x86_64 Linux,
+rustc 1.98.1 (48a229cea), repository compiler flags and default features.
+`U64DcrtTable` still selects native kernels at runtime without the Cargo `simd`
+feature. A temporary Criterion probe generated and dropped one complete named
+key set per iteration, including metadata and, for expansion/reverse trace,
+normalization and monomial preparation. N=1024, u64, GLWE dimension 2,
+sparse ternary secret, sigma=3.2, ordered Q=[1125899906826241,1125899906629633],
+logB=20 with all five gadget levels; t=12289 and gamma=2199023190017.
+These are the existing trace benchmark's functional parameters, not a security
+recommendation. Parameters, secrets, table and checked domain were outside timing.
+Secret generation used seed 42; each case's generation RNG started at seed 4242
+and advanced across iterations.
+
+Saved executables ran sequentially on CPU 4 in before/after/after/before order;
+no compilation overlapped measurement. Each process used 30 samples, 1 s warmup
+and 2 s measurement. Criterion mean point estimates, in microseconds:
+
+| Complete key set | Before, min–max | After, min–max | Change across the two pairs |
+| --- | ---: | ---: | ---: |
+| crt_trace | 3362.09–3371.79 | 3325.16–3326.07 | -1.38% to -1.07% |
+| dcrt_trace | 3352.50–3356.38 | 3308.49–3322.13 | -1.31% to -1.02% |
+| dcrt_reverse | 3348.71–3370.62 | 3315.63–3319.32 | -1.52% to -0.99% |
+| crt_expand | 3359.58–3370.58 | 3322.32–3334.21 | -1.11% to -1.08% |
+| dcrt_expand | 3440.98–3453.12 | 3401.12–3407.91 | -1.51% to -0.96% |
+
+Retain the local preparation change: the five complete constructors improved
+slightly in both pairs, without additional retained/peak storage or public API.
+One bound `DcrtGlevEncryptor` replaces log2(N) identical bindings, reducing
+ordered-modulus comparisons from O(m log N) to O(m) for m limbs. CRT coefficient
+key layout is also checked once. Encryption, permutation and CRT signed-message
+encoding still run for every degree/row in their existing order; no transform
+or gadget level is removed. CRT and DCRT keep separate generation helpers and
+scratch representations. Standalone automorphism constructors retain independent
+checks. No online trace, expansion, PBS or CBS improvement is claimed.
+
+A separate allocator probe retained the returned complete key. Counts include
+allocation and reallocation requests during generation; bytes exclude allocator
+metadata, caller resources and RSS. Retained bytes are live requested bytes at
+return; peak is their maximum during the constructor.
+
+| Complete key set | Requests before → after | Requested bytes before → after | Retained bytes, unchanged | Peak bytes, unchanged |
+| --- | ---: | ---: | ---: | ---: |
+| crt_trace | 41 → 23 | 5198400 → 4977216 | 4952640 | 4977200 |
+| dcrt_trace | 32 → 23 | 5120576 → 4973120 | 4956736 | 4973104 |
+| dcrt_reverse | 33 → 24 | 5120608 → 4973152 | 4956768 | 4973104 |
+| crt_expand | 64 → 46 | 5199192 → 4978008 | 4953256 | 4977200 |
+| dcrt_expand | 97 → 88 | 5777144 → 5629688 | 5285272 | 5301024 |
+
+CRT scratch allocations fall from 20 to 2, saving 18 requests and 221184 bytes
+(216 KiB) per key set. DCRT scratch allocations fall from 10 to 1, saving 9
+requests and 147456 bytes (144 KiB). Peak is unchanged because the old final
+degree already held those scratch buffers alongside the preceding keys.
+`Zeroizing` buffers remain local, are erased on return/unwind, and are released
+before the owner prepares its final metadata or expansion factors. No online
+workspace gains storage or shares new addresses.
+
+Temporary N=32 snapshots with dimension 2, ordered Q=[257,769], logB=4 and all
+five levels checked every stored ciphertext row and the next four RNG words
+for u32/u64 across all five key sets; all matched the baseline byte for byte.
+A temporary allocator observer checked CRT's two buffers and DCRT's one buffer
+immediately before release on normal return and interrupted sampling for every
+u64/N1024 constructor. The probes were removed. Ordinary tests retain small
+trace/reverse-trace/expansion oracles and ordered-domain/radix/level rejection;
+one generation regression checks secret layout/basis rejection before sampling,
+including a foreign coefficient key with a valid DCRT binding.
+
+[Per-run estimates and storage counts](data/rns-key-set-preparation.csv) retain
+the evidence. To reproduce the timing workload, use the fixture above and
+`b.iter(|| black_box(Key::new(&domain, ..., &mut rng)))` for each of
+`CrtGlweTraceKey`, `DcrtGlweTraceKey`, `DcrtGlweRevTraceKey`,
+`CrtGlweExpandCoeffKey` and `DcrtGlweExpandCoeffKey`; drop the key in the iteration.
+The existing `trace` and `expand_coeff` benchmarks instead measure online
+operations. CPU 8, other sizes/dimensions, u32 timing and nightly-feature latency
+were not measured; the small latency changes are scoped to these runs.
+
 ## NTRU trace preparation, 2026-10-10
 
 Compared with `08cc5af4`, on AMD Ryzen 9 9955HX3D, x86_64 Linux,

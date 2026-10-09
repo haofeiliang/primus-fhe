@@ -14,7 +14,7 @@ use zeroize::Zeroizing;
 
 use crate::RnsDomainError;
 use crate::automorphism::{AutomorphismKeyMetadata, AutomorphismWorkspace};
-use crate::{DcrtGadgetDomain, DcrtGlweCiphertext, DcrtGlweSecretKey};
+use crate::{DcrtGadgetDomain, DcrtGlevEncryptor, DcrtGlweCiphertext, DcrtGlweSecretKey};
 
 /// Applies one bit-reversed evaluation map to each DCRT modulus component.
 /// The caller supplies complete, matching RNS polynomials; no arithmetic or
@@ -38,12 +38,15 @@ fn dcrt_polynomial_automorphism_to<T: FheUint>(
 /// For each secret-key polynomial s_i (in NTT domain), apply NTT-domain
 /// permutation σ_k(s_i) and encrypt under a GLEV ciphertext.
 ///
-/// This path needs only the NTT-domain secret key; coefficient key generation
-/// instead permutes the signed secret before encoding it into each RNS modulus.
+/// The caller binds the encryptor to this domain once and supplies one complete
+/// DCRT scratch polynomial. Each row overwrites it in the existing NTT order;
+/// no coefficient conversion or BFV scaling is performed.
 fn generate_ntt_auto_key_data<T, M, Table, R>(
     domain: &DcrtGadgetDomain<'_, T, M, Table>,
     permutation: &NttAutomorphismPermutation,
     dcrt_sk: &DcrtGlweSecretKey<T>,
+    encryptor: &DcrtGlevEncryptor<'_, T, M, Table>,
+    auto_buffer: &mut [T],
     rng: &mut R,
 ) -> Vec<T>
 where
@@ -53,15 +56,9 @@ where
     M: FieldContext<T>,
 {
     let params = domain.parameters();
-    let rns_poly_len = params.rns_poly_len();
     let dcrt_glev_len = params.rns_glev_len();
-    let encryptor = dcrt_sk
-        .try_bind_gadget(domain)
-        .expect("automorphism secret key and gadget domain are incompatible");
-
     let mut key = vec![T::ZERO; params.dimension().get() * dcrt_glev_len];
-    let mut auto_buffer = Zeroizing::new(vec![T::ZERO; rns_poly_len]);
-    let mut auto_si = DcrtPolynomial(auto_buffer.as_mut_slice());
+    let mut auto_si = DcrtPolynomial(auto_buffer);
 
     let key_iter = DcrtGlevIterMut::new(key.as_mut_slice(), dcrt_glev_len);
 
@@ -144,8 +141,10 @@ impl<T: FheUint> DcrtGlweAutoKeyData<T> {
     ///
     /// # Panics
     ///
-    /// Panics if `degree` is not odd and less than twice the polynomial length.
-    pub(super) fn new<M, Table, R>(
+    /// Panics if `degree` is invalid or the secret layout/ordered basis differs
+    /// from the domain. These checks precede sampling.
+    #[must_use]
+    fn new<M, Table, R>(
         domain: &DcrtGadgetDomain<'_, T, M, Table>,
         degree: usize,
         dcrt_sk: &DcrtGlweSecretKey<T>,
@@ -159,9 +158,58 @@ impl<T: FheUint> DcrtGlweAutoKeyData<T> {
         let permutation =
             NttAutomorphismPermutation::new(degree, domain.parameters().poly_length());
 
-        let key = generate_ntt_auto_key_data(domain, &permutation, dcrt_sk, rng);
+        let encryptor = dcrt_sk
+            .try_bind_gadget(domain)
+            .expect("automorphism secret key and gadget domain are incompatible");
+        let mut auto_buffer = Zeroizing::new(vec![T::ZERO; domain.parameters().rns_poly_len()]);
+        let key = generate_ntt_auto_key_data(
+            domain,
+            &permutation,
+            dcrt_sk,
+            &encryptor,
+            &mut auto_buffer,
+            rng,
+        );
 
         Self { key, permutation }
+    }
+
+    /// Generates a homogeneous key set in the supplied degree order. The DCRT
+    /// key/domain binding precedes sampling; one NTT scratch polynomial serves
+    /// all degrees and is erased on return/unwind. Each entry retains its own
+    /// permutation and encrypted rows, with the original row/level RNG order.
+    #[must_use]
+    pub(super) fn generate_key_set<M, Table, R>(
+        domain: &DcrtGadgetDomain<'_, T, M, Table>,
+        degrees: impl Iterator<Item = usize>,
+        dcrt_sk: &DcrtGlweSecretKey<T>,
+        rng: &mut R,
+    ) -> Vec<Self>
+    where
+        R: rand::Rng + rand::CryptoRng,
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+    {
+        let params = domain.parameters();
+        let encryptor = dcrt_sk
+            .try_bind_gadget(domain)
+            .expect("automorphism secret key and gadget domain are incompatible");
+        let mut auto_buffer = Zeroizing::new(vec![T::ZERO; params.rns_poly_len()]);
+
+        degrees
+            .map(|degree| {
+                let permutation = NttAutomorphismPermutation::new(degree, params.poly_length());
+                let key = generate_ntt_auto_key_data(
+                    domain,
+                    &permutation,
+                    dcrt_sk,
+                    &encryptor,
+                    &mut auto_buffer,
+                    rng,
+                );
+                Self { key, permutation }
+            })
+            .collect()
     }
 
     /// Internal kernel used by composed operations.

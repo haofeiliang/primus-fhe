@@ -99,6 +99,11 @@ evaluator.automorphism_to(&ciphertext, &mut output);
 
 `CrtGlweAutoEvaluator` 使用系数密文，`DcrtGlweAutoEvaluator` 使用 NTT 密文。内部 kernel 分别复用 `CoeffAutomorphismPermutation` 和 `NttAutomorphismPermutation`，模数分量及密钥行共享置换。Trace 和展开在已建立的绑定下调用这些 kernel，不逐次检查或分配。
 
+Trace、reverse trace 和展开的密钥生成对每个密钥集只绑定一次秘密与 gadget domain，
+并跨 degree 复用局部 `Zeroizing` 缓冲。CRT 先置换有符号秘密，再编码到各模数；
+DCRT 直接置换已有 NTT 秘密。degree、row、gadget level 的采样顺序不变。
+缓冲在返回或 panic 展开时擦除，不加入在线 evaluator；独立自同构密钥生成仍自行绑定并检查布局。
+
 `CrtGlweTraceEvaluator` / `DcrtGlweTraceEvaluator` 提供 `trace_to(&input, &mut output)`，普通环 trace 的明文结果为 `N*m[0]`。`DcrtGlweRevTraceEvaluator` 提供同名方法，但反转自同构顺序，每步乘 `2^-1 mod q_i`，保持归一化结果 `m[0]`。输入不变，输出及内部 scratch 被覆盖。
 
 Reverse trace 保持同一 Q 基；模逆 `inv2` 不是 modulus switch 或舍入减半。完整序列将输入消息和输入误差投影到常数项；每次自同构/key switch 引入的误差只经过剩余投影，因此较晚引入的误差可以保留在非常数位置。须按秘密、basis 和消息尺度预算这些误差，不能从“无舍入”直接推出 native-torus 方差界。详见[相位与误差契约](src/dcrt/rev_trace.rs)及对应的[单模数契约](../primus_glwe/src/trace/ntt_operations.rs)。

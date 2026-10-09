@@ -12,16 +12,20 @@ use crate::RnsDomainError;
 use crate::automorphism::{AutomorphismKeyMetadata, AutomorphismWorkspace};
 use crate::secret_key::encode_secret_polynomial_to_rns;
 use crate::{
-    CrtGlweCiphertext, DcrtGadgetDomain, DcrtGlweCiphertext, DcrtGlweSecretKey, GlweSecretKey,
+    CrtGlweCiphertext, DcrtGadgetDomain, DcrtGlevEncryptor, DcrtGlweCiphertext, DcrtGlweSecretKey,
+    GlweSecretKey,
 };
 
-/// Generate automorphism key data in the coefficient domain: for each
-/// secret-key polynomial s_i, encrypt σ_k(s_i) under a GLEV ciphertext.
+/// Encrypts each signed σ_k(s_i) after encoding it into the ordered CRT basis.
+/// The caller binds the encryptor to this domain and checks the coefficient key
+/// layout once. Both complete scratch polynomials are overwritten per key row.
 fn generate_auto_key_data<T, M, Table, R>(
     domain: &DcrtGadgetDomain<'_, T, M, Table>,
     permutation: &CoeffAutomorphismPermutation,
     sk: &GlweSecretKey<T>,
-    dcrt_sk: &DcrtGlweSecretKey<T>,
+    encryptor: &DcrtGlevEncryptor<'_, T, M, Table>,
+    auto_signed: &mut [T::SignedInteger],
+    auto_buffer: &mut [T],
     rng: &mut R,
 ) -> Vec<T>
 where
@@ -31,25 +35,16 @@ where
     M: FieldContext<T>,
 {
     let params = domain.parameters();
-    let poly_length = params.poly_length().get();
-    let rns_poly_len = params.rns_poly_len();
     let dcrt_glev_len = params.rns_glev_len();
-    let encryptor = dcrt_sk
-        .try_bind_gadget(domain)
-        .expect("automorphism secret key and gadget domain are incompatible");
-    assert_eq!(sk.glwe_size(), params.size().rns_glwe_size().glwe_size());
-
     let mut key = vec![T::ZERO; params.dimension().get() * dcrt_glev_len];
-    let mut auto_buffer = Zeroizing::new(vec![T::ZERO; rns_poly_len]);
-    let mut auto_si = CrtPolynomial(auto_buffer.as_mut_slice());
-    let mut auto_signed = Zeroizing::new(vec![T::SignedInteger::ZERO; poly_length]);
+    let mut auto_si = CrtPolynomial(auto_buffer);
 
     let key_iter = DcrtGlevIterMut::new(key.as_mut_slice(), dcrt_glev_len);
 
     sk.iter().zip(key_iter).for_each(|(si, mut dcrt_glev)| {
-        permutation.apply_signed_to::<T>(si, &mut auto_signed);
+        permutation.apply_signed_to::<T>(si, auto_signed);
         encode_secret_polynomial_to_rns(
-            &auto_signed,
+            auto_signed,
             auto_si.as_mut(),
             params.cipher_moduli_value(),
         );
@@ -110,8 +105,10 @@ impl<T: FheUint> CrtGlweAutoKeyData<T> {
     ///
     /// # Panics
     ///
-    /// Panics if `degree` is not odd and less than twice the polynomial length.
-    pub(super) fn new<M, Table, R>(
+    /// Panics if `degree` is invalid or the secret layout/ordered basis differs
+    /// from the domain. These checks precede sampling.
+    #[must_use]
+    fn new<M, Table, R>(
         domain: &DcrtGadgetDomain<'_, T, M, Table>,
         degree: usize,
         sk: &GlweSecretKey<T>,
@@ -126,9 +123,68 @@ impl<T: FheUint> CrtGlweAutoKeyData<T> {
         let permutation =
             CoeffAutomorphismPermutation::new(degree, domain.parameters().poly_length());
 
-        let key = generate_auto_key_data(domain, &permutation, sk, dcrt_sk, rng);
+        let params = domain.parameters();
+        let encryptor = dcrt_sk
+            .try_bind_gadget(domain)
+            .expect("automorphism secret key and gadget domain are incompatible");
+        assert_eq!(sk.glwe_size(), params.size().rns_glwe_size().glwe_size());
+        let mut auto_buffer = Zeroizing::new(vec![T::ZERO; params.rns_poly_len()]);
+        let mut auto_signed =
+            Zeroizing::new(vec![T::SignedInteger::ZERO; params.poly_length().get()]);
+        let key = generate_auto_key_data(
+            domain,
+            &permutation,
+            sk,
+            &encryptor,
+            &mut auto_signed,
+            &mut auto_buffer,
+            rng,
+        );
 
         Self { key, permutation }
+    }
+
+    /// Generates a homogeneous key set in the supplied degree order. Binding
+    /// and coefficient-key layout checks precede sampling; one signed and one
+    /// CRT scratch polynomial serve all degrees and are erased on return/unwind.
+    /// Every entry still owns its permutation and encrypted rows.
+    #[must_use]
+    pub(super) fn generate_key_set<M, Table, R>(
+        domain: &DcrtGadgetDomain<'_, T, M, Table>,
+        degrees: impl Iterator<Item = usize>,
+        sk: &GlweSecretKey<T>,
+        dcrt_sk: &DcrtGlweSecretKey<T>,
+        rng: &mut R,
+    ) -> Vec<Self>
+    where
+        R: rand::Rng + rand::CryptoRng,
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+    {
+        let params = domain.parameters();
+        let encryptor = dcrt_sk
+            .try_bind_gadget(domain)
+            .expect("automorphism secret key and gadget domain are incompatible");
+        assert_eq!(sk.glwe_size(), params.size().rns_glwe_size().glwe_size());
+        let mut auto_buffer = Zeroizing::new(vec![T::ZERO; params.rns_poly_len()]);
+        let mut auto_signed =
+            Zeroizing::new(vec![T::SignedInteger::ZERO; params.poly_length().get()]);
+
+        degrees
+            .map(|degree| {
+                let permutation = CoeffAutomorphismPermutation::new(degree, params.poly_length());
+                let key = generate_auto_key_data(
+                    domain,
+                    &permutation,
+                    sk,
+                    &encryptor,
+                    &mut auto_signed,
+                    &mut auto_buffer,
+                    rng,
+                );
+                Self { key, permutation }
+            })
+            .collect()
     }
 
     /// Internal kernel used by composed operations.
