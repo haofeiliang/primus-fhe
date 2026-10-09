@@ -29,7 +29,7 @@ names without changing those reports' measured revisions.
 | [Benchmark schema 2](tfhe-benchmark-schema2.md) | Centralized runner/report validation: six workloads, three serial processes each, CPU 4 only |
 | [TFHE baseline](tfhe-baseline.md) | Benchmark coverage, setup, alignment and container measurements from the earlier cleanup |
 | [Fourier first-product write](fourier-first-write.md) | Final F0/F1 full-request comparison, resource costs, build validation and the decision to retain F0 |
-| [Workspace measurements](workspace-measurements.md) | Borrowed resources, parameter sharing, return buffers and storage costs |
+| [Preparation and workspace measurements](workspace-measurements.md) | NTT construction, borrowed resources, parameter sharing, return buffers and storage costs |
 | [Sparse baseline](sparse-baseline.md) | Complete requests, stage diagnosis, retained/peak heap and aggregate scratch |
 | [Sparse arithmetic](sparse-arithmetic.md) | Pair/four-way accumulation, lazy ranges and compact reduction |
 | [Sparse layout and batching](sparse-layout-and-batching.md) | Tiles, first buckets, streaming, source layout and paired LUT rotations |

@@ -31,6 +31,16 @@ where
 
     /// Finds the *minimal* primitive `2^log_degree`-th root of unity — the
     /// smallest value among all such roots under the natural integer order.
+    ///
+    /// # Correctness
+    ///
+    /// `log_degree` must be positive and the modulus must be an odd prime.
+    /// [`FieldContext`] does not establish primality. The modulus must also
+    /// satisfy [`ShoupFactor::new`]'s numerical bounds.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `log_degree >= Self::BITS`, as in [`Self::try_primitive_root`].
     fn try_minimal_primitive_root<M>(log_degree: u32, modulus: M) -> Result<Self, NttError<Self>>
     where
         M: FieldContext<Self>;
@@ -112,7 +122,10 @@ impl<T: FheUint> PrimitiveRoot for T {
         let mut current_generator = root;
 
         let degree = 1u64 << log_degree;
-        for _ in 0..degree {
+        // For power-of-two order D, the D/2 odd powers are exactly the primitive
+        // roots in the prime field. Multiplication by the sampled root's square
+        // visits each once; another D/2 steps would repeat the same orbit.
+        for _ in 0..degree / 2 {
             if current_generator < root {
                 root = current_generator;
             }

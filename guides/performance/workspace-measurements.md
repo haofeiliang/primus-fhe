@@ -1,4 +1,4 @@
-# Workspace and parameter-storage measurements
+# Workspace and parameter-preparation measurements
 
 [Performance decisions and measurement method](README.md) · [Current ownership contracts](../development/workspaces-and-storage.md)
 
@@ -7,6 +7,51 @@ recommended workflows belong to the development guide. Retained heap, allocation
 traffic, live peak, code size and latency are different metrics; a smaller buffer
 or fewer allocations alone do not prove faster evaluation. The original tables,
 regressions and rechecks remain below, with their own parameters and toolchains.
+
+## NTT root preparation, 2026-10-10
+
+Compared with `53a0307a`, on AMD Ryzen 9 9955HX3D, x86_64 Linux,
+rustc 1.98.1 (48a229cea), default features and repository compiler flags.
+Executables were built in the same checkout, saved, and run sequentially on
+CPU 4 in before/after/after/before order; no compilation overlapped measurement.
+Each process used 30 samples, 1 s warmup
+and 2 s measurement. The existing `bench_ntt` construction cases create and
+drop one complete N=4096 table per iteration, including root search, numerical
+preparation, layout, allocations and destruction; modulus preparation is outside
+measurement. Random root search is unchanged and is not seeded. The generic
+table is portable; specialized tables select native kernels at runtime, so
+default features do not imply scalar-only specialized construction.
+
+For order D=2N, multiplying by the sampled root's square visits the D/2
+distinct odd powers, which are exactly the primitive roots in the prime field.
+The previous D-step loop visited that orbit twice. The retained change scans
+D/2 steps and returns the same minimum; it adds no storage, allocation or API.
+One small integer-oracle test covers orders 2 through 256 for u16/u32/u64 and
+an unavailable-order error. Default and nightly all-feature NTT tests cover
+direct polynomial evaluation, specialized/generic kernels and DCRT normalization.
+
+The two runs' Criterion mean point estimates, in microseconds:
+
+| Word / modulus | Table | Before, min–max | After, min–max | Change across the two pairs |
+| --- | --- | ---: | ---: | ---: |
+| u32 / 268369921 | Generic | 46.51–46.55 | 37.81–37.83 | −18.8% to −18.7% |
+| u32 / 268369921 | Specialized | 58.03–58.33 | 49.42–49.48 | −15.3% to −14.7% |
+| u64 / 1073692673 | Generic | 57.71–58.25 | 48.21–48.21 | −17.2% to −16.5% |
+| u64 / 1073692673 | Specialized | 65.48–65.53 | 56.50–56.53 | −13.8% to −13.7% |
+| u64 / 1125899906826241 | Generic | 58.01–58.68 | 48.36–48.36 | −17.6% to −16.6% |
+| u64 / 1125899906826241 | Specialized | 65.47–65.53 | 56.69–56.73 | −13.4% to −13.4% |
+| u64 / 1152921504606830593 | Generic | 57.86–58.60 | 48.44–48.98 | −16.4% to −16.3% |
+| u64 / 1152921504606830593 | Specialized | 65.83–66.02 | 56.63–56.64 | −14.2% to −14.0% |
+
+[Per-run estimates](data/ntt-root-construction.csv) retain the paired values.
+Complete construction improved by about 13–19% in these cases; halving the
+scan does not halve the constructor. Online transforms are unchanged. CPU 8,
+other sizes and nightly-feature latency were not measured. Reproduce on each
+revision with the existing target:
+
+```sh
+taskset -c 4 cargo bench -p primus_ntt --bench bench_ntt -- '^construction/' --sample-size 30 --warm-up-time 1 --measurement-time 2 --noplot
+```
 
 ## Binding migration measurements
 
