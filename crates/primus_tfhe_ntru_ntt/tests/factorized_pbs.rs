@@ -49,7 +49,11 @@ fn context(
             },
             noise_standard_deviation: 0.7,
         },
-        messages: PbsMessageConfig::new(4),
+        messages: if distr == SecretKeyDistr::UniformBinary {
+            PbsMessageConfig::new(15).with_output_modulus(8)
+        } else {
+            PbsMessageConfig::new(16)
+        },
     })
     .unwrap();
     let context = TfheContext::try_from_parameters(parameters.clone()).unwrap();
@@ -67,11 +71,7 @@ fn value(message: usize, output: usize) -> u32 {
 fn check_complete(distr: SecretKeyDistr) {
     let (_, context) = self::context(distr);
     // Reuse the existing distributions to cover equal and distinct message moduli.
-    let messages = if distr == SecretKeyDistr::UniformBinary {
-        PbsMessageConfig::new(15).with_output_modulus(8)
-    } else {
-        PbsMessageConfig::new(16)
-    };
+    let messages = context.parameters().messages();
     let mvb_codecs = context
         .parameters()
         .factorized_pbs_codecs(messages)
@@ -81,11 +81,9 @@ fn check_complete(distr: SecretKeyDistr) {
     let modulus = context.parameters().accumulator_ntru().cipher_modulus();
     let mut rng = StdRng::seed_from_u64(0xB301);
     let (client, server) = context.try_generate_keys(&mut rng).unwrap();
-    let encryptor = context
-        .encryptor(client.external_lwe_secret_key(), &input_codec)
-        .unwrap();
+    let encryptor = context.encryptor(client.external_lwe_secret_key()).unwrap();
     let decryptor = context
-        .decryptor(client.external_lwe_secret_key(), &codec)
+        .mvb_decryptor(client.external_lwe_secret_key())
         .unwrap();
     let mut pbs = context.evaluator(&server).unwrap();
     let mut evaluator = primus_tfhe_ntru_ntt::FactorizedEvaluator::new(&pbs);
@@ -115,9 +113,7 @@ fn check_complete(distr: SecretKeyDistr) {
     };
 
     for count in [1, 3, 17] {
-        let lut = context
-            .compile_factorized_lookup_table_fn(&mvb_codecs, DOMAIN, count, value)
-            .unwrap();
+        let lut = context.compile_mvb_fn(DOMAIN, count, value).unwrap();
         assert_eq!(
             (
                 lut.input_domain_len(),
@@ -158,19 +154,15 @@ fn check_complete(distr: SecretKeyDistr) {
 
     // For t_out=2, Delta is odd: the initializer must handle modular Delta/2,
     // whose canonical value is large, before any noisy public multiplication.
-    let binary_codec = ScaledCodec::new(2, modulus);
+    let binary_codec = ScaledCodec::new(2, context.parameters().external_lwe().cipher_modulus());
     let binary_decryptor = context
-        .decryptor(client.external_lwe_secret_key(), &binary_codec)
-        .unwrap();
-    let binary_codecs = context
         .parameters()
-        .factorized_pbs_codecs(
-            PbsMessageConfig::new(input_codec.plaintext_modulus())
-                .with_output_modulus(binary_codec.plaintext_modulus()),
-        )
+        .decryptor_with_codec(client.external_lwe_secret_key(), &binary_codec)
         .unwrap();
     let binary = context
-        .compile_factorized_lookup_table_fn(&binary_codecs, DOMAIN, 1, |m, _| u32::from(m >= 3))
+        .compile_mvb_fn_with_messages(messages.with_output_modulus(2), DOMAIN, 1, |m, _| {
+            u32::from(m >= 3)
+        })
         .unwrap();
     for message in [0, 7] {
         let input = encryptor.encrypt_padded(message, &mut rng).unwrap();
@@ -181,15 +173,11 @@ fn check_complete(distr: SecretKeyDistr) {
         );
     }
 
-    let lut = context
-        .compile_factorized_lookup_table_fn(&mvb_codecs, DOMAIN, 3, value)
-        .unwrap();
+    let lut = context.compile_mvb_fn(DOMAIN, 3, value).unwrap();
     // Identical parameters do not establish NTT context identity.
     let (_, other_context) = self::context(distr);
 
-    let foreign = other_context
-        .compile_factorized_lookup_table_fn(&mvb_codecs, DOMAIN, 3, value)
-        .unwrap();
+    let foreign = other_context.compile_mvb_fn(DOMAIN, 3, value).unwrap();
     let input = encryptor.encrypt_padded(3, &mut rng).unwrap();
     let wrong = LweCiphertext::zero(dimension - 1);
     for case in 0..4 {

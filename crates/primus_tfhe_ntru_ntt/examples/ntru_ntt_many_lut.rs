@@ -13,30 +13,21 @@ type Word = u64;
 fn main() {
     let config = experimental::CLASSIC_MANY_LUT_U64;
     let context = TfheContext::<Word, Table, _>::try_from_pbs_config(config).unwrap();
-    let parameters = context.parameters();
 
     // One padded input in 0..8 uses Rounded t=16; both outputs use Rounded t=8.
-    // config.messages carries both domains; with_output_modulus overrides only the output.
-    let codecs = context
-        .parameters()
-        .pbs_codecs(parameters.messages())
-        .unwrap();
+    // The context derives input/output encodings from config.messages.
 
     // Client: keep the external secret; send server_key to the server.
     let mut rng = StdRng::seed_from_u64(42);
     let (client_key, server_key) = context.try_generate_keys(&mut rng).unwrap();
-    // Ordinary messages borrow only the external secret from the setup bundle.
+    // Clients borrow only the external secret; no LUT or codec is needed.
     let external_secret = client_key.external_lwe_secret_key();
-    let encryptor = context
-        .encryptor(external_secret, codecs.input_codec())
-        .unwrap();
-    let decryptor = context
-        .decryptor(external_secret, codecs.output_codec())
-        .unwrap();
+    let encryptor = context.encryptor(external_secret).unwrap();
+    let decryptor = context.pbs_decryptor(external_secret).unwrap();
     let mut input = context.allocate_lwe_ciphertext();
 
     // Server: interleave two functions in one LUT to share a blind rotation.
-    let compiler = context.parameters().lookup_table_compiler(&codecs).unwrap();
+    let compiler = context.pbs_lookup_table_compiler().unwrap();
     let lut = compiler
         .compile_interleaved_fn(2, |x, output| {
             if output == 0 {

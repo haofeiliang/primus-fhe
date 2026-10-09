@@ -80,7 +80,8 @@ where
 // prerequisite BR are setup only. The `pbs` target covers both execution orders.
 fn stages<T: TorusFftValue, Table: FftTable>(c: &mut Group<'_>, backend: &str) {
     let fixture = std::cell::LazyCell::new(|| {
-        let operation = glwe::fourier_pbs(PbsOrder::BootstrapKeyswitch, PBS_WORKLOADS[0]);
+        let operation = glwe::fourier_pbs(PbsOrder::BootstrapKeyswitch, PBS_WORKLOADS[0])
+            .with_messages(PbsMessageConfig::new(T::as_from(4u32)));
         let context = TfheContext::<T, Table>::from_parameters(operation.clone());
         let mut rng = StdRng::seed_from_u64(42);
         let (client, server) = context.try_generate_keys(&mut rng).unwrap();
@@ -92,19 +93,16 @@ fn stages<T: TorusFftValue, Table: FftTable>(c: &mut Group<'_>, backend: &str) {
         c.bench_function(case.id(), |b| {
             let (operation, context, client, server_key) = &*fixture;
             let parameters = context.parameters();
-            let codecs = parameters
-                .pbs_codecs(PbsMessageConfig::new(T::as_from(4u32)))
-                .unwrap();
             let poly_length = parameters.blind_rotation_params().poly_length();
 
             let mut rng = StdRng::seed_from_u64(43);
             let input = context
-                .encryptor(client.external_lwe_secret_key(), codecs.input_codec())
+                .encryptor(client.external_lwe_secret_key())
                 .unwrap()
                 .encrypt_padded(T::ONE, &mut rng)
                 .unwrap();
-            let lookup_table = parameters
-                .lookup_table_compiler(&codecs)
+            let lookup_table = context
+                .pbs_lookup_table_compiler()
                 .unwrap()
                 .compile_fn(|m| T::as_from(m ^ 1))
                 .unwrap();
@@ -142,7 +140,7 @@ fn stages<T: TorusFftValue, Table: FftTable>(c: &mut Group<'_>, backend: &str) {
             if !verified {
                 assert_eq!(
                     context
-                        .decryptor(client.external_lwe_secret_key(), codecs.output_codec())
+                        .pbs_decryptor(client.external_lwe_secret_key())
                         .unwrap()
                         .decrypt(small_lwe.as_view())
                         .unwrap(),

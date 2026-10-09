@@ -61,11 +61,11 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
         let codec = codecs.input_codec();
         let encryptor = parameters
             .as_ref()
-            .encryptor(key.external_lwe_secret_key(), codec)
+            .encryptor_with_codec(key.external_lwe_secret_key(), codec)
             .unwrap();
         let decryptor = parameters
             .as_ref()
-            .decryptor(key.external_lwe_secret_key(), codec)
+            .decryptor_with_codec(key.external_lwe_secret_key(), codec)
             .unwrap();
         let domain_len = t.div_ceil(2);
         let default = parameters

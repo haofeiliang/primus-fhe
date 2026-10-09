@@ -428,7 +428,7 @@ fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T) {
                 context.parameters().external_lwe().cipher_modulus(),
             );
             let encryptor = context
-                .encryptor(client.external_lwe_secret_key(), &input_codec)
+                .encryptor_with_codec(client.external_lwe_secret_key(), &input_codec)
                 .unwrap();
             let decryptor = context
                 .decryptor(client.external_lwe_secret_key(), &input_codec)
@@ -687,7 +687,7 @@ fn fourier<T: TorusFftValue, Table: FftTable>() {
                 context.parameters().external_lwe().cipher_modulus(),
             );
             let encryptor = context
-                .encryptor(client.external_lwe_secret_key(), &input_codec)
+                .encryptor_with_codec(client.external_lwe_secret_key(), &input_codec)
                 .unwrap();
             let decryptor = context
                 .decryptor(client.external_lwe_secret_key(), &input_codec)

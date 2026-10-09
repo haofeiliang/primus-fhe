@@ -80,11 +80,11 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
         let input_codec = codecs.input_codec();
         let encryptor = parameters
             .as_ref()
-            .encryptor(key.external_lwe_secret_key(), input_codec)
+            .encryptor_with_codec(key.external_lwe_secret_key(), input_codec)
             .unwrap();
         let decryptor = parameters
             .as_ref()
-            .decryptor(key.external_lwe_secret_key(), input_codec)
+            .decryptor_with_codec(key.external_lwe_secret_key(), input_codec)
             .unwrap();
         let domain_len = t.div_ceil(2);
         let default = parameters
@@ -163,13 +163,13 @@ fn codec_binding_checks_domains_without_preparing_an_unused_default() {
     assert!(matches!(
         parameters
             .as_ref()
-            .encryptor(key.external_lwe_secret_key(), &foreign),
+            .encryptor_with_codec(key.external_lwe_secret_key(), &foreign),
         Err(TfheClientError::Client(ClientError::CodecModulusMismatch))
     ));
     assert!(matches!(
         parameters
             .as_ref()
-            .decryptor(key.external_lwe_secret_key(), &foreign),
+            .decryptor_with_codec(key.external_lwe_secret_key(), &foreign),
         Err(TfheClientError::Client(ClientError::CodecModulusMismatch))
     ));
     let foreign_codecs = PbsMessageConfig::new(4)

@@ -83,7 +83,7 @@ fn check<
     assert_eq!(
         params
             .as_ref()
-            .encryptor(client.external_lwe_secret_key(), &input_codec)
+            .encryptor_with_codec(client.external_lwe_secret_key(), &input_codec)
             .unwrap()
             .encrypt(1, &mut rng)
             .unwrap(),
@@ -102,7 +102,7 @@ fn check<
     assert_eq!(
         params
             .as_ref()
-            .public_encryptor(&public, &input_codec)
+            .public_encryptor_with_codec(&public, &input_codec)
             .unwrap()
             .encrypt(1, &mut rng)
             .unwrap(),
@@ -115,7 +115,7 @@ fn check<
         &input_codec,
         params
             .as_ref()
-            .public_encryptor(&public, &input_codec)
+            .public_encryptor_with_codec(&public, &input_codec)
             .unwrap(),
     );
     check_reused_output(
@@ -124,7 +124,7 @@ fn check<
         &input_codec,
         params
             .as_ref()
-            .encryptor(client.external_lwe_secret_key(), &input_codec)
+            .encryptor_with_codec(client.external_lwe_secret_key(), &input_codec)
             .unwrap(),
     );
     check_boolean_client(&params, &client, &input_codec);
@@ -144,7 +144,7 @@ fn check<
     assert_eq!(
         params
             .as_ref()
-            .encryptor(wrong_domain.external_lwe_secret_key(), &input_codec)
+            .encryptor_with_codec(wrong_domain.external_lwe_secret_key(), &input_codec)
             .err(),
         Some(error.clone())
     );
@@ -157,7 +157,7 @@ fn check<
         assert_eq!(
             params
                 .as_ref()
-                .decryptor(wrong_domain.external_lwe_secret_key(), decoder)
+                .decryptor_with_codec(wrong_domain.external_lwe_secret_key(), decoder)
                 .err(),
             Some(error.clone())
         );
@@ -190,7 +190,7 @@ fn check<
     assert_eq!(
         params
             .as_ref()
-            .public_encryptor(&foreign, &input_codec)
+            .public_encryptor_with_codec(&foreign, &input_codec)
             .err(),
         Some(ClientError::PublicKeyModulusMismatch)
     );
@@ -208,7 +208,10 @@ fn check<
         &mut rng,
     );
     assert_eq!(
-        params.as_ref().public_encryptor(&full, &input_codec).err(),
+        params
+            .as_ref()
+            .public_encryptor_with_codec(&full, &input_codec)
+            .err(),
         Some(ClientError::KeyDimensionMismatch {
             expected: 4,
             actual: 8
@@ -258,7 +261,7 @@ fn check_boolean_client<
             BooleanEncryptor::try_new(
                 parameters
                     .as_ref()
-                    .encryptor(client.external_lwe_secret_key(), input_codec)
+                    .encryptor_with_codec(client.external_lwe_secret_key(), input_codec)
                     .unwrap()
             )
             .err(),
@@ -268,7 +271,7 @@ fn check_boolean_client<
             BooleanDecryptor::try_new(
                 parameters
                     .as_ref()
-                    .decryptor(client.external_lwe_secret_key(), input_codec)
+                    .decryptor_with_codec(client.external_lwe_secret_key(), input_codec)
                     .unwrap()
             )
             .err(),
@@ -279,20 +282,20 @@ fn check_boolean_client<
     let encryptor = BooleanEncryptor::try_new(
         parameters
             .as_ref()
-            .encryptor(client.external_lwe_secret_key(), input_codec)
+            .encryptor_with_codec(client.external_lwe_secret_key(), input_codec)
             .unwrap(),
     )
     .unwrap();
     let decryptor = BooleanDecryptor::try_new(
         parameters
             .as_ref()
-            .decryptor(client.external_lwe_secret_key(), input_codec)
+            .decryptor_with_codec(client.external_lwe_secret_key(), input_codec)
             .unwrap(),
     )
     .unwrap();
     let raw_encryptor = parameters
         .as_ref()
-        .encryptor(client.external_lwe_secret_key(), input_codec)
+        .encryptor_with_codec(client.external_lwe_secret_key(), input_codec)
         .unwrap();
     let mut rng = StdRng::seed_from_u64(0xB202);
     // Reuse a stack-backed view; only its mask/body may be overwritten.
@@ -360,7 +363,7 @@ fn check_reused_output<M, Key>(
 {
     let decryptor = parameters
         .as_ref()
-        .decryptor(client.external_lwe_secret_key(), input_codec)
+        .decryptor_with_codec(client.external_lwe_secret_key(), input_codec)
         .unwrap();
     let dimension = parameters.as_ref().external_lwe_dimension().get();
     let t = input_codec.plaintext_modulus();

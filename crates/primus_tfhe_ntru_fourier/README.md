@@ -14,11 +14,8 @@ use primus_tfhe_ntru_fourier::{experimental, TfheContext};
 use primus_fft::RustFftTable as Table;
 
 let config = experimental::CLASSIC_PBS_U64;
+// The context uses config.messages; change its output_modulus before construction to override the default.
 let context = TfheContext::<u64, Table, _>::try_from_pbs_config(config)?;
-let parameters = context.parameters();
-let br = context.parameters();
-// Optional: parameters.messages().with_output_modulus(8) changes only this program's output.
-let codecs = br.pbs_codecs(parameters.messages())?;
 ```
 
 `PbsConfig` is one complete numerical description, containing BR/KS choices and input/output messages. `CbsConfig` describes ring-output CBS; its gadget output has no ordinary message codec. `experimental` also exports `SPARSE_PBS_U64`, `CLASSIC_MANY_LUT_U64`, `CLASSIC_THRESHOLD_MVB_U64`, `CLASSIC_CBS_U64` and `CLASSIC_ONE_HOT_U64`. The context retains the selected algorithm, KS, messages and optional CBS state; default keygen does not receive them again. Configs are `Copy`, so field overrides and struct-update syntax work without preparing samplers first.
@@ -27,13 +24,13 @@ These u64 constants are arithmetic examples, with unassessed security and failur
 
 ## Quick start
 
-The basic, sparse, ManyLUT and MVB examples use `PbsMessageConfig`: `new(t)` defaults to equal message moduli, while `with_output_modulus(t_out)` changes only the output. Prepare with `br.pbs_codecs` for ordinary PBS/ManyLUT or `br.factorized_pbs_codecs` for MVB; the returned codecs distinguish input, LUT output and returned output. `context.decryptor(external_secret, codecs.output_codec())?` accepts Rounded or Scaled outputs; use `decrypt()` to obtain the message. See [choosing the output encoding](../primus_tfhe/README.md#choosing-the-output-encoding).
+The examples take input/output plaintext moduli from `config.messages`: `PbsMessageConfig::new(t)` defaults to equal moduli, and `with_output_modulus(t_out)` changes only the output. Use `context.encryptor(external_secret)` for Rounded input, `pbs_decryptor` for ordinary PBS/ManyLUT, and `mvb_decryptor` for Scaled MVB output. Clients need no LUT or explicit codec. See [choosing the output encoding](../primus_tfhe/README.md#choosing-the-output-encoding).
 
 ```sh
 cargo run -p primus_tfhe_ntru_fourier --release --example ntru_fourier_basic --features rustfft
 ```
 
-The [basic example](examples/ntru_fourier_basic.rs) shows parameters → context → paired keys → clients → one compiled LUT → reused evaluator and ciphertext buffers. It computes `x % 4`, keeping `t=32` encoding for both input and output, and decodes with `decrypt`. `br.lookup_table_compiler(&codecs)?` binds the prepared input/output encodings; `compiler.compile_fn(function)` creates the LUT. Choose a different output message modulus with `PbsMessageConfig::with_output_modulus`; see [choosing the output encoding](../primus_tfhe/README.md#choosing-the-output-encoding). Public-key encryption starts with `context.public_encryptor(&public, codecs.input_codec())`; see the [family guide](../primus_tfhe_ntru/README.md#clients-and-luts). The example uses external `q=2^24`, distinct from ring `Q`: LUT compilation is at `Q` and the returned LWE is at `q`.
+The [basic example](examples/ntru_fourier_basic.rs) shows config → context → paired keys → clients → LUT → reused evaluator and buffers. It computes `x % 4` with `t=32` for input and output. `context.pbs_lookup_table_compiler()?.compile_fn(function)` prepares the public LUT; public-key clients use `context.public_encryptor(&public)`. Input encryption uses the configured `messages.input_modulus`. Set `config.messages = PbsMessageConfig::new(t_in).with_output_modulus(t_out)` before context creation for distinct input and output domains. Advanced same-key programs reuse prepared codecs through the family parameter factories; see [choosing the output encoding](../primus_tfhe/README.md#choosing-the-output-encoding). External `q=2^24` differs from ring Q: compilation encodes at Q and the output decoder uses q.
 
 Examples use `Word = u64` and the operation config listed below. Dimensions, modulus representation, secret distributions, noise and decompositions live in `experimental`; each `main` shows only preparation, the public function, clients and evaluation. CBS uses the prepared `CbsParameters` and independently chooses the candidate ring-message domain. The Fourier examples select RustFFT; switch the `Table` import and the example target’s `required-features` to use TFHE-FFT with `--features tfhe-fft`. Explicit u32/u64 parameter composition remains available; see the [family configs](../primus_tfhe_ntru/README.md#experimental-paired-parameters) and [parameter guide](../../guides/development/tfhe-parameters.md).
 
@@ -85,7 +82,7 @@ For CBS/one-hot alone, keep standalone `BootstrapResources` without return buffe
 
 ## Fixed-scale factorized MVB
 
-Compile through `context.compile_factorized_lookup_table_fn(&codecs, domain_len, output_count, function)` and bind a `FactorizedEvaluator`. The program borrows that context; outputs use unsigned Scaled encoding. `factorized_pbs_codecs` prepares the Q LUT encoding and q return decoding from the same output message modulus; budget the difference between `(q/Q)*round(Q/t_out)` and `round(q/t_out)`, plus return noise.
+Compile with `context.compile_mvb_fn(domain_len, output_count, function)` and bind a `FactorizedEvaluator`. The input uses the same `encryptor`; decode the unsigned Scaled output with `context.mvb_decryptor(external_secret)`. Both use the configured message domains. For another output domain with the same keys, reuse `parameters.factorized_pbs_codecs(messages)` for compilation and `parameters.decryptor_with_codec`; compiling a program does not change an existing decoder. The program remains bound to this context. LUT encoding is at Q, output decoding at q; budget the difference between `(q/Q)*round(Q/t_out)` and `round(q/t_out)`, plus return noise. Explicit prepared codecs remain supported by `compile_factorized_lookup_table_fn` for matched numerical comparisons and advanced composition.
 
 The actual scale `round(2^BITS/t_out)` must be even (`t_out=10` works for u32/u64). Odd scales return `LookupTableError::OddFactorizationScale`. Factors are transformed as signed integers without torus scaling; budget their amplification and FFT error.
 

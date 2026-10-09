@@ -6,7 +6,6 @@ use primus_modulus::{BarrettModulus, PowOf2Modulus};
 use primus_ntru::{NtruCiphertext, NttNtruExternalProductWorkspace, SecretKeyDistr};
 use primus_ntt::U64NttTable;
 use primus_poly::PolyLength;
-use primus_tfhe::PbsMessageConfig;
 use primus_tfhe_ntru_ntt::{
     BlindRotationMethod, CbsGadgetConfig, CircuitBootstrapEvaluator, DecompositionConfig,
     GadgetEncryptionConfig, OneHotCircuitBootstrapEvaluator, PbsParameters, TfheContext,
@@ -203,16 +202,9 @@ fn selectors(distr: SecretKeyDistr, sparse: bool) {
     let mut selected = NtruCiphertext::<Vec<u64>>::zero(N);
     let mut ep = NttNtruExternalProductWorkspace::new(PolyLength::new(N));
 
-    let encryptor = context
-        .encryptor(client.external_lwe_secret_key(), &input_codec)
-        .unwrap();
-    let codecs = context
-        .parameters()
-        .pbs_codecs(PbsMessageConfig::new(input_codec.plaintext_modulus()))
-        .unwrap();
+    let encryptor = context.encryptor(client.external_lwe_secret_key()).unwrap();
     let identity = context
-        .parameters()
-        .lookup_table_compiler(&codecs)
+        .pbs_lookup_table_compiler()
         .unwrap()
         .compile_fn(|m| m as u64)
         .unwrap();
@@ -322,7 +314,7 @@ fn selectors(distr: SecretKeyDistr, sparse: bool) {
 
         assert_eq!(
             context
-                .decryptor(client.external_lwe_secret_key(), &input_codec)
+                .pbs_decryptor(client.external_lwe_secret_key())
                 .unwrap()
                 .decrypt(lwe_output.as_view())
                 .unwrap(),

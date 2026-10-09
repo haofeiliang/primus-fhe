@@ -14,11 +14,8 @@ use primus_tfhe_glwe_ntt::{experimental, TfheContext};
 use primus_ntt::U64NttTable as Table;
 
 let config = experimental::CLASSIC_PBS_U64;
+// Context 使用 config.messages；构造前修改 output_modulus 即可覆盖默认输出域。
 let context = TfheContext::<u64, Table>::try_from_pbs_config(config)?;
-let parameters = context.parameters();
-let br = context.parameters();
-// 可选：config.messages.with_output_modulus(8) 仅修改输出域。
-let codecs = br.pbs_codecs(parameters.messages())?;
 ```
 
 `PbsConfig` 用一个纯数值类型组合 BR/KS 与输入输出消息配置；`CbsConfig` 表示环输出 CBS，其 gadget 输出不使用普通消息 codec。`experimental` 另导出 `SPARSE_PBS_U64`、`CLASSIC_MANY_LUT_U64`、`CLASSIC_THRESHOLD_MVB_U64`、`CLASSIC_CBS_U64` 和 `SPARSE_CBS_U64`。Context 保留算法、KS、消息选择与可选 CBS 状态，默认密钥生成不再补传这些参数。配置实现 `Copy`，可直接覆盖字段或使用 struct update，而无需先准备采样器。
@@ -27,13 +24,13 @@ let codecs = br.pbs_codecs(parameters.messages())?;
 
 ## 快速开始
 
-基础、sparse、ManyLUT 和 MVB 示例使用 `PbsMessageConfig`：`new(t)` 默认输入输出消息模数相同，`with_output_modulus(t_out)` 只修改输出。普通 PBS/ManyLUT 用 `br.pbs_codecs` 准备，MVB 用 `br.factorized_pbs_codecs` 准备；返回的 codec 分别表示输入、LUT 输出和返回输出。`context.decryptor(external_secret, codecs.output_codec())?` 同时接受 Rounded/Scaled 输出，随后用 `decrypt()` 得到消息。见[选择输出编码](../primus_tfhe/README.zh_CN.md#选择输出编码)。
+示例从 `config.messages` 读取输入/输出消息模数：`PbsMessageConfig::new(t)` 默认两者相同，`with_output_modulus(t_out)` 只修改输出。`context.encryptor(external_secret)` 选择 Rounded 输入；普通 PBS/ManyLUT 用 `pbs_decryptor`，MVB 的 Scaled 输出用 `mvb_decryptor`。客户端不接收 LUT，也不要求手工创建 codec。见[选择输出编码](../primus_tfhe/README.zh_CN.md#选择输出编码)。
 
 ```sh
 cargo run -p primus_tfhe_glwe_ntt --release --example ntt_basic
 ```
 
-[basic 示例](examples/ntt_basic.rs)展示参数 → context → 配对密钥 → 客户端 → 单个 LUT → 复用 evaluator 和密文缓冲。它计算 `x % 4`，输入和输出均采用 `t=32` 编码，直接用 `decrypt` 解码。 `br.lookup_table_compiler(&codecs)?` 直接绑定已准备的输入/输出编码，再用 `compiler.compile_fn(function)` 创建 LUT。通过 `PbsMessageConfig::with_output_modulus` 选择不同输出消息模数，见[选择输出编码](../primus_tfhe/README.zh_CN.md#选择输出编码)。 公钥加密通过 `context.public_encryptor(&public, codecs.input_codec())` 创建客户端，见[家族说明](../primus_tfhe_glwe/README.zh_CN.md#客户端与-lut)。
+[basic 示例](examples/ntt_basic.rs)展示配置 → context → 配对密钥 → 客户端 → LUT → 复用 evaluator 和缓冲。它计算 `x % 4`，输入/输出均采用 `t=32`。`context.pbs_lookup_table_compiler()?.compile_fn(function)` 编译公开 LUT，公钥客户端用 `context.public_encryptor(&public)`。输入加密使用配置中的 `messages.input_modulus`；构造 Context 前用 `config.messages = PbsMessageConfig::new(t_in).with_output_modulus(t_out)` 独立设置输入、输出域。高级同钥组合通过家族参数工厂复用已准备的 codec，见[选择输出编码](../primus_tfhe/README.zh_CN.md#选择输出编码)。
 
 示例固定 `Word = u64`，使用下表对应的操作配置。尺寸、模数表示、秘密分布、噪声和分解集中在 `experimental`；各个 `main` 只展示准备、公开函数、客户端和求值。CBS 使用完整的 `CbsParameters`，消费端独立选择候选环消息域。 高级显式组合仍支持 u32/u64，见[家族配置](../primus_tfhe_glwe/README.zh_CN.md#实验配套参数)和[数值参数指南](../../guides/development/tfhe-parameters.md)。
 
@@ -88,7 +85,7 @@ let mut cbs = context.circuit_bootstrap_evaluator(&resources, circuit_key)?;
 
 ## 固定尺度分解式 MVB
 
-通过 `context.compile_factorized_lookup_table_fn(&codecs, domain_len, output_count, function)` 编译并绑定 `FactorizedEvaluator`；`codecs` 由 `br.factorized_pbs_codecs(messages)` 准备，输入使用 Rounded、输出使用 Scaled，均采用 context 的密文模数。程序借用该 context，输出使用 unsigned Scaled 编码。
+用 `context.compile_mvb_fn(domain_len, output_count, function)` 编译并绑定 `FactorizedEvaluator`。输入沿用 `encryptor`，unsigned Scaled 输出用 `context.mvb_decryptor(external_secret)` 解密，两者均读取配置的消息域。同一密钥配合其他输出域时，为编译和 `parameters.decryptor_with_codec` 共同复用 `parameters.factorized_pbs_codecs(messages)`；编译程序不会改变已有解密器。程序仍绑定该 context。 LUT 和返回 LWE 使用同一密文模数。 高级组合和数值对比仍可通过 `compile_factorized_lookup_table_fn` 显式传入已准备 codec。
 
 系数模数必须为奇数；预处理后的因子保留 NTT 表示。
 

@@ -22,10 +22,7 @@ fn pbs_pair<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     order: PbsOrder,
 ) {
     let parameters = glwe::diagnostic(ntt_modulus::<T>(), order);
-    let codecs = parameters
-        .as_ref()
-        .pbs_codecs(PbsMessageConfig::new(T::as_from(8u32)))
-        .unwrap();
+    let parameters = parameters.with_messages(PbsMessageConfig::new(T::as_from(8u32)));
     let name = format!("fixed_weight/{order:?}");
     // Hold one context/client pair, but build each server key only when selected.
     let fixture = std::cell::LazyCell::new(|| {
@@ -59,13 +56,12 @@ fn pbs_pair<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
             let server = &*server;
             let mut rng = StdRng::seed_from_u64(43);
             let input = context
-                .encryptor(client.external_lwe_secret_key(), codecs.input_codec())
+                .encryptor(client.external_lwe_secret_key())
                 .unwrap()
                 .encrypt_padded(T::ONE, &mut rng)
                 .unwrap();
             let lut = context
-                .parameters()
-                .lookup_table_compiler(&codecs)
+                .pbs_lookup_table_compiler()
                 .unwrap()
                 .compile_fn(|m| T::as_from((m + 1) % 4))
                 .unwrap();
@@ -75,7 +71,7 @@ fn pbs_pair<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
                 evaluator.apply_lookup_table_to(input.as_view(), &lut, output.as_mut_view());
                 assert_eq!(
                     context
-                        .decryptor(client.external_lwe_secret_key(), codecs.output_codec())
+                        .pbs_decryptor(client.external_lwe_secret_key())
                         .unwrap()
                         .decrypt(output.as_view())
                         .unwrap(),

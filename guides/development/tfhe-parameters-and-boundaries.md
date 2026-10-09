@@ -149,15 +149,15 @@ PBS trait、四后端、Boolean 门、双输入打包、CBS、one-hot 与 MVB �
 | 输入 t、编程域、单表/ManyLUT 的中心、输出编码和容量 | 普通 LUT compiler / factorized compiler；CBS 由 `compile_lookup_table(&input_codec)` 在 evaluator 构造时检查 |
 | online ciphertext 与所选程序的消息编码一致、实际噪声余量 | 调用方契约；raw 密文没有编码/噪声元数据，不能据布局判定 |
 
-因此更换输入 t 不需要重新生成 GLWE 密钥；重新绑定 client codec 并编译适配该编码的 LUT/CBS 程序即可。输入 q 不同由 client/compiler 绑定拒绝，N/q/basis 等资源不兼容仍由原边界拒绝。两个后端共用 CBS gadget identity 编译，在线 BR、返回和 trace 算法不变，不逐系数增加检查。Boolean 工厂显式接收 t=4 的 codec，factorized 工厂同时接收 Rounded 输入与 Scaled 输出 codec。
+因此更换输入 t 不需要重新生成 GLWE 密钥；重新绑定 client codec 并编译适配该编码的 LUT/CBS 程序即可。输入 q 不同由 client/compiler 绑定拒绝，N/q/basis 等资源不兼容仍由原边界拒绝。两个后端共用 CBS gadget identity 编译，在线 BR、返回和 trace 算法不变，不逐系数增加检查。两个家族的 `PbsParameters` 从保存的消息选择准备客户端编码，四后端 Context 委托它们。默认 `encryptor` 与 `pbs_decryptor` 使用 Rounded，MVB 共用输入工厂并通过 `mvb_decryptor` 选择 Scaled 输出；两种解密工厂共用 `decryptor_with_codec` 绑定状态。配置中的输入、输出消息模数独立，LUT 编译读取同一选择。高级同钥消息域通过 family 的 `encryptor_with_codec`、`public_encryptor_with_codec`、`decryptor_with_codec` 复用已准备状态，不改变默认值或已有客户端。Boolean 和高级数值组合仍可显式传 codec。
 
 ## NTRU TFHE 的密钥域与消息程序
 
-`PbsConfig.external_lwe` 使用数值 `LweConfig`；`PbsParameters::try_from_config` 统一准备 external LWE core、BR `NlevParameters` 和可选的 q 下返回 KS。`accumulator_ntru()` 只借用 BR gadget 内的 `NtruEncryptionParameters`，没有第二份普通参数或 codec。`NtruParameters::try_from_nlev` 在 accumulator client 绑定 Scaled codec 时共享 Arc 采样状态。
+`PbsConfig.external_lwe` 使用数值 `LweConfig`；`PbsParameters::try_from_config` 统一准备 external LWE core、BR `NlevParameters` 和必需的 q 下返回 KS。`accumulator_ntru()` 只借用 BR gadget 内的 `NtruEncryptionParameters`，没有第二份普通参数或 codec。`NtruParameters::try_from_nlev` 在 accumulator client 绑定 Scaled codec 时共享 Arc 采样状态。
 
 | 数据或检查 | 唯一归属与使用时机 |
 | --- | --- |
-| 外部 n、q、s 分布及 fresh noise；累加 N、Q、f 分布及 BR noise | 密钥参数构造；保持 binary/ternary 控制域、2N 可表示性，n 与 N、q 与 Q 相互独立；普通 PBS 需要返回 KS，环输出 CBS 可省略 |
+| 外部 n、q、s 分布及 fresh noise；累加 N、Q、f 分布及 BR noise | 密钥参数构造；保持 binary/ternary 控制域、2N 可表示性，n 与 N、q 与 Q 相互独立；PBS/CBS 完整组合均保留返回 KS；独立环输出 CBS 组件不使用普通返回 |
 | f→s 返回 key 的 basis 与 noise | 密钥参数与返回 key 构造，均在 q 下；目标 LWE 参数不再构造无用 codec |
 | CBS output/trace/SS basis、布局与继承的 accumulator noise | `CbsGadgetParameters`；scheme-switch key 继续绑定完整 output basis |
 | Rounded 输入 t/q、默认或独立输出 t/Q | client/compiler 绑定；输入 q 不符拒绝；默认输出 codec 在 Q 无法构造时返回 `OutputEncoding` |

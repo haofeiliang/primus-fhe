@@ -89,7 +89,7 @@ fn boolean_factories_support_truth_tables_and_reused_output_in_both_orders() {
         );
 
         let invalid = context
-            .encryptor(client_key.external_lwe_secret_key(), &input_codec)
+            .encryptor(client_key.external_lwe_secret_key())
             .unwrap()
             .encrypt(2, &mut rng)
             .unwrap();

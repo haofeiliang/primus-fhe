@@ -23,7 +23,7 @@ PBS 和 CBS 的 `key_switching` 都是必需的 `GadgetEncryptionConfig`，分�
 
 参数入口为 `PbsParameters::try_from_config(pbs_config)`、`CbsParameters::try_from_config(pbs_config, gadget_config)` 和 `CbsParameters::try_with_config(pbs_parameters, gadget_config)`；最后一种移动已有公共状态，不重建 sampler。已有参数按值移入 Context，BR、trace、scheme-switch 继续共享既有环 sampler Arc；显式 `clone()` 可能复制 LWE sampler 数据。
 
-具体后端的 `experimental::*_U64` 提供 PBS、ManyLUT、MVB 和 CBS 等教学配置。`PbsMessageConfig::new(t)` 默认输入/输出消息模数相同，`.with_output_modulus(t_out)` 可单独修改输出。普通 PBS 用 `parameters.pbs_codecs(parameters.messages())?`，MVB 用 `factorized_pbs_codecs`；CBS 保存输入 codec，候选环消息模数由消费方选择。这些配置没有安全性或失败概率评估，来源与操作条件见[参数指南](../../guides/development/tfhe-parameters.md#scope-of-paired-parameter-entries)。
+具体后端的 `experimental::*_U64` 提供 PBS、ManyLUT、MVB 和 CBS 等教学配置。`PbsMessageConfig::new(t)` 默认输入/输出消息模数相同，`.with_output_modulus(t_out)` 可单独修改输出。后端 PBS/ManyLUT 的客户端和编译器根据消息选择派生 Rounded 编码，MVB 通过专用工厂选择 Scaled 输出；CBS 保存输入 codec，候选环消息模数由消费方选择。这些配置没有安全性或失败概率评估，来源与操作条件见[参数指南](../../guides/development/tfhe-parameters.md#scope-of-paired-parameter-entries)。
 
 ## 参数与密钥域
 
@@ -49,17 +49,17 @@ Classic PBS、ManyLUT、CBS、Boolean 和 MVB 支持 binary/ternary 外部秘密
 
 ## 客户端与 LUT
 
-使用 `PbsMessageConfig::new(t_in)` 默认选择相同输入/输出消息模数，或通过 `.with_output_modulus(t_out)` 覆盖输出。`br.pbs_codecs(messages)?` 准备 Rounded codec；`br.factorized_pbs_codecs(messages)?` 为 MVB 准备 Rounded 输入和 Scaled 输出。两者通过 `input_codec()`、`lut_output_codec()`、`output_codec()` 区分角色，自动派生正确的密文模数，不复制密钥、不分配缓冲。编译与输出解码见[选择输出编码](../primus_tfhe/README.zh_CN.md#选择输出编码)。
+通过 `PbsMessageConfig::new(t_in)` 和可选的 `with_output_modulus(t_out)` 设置 `config.messages`。后端 `context.encryptor(external_secret)`、`public_encryptor(&public)` 自动准备 Rounded 输入；`pbs_decryptor` 选择普通 PBS/ManyLUT 的 Rounded 输出，`mvb_decryptor` 选择 MVB 的 Scaled 输出。客户端不接收 codec 或 LUT，`pbs_lookup_table_compiler()` 和 `compile_mvb_fn` 使用同一默认选择。家族 `PbsParameters` 提供同样的默认客户端工厂且无需变换表，Context 委托这些方法。高级同钥消息域通过家族 `*_with_codec` 工厂绑定已准备的 codec；见[选择输出编码](../primus_tfhe/README.zh_CN.md#选择输出编码)。
 
 `ClientKey` 是完整 setup 组合；普通客户端只需 `let external_secret = client.external_lwe_secret_key();`，类型为 `&LweSecretKey`。也可直接按 `br.external_lwe()` 生成该密钥，或通过 `client.into_parts()` 移出，不必持有累加秘密。绑定只检查外部域；累加秘密的形状、可逆性和返回密钥幅度界由各自消费者负责。环客户端只接收 `client.accumulator_ntru_secret_key()`。
 
-选择外部 q 下的 `RoundedCodec`，再使用 context 的 `encryptor(external_secret, &input_codec)`、`public_encryptor(&public, &input_codec)` 和 `decryptor(external_secret, &input_codec)`；`br.try_generate_public_key(external_secret, rng)` 生成独立外部 s 下的 LWE 公钥。它不是 NTRU 环公钥，总噪声要求见 [LWE 公钥契约](../primus_lwe/README.zh_CN.md#公钥加密)。普通消息使用 T，`decrypt` 返回 `Result<T, ClientError>`。
+高级显式编码入口可选择外部 q 下的 `RoundedCodec`，再使用 `br.encryptor_with_codec(external_secret, &input_codec)`、`br.public_encryptor_with_codec(&public, &input_codec)` 和 `br.decryptor_with_codec(external_secret, &input_codec)`；`br.try_generate_public_key(external_secret, rng)` 生成独立外部 s 下的 LWE 公钥。它不是 NTRU 环公钥，总噪声要求见 [LWE 公钥契约](../primus_lwe/README.zh_CN.md#公钥加密)。普通消息使用 T，`decrypt` 返回 `Result<T, ClientError>`。
 
 客户端读写接收 LWE 借用视图：向 `encrypt_to` 传入 `output.as_mut_view()`，向 `decrypt` 或 `decrypt_phase` 传入 `ciphertext.as_view()`。分配型加密方法仍返回 `LweCiphertext<T>`；Boolean 客户端遵循同样的约定。
 
-解密 LUT 结果时，将返回输出 codec 传给 `decryptor(external_secret, &output_codec)`，再调用 `decrypt()`。Rounded 和 Scaled 均可绑定，包括消息模数与输入不同的 MVB 输出。已准备的解码状态按值复制，秘密保持借用；`decrypt_phase` 继续供诊断使用。
+显式 codec 入口解密 LUT 结果时，将返回输出 codec 传给 `br.decryptor_with_codec(external_secret, &output_codec)`，再调用 `decrypt()`。Rounded 和 Scaled 均可绑定，包括消息模数与输入不同的 MVB 输出。已准备的解码状态按值复制，秘密保持借用；`decrypt_phase` 继续供诊断使用。
 
-前半区 LUT 使用 `encrypt_padded`，奇数全域 LUT 使用普通 `encrypt`。用 `br.pbs_codecs(PbsMessageConfig::new(t_in))?` 准备编码，默认输出消息模数与输入相同；需要不同时，在准备前调用 `.with_output_modulus(t_out)`。`br.lookup_table_compiler(&codecs)?` 直接绑定选定的输入/输出编码，支持 `compile_fn` / `compile_slice` 及交错、奇数全域方法。输出 decryptor 绑定 `codecs.output_codec()`。编译器检查输入 q 与 LUT 输出 Q，不会先准备未使用的默认输出。返回路径缩放既有编码，不重新编码；须预算 Q→q 舍入和 key-switch 误差。
+前半区 LUT 使用 `encrypt_padded`，奇数全域 LUT 使用普通 `encrypt`。显式编译时，用 `br.pbs_codecs(PbsMessageConfig::new(t_in))?` 准备编码，默认输出消息模数与输入相同；需要不同时，在准备前调用 `.with_output_modulus(t_out)`。`br.lookup_table_compiler(&codecs)?` 直接绑定选定的输入/输出编码，支持 `compile_fn` / `compile_slice` 及交错、奇数全域方法。输出 decryptor 绑定 `codecs.output_codec()`。编译器检查输入 q 与 LUT 输出 Q，不会先准备未使用的默认输出。返回路径缩放既有编码，不重新编码；须预算 Q→q 舍入和 key-switch 误差。
 
 [公共指南](../primus_tfhe/README.zh_CN.md) 说明 ManyLUT、奇数全域和 MVB。MVB 使用 Q 下的 unsigned `ScaledCodec` 编译，q 下的 Scaled codec 解码，并预算两端固定尺度的差异。有界双输入 `BivariateLookupTable` 目前仅支持 q=Q。
 
@@ -105,7 +105,7 @@ basis、秘密和变换身份仍由调用方保证。
 
 ## NTRU→LWE 返回
 
-`LweReturnEvaluator::new(server.key_switching_key().unwrap(), q_modulus)` 借用 Q→q、f→s
+`LweReturnEvaluator::new(server.key_switching_key(), q_modulus)` 借用 Q→q、f→s
 返回密钥并绑定外部 q，本身不分配。两个后端均重新导出它。按需调用
 `new_scalar_workspace()` 和／或 `new_batch_workspace()`；后者返回
 `LweReturnBatchWorkspace`，保存固定容量 tile 与流式有效前缀。

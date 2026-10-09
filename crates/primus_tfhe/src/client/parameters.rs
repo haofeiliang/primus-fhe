@@ -8,11 +8,12 @@ use rand::distr::Uniform;
 
 use super::ClientError;
 
-/// Borrowed parameters for rounded messages in one external LWE domain.
+/// Parameters for rounded messages in one external LWE domain.
 ///
 /// Construction reuses the mask sampler derived from the codec's ciphertext modulus.
-/// Families select the active secret dimension and fresh-encryption noise once;
-/// this view contains no family key, PBS order or transform-specific state.
+/// Families select the active secret dimension and fresh-encryption noise once.
+/// The small codec state is copied; only the noise sampler is borrowed. This
+/// value contains no family key, PBS order or transform-specific state.
 ///
 /// # Correctness
 ///
@@ -22,7 +23,7 @@ use super::ClientError;
 #[derive(Clone, Copy)]
 pub struct LweClientParameters<'a, T: FheUint, M: RingContext<T>> {
     dimension: LweDimension,
-    codec: &'a RoundedCodec<T, M>,
+    codec: RoundedCodec<T, M>,
     uniform: Uniform<T>,
     noise: &'a DiscreteGaussian<T>,
 }
@@ -34,7 +35,7 @@ impl<'a, T: FheUint, M: RingContext<T>> LweClientParameters<'a, T, M> {
         let codec = parameters.plaintext_codec();
         Self {
             dimension: parameters.dimension(),
-            codec,
+            codec: *codec,
             uniform: parameters.cipher_modulus_uniform_distr(),
             noise: parameters.noise_distribution(),
         }
@@ -47,7 +48,7 @@ impl<'a, T: FheUint, M: RingContext<T>> LweClientParameters<'a, T, M> {
     /// the message space, independently of key generation. No sampler table is built.
     pub fn try_from_parts(
         dimension: LweDimension,
-        codec: &'a RoundedCodec<T, M>,
+        codec: &RoundedCodec<T, M>,
         noise: &'a DiscreteGaussian<T>,
     ) -> Result<Self, ClientError> {
         if noise.modulus_minus_one() != codec.ciphertext_modulus().minus_one() {
@@ -55,7 +56,7 @@ impl<'a, T: FheUint, M: RingContext<T>> LweClientParameters<'a, T, M> {
         }
         Ok(Self {
             dimension,
-            codec,
+            codec: *codec,
             uniform: codec.ciphertext_modulus().uniform_distribution(),
             noise,
         })
@@ -71,8 +72,8 @@ impl<'a, T: FheUint, M: RingContext<T>> LweClientParameters<'a, T, M> {
     /// Returns the rounded message codec and ciphertext modulus.
     #[must_use]
     #[inline]
-    pub fn codec(&self) -> &'a RoundedCodec<T, M> {
-        self.codec
+    pub fn codec(&self) -> &RoundedCodec<T, M> {
+        &self.codec
     }
 
     /// Returns the prepared mask sampler derived from the ciphertext modulus.

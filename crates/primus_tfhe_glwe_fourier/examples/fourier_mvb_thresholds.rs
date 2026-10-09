@@ -18,32 +18,23 @@ const OUTPUTS: usize = 17;
 fn main() {
     let config = experimental::CLASSIC_THRESHOLD_MVB_U64;
     let context = TfheContext::<Word, Table>::try_from_pbs_config(config).unwrap();
-    let parameters = context.parameters();
 
     // Numeric threshold flags use Scaled t=2; the input keeps Rounded t=128.
-    let codecs = context
-        .parameters()
-        .factorized_pbs_codecs(parameters.messages())
-        .unwrap();
     let thresholds: Vec<_> = (1..=OUTPUTS).map(|i| i * DOMAIN / (OUTPUTS + 1)).collect();
 
     // Client: keep client_key and the decryptor; give server_key to the server.
     let mut rng = StdRng::seed_from_u64(42);
     let (client_key, server_key) = context.try_generate_keys(&mut rng).unwrap();
-    // Ordinary messages borrow only the external secret from the setup bundle.
+    // Clients borrow only the external secret; no LUT or codec is needed.
     let external_secret = client_key.external_lwe_secret_key();
-    let encryptor = context
-        .encryptor(external_secret, codecs.input_codec())
-        .unwrap();
-    let decryptor = context
-        .decryptor(external_secret, codecs.output_codec())
-        .unwrap();
+    let encryptor = context.encryptor(external_secret).unwrap();
+    let decryptor = context.mvb_decryptor(external_secret).unwrap();
     let mut input = context.allocate_lwe_ciphertext();
     let mut flags = [0; OUTPUTS];
 
     // Server: MVB keeps all 64 inputs; interleaving 17 outputs fits only 32 here.
     let program = context
-        .compile_factorized_lookup_table_fn(&codecs, DOMAIN, OUTPUTS, |score, i| {
+        .compile_mvb_fn(DOMAIN, OUTPUTS, |score, i| {
             Word::from(score >= thresholds[i])
         })
         .unwrap();

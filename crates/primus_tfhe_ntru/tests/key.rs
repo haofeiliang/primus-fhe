@@ -89,14 +89,14 @@ fn imported_external_residues_must_match_the_control_domain() {
             assert_eq!(
                 parameters
                     .as_ref()
-                    .encryptor(key.external_lwe_secret_key(), &input_codec)
+                    .encryptor_with_codec(key.external_lwe_secret_key(), &input_codec)
                     .err(),
                 error.clone().map(TfheClientError::IncompatibleKey)
             );
             assert_eq!(
                 parameters
                     .as_ref()
-                    .decryptor(key.external_lwe_secret_key(), &input_codec)
+                    .decryptor_with_codec(key.external_lwe_secret_key(), &input_codec)
                     .err(),
                 error.map(TfheClientError::IncompatibleKey)
             );
@@ -179,8 +179,14 @@ fn return_key_rejects_accumulator_magnitudes_outside_external_modulus() {
         let (external, accumulator) = key.into_parts();
         drop(accumulator);
         let codec = RoundedCodec::new(2, parameters.as_ref().external_lwe().cipher_modulus());
-        parameters.as_ref().encryptor(&external, &codec).unwrap();
-        parameters.as_ref().decryptor(&external, &codec).unwrap();
+        parameters
+            .as_ref()
+            .encryptor_with_codec(&external, &codec)
+            .unwrap();
+        parameters
+            .as_ref()
+            .decryptor_with_codec(&external, &codec)
+            .unwrap();
         let mut rng = rand::rngs::StdRng::seed_from_u64(96);
         parameters
             .as_ref()

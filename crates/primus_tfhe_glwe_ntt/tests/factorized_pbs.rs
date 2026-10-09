@@ -53,7 +53,11 @@ fn context(
             noise_standard_deviation: 0.7,
         },
         method: primus_tfhe::BlindRotationMethod::Classic,
-        messages: primus_tfhe::PbsMessageConfig::new(4),
+        messages: if order == PbsOrder::BootstrapKeyswitch && distribution.is_ternary() {
+            PbsMessageConfig::new(16)
+        } else {
+            PbsMessageConfig::new(15).with_output_modulus(8)
+        },
         order,
     })
     .unwrap();
@@ -120,11 +124,9 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
             }))
             .get()
         );
-        let encryptor = context
-            .encryptor(client.external_lwe_secret_key(), &input_codec)
-            .unwrap();
+        let encryptor = context.encryptor(client.external_lwe_secret_key()).unwrap();
         let decryptor = context
-            .decryptor(client.external_lwe_secret_key(), &codec)
+            .mvb_decryptor(client.external_lwe_secret_key())
             .unwrap();
         let check = |outputs: &[LweCiphertext<u32>], message: usize| {
             for (i, output) in outputs.iter().enumerate() {
@@ -140,9 +142,7 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
             let mut pbs = context.evaluator(key).unwrap();
             let mut evaluator = primus_tfhe_glwe_ntt::FactorizedEvaluator::new(&pbs);
             for count in [1, 3, 17] {
-                let lut = context
-                    .compile_factorized_lookup_table_fn(&mvb_codecs, DOMAIN, count, value)
-                    .unwrap();
+                let lut = context.compile_mvb_fn(DOMAIN, count, value).unwrap();
                 assert_eq!(
                     (
                         lut.input_domain_len(),
@@ -220,16 +220,12 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
             Err(LookupTableError::PlaintextDomainTooLarge { .. })
         ));
 
-        let lut = context
-            .compile_factorized_lookup_table_fn(&mvb_codecs, DOMAIN, 3, value)
-            .unwrap();
+        let lut = context.compile_mvb_fn(DOMAIN, 3, value).unwrap();
         // Same q,N, but deliberately a different instance.
         let (_, other_context) =
             self::context(order, SecretKeyDistr::fixed_hamming_weight_binary(8, 2));
 
-        let foreign = other_context
-            .compile_factorized_lookup_table_fn(&mvb_codecs, DOMAIN, 3, value)
-            .unwrap();
+        let foreign = other_context.compile_mvb_fn(DOMAIN, 3, value).unwrap();
         let mut pbs = context.evaluator(&classic).unwrap();
         let mut evaluator = primus_tfhe_glwe_ntt::FactorizedEvaluator::new(&pbs);
         let input = encryptor.encrypt_padded(3, &mut rng).unwrap();
@@ -307,28 +303,12 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
 fn factorized_pbs_accepts_ternary_controls() {
     for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
         let (_, context) = context(order, SecretKeyDistr::fixed_composition_ternary(8, 2, 2));
-        // Cover the default without adding another key-generation case.
-        let messages = if order == PbsOrder::BootstrapKeyswitch {
-            PbsMessageConfig::new(16)
-        } else {
-            PbsMessageConfig::new(15).with_output_modulus(8)
-        };
-        let mvb_codecs = context
-            .parameters()
-            .factorized_pbs_codecs(messages)
-            .unwrap();
-        let input_codec = *mvb_codecs.input_codec();
-        let codec = *mvb_codecs.output_codec();
         let mut rng = StdRng::seed_from_u64(0x0054_334d_5642);
         let (client, server) = context.try_generate_keys(&mut rng).unwrap();
-        let lut = context
-            .compile_factorized_lookup_table_fn(&mvb_codecs, DOMAIN, 3, value)
-            .unwrap();
-        let encryptor = context
-            .encryptor(client.external_lwe_secret_key(), &input_codec)
-            .unwrap();
+        let lut = context.compile_mvb_fn(DOMAIN, 3, value).unwrap();
+        let encryptor = context.encryptor(client.external_lwe_secret_key()).unwrap();
         let decryptor = context
-            .decryptor(client.external_lwe_secret_key(), &codec)
+            .mvb_decryptor(client.external_lwe_secret_key())
             .unwrap();
         let mut pbs = context.evaluator(&server).unwrap();
         let mut evaluator = primus_tfhe_glwe_ntt::FactorizedEvaluator::new(&pbs);

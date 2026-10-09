@@ -275,6 +275,60 @@ where
     Table: FftTable,
     LM: primus_reduce::RingContext<T>,
 {
+    /// Compiles a factorized MVB program using the configured message domains.
+    ///
+    /// Uses Rounded input and Scaled output, including the returned external-q
+    /// decoder from [`Self::mvb_decryptor`]. `input_domain_len` is a nonempty
+    /// prefix of the input front half; `output_count` is positive and unpadded.
+    /// Callback order, factorization and noise requirements follow
+    /// [`Self::compile_factorized_lookup_table_fn`].
+    ///
+    /// # Panics
+    /// Panics for coefficient types other than u32/u64, as required by the FFT conversion.
+    pub fn compile_mvb_fn<F>(
+        &self,
+        input_domain_len: usize,
+        output_count: usize,
+        function: F,
+    ) -> Result<FourierFactorizedLookupTable<'_, T, Table, LM>, LookupTableError>
+    where
+        F: Fn(usize, usize) -> T,
+    {
+        self.compile_mvb_fn_with_messages(
+            self.parameters().messages(),
+            input_domain_len,
+            output_count,
+            function,
+        )
+    }
+
+    /// Compiles MVB with independent input/output plaintext moduli.
+    ///
+    /// Does not change context defaults or previously bound clients. The
+    /// configured input domain uses [`Self::encryptor`]; an independently
+    /// prepared input codec must match `messages.input_modulus`. Decode with
+    /// a Scaled codec at q for `messages.output_modulus`, bound through
+    /// [`primus_tfhe_ntru::PbsParameters::decryptor_with_codec`].
+    /// [`Self::mvb_decryptor`] uses the configured output modulus. Checks
+    /// the Scaled LUT output at Q and returned output at q before compiling;
+    /// inherits [`Self::compile_factorized_lookup_table_fn`]'s program contracts.
+    ///
+    /// # Panics
+    /// Panics for coefficient types other than u32/u64, as required by the FFT conversion.
+    pub fn compile_mvb_fn_with_messages<F>(
+        &self,
+        messages: crate::PbsMessageConfig<T>,
+        input_domain_len: usize,
+        output_count: usize,
+        function: F,
+    ) -> Result<FourierFactorizedLookupTable<'_, T, Table, LM>, LookupTableError>
+    where
+        F: Fn(usize, usize) -> T,
+    {
+        let codecs = self.parameters().factorized_pbs_codecs(messages)?;
+        self.compile_factorized_lookup_table_fn(&codecs, input_domain_len, output_count, function)
+    }
+
     /// Compiles and Fourier-prepares a Native even-scale MVB program from prepared codecs.
     ///
     /// `input_domain_len` selects a nonempty prefix of the input codec's

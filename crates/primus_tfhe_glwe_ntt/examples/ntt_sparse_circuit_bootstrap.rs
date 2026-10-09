@@ -28,7 +28,7 @@ fn main() {
         .unwrap();
     // The integer input is encrypted with the external LWE secret.
     let external_secret = client_key.external_lwe_secret_key();
-    let encryptor = context.encryptor(external_secret, &input_codec).unwrap();
+    let encryptor = context.encryptor(external_secret).unwrap();
 
     // Candidate ring messages use an independent t=8 space under the accumulator secret.
     let mut ring_client = context

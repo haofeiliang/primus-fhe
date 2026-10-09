@@ -16,6 +16,7 @@ use primus_reduce::RingContext;
 
 /// Encrypts rounded TFHE messages into external LWE ciphertexts.
 ///
+/// Copies the prepared Rounded encoding state and borrows the noise sampler.
 /// Both secret and public keys use the same message checks, encoding and output
 /// reuse. Public keys inherit [`EncryptionKey`]'s identity and noise contracts.
 /// Allocating methods return [`LweCiphertext`]; `*_to` methods take mutable LWE

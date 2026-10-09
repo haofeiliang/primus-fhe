@@ -1,6 +1,9 @@
 /// Errors shared by external LWE client construction and operations.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ClientError {
+    /// The requested plaintext modulus cannot be encoded in this ciphertext domain.
+    #[error(transparent)]
+    Encoding(#[from] primus_encoding::CodecError),
     /// The selected message codec belongs to another ciphertext domain.
     #[error("message codec ciphertext modulus mismatch")]
     CodecModulusMismatch,

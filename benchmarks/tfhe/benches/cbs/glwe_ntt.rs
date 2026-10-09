@@ -119,6 +119,9 @@ impl<T: FheUint, Table: MonomialNttTable<ValueT = T>> Fixture<T, Table> {
         sparse: bool,
         message: T,
     ) -> Self {
+        let parameters = parameters.with_messages(primus_tfhe::PbsMessageConfig::new(
+            input_codec.plaintext_modulus(),
+        ));
         let context_parameters = &parameters;
         let context =
             TfheContext::<T, Table>::try_from_parameters(context_parameters.clone()).unwrap();
@@ -142,7 +145,7 @@ impl<T: FheUint, Table: MonomialNttTable<ValueT = T>> Fixture<T, Table> {
         // Separate input randomness from scheme-dependent key generation.
         let mut rng = StdRng::seed_from_u64(43);
         let input = context
-            .encryptor(client.external_lwe_secret_key(), &input_codec)
+            .encryptor(client.external_lwe_secret_key())
             .unwrap()
             .encrypt_padded(message, &mut rng)
             .unwrap();

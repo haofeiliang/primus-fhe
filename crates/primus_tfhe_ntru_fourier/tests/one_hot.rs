@@ -6,7 +6,6 @@ use primus_lattice::LweDimension;
 use primus_modulus::PowOf2Modulus;
 use primus_ntru::{FourierNtruExternalProductWorkspace, NtruCiphertext, SecretKeyDistr};
 use primus_poly::PolyLength;
-use primus_tfhe::PbsMessageConfig;
 use primus_tfhe_ntru_fourier::{
     BlindRotationMethod, CbsGadgetConfig, CircuitBootstrapEvaluator, DecompositionConfig,
     GadgetEncryptionConfig, LweReturnEvaluator, OneHotCircuitBootstrapEvaluator, PbsParameters,
@@ -203,16 +202,9 @@ fn selectors<Table: FftTable>(distr: SecretKeyDistr, sparse: bool) {
     let mut selected = NtruCiphertext::<Vec<u64>>::zero(N);
     let mut ep = FourierNtruExternalProductWorkspace::new(PolyLength::new(N));
     let mut fft = context.new_fft_engine();
-    let encryptor = context
-        .encryptor(client.external_lwe_secret_key(), &input_codec)
-        .unwrap();
-    let codecs = context
-        .parameters()
-        .pbs_codecs(PbsMessageConfig::new(input_codec.plaintext_modulus()))
-        .unwrap();
+    let encryptor = context.encryptor(client.external_lwe_secret_key()).unwrap();
     let identity = context
-        .parameters()
-        .lookup_table_compiler(&codecs)
+        .pbs_lookup_table_compiler()
         .unwrap()
         .compile_fn(|m| m as u64)
         .unwrap();
@@ -322,7 +314,7 @@ fn selectors<Table: FftTable>(distr: SecretKeyDistr, sparse: bool) {
 
         assert_eq!(
             context
-                .decryptor(client.external_lwe_secret_key(), &input_codec)
+                .pbs_decryptor(client.external_lwe_secret_key())
                 .unwrap()
                 .decrypt(lwe_output.as_view())
                 .unwrap(),
@@ -584,7 +576,6 @@ fn check_return_batches<'a, Table: FftTable>(
     pbs: &mut primus_tfhe_ntru_fourier::Evaluator<'a, u64, Table, PowOf2Modulus<u64>>,
 ) {
     let context = pbs.bootstrap_resources().context();
-    let input_codec = RoundedCodec::new(8, context.parameters().external_lwe().cipher_modulus());
     // The return-key binding rejects a different target q before workspace setup.
     assert_rejected(|| {
         let _ = LweReturnEvaluator::new(return_key, PowOf2Modulus::new(1u64 << 23));
@@ -669,26 +660,9 @@ fn check_return_batches<'a, Table: FftTable>(
         )
     });
     assert_eq!(returned, untouched);
-    let codecs = context
-        .parameters()
-        .pbs_codecs(PbsMessageConfig::new(input_codec.plaintext_modulus()))
-        .unwrap();
-    let identity = context
-        .parameters()
-        .lookup_table_compiler(&codecs)
-        .unwrap()
-        .compile_fn(|m| m as u64)
-        .unwrap();
-    let codecs = context
-        .parameters()
-        .pbs_codecs(PbsMessageConfig::new(input_codec.plaintext_modulus()))
-        .unwrap();
-    let many = context
-        .parameters()
-        .lookup_table_compiler(&codecs)
-        .unwrap()
-        .compile_interleaved_fn(2, |m, _| m as u64)
-        .unwrap();
+    let compiler = context.pbs_lookup_table_compiler().unwrap();
+    let identity = compiler.compile_fn(|m| m as u64).unwrap();
+    let many = compiler.compile_interleaved_fn(2, |m, _| m as u64).unwrap();
     pbs.apply_lookup_table_to(input.as_view(), &identity, returned[0].as_mut_view());
     pbs.apply_interleaved_lookup_table_to(input.as_view(), &many, &mut returned[..2]);
     lwe_return.return_batch_to(&mut returned, &mut batch_workspace);

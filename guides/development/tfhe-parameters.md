@@ -212,16 +212,17 @@ online algorithm/config dispatch.
 ```rust,ignore
 let config = primus_tfhe_ntru_ntt::experimental::CLASSIC_PBS_U64;
 let context = primus_tfhe_ntru_ntt::TfheContext::<_, primus_ntt::U64NttTable, _>::try_from_pbs_config(config)?;
-let parameters = context.parameters();
-let messages = parameters.messages().with_output_modulus(8); // Optional independent output.
-let codecs = context.parameters().pbs_codecs(messages)?;
 let (client, server) = context.try_generate_keys(rng)?;
+let secret = client.external_lwe_secret_key();
+let encryptor = context.encryptor(secret)?;
+let decryptor = context.pbs_decryptor(secret)?;
+let lut = context.pbs_lookup_table_compiler()?.compile_fn(|m| (m % 4) as u64)?;
 let evaluator = context.evaluator(&server)?;
 ```
 
 For explicit numerical customization, copy the operation config, override the
 relevant fields, then prepare it. For example, NTRU's
-`config.key_switching.as_mut().unwrap().noise_standard_deviation` changes return-key row noise;
+`config.key_switching.noise_standard_deviation` changes return-key row noise;
 GLWE uses the same field for ring-KS row noise. It does not change fresh input or
 BR row noise. Alternatively, compose `PbsConfig` / `CbsConfig` from their raw
 fields and call `PbsParameters::try_from_config`. Add CBS with
@@ -235,7 +236,7 @@ do not inherit evidence for the teaching workload.
 `from_input_bits(b)` describes 2^b padded inputs and codec t=2^(b+1),
 with that same default full output modulus; it does not imply output padding or
 PBS reconsumption. Teaching constants use 32→32, 16→8 and 128→2;
-MVB uses `factorized_pbs_codecs` for Scaled outputs. `PbsParameters::try_from_config` and `CbsParameters::try_from_config` retain message choices and prepare operation-specific state.
+MVB uses `context.compile_mvb_fn` and `context.mvb_decryptor` for Scaled outputs; ordinary PBS/ManyLUT use `pbs_lookup_table_compiler` and `pbs_decryptor`. Both share Rounded `encryptor`. `PbsParameters::try_from_config` and `CbsParameters::try_from_config` retain message choices and prepare operation-specific state.
 PBS codec modes, function ranges and program capacity remain compilation/binding
 conditions; valid construction alone does not certify an operation noise budget.
 
@@ -369,7 +370,7 @@ to one undifferentiated profile.
 
 ## Teaching examples
 
-TFHE examples fix `Word = u64`, with `U64NttTable` for NTT and `RustFftTable` for Fourier. They retain the existing u64 profiles: Barrett Q50 for TFHE NTT, Native64 for Fourier, and independent PowOf2 q24 for NTRU returns. All 26 TFHE/LUT examples select their matching `experimental` config. Backend examples prepare a complete context directly with `try_from_pbs_config` / `try_from_cbs_config`; high-precision examples still prepare their LUT operation and bind the backend through the explicit BR component constructor. Ordinary PBS/ManyLUT prepare codecs from `config.messages`; MVB uses the same message config with `factorized_pbs_codecs`. CBS/one-hot use `config.input_modulus` and `config.gadget`; high-precision lookup derives its chunk format from `config.one_hot.input_modulus` and takes counts/partition from `config.layout`. Ordinary CBS examples use t_in=8 and compute the predicate m >= 2 inside the same BR; CBS benchmarks and parameter diagnostics retain their identity t_in=4 workload. CBS/one-hot examples obtain their Rounded input and Scaled candidate ring codecs from `br.circuit_bootstrap_codecs(t_in, t_ring)`, keeping the two plaintext domains independent without manually choosing q/Q. This does not establish a noise budget. GLWE basic/CBS/ManyLUT examples fix BR→KS, and factorized MVB fixes KS→BR. Word-width comparisons remain in tests, benchmarks and parameter diagnostics. The LWE basic and NTRU automorphism examples also use u64; the latter retains its small Q27 prime and `log_basis=3` decomposition. Application bytes, indexes and floating-point values keep their own types.
+TFHE examples fix `Word = u64`, with `U64NttTable` for NTT and `RustFftTable` for Fourier. They retain the existing u64 profiles: Barrett Q50 for TFHE NTT, Native64 for Fourier, and independent PowOf2 q24 for NTRU returns. All 26 TFHE/LUT examples select their matching `experimental` config. Backend examples prepare a complete context directly with `try_from_pbs_config` / `try_from_cbs_config`; high-precision examples still prepare their LUT operation and bind the backend through the explicit BR component constructor. Ordinary PBS/ManyLUT clients and compilers derive Rounded codecs from `config.messages`; MVB uses the same message config with Scaled output factories. No codec is supplied in these examples. Family `PbsParameters` own default client preparation and backend contexts delegate to them. Advanced same-key compositions reuse prepared codecs through the family `*_with_codec` factories without changing defaults. CBS/one-hot use `config.pbs.messages.input_modulus` and `config.gadget`; high-precision lookup derives its chunk format from `config.one_hot.pbs.messages.input_modulus` and takes counts/partition from `config.layout`. Ordinary CBS examples use t_in=8 and compute the predicate m >= 2 inside the same BR; CBS benchmarks and parameter diagnostics retain their identity t_in=4 workload. CBS/one-hot examples obtain their Rounded input and Scaled candidate ring codecs from `br.circuit_bootstrap_codecs(t_in, t_ring)`, keeping the two plaintext domains independent without manually choosing q/Q. This does not establish a noise budget. GLWE basic/CBS/ManyLUT examples fix BR→KS, and factorized MVB fixes KS→BR. Word-width comparisons remain in tests, benchmarks and parameter diagnostics. The LWE basic and NTRU automorphism examples also use u64; the latter retains its small Q27 prime and `log_basis=3` decomposition. Application bytes, indexes and floating-point values keep their own types.
 
 Examples do not import benchmark parameter factories. Typed constants centralize the basic fixtures; the remaining local configuration functions keep their numerical choices explicit. The workflow appears in `main` before any parameter helpers. Client and server stages appear directly in `main`, identified by comments. Server setup uses public context, encoding and evaluation keys; CBS/one-hot candidates are encrypted by the client. High-precision lookup compiles the public function separately from key generation and evaluation. Each workload makes two requests with reused buffers. No example imports code from `benches/` or `tests/`.
 

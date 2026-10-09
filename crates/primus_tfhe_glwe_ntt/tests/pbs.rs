@@ -46,7 +46,7 @@ fn parameters<T: FheUint>(q: T, order: PbsOrder) -> PbsParameters<T> {
             noise_standard_deviation: 0.7,
         },
         method: primus_tfhe::BlindRotationMethod::Classic,
-        messages: primus_tfhe::PbsMessageConfig::new(primus_integer::AsFrom::<u32>::as_from(4)),
+        messages: PbsMessageConfig::new(T::as_from(15u32)).with_output_modulus(T::as_from(8u32)),
         order,
     })
     .unwrap()
@@ -78,10 +78,10 @@ where
     );
     let (client_key, server_key) = context.try_generate_keys(&mut rng).unwrap();
     let encryptor = context
-        .encryptor(client_key.external_lwe_secret_key(), &input_codec)
+        .encryptor(client_key.external_lwe_secret_key())
         .unwrap();
     let decryptor = context
-        .decryptor(client_key.external_lwe_secret_key(), &input_codec)
+        .pbs_decryptor(client_key.external_lwe_secret_key())
         .unwrap();
     let mut evaluator = context.evaluator(&server_key).unwrap();
     // Input centers use t_in=15; output values use the independent t_out=8 scale.
@@ -89,14 +89,7 @@ where
         T::as_from(8u32),
         context.parameters().small_lwe().cipher_modulus(),
     );
-    let codecs = context
-        .parameters()
-        .pbs_codecs(
-            PbsMessageConfig::new(input_codec.plaintext_modulus())
-                .with_output_modulus(output_codec.plaintext_modulus()),
-        )
-        .unwrap();
-    let compiler = context.parameters().lookup_table_compiler(&codecs).unwrap();
+    let compiler = context.pbs_lookup_table_compiler().unwrap();
     // Shared tests cover geometry; keep output counts 1, 3 (padded to 4), and 4 here.
     for output_count in [1, 3, 4] {
         let flat: Vec<_> = (0..8)
@@ -128,7 +121,7 @@ where
             }
             for (index, output) in outputs.iter().enumerate() {
                 assert_eq!(
-                    output_codec.decode_value(decryptor.decrypt_phase(output.as_view()).unwrap()),
+                    decryptor.decrypt(output.as_view()).unwrap(),
                     value(message, index)
                 );
             }
@@ -158,26 +151,34 @@ where
 
     // A program chooses its own message scale. Reuse the same client/server
     // keys and evaluator with a different t; ciphertexts carry no codec metadata.
-    let other_codec = RoundedCodec::new(T::as_from(4u32), context.parameters().cipher_modulus());
+    let other_modulus = T::as_from(4u32);
+    let other_codecs = context
+        .parameters()
+        .pbs_codecs(PbsMessageConfig::new(other_modulus))
+        .unwrap();
     let other_input = context
-        .encryptor(client_key.external_lwe_secret_key(), &other_codec)
+        .parameters()
+        .encryptor_with_codec(
+            client_key.external_lwe_secret_key(),
+            other_codecs.input_codec(),
+        )
         .unwrap()
         .encrypt_padded(T::ONE, &mut rng)
         .unwrap();
-    let codecs = context
-        .parameters()
-        .pbs_codecs(PbsMessageConfig::new(other_codec.plaintext_modulus()))
-        .unwrap();
     let other_lut = context
         .parameters()
-        .lookup_table_compiler(&codecs)
+        .lookup_table_compiler(&other_codecs)
         .unwrap()
         .compile_fn(|message| T::as_from(1 - message))
         .unwrap();
     let other_output = evaluator.apply_lookup_table(other_input.as_view(), &other_lut);
     assert_eq!(
         context
-            .decryptor(client_key.external_lwe_secret_key(), &other_codec)
+            .parameters()
+            .decryptor_with_codec(
+                client_key.external_lwe_secret_key(),
+                other_codecs.output_codec()
+            )
             .unwrap()
             .decrypt(other_output.as_view())
             .unwrap(),
@@ -320,18 +321,18 @@ where
         );
         assert_eq!(outputs, before);
     }
-    // Rejected calls leave the reusable evaluator usable.
+    // Rejected calls and message overrides leave the evaluator and original decoder usable.
     evaluator.apply_interleaved_lookup_table_to(input.as_view(), &good, &mut outputs);
     assert_eq!(
-        output_codec.decode_value(decryptor.decrypt_phase(outputs[0].as_view()).unwrap()),
+        decryptor.decrypt(outputs[0].as_view()).unwrap(),
         T::as_from(3u32)
     );
     assert_eq!(
-        output_codec.decode_value(decryptor.decrypt_phase(outputs[1].as_view()).unwrap()),
+        decryptor.decrypt(outputs[1].as_view()).unwrap(),
         T::as_from(0u32)
     );
     assert_eq!(
-        output_codec.decode_value(decryptor.decrypt_phase(outputs[2].as_view()).unwrap()),
+        decryptor.decrypt(outputs[2].as_view()).unwrap(),
         T::as_from(3u32)
     );
 
@@ -356,10 +357,7 @@ where
             bivariate.lookup_table(),
             result.as_mut_view(),
         );
-        assert_eq!(
-            output_codec.decode_value(decryptor.decrypt_phase(result.as_view()).unwrap()),
-            x * x + y
-        );
+        assert_eq!(decryptor.decrypt(result.as_view()).unwrap(), x * x + y);
     }
 
     // Reuse this odd-modulus fixture for the full domain, including the upper
@@ -372,10 +370,7 @@ where
         let expected = values[message];
         let input = encryptor.encrypt(T::as_from(message), &mut rng).unwrap();
         evaluator.apply_lookup_table_to(input.as_view(), &full, result.as_mut_view());
-        assert_eq!(
-            output_codec.decode_value(decryptor.decrypt_phase(result.as_view()).unwrap()),
-            expected
-        );
+        assert_eq!(decryptor.decrypt(result.as_view()).unwrap(), expected);
     }
 }
 

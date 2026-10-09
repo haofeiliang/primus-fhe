@@ -134,12 +134,10 @@ fn split_keys_support_both_pbs_orders() {
             .parameters()
             .try_generate_public_key(client.external_lwe_secret_key(), &mut rng)
             .unwrap();
-        let secret_encryptor = context
-            .encryptor(client.external_lwe_secret_key(), &input_codec)
-            .unwrap();
-        let public_encryptor = context.public_encryptor(&public, &input_codec).unwrap();
+        let secret_encryptor = context.encryptor(client.external_lwe_secret_key()).unwrap();
+        let public_encryptor = context.public_encryptor(&public).unwrap();
         let decryptor = context
-            .decryptor(client.external_lwe_secret_key(), &input_codec)
+            .pbs_decryptor(client.external_lwe_secret_key())
             .unwrap();
         let mut evaluator = context.evaluator(&server).unwrap();
         for message in 0..2u32 {

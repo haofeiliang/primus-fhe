@@ -144,7 +144,7 @@ fn one_hot<T: TorusFftValue, Table: FftTable>(
 
     // Client: prepare encryption and secret-dependent phase diagnostics.
     let encryptor = context
-        .encryptor(client_key.external_lwe_secret_key(), &input_codec)
+        .encryptor_with_codec(client_key.external_lwe_secret_key(), &input_codec)
         .unwrap();
     let format_name = format!("{name}/one_hot");
     let mut phase = primus_poly::Polynomial::<Vec<T>>::zero(N);
@@ -258,7 +258,7 @@ fn lookup<T: TorusFftValue, Table: FftTable>(
 
     // Client: keep encryption, decryption and the error budget local.
     let encryptor = context
-        .encryptor(client_key.external_lwe_secret_key(), &input_codec)
+        .encryptor_with_codec(client_key.external_lwe_secret_key(), &input_codec)
         .unwrap();
     let decryptor = context
         .decryptor(client_key.external_lwe_secret_key(), &input_codec)
@@ -384,7 +384,7 @@ fn pbs<T: TorusFftValue, Table: FftTable>(
         .unwrap();
 
     let encryptor = context
-        .encryptor(client_key.external_lwe_secret_key(), codecs.input_codec())
+        .encryptor_with_codec(client_key.external_lwe_secret_key(), codecs.input_codec())
         .unwrap();
     let decryptor = context
         .decryptor(client_key.external_lwe_secret_key(), codecs.output_codec())
@@ -503,7 +503,7 @@ fn thresholds<T: TorusFftValue, Table: FftTable>(
     let (client_key, server_key) = context.try_generate_keys(&mut rng).unwrap();
 
     let encryptor = context
-        .encryptor(client_key.external_lwe_secret_key(), codecs.input_codec())
+        .encryptor_with_codec(client_key.external_lwe_secret_key(), codecs.input_codec())
         .unwrap();
     let decryptor = context
         .decryptor(client_key.external_lwe_secret_key(), codecs.output_codec())
@@ -584,7 +584,7 @@ fn circuit<T: TorusFftValue, Table: FftTable>(
 
     // Client: encrypt both candidate messages; only choices go to the server.
     let encryptor = context
-        .encryptor(client_key.external_lwe_secret_key(), &input_codec)
+        .encryptor_with_codec(client_key.external_lwe_secret_key(), &input_codec)
         .unwrap();
     let mut accumulator = context
         .accumulator_client(client_key.accumulator_ntru_secret_key(), ring_message_codec)

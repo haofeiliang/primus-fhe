@@ -23,15 +23,15 @@ fn main() {
         .circuit_bootstrap_codecs(config.pbs.messages.input_modulus, 8)
         .unwrap();
 
-    // Client: generate BR and CBS material from the same accumulator secret.
-    // This BR→KS ring-output workflow needs neither an input KS nor a return key.
+    // Client: generate BR/CBS material and KS for downstream LWE returns.
+    // This BR→KS example consumes the CBS result directly as a ring control.
     let mut rng = StdRng::seed_from_u64(42);
     let (client_key, server_key) = context
         .try_generate_circuit_bootstrap_keys(&mut rng)
         .unwrap();
     // The integer input is encrypted with the external LWE secret.
     let external_secret = client_key.external_lwe_secret_key();
-    let encryptor = context.encryptor(external_secret, &input_codec).unwrap();
+    let encryptor = context.encryptor(external_secret).unwrap();
 
     // Candidate ring messages use an independent t=8 space under the accumulator secret.
     let mut ring_client = context

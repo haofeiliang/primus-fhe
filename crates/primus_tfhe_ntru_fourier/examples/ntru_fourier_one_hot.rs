@@ -18,7 +18,7 @@ fn main() {
     let context = TfheContext::<Word, Table, _>::try_from_cbs_config(config).unwrap();
     let poly_length = config.pbs.bsk_poly_length.get();
     // Padded t=8 encodes four selector values independently of the ring messages.
-    let (selector_codec, ring_message_codec) = context
+    let (_, ring_message_codec) = context
         .parameters()
         .circuit_bootstrap_codecs(config.pbs.messages.input_modulus, 8)
         .unwrap();
@@ -30,7 +30,7 @@ fn main() {
         .unwrap();
     // The selector is encrypted with the external LWE secret.
     let external_secret = client_key.external_lwe_secret_key();
-    let encryptor = context.encryptor(external_secret, &selector_codec).unwrap();
+    let encryptor = context.encryptor(external_secret).unwrap();
 
     // Candidate ring messages use their own t=8 space at accumulator Q.
     let mut ring_client = context

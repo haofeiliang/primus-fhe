@@ -74,7 +74,7 @@ let mut cbs = context.circuit_bootstrap_evaluator(&resources, server.circuit_boo
 
 ## 客户端与服务端边界
 
-`Encryptor`、`Decryptor` 及其 Boolean 包装共享编码、范围检查和无分配的 `*_to` 操作。`LweClientParameters::new(&lwe_parameters)` 借用已验证 LWE 域的维数、Rounded codec 和噪声，并从 codec 模数派生 mask 采样器。字段私有，通过访问器读取。家族构造入口先验证密钥，再一次性选定有效 LWE 秘密和噪声；两家族通过 `LweClientParameters::try_from_parts(dimension, &codec, &noise)` 绑定所选消息编码：GLWE BR→KS 使用 small LWE 的噪声和维数，KS→BR 使用提取维数和 accumulator 噪声；NTRU 使用独立外部 LWE 参数。绑定时检查 codec 与密钥、噪声的模数配对。这些检查不建立噪声或安全预算。
+`Encryptor`、`Decryptor` 及其 Boolean 包装共享编码、范围检查和无分配的 `*_to` 操作。`LweClientParameters::new(&lwe_parameters)` 复制维数和小型 Rounded 状态，借用已准备噪声采样器，并从 codec 模数派生 mask 采样器。字段私有，通过访问器读取。家族构造入口先验证密钥，再一次性选定有效 LWE 秘密和噪声；两家族通过 `LweClientParameters::try_from_parts(dimension, &codec, &noise)` 绑定所选消息编码：GLWE BR→KS 使用 small LWE 的噪声和维数，KS→BR 使用提取维数和 accumulator 噪声；NTRU 使用独立外部 LWE 参数。绑定时检查 codec 与密钥、噪声的模数配对。这些检查不建立噪声或安全预算。
 
 公共层接收 `LweSecretKeyRef` 或 `&LwePublicKey`；唯一的客户端 trait `EncryptionKey<T, M>` 只分派加密实现，不关联家族参数或错误类型。普通操作返回 `ClientError`，Boolean 操作返回 `BooleanError`。
 
@@ -129,11 +129,13 @@ let lhs = ring_client.encrypt(&lhs_message, &mut rng);
 let rhs = ring_client.encrypt(&rhs_message, &mut rng);
 let mut decoded = vec![0; lhs_message.len()];
 let external_secret = client_key.external_lwe_secret_key();
-let input = context.encryptor(external_secret, &input_codec)?.encrypt_padded(3, &mut rng)?;
+let input = context.parameters()
+    .encryptor_with_codec(external_secret, &input_codec)?
+    .encrypt_padded(3, &mut rng)?;
 
 // 服务端：在同一次 CBS 内计算 F(m) = [m >= 2]，返回 selected。
-let mut pbs = context.evaluator(&server_key)?;
-let key = server_key.circuit_bootstrap_key().unwrap();
+let mut pbs = context.evaluator(server_key.server_key())?;
+let key = server_key.circuit_bootstrap_key();
 let program = key.parameters().compile_lookup_table_fn(&input_codec, |m| u64::from(m >= 2))?;
 let mut cbs = CircuitBootstrapEvaluator::try_with_lookup_table(
     pbs.bootstrap_resources(), key, program,
@@ -184,7 +186,7 @@ GLWE 两后端同样使用短借用。独立 CBS 可用 `context.bootstrap_resou
 
 前半区单函数或切片编译器为 `0..ceil(t_in/2)` 输入域编程，输出属于输出 codec 指定的 `0..t_out`。 其余输入不独立编程；奇数全域使用下文的独立入口。交错 LUT（ManyLUT）的有效输出数 `k` 为正， 补齐后的输出数为 `s = next_power_of_two(k)`，满足 `ceil(t/2) <= N/s`。callback 按输入优先 顺序接收 `(input, output_index)`，每个有效组合调用一次；切片包含相同顺序的 `D*k` 个值。 例如 `k=3` 时三个输出占用四个槽：编译器将第四槽置零，不调用 callback；求值端只返回三个密文。 所有输出共享一次盲旋转（BR）。GLWE 共享环 key switch 后分别提取；NTRU 每个输出分别返回并执行 LWE key switch。 输出越多，旋转分辨率与输入噪声余量越低。这是一个输入求多个函数，不是独立密文批处理。
 
-通过两家族的 `br.lookup_table_compiler(&codecs)?` 创建可复用的 `LookupTableCompiler`。TFHE 参数保存密钥域、采样状态及默认输入/输出消息模数；客户端和程序可独立绑定 codec 来覆盖默认选择。直接使用共享层时，`LookupTableCompiler::try_new(poly_length, &input_codec, accumulator_modulus, &output_codec)` 绑定相同的编码环境。它只复制所需编码状态，不分配内存，也不借用 parameters/context。方法如下：
+通过各后端的 `context.pbs_lookup_table_compiler()?` 创建可复用的 `LookupTableCompiler`。Context 提供默认输入/输出消息选择；`pbs_lookup_table_compiler_with_messages(messages)` 为单个编译器覆盖消息域，不改变默认值或客户端。家族的 `br.lookup_table_compiler(&codecs)` 仍是显式 codec 入口。直接使用共享层时，`LookupTableCompiler::try_new(poly_length, &input_codec, accumulator_modulus, &output_codec)` 绑定相同的编码环境。它只复制所需编码状态，不分配内存，也不借用 parameters/context。方法如下：
 
 | 程序 | 函数输入 | 切片输入 |
 | --- | --- | --- |
@@ -220,56 +222,56 @@ Raw 构造器 `LookupTable::try_new` / `InterleavedLookupTable::try_new` 显式�
 
 按二进制输入位宽选择时，`PbsMessageConfig::from_input_bits(4)` 对应 16 个合法 padded 输入、codec 模数 32，其中一位用于 padding。默认完整输出模数仍为 32，不自动代表输出带 padding 或可以继续 PBS。`try_from_input_bits(u32)` 拒绝无法表示的模数；密文兼容性和 LUT 容量仍在 setup 检查。一般/奇数模数继续使用 `new(t)`。
 
-两家族的参数提供以下准备入口，四个后端均重导出配置类型：
+GLWE、NTRU 家族的 `PbsParameters` 从 `config.messages` 按用途准备编码，四个后端 Context 委托它们创建客户端。客户端仅需外部秘密或公钥，可以先于 LUT 创建；家族工厂无需变换表。PBS、ManyLUT 和 factorized MVB 的输入共用 `context.encryptor(external_secret)`；公钥输入用 `public_encryptor(&public)`。
 
-| 工厂 | q 下的 `input_codec()` | Q 下的 `lut_output_codec()` | q 下的 `output_codec()` |
+| 程序工厂 | q 下输入 | Q 下 LUT 输出 | q 下返回输出工厂 |
 | --- | --- | --- | --- |
-| `br.pbs_codecs(messages)?` | Rounded | Rounded | Rounded |
-| `br.factorized_pbs_codecs(messages)?` | Rounded | Scaled | Scaled |
+| `context.pbs_lookup_table_compiler()` | Rounded | Rounded | `pbs_decryptor`：Rounded |
+| `context.compile_mvb_fn(domain_len, output_count, function)` | Rounded | Scaled | `mvb_decryptor`：Scaled |
 
-例如普通 PBS 或 ManyLUT，输入 `t_in=16`、输出 `t_out=4`：
+例如先设置 `config.messages = PbsMessageConfig::new(16).with_output_modulus(4)` 并构造 Context：
 
 ```rust,ignore
-use primus_tfhe::PbsMessageConfig;
-
-let codecs = context.parameters().pbs_codecs(
-    PbsMessageConfig::new(16).with_output_modulus(4),
-)?;
-let encryptor = context.encryptor(external_secret, codecs.input_codec())?;
-let decryptor = context.decryptor(external_secret, codecs.output_codec())?;
-let compiler = context.parameters().lookup_table_compiler(&codecs)?;
-let lut = compiler.compile_fn(|x| (x % 4) as u64)?;
+let encryptor = context.encryptor(external_secret)?;
+let decryptor = context.pbs_decryptor(external_secret)?;
+let lut = context.pbs_lookup_table_compiler()?.compile_fn(|x| (x % 4) as u64)?;
 let input = encryptor.encrypt_padded(7, &mut rng)?;
 let output = evaluator.apply_lookup_table(input.as_view(), &lut);
 assert_eq!(decryptor.decrypt(output.as_view())?, 3);
 ```
 
-省略 `.with_output_modulus(4)` 即选择相同消息模数。准备过程验证选定的输入/输出 codec，不分配内存，不借用密钥或 context。输出选择先于 codec 验证生效，不会静默替换非法默认值。程序几何、factorization 专有尺度条件和噪声预算，仍由具体操作检查或要求。
+同一密钥、Context 和 evaluator 可保持配置中的输入域，并为另一程序选择不同输出消息模数：
 
-GLWE 三个角色使用同一密文模数；NTRU 根据同一个 `t_out` 派生两个输出 codec，LUT 系数使用 Q，返回密文使用 q。返回路径缩放既有相位，并不重新生成精确的 q 编码中心，须预算 Q→q 舍入与 key-switch 噪声。在 q 下准备 Scaled codec 还会检查该 codec 自身的尺度恢复条件。
+```rust,ignore
+let parameters = context.parameters();
+let messages = parameters.messages().with_output_modulus(8);
+let codecs = parameters.pbs_codecs(messages)?;
+let decryptor = parameters.decryptor_with_codec(external_secret, codecs.output_codec())?;
+let compiler = parameters.lookup_table_compiler(&codecs)?;
+let lut = compiler.compile_fn(|x| (x % 8) as u64)?;
+```
 
-MVB 使用 `factorized_pbs_codecs`，把 `&codecs` 直接传给 `context.compile_factorized_lookup_table_fn`。与普通 PBS/ManyLUT 相同，用 `context.decryptor(external_secret, codecs.output_codec())?` 绑定，再调用 `decryptor.decrypt(output.as_view())?`。即使 `t_out=t_in`，factorized 输出也保持 Scaled 编码。
+MVB 选择其他输出域时，一次准备 `parameters.factorized_pbs_codecs(messages)`，将该组合交给 `context.compile_factorized_lookup_table_fn`，并通过同一 `parameters.decryptor_with_codec` 绑定 `codecs.output_codec()`。保持 `messages.input_modulus` 与配置中的输入域一致时，可复用 `context.encryptor(external_secret)`。编译 LUT/MVB 不会改变 Context 默认值或已绑定解密器。默认客户端工厂只准备所需 codec，普通 PBS 不要求未使用的 Scaled 编码合法；几何、分解条件与噪声预算仍由具体操作检查或要求。
 
-decryptor 复制 codec 已准备好的 `MessageDecoder`，只借用秘密。Rounded 与 Scaled 共用 q→t 解码，但保留各自的编码中心和恢复界。输入加密与输出解密可以使用不同消息模数。`decrypt_phase` 保留给噪声诊断或高级组合，本身不解码消息。
+GLWE 的输入、LUT 和返回使用同一密文模数。NTRU 从同一 `t_out` 派生 Q 下的 LUT 输出和 q 下的返回 LWE 编码；返回过程缩放已有 phase，不重新生成精确的 q 编码中心，须预算 Q→q 舍入和 key-switch 噪声。q 下的 Scaled codec 也有自身恢复条件。即使 `t_out=t_in`，MVB 输出仍使用 Scaled。
 
-高级组合仍可显式构造 `RoundedCodec`/`ScaledCodec` 并使用底层 LUT 构造接口。`LookupTableCompiler::try_new` 直接接收配好的输入与 LUT 输出 codec，无需先准备默认输出。`try_with_output_codec` 只更改编译器的输出 codec、检查其密文模数，保持输入几何不变；显式接口的调用方自行保留对应输出 decoder。奇数全域方法及原始 Boolean/CBS 输出尺度继续遵守各自契约。
+Encryptor 复制小型 Rounded 状态，借用所选新鲜噪声采样器和密钥；Decryptor 复制已准备解码器，仅借用秘密。两者均不持有 LUT、服务端密钥或可变工作区，codec 变量无需与客户端同寿命。Rounded/Scaled 共用 q→t 解码，但编码中心与恢复界不同；`decrypt_phase` 仍用于未解码 phase 的诊断。
+
+输入加密使用 `config.messages.input_modulus`，输入、输出模数仍可独立配置。高级输入域组合可准备一次 codec，再通过 `context.parameters().encryptor_with_codec(secret, codecs.input_codec())` 绑定已有输入编码；编译器和解密器可复用同一准备结果。此类组合仍可显式构造 `RoundedCodec`/`ScaledCodec` 并使用底层 LUT 构造接口。`LookupTableCompiler::try_new` 直接接收配好的输入与 LUT 输出 codec，无需先准备默认输出。`try_with_output_codec` 只更改编译器的输出 codec、检查其密文模数，保持输入几何不变；显式接口的调用方自行保留对应输出 decoder。奇数全域方法及原始 Boolean/CBS 输出尺度继续遵守各自契约。
 
 返回值属于 `0..t_out`，前半区输入仅接受 `0..ceil(t_in/2)`。相同消息模数不保证结果可直接输入下一次 PBS；还需匹配下一程序的编码、输入域和噪声余量。
 
 ## 奇数全域 PBS
 
-使用 `compiler.compile_odd_full_domain_fn(function)` 或其 `_slice` 形式；需要不同输出消息模数时，在准备 codec 前通过 `PbsMessageConfig::with_output_modulus` 配置。这些方法编程整个 **`0..t_in`**。要求奇数 `t_in >= 3`、`t_in <= N`；切片按输入顺序包含 恰好 `t_in` 个输出。输入用普通 `encrypt`，随后复用 `apply_lookup_table_to`。 默认或显式指定输出编码，都将对应输出 codec 绑定到 decryptor 后调用 `decrypt`。 例如，输入与 accumulator 共用密文模数、`t_in=15`，输出 codec 配置 `t_out=8`：
+使用 `compiler.compile_odd_full_domain_fn(function)` 或其 `_slice` 形式；需要不同输出消息模数时，在准备 codec 前通过 `PbsMessageConfig::with_output_modulus` 配置。这些方法编程整个 **`0..t_in`**。要求奇数 `t_in >= 3`、`t_in <= N`；切片按输入顺序包含 恰好 `t_in` 个输出。输入用普通 `encrypt`，随后复用 `apply_lookup_table_to`。 默认或显式指定输出编码，都将对应输出 codec 绑定到 decryptor 后调用 `decrypt`。 例如，构造 Context 前设置 `config.messages = PbsMessageConfig::new(15).with_output_modulus(8)`，输入与 accumulator 共用密文模数：
 
 ```rust,ignore
-let codecs = context.parameters().pbs_codecs(
-    primus_tfhe::PbsMessageConfig::new(15).with_output_modulus(8),
-)?;
-let encryptor = context.encryptor(external_secret, codecs.input_codec())?;
-let compiler = context.parameters().lookup_table_compiler(&codecs)?;
+let encryptor = context.encryptor(external_secret)?;
+let decryptor = context.pbs_decryptor(external_secret)?;
+let compiler = context.pbs_lookup_table_compiler()?;
 let lut = compiler.compile_odd_full_domain_fn(|x| ((x * x + 3) % 8) as u32).unwrap();
 let input = encryptor.encrypt(14u32, &mut rng).unwrap();
 evaluator.apply_lookup_table_to(input.as_view(), &lut, output.as_mut_view());
-let decryptor = context.decryptor(external_secret, codecs.output_codec())?;
 let message = decryptor.decrypt(output.as_view())?;
 assert_eq!(message, 7);
 ```

@@ -7,14 +7,16 @@
 //!    parameters can also be moved into a context directly.
 //! 2. Create a complete [`TfheContext`] with [`TfheContext::try_from_pbs_config`].
 //!    [`TfheContext::try_generate_keys`] generates the retained BR and KS choices; [`TfheContext::evaluator`] takes only the generated server key.
-//! 3. Prepare codecs with [`PbsParameters::pbs_codecs`] and [`PbsMessageConfig`].
-//!    Bind [`Encryptor`] to the input codec and [`Decryptor`] to the output codec;
-//!    create an [`Evaluator`] from the context. Output message moduli default to
-//!    the input choice and can be overridden before preparation.
-//! 4. Pass the prepared codec pair to [`PbsParameters::lookup_table_compiler`].
-//!    Call [`LookupTableCompiler::compile_fn`] and reuse
+//! 3. Create [`TfheContext::encryptor`] and [`TfheContext::pbs_decryptor`]
+//!    using only the external secret. They derive Rounded encodings from
+//!    the config's input/output messages; no LUT or explicit codec is needed.
+//! 4. Use [`TfheContext::pbs_lookup_table_compiler`] and
+//!    [`LookupTableCompiler::compile_fn`], then reuse
 //!    [`Evaluator::apply_lookup_table_to`] with caller-owned LWE output storage.
-//!    Prepared codecs distinguish accumulator-Q LUT output from external-q decoding.
+//!    ManyLUT shares those clients; factorized MVB uses
+//!    [`TfheContext::compile_mvb_fn`] and [`TfheContext::mvb_decryptor`] for
+//!    Scaled output. Named message overrides reuse the same keys and do not
+//!    change existing clients. Advanced explicit-codec entries remain available.
 //!
 //! # Other operations
 //!
@@ -86,6 +88,7 @@ mod error;
 mod evaluator;
 pub mod factorized;
 pub mod key;
+mod lookup_table;
 pub mod sparse;
 
 pub use accumulator::AccumulatorClient;
@@ -144,7 +147,7 @@ pub type CbsConfig<T, LM = NativeModulus<T>> = primus_tfhe_ntru::CbsConfig<T, Na
 
 pub use primus_tfhe_ntru::{LweConfig, ModulusConfig, ModulusConfigError};
 
-/// Complete PBS parameters, including optional key switching and default messages.
+/// Complete PBS parameters, including required key switching and default messages.
 pub type PbsParameters<T, LM = NativeModulus<T>> =
     primus_tfhe_ntru::PbsParameters<T, NativeModulus<T>, LM>;
 

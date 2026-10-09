@@ -41,7 +41,7 @@ where
         codec: &'a RoundedCodec<T, NativeModulus<T>>,
     ) -> Result<BooleanEncryptor<'a, T>, TfheClientError> {
         Ok(BooleanEncryptor::try_new(
-            self.encryptor(secret_key, codec)?,
+            self.encryptor_with_codec(secret_key, codec)?,
         )?)
     }
 
@@ -52,7 +52,7 @@ where
         public_key: &'a LwePublicKey<T>,
         codec: &'a RoundedCodec<T, NativeModulus<T>>,
     ) -> Result<BooleanEncryptor<'a, T, &'a LwePublicKey<T>>, BooleanError> {
-        BooleanEncryptor::try_new(self.public_encryptor(public_key, codec)?)
+        BooleanEncryptor::try_new(self.public_encryptor_with_codec(public_key, codec)?)
     }
 
     /// Creates a Boolean decryptor after checking the external secret and `t = 4`.

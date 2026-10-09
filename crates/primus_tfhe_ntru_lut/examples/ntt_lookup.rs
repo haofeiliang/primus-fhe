@@ -45,7 +45,7 @@ fn main() {
     // Ordinary messages borrow only the external secret from the setup bundle.
     let external_secret = client_key.external_lwe_secret_key();
     let encryptor = context
-        .encryptor(external_secret, codecs.input_codec())
+        .encryptor_with_codec(external_secret, codecs.input_codec())
         .unwrap();
     let decryptor = context
         .decryptor(external_secret, codecs.output_codec())

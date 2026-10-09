@@ -51,7 +51,11 @@ fn context<T: TorusFftValue, Table: FftTable>(
             },
             noise_standard_deviation: 0.7,
         },
-        messages: primus_tfhe::PbsMessageConfig::new(primus_integer::AsFrom::<u32>::as_from(4)),
+        messages: if matches!(distr, SecretKeyDistr::FixedCompositionTernary { .. }) {
+            PbsMessageConfig::new(T::as_from(16u32))
+        } else {
+            PbsMessageConfig::new(T::as_from(15u32)).with_output_modulus(T::as_from(10u32))
+        },
     })
     .unwrap();
     let context = TfheContext::from_parameters(parameters.clone());
@@ -70,11 +74,7 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(distr: SecretKeyDistr) {
     let (_, context) = self::context::<T, Table>(distr);
     // Existing binary/ternary cases cover both an override and equal-message default.
     // t_out=10 retains the non-power-of-two even-scale case for both word sizes.
-    let messages = if matches!(distr, SecretKeyDistr::FixedCompositionTernary { .. }) {
-        PbsMessageConfig::new(T::as_from(16u32))
-    } else {
-        PbsMessageConfig::new(T::as_from(15u32)).with_output_modulus(T::as_from(10u32))
-    };
+    let messages = context.parameters().messages();
     let mvb_codecs = context
         .parameters()
         .factorized_pbs_codecs(messages)
@@ -87,9 +87,7 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(distr: SecretKeyDistr) {
     // Two full return tiles and a singleton tail reuse one polynomial buffer.
     let output_count = 17;
     let lut = context
-        .compile_factorized_lookup_table_fn(&mvb_codecs, DOMAIN, output_count, |m, i| {
-            T::as_from(value(m, i))
-        })
+        .compile_mvb_fn(DOMAIN, output_count, |m, i| T::as_from(value(m, i)))
         .unwrap();
     assert_eq!(
         (
@@ -101,11 +99,9 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(distr: SecretKeyDistr) {
     );
     let mut pbs = context.evaluator(&server).unwrap();
     let mut evaluator = primus_tfhe_ntru_fourier::FactorizedEvaluator::new(&pbs);
-    let encryptor = context
-        .encryptor(client.external_lwe_secret_key(), &input_codec)
-        .unwrap();
+    let encryptor = context.encryptor(client.external_lwe_secret_key()).unwrap();
     let decryptor = context
-        .decryptor(client.external_lwe_secret_key(), &codec)
+        .mvb_decryptor(client.external_lwe_secret_key())
         .unwrap();
     let dimension = context.parameters().external_lwe_dimension().get();
     assert_eq!(dimension, (LweDimension::new(DIM)).get());
@@ -165,6 +161,7 @@ fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
     let input_codec = RoundedCodec::new(15, context.parameters().external_lwe().cipher_modulus());
     let mut rng = StdRng::seed_from_u64(0x4235_3302);
     let (client, server) = context.try_generate_keys(&mut rng).unwrap();
+    // This raw program uses t_out=8 in a context whose default is t_out=10.
     let codec = ScaledCodec::new(8u32, NativeModulus::new());
     let compile = || {
         FactorizedLookupTable::try_new(
@@ -182,7 +179,7 @@ fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
         self::context::<u32, RustFftTable>(SecretKeyDistr::fixed_hamming_weight_binary(DIM, 3));
     let foreign = FourierFactorizedLookupTable::new(&other, compile());
     let input = context
-        .encryptor(client.external_lwe_secret_key(), &input_codec)
+        .encryptor(client.external_lwe_secret_key())
         .unwrap()
         .encrypt_padded(3, &mut rng)
         .unwrap();
@@ -211,7 +208,8 @@ fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
         assert_eq!(outputs, before);
     }
     let decryptor = context
-        .decryptor(client.external_lwe_secret_key(), &codec)
+        .parameters()
+        .decryptor_with_codec(client.external_lwe_secret_key(), &codec)
         .unwrap();
     let outputs = evaluator.apply_lookup_table(input.as_view(), &lut, &mut pbs);
     assert_eq!(
@@ -221,15 +219,10 @@ fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
             .collect::<Vec<_>>(),
         [3, 4, 5]
     );
-    let mvb_codecs = context
-        .parameters()
-        .factorized_pbs_codecs(
-            PbsMessageConfig::new(input_codec.plaintext_modulus())
-                .with_output_modulus(codec.plaintext_modulus()),
-        )
-        .unwrap();
+    let messages = PbsMessageConfig::new(input_codec.plaintext_modulus())
+        .with_output_modulus(codec.plaintext_modulus());
     let single = context
-        .compile_factorized_lookup_table_fn(&mvb_codecs, DOMAIN, 1, |m, _| m as u32)
+        .compile_mvb_fn_with_messages(messages, DOMAIN, 1, |m, _| m as u32)
         .unwrap();
     assert_eq!(
         decryptor

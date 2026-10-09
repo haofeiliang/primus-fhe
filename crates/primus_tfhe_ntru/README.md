@@ -23,7 +23,7 @@ Both PBS and CBS require a `GadgetEncryptionConfig` in `key_switching`; its deco
 
 Prepare parameters with `PbsParameters::try_from_config(pbs_config)`, `CbsParameters::try_from_config(pbs_config, gadget_config)` or `CbsParameters::try_with_config(pbs_parameters, gadget_config)`. The last entry moves existing common state without rebuilding samplers. Move prepared state into a Context by value; BR, trace and scheme-switch retain their existing ring-sampler Arc. Explicit `clone()` may copy LWE sampler data.
 
-Concrete backends provide `experimental::*_U64` teaching configs for PBS, ManyLUT, MVB and CBS. `PbsMessageConfig::new(t)` defaults to equal input/output message moduli; `.with_output_modulus(t_out)` changes only the output. Ordinary PBS uses `parameters.pbs_codecs(parameters.messages())?`, MVB uses `factorized_pbs_codecs`, and CBS retains the input codec while the consumer chooses candidate-ring messages. Security and failure probability are unassessed; see [provenance and conditions](../../guides/development/tfhe-parameters.md#scope-of-paired-parameter-entries).
+Concrete backends provide `experimental::*_U64` teaching configs for PBS, ManyLUT, MVB and CBS. `PbsMessageConfig::new(t)` defaults to equal input/output message moduli; `.with_output_modulus(t_out)` changes only the output. Backend PBS/ManyLUT clients and compilers derive Rounded encoding from these messages; MVB selects Scaled output through its own factories. CBS retains its input codec while the consumer chooses candidate-ring messages. Security and failure probability are unassessed; see [provenance and conditions](../../guides/development/tfhe-parameters.md#scope-of-paired-parameter-entries).
 
 ## Parameters and key domains
 
@@ -49,17 +49,17 @@ Prefer the backend `KeyGenerator` for encryption. For independently prepared con
 
 ## Clients and LUTs
 
-Use `PbsMessageConfig::new(t_in)` for equal input/output message moduli, or `.with_output_modulus(t_out)` to override the output. `br.pbs_codecs(messages)?` prepares Rounded codecs; `br.factorized_pbs_codecs(messages)?` prepares Rounded input and Scaled outputs for MVB. Both return named `input_codec()`, `lut_output_codec()` and `output_codec()` roles, deriving the correct ciphertext moduli without copying keys or allocating buffers. See [choosing the output encoding](../primus_tfhe/README.md#choosing-the-output-encoding) for compilation and output decoding.
+Choose `config.messages` with `PbsMessageConfig::new(t_in)` and an optional `with_output_modulus(t_out)`. Backend `context.encryptor(external_secret)` and `public_encryptor(&public)` prepare Rounded input; `pbs_decryptor` selects Rounded PBS/ManyLUT output and `mvb_decryptor` selects Scaled MVB output. No codec or LUT is passed to these clients. `pbs_lookup_table_compiler()` and `compile_mvb_fn` use the same defaults. Family `PbsParameters` provide the same default client factories without a transform table; contexts delegate to them. For advanced same-key domains, bind prepared codecs through the family `*_with_codec` factories; see [choosing the output encoding](../primus_tfhe/README.md#choosing-the-output-encoding).
 
 `ClientKey` is the complete setup bundle; ordinary clients need only `let external_secret = client.external_lwe_secret_key();`, an `&LweSecretKey`. You can generate that owner directly from `br.external_lwe()`, or move it out with `client.into_parts()`, without retaining an accumulator secret. Binding checks only the external domain; accumulator shape, invertibility and return-key bounds belong to their own consumers. Ring clients accept only `client.accumulator_ntru_secret_key()`.
 
-Choose a `RoundedCodec` at external q, then use the context's `encryptor(external_secret, &input_codec)`, `public_encryptor(&public, &input_codec)` and `decryptor(external_secret, &input_codec)`. `br.try_generate_public_key(external_secret, rng)` creates an LWE public key under independent external s. This is not an NTRU ring public key; see the [LWE public-key contract](../primus_lwe/README.md#public-key-encryption) for total noise requirements. Ordinary messages use T and `decrypt` returns `Result<T, ClientError>`.
+For explicit encoding, choose a `RoundedCodec` at external q, then use `br.encryptor_with_codec(external_secret, &input_codec)`, `br.public_encryptor_with_codec(&public, &input_codec)` and `br.decryptor_with_codec(external_secret, &input_codec)`. `br.try_generate_public_key(external_secret, rng)` creates an LWE public key under independent external s. This is not an NTRU ring public key; see the [LWE public-key contract](../primus_lwe/README.md#public-key-encryption) for total noise requirements. Ordinary messages use T and `decrypt` returns `Result<T, ClientError>`.
 
 Client reads/writes accept borrowed LWE views: pass `output.as_mut_view()` to `encrypt_to` and `ciphertext.as_view()` to `decrypt` or `decrypt_phase`. Allocating encryption methods still return `LweCiphertext<T>`; Boolean clients follow the same convention.
 
-For LUT results, pass the returned-output codec to `decryptor(external_secret, &output_codec)` and call `decrypt()`. Both Rounded and Scaled codecs are accepted, including MVB output with a different message modulus. The prepared decoding state is copied; the secret remains borrowed. `decrypt_phase` remains available for diagnostics.
+For explicit decoding, pass the returned-output codec to `br.decryptor_with_codec(external_secret, &output_codec)` and call `decrypt()`. Both Rounded and Scaled codecs are accepted, including MVB output with a different message modulus. The prepared decoding state is copied; the secret remains borrowed. `decrypt_phase` remains available for diagnostics.
 
-Use `encrypt_padded` for front-half LUTs and ordinary `encrypt` for odd full domains. Prepare codecs with `br.pbs_codecs(PbsMessageConfig::new(t_in))?`; output message moduli default to the input choice. Call `.with_output_modulus(t_out)` before preparation to override it. `br.lookup_table_compiler(&codecs)?` binds the selected input/output encodings directly; call `compile_fn` / `compile_slice`, or the interleaved / odd full-domain methods. Bind the output decryptor to `codecs.output_codec()`. The compiler checks input q and LUT-output Q without preparing an unused default output. The return path scales existing encodings rather than re-encoding; budget Q→q rounding and key-switch errors.
+Use `encrypt_padded` for front-half LUTs and ordinary `encrypt` for odd full domains. For explicit compilation, prepare codecs with `br.pbs_codecs(PbsMessageConfig::new(t_in))?`; output message moduli default to the input choice. Call `.with_output_modulus(t_out)` before preparation to override it. `br.lookup_table_compiler(&codecs)?` binds the selected input/output encodings directly; call `compile_fn` / `compile_slice`, or the interleaved / odd full-domain methods. Bind the output decryptor to `codecs.output_codec()`. The compiler checks input q and LUT-output Q without preparing an unused default output. The return path scales existing encodings rather than re-encoding; budget Q→q rounding and key-switch errors.
 
 The [common guide](../primus_tfhe/README.md) covers ManyLUT, odd full domains and MVB. MVB compiles with an unsigned `ScaledCodec` at Q and decodes with a Scaled codec at q, budgeting the difference between their fixed scales. Bounded two-input `BivariateLookupTable` currently requires q=Q.
 
@@ -105,7 +105,7 @@ The separate [primus_tfhe_ntru_lut](../primus_tfhe_ntru_lut/README.md) crate han
 
 ## NTRU→LWE returns
 
-`LweReturnEvaluator::new(server.key_switching_key().unwrap(), q_modulus)` borrows the
+`LweReturnEvaluator::new(server.key_switching_key(), q_modulus)` borrows the
 Q→q, f→s key and binds external q without allocating. Both backends re-export it.
 Prepare only the storage you need with `new_scalar_workspace()` and/or
 `new_batch_workspace()`. The latter returns `LweReturnBatchWorkspace`, containing

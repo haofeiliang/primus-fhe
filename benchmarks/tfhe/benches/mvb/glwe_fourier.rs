@@ -36,11 +36,13 @@ fn backend<T: TorusFftValue, Table: FftTable>(c: &mut Group<'_>, backend: &str, 
             sparse,
         } = workload;
         let parameters = glwe::diagnostic(NativeModulus::<T>::new(), order);
+        // Bind the actual workload domains before constructing the context.
+        let parameters = parameters.with_messages(
+            PbsMessageConfig::new(T::as_from(2 * domain)).with_output_modulus(T::TWO),
+        );
         let codecs = parameters
             .as_ref()
-            .factorized_pbs_codecs(
-                PbsMessageConfig::new(T::as_from(2 * domain)).with_output_modulus(T::TWO),
-            )
+            .factorized_pbs_codecs(parameters.messages())
             .unwrap();
         let fixture =
             std::cell::LazyCell::new(|| Fixture::<T, Table>::new(parameters, codecs, workload));
@@ -122,7 +124,7 @@ impl<T: TorusFftValue, Table: FftTable> Fixture<T, Table> {
             )
             .unwrap();
         let input = context
-            .encryptor(client.external_lwe_secret_key(), codecs.input_codec())
+            .encryptor(client.external_lwe_secret_key())
             .unwrap()
             .encrypt_padded(T::as_from(workload.domain / 2), &mut rng)
             .unwrap();
@@ -137,6 +139,7 @@ impl<T: TorusFftValue, Table: FftTable> Fixture<T, Table> {
         }
     }
 
+    /// All three paths deliberately produce the same Scaled MVB centers.
     /// Decode at the return modulus, which can differ from the public LUT's ring modulus.
     fn check_outputs(&self, outputs: &[LweCiphertext<T>], verified: &mut bool) {
         if *verified {
@@ -144,10 +147,7 @@ impl<T: TorusFftValue, Table: FftTable> Fixture<T, Table> {
         }
         let decryptor = self
             .context
-            .decryptor(
-                self.client.external_lwe_secret_key(),
-                self.codecs.output_codec(),
-            )
+            .mvb_decryptor(self.client.external_lwe_secret_key())
             .unwrap();
         for (i, output) in outputs.iter().enumerate() {
             assert_eq!(

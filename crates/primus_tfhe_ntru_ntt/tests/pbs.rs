@@ -48,7 +48,7 @@ fn parameters<T: FheUint>(q: T, distr: SecretKeyDistr, dimension: usize) -> PbsP
             noise_standard_deviation: 0.7,
         },
         algorithm: primus_tfhe::BlindRotationMethod::Classic,
-        messages: primus_tfhe::PbsMessageConfig::new(primus_integer::AsFrom::<u32>::as_from(4)),
+        messages: PbsMessageConfig::new(T::as_from(15u32)).with_output_modulus(T::as_from(8u32)),
     })
     .unwrap()
 }
@@ -113,12 +113,12 @@ where
         .parameters()
         .try_generate_public_key(client_key.external_lwe_secret_key(), &mut rng)
         .unwrap();
-    let public_encryptor = context.public_encryptor(&public, &input_codec).unwrap();
+    let public_encryptor = context.public_encryptor(&public).unwrap();
     let encryptor = context
-        .encryptor(client_key.external_lwe_secret_key(), &input_codec)
+        .encryptor(client_key.external_lwe_secret_key())
         .unwrap();
     let decryptor = context
-        .decryptor(client_key.external_lwe_secret_key(), &input_codec)
+        .pbs_decryptor(client_key.external_lwe_secret_key())
         .unwrap();
     let mut evaluator = context.evaluator(&server_key).unwrap();
     // Input centers use t_in=15; output values use the independent t_out=8 scale.
@@ -126,14 +126,7 @@ where
         T::as_from(8u32),
         context.parameters().external_lwe().cipher_modulus(),
     );
-    let codecs = context
-        .parameters()
-        .pbs_codecs(
-            PbsMessageConfig::new(input_codec.plaintext_modulus())
-                .with_output_modulus(output_codec.plaintext_modulus()),
-        )
-        .unwrap();
-    let compiler = context.parameters().lookup_table_compiler(&codecs).unwrap();
+    let compiler = context.pbs_lookup_table_compiler().unwrap();
     let single = compiler.compile_fn(|input| value(input, 0)).unwrap();
     let mut output = LweCiphertext::zero(context.parameters().external_lwe_dimension().get());
     // Noise-free masks exercise first fusion, leading zero and remaining CMUX parity.
@@ -168,7 +161,7 @@ where
         *input.b_mut() = body;
         evaluator.apply_lookup_table_to(input.as_view(), &single, output.as_mut_view());
         assert_eq!(
-            output_codec.decode_value(decryptor.decrypt_phase(output.as_view()).unwrap()),
+            decryptor.decrypt(output.as_view()).unwrap(),
             T::as_from(3u32)
         );
     }
@@ -203,7 +196,7 @@ where
             }
             for (index, output) in outputs.iter().enumerate() {
                 assert_eq!(
-                    output_codec.decode_value(decryptor.decrypt_phase(output.as_view()).unwrap()),
+                    decryptor.decrypt(output.as_view()).unwrap(),
                     value(message, index)
                 );
             }
@@ -235,7 +228,7 @@ where
                     output.as_mut_view(),
                 );
                 assert_eq!(
-                    output_codec.decode_value(decryptor.decrypt_phase(output.as_view()).unwrap()),
+                    decryptor.decrypt(output.as_view()).unwrap(),
                     value(message, 0)
                 );
             }
@@ -245,44 +238,31 @@ where
     // Message encodings belong to programs: reuse one key and PBS workspace
     // at two additional plaintext moduli, including the interleaved path.
     for t in [4u32, 8] {
-        let codec = RoundedCodec::new(
-            T::as_from(t),
-            context.parameters().external_lwe().cipher_modulus(),
-        );
         let codecs = context
             .parameters()
-            .pbs_codecs(PbsMessageConfig::new(codec.plaintext_modulus()))
+            .pbs_codecs(PbsMessageConfig::new(T::as_from(t)))
             .unwrap();
         let compiler = context.parameters().lookup_table_compiler(&codecs).unwrap();
+        let decryptor = context
+            .parameters()
+            .decryptor_with_codec(client_key.external_lwe_secret_key(), codecs.output_codec())
+            .unwrap();
         let single = compiler.compile_fn(|m| T::as_from(m)).unwrap();
         let many = compiler
             .compile_interleaved_fn(2, |m, _| T::as_from(m))
             .unwrap();
         let input = context
-            .encryptor(client_key.external_lwe_secret_key(), &codec)
+            .parameters()
+            .encryptor_with_codec(client_key.external_lwe_secret_key(), codecs.input_codec())
             .unwrap()
             .encrypt_padded(T::ONE, &mut rng)
             .unwrap();
         let mut outputs = vec![context.allocate_lwe_ciphertext(); 2];
         evaluator.apply_lookup_table_to(input.as_view(), &single, outputs[0].as_mut_view());
-        assert_eq!(
-            context
-                .decryptor(client_key.external_lwe_secret_key(), &codec)
-                .unwrap()
-                .decrypt(outputs[0].as_view())
-                .unwrap(),
-            T::ONE
-        );
+        assert_eq!(decryptor.decrypt(outputs[0].as_view()).unwrap(), T::ONE);
         evaluator.apply_interleaved_lookup_table_to(input.as_view(), &many, &mut outputs);
         for output in outputs {
-            assert_eq!(
-                context
-                    .decryptor(client_key.external_lwe_secret_key(), &codec)
-                    .unwrap()
-                    .decrypt(output.as_view())
-                    .unwrap(),
-                T::ONE
-            );
+            assert_eq!(decryptor.decrypt(output.as_view()).unwrap(), T::ONE);
         }
     }
 
@@ -420,18 +400,18 @@ where
         );
         assert_eq!(outputs, before);
     }
-    // Rejected calls leave the reusable evaluator usable.
+    // Rejected calls and message overrides leave the evaluator and original decoder usable.
     evaluator.apply_interleaved_lookup_table_to(input.as_view(), &good, &mut outputs);
     assert_eq!(
-        output_codec.decode_value(decryptor.decrypt_phase(outputs[0].as_view()).unwrap()),
+        decryptor.decrypt(outputs[0].as_view()).unwrap(),
         T::as_from(3u32)
     );
     assert_eq!(
-        output_codec.decode_value(decryptor.decrypt_phase(outputs[1].as_view()).unwrap()),
+        decryptor.decrypt(outputs[1].as_view()).unwrap(),
         T::as_from(0u32)
     );
     assert_eq!(
-        output_codec.decode_value(decryptor.decrypt_phase(outputs[2].as_view()).unwrap()),
+        decryptor.decrypt(outputs[2].as_view()).unwrap(),
         T::as_from(3u32)
     );
 
@@ -456,10 +436,7 @@ where
             bivariate.lookup_table(),
             result.as_mut_view(),
         );
-        assert_eq!(
-            output_codec.decode_value(decryptor.decrypt_phase(result.as_view()).unwrap()),
-            x * x + y
-        );
+        assert_eq!(decryptor.decrypt(result.as_view()).unwrap(), x * x + y);
     }
 
     // Reuse this odd-modulus fixture for the full domain, including the upper
@@ -472,10 +449,7 @@ where
         let expected = values[message];
         let input = encryptor.encrypt(T::as_from(message), &mut rng).unwrap();
         evaluator.apply_lookup_table_to(input.as_view(), &full, result.as_mut_view());
-        assert_eq!(
-            output_codec.decode_value(decryptor.decrypt_phase(result.as_view()).unwrap()),
-            expected
-        );
+        assert_eq!(decryptor.decrypt(result.as_view()).unwrap(), expected);
     }
 }
 
@@ -564,13 +538,10 @@ fn check_first_controls<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
             .unwrap();
         let mut evaluator = context.evaluator(&server).unwrap();
         let decryptor = context
-            .decryptor(client.external_lwe_secret_key(), &input_codec)
+            .pbs_decryptor(client.external_lwe_secret_key())
             .unwrap();
-        let codecs = parameters
-            .pbs_codecs(PbsMessageConfig::new(input_codec.plaintext_modulus()))
-            .unwrap();
-        let lut = parameters
-            .lookup_table_compiler(&codecs)
+        let lut = context
+            .pbs_lookup_table_compiler()
             .unwrap()
             .compile_fn(|m| T::as_from((m + 1) % 8))
             .unwrap();
@@ -624,7 +595,8 @@ fn first_controls_cover_secret_values_and_single_coordinate_keys() {
             SecretKeyDistr::UniformBinary,
             SecretKeyDistr::UniformTernary,
         ] {
-            let context_parameters = &parameters(q, distr, dimension);
+            let context_parameters =
+                &parameters(q, distr, dimension).with_messages(PbsMessageConfig::new(15));
             let context =
                 TfheContext::<_, U32NttTable>::try_from_parameters(context_parameters.clone())
                     .unwrap();

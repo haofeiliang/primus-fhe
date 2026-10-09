@@ -4,7 +4,7 @@
 //! Fixtures are initialized only for selected IDs, then reused across samples.
 //! Run: cargo bench -p primus_tfhe_benchmarks --bench pbs --features ntru-ntt
 
-use primus_tfhe::{PbsMessageConfig, RoundedPbsCodecs};
+use primus_tfhe::PbsMessageConfig;
 use primus_tfhe_benchmarks::measurement::{Case, Group, metadata};
 use std::hint::black_box;
 
@@ -36,16 +36,12 @@ fn pbs<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     let kind = if ternary { "ternary" } else { "binary" };
     let name = format!("{kind}/{}", workload.name);
     let parameters = ntru::pbs(ntt_modulus::<T>(), workload, secret);
-    let codecs = parameters
-        .as_ref()
-        .pbs_codecs(PbsMessageConfig::new(T::as_from(
-            workload.plaintext_modulus,
-        )))
-        .unwrap();
+    let parameters = parameters.with_messages(PbsMessageConfig::new(T::as_from(
+        workload.plaintext_modulus,
+    )));
     // Cached owned state avoids both eager setup during --list and repeated key
     // generation for each Criterion sample. Evaluators borrow this state locally.
-    let fixture =
-        std::cell::LazyCell::new(|| Fixture::<T, Table>::new(parameters, codecs, workload));
+    let fixture = std::cell::LazyCell::new(|| Fixture::<T, Table>::new(parameters, workload));
     let mut verified = false;
     let case = Case::new("ntru", backend, T::BITS, format!("{name}/complete"));
     c.bench_function(case.id(), |b| {
@@ -63,7 +59,7 @@ fn pbs<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
             evaluator.apply_lookup_table_to(input.as_view(), lut, output.as_mut_view());
             assert_eq!(
                 context
-                    .decryptor(client.external_lwe_secret_key(), codecs.output_codec())
+                    .pbs_decryptor(client.external_lwe_secret_key())
                     .unwrap()
                     .decrypt(output.as_view())
                     .unwrap(),
@@ -115,7 +111,6 @@ impl<T: FheUint, Table: MonomialNttTable<ValueT = T>> Fixture<T, Table> {
     /// preserved so the baseline keeps identical client and encryption randomness.
     fn new(
         parameters: primus_tfhe_ntru_ntt::PbsParameters<T, PowOf2Modulus<T>>,
-        codecs: RoundedPbsCodecs<T, primus_modulus::BarrettModulus<T>, PowOf2Modulus<T>>,
         workload: PbsWorkload,
     ) -> Self {
         let context_parameters = &parameters;
@@ -126,14 +121,13 @@ impl<T: FheUint, Table: MonomialNttTable<ValueT = T>> Fixture<T, Table> {
         let mut rng = StdRng::seed_from_u64(42);
         let (client, server) = context.try_generate_keys(&mut rng).unwrap();
         let input = context
-            .encryptor(client.external_lwe_secret_key(), codecs.input_codec())
+            .encryptor(client.external_lwe_secret_key())
             .unwrap()
             .encrypt_padded(T::ONE, &mut rng)
             .unwrap();
         let domain = workload.plaintext_modulus as usize / 2;
         let lut = context
-            .parameters()
-            .lookup_table_compiler(&codecs)
+            .pbs_lookup_table_compiler()
             .unwrap()
             .compile_fn(|x| T::as_from((x + domain - 1) % domain))
             .unwrap();

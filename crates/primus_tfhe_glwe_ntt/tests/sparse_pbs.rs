@@ -108,11 +108,9 @@ fn sparse_pbs_preserves_external_secret_and_interleaved_outputs_in_both_orders()
                 N
             }
         );
-        let encryptor = context
-            .encryptor(client.external_lwe_secret_key(), &input_codec)
-            .unwrap();
+        let encryptor = context.encryptor(client.external_lwe_secret_key()).unwrap();
         let decryptor = context
-            .decryptor(client.external_lwe_secret_key(), &input_codec)
+            .pbs_decryptor(client.external_lwe_secret_key())
             .unwrap();
         // A distinct output scale exercises P2.1 through both dispatch branches.
         let codec = RoundedCodec::new(16, BarrettModulus::new(Q));
@@ -223,7 +221,7 @@ fn sparse_boolean_gates_chain_in_both_orders() {
             .boolean_decryptor(client.external_lwe_secret_key(), &input_codec)
             .unwrap();
         let phase_decryptor = context
-            .decryptor(client.external_lwe_secret_key(), &input_codec)
+            .pbs_decryptor(client.external_lwe_secret_key())
             .unwrap();
         let mut evaluator = context.boolean_evaluator(&server, &input_codec).unwrap();
         let mut inputs = [
@@ -272,11 +270,9 @@ fn sparse_bivariate_and_odd_full_domain_respect_input_margins_in_both_orders() {
                 &mut rng,
             )
             .unwrap();
-        let encryptor = context
-            .encryptor(client.external_lwe_secret_key(), &input_codec)
-            .unwrap();
+        let encryptor = context.encryptor(client.external_lwe_secret_key()).unwrap();
         let decryptor = context
-            .decryptor(client.external_lwe_secret_key(), &input_codec)
+            .pbs_decryptor(client.external_lwe_secret_key())
             .unwrap();
         let mut evaluator = context.evaluator(&server).unwrap();
 

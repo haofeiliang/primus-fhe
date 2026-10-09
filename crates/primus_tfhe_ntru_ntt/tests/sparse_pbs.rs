@@ -56,7 +56,7 @@ fn context<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
             noise_standard_deviation: 0.7,
         },
         algorithm: primus_tfhe::BlindRotationMethod::Classic,
-        messages: primus_tfhe::PbsMessageConfig::new(primus_integer::AsFrom::<u32>::as_from(4)),
+        messages: PbsMessageConfig::new(T::as_from(16u32)).with_output_modulus(T::as_from(8u32)),
     })
     .unwrap();
     let context = TfheContext::try_from_parameters(parameters.clone()).unwrap();
@@ -115,14 +115,7 @@ fn check_complete<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, weight:
     let modulus = context.parameters().external_lwe().cipher_modulus();
     let q_wide: i128 = q.as_into();
     let codec = RoundedCodec::new(T::as_from(8usize), modulus);
-    let codecs = context
-        .parameters()
-        .pbs_codecs(
-            PbsMessageConfig::new(input_codec.plaintext_modulus())
-                .with_output_modulus(codec.plaintext_modulus()),
-        )
-        .unwrap();
-    let compiler = context.parameters().lookup_table_compiler(&codecs).unwrap();
+    let compiler = context.pbs_lookup_table_compiler().unwrap();
     let value = |m: usize, i: usize| T::as_from((m + 2 * i) % 8);
     let single = compiler.compile_fn(|m| value(m, 0)).unwrap();
     let many = compiler.compile_interleaved_fn(3, value).unwrap();
@@ -133,16 +126,7 @@ fn check_complete<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, weight:
     // Integer differences in the public factors amplify BR noise. Seventeen
     // outputs also cross two complete return tiles and their singleton tail.
     let scaled = ScaledCodec::new(T::as_from(8usize), modulus);
-    let mvb_codecs = context
-        .parameters()
-        .factorized_pbs_codecs(
-            PbsMessageConfig::new(input_codec.plaintext_modulus())
-                .with_output_modulus(scaled.plaintext_modulus()),
-        )
-        .unwrap();
-    let factorized_lut = context
-        .compile_factorized_lookup_table_fn(&mvb_codecs, 8, 17, value)
-        .unwrap();
+    let factorized_lut = context.compile_mvb_fn(8, 17, value).unwrap();
     let mut classic_mvb = primus_tfhe_ntru_ntt::FactorizedEvaluator::new(&classic);
     let mut factor_outputs = vec![output.clone(); 17];
     let mut factor_references = factor_outputs.clone();
@@ -194,7 +178,7 @@ fn check_complete<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, weight:
         let mut sparse_mvb = primus_tfhe_ntru_ntt::FactorizedEvaluator::new(&sparse);
         for (message, zero_mask) in [(0, true), (3, false), (7, false), (1, true)] {
             let mut input = context
-                .encryptor(client.external_lwe_secret_key(), &input_codec)
+                .encryptor(client.external_lwe_secret_key())
                 .unwrap()
                 .encrypt_padded(T::as_from(message), &mut rng)
                 .unwrap();

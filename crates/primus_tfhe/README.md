@@ -74,7 +74,7 @@ let mut cbs = context.circuit_bootstrap_evaluator(&resources, server.circuit_boo
 
 ## Client and server roles
 
-`Encryptor`, `Decryptor` and their Boolean wrappers share encoding, range checks and allocation-free `*_to` operations. `LweClientParameters::new(&lwe_parameters)` borrows a validated LWE domain, including its dimension, rounded codec and noise, and derives the mask sampler from the codec modulus. Its fields are private and available through accessors. Family constructors validate their keys and select the active LWE secret and noise once; Both families use `LweClientParameters::try_from_parts(dimension, &codec, &noise)` to bind a selected message encoding: GLWE BR→KS uses small-LWE noise and dimension, while KS→BR uses the extracted dimension and accumulator noise; NTRU uses its independent external LWE parameters. Codec/key and codec/noise moduli are checked at binding. These checks do not establish a noise or security budget.
+`Encryptor`, `Decryptor` and their Boolean wrappers share encoding, range checks and allocation-free `*_to` operations. `LweClientParameters::new(&lwe_parameters)` copies the dimension and small Rounded state, borrows the prepared noise sampler, and derives its mask sampler from the codec modulus. Its fields are private and available through accessors. Family constructors validate their keys and select the active LWE secret and noise once. Both families use `LweClientParameters::try_from_parts(dimension, &codec, &noise)` to bind a selected message encoding: GLWE BR→KS uses small-LWE noise and dimension, while KS→BR uses the extracted dimension and accumulator noise; NTRU uses its independent external LWE parameters. Codec/key and codec/noise moduli are checked at binding. These checks do not establish a noise or security budget.
 
 The shared layer accepts `LweSecretKeyRef` or `&LwePublicKey`; its only client trait, `EncryptionKey<T, M>`, selects the encryption kernel without family parameter or error types. Raw operations return `ClientError`; Boolean operations return `BooleanError`.
 
@@ -129,11 +129,13 @@ let lhs = ring_client.encrypt(&lhs_message, &mut rng);
 let rhs = ring_client.encrypt(&rhs_message, &mut rng);
 let mut decoded = vec![0; lhs_message.len()];
 let external_secret = client_key.external_lwe_secret_key();
-let input = context.encryptor(external_secret, &input_codec)?.encrypt_padded(3, &mut rng)?;
+let input = context.parameters()
+    .encryptor_with_codec(external_secret, &input_codec)?
+    .encrypt_padded(3, &mut rng)?;
 
 // Server: compute F(m) = [m >= 2] inside the same CBS, then return selected.
-let mut pbs = context.evaluator(&server_key)?;
-let key = server_key.circuit_bootstrap_key().unwrap();
+let mut pbs = context.evaluator(server_key.server_key())?;
+let key = server_key.circuit_bootstrap_key();
 let program = key.parameters().compile_lookup_table_fn(&input_codec, |m| u64::from(m >= 2))?;
 let mut cbs = CircuitBootstrapEvaluator::try_with_lookup_table(
     pbs.bootstrap_resources(), key, program,
@@ -184,7 +186,7 @@ Backends accept numerical `PbsConfig` / `CbsConfig` choices and derive shared ri
 
 The front-half unary function or slice compiler programs `0..ceil(t_in/2)` with outputs in `0..t_out`, as selected by the output codec. Its remaining inputs are not independently programmed. Odd full-domain compilation is a separate entry point described below. For an interleaved LUT (ManyLUT), the effective output count `k` is positive and the padded output count is `s = next_power_of_two(k)`, with `ceil(t/2) <= N/s`. The callback receives `(input, output_index)` once per effective pair, in input-major order; slices contain `D*k` values in the same order. With `k=3`, three outputs occupy four slots: the compiler zeros the fourth slot without calling the callback, and the evaluator returns exactly three ciphertexts. All outputs share one blind rotation (BR). GLWE shares a ring key switch with separate extraction; NTRU returns and LWE-key-switches each output separately. More outputs reduce rotation resolution and the available input-noise margin. This is one input evaluated by multiple functions, not batching independent ciphertexts.
 
-Create a reusable `LookupTableCompiler` with `br.lookup_table_compiler(&codecs)?` in either family. TFHE parameters retain key domains, sampling state and default input/output message choices; clients and programs can override these choices with independently bound codecs. For direct shared-layer use, `LookupTableCompiler::try_new(poly_length, &input_codec, accumulator_modulus, &output_codec)` binds the same encoding environment. It copies only the needed encoding state, without allocation or a borrow of the parameters/context. Its methods are:
+Create a reusable `LookupTableCompiler` with `context.pbs_lookup_table_compiler()?` in any backend. The context supplies its default input/output messages; `pbs_lookup_table_compiler_with_messages(messages)` overrides both for one compiler without changing defaults or clients. Family `br.lookup_table_compiler(&codecs)` remains the explicit-codec entry. For direct shared-layer use, `LookupTableCompiler::try_new(poly_length, &input_codec, accumulator_modulus, &output_codec)` binds the same encoding environment. It copies only the needed encoding state, without allocation or a borrow of the parameters/context. Its methods are:
 
 | Program | Function input | Slice input |
 | --- | --- | --- |
@@ -220,56 +222,56 @@ Describe message domains once with `PbsMessageConfig::new(t_in)`. It defaults to
 
 For a binary input width, `PbsMessageConfig::from_input_bits(4)` selects 16 valid padded inputs and codec modulus 32. One codec bit is padding; the default full output modulus is still 32, so output padding or reconsumption is not implied. `try_from_input_bits(u32)` rejects an unrepresentable modulus; ciphertext compatibility and LUT capacity remain setup checks. General/odd moduli still use `new(t)`.
 
-Prepare the codecs from either family's parameters; all four backends re-export the configuration:
+The GLWE and NTRU `PbsParameters` prepare encoding by purpose from `config.messages`; all four backend contexts delegate client creation to them. Clients need only the external secret or public key, and can be created before any LUT. Family factories need no transform table. Input encryption is shared by PBS, ManyLUT and factorized MVB through `context.encryptor(external_secret)`; public-key input uses `public_encryptor(&public)`.
 
-| Factory | `input_codec()` at q | `lut_output_codec()` at Q | `output_codec()` at q |
+| Program factory | Input at q | LUT output at Q | Returned-output factory at q |
 | --- | --- | --- | --- |
-| `br.pbs_codecs(messages)?` | Rounded | Rounded | Rounded |
-| `br.factorized_pbs_codecs(messages)?` | Rounded | Scaled | Scaled |
+| `context.pbs_lookup_table_compiler()` | Rounded | Rounded | `pbs_decryptor`: Rounded |
+| `context.compile_mvb_fn(domain_len, output_count, function)` | Rounded | Scaled | `mvb_decryptor`: Scaled |
 
-For example, ordinary PBS or ManyLUT with `t_in=16` and `t_out=4`:
+For example, after choosing `config.messages = PbsMessageConfig::new(16).with_output_modulus(4)` and creating the context:
 
 ```rust,ignore
-use primus_tfhe::PbsMessageConfig;
-
-let codecs = context.parameters().pbs_codecs(
-    PbsMessageConfig::new(16).with_output_modulus(4),
-)?;
-let encryptor = context.encryptor(external_secret, codecs.input_codec())?;
-let decryptor = context.decryptor(external_secret, codecs.output_codec())?;
-let compiler = context.parameters().lookup_table_compiler(&codecs)?;
-let lut = compiler.compile_fn(|x| (x % 4) as u64)?;
+let encryptor = context.encryptor(external_secret)?;
+let decryptor = context.pbs_decryptor(external_secret)?;
+let lut = context.pbs_lookup_table_compiler()?.compile_fn(|x| (x % 4) as u64)?;
 let input = encryptor.encrypt_padded(7, &mut rng)?;
 let output = evaluator.apply_lookup_table(input.as_view(), &lut);
 assert_eq!(decryptor.decrypt(output.as_view())?, 3);
 ```
 
-Omit `.with_output_modulus(4)` for equal message moduli. Preparation validates the selected input/output codecs, allocates nothing, and retains no key or context borrow. The output choice is applied before codec validation, so an invalid default is not silently substituted. Program geometry, factorization-specific scale conditions and noise budgets are still checked or required by the chosen operation.
+A second program can keep the configured input domain and choose a different output modulus with the same keys, context and evaluator:
 
-GLWE uses a common ciphertext modulus for all three roles. NTRU derives both output codecs from the same `t_out`, with Q for LUT coefficients and q for returned ciphertexts. The return path rescales an existing phase; it does not recreate the exact q-encoding center. Budget Q→q rounding and key-switch noise. Preparing a Scaled codec at q additionally checks that codec's own scale-recovery condition.
+```rust,ignore
+let parameters = context.parameters();
+let messages = parameters.messages().with_output_modulus(8);
+let codecs = parameters.pbs_codecs(messages)?;
+let decryptor = parameters.decryptor_with_codec(external_secret, codecs.output_codec())?;
+let compiler = parameters.lookup_table_compiler(&codecs)?;
+let lut = compiler.compile_fn(|x| (x % 8) as u64)?;
+```
 
-For MVB, use `factorized_pbs_codecs` and pass `&codecs` directly to `context.compile_factorized_lookup_table_fn`. Bind `context.decryptor(external_secret, codecs.output_codec())?`, then call `decryptor.decrypt(output.as_view())?`, just as for ordinary PBS or ManyLUT. Factorized outputs keep Scaled encoding even when `t_out=t_in`.
+For a different MVB output domain, prepare `parameters.factorized_pbs_codecs(messages)` once, pass that bundle to `context.compile_factorized_lookup_table_fn`, and bind `codecs.output_codec()` through the same `parameters.decryptor_with_codec` method. Keep `messages.input_modulus` equal to the configured input domain to reuse `context.encryptor(external_secret)`. Compiling a LUT or MVB program never changes the context defaults or a previously bound decryptor. Default client factories prepare only the requested codec; ordinary PBS does not require unused Scaled encoding to be valid. Geometry, factorization conditions and noise budgets remain operation requirements.
 
-The decryptor copies the codec’s prepared `MessageDecoder` and borrows only the secret. Rounded and Scaled codecs share q→t decoding, while retaining their distinct encoding centers and recovery bounds. Input encryption and output decryption may use different message moduli. Keep `decrypt_phase` for noise diagnostics or advanced composition; it does not decode a message.
+GLWE uses a common ciphertext modulus for input, LUT and return. NTRU derives both outputs from the same `t_out`, with Q for LUT coefficients and q for returned LWE. The return path rescales an existing phase rather than recreating the exact q-encoding center; budget Q→q rounding and key-switch noise. Preparing a Scaled codec at q also checks that codec's own recovery condition. MVB keeps Scaled output even when `t_out=t_in`.
 
-Explicit `RoundedCodec`/`ScaledCodec` construction and raw LUT constructors remain available for advanced composition. `LookupTableCompiler::try_new` accepts explicitly paired input and LUT-output codecs without first preparing a default output. `try_with_output_codec` changes only the compiler's output codec, checks its ciphertext modulus, and leaves input geometry unchanged. Callers using these explicit interfaces must retain the corresponding output decoder themselves. Odd full-domain methods and raw Boolean/CBS output scales keep their existing contracts.
+The encryptor copies its small Rounded state and borrows the selected fresh-noise sampler and key. The decryptor copies the prepared decoder and borrows only the secret. Neither holds a LUT, server key or mutable workspace; no codec variable must outlive them. Rounded and Scaled share q→t decoding but have different encoding centers and recovery bounds. `decrypt_phase` remains the undecoded diagnostic entry.
+
+Input encryption uses `config.messages.input_modulus`; input and output moduli remain independently configurable. For advanced input domains, prepare the codecs once and bind the existing input codec through `context.parameters().encryptor_with_codec(secret, codecs.input_codec())`; compilers and decoders can reuse the same prepared bundle. Explicit `RoundedCodec`/`ScaledCodec` construction and raw LUT constructors remain available for these compositions. `LookupTableCompiler::try_new` accepts explicitly paired input and LUT-output codecs without first preparing a default output. `try_with_output_codec` changes only the compiler's output codec, checks its ciphertext modulus, and leaves input geometry unchanged. Callers using these explicit interfaces must retain the corresponding output decoder themselves. Odd full-domain methods and raw Boolean/CBS output scales keep their existing contracts.
 
 A returned value belongs to `0..t_out`; front-half input accepts only `0..ceil(t_in/2)`. Equal message moduli alone do not make an output suitable for another PBS: its encoding, domain and noise margin must also match that next program.
 
 ## Odd full-domain PBS
 
-Use `compiler.compile_odd_full_domain_fn(function)` or its `_slice` form; select a different output message modulus with `PbsMessageConfig::with_output_modulus` before preparing codecs when needed. These methods program **all of `0..t_in`**, with odd `t_in >= 3` and `t_in <= N`. Slices contain exactly `t_in` outputs in input order. Encrypt with ordinary `encrypt`, then use the existing `apply_lookup_table_to`. Bind the output codec to the decryptor and call `decrypt`, for either default or explicit output encoding. For example, with a common input/accumulator modulus, `t_in=15` and an output codec for `t_out=8`:
+Use `compiler.compile_odd_full_domain_fn(function)` or its `_slice` form; select a different output message modulus with `PbsMessageConfig::with_output_modulus` before preparing codecs when needed. These methods program **all of `0..t_in`**, with odd `t_in >= 3` and `t_in <= N`. Slices contain exactly `t_in` outputs in input order. Encrypt with ordinary `encrypt`, then use the existing `apply_lookup_table_to`. Bind the output codec to the decryptor and call `decrypt`, for either default or explicit output encoding. For example, configure `config.messages = PbsMessageConfig::new(15).with_output_modulus(8)` before creating the context, with a common input/accumulator modulus:
 
 ```rust,ignore
-let codecs = context.parameters().pbs_codecs(
-    primus_tfhe::PbsMessageConfig::new(15).with_output_modulus(8),
-)?;
-let encryptor = context.encryptor(external_secret, codecs.input_codec())?;
-let compiler = context.parameters().lookup_table_compiler(&codecs)?;
+let encryptor = context.encryptor(external_secret)?;
+let decryptor = context.pbs_decryptor(external_secret)?;
+let compiler = context.pbs_lookup_table_compiler()?;
 let lut = compiler.compile_odd_full_domain_fn(|x| ((x * x + 3) % 8) as u32).unwrap();
 let input = encryptor.encrypt(14u32, &mut rng).unwrap();
 evaluator.apply_lookup_table_to(input.as_view(), &lut, output.as_mut_view());
-let decryptor = context.decryptor(external_secret, codecs.output_codec())?;
 let message = decryptor.decrypt(output.as_view())?;
 assert_eq!(message, 7);
 ```

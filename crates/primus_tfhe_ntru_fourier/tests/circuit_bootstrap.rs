@@ -118,17 +118,10 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr, sparse: bool) {
     )
     .unwrap();
     let mut decrypt = primus_ntru::FourierNtruDecryptWorkspace::new(PolyLength::new(N));
-    let encryptor = context
-        .encryptor(client.external_lwe_secret_key(), &input_codec)
-        .unwrap();
+    let encryptor = context.encryptor(client.external_lwe_secret_key()).unwrap();
     // The same CBS-enabled server key also supports ordinary PBS.
-    let codecs = context
-        .parameters()
-        .pbs_codecs(PbsMessageConfig::new(input_codec.plaintext_modulus()))
-        .unwrap();
     let identity = context
-        .parameters()
-        .lookup_table_compiler(&codecs)
+        .pbs_lookup_table_compiler()
         .unwrap()
         .compile_fn(|message| message as u64)
         .unwrap();
@@ -139,7 +132,7 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr, sparse: bool) {
         .apply_lookup_table(input.as_view(), &identity);
     assert_eq!(
         context
-            .decryptor(client.external_lwe_secret_key(), &input_codec)
+            .pbs_decryptor(client.external_lwe_secret_key())
             .unwrap()
             .decrypt(output.as_view())
             .unwrap(),
@@ -219,7 +212,7 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr, sparse: bool) {
         let input_codec =
             RoundedCodec::new(t, context.parameters().external_lwe().cipher_modulus());
         let encryptor = context
-            .encryptor(client.external_lwe_secret_key(), &input_codec)
+            .encryptor_with_codec(client.external_lwe_secret_key(), &input_codec)
             .unwrap();
         let codecs = context
             .parameters()
@@ -361,13 +354,8 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr, sparse: bool) {
     // A different compatible key object changes only the binding, not scratch.
     let return_key = server.server_key().key_switching_key().clone();
     pbs.try_rebind_return_key(&return_key).unwrap();
-    let codecs = context
-        .parameters()
-        .pbs_codecs(PbsMessageConfig::new(input_codec.plaintext_modulus()))
-        .unwrap();
     let identity = context
-        .parameters()
-        .lookup_table_compiler(&codecs)
+        .pbs_lookup_table_compiler()
         .unwrap()
         .compile_fn(|m| m as u64)
         .unwrap();
@@ -375,7 +363,7 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr, sparse: bool) {
     pbs.apply_lookup_table_to(input.as_view(), &identity, output.as_mut_view());
     assert_eq!(
         context
-            .decryptor(client.external_lwe_secret_key(), &input_codec)
+            .pbs_decryptor(client.external_lwe_secret_key())
             .unwrap()
             .decrypt(output.as_view())
             .unwrap(),

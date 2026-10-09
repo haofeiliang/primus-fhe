@@ -145,7 +145,7 @@ fn pbs<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
         .unwrap();
 
     let encryptor = context
-        .encryptor(client_key.external_lwe_secret_key(), codecs.input_codec())
+        .encryptor_with_codec(client_key.external_lwe_secret_key(), codecs.input_codec())
         .unwrap();
     let decryptor = context
         .decryptor(client_key.external_lwe_secret_key(), codecs.output_codec())
@@ -264,7 +264,7 @@ fn thresholds<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     let (client_key, server_key) = context.try_generate_keys(&mut rng).unwrap();
 
     let encryptor = context
-        .encryptor(client_key.external_lwe_secret_key(), codecs.input_codec())
+        .encryptor_with_codec(client_key.external_lwe_secret_key(), codecs.input_codec())
         .unwrap();
     let decryptor = context
         .decryptor(client_key.external_lwe_secret_key(), codecs.output_codec())
@@ -353,7 +353,7 @@ fn circuit<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
 
     // Client: encrypt both candidate messages; only choices go to the server.
     let encryptor = context
-        .encryptor(client_key.external_lwe_secret_key(), &input_codec)
+        .encryptor_with_codec(client_key.external_lwe_secret_key(), &input_codec)
         .unwrap();
     let mut accumulator = context
         .accumulator_client(client_key.glwe_secret_key(), ring_message_codec)

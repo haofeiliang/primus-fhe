@@ -100,7 +100,7 @@ fn check<
         assert_eq!(
             params
                 .as_ref()
-                .encryptor(client.external_lwe_secret_key(), &codec)
+                .encryptor_with_codec(client.external_lwe_secret_key(), &codec)
                 .unwrap()
                 .encrypt(1, &mut rng)
                 .unwrap(),
@@ -114,7 +114,7 @@ fn check<
         assert_eq!(
             params
                 .as_ref()
-                .public_encryptor(&public, &codec)
+                .public_encryptor_with_codec(&public, &codec)
                 .unwrap()
                 .encrypt(1, &mut rng)
                 .unwrap(),
@@ -125,7 +125,10 @@ fn check<
             &params,
             &client,
             &codec,
-            params.as_ref().public_encryptor(&public, &codec).unwrap(),
+            params
+                .as_ref()
+                .public_encryptor_with_codec(&public, &codec)
+                .unwrap(),
         );
         check_reused_output(
             &params,
@@ -133,7 +136,7 @@ fn check<
             &codec,
             params
                 .as_ref()
-                .encryptor(client.external_lwe_secret_key(), &codec)
+                .encryptor_with_codec(client.external_lwe_secret_key(), &codec)
                 .unwrap(),
         );
 
@@ -158,14 +161,14 @@ fn check<
         assert_eq!(
             params
                 .as_ref()
-                .encryptor(wrong_domain.external_lwe_secret_key(), &codec)
+                .encryptor_with_codec(wrong_domain.external_lwe_secret_key(), &codec)
                 .err(),
             error.clone().map(TfheClientError::IncompatibleKey)
         );
         assert_eq!(
             params
                 .as_ref()
-                .decryptor(wrong_domain.external_lwe_secret_key(), &codec)
+                .decryptor_with_codec(wrong_domain.external_lwe_secret_key(), &codec)
                 .err(),
             error.clone().map(TfheClientError::IncompatibleKey)
         );
@@ -199,7 +202,10 @@ fn check<
             &mut rng,
         );
         assert_eq!(
-            params.as_ref().public_encryptor(&foreign, &codec).err(),
+            params
+                .as_ref()
+                .public_encryptor_with_codec(&foreign, &codec)
+                .err(),
             Some(ClientError::PublicKeyModulusMismatch)
         );
         let short_params = LweParameters::new(
@@ -216,7 +222,10 @@ fn check<
             &mut rng,
         );
         assert_eq!(
-            params.as_ref().public_encryptor(&short, &codec).err(),
+            params
+                .as_ref()
+                .public_encryptor_with_codec(&short, &codec)
+                .err(),
             Some(ClientError::KeyDimensionMismatch {
                 expected: public.dimension().get(),
                 actual: 3,
@@ -236,14 +245,14 @@ fn check<
         assert_eq!(
             params
                 .as_ref()
-                .encryptor(wrong_client.external_lwe_secret_key(), &codec)
+                .encryptor_with_codec(wrong_client.external_lwe_secret_key(), &codec)
                 .err(),
             Some(error.clone())
         );
         assert_eq!(
             params
                 .as_ref()
-                .decryptor(wrong_client.external_lwe_secret_key(), &codec)
+                .decryptor_with_codec(wrong_client.external_lwe_secret_key(), &codec)
                 .err(),
             Some(error)
         );
@@ -313,7 +322,7 @@ fn boolean_clients_reject_other_plaintext_moduli() {
             BooleanEncryptor::try_new(
                 parameters
                     .as_ref()
-                    .encryptor(client.external_lwe_secret_key(), &codec)
+                    .encryptor_with_codec(client.external_lwe_secret_key(), &codec)
                     .unwrap()
             )
             .err(),
@@ -323,7 +332,7 @@ fn boolean_clients_reject_other_plaintext_moduli() {
             BooleanDecryptor::try_new(
                 parameters
                     .as_ref()
-                    .decryptor(client.external_lwe_secret_key(), &codec)
+                    .decryptor_with_codec(client.external_lwe_secret_key(), &codec)
                     .unwrap()
             )
             .err(),
@@ -389,7 +398,7 @@ fn external_binding_checks_small_secret_coefficients_without_an_accumulator() {
                 assert_eq!(
                     parameters
                         .as_ref()
-                        .encryptor(
+                        .encryptor_with_codec(
                             primus_tfhe_glwe::ExternalLweSecretKey::SmallLwe(&secret),
                             &codec
                         )
@@ -421,7 +430,7 @@ fn check_reused_output<M, Key>(
 {
     let decryptor = parameters
         .as_ref()
-        .decryptor(client.external_lwe_secret_key(), codec)
+        .decryptor_with_codec(client.external_lwe_secret_key(), codec)
         .unwrap();
     let dimension = parameters.as_ref().external_lwe_dimension().get();
     let t = codec.plaintext_modulus();
@@ -529,7 +538,7 @@ fn message_codec_must_match_the_key_ciphertext_modulus() {
     assert_eq!(
         parameters
             .as_ref()
-            .encryptor(client.external_lwe_secret_key(), &codec)
+            .encryptor_with_codec(client.external_lwe_secret_key(), &codec)
             .err(),
         Some(error.clone())
     );
@@ -542,13 +551,16 @@ fn message_codec_must_match_the_key_ciphertext_modulus() {
         assert_eq!(
             parameters
                 .as_ref()
-                .decryptor(client.external_lwe_secret_key(), decoder)
+                .decryptor_with_codec(client.external_lwe_secret_key(), decoder)
                 .err(),
             Some(error.clone())
         );
     }
     assert_eq!(
-        parameters.as_ref().public_encryptor(&public, &codec).err(),
+        parameters
+            .as_ref()
+            .public_encryptor_with_codec(&public, &codec)
+            .err(),
         Some(ClientError::CodecModulusMismatch)
     );
     let codecs = primus_tfhe::PbsMessageConfig::new(4)

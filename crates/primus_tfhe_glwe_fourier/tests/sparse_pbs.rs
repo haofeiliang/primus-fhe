@@ -53,7 +53,7 @@ fn context<Table: FftTable>(
             noise_standard_deviation: 1.25,
         },
         method: BlindRotationMethod::Classic,
-        messages: PbsMessageConfig::new(4),
+        messages: PbsMessageConfig::new(15).with_output_modulus(16),
         order,
     })
     .unwrap();
@@ -64,8 +64,6 @@ fn context<Table: FftTable>(
 fn check_pbs<Table: FftTable>() {
     for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
         let (context_parameters, context) = self::context::<Table>(order, 4, 8);
-        let input_codec =
-            primus_encoding::RoundedCodec::new(15, context.parameters().cipher_modulus());
         let mut generator = KeyGenerator::new(&context);
         let mut rng = StdRng::seed_from_u64(0x4234_3250);
         let (client, sparse_key) = generator
@@ -98,23 +96,14 @@ fn check_pbs<Table: FftTable>() {
             }))
             .get()
         );
-        let encryptor = context
-            .encryptor(client.external_lwe_secret_key(), &input_codec)
-            .unwrap();
+        let encryptor = context.encryptor(client.external_lwe_secret_key()).unwrap();
         let decryptor = context
-            .decryptor(client.external_lwe_secret_key(), &input_codec)
+            .pbs_decryptor(client.external_lwe_secret_key())
             .unwrap();
         // Non-power-of-two input centers and a different output scale exercise
         // the exact prepared rotation modulus switch through both complete PBS orders.
         let codec = RoundedCodec::new(16, NativeModulus::new());
-        let codecs = context
-            .parameters()
-            .pbs_codecs(
-                PbsMessageConfig::new(input_codec.plaintext_modulus())
-                    .with_output_modulus(codec.plaintext_modulus()),
-            )
-            .unwrap();
-        let compiler = context.parameters().lookup_table_compiler(&codecs).unwrap();
+        let compiler = context.pbs_lookup_table_compiler().unwrap();
         let function = |m: usize| (3 * m as u64 + 1) % 16;
         let functions = |m: usize, i: usize| (m + 2 * i) as u64;
         let single = compiler.compile_fn(function).unwrap();

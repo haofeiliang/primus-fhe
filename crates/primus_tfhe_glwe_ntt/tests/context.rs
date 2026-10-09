@@ -66,6 +66,41 @@ fn parameters_with_bases(
 }
 
 #[test]
+fn ordinary_clients_do_not_prepare_unused_mvb_encoding() {
+    // Rounded permits this output domain; Scaled cannot recover its centers.
+    // No server material is needed to test client binding and public compilation.
+    let messages = PbsMessageConfig::new(4).with_output_modulus(MODULUS - 1);
+    let parameters = parameters(PbsOrder::BootstrapKeyswitch).with_messages(messages);
+    let context = TfheContext::<u32, U32NttTable>::try_from_parameters(parameters).unwrap();
+    let mut rng = StdRng::seed_from_u64(0x434f_4445_4353);
+    let client = ClientKey::generate(context.parameters(), &mut rng);
+    let secret = client.external_lwe_secret_key();
+    let encryptor = context.encryptor(secret).unwrap();
+    let decryptor = context.pbs_decryptor(secret).unwrap();
+    let input = encryptor.encrypt_padded(1, &mut rng).unwrap();
+    let phase = decryptor.decrypt_phase(input.as_view()).unwrap();
+    assert_eq!(
+        primus_encoding::RoundedCodec::new(4, context.parameters().cipher_modulus())
+            .decode_value(phase),
+        1
+    );
+    context
+        .pbs_lookup_table_compiler()
+        .unwrap()
+        .compile_fn(|_| 0)
+        .unwrap();
+    assert!(matches!(
+        context.mvb_decryptor(secret),
+        Err(primus_tfhe_glwe_ntt::TfheClientError::Client(
+            primus_tfhe::ClientError::Encoding(
+                primus_encoding::CodecError::InsufficientScaleRecovery
+            )
+        ))
+    ));
+    assert!(context.compile_mvb_fn(2, 1, |_, _| 0).is_err());
+}
+
+#[test]
 fn server_keys_are_bound_to_their_decomposition_bases() {
     let modulus = BarrettModulus::new(MODULUS);
     let source_table = U32NttTable::new(PolyLength::new(POLY_LENGTH), modulus).unwrap();
@@ -191,12 +226,10 @@ fn split_keys_support_both_pbs_orders() {
             .parameters()
             .try_generate_public_key(client.external_lwe_secret_key(), &mut rng)
             .unwrap();
-        let secret_encryptor = context
-            .encryptor(client.external_lwe_secret_key(), &input_codec)
-            .unwrap();
-        let public_encryptor = context.public_encryptor(&public, &input_codec).unwrap();
+        let secret_encryptor = context.encryptor(client.external_lwe_secret_key()).unwrap();
+        let public_encryptor = context.public_encryptor(&public).unwrap();
         let decryptor = context
-            .decryptor(client.external_lwe_secret_key(), &input_codec)
+            .pbs_decryptor(client.external_lwe_secret_key())
             .unwrap();
         let mut evaluator = context.evaluator(&server).unwrap();
         for message in 0..2u32 {

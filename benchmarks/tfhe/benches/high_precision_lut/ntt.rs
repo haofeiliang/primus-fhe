@@ -95,7 +95,7 @@ table),
         if !verified {
             evaluator.evaluate_to(input, &mut output);
             let decryptor = context
-                .decryptor(client.external_lwe_secret_key(), &input_codec)
+                .pbs_decryptor(client.external_lwe_secret_key())
                 .unwrap();
             for (i, chunk) in output.iter().enumerate() {
                 assert_eq!(
@@ -150,6 +150,9 @@ impl<T: FheUint, Table: MonomialNttTable<ValueT = T>> Fixture<T, Table> {
         workload: Workload,
         sparse: bool,
     ) -> Self {
+        let parameters = parameters.with_messages(primus_tfhe::PbsMessageConfig::new(
+            input_codec.plaintext_modulus(),
+        ));
         let context_parameters = &parameters;
         let context = TfheContext::<T, Table, PowOf2Modulus<T>>::try_from_parameters(
             context_parameters.clone(),
@@ -201,9 +204,7 @@ impl<T: FheUint, Table: MonomialNttTable<ValueT = T>> Fixture<T, Table> {
         };
         // Identical encrypted input for classic/sparse over the same fixed client.
         let mut rng = StdRng::seed_from_u64(43);
-        let encryptor = context
-            .encryptor(client.external_lwe_secret_key(), &input_codec)
-            .unwrap();
+        let encryptor = context.encryptor(client.external_lwe_secret_key()).unwrap();
         let input: Vec<_> = (0..CONFIG.input_chunk_count)
             .map(|i| {
                 encryptor

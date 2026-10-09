@@ -11,32 +11,22 @@ use rand::{SeedableRng, rngs::StdRng};
 type Word = u64;
 
 fn main() {
+    // Input/output both use t=32; set config.messages.output_modulus before
+    // constructing the context to choose another output domain.
     let config = experimental::CLASSIC_PBS_U64;
     let context = TfheContext::<Word, Table>::try_from_pbs_config(config).unwrap();
-    let parameters = context.parameters();
-
-    // Input and output messages both use t=32, independently of the keys.
-    // To change only the output domain, use parameters.messages().with_output_modulus(t_out) here.
-    let codecs = context
-        .parameters()
-        .pbs_codecs(parameters.messages())
-        .unwrap();
 
     // Client: keep client_key secret; send only server_key to the server.
     let mut rng = StdRng::seed_from_u64(42);
     let (client_key, server_key) = context.try_generate_keys(&mut rng).unwrap();
-    // Ordinary messages borrow only the external secret from the setup bundle.
+    // Clients borrow only the external secret; no LUT or codec is needed.
     let external_secret = client_key.external_lwe_secret_key();
-    let encryptor = context
-        .encryptor(external_secret, codecs.input_codec())
-        .unwrap();
-    let decryptor = context
-        .decryptor(external_secret, codecs.output_codec())
-        .unwrap();
+    let encryptor = context.encryptor(external_secret).unwrap();
+    let decryptor = context.pbs_decryptor(external_secret).unwrap();
     let mut input = context.allocate_lwe_ciphertext();
 
     // Server: prepare public LUT and reusable buffers without the client secret.
-    let compiler = context.parameters().lookup_table_compiler(&codecs).unwrap();
+    let compiler = context.pbs_lookup_table_compiler().unwrap();
     let lut = compiler.compile_fn(|x| (x % 4) as Word).unwrap();
     let mut evaluator = context.evaluator(&server_key).unwrap();
     let mut output = context.allocate_lwe_ciphertext();

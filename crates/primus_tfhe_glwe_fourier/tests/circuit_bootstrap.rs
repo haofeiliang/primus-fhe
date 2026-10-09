@@ -182,9 +182,7 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
         output
     });
 
-    let encryptor = context
-        .encryptor(client.external_lwe_secret_key(), &input_codec)
-        .unwrap();
+    let encryptor = context.encryptor(client.external_lwe_secret_key()).unwrap();
     // The same CBS-enabled server key also supports ordinary PBS.
     let codecs = context
         .parameters()
@@ -207,7 +205,7 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
     .apply_lookup_table(input.as_view(), &identity);
     assert_eq!(
         context
-            .decryptor(client.external_lwe_secret_key(), &input_codec)
+            .pbs_decryptor(client.external_lwe_secret_key())
             .unwrap()
             .decrypt(output.as_view())
             .unwrap(),
@@ -220,7 +218,7 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
         let other_codec =
             primus_encoding::RoundedCodec::new(8, context.parameters().cipher_modulus());
         let input = context
-            .encryptor(client.external_lwe_secret_key(), &other_codec)
+            .encryptor_with_codec(client.external_lwe_secret_key(), &other_codec)
             .unwrap()
             .encrypt_padded(1, &mut rng)
             .unwrap();
@@ -378,7 +376,7 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
         accumulator_client.decrypt_to(&product, &mut decoded_product);
         assert_eq!(
             context
-                .decryptor(client.external_lwe_secret_key(), &input_codec)
+                .pbs_decryptor(client.external_lwe_secret_key())
                 .unwrap()
                 .decrypt(output.as_view())
                 .unwrap(),
@@ -438,7 +436,7 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
     pbs.apply_lookup_table_to(input.as_view(), &identity, output.as_mut_view());
     assert_eq!(
         context
-            .decryptor(client.external_lwe_secret_key(), &input_codec)
+            .pbs_decryptor(client.external_lwe_secret_key())
             .unwrap()
             .decrypt(output.as_view())
             .unwrap(),
