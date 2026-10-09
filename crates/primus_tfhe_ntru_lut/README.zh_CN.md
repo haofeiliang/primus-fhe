@@ -9,43 +9,49 @@
 
 ## 实验配套参数
 
-`experimental::NTT_CLASSIC_LOOKUP_U64` / `FOURIER_CLASSIC_LOOKUP_U64` 是 `HighPrecLutConfig` 常量，组合 n800/h32 的 NTRU CBS、CBS 域已有的必需返回 KS和 c8/d5/o8 布局。`config.try_prepare()?` 返回完整 `HighPrecLutParameters`，保留 one-hot CBS、算法、返回参数、检查后的 chunk 布局和 q/Q 编码，不生成密钥或枚举函数。使用 `parameters.chunk_format()`、`layout()`、`codecs()` 和 `one_hot()` 取得配套状态。
+`experimental::NTT_CLASSIC_LOOKUP_U64` / `FOURIER_CLASSIC_LOOKUP_U64` 组合 n800/h32/N1024 one-hot CBS、其必需返回 KS 和八个输入/八个输出两位 chunks。`coefficient_chunk_count: None` 默认得到 d=5；`Some(d)` 可显式选择其他分区。输入、输出 chunk 数独立。这些算术教学配置没有经过安全性或失败概率评估，见[参数指南](../../guides/development/tfhe-parameters.md#scope-of-paired-parameter-entries)。
 
-输入和返回 chunk 使用 q24，LUT 输出使用 Q；输入/输出 chunk 数独立，公开函数由调用方提供。不创建 CMux 候选 codec。这些是 16 位算术教学配置，安全性和失败概率尚未评估；参见[参数指南](../../guides/development/tfhe-parameters.md#scope-of-paired-parameter-entries)。默认启用 NTT；纯公开表编译可使用 `--no-default-features`。
+`NttHighPrecLutContext::try_from_config` / `FourierHighPrecLutContext::try_from_config` 准备完整操作、q/Q 编码和一份变换表，不生成密钥或求值工作区。若需要先于变换离线编译，使用 `HighPrecLutParameters::try_from_config` 及其编译方法，再将该 owner 移入对应 Context。CBS/BR/返回公共状态与 sampler 只有一份，移动时不 clone，也不增加 Arc。
 
 ## 工作流
 
-[NTT](../primus_tfhe_ntru_ntt/README.zh_CN.md) 和 [Fourier](../primus_tfhe_ntru_fourier/README.zh_CN.md) 均支持 classic binary/ternary 和 sparse fixed-weight binary 查表。通过 `context.try_generate_circuit_bootstrap_keys(rng)` 生成含 BR、KS 和 CBS 的 `CircuitBootstrapServerKey`；算法来自 one-hot 的 PBS 配置。高级显式工厂为 `try_generate_circuit_bootstrap_server_key_with_parameters(ks, &client, method, gadget, rng)`。客户端用 `encrypt_padded` 加密 chunks。基础示例固定 classic，展示一个八 chunk 工作流；sparse/公开提升见[求值与工作区](#求值与工作区)。
+两个后端支持 classic binary/ternary 和 sparse 固定重量 binary 查表。推荐直接提供纯整数函数与完整整数输入输出，由库处理 chunk 提取、padding 加密和拼接：
 
-`HighPrecisionLookupTable::try_new(poly_length, ring_modulus, &input_codec, config, function)` 仅用 N、Q 和 codec 的 q/t 编译公开表，不需要 TFHE 参数、秘密或变换。启用 `ntt` 或 `fourier` 后，`try_from_parameters(br, &input_codec, config, function)` 可从已有参数取得 N/Q/q，并在编译前检查 codec 的 q。两个入口共用同一编译实现，均不需要密钥或变换表。回调接收 `(完整输入索引, 输出 chunk 索引)`，返回一个 digit。用 `NttLookupTableEvaluator::try_new(context, parameters.key_switching(), server_key, table)` 或 `FourierLookupTableEvaluator::try_new(context, parameters.key_switching(), server_key, table)` 绑定资源，调用一次 `allocate_output()`，随后重复调用 `evaluate_to(input_chunks, output_chunks)`。输出逐个使用 `context.decryptor(client.external_lwe_secret_key(), codecs.output_codec())` 解码。表拥有 chunk 编码，密钥不依赖 t。Evaluator 借用 context、服务端密钥和表，求值不需要客户端秘密。
+```rust,no_run
+use primus_ntt::U64NttTable;
+use primus_tfhe_ntru_lut::{NttHighPrecLutContext, experimental};
+use rand::{SeedableRng, rngs::StdRng};
 
-先用 `NTT_CLASSIC_LOOKUP_U64` 准备 context 与服务端密钥；八个两位 chunks 表示一个 16 位输入。以下片段计算 `(x*x+3*x+7) mod 65536`，返回八个 chunks：
-
-```rust,ignore
-use primus_tfhe_ntru_lut::{
-    HighPrecisionLookupTable, NttLookupTableEvaluator,
-};
-
-let chunks = parameters.chunk_format();
-let codecs = parameters.codecs();
-let table = HighPrecisionLookupTable::try_from_parameters(
-    context.parameters(),
-    codecs.input_codec(),
-    parameters.layout(),
-    |x, output| {
-        let x = x as u64; // 明文中间结果可能超出 u32。
-        let value = (x * x + 3 * x + 7) % 65536;
-        chunks.chunk(value, output)
-    },
+let context = NttHighPrecLutContext::<u64, U64NttTable, _>::try_from_config(
+    experimental::NTT_CLASSIC_LOOKUP_U64,
 )?;
-let mut evaluator = NttLookupTableEvaluator::try_new(&context, parameters.key_switching(), &server, &table)?;
+let function = |x: u64| (x*x + 3*x + 7) & 0xffff;
+let table = context.compile_fn(function)?; // 公开、离线；不使用秘密。
+
+// Client：只有配套生成需要两类秘密；在线客户端仅借用外部秘密 s。
+let mut rng = StdRng::seed_from_u64(42);
+let (client, server) = context.try_generate_keys(&table, &mut rng)?;
+let encryptor = context.encryptor(&client)?;
+let decryptor = context.decryptor(&client)?;
+let mut input = encryptor.allocate_input();
+
+// Server：接收公开 context/table、计算密钥和加密 chunks。
+let mut evaluator = context.evaluator(&server, &table)?;
 let mut output = evaluator.allocate_output();
-evaluator.evaluate_to(&encrypted_chunks, &mut output);
+for value in [43981u64, 0] {
+    encryptor.encrypt_to(value, &mut input, &mut rng)?;
+    evaluator.evaluate_to(&input, &mut output);
+    let result: u64 = decryptor.decrypt(&output)?;
+    assert_eq!(result, function(value));
+}
+# Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
-完整可运行工作流见 [ntt_lookup.rs](examples/ntt_lookup.rs) 和 [fourier_lookup.rs](examples/fourier_lookup.rs)。它们使用 n=800/N=1024，以八个两位 chunks 加密 16 位输入，并返回八个 chunks 的 16 位结果。低五个输入 chunks 选择系数，高三个选择 64 个候选多项式之一；输出 chunk 数仍可独立设置。输入 `0b10_10_10_11_11_00_11_01` 返回 `0b10_00_01_01_10_01_01_11`，随后零输入返回 7，两次请求复用同一个 evaluator 和缓冲。
+Fourier 使用 `FourierHighPrecLutContext<u64, RustFftTable, _>` 与对应实验常量。完整示例为 [ntt_lookup.rs](examples/ntt_lookup.rs) 和 [fourier_lookup.rs](examples/fourier_lookup.rs)，输入输出均为 16 位，复用同一 evaluator 与密文存储执行两次请求。五个低 chunk 填满 N=1024 个系数，三个高 chunk 在 64 个多项式间选表。示例固定 u64 系数，库与测试继续支持 u32。
 
-两个示例固定 `Word = u64`，从 `experimental` 取得对应的 `HighPrecLutConfig`。Chunk 位宽从 one-hot 输入 t 派生，输入输出数量及分区取自 `config.layout`，公开函数显式编写。配置准备 BR/返回状态，`parameters.one_hot().gadget()` 用于 CBS 密钥生成。Prime/native Q 与独立 PowOf2 q=2^24 记录在[参数指南](../../guides/development/tfhe-parameters.md)，库测试与诊断继续覆盖 u32。NTT 使用 `U64NttTable`；Fourier 选择 RustFFT。需要 TFHE-FFT 时，同时切换 `Table` 导入、target 的 `required-features` 和 `--features tfhe-fft`。
+`compile_fn(|x: W| -> W)` 将明文整数 W 与密文系数 T 分开。完整输入输出位宽必须能被 W 容纳，超出输出域的结果直接报错，不截断。编译仍为 output-major：同一纯函数会为每个输出 chunk 再计算一次，不保留全域明文缓存。昂贵函数可以显式预先准备值。`compile_chunks_fn(|x, output| digit)` 保留 digit 回调，支持超过一个整数容量的输出。客户端同样提供 `encrypt_chunks_to` / `decrypt_chunks_to`，使用调用方已有 digit 切片。
+
+Encryptor/decryptor 工厂不接收 LUT 或函数，根据完整操作准备编码：输入、返回 chunks 使用 q，公开表系数使用 Q。整值加解密不分配 digit 缓冲，输入密文分配显式执行。加密前先验证完整数量、维数、整数容量与输入范围，失败时不写入或消耗 RNG。解密会拒绝 padding 半区的 digit，不将其掩码为合法值。`decrypt_chunks_to` 遇到非法解码 digit 时可能已写入前缀，应丢弃该部分结果。密文本身仍不携带秘密/编码身份。
 
 ```sh
 cargo run --release -p primus_tfhe_ntru_lut --example ntt_lookup --features ntt
@@ -89,71 +95,24 @@ cargo run --release -p primus_tfhe_ntru_lut --example fourier_lookup --features 
 
 ## 求值与工作区
 
-两个 evaluator 独立持有各自后端的公共 `BootstrapResources` 与 one-hot 操作状态；表选择、旋转与 CBS 依次借用同一外积工作区，Fourier 还复用其中同一个 FFT engine。返回绑定独立于 one-hot：NTT 只分配 scalar 返回缓冲，Fourier 只分配 batch 返回缓冲。
+`context.try_generate_keys(&table, rng)` 生成一份 BR/CBS/返回组合，只补充执行计划实际需要的 lift。Classic 借用已有 initializer；sparse 仅在 `table.needs_public_lift()` 为真时，按 BR 的 basis/noise 生成独立 `NLEV[1]`。BR、CBS 和 lift 共用已接受的环秘密变换/逆元，不生成第二份 BR 或变换表。普通 sparse PBS/CBS/one-hot 不受影响。
 
-两个 evaluator 通过 `try_new(context, parameters.key_switching(), server_key, lookup_table)` 绑定完整 `CircuitBootstrapServerKey`。`HighPrecLutParameters` 直接借用 one-hot PBS 参数已有的 KS，不重复构造返回状态。独立 lift 使用 `try_with_public_lift(context, parameters.key_switching(), server_key, lookup_table, (nlev_view, &nlev_parameters))`。高级 `try_from_parts` 接收独立 BR、返回 KS、CBS 和可选 lift；可依次调用 `CircuitBootstrapServerKey::into_parts()` / `ServerKey::into_parts()` 移出组件，不复制缓冲。绑定检查布局、模数和 basis；实际秘密与变换身份仍由调用方保证。
+使用 sparse 查表时，在创建高精度 Context 前修改 one-hot PBS 的算法：
 
-`table.needs_public_lift()` 表示剪枝后的选表计划是否包含显式 `Lift`。各绑定入口共用同一选择规则：显式 lift 优先，否则需要时借用 classic initializer 及其 BR 参数。Sparse 计划包含 `Lift` 却没有独立材料时返回 `MissingPublicLiftKey`。无 `Lift` 的计划忽略多余材料，不予保留。One-hot evaluator 不暴露 BR controls。
-
-`NttPublicLift` / `FourierPublicLift` 是 NTT/Fourier NLEV[1] 视图和生成时使用的 `NlevParameters` 的借用元组别名，没有新增 owner 或构造器。Evaluator 检查 N、Q 和变换域存储长度，随后使用该材料自己的 basis，允许其不同于 BR/CBS。材料必须使用相同 accumulator 秘密和变换表示（Fourier 使用同一 table 实例）；所声明的明文、basis 和噪声预算仍由调用方保证。
-
-Sparse 要求固定重量 binary 外部秘密与匹配的 CBS 参数，可沿用查表示例的 n=800、h=32、N=1024、q24。调用方使用同一 context/编码编译公开表并加密输入 chunks。以下 NTT 片段接收这些已准备的值，避免复制整套参数：client 生成计算密钥，并按表的实际需要生成 NLEV[1]；server 绑定材料并返回密文。
-
-```rust,no_run
-use primus_modulus::PowOf2Modulus;
-use primus_ntt::U64NttTable as Table;
-use primus_tfhe::{BlindRotationMethod, LweCiphertext};
-use primus_tfhe_ntru::ClientKey;
-use primus_tfhe_ntru_ntt::{KeyGenerator, TfheContext};
-use primus_tfhe_ntru_lut::{HighPrecisionLookupTable, NttLookupTableEvaluator as LookupEvaluator};
-use rand::rngs::StdRng;
-
-// 完整展示 setup 和一次密文请求；后续请求继续复用
-// server 段创建的 evaluator 与输出缓冲。
-fn sparse_setup_and_request(
-    context: &TfheContext<u64, Table, PowOf2Modulus<u64>>,
-    client: &ClientKey<u64>,
-    parameters: &primus_tfhe_ntru_lut::HighPrecLutParameters<u64, primus_modulus::BarrettModulus<u64>, PowOf2Modulus<u64>>,
-    table: &HighPrecisionLookupTable<u64>,
-    inputs: &[LweCiphertext<u64>],
-    rng: &mut StdRng,
-) -> Vec<LweCiphertext<u64>> {
-    // Client：为自己的固定重量 binary LWE 秘密生成计算材料。
-    let mut generator = KeyGenerator::new(context);
-    let server_key = generator.try_generate_circuit_bootstrap_server_key_with_parameters(
-        parameters.key_switching(),
-        client,
-        BlindRotationMethod::Sparse { copy_count: 3, bucket_count: 64 },
-        parameters.one_hot().gadget(),
-        rng,
-    ).unwrap();
-    // 这里使用 BR 的 basis 和行噪声（查表示例中 sigma=0.7）。
-    // 独立的 NlevParameters 可以选择其他提升 basis/噪声预算。
-    let lift_parameters = context.parameters().blind_rotation();
-    let lift = table.needs_public_lift().then(|| {
-        generator.try_generate_public_lift_key(
-            client.accumulator_ntru_secret_key(), lift_parameters, rng,
-        ).unwrap()
-    });
-
-    // Server：接收计算密钥/提升密文、公开参数/表，以及输入密文 chunks。
-    let mut evaluator = match &lift {
-        Some(key) => LookupEvaluator::try_with_public_lift(
-            context,
-            parameters.key_switching(), &server_key, table, (key.as_view(), lift_parameters),
-        ),
-        None => LookupEvaluator::try_new(context, parameters.key_switching(), &server_key, table),
-    }.unwrap();
-    let mut outputs = evaluator.allocate_output();
-    evaluator.evaluate_to(inputs, &mut outputs);
-    // 后续请求复用此 evaluator，并覆盖同一输出缓冲。
-    outputs // 只将结果密文交回 client 解密。
-}
+```rust,ignore
+config.one_hot.pbs.algorithm =
+    BlindRotationMethod::Sparse { copy_count: 3, bucket_count: 64 };
+let context = NttHighPrecLutContext::<u64, Table, _>::try_from_config(config)?;
+let table = context.compile_fn(function)?;
+let (client, server) = context.try_generate_keys(&table, rng)?;
+let mut evaluator = context.evaluator(&server, &table)?;
 ```
 
-Fourier 对应替换为 `primus_fft::RustFftTable as Table`、`primus_tfhe_ntru_fourier::{KeyGenerator, TfheContext}` 和 `FourierLookupTableEvaluator as LookupEvaluator`。使用 Fourier 的 Native64 环参数，外部仍为 `PowOf2Modulus<u64>`，全部材料由同一 FFT 表实例生成。Evaluator 借用期间须保留 key/lift 的 owner；重复请求不应重新调用整个 setup 函数。
+服务端组合可复用于布局、编码和材料需求兼容的其他公开表。最初未生成 lift 的 sparse 组合，绑定后来需要 lift 的表时会报错，不在线生成材料；含 lift 的组合也可绑定不需要它的表。实际秘密与变换身份仍须一致，元数据不能证明这些条件。
 
-这是同一累加秘密下的独立 one 加密，不对 sparse 首桶求和派生，后者具有不同的误差分布。生成前检查环和秘密，Fourier 使用 context 的 FFT 表。普通 sparse PBS/CBS/one-hot 不承担此材料的生成或存储成本。
+显式组合使用 `backend_context()` 借用原 NTRU 环境，通过 `server.into_parts()` 移出完整 `CircuitBootstrapServerKey` 和可选拥有型 lift。`NttPublicLiftKey` / `FourierPublicLiftKey` 将拥有型变换域 NLEV 与生成它的 `NlevParameters` 配对；`NttPublicLift` / `FourierPublicLift` 是借用视图。原有 `NttLookupTableEvaluator` / `FourierLookupTableEvaluator` 构造器与 `try_from_parts` 保留。独立 lift 可以选择其他 basis/noise，默认工作流不隐式重建或重新解释它。
+
+底层公开编译仍可用 `HighPrecisionLookupTable::try_new(poly_length, ring_modulus, input_codec, config, function)`，仅需 N/Q 与输入 q/t。启用后端后也可通过 `try_from_parameters` 复用已有 PBS 参数；两者都不需要密钥或变换。底层 evaluator 绑定检查 N/q/Q 和 one-hot 容量；完整 Context 额外要求匹配自己的 chunk 数、分区与 t。需要 Lift 时，显式材料优先于 classic initializer；没有 Lift 的计划忽略多余 lift。检查证明布局与公开域相容，不证明秘密身份、lift 编码为一或完整噪声余量。
 
 每次调用对低位 chunks 及编译计划实际使用的高位 chunks 执行 one-hot CBS。全等分支省去选择，重复子树只计算一次。公开选择用完整 NLEV selectors 同时提升多项式，加密选择用非零 NGSW selectors；同一 chunk 需要两种表示时共享 BR 与投影。完全不依赖高位的输出使用绑定的 NLEV[1] 提升，公密混合选择也可能需要它。因此，全剪枝表和 c=d 仍需要该材料。每个不同的根仍需低位旋转与返回；重复根在同一 evaluator 内的后续操作完全相同，直接复制已完成的输出。
 
@@ -181,20 +140,20 @@ Evaluator 借用 context、server key 和 table，并在构造时分配全部缓
 
 | Feature | 启用内容 |
 | --- | --- |
-| `ntt` | `NttLookupTableEvaluator` 及 NTT 依赖，不引入 FFT |
-| `fourier` | `FourierLookupTableEvaluator` 及通用 FFT 接口，不引入 NTT 或具体 FFT 引擎 |
+| `ntt` | NTT Context、服务端组合与 evaluator，不选择具体 FFT 引擎 |
+| `fourier` | Fourier Context、服务端组合与 evaluator，不选择具体 FFT 引擎 |
 | `rustfft` / `tfhe-fft` | `fourier` 与选定的 FFT 实现 |
 | `simd` | 已启用算术依赖中的 nightly SIMD，不会激活 evaluator 或 FFT 引擎 |
 
-所有 feature 可以叠加。`LookupTableError::OneHot` / `Evaluation` 只在启用 `ntt` 或 `fourier` 时可用。
+默认 feature 为 `ntt,fourier`，不选择具体 FFT 引擎。所有 feature 可以叠加。`LookupTableError::OneHot` / `Evaluation` 只在启用 `ntt` 或 `fourier` 时可用。
 
-NTT 示例要求 `ntt`；Fourier 示例要求其选定引擎。求值测试按实际启用的 NTT/FFT 实现运行，两个字宽的既有用例保持不变；`pipeline` 比较 u64 NTT 与主 Fourier 引擎（启用 RustFFT 时优先选它）。`ntt`、`rustfft`、`tfhe-fft` 可独立启用；NTT 加一个 FFT 引擎注册全部 18 项。未选择可用后端时，target 提示所需 feature，不注册任何 ID。完整验证使用 `just tfhe`，纯编译或单后端可分别运行：
+NTT 示例要求 `ntt`；Fourier 示例要求其选定引擎。求值测试按实际启用的 NTT/FFT 实现运行，两个字宽的既有用例保持不变；`high_precision_lut` 比较 u64 NTT 与主 Fourier 引擎（启用 RustFFT 时优先选它）。`ntt`、`rustfft`、`tfhe-fft` 可独立启用；NTT 加一个 FFT 引擎注册全部 18 项。未选择可用后端时，target 提示所需 feature，不注册任何 ID。完整验证使用 `just tfhe`，纯编译或单后端可分别运行：
 
 ```sh
 cargo test -p primus_tfhe_ntru_lut
-cargo test -p primus_tfhe_ntru_lut --features ntt
-cargo test -p primus_tfhe_ntru_lut --features rustfft
-cargo test -p primus_tfhe_ntru_lut --features tfhe-fft
+cargo test -p primus_tfhe_ntru_lut --no-default-features --features ntt
+cargo test -p primus_tfhe_ntru_lut --no-default-features --features rustfft
+cargo test -p primus_tfhe_ntru_lut --no-default-features --features tfhe-fft
 ```
 
 ## 基准

@@ -16,7 +16,11 @@ use primus_tfhe_ntru_ntt::{
     OneHotCircuitBootstrapEvaluator, TfheContext,
 };
 
+mod context;
 mod selectors;
+pub use context::{
+    NttHighPrecLutContext, NttHighPrecLutContextError, NttHighPrecLutServerKey, NttPublicLiftKey,
+};
 use selectors::SelectorBuffers;
 
 use crate::{

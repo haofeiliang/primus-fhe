@@ -12,6 +12,58 @@ For the newer matched classic/sparse PBS and CBS comparison, see the
 the CPU-dependent CBS regression and distinguishes retained heap from requested
 live-heap peak. The cleanup measurements below remain historical.
 
+## Complete high-precision lookup workflow, 2026-10-09
+
+`NttHighPrecLutContext` / `FourierHighPrecLutContext` move the complete CBS
+operation into one backend owner, retaining checked chunk geometry and prepared
+q/Q codecs beside it. Integer clients extract/join digits directly; they retain
+no digit buffer. Evaluator factories return the existing numerical evaluator,
+with the same workspaces and online schedule. No table/key copy, second transform
+environment or new online allocation is introduced by these factories.
+
+Before: `4c5c3e5b`, with manually assembled lookup fixtures. After: complete
+Context, plan-directed paired keygen and integer input encryption. CPU 4, stable
+rustc 1.98.1, repository CPU flags, scalar u64, NTT/RustFFT. Both use
+n800/h32/N1024, q24, Q50/native64, t8/M4, c8/d5/o8, the same decompositions/noise,
+seed 42 keygen and seed 43 inputs. Each case uses 15 samples, 1 s warm-up and
+3 s target measurement. One iteration measures `evaluate_to` for all eight
+output chunks; setup, LUT compilation, encryption and binding are excluded.
+
+| Complete lookup, u64 | Manual fixture, ms | Complete Context, ms | Difference |
+| --- | ---: | ---: | ---: |
+| classic/ntt | 49.487 | 49.825 | +0.68% |
+| classic/rustfft | 57.720 | 56.497 | −2.12% |
+| sparse/ntt | 36.838 | 36.644 | −0.53% |
+| sparse/rustfft | 36.872 | 36.432 | −1.19% |
+
+These single before/after pairs show no large increase and do not establish a
+speedup. Arithmetic kernels are unchanged. Paired generation reuses the accepted
+ring transform/inverse; the extra sparse lift is now generated before BR/CBS,
+so evaluation-key row randomness differs from the old fixture despite identical
+secrets and input seeds. Outputs were decoded against the same cleartext oracle.
+No CPU 8, SIMD, TFHE-FFT or keygen-cost timing was taken in this comparison.
+
+On x86_64, `size_of` with u64, `U64NttTable`/`RustFftTable` and external
+`PowOf2Modulus` is 696 B/472 B, versus 288 B/88 B for the underlying backend
+Context: 408 B/384 B of inline lookup geometry/codecs. These exclude referenced
+heap and peak construction storage; Context creates no additional shared-owner
+allocation or sampler copy. Classic reuses its BR initializer. Sparse retains independent NLEV[1]
+only if the compiled plan needs a lift: its transformed coefficient payload is
+`L_BR*N*sizeof(T)` for NTT or `L_BR*(N/2)*sizeof(Complex64)` for Fourier, plus
+generation metadata sharing the existing ring sampler state. This is the same
+material required by the previous explicit fixture; cloning that metadata also
+copies its small basis/mask vectors once at setup. No new evaluator buffer or
+whole-domain cleartext cache is retained. These storage conclusions follow from
+the layouts and call paths; this round did not repeat allocator instrumentation
+or measure peak keygen memory.
+
+```sh
+taskset -c 4 cargo bench -p primus_tfhe_benchmarks --bench high_precision_lut \
+  --features lut,ntru-ntt,ntru-fourier,rustfft -- \
+  'c8_d5_o8/evaluate/' --save-baseline lookup-context \
+  --sample-size 15 --warm-up-time 1 --measurement-time 3
+```
+
 ## Default CBS and one-hot workflow, 2026-10-09
 
 `CbsEvaluator` and NTRU `OneHotEvaluator` combine the existing low-level operation

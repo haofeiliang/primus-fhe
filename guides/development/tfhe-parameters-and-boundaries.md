@@ -19,7 +19,7 @@
 | `GlevParameters` / `GgswParameters` | `GlweSize`、共享模数/采样状态、该运算的 basis | 固定秘密重量、basis 模数和 gadget 布局；无需普通消息 codec |
 | `NlevParameters` | 共享 NTRU 环/采样状态和该运算的 basis | basis 模数、N*L 布局和层序；无需普通消息 codec |
 | `ModulusConfig<M>` / `LweConfig<M>` | 纯数值模数、维数、分布和噪声；具体 reducer 的静态类型 | `M::try_from(modulus_config)` / `LweEncryptionParameters::try_from(lwe_config)` 在 setup 验证表示并准备 reducer/sampler，不进入在线内核 |
-| `PbsConfig` / `CbsConfig` / `HighPrecLutConfig` | 按操作组合共享 `PbsConfig`，分别补 KS/消息、CBS gadget/输入域、one-hot/返回/表布局 | PBS/CBS 用对应参数的 `try_from_config` 构造，高精度使用 `HighPrecLutConfig::try_prepare`；CBS 准备输入 codec，高精度还检查 chunk 布局及 q/Q 编码，公开函数和联合噪声条件仍由程序/绑定边界负责 |
+| `PbsConfig` / `CbsConfig` / `HighPrecLutConfig` | 按操作组合共享 `PbsConfig`，分别补 KS/消息、CBS gadget/输入域、one-hot/返回/表布局 | PBS/CBS 用对应参数的 `try_from_config` 构造，高精度使用 `HighPrecLutParameters::try_from_config`；CBS 准备输入 codec，高精度还检查 chunk 布局及 q/Q 编码，公开函数和联合噪声条件仍由程序/绑定边界负责 |
 | `PbsConfig` → `PbsParameters` / `CbsConfig` → `CbsParameters` | 家族特定的 LWE/环配置、BR 与操作所需 KS 各自的 `GadgetEncryptionConfig`、PBS order/输入准备（GLWE） | 同域检查；PBS/CBS 都准备必需 KS，CBS 当前阶段按路径使用输入 KS，后续 LWE 返回复用已有材料；PBS 保留默认消息选择，CBS 准备输入编码；NTT/Fourier 表由共用 context 绑定 |
 | `CbsGadgetConfig` → `CbsGadgetParameters` | output、trace、scheme-switch 各自的 `DecompositionConfig` | 环大小/模数与密钥行噪声继承累加环，共享其采样状态；输出布局由 output basis 派生；interleaved 容量由程序绑定检查 |
 | `HighPrecisionLookupTable::try_new` | PolyLength N、累加模数 Q、输入 Rounded codec 的 q/t、chunk 配置 | 完整枚举、编码/去重/选择计划，无密钥或 TFHE 参数；evaluator 绑定时核对 N/q/Q 和 CBS；`stats()` 与部分工作区估算用于比较分区 |
@@ -66,6 +66,8 @@ GLWE-TFHE 的 NTT/Fourier、classic/sparse 路径遵循相同的噪声来源：
 `NlevParameters::try_from_parts(Arc<NtruEncryptionParameters>, basis)` 检查 basis/Q 和 N*L；`NtruParameters::try_from_parts(shared_encryption, codec)` 检查 codec/Q，固定尺度恢复条件由 codec 自身保证。两者 `encryption_parameters()` 均借用同一状态。密钥生成、encoded/zero 加密只需加密参数；普通加解密仍使用含 codec 的参数。`try_with_basis` / `try_with_ntru_params` 是从普通参数派生 gadget 的便捷入口，只复制 Arc，不复制采样表。NLev 克隆仍复制其独立 basis；没有把秘密系数或 RNG 放入共享状态。
 
 用户入口 `PbsConfig`、`CbsConfig` 和 `HighPrecLutConfig` 分别准备完整操作状态，见[配套类型](tfhe-parameters.md#scope-of-paired-parameter-entries)。`PbsParameters` 直接持有 LWE/环域、算法、必需 KS 与消息选择；`CbsParameters` 组合这一公共 owner、gadget 和输入 codec。四后端 Context 按值接收参数，公共状态由一个 Box 持有，变换表只有一份；`parameters()` 借用公共参数，`parameters()` 始终提供 PBS，`cbs_parameters()` 查询额外 CBS 能力。底层 BR/trace/scheme-switch 沿用环 sampler 的 Arc，不另建公共 BR Arc。默认 keygen/evaluator 使用保存的选择，工作区在绑定实际操作时分配。
+
+高精度状态由 LUT crate 的 `NttHighPrecLutContext` / `FourierHighPrecLutContext` 持有：将准备好的 CBS owner 移入唯一后端环境，旁置检查后的 chunk 几何与 q/Q 编码，不复制 sampler/BR 或增加 Arc。配置中独立指定输入、输出 chunk 数，默认 d 尽量填满 N，也可显式覆盖。整值编译/客户端与更宽的分块接口共存，编译不创建全域值缓存；客户端不接收 LUT。默认 keygen 根据公开计划按需补充 sparse NLEV[1]，与 BR/CBS 共用已接受的秘密变换和逆元；classic 借用 initializer。完整服务端组合只拥有一份 BR/CBS/返回材料和可选独立 lift，显式组件入口继续可用。
 
 独立组件在构造/绑定边界验证配对；同源路径移动已有状态，不重建 sampler/basis。CBS 组合检查数值/采样域、算法和输入路径。稀疏布局可行性先于秘密采样；matching 只重试公开 map。相同元数据不证明实际秘密或变换身份。完整 PBS/CBS 都准备必需 KS，秘密仍独立采样。GLWE KS→BR 在输入阶段执行 KS，其他 CBS 路径保留 KS 供后续 LWE 返回使用。
 

@@ -359,6 +359,23 @@ where
         parameters: &primus_ntru::NlevParameters<T, primus_modulus::BarrettModulus<T>>,
         rng: &mut R,
     ) -> Result<NttNlev<Vec<T>>, KeyGenerationError> {
+        self.check_public_lift_parameters(parameters)?;
+        self.context
+            .parameters()
+            .check_accumulator_secret_key(secret)?;
+        let transformed = NttNtruSecretKey::try_from_coeff_secret_key(
+            secret,
+            parameters.encryption_parameters().cipher_modulus(),
+            self.context.table(),
+        )?;
+        Ok(self.generate_public_lift_from_transformed(&transformed, parameters, rng))
+    }
+
+    /// Validates independently supplied lift metadata before sampling any key rows.
+    pub(crate) fn check_public_lift_parameters(
+        &self,
+        parameters: &primus_ntru::NlevParameters<T, primus_modulus::BarrettModulus<T>>,
+    ) -> Result<(), KeyGenerationError> {
         if parameters.poly_length() != self.context.parameters().poly_length()
             || parameters.encryption_parameters().cipher_modulus_value()
                 != self
@@ -369,15 +386,7 @@ where
         {
             return Err(KeyGenerationError::IncompatiblePublicLiftParameters);
         }
-        self.context
-            .parameters()
-            .check_accumulator_secret_key(secret)?;
-        let transformed = NttNtruSecretKey::try_from_coeff_secret_key(
-            secret,
-            parameters.encryption_parameters().cipher_modulus(),
-            self.context.table(),
-        )?;
-        Ok(self.generate_public_lift_from_transformed(&transformed, parameters, rng))
+        Ok(())
     }
 
     /// Reuses the checked accumulator transform in paired generation.
@@ -401,7 +410,7 @@ where
     }
 
     /// Shares direct encryption of one with classic initialization, reusing its transform.
-    fn generate_public_lift_from_transformed<R>(
+    pub(crate) fn generate_public_lift_from_transformed<R>(
         &mut self,
         accumulator_ntt: &NttNtruSecretKey<T>,
         parameters: &primus_ntru::NlevParameters<T, primus_modulus::BarrettModulus<T>>,

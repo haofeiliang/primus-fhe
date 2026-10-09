@@ -9,43 +9,49 @@ High-precision lookup over already encrypted NTRU-TFHE chunks, using one-hot CBS
 
 ## Experimental paired parameters
 
-`experimental::NTT_CLASSIC_LOOKUP_U64` / `FOURIER_CLASSIC_LOOKUP_U64` are `HighPrecLutConfig` constants combining n800/h32 NTRU CBS, the CBS domain's required return KS and c8/d5/o8 layout. `config.try_prepare()?` returns complete `HighPrecLutParameters`, retaining one-hot CBS, the algorithm, return parameters, checked chunk geometry and q/Q codecs. It generates no keys and enumerates no function. Read the prepared state through `parameters.chunk_format()`, `layout()`, `codecs()` and `one_hot()`.
+`experimental::NTT_CLASSIC_LOOKUP_U64` / `FOURIER_CLASSIC_LOOKUP_U64` combine n800/h32/N1024 one-hot CBS and its required return KS with eight input/eight output two-bit chunks. `coefficient_chunk_count: None` resolves to d=5; `Some(d)` explicitly selects another partition. Input/output counts remain independent. These arithmetic teaching configurations have no assessed security or failure-probability guarantee; see the [parameter guide](../../guides/development/tfhe-parameters.md#scope-of-paired-parameter-entries).
 
-Input and returned chunks use q24; LUT output uses Q. Input/output chunk counts remain independent and the function is supplied separately. No CMux candidate codec is created. These 16-bit arithmetic teaching configs have unassessed security and failure probability; see the [parameter guide](../../guides/development/tfhe-parameters.md#scope-of-paired-parameter-entries). NTT is enabled by default; use `--no-default-features` for public table compilation alone.
+`NttHighPrecLutContext::try_from_config` / `FourierHighPrecLutContext::try_from_config` prepare the complete operation, its q/Q encodings and one transform table. They create no keys or evaluator workspace. To compile before constructing transforms, use `HighPrecLutParameters::try_from_config` and its compilation methods, then move that owner into the selected Context. The single CBS/BR/return owner and samplers are moved, without cloning or another Arc.
 
 ## Workflow
 
-Both [NTT](../primus_tfhe_ntru_ntt/README.md) and [Fourier](../primus_tfhe_ntru_fourier/README.md) support classic binary/ternary and sparse fixed-weight binary lookup. `context.try_generate_circuit_bootstrap_keys(rng)` generates a `CircuitBootstrapServerKey` containing BR, KS and CBS; the algorithm comes from one-hot's PBS config. The explicit advanced factory is `try_generate_circuit_bootstrap_server_key_with_parameters(ks, &client, method, gadget, rng)`. Clients encrypt chunks with `encrypt_padded`. Basic examples fix classic BR and show one eight-chunk workflow; see [Evaluation and workspace](#evaluation-and-workspace) for sparse/public-lift setup.
+Both backends support classic binary/ternary and sparse fixed-weight binary lookup. The recommended workflow uses a pure integer function and complete integer inputs/outputs; the library handles chunk extraction, padded encryption and joining:
 
-`HighPrecisionLookupTable::try_new(poly_length, ring_modulus, &input_codec, config, function)` compiles the public table using only N, Q and the codec’s q/t, without TFHE parameters, secrets or transforms. With `ntt` or `fourier` enabled, `try_from_parameters(br, &input_codec, config, function)` takes N/Q/q from existing parameters and checks the codec’s q before compilation. Both entries use the same compiler and need no keys or transform tables. The callback receives `(full_input_index, output_chunk_index)` and returns one digit. Bind `NttLookupTableEvaluator::try_new(context, parameters.key_switching(), server_key, table)` or `FourierLookupTableEvaluator::try_new(context, parameters.key_switching(), server_key, table)`, call `allocate_output()` once, then reuse `evaluate_to(input_chunks, output_chunks)`. Decode each result with `context.decryptor(client.external_lwe_secret_key(), codecs.output_codec())`. The table owns its chunk encoding; keys are independent of t. The evaluator borrows its context, server key and table; no client secret is needed for evaluation.
+```rust,no_run
+use primus_ntt::U64NttTable;
+use primus_tfhe_ntru_lut::{NttHighPrecLutContext, experimental};
+use rand::{SeedableRng, rngs::StdRng};
 
-Given a context and server key prepared from `NTT_CLASSIC_LOOKUP_U64`, eight two-bit chunks represent a 16-bit input. This fragment evaluates `(x*x+3*x+7) mod 65536` and returns eight chunks:
-
-```rust,ignore
-use primus_tfhe_ntru_lut::{
-    HighPrecisionLookupTable, NttLookupTableEvaluator,
-};
-
-let chunks = parameters.chunk_format();
-let codecs = parameters.codecs();
-let table = HighPrecisionLookupTable::try_from_parameters(
-    context.parameters(),
-    codecs.input_codec(),
-    parameters.layout(),
-    |x, output| {
-        let x = x as u64; // The cleartext intermediate can exceed u32.
-        let value = (x * x + 3 * x + 7) % 65536;
-        chunks.chunk(value, output)
-    },
+let context = NttHighPrecLutContext::<u64, U64NttTable, _>::try_from_config(
+    experimental::NTT_CLASSIC_LOOKUP_U64,
 )?;
-let mut evaluator = NttLookupTableEvaluator::try_new(&context, parameters.key_switching(), &server, &table)?;
+let function = |x: u64| (x*x + 3*x + 7) & 0xffff;
+let table = context.compile_fn(function)?; // Public, offline; no secrets.
+
+// Client: only paired setup needs both secrets; online clients borrow external s.
+let mut rng = StdRng::seed_from_u64(42);
+let (client, server) = context.try_generate_keys(&table, &mut rng)?;
+let encryptor = context.encryptor(&client)?;
+let decryptor = context.decryptor(&client)?;
+let mut input = encryptor.allocate_input();
+
+// Server: receives public context/table, evaluation material and encrypted chunks.
+let mut evaluator = context.evaluator(&server, &table)?;
 let mut output = evaluator.allocate_output();
-evaluator.evaluate_to(&encrypted_chunks, &mut output);
+for value in [43981u64, 0] {
+    encryptor.encrypt_to(value, &mut input, &mut rng)?;
+    evaluator.evaluate_to(&input, &mut output);
+    let result: u64 = decryptor.decrypt(&output)?;
+    assert_eq!(result, function(value));
+}
+# Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
-Complete runnable workflows are in [ntt_lookup.rs](examples/ntt_lookup.rs) and [fourier_lookup.rs](examples/fourier_lookup.rs). They use n=800/N=1024 and eight two-bit chunks for both the 16-bit input and 16-bit result. Five low input chunks select coefficients; three high chunks select one of 64 candidate polynomials. The output chunk count remains independently configurable. Input `0b10_10_10_11_11_00_11_01` returns `0b10_00_01_01_10_01_01_11`, then zero returns 7, reusing the same evaluator and buffers.
+For Fourier, select `FourierHighPrecLutContext<u64, RustFftTable, _>` and the matching experimental constant. Complete runnable workflows are [ntt_lookup.rs](examples/ntt_lookup.rs) and [fourier_lookup.rs](examples/fourier_lookup.rs), using 16-bit input/output and reusing the same evaluator and ciphertexts for two requests. Five low chunks fill N=1024 coefficients; three high chunks select among 64 polynomials. Examples fix u64 coefficients; the library and tests retain u32.
 
-Both examples use `Word = u64` and the matching `HighPrecLutConfig` from `experimental`. Chunk width derives from one-hot input t; input/output counts and partition come from `config.layout`. The public function remains explicit. The prepared operation owns BR/CBS/return state, and `parameters.one_hot().gadget()` supplies CBS key generation. Prime/native Q and independent PowOf2 q=2^24 are recorded in the [parameter guide](../../guides/development/tfhe-parameters.md). Library tests and diagnostics retain u32 coverage. NTT uses `U64NttTable`; Fourier selects RustFFT. For TFHE-FFT, switch the `Table` import and the target’s `required-features`, then use `--features tfhe-fft`.
+`compile_fn(|x: W| -> W)` separates the cleartext integer type W from coefficient type T. Both complete widths must fit W; results outside the output domain are rejected, without truncation. Compilation remains output-major: the pure function is evaluated again for each output chunk. It does not retain a full-domain cleartext cache. Expensive functions can explicitly prepare their values. `compile_chunks_fn(|x, output| digit)` retains the digit callback and supports outputs wider than one integer. Clients similarly provide `encrypt_chunks_to` and `decrypt_chunks_to` for caller-owned digit slices.
+
+Encryptor/decryptor factories do not receive the table or function. They derive encoding from the operation: input and returned chunks at q, table coefficients at Q. Integer encryption and decoding allocate no digit buffer; input allocation is explicit. Count, dimension, capacity and value checks precede encryption writes/RNG use. Decoding rejects digits in the unused padded half rather than masking them. A chunk decoding failure may leave a prefix written by `decrypt_chunks_to`; discard that partial result. Ciphertexts still carry no key/encoding metadata.
 
 ```sh
 cargo run --release -p primus_tfhe_ntru_lut --example ntt_lookup --features ntt
@@ -89,71 +95,24 @@ After compiling each candidate d, `table.stats()` reports input/output bits, log
 
 ## Evaluation and workspace
 
-Each evaluator owns its backend's common `BootstrapResources` separately from one-hot operation state. Selection, rotation and CBS borrow the same external-product workspace in sequence; Fourier also reuses the same FFT engine inside those resources. The return binding is independent of one-hot: NTT allocates only scalar return scratch, Fourier only batch return scratch.
+`context.try_generate_keys(&table, rng)` generates one BR/CBS/return bundle and only the lift required by the compiled plan. Classic borrows its existing initializer. Sparse generates independent `NLEV[1]` with BR's configured basis/noise only when `table.needs_public_lift()` is true. Its accepted ring transform/inverse are shared across BR, CBS and lift generation; there is no second BR or table. Ordinary sparse PBS/CBS/one-hot remains unaffected.
 
-Both evaluators bind a complete `CircuitBootstrapServerKey` through `try_new(context, parameters.key_switching(), server_key, lookup_table)`. `HighPrecLutParameters` borrows KS from its one-hot PBS state without preparing another return domain. Use `try_with_public_lift(context, parameters.key_switching(), server_key, lookup_table, (nlev_view, &nlev_parameters))` for an independent lift. Advanced `try_from_parts` accepts independent BR, return-KS, CBS and optional lift; successive `CircuitBootstrapServerKey::into_parts()` / `ServerKey::into_parts()` calls move these owners without copying buffers. Binding checks layouts, moduli and bases; actual secret and transform identity remain caller requirements.
+To choose sparse lookup, modify the one-hot PBS algorithm before constructing the lookup Context:
 
-`table.needs_public_lift()` reports whether the pruned selection plan contains an explicit `Lift`. All binding entries share the same selection rule: an explicit lift takes precedence; otherwise a classic initializer and its BR parameters are borrowed when needed. Sparse plans containing `Lift` return `MissingPublicLiftKey` unless independent material is supplied. Plans without `Lift` ignore surplus lift material and do not retain it. One-hot evaluators do not expose BR controls.
-
-`NttPublicLift` / `FourierPublicLift` name borrowed tuples of an NTT/Fourier NLEV encryption of one and its generation `NlevParameters`; they add no owner or constructor. The evaluator checks N, Q and transformed length, then uses that material's basis, which may differ from BR/CBS. The material must use the same accumulator secret and transform representation (the same table instance for Fourier); its claimed plaintext/basis and noise budget remain caller contracts.
-
-For sparse setup, use a fixed-weight binary external secret and matched CBS parameters, as in the lookup examples (n=800, h=32, N=1024, q24). The caller compiles the public table and encrypts its chunks with the same context/encoding. This typed NTT snippet takes those prepared inputs rather than duplicating the full parameter fixture. Client setup produces keys and, only when required by the table, NLEV[1]; the server block binds them and returns ciphertexts:
-
-```rust,no_run
-use primus_modulus::PowOf2Modulus;
-use primus_ntt::U64NttTable as Table;
-use primus_tfhe::{BlindRotationMethod, LweCiphertext};
-use primus_tfhe_ntru::ClientKey;
-use primus_tfhe_ntru_ntt::{KeyGenerator, TfheContext};
-use primus_tfhe_ntru_lut::{HighPrecisionLookupTable, NttLookupTableEvaluator as LookupEvaluator};
-use rand::rngs::StdRng;
-
-// Complete setup and one encrypted request; keep the final server block alive
-// to reuse its evaluator/output for further requests.
-fn sparse_setup_and_request(
-    context: &TfheContext<u64, Table, PowOf2Modulus<u64>>,
-    client: &ClientKey<u64>,
-    parameters: &primus_tfhe_ntru_lut::HighPrecLutParameters<u64, primus_modulus::BarrettModulus<u64>, PowOf2Modulus<u64>>,
-    table: &HighPrecisionLookupTable<u64>,
-    inputs: &[LweCiphertext<u64>],
-    rng: &mut StdRng,
-) -> Vec<LweCiphertext<u64>> {
-    // Client: generate evaluation material for its fixed-weight binary LWE secret.
-    let mut generator = KeyGenerator::new(context);
-    let server_key = generator.try_generate_circuit_bootstrap_server_key_with_parameters(
-        parameters.key_switching(),
-        client,
-        BlindRotationMethod::Sparse { copy_count: 3, bucket_count: 64 },
-        parameters.one_hot().gadget(),
-        rng,
-    ).unwrap();
-    // BR's basis and row noise are used here (sigma=0.7 in the lookup examples).
-    // A separate NlevParameters can select another lift basis/noise budget.
-    let lift_parameters = context.parameters().blind_rotation();
-    let lift = table.needs_public_lift().then(|| {
-        generator.try_generate_public_lift_key(
-            client.accumulator_ntru_secret_key(), lift_parameters, rng,
-        ).unwrap()
-    });
-
-    // Server: receive the keys/lift, public parameters/table and encrypted chunks.
-    let mut evaluator = match &lift {
-        Some(key) => LookupEvaluator::try_with_public_lift(
-            context,
-            parameters.key_switching(), &server_key, table, (key.as_view(), lift_parameters),
-        ),
-        None => LookupEvaluator::try_new(context, parameters.key_switching(), &server_key, table),
-    }.unwrap();
-    let mut outputs = evaluator.allocate_output();
-    evaluator.evaluate_to(inputs, &mut outputs);
-    // Further requests reuse this evaluator and overwrite the same output buffer.
-    outputs // Only result ciphertexts return to the client for decryption.
-}
+```rust,ignore
+config.one_hot.pbs.algorithm =
+    BlindRotationMethod::Sparse { copy_count: 3, bucket_count: 64 };
+let context = NttHighPrecLutContext::<u64, Table, _>::try_from_config(config)?;
+let table = context.compile_fn(function)?;
+let (client, server) = context.try_generate_keys(&table, rng)?;
+let mut evaluator = context.evaluator(&server, &table)?;
 ```
 
-For Fourier, the same flow uses `primus_fft::RustFftTable as Table`, `primus_tfhe_ntru_fourier::{KeyGenerator, TfheContext}` and `FourierLookupTableEvaluator as LookupEvaluator`. Use its Native64 ring parameters, keep external `PowOf2Modulus<u64>`, and generate all material with the same FFT table instance. Keep key/lift owners alive while the evaluator borrows them; do not call the whole setup function for every request.
+The server bundle may serve another table with the same operation layout/encoding and compatible material. A sparse bundle generated without lift rejects a later table needing it; it does not generate material online. A bundle containing lift can also bind plans needing none. Actual secrets and transform identity must still match; metadata does not establish them.
 
-This is an independent encryption of one under the same accumulator secret. It does not sum the first sparse bucket, whose error would have a different distribution. Generation checks the ring and secret before sampling; Fourier uses the context's FFT table. Ordinary sparse PBS/CBS/one-hot pays no lift-generation or storage cost.
+For explicit composition, `backend_context()` borrows the original NTRU environment, and `server.into_parts()` moves out the complete `CircuitBootstrapServerKey` and optional owned lift pair. `NttPublicLiftKey` / `FourierPublicLiftKey` pair owned transformed NLEV with its `NlevParameters`; `NttPublicLift` / `FourierPublicLift` are their borrowed views. The explicit `NttLookupTableEvaluator` / `FourierLookupTableEvaluator` constructors and `try_from_parts` remain available. An independently supplied lift may select another basis/noise; the default workflow does not silently regenerate or reinterpret it.
+
+Raw public compilation remains `HighPrecisionLookupTable::try_new(poly_length, ring_modulus, input_codec, config, function)`, requiring only N/Q and input q/t. With a backend enabled, `try_from_parameters` uses existing PBS parameters. Both compile without keys or transforms. Raw evaluator binding checks N/q/Q and one-hot geometry; the complete Context additionally requires its own chunk counts/partition and t. An explicit lift takes precedence over the classic initializer when needed. A plan without Lift ignores surplus lift material. These checks establish shapes/domains, not secret identity, the lift's encoded one or a complete noise margin.
 
 Each call performs one-hot CBS for the low chunks and only for high chunks used by the compiled selection plan. Equal branches omit a choice, and repeated subtrees are computed once. A public choice uses full NLEV selectors and lifts the polynomial; an encrypted choice uses nonzero NGSW selectors. A chunk requiring both representations shares its BR and projections. An output independent of all high chunks uses the bound NLEV[1] lift; mixed public/encrypted choices can also require it. Thus fully pruned tables and c=d still need this material. Each distinct root still requires low-chunk rotations and return; repeated roots copy the earlier completed output because these subsequent operations are identical in one bound evaluator.
 
@@ -181,20 +140,20 @@ With `--no-default-features`: `ChunkFormat`, public table compilation and inspec
 
 | Feature | Enables |
 | --- | --- |
-| `ntt` | `NttLookupTableEvaluator` and NTT dependencies, without FFT |
-| `fourier` | `FourierLookupTableEvaluator` and generic FFT interfaces, without NTT or a concrete FFT engine |
+| `ntt` | NTT Context, public server bundle and evaluator, without a concrete FFT engine |
+| `fourier` | Fourier Context, public server bundle and evaluator, without a concrete FFT engine |
 | `rustfft` / `tfhe-fft` | `fourier` and the selected FFT implementation |
 | `simd` | Nightly SIMD in active arithmetic dependencies, without activating an evaluator or FFT engine |
 
-All features are additive. `LookupTableError::OneHot` / `Evaluation` are available only with `ntt` or `fourier`.
+The defaults are `ntt,fourier`; no concrete FFT engine is selected. All features are additive. `LookupTableError::OneHot` / `Evaluation` are available only with `ntt` or `fourier`.
 
-The NTT example requires `ntt`; the Fourier example requires its chosen engine. Evaluation tests run for each selected NTT/FFT implementation, retaining the existing cases at both word widths. `pipeline` compares u64 NTT and the primary Fourier engine (RustFFT when enabled). Enable any of `ntt`, `rustfft` or `tfhe-fft` independently; combining NTT and one FFT engine registers all 18 workloads. With no applicable backend, the target prints a feature hint and registers no IDs. Use `just tfhe` for complete validation, or run compiler-only and individual backends separately:
+The NTT example requires `ntt`; the Fourier example requires its chosen engine. Evaluation tests run for each selected NTT/FFT implementation, retaining the existing cases at both word widths. `high_precision_lut` compares u64 NTT and the primary Fourier engine (RustFFT when enabled). Enable any of `ntt`, `rustfft` or `tfhe-fft` independently; combining NTT and one FFT engine registers all 18 workloads. With no applicable backend, the target prints a feature hint and registers no IDs. Use `just tfhe` for complete validation, or run compiler-only and individual backends separately:
 
 ```sh
 cargo test -p primus_tfhe_ntru_lut
-cargo test -p primus_tfhe_ntru_lut --features ntt
-cargo test -p primus_tfhe_ntru_lut --features rustfft
-cargo test -p primus_tfhe_ntru_lut --features tfhe-fft
+cargo test -p primus_tfhe_ntru_lut --no-default-features --features ntt
+cargo test -p primus_tfhe_ntru_lut --no-default-features --features rustfft
+cargo test -p primus_tfhe_ntru_lut --no-default-features --features tfhe-fft
 ```
 
 ## Benchmarks

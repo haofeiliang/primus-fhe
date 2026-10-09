@@ -3,14 +3,16 @@
 use std::hint::black_box;
 
 use criterion::Throughput;
-use primus_encoding::RoundedCodec;
 use primus_fft::{FftTable, TorusFftValue};
 use primus_modulus::{NativeModulus, PowOf2Modulus};
 use primus_ntru::SecretKeyDistr;
 use primus_tfhe_benchmarks::measurement::{Case, Group, metadata};
 use primus_tfhe_benchmarks::parameters::ntru;
-use primus_tfhe_ntru_fourier::{KeyGenerator, TfheContext};
-use primus_tfhe_ntru_lut::{FourierLookupTableEvaluator, HighPrecisionLookupTable};
+use primus_tfhe_ntru::CbsParameters;
+use primus_tfhe_ntru_lut::{
+    FourierHighPrecLutContext, FourierHighPrecLutServerKey, HighPrecLutParameters,
+    HighPrecisionLookupTable,
+};
 use rand::{SeedableRng, rngs::StdRng};
 
 use super::{
@@ -39,10 +41,6 @@ fn benchmark_workload<T: TorusFftValue, Table: FftTable>(
         NativeModulus::<T>::new(),
         SecretKeyDistr::fixed_hamming_weight_binary(800, 32),
     );
-    let input_codec = RoundedCodec::new(
-        CHUNKS.plaintext_modulus(),
-        parameters.as_ref().external_lwe().cipher_modulus(),
-    );
     let kind = if sparse { "sparse" } else { "classic" };
     let name = format!("{kind}/c8_d5_o8{}", workload.suffix());
     if !sparse {
@@ -60,40 +58,24 @@ fn benchmark_workload<T: TorusFftValue, Table: FftTable>(
     }
     let case = Case::new("lookup", backend, T::BITS, format!("{name}/evaluate"));
     let diagnostic_name = case.full_id("high_precision_lut");
-    let fixture = std::cell::LazyCell::new(|| {
-        Fixture::<T, Table>::new(parameters, input_codec, workload, sparse)
-    });
+    let fixture =
+        std::cell::LazyCell::new(|| Fixture::<T, Table>::new(parameters, workload, sparse));
     let mut verified = false;
 
     c.throughput(Throughput::Elements(CONFIG.output_chunk_count as u64));
     c.bench_function(case.id(), |b| {
         let Fixture {
-            parameters,
             context,
             client,
             server,
             table,
-            lift,
             input,
         } = &*fixture;
-        let mut evaluator = match lift {
-            Some(key) => FourierLookupTableEvaluator::try_with_public_lift(
-                context,
-                parameters.key_switching(),
-                server,
-                table,
-                (key.as_view(), context.parameters().blind_rotation()),
-            ),
-            None => FourierLookupTableEvaluator::try_new(context,
-parameters.key_switching(),
-server,
-table),
-        }
-        .unwrap();
+        let mut evaluator = context.evaluator(server, table).unwrap();
         let mut output = evaluator.allocate_output();
         if !verified {
             evaluator.evaluate_to(input, &mut output);
-            let decryptor = context
+            let decryptor = context.backend_context()
                 .pbs_decryptor(client.external_lwe_secret_key())
                 .unwrap();
             for (i, chunk) in output.iter().enumerate() {
@@ -115,14 +97,14 @@ table),
         }
         metadata::record("high_precision_lut", &case, || {
             serde_json::json!({
-                "parameters": metadata::ntru(parameters),
+                "parameters": metadata::ntru(context.backend_context().parameters()),
                 "blind_rotation": metadata::blind_rotation(sparse),
-                "cbs": metadata::cbs(ntru::cbs::<T>(), context.parameters().accumulator_ntru().noise_distribution().standard_deviation()),
+                "cbs": metadata::cbs(ntru::cbs::<T>(), context.backend_context().parameters().accumulator_ntru().noise_distribution().standard_deviation()),
                 "lut": workload.metadata(),
                 "unique_polynomials": table.unique_polynomial_count(),
                 "needs_public_lift": table.needs_public_lift(),
                 "outputs": CONFIG.output_chunk_count,
-                "fft_layout_fingerprint": metadata::fft_layout(context.table()),
+                "fft_layout_fingerprint": metadata::fft_layout(context.backend_context().table()),
             })
         });
         b.iter(|| evaluator.evaluate_to(black_box(input), black_box(&mut output)));
@@ -132,91 +114,46 @@ table),
 /// Owned keys and request data. Evaluators borrow this fixture and own their
 /// scratch separately; constructing it is deferred until Criterion selects a case.
 struct Fixture<T: TorusFftValue, Table: FftTable> {
-    parameters: primus_tfhe_ntru_fourier::PbsParameters<T, PowOf2Modulus<T>>,
-    context: TfheContext<T, Table, PowOf2Modulus<T>>,
-    client: primus_tfhe_ntru_fourier::ClientKey<T>,
-    server: primus_tfhe_ntru_fourier::CircuitBootstrapServerKey<T>,
+    context: FourierHighPrecLutContext<T, Table, PowOf2Modulus<T>>,
+    client: primus_tfhe_ntru::ClientKey<T>,
+    server: FourierHighPrecLutServerKey<T>,
     table: HighPrecisionLookupTable<T>,
-    lift: Option<primus_lattice::nlev::FourierNlev<Vec<primus_fft::Complex64>>>,
     input: Vec<primus_lwe::LweCiphertext<T>>,
 }
 
 impl<T: TorusFftValue, Table: FftTable> Fixture<T, Table> {
-    /// Builds the fixed-seed request outside timing; key-generation order is
-    /// preserved so the baseline keeps identical client and encryption randomness.
+    /// Prepares a complete operation once; only its selected plan can request lift material.
+    /// Keys and client encryption retain separate fixed seeds outside evaluation timing.
     fn new(
         parameters: primus_tfhe_ntru_fourier::PbsParameters<T, PowOf2Modulus<T>>,
-        input_codec: primus_encoding::RoundedCodec<T, PowOf2Modulus<T>>,
         workload: Workload,
         sparse: bool,
     ) -> Self {
-        let parameters = parameters.with_messages(primus_tfhe::PbsMessageConfig::new(
-            input_codec.plaintext_modulus(),
-        ));
-        let context_parameters = &parameters;
-        let context =
-            TfheContext::<T, Table, PowOf2Modulus<T>>::from_parameters(context_parameters.clone());
-        let mut rng = StdRng::seed_from_u64(42);
-        let (client, server) = {
-            let mut generator = KeyGenerator::new(&context);
-            let client = generator.try_generate_client_key(&mut rng).unwrap();
-            let blind_rotation = primus_tfhe_benchmarks::benchmark::blind_rotation(sparse);
-            let server = generator
-                .try_generate_circuit_bootstrap_server_key_with_parameters(
-                    context_parameters.key_switching(),
-                    &client,
-                    blind_rotation,
-                    &primus_tfhe_ntru::CbsGadgetParameters::try_from_config(
-                        context.parameters(),
-                        ntru::cbs::<T>(),
-                    )
-                    .unwrap(),
-                    &mut rng,
-                )
-                .unwrap();
-            (client, server)
-        };
-        let table = HighPrecisionLookupTable::try_new(
-            context.parameters().poly_length(),
-            context.parameters().accumulator_ntru().cipher_modulus(),
-            &input_codec,
-            CONFIG,
-            |x, output| workload.digit::<T>(x, output),
-        )
-        .unwrap();
+        let parameters = parameters
+            .with_messages(primus_tfhe::PbsMessageConfig::new(
+                CHUNKS.plaintext_modulus(),
+            ))
+            .with_algorithm(primus_tfhe_benchmarks::benchmark::blind_rotation(sparse));
+        let cbs = CbsParameters::try_with_config(parameters, ntru::cbs::<T>()).unwrap();
+        let parameters = HighPrecLutParameters::try_new(cbs, CONFIG).unwrap();
+        let context = FourierHighPrecLutContext::<T, Table, _>::from_parameters(parameters);
+        let table = context
+            .compile_chunks_fn(|x, output| workload.digit::<T>(x, output))
+            .unwrap();
         check_repetition(&table, workload);
-        // Lift generation is independent of sparse buckets and only paid by
-        // plans that need it. This fixture selects BR's basis and sigma=0.7.
-        let lift = if sparse && table.needs_public_lift() {
-            Some(
-                KeyGenerator::new(&context)
-                    .try_generate_public_lift_key(
-                        client.accumulator_ntru_secret_key(),
-                        context.parameters().blind_rotation(),
-                        &mut rng,
-                    )
-                    .unwrap(),
-            )
-        } else {
-            None
-        };
-        // Identical encrypted input for classic/sparse over the same fixed client.
+        let mut rng = StdRng::seed_from_u64(42);
+        let (client, server) = context.try_generate_keys(&table, &mut rng).unwrap();
+        // Independent seed keeps encrypted inputs identical across classic/sparse,
+        // even when a sparse plan requests independently generated lift rows.
         let mut rng = StdRng::seed_from_u64(43);
-        let encryptor = context.encryptor(client.external_lwe_secret_key()).unwrap();
-        let input: Vec<_> = (0..CONFIG.input_chunk_count)
-            .map(|i| {
-                encryptor
-                    .encrypt_padded(T::as_from(CHUNKS.chunk(INPUT, i)), &mut rng)
-                    .unwrap()
-            })
-            .collect();
+        let encryptor = context.encryptor(&client).unwrap();
+        let mut input = encryptor.allocate_input();
+        encryptor.encrypt_to(INPUT, &mut input, &mut rng).unwrap();
         Self {
-            parameters,
             context,
             client,
             server,
             table,
-            lift,
             input,
         }
     }

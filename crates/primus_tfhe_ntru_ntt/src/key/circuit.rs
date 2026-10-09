@@ -95,6 +95,52 @@ where
         )
     }
 
+    /// Generates configured CBS/return keys and optional independent `NLEV[1]`.
+    /// The lookup layer requests the extra lift only for sparse plans that need it;
+    /// classic reuses its initializer. Lift metadata is checked before sampling.
+    /// Reuses the accepted ring transform and inverse across all generated material.
+    ///
+    /// # Correctness
+    /// Inherits [`Self::try_generate_circuit_bootstrap_keys`] and
+    /// [`Self::try_generate_public_lift_key`]'s noise and representation contracts.
+    #[allow(clippy::type_complexity)] // Independently reusable key owners, with no extra bundle.
+    pub fn try_generate_circuit_bootstrap_keys_with_public_lift<R: rand::Rng + rand::CryptoRng>(
+        &mut self,
+        public_lift: Option<&primus_ntru::NlevParameters<T, primus_modulus::BarrettModulus<T>>>,
+        rng: &mut R,
+    ) -> Result<
+        (
+            ClientKey<T>,
+            CircuitBootstrapServerKey<T>,
+            Option<primus_ntru::NttNlevCiphertext<Vec<T>>>,
+        ),
+        KeyGenerationError,
+    > {
+        let operation = self
+            .context
+            .cbs_parameters()
+            .ok_or(KeyGenerationError::MissingCircuitBootstrapParameters)?;
+        if let Some(parameters) = public_lift {
+            self.check_public_lift_parameters(parameters)?;
+        }
+        let sparse_layout = self.prepare_blind_rotation(operation.as_ref().algorithm())?;
+        let (client, transformed) = self.generate_client_key_with_main(rng)?;
+        // Retain the accepted representation until every ring key has been generated;
+        // do not convert f or compute its inverse again solely for the extra lift.
+        let lift = public_lift.map(|parameters| {
+            self.generate_public_lift_from_transformed(&transformed, parameters, rng)
+        });
+        let server = self.generate_circuit_server_with_main(
+            operation.pbs_parameters().key_switching(),
+            &client,
+            transformed,
+            sparse_layout,
+            operation.gadget(),
+            rng,
+        )?;
+        Ok((client, server, lift))
+    }
+
     /// Generates a CBS pair from independently prepared KS/CBS parameters.
     /// Checks their common domain before sampling any secrets or key rows.
     /// Inherits [`Self::try_generate_circuit_bootstrap_keys`]'s numerical contracts.

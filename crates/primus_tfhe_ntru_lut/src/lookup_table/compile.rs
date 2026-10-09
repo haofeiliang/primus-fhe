@@ -19,11 +19,11 @@ use super::{
 impl<T: FheUint> HighPrecisionLookupTable<T> {
     /// Compiles a validated geometry without skipping any callback, even when a
     /// polynomial repeats. Check worst-case sizes before allocating or invoking the callback.
-    pub(super) fn compile<M: RingContext<T>, LM: RingContext<T>>(
-        ring_modulus: M,
+    pub(crate) fn compile<M: RingContext<T>, LM: RingContext<T>>(
+        output_codec: &RoundedCodec<T, M>,
         input_codec: &RoundedCodec<T, LM>,
         layout: Layout,
-        mut function: impl FnMut(usize, usize) -> T,
+        mut function: impl FnMut(usize, usize) -> Result<T, LookupTableError>,
     ) -> Result<Self, LookupTableError> {
         let output_count = layout.config.output_chunk_count;
         checked_allocation_len::<T>(&[
@@ -41,9 +41,9 @@ impl<T: FheUint> HighPrecisionLookupTable<T> {
         ])?;
         checked_allocation_len::<TableNodeId>(&[output_count, layout.polynomials_per_output, 2])?;
 
-        let codec = RoundedCodec::try_new(input_codec.plaintext_modulus(), ring_modulus)?;
+        let codec = output_codec;
         let radix = input_codec.plaintext_modulus() >> 1u32;
-        let chunk_encodings = precompute_chunk_encodings(&codec, layout);
+        let chunk_encodings = precompute_chunk_encodings(codec, layout);
         // Both paths receive only validated digits from the filling helper.
         let encode_chunk = |chunk_value: T| match &chunk_encodings {
             Some(encodings) => {
@@ -77,7 +77,7 @@ impl<T: FheUint> HighPrecisionLookupTable<T> {
             selection: selection.finish(),
             plaintext_modulus: input_codec.plaintext_modulus(),
             input_modulus: input_codec.ciphertext_modulus().explicit_value(),
-            ring_modulus: ring_modulus.explicit_value(),
+            ring_modulus: output_codec.ciphertext_modulus().explicit_value(),
         })
     }
 }
@@ -108,13 +108,13 @@ fn encode_output_chunk_coefficients<T: FheUint>(
     first_input: usize,
     output_chunk: usize,
     radix: T,
-    function: &mut impl FnMut(usize, usize) -> T,
+    function: &mut impl FnMut(usize, usize) -> Result<T, LookupTableError>,
     encode_chunk: &impl Fn(T) -> T,
     coefficients: &mut [T],
 ) -> Result<(), LookupTableError> {
     for (offset, coefficient) in coefficients.iter_mut().enumerate() {
         let input = first_input + offset;
-        let chunk_value = function(input, output_chunk);
+        let chunk_value = function(input, output_chunk)?;
         if chunk_value >= radix {
             return Err(LookupTableError::OutputChunkOutOfRange {
                 input,

@@ -7,13 +7,7 @@
 
 use primus_modulus::PowOf2Modulus;
 
-use crate::{HighPrecLutConfig, LookupTableConfig};
-
-const LAYOUT: LookupTableConfig = LookupTableConfig {
-    input_chunk_count: 8,
-    coefficient_chunk_count: 5,
-    output_chunk_count: 8,
-};
+use crate::HighPrecLutConfig;
 
 /// Classic NTT lookup, Q50→q24, eight input/eight output two-bit chunks, d=5.
 #[cfg(feature = "ntt")]
@@ -23,7 +17,9 @@ pub const NTT_CLASSIC_LOOKUP_U64: HighPrecLutConfig<
     PowOf2Modulus<u64>,
 > = HighPrecLutConfig {
     one_hot: primus_tfhe_ntru_ntt::experimental::CLASSIC_ONE_HOT_U64,
-    layout: LAYOUT,
+    input_chunk_count: 8,
+    output_chunk_count: 8,
+    coefficient_chunk_count: None,
 };
 
 /// Native-torus Fourier lookup, with the chunk/return workload of NTT_CLASSIC_LOOKUP_U64.
@@ -34,5 +30,7 @@ pub const FOURIER_CLASSIC_LOOKUP_U64: HighPrecLutConfig<
     PowOf2Modulus<u64>,
 > = HighPrecLutConfig {
     one_hot: primus_tfhe_ntru_fourier::experimental::CLASSIC_ONE_HOT_U64,
-    layout: LAYOUT,
+    input_chunk_count: 8,
+    output_chunk_count: 8,
+    coefficient_chunk_count: None,
 };

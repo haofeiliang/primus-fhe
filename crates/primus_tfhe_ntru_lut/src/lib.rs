@@ -1,15 +1,19 @@
 //! High-precision lookup on independently encrypted, least-significant-first chunks.
 //!
-//! Compile a [`HighPrecisionLookupTable`] with [`LookupTableConfig`], then bind a
-//! `NttLookupTableEvaluator` or `FourierLookupTableEvaluator` to a context,
-//! return parameters and CBS-enabled server key. Reuse its workspace with caller-owned LWE outputs.
-//! Input chunks are already encrypted; this crate does not split a single LWE.
-//! The runnable `ntt_lookup` and `fourier_lookup` examples demonstrate key
-//! generation, chunk encryption, table compilation, workspace reuse and decoding.
-//! The Fourier example selects one concrete FFT table implementation.
-//! With a backend enabled, both prepare complete `HighPrecLutParameters` from an
-//! `experimental` lookup config: CBS, return, checked chunk layout and q/Q codecs.
-//! Preparation does not enumerate the function, create keys or build a transform table.
+//! With a backend enabled, `NttHighPrecLutContext` / `FourierHighPrecLutContext`
+//! prepare the complete CBS/return/chunk operation and one transform environment.
+//! Compile a pure integer function, generate its required public material, then
+//! bind an evaluator and reuse caller-owned ciphertexts. The client adapters
+//! split/join complete integers without digit buffers or hand-written codec wiring.
+//! The runnable `ntt_lookup` and `fourier_lookup` examples show this workflow.
+//! It still encrypts independent chunks; it does not split a single LWE homomorphically.
+//!
+//! `HighPrecLutParameters` can compile before constructing transforms. Context
+//! construction moves that prepared owner without cloning samplers or creating
+//! another BR domain. Compilation, key generation and workspace allocation are
+//! separate explicit operations. Sparse generates independent `NLEV[1]` only
+//! when the compiled plan needs it; classic reuses its existing initializer.
+//! Raw public compilation and explicit component evaluators remain available.
 //!
 //! The common chunk radix is M=t/2, where t is the input codec’s plaintext modulus.
 //! Coefficients encode output chunks at ring Q, using unsigned Rounded encoding.
@@ -51,8 +55,9 @@
 //! the excluded resources. Evaluator binding separately validates N/q/Q and CBS.
 //!
 //! # Features
-//! NTT is enabled by default. With `--no-default-features`, public table compilation
-//! and inspection need no transform or evaluator. `ntt` / `fourier` enable the corresponding evaluator;
+//! NTT and generic Fourier are enabled by default, without choosing an FFT engine.
+//! With `--no-default-features`, public table compilation and inspection need no
+//! transform or evaluator. `ntt` / `fourier` enable the corresponding Context and evaluator;
 //! `fourier` is generic over an FFT table without choosing its implementation.
 //! Either backend feature also enables `HighPrecisionLookupTable::try_from_parameters`,
 //! which compiles with existing N/Q/q parameters without needing a context or keys.
@@ -72,6 +77,8 @@
 
 mod chunk;
 #[cfg(any(feature = "ntt", feature = "fourier"))]
+mod client;
+#[cfg(any(feature = "ntt", feature = "fourier"))]
 mod config;
 #[cfg(any(feature = "ntt", feature = "fourier"))]
 mod evaluation;
@@ -85,12 +92,23 @@ mod ntt;
 
 pub use chunk::{ChunkFormat, ChunkFormatError};
 #[cfg(any(feature = "ntt", feature = "fourier"))]
-pub use config::{HighPrecLutConfig, HighPrecLutParameterError, HighPrecLutParameters};
+pub use client::{HighPrecLutClientError, HighPrecLutDecryptor, HighPrecLutEncryptor};
+#[cfg(any(feature = "ntt", feature = "fourier"))]
+pub use config::{
+    HighPrecLutConfig, HighPrecLutKeyGenerationError, HighPrecLutParameterError,
+    HighPrecLutParameters,
+};
 #[cfg(feature = "fourier")]
-pub use fourier::{FourierLookupTableEvaluator, FourierPublicLift};
+pub use fourier::{
+    FourierHighPrecLutContext, FourierHighPrecLutServerKey, FourierLookupTableEvaluator,
+    FourierPublicLift, FourierPublicLiftKey,
+};
 pub use lookup_table::{
     HighPrecisionLookupTable, LookupTableConfig, LookupTableError, LookupTableStats,
     LookupWorkspaceEstimate,
 };
 #[cfg(feature = "ntt")]
-pub use ntt::{NttLookupTableEvaluator, NttPublicLift};
+pub use ntt::{
+    NttHighPrecLutContext, NttHighPrecLutContextError, NttHighPrecLutServerKey,
+    NttLookupTableEvaluator, NttPublicLift, NttPublicLiftKey,
+};

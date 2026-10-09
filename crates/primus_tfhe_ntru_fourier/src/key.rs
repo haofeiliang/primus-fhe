@@ -354,9 +354,7 @@ where
         parameters: &primus_ntru::NlevParameters<T, primus_modulus::NativeModulus<T>>,
         rng: &mut R,
     ) -> Result<FourierNlev<Vec<Complex64>>, KeyGenerationError> {
-        if parameters.poly_length() != self.context.parameters().poly_length() {
-            return Err(KeyGenerationError::IncompatiblePublicLiftParameters);
-        }
+        self.check_public_lift_parameters(parameters)?;
         self.context
             .parameters()
             .check_accumulator_secret_key(secret)?;
@@ -384,8 +382,19 @@ where
         }
     }
 
+    /// Validates independently supplied lift metadata before sampling any key rows.
+    pub(crate) fn check_public_lift_parameters(
+        &self,
+        parameters: &primus_ntru::NlevParameters<T, primus_modulus::NativeModulus<T>>,
+    ) -> Result<(), KeyGenerationError> {
+        if parameters.poly_length() != self.context.parameters().poly_length() {
+            return Err(KeyGenerationError::IncompatiblePublicLiftParameters);
+        }
+        Ok(())
+    }
+
     /// Shares direct encryption of one with classic initialization, reusing its transform.
-    fn generate_public_lift_from_transformed<R>(
+    pub(crate) fn generate_public_lift_from_transformed<R>(
         &mut self,
         accumulator_fourier: &FourierNtruSecretKey,
         parameters: &primus_ntru::NlevParameters<T, primus_modulus::NativeModulus<T>>,

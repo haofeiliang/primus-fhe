@@ -25,7 +25,9 @@ use crate::{
     },
 };
 
+mod context;
 mod selectors;
+pub use context::{FourierHighPrecLutContext, FourierHighPrecLutServerKey, FourierPublicLiftKey};
 use selectors::SelectorBuffers;
 
 /// Borrowed `NLEV[1]` view and its generation parameters for public polynomial lifting.

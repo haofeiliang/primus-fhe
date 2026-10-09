@@ -19,6 +19,7 @@ primus_tfhe = { path = "../primus_tfhe", optional = true }
 primus_tfhe_ntru = { path = "../primus_tfhe_ntru", optional = true }
 primus_tfhe_ntru_ntt = { path = "../primus_tfhe_ntru_ntt", optional = true }
 primus_tfhe_ntru_fourier = { path = "../primus_tfhe_ntru_fourier", optional = true }
+rand = { workspace = true, optional = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
@@ -36,8 +37,9 @@ name = "fourier_lookup"
 required-features = ["rustfft"]
 
 [features]
-default = ["ntt"]
+default = ["ntt", "fourier"]
 ntt = [
+    "dep:rand",
     "dep:primus_modulus",
     "dep:primus_tfhe",
     "dep:primus_tfhe_ntru",
@@ -47,6 +49,7 @@ ntt = [
     "primus_ntru/ntt",
 ]
 fourier = [
+    "dep:rand",
     "dep:primus_modulus",
     "dep:primus_tfhe",
     "dep:primus_tfhe_ntru",

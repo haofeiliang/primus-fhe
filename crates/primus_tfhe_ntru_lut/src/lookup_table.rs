@@ -56,6 +56,20 @@ pub enum LookupTableError {
         /// Output chunk index.
         output: usize,
     },
+    /// The chosen cleartext integer cannot hold the complete input or output.
+    #[error("lookup needs {required} cleartext bits, but the integer holds {available}")]
+    WordCapacity {
+        /// Required input or output bit count.
+        required: u32,
+        /// Capacity of the selected cleartext integer.
+        available: u32,
+    },
+    /// An integer callback result exceeds the independently configured output width.
+    #[error("function result at input {input} exceeds the output bit count")]
+    OutputValueOutOfRange {
+        /// Full unsigned input index.
+        input: usize,
+    },
     /// The table was compiled with another N, Q or external q.
     #[error("lookup table and context have incompatible ring or encoding parameters")]
     IncompatibleParameters,
@@ -236,7 +250,11 @@ impl<T: FheUint> HighPrecisionLookupTable<T> {
         F: FnMut(usize, usize) -> T,
     {
         let layout = Layout::try_new(input_codec.plaintext_modulus(), poly_length.get(), config)?;
-        Self::compile(ring_modulus, input_codec, layout, function)
+        let output_codec = RoundedCodec::try_new(input_codec.plaintext_modulus(), ring_modulus)?;
+        let mut function = function;
+        Self::compile(&output_codec, input_codec, layout, |x, output| {
+            Ok(function(x, output))
+        })
     }
 
     /// Compiles using the accumulator N/Q and external q from TFHE parameters.

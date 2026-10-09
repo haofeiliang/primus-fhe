@@ -5,7 +5,7 @@
 use primus_modulus::PowOf2Modulus;
 use primus_reduce::RingContext;
 use primus_tfhe_ntru::OneHotLookupTable;
-use primus_tfhe_ntru_lut::{HighPrecisionLookupTable, experimental};
+use primus_tfhe_ntru_lut::{HighPrecLutParameters, HighPrecisionLookupTable, experimental};
 
 /// Keep the recorded layout visible, then exercise independent counts on the same keys/codecs.
 fn check_entry<M>(config: primus_tfhe_ntru_lut::HighPrecLutConfig<u64, M, PowOf2Modulus<u64>>)
@@ -13,10 +13,11 @@ where
     M: RingContext<u64>
         + TryFrom<primus_tfhe_ntru::ModulusConfig<M>, Error = primus_tfhe_ntru::ModulusConfigError>,
 {
-    let parameters = config.try_prepare().unwrap();
+    let parameters = HighPrecLutParameters::try_from_config(config).unwrap();
     let chunks = parameters.chunk_format();
     let mut layout = parameters.layout();
-    assert_eq!(layout, config.layout);
+    assert_eq!(layout.input_chunk_count, config.input_chunk_count);
+    assert_eq!(layout.output_chunk_count, config.output_chunk_count);
     assert_eq!(
         parameters.as_ref().algorithm(),
         config.one_hot.pbs.algorithm
@@ -67,16 +68,16 @@ where
     // Reject incompatible chunk geometry while preparing the operation, before enumeration.
     for (input_chunks, coefficient_chunks, output_chunks) in [(0, 0, 1), (2, 3, 1), (2, 1, 0)] {
         let mut invalid = config;
-        invalid.layout.input_chunk_count = input_chunks;
-        invalid.layout.coefficient_chunk_count = coefficient_chunks;
-        invalid.layout.output_chunk_count = output_chunks;
-        assert!(invalid.try_prepare().is_err());
+        invalid.input_chunk_count = input_chunks;
+        invalid.coefficient_chunk_count = Some(coefficient_chunks);
+        invalid.output_chunk_count = output_chunks;
+        assert!(HighPrecLutParameters::try_from_config(invalid).is_err());
     }
     let mut crowded = config;
     crowded.one_hot.pbs.messages.input_modulus = 1024;
-    crowded.layout.coefficient_chunk_count = 1;
+    crowded.coefficient_chunk_count = Some(1);
     assert!(matches!(
-        crowded.try_prepare(),
+        HighPrecLutParameters::try_from_config(crowded),
         Err(primus_tfhe_ntru_lut::HighPrecLutParameterError::Layout(_))
     ));
 }
