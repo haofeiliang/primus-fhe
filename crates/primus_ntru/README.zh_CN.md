@@ -161,6 +161,10 @@ Sample extraction、NLev/NGSW 外积与 CMUX 位于 [`primus_lattice`](../primus
 
 ## Trace、投影与展开
 
+Trace 密钥生成只检查一次共享资源、编码一次秘密，并在各 degree 间复用两块
+局部系数缓冲。两块缓冲在返回或 unwind 时擦除。每个 degree 独立持有计算密钥
+和置换；在线工作区不保留这些生成缓冲。
+
 `NttNtruTraceKey` 和 `FourierNtruTraceKey` 绑定 `log2(N)` 个 automorphism key。 所有入口的输入、输出均为原秘密下的系数密文，环长度保持 N。普通 partial trace 保留 r 个系数，目标为 `(N/r) * sum_j M[j*N/r] X^(j*N/r)`；reverse trace 保留原消息尺度。NTT 使用模 q 下的 2 的幂逆元归一化；Fourier 在每个逆序步骤前 对无符号系数代表元做向下取整的整数除法，其 phase 舍入误差再乘 f。 两条数值路径的误差分布不同，不能相互替换。
 
 逆序步骤访问 `2r+1, 4r+1, ..., N+1` 次自同构。后续步骤将新引入的自同构误差投影到等间距系数位置；较晚引入的误差可能保留在目标位置以外。Native 减半另外贡献投影后的 `f * parity` 项，其半模数提升项则会消去。这里的 floor 是除二最近舍入的向下取平规则，不承诺舍入无偏。

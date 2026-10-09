@@ -162,6 +162,11 @@ Both moduli may be native or explicit, including equal moduli. The implementatio
 
 ## Trace, projection and expansion
 
+Trace key generation checks shared resources once, encodes the secret once and
+reuses two local coefficient buffers across degrees. Both buffers are erased on
+return or unwind. Each degree owns its evaluation key and permutation; no
+generation buffer is retained in the online workspace.
+
 `NttNtruTraceKey` and `FourierNtruTraceKey` bind `log2(N)` automorphism keys. All endpoints use coefficient ciphertexts under the original secret; the ring length stays N. Ordinary partial trace with r retained coefficients targets `(N/r) * sum_j M[j*N/r] X^(j*N/r)`. Reverse trace preserves that message scale. NTT normalizes with inverse powers of two modulo q. Fourier instead divides unsigned coefficient representatives, rounding down before each reverse step; the resulting phase rounding error is multiplied by f. These numerical paths have different error distributions and are not interchangeable.
 
 Reverse steps visit degrees `2r+1, 4r+1, ..., N+1`. The remaining steps project each newly introduced automorphism error onto equally spaced coefficient positions; late errors can survive outside the target positions. Native halving also contributes projected `f * parity` terms, while its half-modulus lift terms cancel. Its floor rule is nearest division by two with downward ties, not a promise of unbiased rounding.

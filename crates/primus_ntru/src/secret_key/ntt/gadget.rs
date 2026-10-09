@@ -60,7 +60,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
     /// Adds each scaled message before multiplication by the inverse secret, giving
     /// NLev phase `g_l * message + e_l`. The caller validates complete operands,
     /// the key/parameter/table domain and polynomial scratch.
-    fn encrypt_nlev_kernel_to<M, Table, R>(
+    pub(crate) fn encrypt_nlev_kernel_to<M, Table, R>(
         &self,
         message: Polynomial<&[T]>,
         mut result: NttNlevCiphertext<&mut [T]>,
@@ -310,7 +310,8 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         }
     }
 
-    fn assert_gadget_domain<M, Table>(
+    /// Checks shared generation resources before standalone or batched sampling.
+    pub(crate) fn assert_gadget_domain<M, Table>(
         &self,
         params: &NlevParameters<T, M>,
         ntt: &Table,

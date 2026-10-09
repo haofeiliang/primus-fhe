@@ -13,7 +13,7 @@ use primus_ntru::{
 };
 use primus_ntt::{NttTable, U64NttTable};
 use primus_poly::Polynomial;
-use rand::{SeedableRng, TryCryptoRng, TryRng, rngs::StdRng};
+use rand::{Rng, SeedableRng, TryCryptoRng, TryRng, rngs::StdRng};
 
 const N: usize = 32;
 const Q: u64 = 1_125_899_906_826_241;
@@ -512,4 +512,77 @@ fn reverse_trace_preserves_the_distinct_modular_and_native_halving_paths() {
         .is_err()
     );
     assert_eq!(output.as_ref(), &[7; N]);
+}
+
+// Batch generation must establish shared resources before the first degree
+// samples. A mismatch cannot consume RNG or begin producing another key.
+fn assert_rejected_before_sampling(generate: impl FnOnce(&mut StdRng)) {
+    let mut rng = StdRng::seed_from_u64(37);
+    let mut expected_rng = StdRng::seed_from_u64(37);
+    assert!(catch_unwind(AssertUnwindSafe(|| generate(&mut rng))).is_err());
+    assert_eq!(rng.next_u64(), expected_rng.next_u64());
+}
+
+#[test]
+fn ntt_trace_generation_rejects_incompatible_resources_before_sampling() {
+    let length = PolyLength::new(N);
+    let wrong_length = PolyLength::new(2 * N);
+    let modulus = BarrettModulus::new(Q);
+    let other_modulus = BarrettModulus::new(1_073_692_673u64);
+    let table = U64NttTable::new(length, modulus).unwrap();
+    let wrong_table = U64NttTable::new(wrong_length, modulus).unwrap();
+    let other_table = U64NttTable::new(length, other_modulus).unwrap();
+    let secret = secret();
+    let wrong_secret = NtruSecretKey::new(vec![0; 2 * N], SecretKeyDistr::SparseTernary);
+    let key = NttNtruSecretKey::try_from_coeff_secret_key(&secret, modulus, &table).unwrap();
+    let other_key =
+        NttNtruSecretKey::try_from_coeff_secret_key(&secret, other_modulus, &other_table).unwrap();
+    let parameters = NtruParameters::new(length, 4, modulus, SecretKeyDistr::SparseTernary, 0.7);
+    let gadget = NlevParameters::with_ntru_params(&parameters, DecompositionBaseLog::new(10), None);
+
+    for (secret, key, table, workspace_length) in [
+        (&wrong_secret, &key, &table, length),
+        (&secret, &key, &wrong_table, length),
+        (&secret, &key, &other_table, length),
+        (&secret, &other_key, &table, length),
+        (&secret, &key, &table, wrong_length),
+    ] {
+        let mut workspace = NttNtruGadgetEncryptWorkspace::new(workspace_length);
+        assert_rejected_before_sampling(|rng| {
+            let _ = NttNtruTraceKey::generate(secret, key, &gadget, table, rng, &mut workspace);
+        });
+    }
+}
+
+#[test]
+fn fourier_trace_generation_rejects_incompatible_resources_before_sampling() {
+    let length = PolyLength::new(N);
+    let wrong_length = PolyLength::new(2 * N);
+    let table = RustFftTable::new(length);
+    let wrong_table = RustFftTable::new(wrong_length);
+    let secret = secret();
+    let wrong_secret = NtruSecretKey::new(vec![0; 2 * N], SecretKeyDistr::SparseTernary);
+    let key = FourierNtruSecretKey::try_from_coeff_secret_key(&secret, &mut FftEngine::new(&table))
+        .unwrap();
+    let parameters = NtruParameters::new(
+        length,
+        4u64,
+        NativeModulus::new(),
+        SecretKeyDistr::SparseTernary,
+        0.7,
+    );
+    let gadget = NlevParameters::with_ntru_params(&parameters, DecompositionBaseLog::new(10), None);
+
+    for (secret, table, workspace_length) in [
+        (&wrong_secret, &table, length),
+        (&secret, &wrong_table, length),
+        (&secret, &table, wrong_length),
+    ] {
+        let mut fft = FftEngine::new(table);
+        let mut workspace = FourierNtruGadgetEncryptWorkspace::new(workspace_length);
+        assert_rejected_before_sampling(|rng| {
+            let _ =
+                FourierNtruTraceKey::generate(secret, &key, &gadget, &mut fft, rng, &mut workspace);
+        });
+    }
 }

@@ -81,17 +81,53 @@ impl<T: FheUint> NttNtruAutomorphismKey<T> {
             n,
             "automorphism secret length mismatch"
         );
-        let coeff_permutation = CoeffAutomorphismPermutation::new(degree, parameters.poly_length());
-        let ntt_permutation = NttAutomorphismPermutation::new(degree, parameters.poly_length());
+        ntt_secret_key.assert_gadget_domain(parameters, ntt, workspace);
         let modulus = parameters.encryption_parameters().cipher_modulus();
         let mut encoded = Zeroizing::new(vec![T::ZERO; n]);
         let mut permuted = Zeroizing::new(vec![T::ZERO; n]);
-        // Permute canonical residues: no signed negation or inversion of
-        // sigma(f) is needed. Both temporary secret copies are erased on unwind.
+        // Encode before permutation: modular negation supports the signed range
+        // allowed by this backend. Both copies are erased even on unwind.
         modulus.encode_signed_slice_to(secret_key.as_slice(), encoded.as_mut_slice());
-        coeff_permutation.apply_to(&encoded, &mut permuted, modulus);
-        let key_switching = NttNtruKeySwitchingKey::generate_encoded(
-            &permuted,
+        Self::generate_encoded_kernel(
+            degree,
+            &encoded,
+            &mut permuted,
+            ntt_secret_key,
+            parameters,
+            ntt,
+            rng,
+            workspace,
+        )
+    }
+
+    /// The caller validates the output gadget domain and both N-coefficient buffers.
+    /// Trace reuses the encoded original secret, overwriting permutation scratch
+    /// for each degree; only the ciphertext and permutation maps enter the key.
+    #[must_use]
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn generate_encoded_kernel<M, Table, R>(
+        degree: usize,
+        encoded: &[T],
+        permuted: &mut [T],
+        ntt_secret_key: &NttNtruSecretKey<T>,
+        parameters: &NlevParameters<T, M>,
+        ntt: &Table,
+        rng: &mut R,
+        workspace: &mut NttNtruGadgetEncryptWorkspace<T>,
+    ) -> Self
+    where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        R: rand::Rng + rand::CryptoRng,
+    {
+        debug_assert_eq!(encoded.len(), parameters.poly_length().get());
+        debug_assert_eq!(permuted.len(), encoded.len());
+        let coeff_permutation = CoeffAutomorphismPermutation::new(degree, parameters.poly_length());
+        let ntt_permutation = NttAutomorphismPermutation::new(degree, parameters.poly_length());
+        let modulus = parameters.encryption_parameters().cipher_modulus();
+        coeff_permutation.apply_to(encoded, permuted, modulus);
+        let key_switching = NttNtruKeySwitchingKey::generate_encoded_kernel(
+            permuted,
             ntt_secret_key,
             parameters,
             ntt,

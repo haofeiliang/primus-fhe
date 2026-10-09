@@ -8,6 +8,68 @@ traffic, live peak, code size and latency are different metrics; a smaller buffe
 or fewer allocations alone do not prove faster evaluation. The original tables,
 regressions and rechecks remain below, with their own parameters and toolchains.
 
+## NTRU trace preparation, 2026-10-10
+
+Compared with `08cc5af4`, on AMD Ryzen 9 9955HX3D, x86_64 Linux,
+rustc 1.98.1 (48a229cea), repository compiler flags and `ntt,rustfft,tfhe-fft`
+without the Cargo `simd` feature. The U64 NTT table still selects native kernels
+at runtime. A temporary Criterion probe generated and dropped one complete trace
+key per iteration. N=1024, u64, sparse ternary secret, sigma=3.2, logB=10 and
+maximum valid decomposition length: 5 levels at q=1125899906826241 for NTT,
+6 at Native64 for Fourier. Secret pair generation used seed 42; trace generation
+used seed 4242 and advanced that RNG across iterations. Parameters, secrets,
+tables, FFT engines and caller gadget workspaces were prepared outside timing.
+These are functional fixtures, not security recommendations or equivalent
+NTT/Fourier noise budgets.
+
+Saved executables ran sequentially on CPU 4, in before/after/after/before order,
+with no overlapping compilation. Each process used 30 samples, 1 s warmup and
+2 s measurement. Criterion mean point estimates, in microseconds:
+
+| Backend | Before, min–max | After, min–max | Change across the two pairs |
+| --- | ---: | ---: | ---: |
+| NTT | 600.33–600.98 | 600.02–600.60 | −0.06% to −0.05% |
+| RustFFT | 472.13–473.20 | 473.35–473.87 | +0.03% to +0.37% |
+| TFHE-FFT | 475.46–476.69 | 476.58–476.92 | −0.02% to +0.31% |
+
+There is no established latency improvement. The retained change removes repeated
+preparation: one secret encoding instead of log2(N), two temporary coefficient
+allocations instead of 2*log2(N), and one shared resource check before sampling.
+Permutations and gadget encryption still run for every degree in the original
+order. Standalone automorphism and key-switch generation retain their checks;
+their internal paths use the same existing NLev encryption kernel.
+
+A separate allocator probe measured complete generation while retaining its
+result. Requested bytes exclude allocator metadata, caller-owned resources and
+RSS. Retained bytes are allocated minus released bytes at constructor return;
+peak is the maximum simultaneously live requested bytes inside that constructor.
+
+| Backend | Allocation requests before → after | Requested bytes before → after | Retained bytes, unchanged | Peak bytes, unchanged |
+| --- | ---: | ---: | ---: | ---: |
+| NTT | 71 → 53 | 655200 → 507744 | 491360 | 507568 |
+| RustFFT | 70 → 52 | 778064 → 630608 | 614224 | 630608 |
+| TFHE-FFT | 70 → 52 | 778064 → 630608 | 614224 | 630608 |
+
+Each case saves 18 allocation requests and 147456 requested bytes (144 KiB).
+The two N-word buffers still coexist at the last degree, so their longer
+lifetime does not reduce peak storage. They remain local `Zeroizing` buffers,
+erased before returning (and before NTT normalization metadata), with no new online storage
+or public API. The probes were removed; [per-run estimates and storage counts](data/ntru-trace-preparation.csv)
+retain the evidence. To reproduce the temporary timing workload, prepare the
+above fixture, then use `b.iter(|| black_box(TraceKey::generate(...)))`; keep
+caller workspace and RNG outside the iteration and drop the returned key inside
+it. This measures key generation plus destruction, not the existing `primitives`
+benchmark's online trace evaluation.
+
+Temporary N=32 snapshots checked every stored key coefficient and subsequent
+four RNG words for u32/u64, NTT and both FFT engines, with seed 4242 and
+logB=8/L=3; all were byte-identical. A temporary observer checked both secret
+copies immediately before deallocation on normal return and sampling unwind
+for all three u64/N1024 backends. Ordinary tests retain phase, reverse-normalization,
+standalone generation and rejection-before-sampling contracts. CPU 8, other
+sizes, u32 timing and nightly-feature latency were not measured. No online
+PBS/CBS speedup is claimed.
+
 ## NTT root preparation, 2026-10-10
 
 Compared with `53a0307a`, on AMD Ryzen 9 9955HX3D, x86_64 Linux,

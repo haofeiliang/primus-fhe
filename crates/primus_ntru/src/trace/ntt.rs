@@ -9,6 +9,7 @@ use primus_modulus::PowOf2Modulus;
 use primus_ntt::NttTable;
 use primus_poly::PolyLength;
 use primus_reduce::{FieldContext, ReduceNeg};
+use zeroize::Zeroizing;
 
 use super::kernels;
 use crate::{
@@ -46,6 +47,8 @@ pub struct NttNtruTraceKey<T: FheUint> {
 
 impl<T: FheUint> NttNtruTraceKey<T> {
     /// Generates keys for degrees `N+1, N/2+1, ..., 3` under one secret.
+    /// Encodes the secret once and reuses two local coefficient buffers, erased
+    /// on return or unwind. Each degree retains its own key and permutation.
     ///
     /// # Correctness
     /// Inherits [`NttNtruAutomorphismKey::generate`]'s key identity, bounded
@@ -75,20 +78,34 @@ impl<T: FheUint> NttNtruTraceKey<T> {
             "trace normalization requires an odd modulus below 2^(T::BITS-1)"
         );
         let log_n = parameters.poly_length().log_n();
-        let automorphism_keys = (1..=log_n)
-            .rev()
-            .map(|shift| {
-                NttNtruAutomorphismKey::generate(
-                    (1usize << shift) + 1,
-                    secret_key,
-                    ntt_secret_key,
-                    parameters,
-                    ntt,
-                    rng,
-                    workspace,
-                )
-            })
-            .collect();
+        let n = parameters.poly_length().get();
+        assert_eq!(secret_key.poly_length(), n, "trace secret length mismatch");
+        ntt_secret_key.assert_gadget_domain(parameters, ntt, workspace);
+        let automorphism_keys = {
+            // Every degree permutes the same encoded secret. Keep two independent
+            // buffers for the whole batch, and erase them before returning the key.
+            let mut encoded = Zeroizing::new(vec![T::ZERO; n]);
+            let mut permuted = Zeroizing::new(vec![T::ZERO; n]);
+            parameters
+                .encryption_parameters()
+                .cipher_modulus()
+                .encode_signed_slice_to(secret_key.as_slice(), encoded.as_mut_slice());
+            (1..=log_n)
+                .rev()
+                .map(|shift| {
+                    NttNtruAutomorphismKey::generate_encoded_kernel(
+                        (1usize << shift) + 1,
+                        &encoded,
+                        &mut permuted,
+                        ntt_secret_key,
+                        parameters,
+                        ntt,
+                        rng,
+                        workspace,
+                    )
+                })
+                .collect()
+        };
         let inverse_two = (q >> 1u32) + T::ONE;
         let mut inverse = T::ONE;
         let mut inverse_expansion_lengths = Vec::with_capacity(log_n as usize + 1);

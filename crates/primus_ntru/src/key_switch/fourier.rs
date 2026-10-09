@@ -58,10 +58,12 @@ impl<T: TorusFftValue> FourierNtruKeySwitchingKey<T> {
             "key-switch secret polynomial length mismatch"
         );
 
+        output_secret_key.assert_gadget_domain(parameters, fft, workspace);
+
         let mut encoded_secret = Zeroizing::new(vec![T::ZERO; poly_length]);
         NativeModulus::new()
             .encode_signed_slice_to(input_secret_key.as_slice(), encoded_secret.as_mut_slice());
-        Self::generate_encoded(
+        Self::generate_encoded_kernel(
             encoded_secret.as_slice(),
             output_secret_key,
             parameters,
@@ -71,9 +73,9 @@ impl<T: TorusFftValue> FourierNtruKeySwitchingKey<T> {
         )
     }
 
-    /// Generates from native-ring coefficients, including an automorphed secret.
-    /// No inverse of that input secret is needed.
-    pub(crate) fn generate_encoded<Table, R>(
+    /// Requires N native-ring input coefficients and validated output gadget resources.
+    /// No inverse of the automorphed input secret is needed.
+    pub(crate) fn generate_encoded_kernel<Table, R>(
         input_secret: &[T],
         output_secret_key: &FourierNtruSecretKey,
         parameters: &NlevParameters<T, NativeModulus<T>>,
@@ -86,9 +88,9 @@ impl<T: TorusFftValue> FourierNtruKeySwitchingKey<T> {
         R: rand::Rng + rand::CryptoRng,
     {
         let mut data = FourierNlev::zero(parameters.fourier_nlev_len());
-        output_secret_key.encrypt_nlev_to(
-            &Polynomial::new(input_secret),
-            &mut data,
+        output_secret_key.encrypt_nlev_kernel_to(
+            Polynomial::new(input_secret),
+            data.as_mut_view(),
             parameters,
             fft,
             rng,

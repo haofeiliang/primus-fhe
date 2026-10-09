@@ -62,12 +62,14 @@ impl<T: FheUint> NttNtruKeySwitchingKey<T> {
             "key-switch secret polynomial length mismatch"
         );
 
+        output_secret_key.assert_gadget_domain(parameters, ntt, workspace);
+
         let mut encoded_secret = Zeroizing::new(vec![T::ZERO; poly_length]);
         parameters
             .encryption_parameters()
             .cipher_modulus()
             .encode_signed_slice_to(input_secret_key.as_slice(), encoded_secret.as_mut_slice());
-        Self::generate_encoded(
+        Self::generate_encoded_kernel(
             encoded_secret.as_slice(),
             output_secret_key,
             parameters,
@@ -77,9 +79,9 @@ impl<T: FheUint> NttNtruKeySwitchingKey<T> {
         )
     }
 
-    /// Generates from canonical coefficients, also used for the automorphed
-    /// secret without constructing or inverting another secret-key object.
-    pub(crate) fn generate_encoded<M, Table, R>(
+    /// Requires N canonical input coefficients and a validated output gadget domain.
+    /// Encrypts the automorphed secret without constructing or inverting a new key.
+    pub(crate) fn generate_encoded_kernel<M, Table, R>(
         input_secret: &[T],
         output_secret_key: &NttNtruSecretKey<T>,
         parameters: &NlevParameters<T, M>,
@@ -93,9 +95,9 @@ impl<T: FheUint> NttNtruKeySwitchingKey<T> {
         R: rand::Rng + rand::CryptoRng,
     {
         let mut data = NttNlev::zero(parameters.nlev_len());
-        output_secret_key.encrypt_nlev_to(
-            &Polynomial::new(input_secret),
-            &mut data,
+        output_secret_key.encrypt_nlev_kernel_to(
+            Polynomial::new(input_secret),
+            data.as_mut_view(),
             parameters,
             ntt,
             rng,

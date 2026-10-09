@@ -6,7 +6,8 @@ use primus_fft::{FftEngine, FftTable, TorusFftValue};
 use primus_lattice::ntru::NtruIterMut;
 use primus_modulus::{NativeModulus, PowOf2Modulus};
 use primus_poly::PolyLength;
-use primus_reduce::ReduceNeg;
+use primus_reduce::{EncodeSigned, ReduceNeg};
+use zeroize::Zeroizing;
 
 use super::kernels;
 use crate::{
@@ -43,6 +44,8 @@ pub struct FourierNtruTraceKey<T: TorusFftValue> {
 
 impl<T: TorusFftValue> FourierNtruTraceKey<T> {
     /// Generates keys for degrees `N+1, N/2+1, ..., 3` under one secret.
+    /// Encodes the secret once and reuses two local coefficient buffers, erased
+    /// on return or unwind. Each degree retains its own key and permutation.
     ///
     /// # Correctness
     /// Inherits [`FourierNtruAutomorphismKey::generate`]'s key identity and
@@ -63,20 +66,33 @@ impl<T: TorusFftValue> FourierNtruTraceKey<T> {
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
     {
-        let automorphism_keys = (1..=parameters.poly_length().log_n())
-            .rev()
-            .map(|shift| {
-                FourierNtruAutomorphismKey::generate(
-                    (1usize << shift) + 1,
-                    secret_key,
-                    fourier_secret_key,
-                    parameters,
-                    fft,
-                    rng,
-                    workspace,
-                )
-            })
-            .collect();
+        let log_n = parameters.poly_length().log_n();
+        let n = parameters.poly_length().get();
+        assert_eq!(secret_key.poly_length(), n, "trace secret length mismatch");
+        fourier_secret_key.assert_gadget_domain(parameters, fft, workspace);
+        let automorphism_keys = {
+            // Every degree permutes the same encoded secret. Keep two independent
+            // buffers for the whole batch, and erase them before returning the key.
+            let mut encoded = Zeroizing::new(vec![T::ZERO; n]);
+            let mut permuted = Zeroizing::new(vec![T::ZERO; n]);
+            NativeModulus::new()
+                .encode_signed_slice_to(secret_key.as_slice(), encoded.as_mut_slice());
+            (1..=log_n)
+                .rev()
+                .map(|shift| {
+                    FourierNtruAutomorphismKey::generate_encoded_kernel(
+                        (1usize << shift) + 1,
+                        &encoded,
+                        &mut permuted,
+                        fourier_secret_key,
+                        parameters,
+                        fft,
+                        rng,
+                        workspace,
+                    )
+                })
+                .collect()
+        };
         Self { automorphism_keys }
     }
 

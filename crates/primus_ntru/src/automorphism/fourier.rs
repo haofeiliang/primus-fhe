@@ -80,22 +80,52 @@ impl<T: TorusFftValue> FourierNtruAutomorphismKey<T> {
             n,
             "automorphism secret length mismatch"
         );
-        assert_eq!(
-            fft.poly_length().get(),
-            n,
-            "automorphism FFT length mismatch"
-        );
-        let coeff_permutation = CoeffAutomorphismPermutation::new(degree, parameters.poly_length());
-        let fourier_permutation = fft.table().automorphism_map(degree);
+        fourier_secret_key.assert_gadget_domain(parameters, fft, workspace);
         let modulus = NativeModulus::new();
         let mut encoded = Zeroizing::new(vec![T::ZERO; n]);
         let mut permuted = Zeroizing::new(vec![T::ZERO; n]);
-        // Native-ring negation supports the full signed input range. Both
-        // temporary secret copies are erased even if encryption unwinds.
+        // Encode before permutation: modular negation supports the signed range
+        // allowed by this backend. Both copies are erased even on unwind.
         modulus.encode_signed_slice_to(secret_key.as_slice(), encoded.as_mut_slice());
-        coeff_permutation.apply_to(&encoded, &mut permuted, modulus);
-        let key_switching = FourierNtruKeySwitchingKey::generate_encoded(
-            &permuted,
+        Self::generate_encoded_kernel(
+            degree,
+            &encoded,
+            &mut permuted,
+            fourier_secret_key,
+            parameters,
+            fft,
+            rng,
+            workspace,
+        )
+    }
+
+    /// The caller validates the output gadget domain and both N-coefficient buffers.
+    /// Trace reuses the encoded original secret, overwriting permutation scratch
+    /// for each degree; only the ciphertext and permutation maps enter the key.
+    #[must_use]
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn generate_encoded_kernel<Table, R>(
+        degree: usize,
+        encoded: &[T],
+        permuted: &mut [T],
+        fourier_secret_key: &FourierNtruSecretKey,
+        parameters: &NlevParameters<T, NativeModulus<T>>,
+        fft: &mut FftEngine<'_, Table>,
+        rng: &mut R,
+        workspace: &mut FourierNtruGadgetEncryptWorkspace<T>,
+    ) -> Self
+    where
+        Table: FftTable,
+        R: rand::Rng + rand::CryptoRng,
+    {
+        debug_assert_eq!(encoded.len(), parameters.poly_length().get());
+        debug_assert_eq!(permuted.len(), encoded.len());
+        let coeff_permutation = CoeffAutomorphismPermutation::new(degree, parameters.poly_length());
+        let fourier_permutation = fft.table().automorphism_map(degree);
+        let modulus = NativeModulus::new();
+        coeff_permutation.apply_to(encoded, permuted, modulus);
+        let key_switching = FourierNtruKeySwitchingKey::generate_encoded_kernel(
+            permuted,
             fourier_secret_key,
             parameters,
             fft,

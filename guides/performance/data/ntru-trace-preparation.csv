@@ -1,0 +1,4 @@
+case,before_r1_us,after_r1_us,before_r2_us,after_r2_us,change_r1_percent,change_r2_percent,before_allocations,after_allocations,before_allocated_bytes,after_allocated_bytes,before_retained_bytes,after_retained_bytes,before_peak_bytes,after_peak_bytes
+ntt,600.325720,600.017040,600.981890,600.595512,-0.051419,-0.064291,71,53,655200,507744,491360,491360,507568,507568
+rustfft,472.133098,473.869485,473.199498,473.351889,0.367775,0.032204,70,52,778064,630608,614224,614224,630608,630608
+tfhe-fft,476.689496,476.581968,475.464787,476.918697,-0.022557,0.305787,70,52,778064,630608,614224,614224,630608,630608

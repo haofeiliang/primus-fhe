@@ -50,7 +50,7 @@ impl FourierNtruSecretKey {
     /// Adds each scaled message before multiplication by the inverse secret, giving
     /// NLev phase `g_l * message + e_l` up to FFT rounding. The caller validates
     /// complete operands, the FFT domain and polynomial scratch.
-    fn encrypt_nlev_kernel_to<T, Table, R>(
+    pub(crate) fn encrypt_nlev_kernel_to<T, Table, R>(
         &self,
         message: Polynomial<&[T]>,
         mut result: FourierNlevCiphertext<&mut [Complex64]>,
@@ -300,7 +300,8 @@ impl FourierNtruSecretKey {
         }
     }
 
-    fn assert_gadget_domain<T, Table>(
+    /// Checks shared generation resources before standalone or batched sampling.
+    pub(crate) fn assert_gadget_domain<T, Table>(
         &self,
         params: &NlevParameters<T, NativeModulus<T>>,
         fft: &FftEngine<'_, Table>,
