@@ -125,8 +125,7 @@ where
             ),
             ShoupFactor::new(minus_inv_q_mod_t_gamma[1], gamma),
         ];
-        let t_gamma_value = multiply_many_values(&[t, gamma]);
-        let t_gamma_factor_mod_q = base_q.decompose_factors(t_gamma_value.view());
+        let t_gamma_factor_mod_q = base_q.decompose_factors(base_t_gamma.moduli_product());
 
         let converter_q_to_t_gamma = BaseConverter::from_owned_bases(base_q.clone(), base_t_gamma);
 
