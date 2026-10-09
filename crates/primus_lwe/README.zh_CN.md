@@ -88,7 +88,7 @@ assert_eq!(codec.decode_value(phase), message);
 
 消息加密使用 `encrypt_message[_to]`，传入 `LweParameters` 与显式 embedding。Raw `encrypt_encoded[_to]` 直接接收已编码剩余类、模数、噪声采样器和 RNG，让 TFHE 调用方复用已有资源，无需重新构造参数对象。
 
-`LwePublicKey::generate` 是 raw 入口，不能检查拥有型私钥的模数元数据，须先检查再借用。它接收 `LweSecretKeyRef`：owned LWE 私钥传入 `secret.as_view()`，GLWE/NTRU 系数可直接使用 `LweSecretKeyRef::Signed`， 生成过程中无需复制秘密。借用视图仍须满足对应模数下的系数范围契约。
+`LwePublicKey::generate(secret, dimension, modulus, uniform, noise, rng)` 接收 `LweSecretKeyRef` 和已准备的采样器：owned LWE 私钥传入 `secret.as_view()`，GLWE/NTRU 系数可直接使用 `LweSecretKeyRef::Signed`。生成时借用噪声采样器，不重建或克隆其表，也不复制秘密。采样前检查秘密维数和噪声采样器的模数；均匀采样器须使用传入的模数，借用系数须满足视图的范围契约。这个 raw 入口不能检查拥有型私钥的模数元数据，须先检查再借用。
 
 公钥存储 `n` 行 `[A_i, b_i]`，其中 `A` 为方阵，`b = A s + e`， 总计 `n * (n + 1)` 个系数。加密采样稀疏三元向量 `r`，分布为 `Pr[0] = 1/2`、`Pr[-1] = Pr[1] = 1/4`，再采样独立的新高斯噪声 `e1, e2`：
 

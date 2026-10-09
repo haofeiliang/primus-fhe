@@ -49,7 +49,10 @@ fn main() {
     // these demonstration parameters are not a security recommendation.
     let public_key = LwePublicKey::generate(
         secret_key.as_view(),
-        parameters.encryption_parameters(),
+        parameters.dimension(),
+        parameters.cipher_modulus(),
+        parameters.cipher_modulus_uniform_distr(),
+        parameters.noise_distribution(),
         &mut rng,
     );
     let ciphertext =

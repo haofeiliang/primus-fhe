@@ -88,7 +88,7 @@ Single-engine features can be compiled and run independently.
 | `cbs` | Ordinary CBS, or NTRU one-hot full M / compact M−1 outputs |
 | `mvb` | The same k thresholds via independent PBS, ManyLUT or factorized MVB |
 | `high_precision_lut` | Separate `create_lut_and_drop` and complete `evaluate` |
-| `setup` | Key generation, or explicitly named raw BR/KS stages |
+| `setup` | Evaluation/public-key generation, or explicitly named raw GLWE BR/KS stages |
 | `sparse_paper` | Paper-shaped original/candidate profiles and adapted return path |
 
 All backends in an operation share a Criterion group, enabling HTML comparisons.

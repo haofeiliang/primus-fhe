@@ -2,6 +2,10 @@
 
 use primus_tfhe_benchmarks::measurement;
 
+#[cfg(any(feature = "glwe-ntt", feature = "glwe-fourier"))]
+#[path = "setup/public_key.rs"]
+mod public_key;
+
 #[cfg(feature = "glwe-ntt")]
 #[path = "setup/glwe_ntt.rs"]
 mod glwe_ntt;
@@ -26,6 +30,8 @@ mod ntru_fourier;
 
 fn main() {
     measurement::run("setup", |group| {
+        #[cfg(any(feature = "glwe-ntt", feature = "glwe-fourier"))]
+        public_key::bench_generation(group);
         #[cfg(feature = "glwe-ntt")]
         glwe_ntt::bench_setup(group);
         #[cfg(all(

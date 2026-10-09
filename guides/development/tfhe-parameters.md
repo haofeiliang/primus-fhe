@@ -350,7 +350,7 @@ in [`primus_tfhe_benchmarks`](../../benchmarks/tfhe/README.md#targets):
 | `sparse_pbs` | Fixed n728/h32, Rounded 8→8 in all four backends; paired classic/sparse |
 | `cbs` | Fixed n728/h32, identity selector t=4 with ring candidates t=4; NTRU also full/nonzero one-hot at t=8, candidates t=8, classic/sparse |
 | `mvb` | Fixed n728/h32; input 16/output 2, D8/k3 compares three paths with classic/sparse; input 128/output 2, D64/k17 keeps classic independent/factorized paths |
-| `setup` | u64 key generation and GLWE stage diagnostics, separated from complete-request timings |
+| `setup` | u64 evaluation-key generation, complete GLWE public-key generation in both PBS orders, and GLWE stage diagnostics; separate from online request timings |
 | `high_precision_lut` | n800/h32, tau2/c8/d5/o8, classic/sparse; separate public LUT creation and homomorphic evaluation; polynomial, dense and shared-function workloads |
 | `sparse_paper` | Opt-in GLWE NTT paper/candidate profiles and benchmark-only small-q adapter, kept outside the shared fixture catalogue |
 

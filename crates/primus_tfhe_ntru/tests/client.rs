@@ -184,7 +184,10 @@ fn check<
     let foreign_secret = LweSecretKey::generate(foreign_params.encryption_parameters(), &mut rng);
     let foreign = LwePublicKey::generate(
         foreign_secret.as_view(),
-        foreign_params.encryption_parameters(),
+        foreign_params.dimension(),
+        foreign_params.cipher_modulus(),
+        foreign_params.cipher_modulus_uniform_distr(),
+        foreign_params.noise_distribution(),
         &mut rng,
     );
     assert_eq!(
@@ -204,7 +207,10 @@ fn check<
     let full_secret = LweSecretKey::generate(full_params.encryption_parameters(), &mut rng);
     let full = LwePublicKey::generate(
         full_secret.as_view(),
-        full_params.encryption_parameters(),
+        full_params.dimension(),
+        full_params.cipher_modulus(),
+        full_params.cipher_modulus_uniform_distr(),
+        full_params.noise_distribution(),
         &mut rng,
     );
     assert_eq!(

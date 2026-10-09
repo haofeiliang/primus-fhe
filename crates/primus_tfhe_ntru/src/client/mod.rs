@@ -135,9 +135,13 @@ impl<T: FheUint, M: RingContext<T>, LM: RingContext<T>> PbsParameters<T, M, LM> 
         rng: &mut R,
     ) -> Result<LwePublicKey<T>, TfheKeyError> {
         self.check_external_secret_key(key)?;
+        let lwe = self.external_lwe();
         Ok(LwePublicKey::generate(
             key.as_view(),
-            self.external_lwe(),
+            lwe.dimension(),
+            lwe.cipher_modulus(),
+            lwe.cipher_modulus_uniform_distr(),
+            lwe.noise_distribution(),
             rng,
         ))
     }

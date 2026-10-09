@@ -130,7 +130,15 @@ impl<T: FheUint, M: RingContext<T>> PbsParameters<T, M> {
         let key = key.bind(self)?;
         Ok(match self.pbs_order() {
             crate::PbsOrder::BootstrapKeyswitch => {
-                LwePublicKey::generate(key, self.small_lwe(), rng)
+                let lwe = self.small_lwe();
+                LwePublicKey::generate(
+                    key,
+                    lwe.dimension(),
+                    lwe.cipher_modulus(),
+                    lwe.cipher_modulus_uniform_distr(),
+                    lwe.noise_distribution(),
+                    rng,
+                )
             }
             crate::PbsOrder::KeyswitchBootstrap => {
                 let glwe = self.blind_rotation_params();
@@ -140,7 +148,14 @@ impl<T: FheUint, M: RingContext<T>> PbsParameters<T, M> {
                     glwe.secret_key_distr(),
                     glwe.noise_distribution().standard_deviation(),
                 );
-                LwePublicKey::generate(key, &lwe, rng)
+                LwePublicKey::generate(
+                    key,
+                    lwe.dimension(),
+                    lwe.cipher_modulus(),
+                    lwe.cipher_modulus_uniform_distr(),
+                    lwe.noise_distribution(),
+                    rng,
+                )
             }
         })
     }

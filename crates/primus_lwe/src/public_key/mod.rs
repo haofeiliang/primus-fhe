@@ -9,8 +9,9 @@ use primus_integer::FheUint;
 use primus_lattice::LweDimension;
 use primus_lattice::lwe::Lwe;
 use primus_reduce::RingContext;
+use rand::distr::Uniform;
 
-use crate::{LweCiphertext, LweEncryptionParameters, LweSecretKeyRef};
+use crate::{LweCiphertext, LweSecretKeyRef};
 
 // A full row block consumes whole random words for any ciphertext tile count.
 const ROWS_PER_BLOCK: usize = 16;
@@ -41,7 +42,7 @@ const ROWS_PER_BLOCK: usize = 16;
 /// Decryption requires `e^T r + e2 - e1^T s` to stay within the plaintext
 /// codec's decoding margin. Small centered secret coefficients are needed to
 /// control `e1^T s`. The high-level methods use `params.noise_distribution()`
-/// for both `e1` and `e2`; generation uses its own supplied parameters for `e`.
+/// for both `e1` and `e2`; generation uses its supplied sampler for `e`.
 /// None of these samplers specifies the *total* output noise distribution.
 ///
 /// Parameters must jointly ensure LWE security for the long-term secret and
@@ -59,36 +60,46 @@ pub struct LwePublicKey<T: FheUint> {
 impl<T: FheUint> LwePublicKey<T> {
     /// Generates `n` independent zero encryptions under `secret_key`.
     ///
-    /// Borrows encoded or signed coefficients without copying the secret.
-    /// Only the dimension and modulus identity are retained from
-    /// `params`; the samplers remain caller-owned. No message codec is needed.
+    /// Borrows encoded or signed coefficients and an already prepared noise
+    /// sampler. Only the dimension and modulus identity are retained; generation
+    /// does not prepare or clone sampling tables. No message codec is needed.
     ///
     /// # Correctness
     ///
     /// The secret must satisfy [`LweSecretKeyRef`]'s coefficient-range contract
-    /// under `params`' modulus. The raw view has no recorded modulus; when
+    /// under `modulus`. The raw view has no recorded modulus; when
     /// borrowing an owning key, check its modulus before calling `as_view()`.
+    /// `uniform` must sample canonical residues uniformly under the same modulus.
     /// The [type's security and noise requirements](Self#correctness) apply.
     ///
     /// # Panics
     ///
     /// Panics before sampling if the secret dimension differs from the nonzero
-    /// parameter dimension or the public-key storage length overflows `usize`.
+    /// supplied dimension, the noise sampler has a different modulus, or the
+    /// public-key storage length overflows `usize`.
     #[must_use]
+    #[inline]
     pub fn generate<M, R>(
         secret_key: LweSecretKeyRef<'_, T>,
-        params: &LweEncryptionParameters<T, M>,
+        dimension: LweDimension,
+        modulus: M,
+        uniform: Uniform<T>,
+        noise: &DiscreteGaussian<T>,
         rng: &mut R,
     ) -> Self
     where
         M: RingContext<T>,
         R: rand::Rng + rand::CryptoRng,
     {
-        let dimension = params.dimension();
         assert_eq!(
             secret_key.dimension(),
             dimension.get(),
             "LWE public-key dimension mismatch"
+        );
+        assert_eq!(
+            noise.modulus_minus_one(),
+            modulus.minus_one(),
+            "LWE public-key noise modulus mismatch"
         );
         let row_len = dimension.ciphertext_len();
         let length = dimension
@@ -96,9 +107,6 @@ impl<T: FheUint> LwePublicKey<T> {
             .checked_mul(row_len)
             .expect("LWE public-key storage length overflow");
         let mut data = vec![T::ZERO; length];
-        let modulus = params.cipher_modulus();
-        let uniform = params.cipher_modulus_uniform_distr();
-        let noise = params.noise_distribution();
         for row in data.chunks_exact_mut(row_len) {
             secret_key.encrypt_encoded_to(
                 T::ZERO,

@@ -43,7 +43,7 @@ is enabled. GLWE uses `KeyswitchBootstrap` unless a row says otherwise;
 | `lookup_table`: u64 Native for all three geometries; t32/k1 additionally at u64 PowOf2 q24, u64 Barrett Q50, and u32 Barrett Q27 | 6 | Retain each packing shape and modulus family without their full cross-product |
 
 This selects 98 ordinary IDs, or 100 with the two secondary-engine PBS IDs,
-including the six `primus_tfhe/lookup_table` IDs outside this package. This package has 92 ordinary IDs (94 with both FFT engines), plus 20 setup and 36 paper IDs. It is a selection of benchmark
+including the six `primus_tfhe/lookup_table` IDs outside this package. This package has 92 ordinary IDs (94 with both FFT engines), plus 24 setup and 36 paper IDs. It is a selection of benchmark
 workloads, not a CI run list or a restriction on supported APIs. Other word,
 order and engine combinations remain covered by focused correctness tests and
 independent feature compilation. D64/k17 sparse remains supported; it is not a
@@ -61,7 +61,7 @@ No claim of equal security follows from choosing these cases.
 
 | Entry | Retained work |
 | --- | --- |
-| Four backends' `setup` | u64 dense binary/ternary and fixed-weight classic/sparse keygen; GLWE also keeps binary raw BR/KS at n800/N1024. Primary FFT engine only: six GLWE / four NTRU IDs per backend, 20 total |
+| Four backends' `setup` | u64 dense binary/ternary and fixed-weight classic/sparse keygen; GLWE also keeps binary raw BR/KS at n800/N1024. Primary FFT engine only: six GLWE / four NTRU IDs per backend, 20 total, plus four coefficient-domain GLWE public-key generation IDs for both orders at Barrett/Native modulus |
 | GLWE NTT `sparse_paper` | The 36 original/candidate paper IDs, including u32/u64 at the same small prime and raw-BR versus complete-return boundaries |
 | LUT `high_precision_lut`, `PRIMUS_LUT_DIAGNOSTICS=1` with `--test` | Existing fixture's final phase error; no extra workload matrix |
 | `validate_parameters` binary | Numerical profiles and detailed intermediate phase checks; `--list` discovers profiles without keys, backend and engine features select profiles; no arguments only lists, --all explicitly runs everything |
@@ -71,10 +71,14 @@ u32 and secondary-engine setup timings are no longer default registrations;
 the numerical diagnostic retains their parameter coverage. Historical measurements
 remain in the performance guides; use their pinned revisions for removed IDs.
 Listing and filtering stay lazy: unselected cases do not generate keys.
+GLWE public-key diagnostics measure the complete external LWE matrix generation
+including allocation, with output drop outside timing. They use n800 for BR→KS
+and n1024 for KS→BR, and require no FFT engine.
 
 ```sh
 cargo bench -p primus_tfhe_benchmarks --bench setup --features glwe-ntt -- --list
 cargo bench -p primus_tfhe_benchmarks --bench setup --features ntru-fourier,tfhe-fft -- --list
+cargo bench -p primus_tfhe_benchmarks --bench setup --features glwe-ntt,glwe-fourier -- 'public_key/'
 cargo bench -p primus_tfhe_benchmarks --bench sparse_paper --features glwe-ntt -- 'std128_' --list
 PRIMUS_LUT_DIAGNOSTICS=1 cargo bench -p primus_tfhe_benchmarks --bench high_precision_lut --features lut,ntru-ntt -- \
   'sparse/.*/shared_middle_chunk/evaluate/lookup/ntt/u64$' --test

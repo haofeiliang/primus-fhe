@@ -36,7 +36,7 @@ cargo bench -p primus_tfhe_benchmarks --bench high_precision_lut --features lut,
 
 Nightly 基准 smoke 的显式命令为 `cargo +nightly bench -p <package> --bench <target> --features simd -- --test`。所有 smoke 和示例执行都由维护者按改动选择，CI 不生成密钥运行大参数工作负载，也不自动执行全量性能采样。Smoke 耗时包含构造、密钥生成和断言，不能当作 kernel 延迟。
 
-普通 TFHE target 不注册 keygen、阶段或论文计时。独立 `primus_tfhe_benchmarks` 包的 `setup` 保存代表性 u64 keygen（GLWE 另有 BR/KS），`sparse_paper` 保存论文与候选参数比较；Cargo `--benches` 会选中它们，因此普通 smoke 应显式选择 target/ID。LUT 仅在设置 `PRIMUS_LUT_DIAGNOSTICS=1` 时报告相位误差；配合 `--test` 获取单次报告，无需统计采样。矩阵与命令见 [benchmark 指南](../../benchmarks/tfhe/BENCHMARKS.md#explicit-diagnostics)。
+普通 TFHE target 不注册 keygen、阶段或论文计时。独立 `primus_tfhe_benchmarks` 包的 `setup` 保存代表性 u64 keygen（GLWE 另有 BR/KS 与两种 PBS 顺序的完整公钥生成），`sparse_paper` 保存论文与候选参数比较；Cargo `--benches` 会选中它们，因此普通 smoke 应显式选择 target/ID。LUT 仅在设置 `PRIMUS_LUT_DIAGNOSTICS=1` 时报告相位误差；配合 `--test` 获取单次报告，无需统计采样。矩阵与命令见 [benchmark 指南](../../benchmarks/tfhe/BENCHMARKS.md#explicit-diagnostics)。
 
 Fourier 基准接受单独 `rustfft` 或 `tfhe-fft`；高精度 LUT 选择 `lut,ntru-ntt`。Cargo 的 `required-features` 不能表示“或”，因此这些 target 用 cfg 选择注册；无可用后端/引擎时没有工作负载。不能把这种空运行当作数值验证。显式双 FFT 对照测试仍保留两项依赖。
 

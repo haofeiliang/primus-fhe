@@ -88,7 +88,7 @@ For noise diagnostics, obtain `phase = secret.decrypt_phase(input, modulus)`, en
 
 Message encryption uses `encrypt_message[_to]` with `LweParameters` and an explicit embedding. Raw `encrypt_encoded[_to]` accepts the encoded residue, modulus, noise sampler and RNG directly, so TFHE callers can reuse their prepared resources without constructing another parameter object.
 
-`LwePublicKey::generate` accepts `LweSecretKeyRef`: pass `secret.as_view()` for an owned LWE secret, or `LweSecretKeyRef::Signed` for GLWE/NTRU coefficients. Generation does not copy the secret. The borrowed coefficients must satisfy the view's range contract for the supplied modulus. This raw entry point cannot check an owning key's modulus metadata; check it before taking `as_view()`.
+`LwePublicKey::generate(secret, dimension, modulus, uniform, noise, rng)` accepts a `LweSecretKeyRef` and prepared samplers: pass `secret.as_view()` for an owned LWE secret, or `LweSecretKeyRef::Signed` for GLWE/NTRU coefficients. Generation borrows the noise sampler without rebuilding or cloning its tables and does not copy the secret. It checks the secret dimension and noise modulus before sampling. The uniform sampler must use the supplied modulus, and borrowed coefficients must satisfy the view's range contract. This raw entry point cannot check an owning key's modulus metadata; check it before taking `as_view()`.
 
 The public key stores `n` rows `[A_i, b_i]`, with square `A` and `b = A s + e`: `n * (n + 1)` coefficients. Encryption samples sparse ternary `r` with `Pr[0] = 1/2`, `Pr[-1] = Pr[1] = 1/4`, plus fresh Gaussian `e1, e2`, and computes:
 

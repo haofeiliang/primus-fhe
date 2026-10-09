@@ -92,6 +92,17 @@ fn check<
                 params.as_ref().blind_rotation_params().noise_distribution(),
             ),
         };
+        // Each row must consume mask coefficients then fresh external-domain
+        // noise, with no extra sampling while selecting or preparing resources.
+        let mut reference_rng = StdRng::seed_from_u64(0x474c_5745_504b);
+        let mut rows = vec![0; public.as_slice().len()];
+        for mut row in
+            primus_lattice::lwe::LweIterMut::new(&mut rows, public.dimension().ciphertext_len())
+        {
+            secret.encrypt_encoded_to(0, &mut row, modulus, uniform, noise, &mut reference_rng);
+        }
+        assert_eq!(public.as_slice(), rows);
+        assert_eq!(rng.next_u64(), reference_rng.next_u64());
         let encoded = codec.encode_value(1, primus_encoding::PlaintextEmbedding::Unsigned);
         let seed = rng.next_u64();
         let mut rng = StdRng::seed_from_u64(seed);
@@ -198,7 +209,10 @@ fn check<
             LweSecretKey::generate(foreign_params.encryption_parameters(), &mut rng);
         let foreign = LwePublicKey::generate(
             foreign_secret.as_view(),
-            foreign_params.encryption_parameters(),
+            foreign_params.dimension(),
+            foreign_params.cipher_modulus(),
+            foreign_params.cipher_modulus_uniform_distr(),
+            foreign_params.noise_distribution(),
             &mut rng,
         );
         assert_eq!(
@@ -218,7 +232,10 @@ fn check<
         let short_secret = LweSecretKey::generate(short_params.encryption_parameters(), &mut rng);
         let short = LwePublicKey::generate(
             short_secret.as_view(),
-            short_params.encryption_parameters(),
+            short_params.dimension(),
+            short_params.cipher_modulus(),
+            short_params.cipher_modulus_uniform_distr(),
+            short_params.noise_distribution(),
             &mut rng,
         );
         assert_eq!(

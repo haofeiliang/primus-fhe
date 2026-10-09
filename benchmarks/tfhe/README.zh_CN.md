@@ -73,7 +73,7 @@ cargo bench -p primus_tfhe_benchmarks --bench high_precision_lut --features lut,
 | `cbs` | 普通 CBS，或 NTRU one-hot 的完整 M / 紧凑 M−1 输出 |
 | `mvb` | 独立 PBS、ManyLUT、factorized MVB 生成相同 k 个阈值 |
 | `high_precision_lut` | 分别计时 `create_lut_and_drop` 和完整 `evaluate` |
-| `setup` | 密钥生成，或具名的原始 BR/KS 阶段 |
+| `setup` | 计算密钥、公钥生成，或具名的 GLWE 原始 BR/KS 阶段 |
 | `sparse_paper` | 论文原始/候选参数及适配后的返回路径 |
 
 同一运算的各后端进入同一个 Criterion group，可生成 HTML 对照。ID 将工作负载放在 `family/engine/word` 前面；不同 order、输出契约和参数仍保留区别。相同 n/N 不代表等安全性，完整矩阵及数值契约见 [BENCHMARKS.md](BENCHMARKS.md)。

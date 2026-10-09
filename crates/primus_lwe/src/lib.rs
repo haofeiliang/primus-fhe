@@ -18,6 +18,8 @@
 //! ciphertext layout, so secret-key decryption and key switching also accept
 //! public-key ciphertexts. Its noise budget differs from secret-key encryption;
 //! see the public key's correctness contract before choosing parameters.
+//! [`LwePublicKey::generate`] takes the dimension, modulus and prepared samplers
+//! directly, borrowing the noise sampler without preparing or cloning its tables.
 //!
 //! Both keys provide `encrypt_message_batch` / `encrypt_message_batch_to` for
 //! independent samples in a contiguous `Vec<T>`. Batch output methods accept

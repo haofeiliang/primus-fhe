@@ -12,6 +12,52 @@ For the newer matched classic/sparse PBS and CBS comparison, see the
 the CPU-dependent CBS regression and distinguishes retained heap from requested
 live-heap peak. The cleanup measurements below remain historical.
 
+## Public-key sampler reuse, 2026-10-09
+
+The 2026-10-10 follow-up retains the raw LWE generator's explicit
+`dimension/modulus/uniform/noise` inputs and inline hint. GLWE public-key
+generation keeps its original preparation: small-LWE resources for BR→KS,
+fresh LWE parameters derived from the ring sigma for KS→BR. Reusing the existing
+ring sampler was rejected; KS key noise does not enter public-key generation.
+This changes the low-level API, not the row algorithm or online PBS/CBS work.
+
+Frozen binaries isolate the raw API, inline hint and GLWE sampler reuse from
+`fe4111a4`. Measurements use CPU 4 of an AMD Ryzen 9 9955HX3D, stable rustc
+1.98.1, repository CPU flags, the default bench profile and features
+`glwe-ntt,glwe-fourier`. Each case has 30 samples, 1 s warm-up and 2 s
+measurement, with original/modified runs repeated in reverse order. Each
+iteration allocates and generates all n zero rows; output drop and all fixture
+preparation are excluded. Binary secrets use client seed 42 and public-key
+seed 4242. No FFT is performed. Snapshots outside timing compare all matrix
+coefficients and the next RNG word; all five variants agree in all four cases.
+
+| Full generation, u64 | n | Raw API + inline, retained | Also reuse samplers within each order, rejected |
+| --- | ---: | ---: | ---: |
+| Q50 Barrett, BR→KS | 800 | −0.41% to −0.15% | +0.44% to +1.06% |
+| Native64, BR→KS | 800 | −0.17% to +0.57% | −3.10% to −2.50% |
+| Q50 Barrett, KS→BR | 1024 | −0.48% to −0.07% | +3.42% to +5.19% |
+| Native64, KS→BR | 1024 | −2.24% to −2.23% | −3.09% to −2.64% |
+
+Each column uses its own original/modified pair; ranges are the two observed
+mean changes, not confidence intervals. Q50 is 1,125,899,906,826,241. The earlier
+combined-order reuse implementation had inconsistent results. Removing the
+inline hint also failed to establish a consistent improvement. These runs do
+not identify the cause or establish a general speedup; no CPU 8 or SIMD timing
+was taken. The raw API is retained for its explicit sampling dependencies and
+ability to borrow caller-prepared state, with required caller adaptations.
+
+An earlier allocator probe showed KS→BR reuse saving two CDT allocations and
+624 B of peak live requested storage at Q50, or six Ziggurat allocations and
+7,353 B at Native64. The n1024 matrix remains 8,396,800 B and the arithmetic
+remains O(n²). That small saving does not justify the repeatable Q50 regression;
+GLWE sampler reuse remains a candidate rather than the current implementation.
+
+```sh
+taskset -c 4 cargo bench -p primus_tfhe_benchmarks --bench setup \
+  --features glwe-ntt,glwe-fourier -- 'public_key/' \
+  --sample-size 30 --warm-up-time 1 --measurement-time 2
+```
+
 ## Complete high-precision lookup workflow, 2026-10-09
 
 `NttHighPrecLutContext` / `FourierHighPrecLutContext` move the complete CBS
