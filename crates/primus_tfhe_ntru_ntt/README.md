@@ -48,7 +48,7 @@ Comments identify client and server stages. Basic and sparse both compute `x % 4
 
 ManyLUT interleaves outputs within one blind rotation, shares one Q→q conversion across multiple outputs, and batches their LWE key switches; factorized MVB uses public factors and a different evaluation interface. NTRU sparse supports ordinary/interleaved PBS, factorized MVB, CBS and one-hot. Sparse BR requires a fixed-weight binary external secret.
 
-Client factories take only the relevant secret: pass `client_key.external_lwe_secret_key()` to `encryptor` / `pbs_decryptor` / `mvb_decryptor` and the Boolean variants, or `client_key.accumulator_ntru_secret_key()` to `accumulator_client`. Complete `ClientKey` bundles are used for server-key generation; no secret buffers are copied to select a role.
+External LWE factories take `client_key.external_lwe_secret_key()`: `encryptor` / `pbs_decryptor` / `mvb_decryptor` and the Boolean variants derive their codecs from the configured messages. Boolean gates require both input/output t=4. Ring clients use `accumulator_client(client_key.accumulator_ntru_secret_key(), t_ring)` with an independent candidate message modulus. Complete `ClientKey` bundles are used for server-key generation; selecting a role copies no secret buffers.
 
 ## Parameters and representation
 
@@ -80,7 +80,7 @@ Use `cbs.into_parts()` or `one_hot.into_parts()` to move out operation state and
 
 ## Fixed-scale factorized MVB
 
-Compile with `context.compile_mvb_fn(domain_len, output_count, function)` and bind a `FactorizedEvaluator`. The input uses the same `encryptor`; decode the unsigned Scaled output with `context.mvb_decryptor(external_secret)`. Both use the configured message domains. For another output domain with the same keys, reuse `parameters.factorized_pbs_codecs(messages)` for compilation and `parameters.decryptor_with_codec`; compiling a program does not change an existing decoder. The program remains bound to this context. LUT encoding is at Q, output decoding at q; budget the difference between `(q/Q)*round(Q/t_out)` and `round(q/t_out)`, plus return noise. Explicit prepared codecs remain supported by `compile_factorized_lookup_table_fn` for matched numerical comparisons and advanced composition.
+Compile with `context.compile_mvb_fn(domain_len, output_count, function)` and bind a `FactorizedEvaluator`. The input uses the same `encryptor`; decode the unsigned Scaled output with `context.mvb_decryptor(external_secret)`. Both use the configured message domains. For another output domain with the same keys, reuse `parameters.factorized_pbs_codecs(messages)` for compilation and `parameters.decryptor_with_codec`; compiling a program does not change an existing decoder. The program remains bound to this context. LUT encoding is at Q, output decoding at q; budget the difference between `(q/Q)*round(Q/t_out)` and `round(q/t_out)`, plus return noise. Advanced composition uses `parameters.compile_factorized_lookup_table_fn(&codecs, ...)` followed by `NttFactorizedLookupTable::new(&context, raw)`; same-key message overrides use `context.compile_mvb_fn_with_messages`.
 
 The coefficient modulus must be odd. Factors stay in NTT form after preparation.
 

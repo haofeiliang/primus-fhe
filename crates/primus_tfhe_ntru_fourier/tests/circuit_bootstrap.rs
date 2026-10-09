@@ -235,6 +235,7 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr, sparse: bool) {
         let input_codec =
             RoundedCodec::new(t, context.parameters().external_lwe().cipher_modulus());
         let encryptor = context
+            .parameters()
             .encryptor_with_codec(client.external_lwe_secret_key(), &input_codec)
             .unwrap();
         let codecs = context
@@ -286,7 +287,8 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr, sparse: bool) {
         accumulator_client.decrypt_to(&product, &mut decoded_product);
         assert_eq!(
             context
-                .decryptor(client.external_lwe_secret_key(), &input_codec)
+                .parameters()
+                .decryptor_with_codec(client.external_lwe_secret_key(), &input_codec)
                 .unwrap()
                 .decrypt(output.as_view())
                 .unwrap(),

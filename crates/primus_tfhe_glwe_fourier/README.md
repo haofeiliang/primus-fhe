@@ -47,7 +47,7 @@ Comments identify client and server stages. Basic and sparse both compute `x % 4
 
 ManyLUT interleaves outputs within one blind rotation; factorized MVB uses public factors and a different evaluation interface.
 
-Client factories take only the relevant secret: pass `client_key.external_lwe_secret_key()` to `encryptor` / `pbs_decryptor` / `mvb_decryptor` and the Boolean variants, or `client_key.glwe_secret_key()` to `accumulator_client`. Complete `ClientKey` bundles are used for server-key generation; no secret buffers are copied to select a role.
+External LWE factories take `client_key.external_lwe_secret_key()`: `encryptor` / `pbs_decryptor` / `mvb_decryptor` and the Boolean variants derive their codecs from the configured messages. Boolean gates require both input/output t=4. Ring clients use `accumulator_client(client_key.glwe_secret_key(), t_ring)` with an independent candidate message modulus. Complete `ClientKey` bundles are used for server-key generation; selecting a role copies no secret buffers.
 
 ## Parameters and representation
 
@@ -85,7 +85,7 @@ For independently generated material, use `context.bootstrap_resources(br, input
 
 ## Fixed-scale factorized MVB
 
-Compile with `context.compile_mvb_fn(domain_len, output_count, function)` and bind a `FactorizedEvaluator`. The input uses the same `encryptor`; decode the unsigned Scaled output with `context.mvb_decryptor(external_secret)`. Both use the configured message domains. For another output domain with the same keys, reuse `parameters.factorized_pbs_codecs(messages)` for compilation and `parameters.decryptor_with_codec`; compiling a program does not change an existing decoder. The program remains bound to this context. LUT and returned LWE ciphertexts share the same modulus. Explicit prepared codecs remain supported by `compile_factorized_lookup_table_fn` for matched numerical comparisons and advanced composition.
+Compile with `context.compile_mvb_fn(domain_len, output_count, function)` and bind a `FactorizedEvaluator`. The input uses the same `encryptor`; decode the unsigned Scaled output with `context.mvb_decryptor(external_secret)`. Both use the configured message domains. For another output domain with the same keys, reuse `parameters.factorized_pbs_codecs(messages)` for compilation and `parameters.decryptor_with_codec`; compiling a program does not change an existing decoder. The program remains bound to this context. LUT and returned LWE ciphertexts share the same modulus. Advanced composition uses `parameters.compile_factorized_lookup_table_fn(&codecs, ...)` followed by `FourierFactorizedLookupTable::new(&context, raw)`; same-key message overrides use `context.compile_mvb_fn_with_messages`.
 
 The actual scale `round(2^BITS/t_out)` must be even (`t_out=10` works for u32/u64). Odd scales return `LookupTableError::OddFactorizationScale`. Factors are transformed as signed integers without torus scaling; budget their amplification and FFT error.
 

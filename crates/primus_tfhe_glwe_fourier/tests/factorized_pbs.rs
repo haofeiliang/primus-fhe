@@ -303,7 +303,7 @@ fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
         );
     }
     assert!(matches!(
-        context.compile_factorized_lookup_table_fn(
+        context.parameters().compile_factorized_lookup_table_fn(
             &PbsMessageConfig::new(15)
                 .with_output_modulus(8)
                 .try_factorized_codecs(input_codec.ciphertext_modulus(), BarrettModulus::new(97))
@@ -315,7 +315,7 @@ fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
         Err(LookupTableError::OutputModulusMismatch)
     ));
     assert!(matches!(
-        context.compile_factorized_lookup_table_fn(
+        context.parameters().compile_factorized_lookup_table_fn(
             &PbsMessageConfig::new(15)
                 .with_output_modulus(3)
                 .try_factorized_codecs(input_codec.ciphertext_modulus(), NativeModulus::new())

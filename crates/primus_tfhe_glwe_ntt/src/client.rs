@@ -1,9 +1,7 @@
 //! External LWE client constructors for the bound TFHE context.
 
-use primus_encoding::{MessageDecoder, RoundedCodec};
 use primus_integer::FheUint;
 use primus_lwe::LwePublicKey;
-use primus_modulus::BarrettModulus;
 use primus_ntt::MonomialNttTable;
 
 use crate::{
@@ -61,39 +59,5 @@ where
         secret_key: ExternalLweSecretKey<'a, T>,
     ) -> Result<Decryptor<'a, T>, TfheClientError> {
         self.parameters().mvb_decryptor(secret_key)
-    }
-
-    // Advanced entries bind explicitly prepared codecs in the external LWE domain.
-
-    /// Binds an explicit Rounded input codec after checking the external secret.
-    /// Inherits [`primus_tfhe_glwe::PbsParameters::encryptor`]'s signed-range contract.
-    pub fn encryptor_with_codec<'a>(
-        &'a self,
-        secret_key: ExternalLweSecretKey<'a, T>,
-        codec: &RoundedCodec<T, BarrettModulus<T>>,
-    ) -> Result<Encryptor<'a, T>, TfheClientError> {
-        self.parameters().encryptor_with_codec(secret_key, codec)
-    }
-
-    /// Binds an explicit Rounded input codec to an external LWE public key.
-    /// Key identity and noise requirements follow [`primus_tfhe::EncryptionKey`].
-    pub fn public_encryptor_with_codec<'a>(
-        &'a self,
-        public_key: &'a LwePublicKey<T>,
-        codec: &RoundedCodec<T, BarrettModulus<T>>,
-    ) -> Result<Encryptor<'a, T, &'a LwePublicKey<T>>, ClientError> {
-        self.parameters()
-            .public_encryptor_with_codec(public_key, codec)
-    }
-
-    /// Binds a Rounded or Scaled output codec after checking the external
-    /// secret and ciphertext modulus. Copies the prepared decoding state.
-    /// Inherits [`primus_tfhe_glwe::PbsParameters::decryptor_with_codec`]'s signed-range contract.
-    pub fn decryptor<'a>(
-        &self,
-        secret_key: ExternalLweSecretKey<'a, T>,
-        codec: impl Into<MessageDecoder<T, BarrettModulus<T>>>,
-    ) -> Result<Decryptor<'a, T>, TfheClientError> {
-        self.parameters().decryptor_with_codec(secret_key, codec)
     }
 }

@@ -50,7 +50,7 @@ ManyLUT 通过交错共享一次盲旋转，多输出返回还共享一次 Q→q
 
 普通 PBS/ManyLUT/MVB 的客户端与编译器从 Context 的消息选择派生 codec，密钥生成不依赖 t。CBS/one-hot 的候选 codec 仍显式绑定。CBS/one-hot 的容量在绑定输入 codec 时检查。
 
-客户端工厂只接收所需秘密：普通及 Boolean 加解密传入 `client_key.external_lwe_secret_key()`，`accumulator_client` 传入 `client_key.accumulator_ntru_secret_key()`。完整 `ClientKey` 组合用于生成服务端密钥；选择角色不会复制秘密缓冲区。
+外部 LWE 工厂接收 `client_key.external_lwe_secret_key()`：`encryptor` / `pbs_decryptor` / `mvb_decryptor` 及 Boolean 工厂从配置中的消息域准备编码；Boolean 门要求输入、输出均为 t=4。环客户端使用 `accumulator_client(client_key.accumulator_ntru_secret_key(), t_ring)`，显式选择独立的候选消息模数。完整 `ClientKey` 组合用于生成服务端密钥；选择角色不会复制秘密缓冲区。
 
 ## 参数与表示
 
@@ -84,7 +84,7 @@ Fourier 环只支持 `NativeModulus`；`PowOf2Modulus` 环不受支持。 NTRU �
 
 ## 固定尺度分解式 MVB
 
-用 `context.compile_mvb_fn(domain_len, output_count, function)` 编译并绑定 `FactorizedEvaluator`。输入沿用 `encryptor`，unsigned Scaled 输出用 `context.mvb_decryptor(external_secret)` 解密，两者均读取配置的消息域。同一密钥配合其他输出域时，为编译和 `parameters.decryptor_with_codec` 共同复用 `parameters.factorized_pbs_codecs(messages)`；编译程序不会改变已有解密器。程序仍绑定该 context。 LUT 编码在 Q 下，输出解码在 q 下；须预算 `(q/Q)*round(Q/t_out)` 与 `round(q/t_out)` 的差及返回噪声。 高级组合和数值对比仍可通过 `compile_factorized_lookup_table_fn` 显式传入已准备 codec。
+用 `context.compile_mvb_fn(domain_len, output_count, function)` 编译并绑定 `FactorizedEvaluator`。输入沿用 `encryptor`，unsigned Scaled 输出用 `context.mvb_decryptor(external_secret)` 解密，两者均读取配置的消息域。同一密钥配合其他输出域时，为编译和 `parameters.decryptor_with_codec` 共同复用 `parameters.factorized_pbs_codecs(messages)`；编译程序不会改变已有解密器。程序仍绑定该 context。LUT 编码在 Q 下，输出解码在 q 下；须预算 `(q/Q)*round(Q/t_out)` 与 `round(q/t_out)` 的差及返回噪声。高级组合使用家族的 `parameters.compile_factorized_lookup_table_fn(&codecs, ...)` 编译原始程序，再交给本后端的 `FourierFactorizedLookupTable::new(&context, raw)`；同钥消息域覆盖可用 `context.compile_mvb_fn_with_messages`。
 
 实际尺度 `round(2^BITS/t_out)` 必须为偶数，`t_out=10` 对 u32/u64 均可用。 奇数尺度返回 `LookupTableError::OddFactorizationScale`。因子按有符号整数变换，不作环面缩放； 须预算因子放大和 FFT 误差。
 

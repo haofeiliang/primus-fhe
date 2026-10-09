@@ -149,13 +149,11 @@ fn split_keys_support_both_pbs_orders() {
                 assert_eq!(decryptor.decrypt(output.as_view()).unwrap(), 1 - message);
             }
         }
-        let boolean_encryptor = context
-            .boolean_public_encryptor(&public, &input_codec)
-            .unwrap();
+        let boolean_encryptor = context.boolean_public_encryptor(&public).unwrap();
         let boolean_decryptor = context
-            .boolean_decryptor(client.external_lwe_secret_key(), &input_codec)
+            .boolean_decryptor(client.external_lwe_secret_key())
             .unwrap();
-        let mut boolean_evaluator = context.boolean_evaluator(&server, &input_codec).unwrap();
+        let mut boolean_evaluator = context.boolean_evaluator(&server).unwrap();
         let lhs = boolean_encryptor.encrypt(true, &mut rng).unwrap();
         let rhs = boolean_encryptor.encrypt(false, &mut rng).unwrap();
         assert!(

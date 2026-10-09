@@ -428,10 +428,12 @@ fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T) {
                 context.parameters().external_lwe().cipher_modulus(),
             );
             let encryptor = context
+                .parameters()
                 .encryptor_with_codec(client.external_lwe_secret_key(), &input_codec)
                 .unwrap();
             let decryptor = context
-                .decryptor(client.external_lwe_secret_key(), &input_codec)
+                .parameters()
+                .decryptor_with_codec(client.external_lwe_secret_key(), &input_codec)
                 .unwrap();
             for (config, mapping) in cases(radix) {
                 let table = HighPrecisionLookupTable::try_from_parameters(
@@ -687,10 +689,12 @@ fn fourier<T: TorusFftValue, Table: FftTable>() {
                 context.parameters().external_lwe().cipher_modulus(),
             );
             let encryptor = context
+                .parameters()
                 .encryptor_with_codec(client.external_lwe_secret_key(), &input_codec)
                 .unwrap();
             let decryptor = context
-                .decryptor(client.external_lwe_secret_key(), &input_codec)
+                .parameters()
+                .decryptor_with_codec(client.external_lwe_secret_key(), &input_codec)
                 .unwrap();
             for (config, mapping) in cases(radix) {
                 let table = HighPrecisionLookupTable::try_from_parameters(

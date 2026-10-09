@@ -47,7 +47,7 @@ cargo run -p primus_tfhe_glwe_ntt --release --example ntt_basic
 
 ManyLUT 通过交错共享一次盲旋转；分解式 MVB 通过公共因子生成多输出，是不同的求值接口。
 
-客户端工厂只接收所需秘密：普通及 Boolean 加解密传入 `client_key.external_lwe_secret_key()`，`accumulator_client` 传入 `client_key.glwe_secret_key()`。完整 `ClientKey` 组合用于生成服务端密钥；选择角色不会复制秘密缓冲区。
+外部 LWE 工厂接收 `client_key.external_lwe_secret_key()`：`encryptor` / `pbs_decryptor` / `mvb_decryptor` 及 Boolean 工厂从配置中的消息域准备编码；Boolean 门要求输入、输出均为 t=4。环客户端使用 `accumulator_client(client_key.glwe_secret_key(), t_ring)`，显式选择独立的候选消息模数。完整 `ClientKey` 组合用于生成服务端密钥；选择角色不会复制秘密缓冲区。
 
 ## 参数与表示
 
@@ -83,7 +83,7 @@ let mut cbs = context.circuit_bootstrap_evaluator(&server)?;
 
 ## 固定尺度分解式 MVB
 
-用 `context.compile_mvb_fn(domain_len, output_count, function)` 编译并绑定 `FactorizedEvaluator`。输入沿用 `encryptor`，unsigned Scaled 输出用 `context.mvb_decryptor(external_secret)` 解密，两者均读取配置的消息域。同一密钥配合其他输出域时，为编译和 `parameters.decryptor_with_codec` 共同复用 `parameters.factorized_pbs_codecs(messages)`；编译程序不会改变已有解密器。程序仍绑定该 context。 LUT 和返回 LWE 使用同一密文模数。 高级组合和数值对比仍可通过 `compile_factorized_lookup_table_fn` 显式传入已准备 codec。
+用 `context.compile_mvb_fn(domain_len, output_count, function)` 编译并绑定 `FactorizedEvaluator`。输入沿用 `encryptor`，unsigned Scaled 输出用 `context.mvb_decryptor(external_secret)` 解密，两者均读取配置的消息域。同一密钥配合其他输出域时，为编译和 `parameters.decryptor_with_codec` 共同复用 `parameters.factorized_pbs_codecs(messages)`；编译程序不会改变已有解密器。程序仍绑定该 context。LUT 和返回 LWE 使用同一密文模数。高级组合使用家族的 `parameters.compile_factorized_lookup_table_fn(&codecs, ...)` 编译原始程序，再交给本后端的 `NttFactorizedLookupTable::new(&context, raw)`；同钥消息域覆盖可用 `context.compile_mvb_fn_with_messages`。
 
 系数模数必须为奇数；预处理后的因子保留 NTT 表示。
 

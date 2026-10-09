@@ -65,7 +65,7 @@ The [common guide](../primus_tfhe/README.md) covers ManyLUT, odd full domains an
 
 ## Boolean clients and gates
 
-Pass an explicit t=4 `RoundedCodec` to `boolean_encryptor`, `boolean_public_encryptor`, `boolean_decryptor` and `boolean_evaluator`. They handle Boolean external LWE encoding with ordinary PBS keys; see [Boolean gates](../primus_tfhe/README.md#boolean-gates) for calls and chaining contracts.
+Set `config.messages = PbsMessageConfig::new(4)` before constructing a backend Context, then use `boolean_encryptor`, `boolean_public_encryptor`, `boolean_decryptor` and `boolean_evaluator` without codecs. Both message domains must be t=4 to compose gates, using ordinary PBS material. Shared Boolean constructors remain available for advanced numerical composition; see the [common Boolean contract](../primus_tfhe/README.md#boolean-gates).
 
 ## CBS and examples
 

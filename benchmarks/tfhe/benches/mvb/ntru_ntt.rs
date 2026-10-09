@@ -228,10 +228,12 @@ impl<T: FheUint, Table: MonomialNttTable<ValueT = T>> Fixture<T, Table> {
         let w = self.workload;
         let lut = self
             .context
+            .parameters()
             .compile_factorized_lookup_table_fn(&self.codecs, w.domain, w.outputs, |m, i| {
                 w.value(m, i)
             })
             .unwrap();
+        let lut = primus_tfhe_ntru_ntt::NttFactorizedLookupTable::new(&self.context, lut);
         let mut outputs: Vec<_> = (0..w.outputs)
             .map(|_| self.context.allocate_lwe_ciphertext())
             .collect();

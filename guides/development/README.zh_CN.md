@@ -181,6 +181,8 @@ assert_eq!(level_count, 9); // (k+1) 行 * L 层
 
 TFHE 示例固定 u64，按参数 → context/table → client/server key → 公开 LUT → evaluator 和输出分配 → 重复 `*_to` 求值 → 客户端解密的顺序展示。参数是功能 fixture，须按目标操作选择并验证。公开 context/codec/LUT 可由双方持有；client 提供计算密钥、请求密文及必要的 public lift，server 构造并复用 evaluator 和输出，无需客户端私钥。
 
+Context 客户端工厂读取配置中的消息模数：输入使用 `encryptor` / `public_encryptor`，PBS/ManyLUT 使用 `pbs_decryptor`，Scaled MVB 输出使用 `mvb_decryptor`。Boolean 工厂要求输入、输出消息模数均为 4，不接收 codec。编译器的数值覆盖保留独立输入/输出选择，不改变已有客户端；高级显式 codec 组合使用家族 `PbsParameters` 工厂和原始程序构造器。
+
 NTRU 将外部 LWE 的秘密/模数/维数与累加 NTRU 环的秘密/模数/长度分开；GLWE 的 PBS order 有自身输入输出域契约。缓冲区尺寸相同不代表密钥可以互换。保留后端参数检查，并明确调用方仍需保证的秘密和表身份。
 
 对加密 chunk 计算高精度函数，使用 [primus_tfhe_ntru_lut](../../crates/primus_tfhe_ntru_lut/README.zh_CN.md)。NTT/Fourier 高精度 Context 提供完整参数、整值编译、按需材料的成对密钥生成、整值/分块客户端与 evaluator 工厂；客户端不接收 LUT，输入输出 chunk 数独立，默认系数分区尽量填满环，也可覆盖。默认启用 `ntt,fourier`，不选择具体 FFT 引擎；关闭默认 feature 后仅提供公开编译，`ntt` / `fourier` 选择 Context 和 evaluator，`rustfft` / `tfhe-fft` 同时启用 Fourier 与具体引擎。纯编译仅接收 PolyLength、累加 Q、输入 codec 和 chunk 配置，无需加密参数、密钥或变换依赖；`stats()` 与部分工作区估算帮助比较分区。One-hot CBS 位于 NTRU 后端，表分区、选择和旋转位于查表库。其 evaluator 借用 context、server key 和编译后的 LUT，拥有可复用缓冲。输出只分配一次并复用 `evaluate_to`，在线循环内不重新构造密钥或表。

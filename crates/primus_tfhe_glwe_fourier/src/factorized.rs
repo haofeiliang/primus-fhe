@@ -3,10 +3,9 @@
 use primus_fft::{Complex64, FftTable, TorusFftValue};
 use primus_lattice::glwe::FourierGlwe;
 use primus_lwe::LweCiphertext;
-use primus_modulus::NativeModulus;
 use primus_poly::{FourierPolynomial, FourierPolynomialIter, PolynomialIter, PolynomialOwned};
 use primus_reduce::Modulus;
-use primus_tfhe::{FactorizedLookupTable, FactorizedPbsCodecs};
+use primus_tfhe::FactorizedLookupTable;
 
 use crate::{Evaluator, LookupTableError, Lwe, TfheContext};
 
@@ -232,7 +231,7 @@ where
     /// decoder from [`Self::mvb_decryptor`]. `input_domain_len` is a nonempty
     /// prefix of the input front half; `output_count` is positive and unpadded.
     /// Callback order, factorization and noise requirements follow
-    /// [`Self::compile_factorized_lookup_table_fn`].
+    /// [`FactorizedLookupTable::try_new`].
     ///
     /// # Panics
     /// Panics for coefficient types other than u32/u64, as required by the FFT conversion.
@@ -261,8 +260,11 @@ where
     /// a Scaled codec at q for `messages.output_modulus`, bound through
     /// [`primus_tfhe_glwe::PbsParameters::decryptor_with_codec`].
     /// [`Self::mvb_decryptor`] uses the configured output modulus. Checks
-    /// the Scaled LUT output at Q and returned output at q before compiling;
-    /// inherits [`Self::compile_factorized_lookup_table_fn`]'s program contracts.
+    /// the Scaled output at the ciphertext modulus before compiling;
+    /// inherits [`FactorizedLookupTable::try_new`]'s program contracts.
+    /// Factors use signed integer FFTs, without torus scaling; evaluation requires
+    /// this context instance. Inherits [`FourierFactorizedLookupTable::new`]'s
+    /// floating-point error limits.
     ///
     /// # Panics
     /// Panics for coefficient types other than u32/u64, as required by the FFT conversion.
@@ -277,34 +279,8 @@ where
         F: Fn(usize, usize) -> T,
     {
         let codecs = self.parameters().factorized_pbs_codecs(messages)?;
-        self.compile_factorized_lookup_table_fn(&codecs, input_domain_len, output_count, function)
-    }
-
-    /// Compiles and Fourier-prepares a Native even-scale MVB program from prepared codecs.
-    ///
-    /// The prepared codecs must use this context's ciphertext modulus.
-    /// `input_domain_len` selects a nonempty prefix of the input codec's
-    /// front half; `output_count` is positive and unpadded. The output codec
-    /// must use Native and have an even scale, including for nonbinary plaintext
-    /// moduli. Callback order follows [`FactorizedLookupTable::try_new`].
-    /// The result is bound to this context; factor amplification and FFT error
-    /// must satisfy [`FactorizedEvaluator::apply_lookup_table_to`]'s noise budget.
-    ///
-    /// # Panics
-    /// Panics for coefficient types other than u32/u64.
-    pub fn compile_factorized_lookup_table_fn<OM, F>(
-        &self,
-        codecs: &FactorizedPbsCodecs<T, OM, NativeModulus<T>>,
-        input_domain_len: usize,
-        output_count: usize,
-        function: F,
-    ) -> Result<FourierFactorizedLookupTable<'_, T, Table>, LookupTableError>
-    where
-        OM: primus_reduce::RingContext<T>,
-        F: Fn(usize, usize) -> T,
-    {
         let lookup_table = self.parameters().compile_factorized_lookup_table_fn(
-            codecs,
+            &codecs,
             input_domain_len,
             output_count,
             function,

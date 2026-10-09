@@ -4,7 +4,7 @@ use primus_integer::FheUint;
 use primus_lattice::ntru::NttNtru;
 use primus_ntt::MonomialNttTable;
 use primus_poly::{NttPolynomial, NttPolynomialIter, PolynomialIterMut, PolynomialOwned};
-use primus_tfhe::{FactorizedLookupTable, FactorizedPbsCodecs, LweCiphertext};
+use primus_tfhe::{FactorizedLookupTable, LweCiphertext};
 
 use crate::{Evaluator, LookupTableError, Lwe, TfheContext};
 
@@ -279,7 +279,7 @@ where
     /// decoder from [`Self::mvb_decryptor`]. `input_domain_len` is a nonempty
     /// prefix of the input front half; `output_count` is positive and unpadded.
     /// Callback order, factorization and noise requirements follow
-    /// [`Self::compile_factorized_lookup_table_fn`].
+    /// [`FactorizedLookupTable::try_new`].
     pub fn compile_mvb_fn<F>(
         &self,
         input_domain_len: usize,
@@ -306,7 +306,8 @@ where
     /// [`primus_tfhe_ntru::PbsParameters::decryptor_with_codec`].
     /// [`Self::mvb_decryptor`] uses the configured output modulus. Checks
     /// the Scaled LUT output at Q and returned output at q before compiling;
-    /// inherits [`Self::compile_factorized_lookup_table_fn`]'s program contracts.
+    /// inherits [`FactorizedLookupTable::try_new`]'s program contracts.
+    /// Factors are prepared in NTT form; evaluation requires this context instance.
     pub fn compile_mvb_fn_with_messages<F>(
         &self,
         messages: crate::PbsMessageConfig<T>,
@@ -318,31 +319,8 @@ where
         F: Fn(usize, usize) -> T,
     {
         let codecs = self.parameters().factorized_pbs_codecs(messages)?;
-        self.compile_factorized_lookup_table_fn(&codecs, input_domain_len, output_count, function)
-    }
-
-    /// Compiles and NTT-prepares a fixed-scale MVB program from prepared codecs.
-    ///
-    /// `input_domain_len` selects a nonempty prefix of the input codec's
-    /// front half; `output_count` is positive and unpadded. Outputs must lie in
-    /// the prepared Scaled output domain, and its ciphertext modulus must match
-    /// the accumulator. Callback order and noise requirements follow
-    /// [`FactorizedLookupTable::try_new`]. The result borrows this context and
-    /// may only be evaluated by its [`FactorizedEvaluator`]. The input codec must
-    /// use external q; the output codec must use accumulator Q.
-    pub fn compile_factorized_lookup_table_fn<OM, F>(
-        &self,
-        codecs: &FactorizedPbsCodecs<T, OM, LM>,
-        input_domain_len: usize,
-        output_count: usize,
-        function: F,
-    ) -> Result<NttFactorizedLookupTable<'_, T, Table, LM>, LookupTableError>
-    where
-        OM: primus_reduce::RingContext<T>,
-        F: Fn(usize, usize) -> T,
-    {
         let lookup_table = self.parameters().compile_factorized_lookup_table_fn(
-            codecs,
+            &codecs,
             input_domain_len,
             output_count,
             function,

@@ -65,7 +65,7 @@ Classic PBS、ManyLUT、CBS、Boolean 和 MVB 支持 binary/ternary 外部秘密
 
 ## Boolean 客户端与门
 
-显式传入 t=4 的 `RoundedCodec`，使用 `boolean_encryptor`、`boolean_public_encryptor`、`boolean_decryptor` 和 `boolean_evaluator`。它们处理外部 LWE 的 bool 编码，使用普通 PBS 密钥；调用与串联契约见 [Boolean 门](../primus_tfhe/README.zh_CN.md#boolean-门)。
+构造后端 Context 前设置 `config.messages = PbsMessageConfig::new(4)`，即可用 `boolean_encryptor`、`boolean_public_encryptor`、`boolean_decryptor` 和 `boolean_evaluator`，无需传 codec。输入、输出均需 t=4 才能串联门操作；密钥沿用普通 PBS 材料。高级数值组合保留共享 Boolean 构造器，调用与串联契约见[公共 Boolean 契约](../primus_tfhe/README.zh_CN.md#boolean-门)。
 
 ## CBS 与示例
 

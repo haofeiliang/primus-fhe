@@ -93,14 +93,13 @@ Prefer `try_*` configuration and binding constructors and handle the error retur
 
 ## Boolean gates
 
-Boolean clients require `t=4`. All context factories take an explicit Rounded codec, as shown below; use the family’s external LWE modulus when constructing it. They use raw `LweCiphertext<T>` with unsigned rounded 0/1 encoding and reject non-Boolean decoded values. Direct Boolean construction wraps a prepared client with `BooleanEncryptor::try_new(encryptor)` or `BooleanDecryptor::try_new(decryptor)`. Boolean evaluation uses ordinary PBS keys, without CBS material.
+Boolean clients use the configured message domains: set `config.messages = PbsMessageConfig::new(4)` before constructing the Context. Encryption and decoding each require t=4; the gate evaluator requires both input/output t=4. None of the four factories takes a codec. Clients use raw `LweCiphertext<T>` with unsigned Rounded 0/1 encoding and reject non-Boolean decoded values. Direct numerical composition can still wrap prepared clients with `BooleanEncryptor::try_new(encryptor)` / `BooleanDecryptor::try_new(decryptor)` or use the shared `BooleanEvaluator::try_new`. Gates use ordinary PBS keys, without CBS material.
 
 ```rust,ignore
-let codec = primus_encoding::RoundedCodec::new(4, context.parameters().cipher_modulus());
 let external_secret = client.external_lwe_secret_key();
-let encryptor = context.boolean_encryptor(external_secret, &codec)?;
-let decryptor = context.boolean_decryptor(external_secret, &codec)?;
-let mut gates = context.boolean_evaluator(&server, &codec)?;
+let encryptor = context.boolean_encryptor(external_secret)?;
+let decryptor = context.boolean_decryptor(external_secret)?;
+let mut gates = context.boolean_evaluator(&server)?;
 let lhs = encryptor.encrypt(true, &mut rng)?;
 let rhs = encryptor.encrypt(false, &mut rng)?;
 let mut output = context.allocate_lwe_ciphertext();
@@ -243,7 +242,7 @@ let compiler = parameters.lookup_table_compiler(&codecs)?;
 let lut = compiler.compile_fn(|x| (x % 8) as u64)?;
 ```
 
-For a different MVB output domain, prepare `parameters.factorized_pbs_codecs(messages)` once, pass that bundle to `context.compile_factorized_lookup_table_fn`, and bind `codecs.output_codec()` through the same `parameters.decryptor_with_codec` method. Keep `messages.input_modulus` equal to the configured input domain to reuse `context.encryptor(external_secret)`. Compiling a LUT or MVB program never changes the context defaults or a previously bound decryptor. Default client factories prepare only the requested codec; ordinary PBS does not require unused Scaled encoding to be valid. Geometry, factorization conditions and noise budgets remain operation requirements.
+For another MVB output domain, use `context.compile_mvb_fn_with_messages(messages, domain_len, output_count, function)` and prepare its Scaled decoder through `parameters.factorized_pbs_codecs(messages)` and `parameters.decryptor_with_codec`. Keep the configured input modulus to reuse `context.encryptor(external_secret)`. Numerical comparisons requiring identical PBS/MVB encodings use the family method `parameters.compile_factorized_lookup_table_fn(&codecs, ...)`, then the backend representation constructor `NttFactorizedLookupTable::new` / `FourierFactorizedLookupTable::new`. Contexts no longer duplicate manual-codec client or compilation forwarding. Compilation never changes defaults or bound clients; default factories prepare only the requested codecs. Geometry, decomposition and noise budgets remain operation requirements.
 
 GLWE uses a common ciphertext modulus for input, LUT and return. NTRU derives both outputs from the same `t_out`, with Q for LUT coefficients and q for returned LWE. The return path rescales an existing phase rather than recreating the exact q-encoding center; budget Q→q rounding and key-switch noise. Preparing a Scaled codec at q also checks that codec's own recovery condition. MVB keeps Scaled output even when `t_out=t_in`.
 

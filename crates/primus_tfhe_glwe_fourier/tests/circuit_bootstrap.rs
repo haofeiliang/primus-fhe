@@ -239,6 +239,7 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
         let other_codec =
             primus_encoding::RoundedCodec::new(8, context.parameters().cipher_modulus());
         let input = context
+            .parameters()
             .encryptor_with_codec(client.external_lwe_secret_key(), &other_codec)
             .unwrap()
             .encrypt_padded(1, &mut rng)

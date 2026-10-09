@@ -16,7 +16,8 @@
 //!    ManyLUT shares those clients; factorized MVB uses
 //!    [`TfheContext::compile_mvb_fn`] and [`TfheContext::mvb_decryptor`] for
 //!    Scaled output. Named message overrides reuse the same keys and do not
-//!    change existing clients. Advanced explicit-codec entries remain available.
+//!    change existing clients. Advanced explicit-codec factories remain on
+//!    [`PbsParameters`].
 //!
 //! # Other operations
 //!

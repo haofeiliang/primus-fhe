@@ -151,7 +151,7 @@ PBS trait、四后端、Boolean 门、双输入打包、CBS、one-hot 与 MVB �
 | 输入 t、编程域、单表/ManyLUT 的中心、输出编码和容量 | 普通 LUT compiler / factorized compiler；CBS 由 `compile_lookup_table(&input_codec)` 在 evaluator 构造时检查 |
 | online ciphertext 与所选程序的消息编码一致、实际噪声余量 | 调用方契约；raw 密文没有编码/噪声元数据，不能据布局判定 |
 
-因此更换输入 t 不需要重新生成 GLWE 密钥；重新绑定 client codec 并编译适配该编码的 LUT/CBS 程序即可。输入 q 不同由 client/compiler 绑定拒绝，N/q/basis 等资源不兼容仍由原边界拒绝。两个后端共用 CBS gadget identity 编译，在线 BR、返回和 trace 算法不变，不逐系数增加检查。两个家族的 `PbsParameters` 从保存的消息选择准备客户端编码，四后端 Context 委托它们。默认 `encryptor` 与 `pbs_decryptor` 使用 Rounded，MVB 共用输入工厂并通过 `mvb_decryptor` 选择 Scaled 输出；两种解密工厂共用 `decryptor_with_codec` 绑定状态。配置中的输入、输出消息模数独立，LUT 编译读取同一选择。高级同钥消息域通过 family 的 `encryptor_with_codec`、`public_encryptor_with_codec`、`decryptor_with_codec` 复用已准备状态，不改变默认值或已有客户端。Boolean 和高级数值组合仍可显式传 codec。
+因此更换输入 t 不需要重新生成 GLWE 密钥；重新绑定 client codec 并编译适配该编码的 LUT/CBS 程序即可。输入 q 不同由 client/compiler 绑定拒绝，N/q/basis 等资源不兼容仍由原边界拒绝。两个后端共用 CBS gadget identity 编译，在线 BR、返回和 trace 算法不变，不逐系数增加检查。两个家族的 `PbsParameters` 从保存的消息选择准备客户端编码，四后端 Context 委托它们。默认 `encryptor` 与 `pbs_decryptor` 使用 Rounded，MVB 共用输入工厂并通过 `mvb_decryptor` 选择 Scaled 输出；两种解密工厂共用 `decryptor_with_codec` 绑定状态。配置中的输入、输出消息模数独立，LUT 编译读取同一选择。高级同钥消息域通过 family 的 `encryptor_with_codec`、`public_encryptor_with_codec`、`decryptor_with_codec` 复用已准备状态，不改变默认值或已有客户端。Boolean Context 工厂从配置准备 Rounded 输入/输出，门 evaluator 要求两者均为 t=4，不接收 codec；高级数值组合使用家族客户端与共享 Boolean 原语。Context 的显式 codec 客户端和 MVB 编译转发已删除，普通/ManyLUT 和 MVB 仍保留数值消息覆盖工厂。
 
 ## NTRU TFHE 的密钥域与消息程序
 
@@ -197,9 +197,9 @@ GLWE raw sparse BR 由既有 `SparseGlweBlindRotationWorkspace` 执行，调用 
 
 ## Classic 与 CBS 能力绑定
 
-NTRU `BlindRotationKey` 持有 classic/sparse 材料、BR basis 与输入分布；`ServerKey` 再组合该 owner、返回密钥与可选 CBS 密钥。`BlindRotationKey::classic_controls()` 返回借用的 `ClassicControls`，sparse 返回 `None`。视图集中 NLEV initializer、首坐标 NLEV 的正/可选负 bit，以及后续 NGSW bit 的语义迭代器。BR 构造时选择 binary/ternary/sparse 及其 scratch，在线提升不再重新分派服务端密钥或调用可能在 sparse 下 panic 的 initializer。
+NTRU `BlindRotationKey` 持有 classic/sparse 材料、BR basis 与输入分布；`ServerKey` 组合该 owner 与返回密钥，`CircuitBootstrapServerKey` 再组合必需的 CBS 密钥。`BlindRotationKey::classic_controls()` 返回借用的 `ClassicControls`，sparse 返回 `None`。视图集中 NLEV initializer、首坐标 NLEV 的正/可选负 bit，以及后续 NGSW bit 的语义迭代器。BR 构造时选择 binary/ternary/sparse 及其 scratch，在线提升不再重新分派服务端密钥或调用可能在 sparse 下 panic 的 initializer。
 
-NTRU 的 BR、返回和 CBS 材料可分别生成和持有：`KeyGenerator::try_generate_blind_rotation_key(client, config, rng)` 需要两个秘密角色，`PbsParameters::try_generate_lwe_return_key` 需要完整返回配对，`try_generate_circuit_bootstrap_key` 只接收累加秘密。`ServerKey::new` / `into_parts` 移动各组件而不复制密文数组；独立生成可能重复转换累加秘密，完整成对生成仍复用已转换表示。
+NTRU 的 BR、返回和 CBS 材料可分别生成和持有：`KeyGenerator::try_generate_blind_rotation_key(client, method, rng)` 需要两个秘密角色，`PbsParameters::try_generate_lwe_return_key` 需要完整返回配对，`try_generate_circuit_bootstrap_key` 只接收累加秘密。`ServerKey::new` / `into_parts` 移动各组件而不复制密文数组；独立生成可能重复转换累加秘密，完整成对生成仍复用已转换表示。
 
 高精度公开提升另由 `KeyGenerator::try_generate_public_lift_key(secret, &nlev_parameters, rng)` 按需生成 NLEV[1]，只接收累加秘密和独立 basis/噪声参数，不存入普通 ServerKey。查表 `try_new(context, server_key, table)` 按需复用 classic initializer；独立材料由 `try_with_public_lift(context, server_key, table, public_lift)` 显式传入。高级 `try_from_parts` 也按需回退到 classic initializer；sparse 仅在编译表含 `Lift` 时需要独立提升材料。表可用原始 N/Q/codec 离线编译，也可在 LUT 后端 feature 下用 `HighPrecisionLookupTable::try_from_parameters` 提取 N/Q/q，编译前检查 codec 的外部 q。基础 TFHE 家族不依赖 LUT。
 

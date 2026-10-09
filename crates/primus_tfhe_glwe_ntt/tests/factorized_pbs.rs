@@ -280,7 +280,7 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
             );
         }
         assert!(matches!(
-            context.compile_factorized_lookup_table_fn(
+            context.parameters().compile_factorized_lookup_table_fn(
                 &PbsMessageConfig::new(15)
                     .with_output_modulus(8)
                     .try_factorized_codecs(

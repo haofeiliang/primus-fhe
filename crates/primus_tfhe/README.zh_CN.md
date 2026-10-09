@@ -93,14 +93,13 @@ let mut cbs = context.circuit_bootstrap_evaluator(&server)?;
 
 ## Boolean 门
 
-Boolean 客户端要求 `t=4`。四个 context 工厂均显式接收 Rounded codec，如下例；构造时使用相应家族的外部 LWE 模数。客户端使用 unsigned rounded `0/1` 编码的 `LweCiphertext<T>`，解密拒绝非 Boolean 值。直接构造时，将已有客户端传给 `BooleanEncryptor::try_new(encryptor)` 或 `BooleanDecryptor::try_new(decryptor)`。门求值使用普通 PBS 密钥，无需 CBS 材料。
+Boolean 客户端使用配置中的消息域：构造 Context 前设置 `config.messages = PbsMessageConfig::new(4)`。输入加密和输出解密各自要求 t=4，门 evaluator 要求输入、输出均为 t=4；四个工厂不再接收 codec。客户端使用 unsigned Rounded `0/1` 编码的 `LweCiphertext<T>`，解密拒绝非 Boolean 值。直接数值组合仍可将已有客户端传给 `BooleanEncryptor::try_new(encryptor)` / `BooleanDecryptor::try_new(decryptor)`，或使用共享 `BooleanEvaluator::try_new`。门求值使用普通 PBS 密钥，无需 CBS 材料。
 
 ```rust,ignore
-let codec = primus_encoding::RoundedCodec::new(4, context.parameters().cipher_modulus());
 let external_secret = client.external_lwe_secret_key();
-let encryptor = context.boolean_encryptor(external_secret, &codec)?;
-let decryptor = context.boolean_decryptor(external_secret, &codec)?;
-let mut gates = context.boolean_evaluator(&server, &codec)?;
+let encryptor = context.boolean_encryptor(external_secret)?;
+let decryptor = context.boolean_decryptor(external_secret)?;
+let mut gates = context.boolean_evaluator(&server)?;
 let lhs = encryptor.encrypt(true, &mut rng)?;
 let rhs = encryptor.encrypt(false, &mut rng)?;
 let mut output = context.allocate_lwe_ciphertext();
@@ -243,7 +242,7 @@ let compiler = parameters.lookup_table_compiler(&codecs)?;
 let lut = compiler.compile_fn(|x| (x % 8) as u64)?;
 ```
 
-MVB 选择其他输出域时，一次准备 `parameters.factorized_pbs_codecs(messages)`，将该组合交给 `context.compile_factorized_lookup_table_fn`，并通过同一 `parameters.decryptor_with_codec` 绑定 `codecs.output_codec()`。保持 `messages.input_modulus` 与配置中的输入域一致时，可复用 `context.encryptor(external_secret)`。编译 LUT/MVB 不会改变 Context 默认值或已绑定解密器。默认客户端工厂只准备所需 codec，普通 PBS 不要求未使用的 Scaled 编码合法；几何、分解条件与噪声预算仍由具体操作检查或要求。
+MVB 选择其他输出域时，用 `context.compile_mvb_fn_with_messages(messages, domain_len, output_count, function)` 编译，通过 `parameters.factorized_pbs_codecs(messages)` 与 `parameters.decryptor_with_codec` 准备相应 Scaled 输出解密器。保持 `messages.input_modulus` 与配置一致时，可复用 `context.encryptor(external_secret)`。需要普通 PBS 与 MVB 使用完全相同编码进行数值对比时，使用家族的 `parameters.compile_factorized_lookup_table_fn(&codecs, ...)`，再将原始程序交给相应后端的 `NttFactorizedLookupTable::new` / `FourierFactorizedLookupTable::new`。Context 不再重复提供手工 codec 的客户端或编译转发。编译不会改变默认值或已绑定客户端；默认工厂只准备所需 codec，几何、分解条件与噪声预算仍由具体操作负责。
 
 GLWE 的输入、LUT 和返回使用同一密文模数。NTRU 从同一 `t_out` 派生 Q 下的 LUT 输出和 q 下的返回 LWE 编码；返回过程缩放已有 phase，不重新生成精确的 q 编码中心，须预算 Q→q 舍入和 key-switch 噪声。q 下的 Scaled codec 也有自身恢复条件。即使 `t_out=t_in`，MVB 输出仍使用 Scaled。
 

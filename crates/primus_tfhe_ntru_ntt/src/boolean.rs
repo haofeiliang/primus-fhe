@@ -34,56 +34,52 @@ where
     Table: MonomialNttTable<ValueT = T>,
     LM: primus_reduce::RingContext<T>,
 {
-    /// Creates a secret-key Boolean encryptor, requiring `t = 4`.
+    /// Creates a Boolean encryptor from the configured Rounded input, requiring t=4.
     pub fn boolean_encryptor<'a>(
         &'a self,
         secret_key: &'a LweSecretKey<T>,
-        codec: &'a RoundedCodec<T, LM>,
     ) -> Result<BooleanEncryptor<'a, T, crate::LweSecretKeyRef<'a, T>, LM>, TfheClientError> {
-        Ok(BooleanEncryptor::try_new(
-            self.encryptor_with_codec(secret_key, codec)?,
-        )?)
+        Ok(BooleanEncryptor::try_new(self.encryptor(secret_key)?)?)
     }
 
-    /// Creates a public-key Boolean encryptor, requiring `t = 4`.
+    /// Creates a public-key Boolean encryptor from the configured input, requiring t=4.
     /// Inherits [`Self::public_encryptor`]'s key identity and noise requirements.
     pub fn boolean_public_encryptor<'a>(
         &'a self,
         public_key: &'a LwePublicKey<T>,
-        codec: &'a RoundedCodec<T, LM>,
     ) -> Result<BooleanEncryptor<'a, T, &'a LwePublicKey<T>, LM>, BooleanError> {
-        BooleanEncryptor::try_new(self.public_encryptor_with_codec(public_key, codec)?)
+        BooleanEncryptor::try_new(self.public_encryptor(public_key)?)
     }
 
-    /// Creates a Boolean decryptor after checking the external secret and `t = 4`.
+    /// Creates a Boolean decryptor from the configured Rounded output, requiring t=4.
+    /// Copies decoding state and borrows only the external secret.
     pub fn boolean_decryptor<'a>(
-        &'a self,
+        &self,
         secret_key: &'a LweSecretKey<T>,
-        codec: &'a RoundedCodec<T, LM>,
     ) -> Result<BooleanDecryptor<'a, T, LM>, TfheClientError> {
-        Ok(BooleanDecryptor::try_new(
-            self.decryptor(secret_key, codec)?,
-        )?)
+        Ok(BooleanDecryptor::try_new(self.pbs_decryptor(secret_key)?)?)
     }
 
     /// Creates a Boolean evaluator with this context's PBS, gate LUTs and workspace.
-    /// Requires `t = 4`; online `_to` operations reuse the allocated storage.
+    /// Requires configured input/output t=4; online `_to` operations reuse storage.
     pub fn boolean_evaluator<'a>(
         &'a self,
         server_key: &'a ServerKey<T>,
-        codec: &RoundedCodec<T, LM>,
     ) -> Result<BooleanEvaluator<'a, T, Table, LM>, TfheEvaluationError> {
-        if codec.ciphertext_modulus().explicit_value()
-            != self.parameters().external_lwe().cipher_modulus_value()
-        {
-            return Err(TfheEvaluationError::LookupTable(
-                crate::LookupTableError::InputModulusMismatch,
-            ));
+        let messages = self.parameters().messages();
+        let boolean_modulus = T::ONE << primus_tfhe::BOOLEAN_PLAINTEXT_BITS;
+        if messages.input_modulus != boolean_modulus || messages.output_modulus != boolean_modulus {
+            return Err(TfheEvaluationError::InvalidBooleanEncoding);
         }
+        let codec = RoundedCodec::try_new(
+            messages.input_modulus,
+            self.parameters().external_lwe().cipher_modulus(),
+        )
+        .map_err(crate::LookupTableError::InputEncoding)?;
         BooleanEvaluator::try_new(
             self.parameters().external_lwe_dimension(),
             self.parameters().accumulator_ntru().poly_length(),
-            codec,
+            &codec,
             self.parameters().accumulator_ntru().cipher_modulus(),
             self.evaluator(server_key)?,
         )

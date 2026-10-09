@@ -135,7 +135,7 @@ const fn fixed(
     )
 }
 
-/// CBS adds three gadget decompositions; input/candidate codecs remain consumer-bound.
+/// CBS adds three gadget decompositions and configured input; candidate t is independent.
 const fn circuit(
     modulus: ModulusConfig<NativeModulus<u64>>,
     secret: SecretKeyDistr,

@@ -78,7 +78,7 @@ PBS 和 CBS 的 `key_switching` 都是必需的 `GadgetEncryptionConfig`，分�
 
 两个后端均提供 `context.try_generate_circuit_bootstrap_keys(rng)`，返回 `(ClientKey, CircuitBootstrapServerKey)`。该类型组合一个 BR/KS `ServerKey` 和必需 CBS key；`server.server_key()` 可绑定普通 PBS，CBS 借用同一 BR。KS→BR 的输入准备使用已有 KS，BR→KS 的 CBS 不分配返回 scratch，后续 LWE 返回仍可复用 KS。见[材料选择](../primus_tfhe/README.zh_CN.md#选择盲旋转算法)。
 
-显式传入 t=4 的 `RoundedCodec` 时，context 提供 `boolean_encryptor`、`boolean_public_encryptor`、`boolean_decryptor` 和 `boolean_evaluator`。这些接口使用普通 PBS 材料；调用与串联约定见[公共 Boolean 契约](../primus_tfhe/README.zh_CN.md#boolean-门)。
+构造后端 Context 前设置 `config.messages = PbsMessageConfig::new(4)`，即可用 `boolean_encryptor`、`boolean_public_encryptor`、`boolean_decryptor` 和 `boolean_evaluator`，无需传 codec。输入、输出均需 t=4 才能串联门操作；密钥沿用普通 PBS 材料。高级数值组合保留共享 Boolean 构造器，调用与串联契约见[公共 Boolean 契约](../primus_tfhe/README.zh_CN.md#boolean-门)。
 
 输入编码与 ManyLUT 容量在 CBS 程序绑定时检查：两后端均使用 `CircuitBootstrapEvaluator::try_new(&resources, key, &input_codec)`。默认构造使用密钥自带参数，`try_with_parameters` 显式选择兼容的替代输出 basis。同一套密钥可服务多个明文模数，前提是各程序满足容量与噪声余量。`accumulator_client(client.glwe_secret_key(), t_ring)` 独立绑定普通环消息，其 `ScaledCodec` 不必采用输入 LWE 的明文模数。
 

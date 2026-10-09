@@ -224,7 +224,7 @@ fn check_complete(distr: SecretKeyDistr) {
         );
     }
     assert!(matches!(
-        context.compile_factorized_lookup_table_fn(
+        context.parameters().compile_factorized_lookup_table_fn(
             &PbsMessageConfig::new(15)
                 .with_output_modulus(8)
                 .try_factorized_codecs(input_codec.ciphertext_modulus(), BarrettModulus::new(97))

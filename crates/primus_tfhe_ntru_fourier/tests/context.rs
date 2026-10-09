@@ -1,5 +1,4 @@
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
-use primus_encoding::RoundedCodec;
 use primus_fft::{FftTable, RustFftTable};
 use primus_lattice::LweDimension;
 use primus_modulus::NativeModulus;
@@ -52,7 +51,7 @@ fn rejects_server_keys_with_same_layout_but_different_bases() {
     let table = RustFftTable::new(PolyLength::new(POLY_LENGTH));
     let context_parameters = &parameters(8, 8);
     let context = TfheContext::try_new(context_parameters.clone(), table).unwrap();
-    let input_codec = RoundedCodec::new(4, context.parameters().external_lwe().cipher_modulus());
+
     let mut rng = StdRng::seed_from_u64(0x464f_5552_4241_5349);
     let (_, server_key) = context.try_generate_keys(&mut rng).unwrap();
 
@@ -86,9 +85,7 @@ fn rejects_server_keys_with_same_layout_but_different_bases() {
             Some(expected.clone())
         );
         assert_eq!(
-            incompatible
-                .boolean_evaluator(&server_key, &input_codec)
-                .err(),
+            incompatible.boolean_evaluator(&server_key).err(),
             Some(expected.clone())
         );
     }

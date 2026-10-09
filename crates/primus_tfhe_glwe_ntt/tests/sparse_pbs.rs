@@ -215,15 +215,15 @@ fn sparse_boolean_gates_chain_in_both_orders() {
             )
             .unwrap();
         let encryptor = context
-            .boolean_encryptor(client.external_lwe_secret_key(), &input_codec)
+            .boolean_encryptor(client.external_lwe_secret_key())
             .unwrap();
         let decryptor = context
-            .boolean_decryptor(client.external_lwe_secret_key(), &input_codec)
+            .boolean_decryptor(client.external_lwe_secret_key())
             .unwrap();
         let phase_decryptor = context
             .pbs_decryptor(client.external_lwe_secret_key())
             .unwrap();
-        let mut evaluator = context.boolean_evaluator(&server, &input_codec).unwrap();
+        let mut evaluator = context.boolean_evaluator(&server).unwrap();
         let mut inputs = [
             encryptor.encrypt(false, &mut rng).unwrap(),
             encryptor.encrypt(true, &mut rng).unwrap(),

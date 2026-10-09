@@ -1,6 +1,5 @@
 //! External LWE client constructors for the bound TFHE context.
 
-use primus_encoding::{MessageDecoder, RoundedCodec};
 use primus_integer::FheUint;
 use primus_lwe::LweSecretKey;
 use primus_ntt::MonomialNttTable;
@@ -56,37 +55,5 @@ where
         secret_key: &'a LweSecretKey<T>,
     ) -> Result<Decryptor<'a, T, LM>, TfheClientError> {
         self.parameters().mvb_decryptor(secret_key)
-    }
-
-    // Advanced entries bind explicitly prepared codecs in the external LWE domain.
-
-    /// Binds an explicit Rounded input codec after checking the external secret.
-    pub fn encryptor_with_codec<'a>(
-        &'a self,
-        secret_key: &'a LweSecretKey<T>,
-        codec: &RoundedCodec<T, LM>,
-    ) -> Result<Encryptor<'a, T, crate::LweSecretKeyRef<'a, T>, LM>, TfheClientError> {
-        self.parameters().encryptor_with_codec(secret_key, codec)
-    }
-
-    /// Binds an explicit Rounded input codec to an external LWE public key.
-    /// Key identity and noise requirements follow [`primus_tfhe::EncryptionKey`].
-    pub fn public_encryptor_with_codec<'a>(
-        &'a self,
-        public_key: &'a LwePublicKey<T>,
-        codec: &RoundedCodec<T, LM>,
-    ) -> Result<Encryptor<'a, T, &'a LwePublicKey<T>, LM>, ClientError> {
-        self.parameters()
-            .public_encryptor_with_codec(public_key, codec)
-    }
-
-    /// Binds a Rounded or Scaled output codec after checking the external
-    /// secret and ciphertext modulus. Copies the prepared decoding state.
-    pub fn decryptor<'a>(
-        &self,
-        secret_key: &'a LweSecretKey<T>,
-        codec: impl Into<MessageDecoder<T, LM>>,
-    ) -> Result<Decryptor<'a, T, LM>, TfheClientError> {
-        self.parameters().decryptor_with_codec(secret_key, codec)
     }
 }

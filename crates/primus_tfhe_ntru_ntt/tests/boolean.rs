@@ -4,7 +4,6 @@
 mod boolean;
 
 use primus_decompose::DecompositionBaseLog;
-use primus_encoding::RoundedCodec;
 use primus_lattice::LweDimension;
 use primus_modulus::BarrettModulus;
 use primus_ntru::SecretKeyDistr;
@@ -52,23 +51,46 @@ fn check_context(distr: SecretKeyDistr) {
     let context_parameters = &parameters;
     let context =
         TfheContext::<_, U32NttTable>::try_from_parameters(context_parameters.clone()).unwrap();
-    let input_codec = RoundedCodec::new(4, context.parameters().external_lwe().cipher_modulus());
+
     let mut rng = StdRng::seed_from_u64(0xB201);
     let (client, server) = context.try_generate_keys(&mut rng).unwrap();
+    // Input/output choices are independent, but Boolean composition requires both t=4.
+    for messages in [
+        primus_tfhe::PbsMessageConfig::new(8).with_output_modulus(4),
+        primus_tfhe::PbsMessageConfig::new(4).with_output_modulus(8),
+    ] {
+        let parameters = context.parameters().clone().with_messages(messages);
+        let different = TfheContext::<_, U32NttTable>::try_from_parameters(parameters).unwrap();
+        assert_eq!(
+            different.boolean_evaluator(&server).err(),
+            Some(primus_tfhe::TfheEvaluationError::InvalidBooleanEncoding)
+        );
+        if messages.input_modulus == 8 {
+            assert!(
+                different
+                    .boolean_encryptor(client.external_lwe_secret_key())
+                    .is_err()
+            );
+        } else {
+            assert!(
+                different
+                    .boolean_decryptor(client.external_lwe_secret_key())
+                    .is_err()
+            );
+        }
+    }
     let public = context
         .parameters()
         .try_generate_public_key(client.external_lwe_secret_key(), &mut rng)
         .unwrap();
     let encryptor = context
-        .boolean_encryptor(client.external_lwe_secret_key(), &input_codec)
+        .boolean_encryptor(client.external_lwe_secret_key())
         .unwrap();
-    let public_encryptor = context
-        .boolean_public_encryptor(&public, &input_codec)
-        .unwrap();
+    let public_encryptor = context.boolean_public_encryptor(&public).unwrap();
     let decryptor = context
-        .boolean_decryptor(client.external_lwe_secret_key(), &input_codec)
+        .boolean_decryptor(client.external_lwe_secret_key())
         .unwrap();
-    let mut evaluator = context.boolean_evaluator(&server, &input_codec).unwrap();
+    let mut evaluator = context.boolean_evaluator(&server).unwrap();
     let inputs = [
         encryptor.encrypt(false, &mut rng).unwrap(),
         encryptor.encrypt(true, &mut rng).unwrap(),

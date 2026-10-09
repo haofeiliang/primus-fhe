@@ -5,7 +5,6 @@ use primus_integer::FheUint;
 use primus_lwe::LwePublicKey;
 use primus_modulus::BarrettModulus;
 use primus_ntt::MonomialNttTable;
-use primus_reduce::Modulus;
 
 use crate::{
     Evaluator, ExternalLweSecretKey, ServerKey, TfheClientError, TfheContext, TfheEvaluationError,
@@ -33,58 +32,52 @@ where
     T: FheUint,
     Table: MonomialNttTable<ValueT = T>,
 {
-    /// Creates a secret-key Boolean encryptor, requiring `t = 4`.
+    /// Creates a Boolean encryptor from the configured Rounded input, requiring t=4.
     /// Inherits [`Self::encryptor`]'s signed-secret range contract.
     pub fn boolean_encryptor<'a>(
         &'a self,
         secret_key: ExternalLweSecretKey<'a, T>,
-        codec: &'a RoundedCodec<T, BarrettModulus<T>>,
     ) -> Result<BooleanEncryptor<'a, T>, TfheClientError> {
-        Ok(BooleanEncryptor::try_new(
-            self.encryptor_with_codec(secret_key, codec)?,
-        )?)
+        Ok(BooleanEncryptor::try_new(self.encryptor(secret_key)?)?)
     }
 
-    /// Creates a public-key Boolean encryptor, requiring `t = 4`.
+    /// Creates a public-key Boolean encryptor from the configured input, requiring t=4.
     /// Inherits [`Self::public_encryptor`]'s key identity and noise requirements.
     pub fn boolean_public_encryptor<'a>(
         &'a self,
         public_key: &'a LwePublicKey<T>,
-        codec: &'a RoundedCodec<T, BarrettModulus<T>>,
     ) -> Result<BooleanEncryptor<'a, T, &'a LwePublicKey<T>>, BooleanError> {
-        BooleanEncryptor::try_new(self.public_encryptor_with_codec(public_key, codec)?)
+        BooleanEncryptor::try_new(self.public_encryptor(public_key)?)
     }
 
-    /// Creates a Boolean decryptor after checking the external secret and `t = 4`.
-    /// Inherits [`Self::decryptor`]'s signed-secret range contract.
+    /// Creates a Boolean decryptor from the configured Rounded output, requiring t=4.
+    /// Copies decoding state and borrows only the external secret.
+    /// Inherits [`Self::pbs_decryptor`]'s signed-secret range contract.
     pub fn boolean_decryptor<'a>(
-        &'a self,
+        &self,
         secret_key: ExternalLweSecretKey<'a, T>,
-        codec: &'a RoundedCodec<T, BarrettModulus<T>>,
     ) -> Result<BooleanDecryptor<'a, T>, TfheClientError> {
-        Ok(BooleanDecryptor::try_new(
-            self.decryptor(secret_key, codec)?,
-        )?)
+        Ok(BooleanDecryptor::try_new(self.pbs_decryptor(secret_key)?)?)
     }
 
     /// Creates a Boolean evaluator with this context's PBS, gate LUTs and workspace.
-    /// Requires `t = 4`; online `_to` operations reuse the allocated storage.
+    /// Requires configured input/output t=4; online `_to` operations reuse storage.
     pub fn boolean_evaluator<'a>(
         &'a self,
         server_key: &'a ServerKey<T>,
-        codec: &RoundedCodec<T, BarrettModulus<T>>,
     ) -> Result<BooleanEvaluator<'a, T, Table>, TfheEvaluationError> {
-        if codec.ciphertext_modulus().explicit_value()
-            != self.parameters().cipher_modulus().explicit_value()
-        {
-            return Err(TfheEvaluationError::LookupTable(
-                crate::LookupTableError::InputModulusMismatch,
-            ));
+        let messages = self.parameters().messages();
+        let boolean_modulus = T::ONE << primus_tfhe::BOOLEAN_PLAINTEXT_BITS;
+        if messages.input_modulus != boolean_modulus || messages.output_modulus != boolean_modulus {
+            return Err(TfheEvaluationError::InvalidBooleanEncoding);
         }
+        let codec =
+            RoundedCodec::try_new(messages.input_modulus, self.parameters().cipher_modulus())
+                .map_err(crate::LookupTableError::InputEncoding)?;
         BooleanEvaluator::try_new(
             self.parameters().external_lwe_dimension(),
             self.parameters().blind_rotation_params().poly_length(),
-            codec,
+            &codec,
             self.parameters().blind_rotation_params().cipher_modulus(),
             self.evaluator(server_key)?,
         )

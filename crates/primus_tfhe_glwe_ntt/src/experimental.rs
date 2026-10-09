@@ -49,7 +49,7 @@ pub const CLASSIC_MANY_LUT_U64: PbsConfig<u64> = fixed(
 );
 
 /// Classic NTT threshold MVB, n728/h32/N1024, Rounded t_in=128/Scaled t_out=2.
-/// Teaching geometry is D64/k17; use `factorized_pbs_codecs`, not Rounded outputs.
+/// Teaching geometry is D64/k17; use `compile_mvb_fn` / `mvb_decryptor` for Scaled output.
 pub const CLASSIC_THRESHOLD_MVB_U64: PbsConfig<u64> = fixed(
     ModulusConfig::Explicit(Q50),
     Q50 as f64,

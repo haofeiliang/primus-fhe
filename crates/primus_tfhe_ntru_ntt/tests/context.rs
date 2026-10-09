@@ -1,5 +1,4 @@
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
-use primus_encoding::RoundedCodec;
 use primus_lattice::LweDimension;
 use primus_modulus::BarrettModulus;
 use primus_ntru::SecretKeyDistr;
@@ -99,8 +98,7 @@ fn rejects_server_keys_with_same_layout_but_different_bases_or_modulus() {
         .unwrap();
         let incompatible_parameters = &candidate;
         let incompatible = TfheContext::try_new(incompatible_parameters.clone(), table).unwrap();
-        let input_codec =
-            RoundedCodec::new(4, incompatible.parameters().external_lwe().cipher_modulus());
+
         let expected = if cipher_modulus != CIPHER_MODULUS || key_switching_log_basis != 9 {
             TfheEvaluationError::IncompatibleLweReturnKey
         } else {
@@ -111,9 +109,7 @@ fn rejects_server_keys_with_same_layout_but_different_bases_or_modulus() {
             Some(expected.clone())
         );
         assert_eq!(
-            incompatible
-                .boolean_evaluator(&server_key, &input_codec)
-                .err(),
+            incompatible.boolean_evaluator(&server_key).err(),
             Some(expected.clone())
         );
     }
@@ -136,7 +132,6 @@ fn construction_errors_preserve_transform_sources() {
     let context_parameters = &parameters(CIPHER_MODULUS, 9, 9);
     let context =
         TfheContext::<_, U32NttTable>::try_from_parameters(context_parameters.clone()).unwrap();
-    let input_codec = RoundedCodec::new(4, context.parameters().external_lwe().cipher_modulus());
     // Compatible shape/distributions do not imply an invertible secret.
     let client = ClientKey::new(
         primus_lwe::LweSecretKey::new(
@@ -160,10 +155,7 @@ fn construction_errors_preserve_transform_sources() {
     );
     assert_eq!(
         context
-            .accumulator_client(
-                client.accumulator_ntru_secret_key(),
-                input_codec.plaintext_modulus()
-            )
+            .accumulator_client(client.accumulator_ntru_secret_key(), 4)
             .err(),
         Some(TfheClientError::Ntru(NtruError::NonInvertibleSecretKey))
     );

@@ -55,10 +55,7 @@ fn check<T: TorusFftValue, Table: FftTable>() {
         };
         let context_parameters = &PbsParameters::try_from_config(config).unwrap();
         let context = TfheContext::<_, Table, _>::from_parameters(context_parameters.clone());
-        let input_codec = RoundedCodec::new(
-            T::as_from(4u32),
-            context.parameters().external_lwe().cipher_modulus(),
-        );
+
         let mut rng = StdRng::seed_from_u64(0x513251);
         let blind_rotation = if distr.is_binary() {
             BlindRotationMethod::Sparse {
@@ -139,12 +136,12 @@ fn check<T: TorusFftValue, Table: FftTable>() {
             );
         }
         // Boolean correction is at q even though its internal LUT is encoded at Q.
-        let mut boolean = context.boolean_evaluator(&server, &input_codec).unwrap();
+        let mut boolean = context.boolean_evaluator(&server).unwrap();
         let bool_encrypt = context
-            .boolean_encryptor(client.external_lwe_secret_key(), &input_codec)
+            .boolean_encryptor(client.external_lwe_secret_key())
             .unwrap();
         let bool_decrypt = context
-            .boolean_decryptor(client.external_lwe_secret_key(), &input_codec)
+            .boolean_decryptor(client.external_lwe_secret_key())
             .unwrap();
         for a in [false, true] {
             for b in [false, true] {
