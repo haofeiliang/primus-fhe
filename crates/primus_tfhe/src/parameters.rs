@@ -27,7 +27,7 @@ pub struct GadgetEncryptionConfig<D = DecompositionConfig> {
 /// layout. This algorithm choice carries no encryption parameters, keys, return policy,
 /// CBS material or runtime scratch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BlindRotationAlgorithm {
+pub enum BlindRotationMethod {
     /// Per-coordinate binary or ternary CMux controls, including fixed-weight distributions.
     Classic,
     /// Bucketed controls for a fixed-weight binary secret with weight `0 < h < n`.

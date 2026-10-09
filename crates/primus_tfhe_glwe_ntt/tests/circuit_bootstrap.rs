@@ -12,9 +12,9 @@ use primus_ntt::U64NttTable;
 use primus_poly::PolyLength;
 use primus_poly::Polynomial;
 use primus_tfhe::PbsMessageConfig;
-use primus_tfhe_glwe::{BlindRotationConfig, LweConfig};
+use primus_tfhe_glwe::{LweConfig, PbsConfig};
 use primus_tfhe_glwe_ntt::{
-    BlindRotationAlgorithm, CbsGadgetConfig, CbsParameters, CircuitBootstrapEvaluator,
+    BlindRotationMethod, CbsGadgetConfig, CbsGadgetParameters, CircuitBootstrapEvaluator,
     DecompositionConfig, GadgetEncryptionConfig, KeyGenerator, PbsOrder, PbsParameters,
     TfheContext, TfheEvaluationError,
 };
@@ -24,38 +24,33 @@ const POLY_LENGTH: usize = 64;
 const MODULUS: u64 = 1_125_899_906_826_241;
 
 fn parameters(order: PbsOrder, distribution: SecretKeyDistr) -> PbsParameters<u64> {
-    BlindRotationConfig {
+    PbsParameters::try_from_config(PbsConfig {
         small_lwe: LweConfig {
             dimension: LweDimension::new(4),
             cipher_modulus: BarrettModulus::new(MODULUS).into(),
             secret_key_distr: distribution,
             noise_standard_deviation: 0.7,
         },
-        acc_dimension: GlweDimension::new(1),
-        acc_poly_length: PolyLength::new(POLY_LENGTH),
+        bsk_dimension: GlweDimension::new(1),
+        bsk_poly_length: PolyLength::new(POLY_LENGTH),
         bsk_secret_distr: SecretKeyDistr::UniformBinary,
         bsk_gadget: GadgetEncryptionConfig {
-            // Full decomposition keeps phase error below the third output level.
             decomposition: DecompositionConfig {
                 log_basis: DecompositionBaseLog::new(10),
                 level_count: None,
             },
             noise_standard_deviation: 0.7,
         },
-        algorithm: BlindRotationAlgorithm::Classic,
-    }
-    .try_prepare()
-    .and_then(|parameters| {
-        parameters.try_with_key_switching(
-            GadgetEncryptionConfig {
-                decomposition: DecompositionConfig {
-                    log_basis: DecompositionBaseLog::new(10),
-                    level_count: Some(DecompositionLevelCount::new(4)),
-                },
-                noise_standard_deviation: 0.7,
+        method: BlindRotationMethod::Classic,
+        key_switching: GadgetEncryptionConfig {
+            decomposition: DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(10),
+                level_count: Some(DecompositionLevelCount::new(4)),
             },
-            order,
-        )
+            noise_standard_deviation: 0.7,
+        },
+        messages: primus_tfhe::PbsMessageConfig::new(4),
+        order,
     })
     .unwrap()
 }
@@ -91,9 +86,9 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
     ] {
         let tfhe = parameters(order, distribution);
         let modulus = BarrettModulus::new(MODULUS);
-        let context = TfheContext::<_, U64NttTable>::try_from_parameters(tfhe).unwrap();
-        let input_codec =
-            primus_encoding::RoundedCodec::new(4, context.parameters().cipher_modulus());
+        let context_parameters = &tfhe;
+        let context =
+            TfheContext::<_, U64NttTable>::try_from_parameters(context_parameters.clone()).unwrap();
         let mut rng = StdRng::seed_from_u64(0x0050_4154_4348_4544 ^ order as u64);
         // Three gadget levels exercise multiple scales and an internal padding slot.
         let levels = 3;
@@ -111,51 +106,42 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
                 level_count: None,
             },
         };
-        let (client_key, ring_server) = context
-            .try_generate_circuit_bootstrap_keys(
-                BlindRotationAlgorithm::Classic,
-                cbs_config,
-                &mut rng,
-            )
+        let cbs_parameters = primus_tfhe_glwe::CbsParameters::try_with_config(
+            context.parameters().clone(),
+            cbs_config,
+        )
+        .unwrap();
+        let input_codec = *cbs_parameters.input_codec();
+        let context = context
+            .try_with_cbs_parameters(cbs_parameters.clone())
             .unwrap();
-        assert_eq!(
-            ring_server.input_key_switching_key().is_some(),
-            order == PbsOrder::KeyswitchBootstrap
-        );
-        let (br, input_ks, circuit) = ring_server.into_parts();
-        // Ordinary PBS additionally needs output KS in BR→KS order.
-        let ks = input_ks.unwrap_or_else(|| {
-            KeyGenerator::new(&context)
-                .try_generate_glwe_key_switching_key(&client_key, &mut rng)
-                .unwrap()
-        });
-        let classic_server_key = primus_tfhe_glwe_ntt::ServerKey::new(br, ks, Some(circuit));
+        let (client_key, ring_server) = context
+            .try_generate_circuit_bootstrap_keys(&mut rng)
+            .unwrap();
+        let (classic_server_key, circuit) = ring_server.into_parts();
         let sparse_server_key = sparse.then(|| {
-            // Bundled generation and separately paired CBS material share the same evaluator.
-            let config = (order == PbsOrder::BootstrapKeyswitch).then_some(cbs_config);
+            // BR material can share an independently paired CBS key.
             KeyGenerator::new(&context)
-                .try_generate_server_key(
+                .try_generate_server_key_with_parameters(
+                    context_parameters.glwe_key_switching(),
                     &client_key,
-                    BlindRotationAlgorithm::Sparse {
+                    BlindRotationMethod::Sparse {
                         copy_count: 3,
                         bucket_count: 4,
                     },
-                    config,
                     &mut rng,
                 )
                 .unwrap()
         });
         let server_key = sparse_server_key.as_ref().unwrap_or(&classic_server_key);
-        let circuit_key = server_key
-            .circuit_bootstrap_key()
-            .unwrap_or_else(|| classic_server_key.circuit_bootstrap_key().unwrap());
+        let circuit_key = &circuit;
         let circuit_parameters = circuit_key.parameters();
         let mut resources = context
             .bootstrap_resources_from_server_key(server_key)
             .unwrap();
         let main_secret =
             NttGlweSecretKey::from_coeff_secret_key(client_key.glwe_secret_key(), context.table());
-        let glwe = context.parameters().blind_rotation_ggsw();
+        let glwe = context.parameters().blind_rotation_params();
         let mut accumulator_client = context
             .accumulator_client(
                 client_key.glwe_secret_key(),
@@ -228,25 +214,34 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
             assert_eq!(accumulator_client.decrypt(&selected), messages[1]);
         }
 
-        let other_context = TfheContext::<_, U64NttTable>::try_from_parameters(parameters(
-            order,
-            SecretKeyDistr::UniformBinary,
-        ))
-        .unwrap();
+        let other_context_parameters = &parameters(order, SecretKeyDistr::UniformBinary);
+        let other_context =
+            TfheContext::<_, U64NttTable>::try_from_parameters(other_context_parameters.clone())
+                .unwrap();
+        // Independent operation state is paired at context setup, before keygen.
+        assert!(matches!(
+            other_context.try_with_cbs_parameters(cbs_parameters.clone()),
+            Err(primus_tfhe_glwe_ntt::TfheContextError::Parameters(
+                primus_tfhe_glwe_ntt::TfheParameterError::IncompatibleComponents
+            ))
+        ));
+        let other_context =
+            TfheContext::<_, U64NttTable>::try_from_parameters(other_context_parameters.clone())
+                .unwrap();
         assert!(matches!(
             other_context.bootstrap_resources_from_server_key(server_key),
             Err(TfheEvaluationError::IncompatibleBlindRotationKey)
         ));
         let incompatible_trace = GgswParameters::with_glwe_params(
             &primus_glwe::GlweParameters::try_from_glev(
-                context.parameters().blind_rotation_ggsw(),
+                context.parameters().blind_rotation_params(),
                 primus_encoding::ScaledCodec::new(4, modulus),
             )
             .unwrap(),
             DecompositionBaseLog::new(9),
             None,
         );
-        let incompatible_parameters = CbsParameters::try_new(
+        let incompatible_parameters = CbsGadgetParameters::try_new(
             context.parameters(),
             circuit_parameters.output_basis().clone(),
             incompatible_trace,
@@ -264,7 +259,7 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
         ));
         // GLWE scheme switching binds output layout, so another output basis
         // with the same level count can reuse this circuit key.
-        let alternate = CbsParameters::try_new(
+        let alternate = CbsGadgetParameters::try_new(
             context.parameters(),
             ApproxSignedBasis::new(
                 Some(MODULUS),
@@ -316,6 +311,7 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
         // to allocate a missing return stage; KS→BR already owns the input KS.
         let mut pbs = primus_tfhe_glwe_ntt::Evaluator::try_from_resources(
             resources,
+            context_parameters.glwe_key_switching(),
             server_key.glwe_key_switching_key(),
         )
         .unwrap();
@@ -327,8 +323,9 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
         let mut selected = context.allocate_accumulator_ciphertext();
         // Equal parameters do not identify a transform context. Reject a foreign
         // resource owner before touching the caller's output.
+        let foreign_context_parameters = context_parameters;
         let foreign_context =
-            TfheContext::<_, U64NttTable>::try_from_parameters(context.parameters().clone())
+            TfheContext::<_, U64NttTable>::try_from_parameters(foreign_context_parameters.clone())
                 .unwrap();
         let mut foreign_resources = foreign_context
             .bootstrap_resources_from_server_key(server_key)
@@ -491,7 +488,11 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
         // Rebinding another KS from the same secrets must retain buffers and
         // use the replacement in the active stage of either PBS order.
         let replacement = KeyGenerator::new(&context)
-            .try_generate_glwe_key_switching_key(&client_key, &mut rng)
+            .try_generate_glwe_key_switching_key(
+                context_parameters.glwe_key_switching(),
+                &client_key,
+                &mut rng,
+            )
             .unwrap();
         pbs.try_rebind_key_switching_key(&replacement).unwrap();
         pbs.apply_lookup_table_to(input.as_view(), &identity, output.as_mut_view());
@@ -504,49 +505,4 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
             1
         );
     }
-}
-
-/// A ring-output setup has no unused KS state and rejects ordinary PBS before sampling.
-#[test]
-fn ring_only_parameters_reject_ordinary_pbs_before_sampling() {
-    let full = parameters(PbsOrder::BootstrapKeyswitch, SecretKeyDistr::UniformBinary);
-    let parameters = PbsParameters::try_without_key_switching(
-        full.small_lwe().clone(),
-        full.blind_rotation_ggsw().clone(),
-    )
-    .unwrap();
-    let context = TfheContext::<_, U64NttTable>::try_from_parameters(parameters).unwrap();
-    let mut rng = StdRng::seed_from_u64(42);
-    let mut untouched = StdRng::seed_from_u64(42);
-    assert_eq!(
-        context
-            .try_generate_keys(BlindRotationAlgorithm::Classic, None, &mut rng)
-            .err(),
-        Some(primus_tfhe_glwe_ntt::KeyGenerationError::MissingKeySwitchingParameters)
-    );
-    assert_eq!(
-        rand::RngExt::random::<u64>(&mut rng),
-        rand::RngExt::random::<u64>(&mut untouched)
-    );
-    let config = CbsGadgetConfig {
-        output: DecompositionConfig {
-            log_basis: DecompositionBaseLog::new(8),
-            level_count: Some(DecompositionLevelCount::new(2)),
-        },
-        trace: DecompositionConfig {
-            log_basis: DecompositionBaseLog::new(8),
-            level_count: None,
-        },
-        scheme_switch: DecompositionConfig {
-            log_basis: DecompositionBaseLog::new(8),
-            level_count: None,
-        },
-    };
-    let (_, server) = context
-        .try_generate_circuit_bootstrap_keys(BlindRotationAlgorithm::Classic, config, &mut rng)
-        .unwrap();
-    assert!(server.input_key_switching_key().is_none());
-    let resources = server.bootstrap_resources(&context).unwrap();
-    let codec = primus_encoding::RoundedCodec::new(4, context.parameters().cipher_modulus());
-    CircuitBootstrapEvaluator::try_new(&resources, server.circuit_bootstrap_key(), &codec).unwrap();
 }

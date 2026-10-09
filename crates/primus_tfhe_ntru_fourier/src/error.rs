@@ -4,9 +4,13 @@ pub use primus_tfhe_ntru::{
     TfheClientError, TfheKeyError, TfheParameterError,
 };
 
-/// Failure to bind a Fourier table to NTRU TFHE parameters.
+/// Failure to prepare NTRU operation state or bind it to a Fourier table.
 #[derive(Debug, thiserror::Error)]
 pub enum TfheContextError {
+    /// Preparing the selected operation or pairing independent operation state failed.
+    #[error(transparent)]
+    Parameters(#[from] TfheParameterError),
+
     /// The Fourier table uses another polynomial length.
     #[error("Fourier polynomial length mismatch: expected {expected}, got {actual}")]
     PolynomialLengthMismatch {

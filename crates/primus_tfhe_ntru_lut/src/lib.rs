@@ -1,14 +1,15 @@
 //! High-precision lookup on independently encrypted, least-significant-first chunks.
 //!
 //! Compile a [`HighPrecisionLookupTable`] with [`LookupTableConfig`], then bind a
-//! `NttLookupTableEvaluator` or `FourierLookupTableEvaluator` to a CBS-enabled
-//! context and server key. Reuse its workspace with caller-owned LWE outputs.
+//! `NttLookupTableEvaluator` or `FourierLookupTableEvaluator` to a context,
+//! return parameters and CBS-enabled server key. Reuse its workspace with caller-owned LWE outputs.
 //! Input chunks are already encrypted; this crate does not split a single LWE.
 //! The runnable `ntt_lookup` and `fourier_lookup` examples demonstrate key
 //! generation, chunk encryption, table compilation, workspace reuse and decoding.
 //! The Fourier example selects one concrete FFT table implementation.
-//! With a backend enabled, both start from an `experimental` lookup config and
-//! derive the common chunk width from its one-hot input message modulus.
+//! With a backend enabled, both prepare complete `HighPrecLutParameters` from an
+//! `experimental` lookup config: CBS, return, checked chunk layout and q/Q codecs.
+//! Preparation does not enumerate the function, create keys or build a transform table.
 //!
 //! The common chunk radix is M=t/2, where t is the input codec’s plaintext modulus.
 //! Coefficients encode output chunks at ring Q, using unsigned Rounded encoding.
@@ -50,8 +51,8 @@
 //! the excluded resources. Evaluator binding separately validates N/q/Q and CBS.
 //!
 //! # Features
-//! Default features are empty: public table compilation and inspection need no
-//! transform or evaluator. `ntt` / `fourier` enable the corresponding evaluator;
+//! NTT is enabled by default. With `--no-default-features`, public table compilation
+//! and inspection need no transform or evaluator. `ntt` / `fourier` enable the corresponding evaluator;
 //! `fourier` is generic over an FFT table without choosing its implementation.
 //! Either backend feature also enables `HighPrecisionLookupTable::try_from_parameters`,
 //! which compiles with existing N/Q/q parameters without needing a context or keys.
@@ -84,7 +85,7 @@ mod ntt;
 
 pub use chunk::{ChunkFormat, ChunkFormatError};
 #[cfg(any(feature = "ntt", feature = "fourier"))]
-pub use config::HighPrecLutConfig;
+pub use config::{HighPrecLutConfig, HighPrecLutParameterError, HighPrecLutParameters};
 #[cfg(feature = "fourier")]
 pub use fourier::{FourierLookupTableEvaluator, FourierPublicLift};
 pub use lookup_table::{

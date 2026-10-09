@@ -6,6 +6,17 @@ use primus_ntru::NlevParameterError;
 /// An invalid combination of NTRU-based TFHE parameters.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum TfheParameterError {
+    /// Independent operation components do not share the required domain/input role.
+    #[error("operation components use incompatible domains or input roles")]
+    IncompatibleComponents,
+
+    /// Preparing a CBS trace, scheme-switch or output gadget failed.
+    #[error("invalid circuit-bootstrap gadget parameters")]
+    CircuitBootstrap(#[source] CircuitBootstrapParameterError),
+    /// The CBS selector's input message encoding is invalid.
+    #[error("invalid selector-input encoding")]
+    InputEncoding(#[source] primus_encoding::CodecError),
+
     /// The numerical external LWE description or fresh encryption sampler is invalid.
     #[error("invalid external LWE configuration")]
     InputParameters(#[source] primus_tfhe::LweConfigError),
@@ -113,18 +124,19 @@ pub enum CircuitBootstrapParameterError {
 /// Failure to generate classic, sparse or circuit-bootstrap keys for this TFHE family.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum KeyGenerationError {
-    /// PBS/LUT return generation needs a return-q domain; ring-output CBS can omit it.
-    #[error("this operation requires key-switching parameters")]
-    MissingKeySwitchingParameters,
+    /// The context has no complete ring-output CBS configuration.
+    #[error("context has no circuit-bootstrap parameters")]
+    MissingCircuitBootstrapParameters,
+    /// Independently supplied KS parameters do not match the BR input/return domain.
+    #[error("key-switching parameters do not match the blind-rotation domain")]
+    IncompatibleKeySwitchingParameters,
+
     /// Sparse blind-rotation key generation failed.
     #[error(transparent)]
     SparseBootstrapping(#[from] SparseBootstrappingKeyError),
     /// The supplied client secrets do not match the TFHE parameters.
     #[error(transparent)]
     ClientKey(#[from] TfheKeyError),
-    /// The requested CBS configuration cannot be prepared.
-    #[error(transparent)]
-    CbsParameters(#[from] CircuitBootstrapParameterError),
     /// Prepared CBS parameters belong to another accumulator or input domain.
     #[error("circuit-bootstrap parameters do not match this TFHE context")]
     IncompatibleCircuitBootstrapParameters,

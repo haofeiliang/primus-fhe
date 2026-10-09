@@ -11,4 +11,5 @@ pub use key::CircuitBootstrapKey;
 /// Native reverse trace halves integers at each stage. Its rounding, trace key
 /// switching, scheme-switch decomposition and FFT precision contribute to the
 /// CBS error budget; see [`CircuitBootstrapEvaluator::try_new`].
-pub type CbsParameters<T> = primus_tfhe_glwe::CbsParameters<T, primus_modulus::NativeModulus<T>>;
+pub type CbsGadgetParameters<T> =
+    primus_tfhe_glwe::CbsGadgetParameters<T, primus_modulus::NativeModulus<T>>;

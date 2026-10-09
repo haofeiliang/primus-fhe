@@ -7,7 +7,7 @@
 //! Arithmetic profiles: guides/development/tfhe-parameters.md (not security presets).
 
 use primus_fft::RustFftTable as Table;
-use primus_tfhe_ntru_fourier::{PbsMessageConfig, TfheContext};
+use primus_tfhe_ntru_fourier::TfheContext;
 use primus_tfhe_ntru_lut::{FourierLookupTableEvaluator, HighPrecisionLookupTable, experimental};
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -16,10 +16,11 @@ type Word = u64;
 
 fn main() {
     let config = experimental::FOURIER_CLASSIC_LOOKUP_U64;
-    let chunks = config.try_chunk_format().unwrap();
+    let parameters = config.try_prepare().unwrap();
+    let chunks = parameters.chunk_format();
     // Eight two-bit chunks; five low chunks fill N=1024 coefficients,
     // and three high chunks select among 64 polynomials per output.
-    let layout = config.layout;
+    let layout = parameters.layout();
     let input_bits = chunks.bit_count(layout.input_chunk_count);
     let output_bits = chunks.bit_count(layout.output_chunk_count);
     // Evaluate the cleartext function in u64; its intermediate can exceed u32.
@@ -27,20 +28,17 @@ fn main() {
     println!("f(x) = (x*x + 3*x + 7) mod {}", 1u64 << output_bits);
     println!("Input: {input_bits} bits; output: {output_bits} bits");
 
-    let parameters = config.try_prepare().unwrap();
-    let context = TfheContext::<Word, Table, _>::from_parameters(parameters);
+    let context = TfheContext::<Word, Table, _>::from_cbs_parameters(parameters.one_hot().clone());
     // The factory prepares chunk input/return codecs at q and LUT encoding at Q.
-    let codecs = context
-        .parameters()
-        .pbs_codecs(PbsMessageConfig::new(config.one_hot.input_modulus))
-        .unwrap();
+    let codecs = parameters.codecs();
 
     // Client: generate independent LWE/NTRU secrets plus CBS-enabled server material.
     let mut rng = StdRng::seed_from_u64(42);
     let (client_key, server_key) = context
-        .try_generate_keys(
-            config.one_hot.blind_rotation.algorithm,
-            Some(config.one_hot.gadget),
+        .try_generate_circuit_bootstrap_keys_with_parameters(
+            parameters.key_switching(),
+            parameters.as_ref().algorithm(),
+            parameters.one_hot().gadget(),
             &mut rng,
         )
         .unwrap();
@@ -70,8 +68,13 @@ fn main() {
     .unwrap();
 
     // Server: bind public material once and reuse all online buffers.
-    let mut evaluator =
-        FourierLookupTableEvaluator::try_new(&context, &server_key, &table).unwrap();
+    let mut evaluator = FourierLookupTableEvaluator::try_new(
+        &context,
+        parameters.key_switching(),
+        &server_key,
+        &table,
+    )
+    .unwrap();
     let mut output = evaluator.allocate_output();
 
     // Eight two-bit chunks, written most-significant first.

@@ -6,9 +6,13 @@ pub use primus_tfhe_glwe::{
     TfheClientError, TfheKeyError, TfheParameterError,
 };
 
-/// Failure to bind a Fourier table to TFHE parameters.
+/// Failure to prepare operation state or bind it to a Fourier table.
 #[derive(Debug, thiserror::Error)]
 pub enum TfheContextError {
+    /// Preparing the selected operation or pairing independent operation state failed.
+    #[error(transparent)]
+    Parameters(#[from] TfheParameterError),
+
     /// The Fourier table was built for a different polynomial length.
     #[error("FFT polynomial length mismatch: expected {expected}, got {actual}")]
     PolynomialLengthMismatch {

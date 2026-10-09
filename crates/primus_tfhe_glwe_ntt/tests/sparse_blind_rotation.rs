@@ -1,12 +1,8 @@
-use primus_decompose::primitive::ApproxSignedBasis;
-use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_decompose::DecompositionBaseLog;
 use primus_encoding::{PlaintextEmbedding, RoundedCodec};
-use primus_glwe::{
-    GlweParameters, NttGlweGadgetEncryptWorkspace, NttGlweSecretKey, SecretKeyDistr,
-};
+use primus_glwe::{NttGlweGadgetEncryptWorkspace, NttGlweSecretKey, SecretKeyDistr};
 use primus_lattice::{GlweDimension, LweDimension};
 use primus_lattice::{glwe::Glwe, lwe::Lwe};
-use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
 use primus_poly::{PolyLength, Polynomial};
@@ -56,44 +52,40 @@ fn sparse_rotation_matches_direct_phase_and_classic_with_reused_scratch() {
     // inputs and spans multiple aggregation tiles, including a short final tile.
     for (n, k, copies, buckets) in [(32usize, 1, 3, 8), (32, 2, 1, 17), (256, 2, 3, 8)] {
         let modulus = BarrettModulus::new(Q);
-        let lwe = LweParameters::new(
-            LweDimension::new(16),
-            T,
-            modulus,
-            SecretKeyDistr::fixed_hamming_weight_binary(16, 4),
-            0.7,
-        );
-        let glwe = GlweParameters::new(
-            GlweDimension::new(k),
-            PolyLength::new(n),
-            T,
-            modulus,
-            SecretKeyDistr::UniformBinary,
-            0.7,
-        );
         // The small rings use exact decomposition; the encrypted-input case
         // also exercises the truncated basis used by the cost profile.
-        let basis = if n == 32 {
-            ApproxSignedBasis::new(Some(Q), DecompositionBaseLog::new(9), None)
-        } else {
-            ApproxSignedBasis::new(
-                Some(Q),
-                DecompositionBaseLog::new(7),
-                Some(DecompositionLevelCount::new(3)),
-            )
-        };
-        let parameters = PbsParameters::try_new(
-            lwe.into_encryption_parameters(),
-            primus_glwe::GgswParameters::try_with_basis(&glwe, basis.clone()).unwrap(),
-            GadgetEncryptionConfig {
-                decomposition: basis,
-                noise_standard_deviation: glwe.noise_distribution().standard_deviation(),
+        let parameters = PbsParameters::try_from_config(primus_tfhe_glwe::PbsConfig {
+            small_lwe: primus_tfhe::LweConfig {
+                dimension: LweDimension::new(16),
+                cipher_modulus: modulus.into(),
+                secret_key_distr: SecretKeyDistr::fixed_hamming_weight_binary(16, 4),
+                noise_standard_deviation: 0.7,
             },
-            PbsOrder::KeyswitchBootstrap,
-        )
+            bsk_dimension: GlweDimension::new(k),
+            bsk_poly_length: PolyLength::new(n),
+            bsk_secret_distr: SecretKeyDistr::UniformBinary,
+            bsk_gadget: GadgetEncryptionConfig {
+                decomposition: primus_tfhe::DecompositionConfig {
+                    log_basis: DecompositionBaseLog::new(9),
+                    level_count: None,
+                },
+                noise_standard_deviation: 0.7,
+            },
+            key_switching: GadgetEncryptionConfig {
+                decomposition: primus_tfhe::DecompositionConfig {
+                    log_basis: DecompositionBaseLog::new(9),
+                    level_count: None,
+                },
+                noise_standard_deviation: 0.7,
+            },
+            method: primus_tfhe::BlindRotationMethod::Classic,
+            messages: primus_tfhe::PbsMessageConfig::new(primus_integer::AsFrom::<u32>::as_from(4)),
+            order: PbsOrder::KeyswitchBootstrap,
+        })
         .unwrap();
         let ntt = U32NttTable::new(PolyLength::new(n), modulus).unwrap();
-        let context = TfheContext::try_new(parameters, ntt).unwrap();
+        let context_parameters = &parameters;
+        let context = TfheContext::try_new(context_parameters.clone(), ntt).unwrap();
         let input_codec =
             primus_encoding::RoundedCodec::new(8, context.parameters().cipher_modulus());
         let parameters = context.parameters();
@@ -110,7 +102,7 @@ fn sparse_rotation_matches_direct_phase_and_classic_with_reused_scratch() {
             client.small_lwe_secret_key(),
             parameters.small_lwe(),
             &output_key,
-            parameters.blind_rotation_ggsw(),
+            parameters.blind_rotation_params(),
             ntt,
             &mut rng,
             &mut NttGlweGadgetEncryptWorkspace::new(size),

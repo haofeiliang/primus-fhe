@@ -41,7 +41,7 @@ fn benchmark_workload<T: TorusFftValue, Table: FftTable>(
     );
     let input_codec = RoundedCodec::new(
         CHUNKS.plaintext_modulus(),
-        parameters.external_lwe().cipher_modulus(),
+        parameters.as_ref().external_lwe().cipher_modulus(),
     );
     let kind = if sparse { "sparse" } else { "classic" };
     let name = format!("{kind}/c8_d5_o8{}", workload.suffix());
@@ -68,6 +68,7 @@ fn benchmark_workload<T: TorusFftValue, Table: FftTable>(
     c.throughput(Throughput::Elements(CONFIG.output_chunk_count as u64));
     c.bench_function(case.id(), |b| {
         let Fixture {
+            parameters,
             context,
             client,
             server,
@@ -78,11 +79,15 @@ fn benchmark_workload<T: TorusFftValue, Table: FftTable>(
         let mut evaluator = match lift {
             Some(key) => FourierLookupTableEvaluator::try_with_public_lift(
                 context,
+                parameters.key_switching(),
                 server,
                 table,
                 (key.as_view(), context.parameters().blind_rotation()),
             ),
-            None => FourierLookupTableEvaluator::try_new(context, server, table),
+            None => FourierLookupTableEvaluator::try_new(context,
+parameters.key_switching(),
+server,
+table),
         }
         .unwrap();
         let mut output = evaluator.allocate_output();
@@ -110,7 +115,7 @@ fn benchmark_workload<T: TorusFftValue, Table: FftTable>(
         }
         metadata::record("high_precision_lut", &case, || {
             serde_json::json!({
-                "parameters": metadata::ntru(context.parameters()),
+                "parameters": metadata::ntru(parameters),
                 "blind_rotation": metadata::blind_rotation(sparse),
                 "cbs": metadata::cbs(ntru::cbs::<T>(), context.parameters().accumulator_ntru().noise_distribution().standard_deviation()),
                 "lut": workload.metadata(),
@@ -127,9 +132,10 @@ fn benchmark_workload<T: TorusFftValue, Table: FftTable>(
 /// Owned keys and request data. Evaluators borrow this fixture and own their
 /// scratch separately; constructing it is deferred until Criterion selects a case.
 struct Fixture<T: TorusFftValue, Table: FftTable> {
+    parameters: primus_tfhe_ntru_fourier::PbsParameters<T, PowOf2Modulus<T>>,
     context: TfheContext<T, Table, PowOf2Modulus<T>>,
     client: primus_tfhe_ntru_fourier::ClientKey<T>,
-    server: primus_tfhe_ntru_fourier::ServerKey<T>,
+    server: primus_tfhe_ntru_fourier::CircuitBootstrapServerKey<T>,
     table: HighPrecisionLookupTable<T>,
     lift: Option<primus_lattice::nlev::FourierNlev<Vec<primus_fft::Complex64>>>,
     input: Vec<primus_lwe::LweCiphertext<T>>,
@@ -144,14 +150,26 @@ impl<T: TorusFftValue, Table: FftTable> Fixture<T, Table> {
         workload: Workload,
         sparse: bool,
     ) -> Self {
-        let context = TfheContext::<T, Table, PowOf2Modulus<T>>::from_parameters(parameters);
+        let context_parameters = &parameters;
+        let context =
+            TfheContext::<T, Table, PowOf2Modulus<T>>::from_parameters(context_parameters.clone());
         let mut rng = StdRng::seed_from_u64(42);
         let (client, server) = {
             let mut generator = KeyGenerator::new(&context);
             let client = generator.try_generate_client_key(&mut rng).unwrap();
             let blind_rotation = primus_tfhe_benchmarks::benchmark::blind_rotation(sparse);
             let server = generator
-                .try_generate_server_key(&client, blind_rotation, Some(ntru::cbs::<T>()), &mut rng)
+                .try_generate_circuit_bootstrap_server_key_with_parameters(
+                    context_parameters.key_switching(),
+                    &client,
+                    blind_rotation,
+                    &primus_tfhe_ntru::CbsGadgetParameters::try_from_config(
+                        context.parameters(),
+                        ntru::cbs::<T>(),
+                    )
+                    .unwrap(),
+                    &mut rng,
+                )
                 .unwrap();
             (client, server)
         };
@@ -192,6 +210,7 @@ impl<T: TorusFftValue, Table: FftTable> Fixture<T, Table> {
             })
             .collect();
         Self {
+            parameters,
             context,
             client,
             server,

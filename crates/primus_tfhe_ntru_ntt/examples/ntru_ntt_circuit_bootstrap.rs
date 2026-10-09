@@ -12,23 +12,18 @@ type Word = u64;
 
 fn main() {
     let config = experimental::CLASSIC_CBS_U64;
-    let parameters = config.try_prepare().unwrap();
-    let context = TfheContext::<Word, Table, _>::try_from_parameters(parameters).unwrap();
-    let poly_length = config.blind_rotation.acc_poly_length.get();
+    let context = TfheContext::<Word, Table, _>::try_from_cbs_config(config).unwrap();
+    let poly_length = config.pbs.bsk_poly_length.get();
     // Padded t=8 accepts integers 0..4, independently of the candidate ring messages.
     let (input_codec, ring_message_codec) = context
         .parameters()
-        .circuit_bootstrap_codecs(config.input_modulus, 8)
+        .circuit_bootstrap_codecs(config.pbs.messages.input_modulus, 8)
         .unwrap();
 
-    // Client: generate BR and CBS material; this ring-output workflow needs no return key.
+    // Client: generate BR/KS and CBS material; this example consumes the ring output.
     let mut rng = StdRng::seed_from_u64(42);
     let (client_key, server_key) = context
-        .try_generate_circuit_bootstrap_keys(
-            config.blind_rotation.algorithm,
-            config.gadget,
-            &mut rng,
-        )
+        .try_generate_circuit_bootstrap_keys(&mut rng)
         .unwrap();
     // The integer input is encrypted with the external LWE secret.
     let external_secret = client_key.external_lwe_secret_key();

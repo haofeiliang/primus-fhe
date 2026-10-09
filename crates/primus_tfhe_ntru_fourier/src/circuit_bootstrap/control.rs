@@ -4,14 +4,14 @@ use primus_fft::{Complex64, FftTable, TorusFftValue};
 use primus_ntru::{FourierNgswCiphertext, NtruCiphertext};
 use primus_reduce::RingContext;
 
-use crate::{BootstrapResources, CbsParameters};
+use crate::{BootstrapResources, CbsGadgetParameters};
 
 /// Consumes a bit control after the public evaluator has checked the resource
 /// context. CBS binding established the basis and accumulator domain; raw
 /// ciphertext views still require exact lengths before any output is written.
 /// Slice views keep this implementation independent of caller-owned storage.
 pub(super) fn cmux_to<T, Table, LM>(
-    parameters: &CbsParameters<T>,
+    parameters: &CbsGadgetParameters<T>,
     control: FourierNgswCiphertext<&[Complex64]>,
     lhs: NtruCiphertext<&[T]>,
     rhs: NtruCiphertext<&[T]>,
@@ -52,7 +52,7 @@ pub(super) fn cmux_to<T, Table, LM>(
 /// identity; lengths are checked here before writes, and the existing resource
 /// owner supplies scratch. Unlike CMux, the control need not encrypt a bit.
 pub(super) fn external_product_to<T, Table, LM>(
-    parameters: &CbsParameters<T>,
+    parameters: &CbsGadgetParameters<T>,
     control: FourierNgswCiphertext<&[Complex64]>,
     input: NtruCiphertext<&[T]>,
     mut output: NtruCiphertext<&mut [T]>,

@@ -71,7 +71,7 @@ impl<T: FheUint, M: RingContext<T>> PbsParameters<T, M> {
             return Err(LookupTableError::InputModulusMismatch);
         }
         LookupTableCompiler::try_new(
-            self.blind_rotation_ggsw().poly_length(),
+            self.blind_rotation_params().poly_length(),
             codecs.input_codec(),
             self.cipher_modulus(),
             codecs.lut_output_codec(),
@@ -113,7 +113,7 @@ impl<T: FheUint, M: RingContext<T>> PbsParameters<T, M> {
         }
         FactorizedLookupTable::try_new(
             input_domain_len,
-            self.blind_rotation_ggsw().poly_length(),
+            self.blind_rotation_params().poly_length(),
             output_count,
             codecs.input_codec(),
             codecs.lut_output_codec(),

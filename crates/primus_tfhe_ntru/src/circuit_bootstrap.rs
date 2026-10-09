@@ -22,14 +22,14 @@ use crate::{CbsGadgetConfig, CircuitBootstrapParameterError, PbsParameters};
 /// key encrypts secret-dependent messages and multiplies errors by f and f²;
 /// ordinary PBS parameters are not automatically valid CBS parameters.
 #[derive(Clone)]
-pub struct CbsParameters<T: FheUint, M: RingContext<T>> {
+pub struct CbsGadgetParameters<T: FheUint, M: RingContext<T>> {
     trace: NlevParameters<T, M>,
     scheme_switch: NlevParameters<T, M>,
     output_basis: ApproxSignedBasis<T>,
     output_nlev_len: usize,
 }
 
-impl<T: FheUint, M: RingContext<T>> CbsParameters<T, M> {
+impl<T: FheUint, M: RingContext<T>> CbsGadgetParameters<T, M> {
     /// Derives CBS parameters from TFHE with independent gadget bases.
     ///
     /// Reuses the accumulator's validated ring and sampler state without preparing
@@ -46,15 +46,15 @@ impl<T: FheUint, M: RingContext<T>> CbsParameters<T, M> {
         config: CbsGadgetConfig,
     ) -> Result<Self, CircuitBootstrapParameterError> {
         let accumulator = tfhe.accumulator_ntru();
-        let output_basis = config
-            .output
-            .try_build(accumulator.cipher_modulus_value())?;
+        let modulus = accumulator.cipher_modulus_value();
+        let output_basis = ApproxSignedBasis::try_from((config.output, modulus))?;
         let key_parameters = |role, decomposition: DecompositionConfig| {
-            let basis = decomposition
-                .try_build(accumulator.cipher_modulus_value())
-                .map_err(|source| CircuitBootstrapParameterError::GadgetParameters {
-                    role,
-                    source: source.into(),
+            let basis =
+                ApproxSignedBasis::try_from((decomposition, modulus)).map_err(|source| {
+                    CircuitBootstrapParameterError::GadgetParameters {
+                        role,
+                        source: source.into(),
+                    }
                 })?;
             tfhe.blind_rotation()
                 .try_with_new_basis(basis)
@@ -219,7 +219,7 @@ impl<T: FheUint, M: RingContext<T>> CbsParameters<T, M> {
     }
 }
 
-impl<T: FheUint> CbsParameters<T, NativeModulus<T>> {
+impl<T: FheUint> CbsGadgetParameters<T, NativeModulus<T>> {
     /// Returns the number of complex values in the output Fourier NLev/NGSW.
     #[must_use]
     #[inline]

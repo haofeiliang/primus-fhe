@@ -12,11 +12,11 @@ English | [简体中文](README.zh_CN.md)
 | Type | Role |
 | --- | --- |
 | `DecompositionBaseLog` / `DecompositionLevelCount` | Checked radix logarithm and positive retained-level count |
-| `DecompositionConfig` | Radix and retained-level choices before binding a modulus; `try_build` prepares a primitive basis |
+| `DecompositionConfig` | Radix and retained-level choices; `ApproxSignedBasis::try_from((config, modulus))` binds the modulus |
 | `primitive::ApproxSignedBasis<T>` | Single-limb inputs with an explicit modulus or the implicit native modulus `2^T::BITS` |
 | `big_integer::BigUintApproxSignedBasis<T>` | Fixed-width, multi-limb inputs with an explicit integer modulus |
 | `OnceSignedDecomposer`, `OnceBigUintSignedDecomposer` | Extract one retained level; obtained from the corresponding basis's `decomposer_iter()` |
-| `ApproxSignedBasisError` | Invalid construction parameters, returned by `try_new` |
+| `ApproxSignedBasisError` | Invalid construction parameters, returned by `try_new` and `TryFrom` |
 
 `T: FheUint` is the unsigned coefficient type for the primitive basis and the limb type for the BigUint basis. `BigUint` comes from [`primus_integer`](../primus_integer/README.md), not a dynamically sized integer library. Construct a basis once and reuse its weights and extraction windows.
 
@@ -52,7 +52,7 @@ Despite its name, `unsigned_decompose*` still represents a **signed** digit. For
 
 Both bases additionally require `log_basis < T::BITS`, a modulus at least `B`, and a retained count that fits the decomposition width. A multi-limb basis can have more levels than one limb has bits. Basis `new` panics on these contextual errors; `try_new` returns `ApproxSignedBasisError`.
 
-`DecompositionConfig { log_basis, level_count }` keeps these choices independent of the modulus. `config.try_build::<u32>(None)` prepares a native basis, while `config.try_build(Some(q))` uses an explicit modulus. Validation and errors come from `primitive::ApproxSignedBasis::try_new`; the config itself has no precomputed storage.
+`DecompositionConfig { log_basis, level_count }` keeps these choices independent of the modulus. `ApproxSignedBasis::<u32>::try_from((config, None))` prepares a native basis, while `ApproxSignedBasis::try_from((config, Some(q)))` uses an explicit modulus. Validation and errors come from `primitive::ApproxSignedBasis::try_new`; the config itself has no precomputed storage.
 
 The decomposition width `m` differs between representations:
 

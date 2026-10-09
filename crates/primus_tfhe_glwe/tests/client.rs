@@ -1,57 +1,57 @@
 use primus_decompose::DecompositionBaseLog;
-use primus_decompose::primitive::ApproxSignedBasis;
 use primus_encoding::RoundedCodec;
-use primus_glwe::{GlweParameters, GlweSecretKey, GlweSize, SecretKeyDistr};
+use primus_glwe::{GlweSecretKey, GlweSize, SecretKeyDistr};
 use primus_lattice::{GlweDimension, LweDimension};
 use primus_lwe::{LweCiphertext, LweParameters, LwePublicKey, LweSecretKey, LweSecretKeyRef};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_poly::PolyLength;
 use primus_reduce::RingContext;
-use primus_tfhe::BlindRotationAlgorithm;
-use primus_tfhe_glwe::{BlindRotationConfig, LweConfig};
+use primus_tfhe::BlindRotationMethod;
 use primus_tfhe_glwe::{
     BooleanDecryptor, BooleanEncryptor, BooleanError, ClientError, ClientKey, EncryptionKey,
     Encryptor, GadgetEncryptionConfig, Lwe, PbsOrder, PbsParameters, TfheClientError, TfheKeyError,
 };
+use primus_tfhe_glwe::{LweConfig, PbsConfig};
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
-fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
+fn check<
+    M: RingContext<u32>
+        + TryFrom<primus_tfhe::ModulusConfig<M>, Error = primus_tfhe::ModulusConfigError>,
+>(
+    modulus: M,
+    plain_modulus: u32,
+) {
     let codec = RoundedCodec::new(plain_modulus, modulus);
     for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
         // Two different external dimensions and a signed ring secret including -1.
-        let small = LweParameters::new(
-            LweDimension::new(4),
-            plain_modulus,
-            modulus,
-            SecretKeyDistr::UniformBinary,
-            0.7,
-        );
-        let glwe = GlweParameters::new(
-            GlweDimension::new(2),
-            PolyLength::new(32),
-            plain_modulus,
-            modulus,
-            SecretKeyDistr::UniformTernary,
-            1.4,
-        );
-        let bsk = ApproxSignedBasis::new(
-            glwe.cipher_modulus_value(),
-            DecompositionBaseLog::new(8),
-            None,
-        );
-        let params = PbsParameters::try_new(
-            small.into_encryption_parameters(),
-            primus_glwe::GgswParameters::try_with_basis(&glwe, bsk).unwrap(),
-            GadgetEncryptionConfig {
-                decomposition: ApproxSignedBasis::new(
-                    modulus.explicit_value(),
-                    DecompositionBaseLog::new(8),
-                    None,
-                ),
-                noise_standard_deviation: glwe.noise_distribution().standard_deviation(),
+        let params = PbsParameters::try_from_config(primus_tfhe_glwe::PbsConfig {
+            small_lwe: primus_tfhe::LweConfig {
+                dimension: LweDimension::new(4),
+                cipher_modulus: modulus.into(),
+                secret_key_distr: SecretKeyDistr::UniformBinary,
+                noise_standard_deviation: 0.7,
             },
+            bsk_dimension: GlweDimension::new(2),
+            bsk_poly_length: PolyLength::new(32),
+            bsk_secret_distr: SecretKeyDistr::UniformTernary,
+            bsk_gadget: GadgetEncryptionConfig {
+                decomposition: primus_tfhe::DecompositionConfig {
+                    log_basis: DecompositionBaseLog::new(8),
+                    level_count: None,
+                },
+                noise_standard_deviation: 1.4,
+            },
+            key_switching: GadgetEncryptionConfig {
+                decomposition: primus_tfhe::DecompositionConfig {
+                    log_basis: DecompositionBaseLog::new(8),
+                    level_count: None,
+                },
+                noise_standard_deviation: 1.4,
+            },
+            method: primus_tfhe::BlindRotationMethod::Classic,
+            messages: primus_tfhe::PbsMessageConfig::new(4),
             order,
-        )
+        })
         .unwrap();
         let client = ClientKey::new(
             LweSecretKey::new(vec![1, 0, 1, 1], SecretKeyDistr::UniformBinary, modulus),
@@ -64,6 +64,7 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
         );
         let mut rng = StdRng::seed_from_u64(0x474c_5745_504b);
         let public = params
+            .as_ref()
             .try_generate_public_key(client.external_lwe_secret_key(), &mut rng)
             .unwrap();
         assert_eq!(
@@ -78,16 +79,17 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
         let (secret, uniform, noise) = match order {
             PbsOrder::BootstrapKeyswitch => (
                 client.small_lwe_secret_key().as_view(),
-                params.small_lwe().cipher_modulus_uniform_distr(),
-                params.small_lwe().noise_distribution(),
+                params.as_ref().small_lwe().cipher_modulus_uniform_distr(),
+                params.as_ref().small_lwe().noise_distribution(),
             ),
             PbsOrder::KeyswitchBootstrap => (
                 LweSecretKeyRef::Signed(client.glwe_secret_key().as_slice()),
                 params
-                    .blind_rotation_ggsw()
+                    .as_ref()
+                    .blind_rotation_params()
                     .encryption_parameters()
                     .cipher_modulus_uniform_distr(),
-                params.blind_rotation_ggsw().noise_distribution(),
+                params.as_ref().blind_rotation_params().noise_distribution(),
             ),
         };
         let encoded = codec.encode_value(1, primus_encoding::PlaintextEmbedding::Unsigned);
@@ -97,6 +99,7 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
         let expected = secret.encrypt_encoded(encoded, modulus, uniform, noise, &mut reference_rng);
         assert_eq!(
             params
+                .as_ref()
                 .encryptor(client.external_lwe_secret_key(), &codec)
                 .unwrap()
                 .encrypt(1, &mut rng)
@@ -110,6 +113,7 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
         let expected = public.encrypt_encoded(encoded, modulus, noise, &mut reference_rng);
         assert_eq!(
             params
+                .as_ref()
                 .public_encryptor(&public, &codec)
                 .unwrap()
                 .encrypt(1, &mut rng)
@@ -121,13 +125,14 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
             &params,
             &client,
             &codec,
-            params.public_encryptor(&public, &codec).unwrap(),
+            params.as_ref().public_encryptor(&public, &codec).unwrap(),
         );
         check_reused_output(
             &params,
             &client,
             &codec,
             params
+                .as_ref()
                 .encryptor(client.external_lwe_secret_key(), &codec)
                 .unwrap(),
         );
@@ -145,19 +150,21 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
         // Full setup always needs the small secret, but KS→BR messages use only
         // the signed GLWE secret and must not inspect that unrelated LWE owner.
         assert_eq!(
-            wrong_domain.check_compatible(&params).err(),
+            wrong_domain.check_compatible((params).as_ref()).err(),
             Some(TfheKeyError::LweSecretKeyModulusMismatch)
         );
         let error = (order == PbsOrder::BootstrapKeyswitch)
             .then_some(TfheKeyError::LweSecretKeyModulusMismatch);
         assert_eq!(
             params
+                .as_ref()
                 .encryptor(wrong_domain.external_lwe_secret_key(), &codec)
                 .err(),
             error.clone().map(TfheClientError::IncompatibleKey)
         );
         assert_eq!(
             params
+                .as_ref()
                 .decryptor(wrong_domain.external_lwe_secret_key(), &codec)
                 .err(),
             error.clone().map(TfheClientError::IncompatibleKey)
@@ -167,6 +174,7 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
         let mut untouched = StdRng::seed_from_u64(seed);
         assert_eq!(
             params
+                .as_ref()
                 .try_generate_public_key(wrong_domain.external_lwe_secret_key(), &mut rng)
                 .err(),
             error.clone(),
@@ -191,7 +199,7 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
             &mut rng,
         );
         assert_eq!(
-            params.public_encryptor(&foreign, &codec).err(),
+            params.as_ref().public_encryptor(&foreign, &codec).err(),
             Some(ClientError::PublicKeyModulusMismatch)
         );
         let short_params = LweParameters::new(
@@ -208,7 +216,7 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
             &mut rng,
         );
         assert_eq!(
-            params.public_encryptor(&short, &codec).err(),
+            params.as_ref().public_encryptor(&short, &codec).err(),
             Some(ClientError::KeyDimensionMismatch {
                 expected: public.dimension().get(),
                 actual: 3,
@@ -227,12 +235,14 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
         });
         assert_eq!(
             params
+                .as_ref()
                 .encryptor(wrong_client.external_lwe_secret_key(), &codec)
                 .err(),
             Some(error.clone())
         );
         assert_eq!(
             params
+                .as_ref()
                 .decryptor(wrong_client.external_lwe_secret_key(), &codec)
                 .err(),
             Some(error)
@@ -242,6 +252,7 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
         let mut expected_rng = StdRng::seed_from_u64(seed);
         assert_eq!(
             params
+                .as_ref()
                 .try_generate_public_key(wrong_client.external_lwe_secret_key(), &mut rng)
                 .err(),
             Some(TfheKeyError::PbsOrderMismatch {
@@ -267,39 +278,41 @@ fn boolean_clients_reject_other_plaintext_moduli() {
     let modulus = NativeModulus::<u32>::new();
     for t in [3, 5] {
         let codec = RoundedCodec::new(t, modulus);
-        let parameters = PbsParameters::try_new(
-            (LweParameters::new(
-                LweDimension::new(4),
-                t,
-                modulus,
-                SecretKeyDistr::UniformBinary,
-                0.7,
-            ))
-            .into_encryption_parameters(),
-            primus_glwe::GgswParameters::try_with_basis(
-                &(GlweParameters::new(
-                    GlweDimension::new(1),
-                    PolyLength::new(32),
-                    t,
-                    modulus,
-                    SecretKeyDistr::UniformTernary,
-                    0.7,
-                )),
-                ApproxSignedBasis::new(None, DecompositionBaseLog::new(8), None),
-            )
-            .unwrap(),
-            GadgetEncryptionConfig {
-                decomposition: ApproxSignedBasis::new(None, DecompositionBaseLog::new(8), None),
+        let parameters = PbsParameters::try_from_config(primus_tfhe_glwe::PbsConfig {
+            small_lwe: primus_tfhe::LweConfig {
+                dimension: LweDimension::new(4),
+                cipher_modulus: modulus.into(),
+                secret_key_distr: SecretKeyDistr::UniformBinary,
                 noise_standard_deviation: 0.7,
             },
-            PbsOrder::BootstrapKeyswitch,
-        )
+            bsk_dimension: GlweDimension::new(1),
+            bsk_poly_length: PolyLength::new(32),
+            bsk_secret_distr: SecretKeyDistr::UniformTernary,
+            bsk_gadget: GadgetEncryptionConfig {
+                decomposition: primus_tfhe::DecompositionConfig {
+                    log_basis: DecompositionBaseLog::new(8),
+                    level_count: None,
+                },
+                noise_standard_deviation: 0.7,
+            },
+            key_switching: GadgetEncryptionConfig {
+                decomposition: primus_tfhe::DecompositionConfig {
+                    log_basis: DecompositionBaseLog::new(8),
+                    level_count: None,
+                },
+                noise_standard_deviation: 0.7,
+            },
+            method: primus_tfhe::BlindRotationMethod::Classic,
+            messages: primus_tfhe::PbsMessageConfig::new(4),
+            order: PbsOrder::BootstrapKeyswitch,
+        })
         .unwrap();
-        let client = ClientKey::generate(&parameters, &mut rng);
-        client.check_compatible(&parameters).unwrap();
+        let client = ClientKey::generate(parameters.as_ref(), &mut rng);
+        client.check_compatible(parameters.as_ref()).unwrap();
         assert_eq!(
             BooleanEncryptor::try_new(
                 parameters
+                    .as_ref()
                     .encryptor(client.external_lwe_secret_key(), &codec)
                     .unwrap()
             )
@@ -309,6 +322,7 @@ fn boolean_clients_reject_other_plaintext_moduli() {
         assert_eq!(
             BooleanDecryptor::try_new(
                 parameters
+                    .as_ref()
                     .decryptor(client.external_lwe_secret_key(), &codec)
                     .unwrap()
             )
@@ -320,42 +334,46 @@ fn boolean_clients_reject_other_plaintext_moduli() {
 
 #[test]
 fn external_binding_checks_small_secret_coefficients_without_an_accumulator() {
-    fn check<M: RingContext<u32>>(modulus: M) {
+    fn check<
+        M: RingContext<u32>
+            + TryFrom<primus_tfhe::ModulusConfig<M>, Error = primus_tfhe::ModulusConfigError>,
+    >(
+        modulus: M,
+    ) {
         let codec = RoundedCodec::new(4, modulus);
         let gaussian = SecretKeyDistr::gaussian(1.0);
         for distr in [
             SecretKeyDistr::UniformBinary,
             SecretKeyDistr::UniformTernary,
         ] {
-            let parameters = PbsParameters::try_new(
-                (LweParameters::new(LweDimension::new(4), 4, modulus, distr, 0.7))
-                    .into_encryption_parameters(),
-                primus_glwe::GgswParameters::try_with_basis(
-                    &(GlweParameters::new(
-                        GlweDimension::new(1),
-                        PolyLength::new(32),
-                        4,
-                        modulus,
-                        gaussian,
-                        0.7,
-                    )),
-                    ApproxSignedBasis::new(
-                        modulus.explicit_value(),
-                        DecompositionBaseLog::new(8),
-                        None,
-                    ),
-                )
-                .unwrap(),
-                GadgetEncryptionConfig {
-                    decomposition: ApproxSignedBasis::new(
-                        modulus.explicit_value(),
-                        DecompositionBaseLog::new(8),
-                        None,
-                    ),
+            let parameters = PbsParameters::try_from_config(primus_tfhe_glwe::PbsConfig {
+                small_lwe: primus_tfhe::LweConfig {
+                    dimension: LweDimension::new(4),
+                    cipher_modulus: modulus.into(),
+                    secret_key_distr: distr,
                     noise_standard_deviation: 0.7,
                 },
-                PbsOrder::BootstrapKeyswitch,
-            )
+                bsk_dimension: GlweDimension::new(1),
+                bsk_poly_length: PolyLength::new(32),
+                bsk_secret_distr: gaussian,
+                bsk_gadget: GadgetEncryptionConfig {
+                    decomposition: primus_tfhe::DecompositionConfig {
+                        log_basis: DecompositionBaseLog::new(8),
+                        level_count: None,
+                    },
+                    noise_standard_deviation: 0.7,
+                },
+                key_switching: GadgetEncryptionConfig {
+                    decomposition: primus_tfhe::DecompositionConfig {
+                        log_basis: DecompositionBaseLog::new(8),
+                        level_count: None,
+                    },
+                    noise_standard_deviation: 0.7,
+                },
+                method: primus_tfhe::BlindRotationMethod::Classic,
+                messages: primus_tfhe::PbsMessageConfig::new(4),
+                order: PbsOrder::BootstrapKeyswitch,
+            })
             .unwrap();
             let minus_one = modulus.minus_one();
             for coefficient in [0, 1, minus_one, 2, minus_one - 1] {
@@ -370,6 +388,7 @@ fn external_binding_checks_small_secret_coefficients_without_an_accumulator() {
                     };
                 assert_eq!(
                     parameters
+                        .as_ref()
                         .encryptor(
                             primus_tfhe_glwe::ExternalLweSecretKey::SmallLwe(&secret),
                             &codec
@@ -401,9 +420,10 @@ fn check_reused_output<M, Key>(
     Key: EncryptionKey<u32, M>,
 {
     let decryptor = parameters
+        .as_ref()
         .decryptor(client.external_lwe_secret_key(), codec)
         .unwrap();
-    let dimension = parameters.external_lwe_dimension().get();
+    let dimension = parameters.as_ref().external_lwe_dimension().get();
     let t = codec.plaintext_modulus();
     let mut rng = StdRng::seed_from_u64(0x434c_4945_4e54);
     let mut expected_rng = StdRng::seed_from_u64(0x434c_4945_4e54);
@@ -468,15 +488,15 @@ fn check_reused_output<M, Key>(
 #[test]
 fn message_codec_must_match_the_key_ciphertext_modulus() {
     use primus_tfhe_glwe::{DecompositionConfig, LookupTableError};
-    let parameters = BlindRotationConfig {
+    let parameters = PbsParameters::try_from_config(PbsConfig {
         small_lwe: LweConfig {
             dimension: LweDimension::new(4),
             cipher_modulus: BarrettModulus::new(132_120_577u32).into(),
             secret_key_distr: SecretKeyDistr::UniformBinary,
             noise_standard_deviation: 0.7,
         },
-        acc_dimension: GlweDimension::new(1),
-        acc_poly_length: PolyLength::new(32),
+        bsk_dimension: GlweDimension::new(1),
+        bsk_poly_length: PolyLength::new(32),
         bsk_secret_distr: SecretKeyDistr::UniformTernary,
         bsk_gadget: GadgetEncryptionConfig {
             decomposition: DecompositionConfig {
@@ -485,25 +505,22 @@ fn message_codec_must_match_the_key_ciphertext_modulus() {
             },
             noise_standard_deviation: 0.7,
         },
-        algorithm: BlindRotationAlgorithm::Classic,
-    }
-    .try_prepare()
-    .and_then(|parameters| {
-        parameters.try_with_key_switching(
-            GadgetEncryptionConfig {
-                decomposition: DecompositionConfig {
-                    log_basis: DecompositionBaseLog::new(8),
-                    level_count: None,
-                },
-                noise_standard_deviation: 0.7,
+        method: BlindRotationMethod::Classic,
+        key_switching: GadgetEncryptionConfig {
+            decomposition: DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(8),
+                level_count: None,
             },
-            PbsOrder::BootstrapKeyswitch,
-        )
+            noise_standard_deviation: 0.7,
+        },
+        messages: primus_tfhe::PbsMessageConfig::new(4),
+        order: PbsOrder::BootstrapKeyswitch,
     })
     .unwrap();
     let mut rng = StdRng::seed_from_u64(0x434f_4445_4351);
-    let client = ClientKey::generate(&parameters, &mut rng);
+    let client = ClientKey::generate(parameters.as_ref(), &mut rng);
     let public = parameters
+        .as_ref()
         .try_generate_public_key(client.external_lwe_secret_key(), &mut rng)
         .unwrap();
     let codec = RoundedCodec::new(4, BarrettModulus::new(65_537u32));
@@ -511,6 +528,7 @@ fn message_codec_must_match_the_key_ciphertext_modulus() {
     let error = TfheClientError::from(ClientError::CodecModulusMismatch);
     assert_eq!(
         parameters
+            .as_ref()
             .encryptor(client.external_lwe_secret_key(), &codec)
             .err(),
         Some(error.clone())
@@ -523,20 +541,24 @@ fn message_codec_must_match_the_key_ciphertext_modulus() {
     ] {
         assert_eq!(
             parameters
+                .as_ref()
                 .decryptor(client.external_lwe_secret_key(), decoder)
                 .err(),
             Some(error.clone())
         );
     }
     assert_eq!(
-        parameters.public_encryptor(&public, &codec).err(),
+        parameters.as_ref().public_encryptor(&public, &codec).err(),
         Some(ClientError::CodecModulusMismatch)
     );
     let codecs = primus_tfhe::PbsMessageConfig::new(4)
-        .try_rounded_codecs(codec.ciphertext_modulus(), parameters.cipher_modulus())
+        .try_rounded_codecs(
+            codec.ciphertext_modulus(),
+            parameters.as_ref().cipher_modulus(),
+        )
         .unwrap();
     assert_eq!(
-        parameters.lookup_table_compiler(&codecs).err(),
+        parameters.as_ref().lookup_table_compiler(&codecs).err(),
         Some(LookupTableError::InputModulusMismatch)
     );
 }

@@ -3,7 +3,9 @@
 use primus_modulus::PowOf2Modulus;
 use primus_ntru::SecretKeyDistr;
 use primus_reduce::Modulus;
-use primus_tfhe_ntru_fourier::{CbsConfig, OneHotLookupTable, PbsConfig, experimental as presets};
+use primus_tfhe_ntru_fourier::{
+    CbsConfig, CbsParameters, OneHotLookupTable, PbsConfig, PbsParameters, experimental as presets,
+};
 
 /// Keep PBS q/Q separate and CBS free of numerical return state.
 fn check_entries(
@@ -16,37 +18,37 @@ fn check_entries(
         (728, 1024, 16, 8),
         (728, 1024, 128, 2),
     ]) {
-        let parameters = config.try_prepare().unwrap();
-        assert_eq!(parameters.external_lwe().dimension().get(), n);
-        assert_eq!(parameters.poly_length().get(), length);
+        let parameters = PbsParameters::try_from_config(config).unwrap();
+        assert_eq!(parameters.as_ref().external_lwe().dimension().get(), n);
+        assert_eq!(parameters.as_ref().poly_length().get(), length);
         assert_eq!(
-            parameters.external_lwe().cipher_modulus_value(),
+            parameters.as_ref().external_lwe().cipher_modulus_value(),
             Some(1 << 24)
         );
         assert_eq!(
             parameters
+                .as_ref()
                 .accumulator_ntru()
                 .noise_distribution()
                 .standard_deviation(),
             0.7
         );
         assert_eq!(
-            parameters
-                .key_switching_lwe()
-                .unwrap()
-                .noise_standard_deviation(),
+            parameters.key_switching().lwe().noise_standard_deviation(),
             3.2
         );
-        let messages = config.messages;
+        let messages = parameters.messages();
+        assert_eq!(messages, config.messages);
+        assert_eq!(parameters.as_ref().algorithm(), config.algorithm);
         assert_eq!(
             (messages.input_modulus, messages.output_modulus),
             (input_t, output_t)
         );
         if input_t == 128 {
-            let codecs = parameters.factorized_pbs_codecs(messages).unwrap();
+            let codecs = parameters.as_ref().factorized_pbs_codecs(messages).unwrap();
             let factors = primus_tfhe::FactorizedLookupTable::try_new(
                 64,
-                parameters.poly_length(),
+                parameters.as_ref().poly_length(),
                 17,
                 codecs.input_codec(),
                 codecs.lut_output_codec(),
@@ -56,6 +58,7 @@ fn check_entries(
             assert_eq!(factors.output_count(), 17);
         } else {
             let codecs = parameters
+                .as_ref()
                 .pbs_codecs(messages.with_output_modulus(8))
                 .unwrap();
             assert_eq!(
@@ -63,10 +66,14 @@ fn check_entries(
                     .lut_output_codec()
                     .ciphertext_modulus()
                     .explicit_value(),
-                parameters.accumulator_ntru().cipher_modulus_value()
+                parameters
+                    .as_ref()
+                    .accumulator_ntru()
+                    .cipher_modulus_value()
             );
             assert_eq!(codecs.output_codec().ciphertext_modulus().value(), 1 << 24);
             let program = parameters
+                .as_ref()
                 .lookup_table_compiler(&codecs)
                 .unwrap()
                 .compile_fn(|_| 7)
@@ -75,17 +82,21 @@ fn check_entries(
         }
         assert!(
             parameters
+                .as_ref()
                 .pbs_codecs(messages.with_output_modulus(1))
                 .is_err()
         );
     }
     for (config, one_hot) in cbs.into_iter().zip([false, true]) {
-        let parameters = config.try_prepare().unwrap();
-        assert!(parameters.key_switching_lwe().is_none());
-        assert!(parameters.key_switching_basis().is_none());
-        assert_eq!(parameters.external_lwe().dimension().get(), 800);
+        let parameters = CbsParameters::try_from_config(config.pbs, config.gadget).unwrap();
+        assert_eq!(parameters.as_ref().algorithm(), config.pbs.algorithm);
         assert_eq!(
-            parameters.external_lwe().secret_key_distr(),
+            parameters.input_codec().plaintext_modulus(),
+            config.pbs.messages.input_modulus
+        );
+        assert_eq!(parameters.as_ref().external_lwe().dimension().get(), 800);
+        assert_eq!(
+            parameters.as_ref().external_lwe().secret_key_distr(),
             if one_hot {
                 SecretKeyDistr::FixedHammingWeightBinary { hamming_weight: 32 }
             } else {
@@ -93,15 +104,19 @@ fn check_entries(
             }
         );
         assert_eq!(
-            parameters.external_lwe().noise_standard_deviation(),
+            parameters
+                .as_ref()
+                .external_lwe()
+                .noise_standard_deviation(),
             (1u64 << 24) as f64 * 2.046_151_696_979_124e-6
         );
         let (input, _) = parameters
-            .circuit_bootstrap_codecs(config.input_modulus, 8)
+            .as_ref()
+            .circuit_bootstrap_codecs(config.pbs.messages.input_modulus, 8)
             .unwrap();
-        let cbs = config.try_cbs_parameters(&parameters).unwrap();
+        let cbs = parameters.gadget();
         if one_hot {
-            let table = OneHotLookupTable::try_new(&parameters, &cbs, &input).unwrap();
+            let table = OneHotLookupTable::try_new(parameters.as_ref(), cbs, &input).unwrap();
             assert_eq!(table.selector_count(), 4);
             assert_eq!(table.guard_radius(), 32);
         } else {
@@ -114,7 +129,7 @@ fn check_entries(
 }
 
 #[test]
-fn experimental_configs_preserve_domains_without_unused_return_state() {
+fn experimental_configs_share_br_and_return_domains() {
     check_entries(
         [
             presets::CLASSIC_PBS_U64,

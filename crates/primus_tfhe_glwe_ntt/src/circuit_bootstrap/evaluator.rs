@@ -13,7 +13,8 @@ use primus_tfhe::CircuitBootstrapLookupTable;
 use super::key::CircuitBootstrapBinding;
 
 use crate::{
-    BootstrapResources, CbsParameters, CircuitBootstrapKey, Lwe, TfheContext, TfheEvaluationError,
+    BootstrapResources, CbsGadgetParameters, CircuitBootstrapKey, Lwe, TfheContext,
+    TfheEvaluationError,
 };
 
 /// Classic binary/ternary or sparse binary CBS producing NTT GGSW controls.
@@ -75,7 +76,7 @@ where
     /// or a noise margin; see [`primus_glwe::NttGlweSchemeSwitchKey::apply_to`].
     pub fn try_with_parameters(
         resources: &BootstrapResources<'a, T, Table>,
-        parameters: &'a CbsParameters<T>,
+        parameters: &'a CbsGadgetParameters<T>,
         circuit_key: &'a CircuitBootstrapKey<T>,
         input_codec: &RoundedCodec<T, BarrettModulus<T>>,
     ) -> Result<Self, TfheEvaluationError> {
@@ -118,7 +119,7 @@ where
     /// [`Self::try_with_parameters`]'s secret, representation and noise requirements.
     pub fn try_with_parameters_and_lookup_table(
         resources: &BootstrapResources<'a, T, Table>,
-        parameters: &'a CbsParameters<T>,
+        parameters: &'a CbsGadgetParameters<T>,
         circuit_key: &'a CircuitBootstrapKey<T>,
         lookup_table: CircuitBootstrapLookupTable<T>,
     ) -> Result<Self, TfheEvaluationError> {
@@ -197,7 +198,7 @@ where
     /// plaintext in `0..ceil(t/2)` and canonical residues, where `t` is the selected
     /// input codec's plaintext modulus. Noise must fit the coarser ManyLUT rotation intervals;
     /// trace and scheme-switching errors must also fit the independent CBS
-    /// budget described by [`CbsParameters`]. For sparse keys, include
+    /// budget described by [`CbsGadgetParameters`]. For sparse keys, include
     /// aggregation noise from every bucket, including zero selections and dummies.
     /// CMux requires `F(m)` in `{0, 1}` throughout the programmed domain.
     /// The output remains under the accumulator GLWE
@@ -244,7 +245,10 @@ where
             accumulator,
             parameters.output_basis().decompose_length().get(),
             self.traced.as_mut(),
-            context.parameters().blind_rotation_ggsw().cipher_modulus(),
+            context
+                .parameters()
+                .blind_rotation_params()
+                .cipher_modulus(),
             context.table(),
             &mut self.trace,
         );
@@ -253,7 +257,10 @@ where
             circuit_key.scheme_switch_key().apply_to(
                 &self.traced,
                 output,
-                context.parameters().blind_rotation_ggsw().cipher_modulus(),
+                context
+                    .parameters()
+                    .blind_rotation_params()
+                    .cipher_modulus(),
                 context.table(),
                 scratch,
             );
@@ -317,7 +324,10 @@ where
                 rhs,
                 output,
                 parameters.output_basis(),
-                context.parameters().blind_rotation_ggsw().cipher_modulus(),
+                context
+                    .parameters()
+                    .blind_rotation_params()
+                    .cipher_modulus(),
                 context.table(),
                 scratch,
             );
@@ -363,10 +373,45 @@ where
                 input,
                 output,
                 parameters.output_basis(),
-                context.parameters().blind_rotation_ggsw().cipher_modulus(),
+                context
+                    .parameters()
+                    .blind_rotation_params()
+                    .cipher_modulus(),
                 context.table(),
                 scratch,
             );
         });
+    }
+}
+
+impl<T, Table> TfheContext<T, Table>
+where
+    T: FheUint,
+    Table: MonomialNttTable<ValueT = T>,
+{
+    /// Prepares the configured gadget identity CBS using shared resources and an independent key.
+    /// Uses this context's input encoding and gadgets; no return scratch is allocated.
+    /// Resources must belong to this exact context. Advanced constructors on
+    /// [`CircuitBootstrapEvaluator`] permit explicit programs and encoding overrides.
+    ///
+    /// # Correctness
+    /// Inherits [`CircuitBootstrapEvaluator::try_new`]'s secret, representation and noise contracts.
+    pub fn circuit_bootstrap_evaluator<'a>(
+        &'a self,
+        resources: &BootstrapResources<'a, T, Table>,
+        circuit_key: &'a CircuitBootstrapKey<T>,
+    ) -> Result<CircuitBootstrapEvaluator<'a, T, Table>, TfheEvaluationError> {
+        let parameters = self
+            .cbs_parameters()
+            .ok_or(TfheEvaluationError::MissingCircuitBootstrapParameters)?;
+        if !core::ptr::eq(self, resources.context()) {
+            return Err(TfheEvaluationError::IncompatibleCircuitBootstrapParameters);
+        }
+        CircuitBootstrapEvaluator::try_with_parameters(
+            resources,
+            parameters.gadget(),
+            circuit_key,
+            parameters.input_codec(),
+        )
     }
 }

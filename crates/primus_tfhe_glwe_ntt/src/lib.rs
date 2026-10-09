@@ -2,12 +2,11 @@
 //!
 //! # Start here
 //!
-//! 1. Select [`experimental::CLASSIC_PBS_U64`], a numerical [`PbsConfig`], and
-//!    call [`PbsConfig::try_prepare`] to prepare sampling state. For existing
-//!    LWE parameters/bases, use [`PbsParameters::try_new`].
-//! 2. Create a [`TfheContext`] and paired [`ClientKey`]/[`ServerKey`] with
-//!    [`TfheContext::try_generate_keys`] and the config's `blind_rotation.algorithm`;
-//!    `None` selects ordinary PBS material.
+//! 1. Select [`experimental::CLASSIC_PBS_U64`], a numerical [`PbsConfig`].
+//!    [`PbsParameters::try_from_config`] prepares its domain once; prepared
+//!    parameters can also be moved into a context directly.
+//! 2. Create a complete [`TfheContext`] with [`TfheContext::try_from_pbs_config`].
+//!    [`TfheContext::try_generate_keys`] generates the retained BR and KS choices; [`TfheContext::evaluator`] takes only the generated server key.
 //! 3. Prepare codecs with [`PbsParameters::pbs_codecs`] and [`PbsMessageConfig`].
 //!    Bind [`Encryptor`] to the input codec and [`Decryptor`] to the output codec;
 //!    create an [`Evaluator`] from the context. Output message moduli default to
@@ -27,22 +26,27 @@
 //! - [`boolean`]: Boolean clients and gates with plaintext modulus four.
 //! - [`circuit_bootstrap`]: optional trace/scheme-switch material and
 //!   [`CircuitBootstrapEvaluator`], producing accumulator-secret gadget controls for CMUX.
-//! - [`sparse`]: fixed-weight binary bucket material; choose [`BlindRotationAlgorithm::Sparse`]
-//!   with [`KeyGenerator::try_generate_server_key`] for an existing client.
+//! - [`sparse`]: fixed-weight binary bucket material; choose [`BlindRotationMethod::Sparse`]
+//!   in the operation config, then use [`KeyGenerator::try_generate_server_key`].
 //!
 //! [`Evaluator`] owns common [`BootstrapResources`] and the ordinary return stage.
 //! CBS borrows common resources per operation; MVB borrows the complete evaluator.
 //! Standalone resources include input KS for KS→BR, but no output KS for BR→KS.
 //! The specialized constructors document their allocation and borrowing contracts.
 //!
-//! Ring-output CBS can use [`TfheContext::try_generate_circuit_bootstrap_keys`]
-//! without ordinary return material. [`PbsParameters::circuit_bootstrap_codecs`]
+//! [`TfheContext::try_generate_circuit_bootstrap_keys`] generates a complete CBS
+//! bundle, including the BR/KS [`ServerKey`] for downstream LWE returns. [`PbsParameters::circuit_bootstrap_codecs`]
 //! prepares the independent input and candidate ring-message encodings. Compile F
-//! with [`CbsParameters::compile_lookup_table_fn`] and bind the program
+//! with [`CbsGadgetParameters::compile_lookup_table_fn`] and bind the program
 //! with [`CircuitBootstrapEvaluator::try_with_lookup_table`]. CBS output uses its
 //! gadget basis; CMux requires bit-valued F across the programmed input domain.
 //!
 //! # Composition and representation
+//!
+//! [`PbsParameters`] and [`CbsParameters`] retain complete operation choices.
+//! [`TfheContext`] retains those capabilities while sharing one [`PbsParameters`]
+//! domain with required KS state and owning one transform table.
+//! Keys and mutable evaluation scratch remain independently owned.
 //!
 //! [`key`] contains evaluation material and component generation. Common workflow types
 //! are re-exported at this root; lower-level material is documented in its own module.
@@ -94,7 +98,7 @@ pub use bootstrapping_key::NttGlweBootstrappingKey;
 #[doc(no_inline)]
 pub use circuit_bootstrap::CircuitBootstrapKey;
 #[doc(inline)]
-pub use circuit_bootstrap::{CbsParameters, CircuitBootstrapEvaluator};
+pub use circuit_bootstrap::{CbsGadgetParameters, CircuitBootstrapEvaluator};
 pub use context::TfheContext;
 #[doc(inline)]
 pub use evaluator::Evaluator;
@@ -105,7 +109,7 @@ pub use key::BlindRotationKey;
 #[doc(inline)]
 pub use key::{CircuitBootstrapServerKey, KeyGenerator, ServerKey};
 pub use primus_tfhe::{
-    BivariateLookupTable, BlindRotationAlgorithm, CbsGadgetConfig, CircuitBootstrapCodecs,
+    BivariateLookupTable, BlindRotationMethod, CbsGadgetConfig, CircuitBootstrapCodecs,
     CircuitBootstrapLookupTable, ClientError, DecompositionConfig, FactorizedLookupTable,
     FactorizedPbsCodecs, GadgetEncryptionConfig, InterleavedLookupTable, LookupTable,
     LookupTableCompiler, Lwe, LweCiphertext, LweSecretKeyRef, PbsCodecs, PbsMessageConfig,
@@ -129,16 +133,20 @@ pub type Encryptor<'a, T, Key = LweSecretKeyRef<'a, T>> =
 /// Client-key decryptor for the explicit-modulus NTT backend.
 pub type Decryptor<'a, T> = primus_tfhe_glwe::Decryptor<'a, T, BarrettModulus<T>>;
 
-/// Prepared GLWE BR domains and optional ring-KS state for this NTT backend.
-pub type PbsParameters<T> = primus_tfhe_glwe::PbsParameters<T, BarrettModulus<T>>;
-
-/// Shared numerical blind-rotation choices for this backend.
-pub type BlindRotationConfig<T> = primus_tfhe_glwe::BlindRotationConfig<BarrettModulus<T>>;
-
 /// Complete numerical PBS choices for this backend.
 pub type PbsConfig<T> = primus_tfhe_glwe::PbsConfig<T, BarrettModulus<T>>;
 
 /// Complete numerical CBS choices for this backend.
 pub type CbsConfig<T> = primus_tfhe_glwe::CbsConfig<T, BarrettModulus<T>>;
 
-pub use primus_tfhe_glwe::{CbsInput, LweConfig, ModulusConfig, ModulusConfigError};
+pub use primus_tfhe_glwe::{LweConfig, ModulusConfig, ModulusConfigError};
+
+/// Complete PBS parameters, including optional key switching and default messages.
+pub type PbsParameters<T> = primus_tfhe_glwe::PbsParameters<T, BarrettModulus<T>>;
+
+/// Complete ring-output CBS parameters and selector-input encoding.
+pub type CbsParameters<T> = primus_tfhe_glwe::CbsParameters<T, BarrettModulus<T>>;
+
+/// Prepared ring key-switch parameters at this backend's ciphertext modulus.
+pub type GlweKeySwitchingParameters<T> =
+    primus_glwe::GlweKeySwitchingParameters<T, BarrettModulus<T>>;

@@ -22,6 +22,7 @@ where
     LM: primus_reduce::RingContext<T>,
 {
     pub(crate) resources: BootstrapResources<'a, T, Table, LM>,
+    key_switching: &'a crate::LweReturnParameters<T, LM>,
     pub(crate) lwe_return: LweReturnEvaluator<'a, T, LM>,
     scalar_return: primus_ntru::NtruLweKeySwitchingWorkspace<T>,
     pub(crate) batch_return: LweReturnBatchWorkspace<T>,
@@ -42,11 +43,12 @@ where
         context: &'a TfheContext<T, Table, LM>,
         server_key: &'a ServerKey<T>,
     ) -> Result<Self, TfheEvaluationError> {
-        Self::try_from_parts(
-            context,
-            server_key.blind_rotation_key(),
-            server_key.key_switching_key(),
-        )
+        let parameters = context.parameters();
+        let key_switching = parameters.key_switching();
+        let return_key = server_key.key_switching_key();
+        parameters.check_lwe_return_key(return_key)?;
+        let resources = BootstrapResources::try_new(context, server_key.blind_rotation_key())?;
+        Ok(Self::from_resources(resources, key_switching, return_key))
     }
 
     /// Binds independent BR and Q→q, f→s return material before allocating scratch.
@@ -54,18 +56,22 @@ where
     /// layout, distribution, basis and modulus checks do not establish identity.
     pub fn try_from_parts(
         context: &'a TfheContext<T, Table, LM>,
+        key_switching: &'a crate::LweReturnParameters<T, LM>,
         blind_rotation_key: &'a BlindRotationKey<T>,
         return_key: &'a primus_ntru::NtruLweKeySwitchingKey<T>,
     ) -> Result<Self, TfheEvaluationError> {
-        context.parameters().check_lwe_return_key(return_key)?;
+        context
+            .parameters()
+            .check_lwe_return_key_with_parameters(key_switching, return_key)?;
         let resources = BootstrapResources::try_new(context, blind_rotation_key)?;
-        Ok(Self::from_resources(resources, return_key))
+        Ok(Self::from_resources(resources, key_switching, return_key))
     }
 
     /// Adds client-return buffers after the owning boundary checked return compatibility.
     #[must_use]
     fn from_resources(
         resources: BootstrapResources<'a, T, Table, LM>,
+        key_switching: &'a crate::LweReturnParameters<T, LM>,
         return_key: &'a primus_ntru::NtruLweKeySwitchingKey<T>,
     ) -> Self {
         let lwe_return = LweReturnEvaluator::new(
@@ -80,6 +86,7 @@ where
         let batch_return = lwe_return.new_batch_workspace();
         Self {
             resources,
+            key_switching,
             lwe_return,
             scalar_return,
             batch_return,
@@ -108,13 +115,14 @@ where
     /// external secret; compatibility checks do not establish secret identity.
     pub fn try_from_resources(
         resources: BootstrapResources<'a, T, Table, LM>,
+        key_switching: &'a crate::LweReturnParameters<T, LM>,
         return_key: &'a primus_ntru::NtruLweKeySwitchingKey<T>,
     ) -> Result<Self, TfheEvaluationError> {
         resources
             .context
             .parameters()
-            .check_lwe_return_key(return_key)?;
-        Ok(Self::from_resources(resources, return_key))
+            .check_lwe_return_key_with_parameters(key_switching, return_key)?;
+        Ok(Self::from_resources(resources, key_switching, return_key))
     }
 
     /// Changes compatible return material without reallocating scratch. Success
@@ -125,7 +133,7 @@ where
         return_key: &'a primus_ntru::NtruLweKeySwitchingKey<T>,
     ) -> Result<(), TfheEvaluationError> {
         let parameters = self.resources.context.parameters();
-        parameters.check_lwe_return_key(return_key)?;
+        parameters.check_lwe_return_key_with_parameters(self.key_switching, return_key)?;
         self.lwe_return =
             LweReturnEvaluator::new(return_key, parameters.external_lwe().cipher_modulus());
         self.batch_return.discard_batch();

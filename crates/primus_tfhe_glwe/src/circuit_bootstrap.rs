@@ -24,14 +24,14 @@ use crate::{CbsGadgetConfig, CircuitBootstrapParameterError, PbsParameters};
 /// do not establish secret or transform identity; execution backends specify
 /// their representation and numerical requirements.
 #[derive(Clone)]
-pub struct CbsParameters<T: FheUint, M: RingContext<T>> {
+pub struct CbsGadgetParameters<T: FheUint, M: RingContext<T>> {
     trace: GlevParameters<T, M>,
     scheme_switch: GgswParameters<T, M>,
     output_basis: ApproxSignedBasis<T>,
     output_size: GadgetSize,
 }
 
-impl<T: FheUint, M: RingContext<T>> CbsParameters<T, M> {
+impl<T: FheUint, M: RingContext<T>> CbsGadgetParameters<T, M> {
     /// Derives CBS parameters from TFHE with independent gadget bases.
     ///
     /// Reuses the accumulator's validated layout and sampler state without preparing
@@ -46,16 +46,16 @@ impl<T: FheUint, M: RingContext<T>> CbsParameters<T, M> {
         tfhe: &PbsParameters<T, M>,
         config: CbsGadgetConfig,
     ) -> Result<Self, CircuitBootstrapParameterError> {
-        let accumulator = tfhe.blind_rotation_ggsw();
-        let output_basis = config
-            .output
-            .try_build(accumulator.cipher_modulus().explicit_value())?;
+        let accumulator = tfhe.blind_rotation_params();
+        let modulus = accumulator.cipher_modulus().explicit_value();
+        let output_basis = ApproxSignedBasis::try_from((config.output, modulus))?;
         let key_parameters = |role, decomposition: DecompositionConfig| {
-            let basis = decomposition
-                .try_build(accumulator.cipher_modulus().explicit_value())
-                .map_err(|source| CircuitBootstrapParameterError::GadgetParameters {
-                    role,
-                    source: source.into(),
+            let basis =
+                ApproxSignedBasis::try_from((decomposition, modulus)).map_err(|source| {
+                    CircuitBootstrapParameterError::GadgetParameters {
+                        role,
+                        source: source.into(),
+                    }
                 })?;
             accumulator
                 .try_with_new_basis(basis)
@@ -79,7 +79,7 @@ impl<T: FheUint, M: RingContext<T>> CbsParameters<T, M> {
         if output_basis.modulus() != tfhe.cipher_modulus().explicit_value() {
             return Err(CircuitBootstrapParameterError::OutputBasisModulusMismatch);
         }
-        let glwe = tfhe.blind_rotation_ggsw();
+        let glwe = tfhe.blind_rotation_params();
         for (role, parameters) in [("trace", &trace), ("scheme-switch", &scheme_switch)] {
             if parameters.glwe_size() != glwe.glwe_size() {
                 return Err(CircuitBootstrapParameterError::GlweLayoutMismatch { role });
@@ -217,7 +217,7 @@ impl<T: FheUint, M: RingContext<T>> CbsParameters<T, M> {
     /// This does not check noise, secret identity or transform representation.
     #[must_use]
     pub fn is_compatible(&self, tfhe: &PbsParameters<T, M>) -> bool {
-        let glwe = tfhe.blind_rotation_ggsw();
+        let glwe = tfhe.blind_rotation_params();
         self.output_size.glwe_size() == glwe.glwe_size()
             && self.output_basis.modulus() == glwe.cipher_modulus().explicit_value()
     }

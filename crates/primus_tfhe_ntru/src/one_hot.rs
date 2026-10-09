@@ -6,7 +6,7 @@ use primus_integer::FheUint;
 use primus_poly::PolynomialOwned;
 use primus_reduce::RingContext;
 
-use crate::{CbsParameters, PbsParameters, TfheEvaluationError};
+use crate::{CbsGadgetParameters, PbsParameters, TfheEvaluationError};
 
 mod selectors;
 pub use selectors::NlevSelectors;
@@ -56,7 +56,7 @@ impl<T: FheUint> OneHotLookupTable<T> {
     /// NTRU evaluation errors require a separate output-noise budget.
     pub fn try_new<M, LM>(
         tfhe: &PbsParameters<T, M, LM>,
-        cbs: &CbsParameters<T, M>,
+        cbs: &CbsGadgetParameters<T, M>,
         input_codec: &RoundedCodec<T, LM>,
     ) -> Result<Self, OneHotBootstrapError>
     where

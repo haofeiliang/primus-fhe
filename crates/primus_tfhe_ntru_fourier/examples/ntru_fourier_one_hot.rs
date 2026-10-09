@@ -6,7 +6,7 @@
 //! Arithmetic profiles: guides/development/tfhe-parameters.md (not security presets).
 
 use primus_fft::RustFftTable as Table;
-use primus_tfhe_ntru_fourier::{OneHotCircuitBootstrapEvaluator, TfheContext, experimental};
+use primus_tfhe_ntru_fourier::{TfheContext, experimental};
 use rand::{SeedableRng, rngs::StdRng};
 
 // The paired experimental entry fixes u64 coefficients and the operation domains.
@@ -15,23 +15,18 @@ const TARGET: usize = 2; // Public selector r in 0..4; delta_r encrypts [input =
 
 fn main() {
     let config = experimental::CLASSIC_ONE_HOT_U64;
-    let parameters = config.try_prepare().unwrap();
-    let context = TfheContext::<Word, Table, _>::from_parameters(parameters);
-    let poly_length = config.blind_rotation.acc_poly_length.get();
+    let context = TfheContext::<Word, Table, _>::try_from_cbs_config(config).unwrap();
+    let poly_length = config.pbs.bsk_poly_length.get();
     // Padded t=8 encodes four selector values independently of the ring messages.
     let (selector_codec, ring_message_codec) = context
         .parameters()
-        .circuit_bootstrap_codecs(config.input_modulus, 8)
+        .circuit_bootstrap_codecs(config.pbs.messages.input_modulus, 8)
         .unwrap();
 
     // Client: independent LWE/NTRU secrets; send evaluation material and both encrypted choices.
     let mut rng = StdRng::seed_from_u64(42);
     let (client_key, server_key) = context
-        .try_generate_circuit_bootstrap_keys(
-            config.blind_rotation.algorithm,
-            config.gadget,
-            &mut rng,
-        )
+        .try_generate_circuit_bootstrap_keys(&mut rng)
         .unwrap();
     // The selector is encrypted with the external LWE secret.
     let external_secret = client_key.external_lwe_secret_key();
@@ -48,12 +43,9 @@ fn main() {
 
     // Server: reserve one transformed NGSW per value in 0..4 and one ring result.
     let mut resources = server_key.bootstrap_resources(&context).unwrap();
-    let mut cbs = OneHotCircuitBootstrapEvaluator::try_new(
-        &resources,
-        server_key.circuit_bootstrap_key(),
-        &selector_codec,
-    )
-    .unwrap();
+    let mut cbs = context
+        .one_hot_evaluator(&resources, server_key.circuit_bootstrap_key())
+        .unwrap();
     let mut selectors = cbs.allocate_ngsw_output();
     let mut selected = context.allocate_accumulator_ciphertext();
 

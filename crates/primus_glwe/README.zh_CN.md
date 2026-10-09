@@ -131,7 +131,9 @@ NTT 域私钥运算无需 workspace。Fourier 运算使用 `FourierGlweEncryptWo
 
 `encrypt_glev_to` 和 `encrypt_ggsw_to` 对系数域环多项式应用 gadget 基，不做明文缩放。因此 GGSW 控制位使用常数多项式 `0` 或 `1`。两者使用由 `GadgetSize` 构造的 gadget workspace：GLev 要求多项式长度匹配；GGSW 还要求 level 数量匹配。
 
-仅需 gadget 参数时，使用 `GlevParameters::try_from_parts(size, encryption, basis)`：`size` 是经过验证的 `GlweSize`，`encryption` 是 `Arc<GlweEncryptionParameters<T, M>>`，`basis` 是预计算的 `ApproxSignedBasis<T>`。无需明文模数或 codec。构造器检查 basis 模数、固定秘密重量是否适合完整 `kN` 长度，以及 gadget 布局，返回 `GlevParameterError`；接收所有权时不复制采样表或重建 basis。
+`GgswParameters` 是 `GlevParameters` 的别名。使用 `GgswParameters::try_new(size, modulus, secret_distr, decomposition, sigma)`，可从经过验证的 `GlweSize` 和 `DecompositionConfig` 直接准备 gadget 参数。它在同一模数域创建采样状态和 basis，检查固定秘密重量是否适合完整 `kN` 长度，并派生 gadget 布局。`sigma` 使用系数单位，错误通过 `GlevParameterError` 返回。无需明文模数或 codec。
+
+已有预计算组件时，使用 `GlevParameters::try_from_parts(size, encryption, basis)`：`encryption` 是 `Arc<GlweEncryptionParameters<T, M>>`，`basis` 是 `ApproxSignedBasis<T>`。构造器检查 basis 模数、固定秘密重量是否适合 `kN`，以及 gadget 布局；接收所有权时不复制采样表或重建 basis。
 
 `GlweParameters::try_from_glev(&gadget, codec)` 为已有 gadget 域绑定普通 `ScaledCodec`，共享预计算采样状态并检查 codec 模数，不保留或复制 gadget basis。
 

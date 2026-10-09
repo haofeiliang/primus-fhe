@@ -45,31 +45,32 @@ Sparse mode requires explicit key generation; sparse ternary is unsupported. NTR
 
 ## Selecting blind rotation
 
-All four backends re-export `BlindRotationAlgorithm`. Select the algorithm independently of the secret distribution and optional CBS material:
+All four backends re-export `BlindRotationMethod`. The operation config retains the algorithm independently of the secret distribution; a complete PBS context supplies default keygen and evaluation parameters:
 
 ```rust,ignore
-let blind_rotation = BlindRotationAlgorithm::Sparse { copy_count: 3, bucket_count: 64 };
-// Use BlindRotationAlgorithm::Classic for per-coordinate CMux controls.
-let (client, server) = context.try_generate_keys(blind_rotation, None, rng)?;
+// GLWE uses config.method; NTRU uses config.algorithm.
+config.method = BlindRotationMethod::Sparse { copy_count: 3, bucket_count: 64 };
+let context = TfheContext::try_from_pbs_config(config)?;
+let (client, server) = context.try_generate_keys(rng)?;
+let mut pbs = context.evaluator(&server)?;
 ```
 
-`Classic` supports binary and ternary distributions, including fixed-weight ones. `Sparse` requires fixed-weight binary with `0<h<n`; it retries only the public bucket map and returns an error if matching fails. It never changes the client secret or falls back to classic. Paired generation reuses transformed secrets; `generator.try_generate(blind_rotation, cbs, rng)` offers the same choice with reusable setup scratch. To retain an existing client, use `generator.try_generate_server_key(&client, blind_rotation, cbs, rng)`.
+`Classic` supports binary and ternary distributions, including fixed-weight ones. `Sparse` requires fixed-weight binary with `0<h<n`; it retries only the public bucket map and returns an error on matching failure, without changing the client secret or falling back to classic. `KeyGenerator::try_generate(rng)` reuses setup scratch; existing clients use `context.try_generate_server_key(&client, rng)`. Named `try_generate_with_parameters` / `try_generate_server_key_with_parameters` accept explicit KS, algorithm choices; CBS-specific factories also require gadget parameters for algorithm comparisons or independent components.
 
-CBS and sparse configuration errors precede secret sampling. Existing clients are validated at the generation boundary; fresh keys rely on the sampler guarantees. NTRU additionally checks the accepted ring secret against return q when its sampler bound cannot establish that condition. Ring-only BR/CBS does not need this return bound.
+Context setup checks independently supplied CBS domain, algorithm and shared input-KS pairing. Sparse configuration checks precede secret sampling. Fresh keys rely on sampler guarantees; imported clients are validated at generation. NTRU additionally checks the accepted ring secret against return q when the sampler bound cannot establish that condition. Complete CBS bundles share this return bound; standalone BR/CBS component APIs check only their actual numerical requirements.
 
-`None` for CBS generates BR and ordinary return material; `Some(config)` adds trace/scheme-switch keys. Independent BR, CBS and return generation remains available, and NTRU public lift is requested separately when a lookup needs it. Each backend's `BlindRotationKey` owns only BR material; `ServerKey` combines materials. GLWE ring KS and NTRU LWE return keep distinct APIs because their domains differ.
+`context.try_generate_keys(rng)` always returns a `ServerKey` with BR and required KS. After configuring CBS, `try_generate_circuit_bootstrap_keys(rng)` returns the `CircuitBootstrapServerKey { server_key, circuit_bootstrap }` composition, with only one BR/KS copy. `server_key()` and `circuit_bootstrap_key()` borrow its two parts. Independent BR, CBS, return and NTRU public-lift generation remain available.
 
-For ring-output CBS or NTRU one-hot, use the dedicated paired entry:
+For ring-output CBS or NTRU one-hot, construct the context from `CbsConfig`:
 
 ```rust,ignore
-let (client, server) = context.try_generate_circuit_bootstrap_keys(blind_rotation, cbs_config, rng)?;
+let context = TfheContext::try_from_cbs_config(config)?;
+let (client, server) = context.try_generate_circuit_bootstrap_keys(rng)?;
 let mut resources = server.bootstrap_resources(&context)?;
-let mut cbs = CircuitBootstrapEvaluator::try_new(
-    &resources, server.circuit_bootstrap_key(), &input_codec,
-)?;
+let mut cbs = context.circuit_bootstrap_evaluator(&resources, server.circuit_bootstrap_key())?;
 ```
 
-This returns `CircuitBootstrapServerKey`, with BR and required CBS material. GLWE adds input KS only for KS→BR; GLWE BR→KS and NTRU generate no ordinary return key. NTRU one-hot uses `OneHotCircuitBootstrapEvaluator` with the same bundle. The generator variant has the same method name and reuses setup scratch. For mixed PBS/CBS or high-precision lookup, keep `try_generate_keys(..., Some(cbs_config), ...)` and its complete `ServerKey`. Components can be borrowed or moved out with `into_parts()` for advanced composition; no ciphertext buffers are copied.
+`CircuitBootstrapServerKey` always contains BR, KS and CBS material. The CBS stage borrows BR/CBS and uses input KS when required by GLWE order. Every complete CBS context also supports ordinary PBS: `context.evaluator(server.server_key())?`. NTRU one-hot uses the same context's `one_hot_evaluator(&resources, key)`. Default factories use retained input codecs and gadgets; custom programs remain explicit compilation/binding inputs. Each bundle's `into_parts()` moves owners without copying ciphertext arrays.
 
 ## Client and server roles
 
@@ -170,9 +171,11 @@ All backends prepare storage at construction; online `_to` operations never allo
 
 ## LUTs and resource lifetime
 
-Backends accept numerical `PbsConfig` / `CbsConfig` choices and derive shared ring parameters; `TfheContext::try_from_parameters` creates the selected transform table. This crate re-exports `DecompositionConfig` (radix and retained levels) from [`primus_decompose`](../primus_decompose/README.md). `GadgetEncryptionConfig { decomposition, noise_standard_deviation }` groups the independent choices for blind rotation or PBS key switching. `CbsGadgetConfig` contains three `DecompositionConfig` choices: `output`, `trace` and `scheme_switch`. Trace and scheme-switch rows inherit the accumulator encryption noise and share its immutable sampler state; their bases and random draws remain independent. Backends bind these choices to their own modulus, layout and representation. `Option<CbsGadgetConfig>` selects optional CBS during paired key generation; the server key owns its parameters and material, while each evaluator owns only its own workspace.
+Backends accept numerical `PbsConfig` / `CbsConfig` choices and derive shared ring parameters; `TfheContext::try_from_parameters` creates the selected transform table. This crate re-exports `DecompositionConfig` (radix and retained levels) from [`primus_decompose`](../primus_decompose/README.md). `GadgetEncryptionConfig { decomposition, noise_standard_deviation }` groups the independent choices for blind rotation or PBS key switching. `CbsGadgetConfig` contains three `DecompositionConfig` choices: `output`, `trace` and `scheme_switch`. Trace and scheme-switch rows inherit the accumulator encryption noise and share its immutable sampler state; their bases and random draws remain independent. Backends bind these choices to their own modulus, layout and representation. `TfheContext` retains complete PBS/CBS capabilities; independently supplied components use explicit advanced factories; the server key owns its parameters and material, while each evaluator owns only its own workspace.
 
-`GadgetEncryptionConfig<D = DecompositionConfig>` defaults to decomposition choices; the direct GLWE constructor instead accepts a prepared `ApproxSignedBasis<T>` as `D` and moves it without rebuilding it. Noise is in coefficient units at the key's modulus: common q for GLWE BR/KS, accumulator Q for NTRU BR and CBS trace/scheme switching, and external q for NTRU return KS. The config itself is unchecked; existing parameter constructors validate it. The noise in `BlindRotationConfig::bsk_gadget` also serves accumulator encryption and, for GLWE KS→BR, fresh external LWE encryption. KS noise remains independently configurable; CBS trace/scheme-switch rows inherit accumulator noise.
+`LweConfig` converts to sampling parameters with `primus_lwe::LweEncryptionParameters::try_from(config)?`; concrete reducers likewise use `BarrettModulus::try_from(config)`, `PowOf2Modulus::try_from(config)` or `NativeModulus::try_from(config)`. These setup conversions preserve modulus/sampling errors and prepare no message codec.
+
+`GadgetEncryptionConfig<D = DecompositionConfig>` defaults to decomposition choices; the direct GLWE constructor instead accepts a prepared `ApproxSignedBasis<T>` as `D` and moves it without rebuilding it. Noise is in coefficient units at the key's modulus: common q for GLWE BR/KS, accumulator Q for NTRU BR and CBS trace/scheme switching, and external q for NTRU return KS. The config itself is unchecked; existing parameter constructors validate it. The noise in `PbsConfig::bsk_gadget` also serves accumulator encryption and, for GLWE KS→BR, fresh external LWE encryption. KS noise remains independently configurable; CBS trace/scheme-switch rows inherit accumulator noise.
 
 1. A family parameter set describes the external LWE and accumulator ring.
 2. A backend context binds those parameters to an NTT/FFT table and generates paired client/server keys.
@@ -181,7 +184,7 @@ Backends accept numerical `PbsConfig` / `CbsConfig` choices and derive shared ri
 
 The front-half unary function or slice compiler programs `0..ceil(t_in/2)` with outputs in `0..t_out`, as selected by the output codec. Its remaining inputs are not independently programmed. Odd full-domain compilation is a separate entry point described below. For an interleaved LUT (ManyLUT), the effective output count `k` is positive and the padded output count is `s = next_power_of_two(k)`, with `ceil(t/2) <= N/s`. The callback receives `(input, output_index)` once per effective pair, in input-major order; slices contain `D*k` values in the same order. With `k=3`, three outputs occupy four slots: the compiler zeros the fourth slot without calling the callback, and the evaluator returns exactly three ciphertexts. All outputs share one blind rotation (BR). GLWE shares a ring key switch with separate extraction; NTRU returns and LWE-key-switches each output separately. More outputs reduce rotation resolution and the available input-noise margin. This is one input evaluated by multiple functions, not batching independent ciphertexts.
 
-Create a reusable `LookupTableCompiler` with `parameters.lookup_table_compiler(&codecs)?` in either family. TFHE parameters contain key domains and sampling state without a message modulus; clients and programs choose their codecs independently. For direct shared-layer use, `LookupTableCompiler::try_new(poly_length, &input_codec, accumulator_modulus, &output_codec)` binds the same encoding environment. It copies only the needed encoding state, without allocation or a borrow of the parameters/context. Its methods are:
+Create a reusable `LookupTableCompiler` with `br.lookup_table_compiler(&codecs)?` in either family. TFHE parameters retain key domains, sampling state and default input/output message choices; clients and programs can override these choices with independently bound codecs. For direct shared-layer use, `LookupTableCompiler::try_new(poly_length, &input_codec, accumulator_modulus, &output_codec)` binds the same encoding environment. It copies only the needed encoding state, without allocation or a borrow of the parameters/context. Its methods are:
 
 | Program | Function input | Slice input |
 | --- | --- | --- |
@@ -221,8 +224,8 @@ Prepare the codecs from either family's parameters; all four backends re-export 
 
 | Factory | `input_codec()` at q | `lut_output_codec()` at Q | `output_codec()` at q |
 | --- | --- | --- | --- |
-| `parameters.pbs_codecs(messages)?` | Rounded | Rounded | Rounded |
-| `parameters.factorized_pbs_codecs(messages)?` | Rounded | Scaled | Scaled |
+| `br.pbs_codecs(messages)?` | Rounded | Rounded | Rounded |
+| `br.factorized_pbs_codecs(messages)?` | Rounded | Scaled | Scaled |
 
 For example, ordinary PBS or ManyLUT with `t_in=16` and `t_out=4`:
 

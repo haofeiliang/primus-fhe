@@ -112,17 +112,17 @@ pub fn benchmark_lut_creation<T: FheUint, M: RingContext<T>, LM: RingContext<T>>
 ) {
     let input_codec = RoundedCodec::new(
         CHUNKS.plaintext_modulus(),
-        parameters.external_lwe().cipher_modulus(),
+        parameters.as_ref().external_lwe().cipher_modulus(),
     );
-    let poly_length = parameters.poly_length();
-    let ring_modulus = parameters.accumulator_ntru().cipher_modulus();
+    let poly_length = parameters.as_ref().poly_length();
+    let ring_modulus = parameters.as_ref().accumulator_ntru().cipher_modulus();
     c.throughput(criterion::Throughput::Elements(1));
     c.bench_function(case.id(), |b| {
         metadata::record("high_precision_lut", case, || {
             serde_json::json!({
                 "poly_length": poly_length.get(),
                 "lut": workload.metadata(),
-                "q": parameters.external_lwe().cipher_modulus().explicit_value().map(|q| q.to_string()), "Q": ring_modulus.explicit_value().map_or_else(|| format!("2^{}", T::BITS), |q| q.to_string()),
+                "q": parameters.as_ref().external_lwe().cipher_modulus().explicit_value().map(|q| q.to_string()), "Q": ring_modulus.explicit_value().map_or_else(|| format!("2^{}", T::BITS), |q| q.to_string()),
                 "outputs": 1,
                 "drop": "included",
             })

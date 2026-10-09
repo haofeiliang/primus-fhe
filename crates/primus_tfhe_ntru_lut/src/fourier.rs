@@ -12,7 +12,8 @@ use primus_reduce::RingContext;
 use primus_tfhe::LweCiphertext;
 use primus_tfhe_ntru::{LweReturnBatchWorkspace, LweReturnEvaluator};
 use primus_tfhe_ntru_fourier::{
-    BlindRotationKey, CircuitBootstrapKey, OneHotCircuitBootstrapEvaluator, ServerKey, TfheContext,
+    BlindRotationKey, CircuitBootstrapKey, CircuitBootstrapServerKey,
+    OneHotCircuitBootstrapEvaluator, TfheContext,
 };
 
 use crate::{
@@ -103,10 +104,11 @@ where
     /// as required by [`OneHotCircuitBootstrapEvaluator::try_new`].
     pub fn try_new(
         context: &'a TfheContext<T, Table, LM>,
-        server_key: &'a ServerKey<T>,
+        key_switching: &primus_tfhe_ntru::LweReturnParameters<T, LM>,
+        server_key: &'a CircuitBootstrapServerKey<T>,
         lookup_table: &'a HighPrecisionLookupTable<T>,
     ) -> Result<Self, LookupTableError> {
-        Self::try_from_server_key(context, server_key, None, lookup_table)
+        Self::try_from_server_key(context, key_switching, server_key, None, lookup_table)
     }
 
     /// Binds an explicit `NLEV[1]` with its own generation basis and noise parameters.
@@ -118,28 +120,33 @@ where
     /// satisfy [`Self::try_from_parts`]'s secret, encoding and representation contract.
     pub fn try_with_public_lift(
         context: &'a TfheContext<T, Table, LM>,
-        server_key: &'a ServerKey<T>,
+        key_switching: &primus_tfhe_ntru::LweReturnParameters<T, LM>,
+        server_key: &'a CircuitBootstrapServerKey<T>,
         lookup_table: &'a HighPrecisionLookupTable<T>,
         public_lift: FourierPublicLift<'a, T>,
     ) -> Result<Self, LookupTableError> {
-        Self::try_from_server_key(context, server_key, Some(public_lift), lookup_table)
+        Self::try_from_server_key(
+            context,
+            key_switching,
+            server_key,
+            Some(public_lift),
+            lookup_table,
+        )
     }
 
     fn try_from_server_key(
         context: &'a TfheContext<T, Table, LM>,
-        server_key: &'a ServerKey<T>,
+        key_switching: &primus_tfhe_ntru::LweReturnParameters<T, LM>,
+        server_key: &'a CircuitBootstrapServerKey<T>,
         public_lift: Option<FourierPublicLift<'a, T>>,
         lookup_table: &'a HighPrecisionLookupTable<T>,
     ) -> Result<Self, LookupTableError> {
-        let circuit_key = server_key.circuit_bootstrap_key().ok_or(
-            primus_tfhe_ntru::OneHotBootstrapError::Evaluation(
-                primus_tfhe::TfheEvaluationError::MissingCircuitBootstrapKey,
-            ),
-        )?;
+        let circuit_key = server_key.circuit_bootstrap_key();
         Self::try_from_parts(
             context,
-            server_key.blind_rotation_key(),
-            server_key.key_switching_key(),
+            key_switching,
+            server_key.server_key().blind_rotation_key(),
+            server_key.server_key().key_switching_key(),
             circuit_key,
             public_lift,
             lookup_table,
@@ -161,13 +168,16 @@ where
     /// with enough decomposition precision and noise margin for public LUT products.
     pub fn try_from_parts(
         context: &'a TfheContext<T, Table, LM>,
+        key_switching: &primus_tfhe_ntru::LweReturnParameters<T, LM>,
         blind_rotation_key: &'a BlindRotationKey<T>,
         return_key: &'a primus_ntru::NtruLweKeySwitchingKey<T>,
         circuit_key: &'a CircuitBootstrapKey<T>,
         public_lift: Option<FourierPublicLift<'a, T>>,
         lookup_table: &'a HighPrecisionLookupTable<T>,
     ) -> Result<Self, LookupTableError> {
-        context.parameters().check_lwe_return_key(return_key)?;
+        context
+            .parameters()
+            .check_lwe_return_key_with_parameters(key_switching, return_key)?;
         if !lookup_table.is_compatible(
             context.parameters().poly_length(),
             context.parameters().accumulator_ntru().cipher_modulus(),

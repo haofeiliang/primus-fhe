@@ -7,6 +7,17 @@ use primus_glwe::GlevParameterError;
 /// An invalid combination of GLWE-based TFHE parameters.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum TfheParameterError {
+    /// Independent operation components do not share the required domain/input role.
+    #[error("operation components use incompatible domains or input roles")]
+    IncompatibleComponents,
+
+    /// Preparing a CBS trace, scheme-switch or output gadget failed.
+    #[error("invalid circuit-bootstrap gadget parameters")]
+    CircuitBootstrap(#[source] CircuitBootstrapParameterError),
+    /// The CBS selector's input message encoding is invalid.
+    #[error("invalid selector-input encoding")]
+    InputEncoding(#[source] primus_encoding::CodecError),
+
     /// The numerical LWE description or its fresh encryption sampler is invalid.
     #[error("invalid input LWE configuration")]
     InputParameters(#[source] primus_tfhe::LweConfigError),
@@ -40,11 +51,6 @@ pub enum TfheParameterError {
         /// Main GLWE secret-key capacity `kN`.
         capacity: usize,
     },
-
-    /// GLWE key switching and compact extraction require matching small-LWE
-    /// and GLWE ciphertext moduli.
-    #[error("TFHE GLWE key switching requires matching LWE and GLWE ciphertext moduli")]
-    CipherModulusMismatch,
 
     /// The GLWE key-switching basis or output gadget layout is incompatible.
     #[error("invalid GLWE key-switching parameters")]
@@ -163,18 +169,19 @@ pub enum CircuitBootstrapParameterError {
 /// Failure to generate ordinary or circuit-bootstrap keys for this TFHE family.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum KeyGenerationError {
-    /// Ordinary PBS/KS generation needs a KS domain; ring-output CBS can omit it.
-    #[error("this operation requires key-switching parameters")]
-    MissingKeySwitchingParameters,
+    /// The context has no complete ring-output CBS configuration.
+    #[error("context has no circuit-bootstrap parameters")]
+    MissingCircuitBootstrapParameters,
+    /// Independently supplied KS parameters do not match the BR input/return domain.
+    #[error("key-switching parameters do not match the blind-rotation domain")]
+    IncompatibleKeySwitchingParameters,
+
     /// The supplied client secrets do not match the TFHE parameters.
     #[error(transparent)]
     ClientKey(#[from] TfheKeyError),
     /// Sparse blind-rotation key generation failed.
     #[error(transparent)]
     SparseBootstrapping(#[from] SparseBootstrappingKeyError),
-    /// The requested CBS configuration cannot be prepared.
-    #[error(transparent)]
-    CbsParameters(#[from] CircuitBootstrapParameterError),
     /// Prepared CBS parameters belong to another accumulator domain.
     #[error("circuit-bootstrap parameters do not match this TFHE context")]
     IncompatibleCircuitBootstrapParameters,

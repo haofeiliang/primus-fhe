@@ -10,8 +10,8 @@ use primus_lattice::LweDimension;
 use primus_modulus::NativeModulus;
 use primus_ntru::SecretKeyDistr;
 use primus_poly::PolyLength;
-use primus_tfhe::BlindRotationAlgorithm;
-use primus_tfhe_ntru::{BlindRotationConfig, LweConfig};
+use primus_tfhe::BlindRotationMethod;
+use primus_tfhe_ntru::{LweConfig, PbsConfig};
 use primus_tfhe_ntru_fourier::{
     BooleanGate, DecompositionConfig, GadgetEncryptionConfig, LweCiphertext, PbsParameters,
     TfheContext,
@@ -21,7 +21,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 
 /// Reuses one key setup for gate correctness and rejected-call recovery.
 fn check_context<Table: FftTable>(distr: SecretKeyDistr) {
-    let parameters: PbsParameters<u32> = BlindRotationConfig {
+    let parameters: PbsParameters<u32> = PbsParameters::try_from_config(PbsConfig {
         external_lwe: LweConfig {
             dimension: LweDimension::new(4),
             cipher_modulus: NativeModulus::new().into(),
@@ -29,7 +29,7 @@ fn check_context<Table: FftTable>(distr: SecretKeyDistr) {
             noise_standard_deviation: 0.7,
         },
         acc_modulus: NativeModulus::new().into(),
-        acc_poly_length: PolyLength::new(32),
+        bsk_poly_length: PolyLength::new(32),
         bsk_secret_distr: SecretKeyDistr::SparseTernary,
         bsk_gadget: GadgetEncryptionConfig {
             decomposition: DecompositionConfig {
@@ -38,25 +38,22 @@ fn check_context<Table: FftTable>(distr: SecretKeyDistr) {
             },
             noise_standard_deviation: 0.7,
         },
-        algorithm: BlindRotationAlgorithm::Classic,
-    }
-    .try_prepare()
-    .and_then(|parameters| {
-        parameters.try_with_key_switching(GadgetEncryptionConfig {
+        algorithm: BlindRotationMethod::Classic,
+        key_switching: GadgetEncryptionConfig {
             decomposition: DecompositionConfig {
                 log_basis: DecompositionBaseLog::new(8),
                 level_count: None,
             },
             noise_standard_deviation: 0.7,
-        })
+        },
+        messages: primus_tfhe::PbsMessageConfig::new(4),
     })
     .unwrap();
-    let context = TfheContext::<_, Table>::from_parameters(parameters);
+    let context_parameters = &parameters;
+    let context = TfheContext::<_, Table>::from_parameters(context_parameters.clone());
     let input_codec = RoundedCodec::new(4, context.parameters().external_lwe().cipher_modulus());
     let mut rng = StdRng::seed_from_u64(0xB201);
-    let (client, server) = context
-        .try_generate_keys(BlindRotationAlgorithm::Classic, None, &mut rng)
-        .unwrap();
+    let (client, server) = context.try_generate_keys(&mut rng).unwrap();
     let public = context
         .parameters()
         .try_generate_public_key(client.external_lwe_secret_key(), &mut rng)

@@ -12,18 +12,19 @@ type Word = u64;
 
 fn main() {
     let config = experimental::SPARSE_PBS_U64;
-    let parameters = config.try_prepare().unwrap();
-    let context = TfheContext::<Word, Table, _>::try_from_parameters(parameters).unwrap();
+    let context = TfheContext::<Word, Table, _>::try_from_pbs_config(config).unwrap();
+    let parameters = context.parameters();
 
     // Like basic PBS, input and output use the same message modulus.
-    let codecs = context.parameters().pbs_codecs(config.messages).unwrap();
+    let codecs = context
+        .parameters()
+        .pbs_codecs(parameters.messages())
+        .unwrap();
 
     // Client: generate sparse BR material from the fixed-weight secret.
     let mut rng = StdRng::seed_from_u64(42);
     // Three copies, 64 buckets. Map retries retain the same client secret.
-    let (client_key, server_key) = context
-        .try_generate_keys(config.blind_rotation.algorithm, None, &mut rng)
-        .unwrap();
+    let (client_key, server_key) = context.try_generate_keys(&mut rng).unwrap();
     // Ordinary messages borrow only the external secret from the setup bundle.
     let external_secret = client_key.external_lwe_secret_key();
     let encryptor = context

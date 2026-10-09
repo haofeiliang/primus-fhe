@@ -4,7 +4,7 @@ use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
 use primus_lattice::nlev::{FourierNlevIterMut, NlevIter};
 use primus_modulus::NativeModulus;
 use primus_ntru::FourierNgswCiphertext;
-use primus_tfhe_ntru::CbsParameters;
+use primus_tfhe_ntru::CbsGadgetParameters;
 
 use super::aggregate_rotation_control_to;
 use crate::lookup_table::{
@@ -33,7 +33,7 @@ impl<T: TorusFftValue> SelectorBuffers<'_, T> {
         &mut self,
         chunk: SelectorChunk,
         layout: Layout,
-        parameters: &CbsParameters<T, NativeModulus<T>>,
+        parameters: &CbsGadgetParameters<T, NativeModulus<T>>,
         project: impl FnOnce(Option<&mut [T]>, Option<&mut [Complex64]>) -> &'f mut FftEngine<'a, Table>,
     ) {
         let selector_len = parameters.output_nlev_len() / 2;

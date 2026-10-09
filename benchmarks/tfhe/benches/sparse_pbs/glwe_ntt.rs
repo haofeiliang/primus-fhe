@@ -23,12 +23,15 @@ fn pbs_pair<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
 ) {
     let parameters = glwe::diagnostic(ntt_modulus::<T>(), order);
     let codecs = parameters
+        .as_ref()
         .pbs_codecs(PbsMessageConfig::new(T::as_from(8u32)))
         .unwrap();
     let name = format!("fixed_weight/{order:?}");
     // Hold one context/client pair, but build each server key only when selected.
     let fixture = std::cell::LazyCell::new(|| {
-        let context = TfheContext::<T, Table>::try_from_parameters(parameters).unwrap();
+        let context_parameters = &parameters;
+        let context =
+            TfheContext::<T, Table>::try_from_parameters(context_parameters.clone()).unwrap();
         let mut rng = StdRng::seed_from_u64(42);
         let client = ClientKey::generate(context.parameters(), &mut rng);
         (context, client)
@@ -41,7 +44,12 @@ fn pbs_pair<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
             let mut rng = StdRng::seed_from_u64(4242);
             let blind_rotation = primus_tfhe_benchmarks::benchmark::blind_rotation(sparse);
             generator
-                .try_generate_server_key(client, blind_rotation, None, &mut rng)
+                .try_generate_server_key_with_parameters(
+                    parameters.glwe_key_switching(),
+                    client,
+                    blind_rotation,
+                    &mut rng,
+                )
                 .unwrap()
         });
         let mut verified = false;
@@ -78,7 +86,7 @@ fn pbs_pair<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
 
             metadata::record("sparse_pbs", &case, || {
                 serde_json::json!({
-                    "parameters": metadata::glwe(context.parameters()),
+                    "parameters": metadata::glwe(&parameters),
                     "blind_rotation": metadata::blind_rotation(sparse),
                     "plaintext_modulus": 8,
                     "encoding": "rounded_padded",

@@ -45,31 +45,32 @@ Sparse 模式需显式选择生成入口，暂不支持 sparse ternary。NTRU �
 
 ## 选择盲旋转算法
 
-四个后端均导出 `BlindRotationAlgorithm`，独立选择 BR 算法、秘密分布和可选 CBS 材料：
+四个后端均导出 `BlindRotationMethod`。算法由操作配置保存，独立于秘密分布；从 PBS 配置创建 Context 后，默认生成与求值不再补传参数：
 
 ```rust,ignore
-let blind_rotation = BlindRotationAlgorithm::Sparse { copy_count: 3, bucket_count: 64 };
-// 使用 BlindRotationAlgorithm::Classic 选择逐坐标 CMux 控制。
-let (client, server) = context.try_generate_keys(blind_rotation, None, rng)?;
+// GLWE 使用 config.method；NTRU 使用 config.algorithm。
+config.method = BlindRotationMethod::Sparse { copy_count: 3, bucket_count: 64 };
+let context = TfheContext::try_from_pbs_config(config)?;
+let (client, server) = context.try_generate_keys(rng)?;
+let mut pbs = context.evaluator(&server)?;
 ```
 
-`Classic` 支持 binary/ternary，包括固定重量分布。`Sparse` 要求 fixed-weight binary 且 `0<h<n`，只重试公开桶映射，匹配失败返回错误；不会修改客户端秘密或回退到 classic。成对生成复用转换后的秘密；`generator.try_generate(blind_rotation, cbs, rng)` 提供同样的选择并复用生成工作区。保留已有客户端时，使用 `generator.try_generate_server_key(&client, blind_rotation, cbs, rng)`。
+`Classic` 支持 binary/ternary，包括固定重量分布。`Sparse` 要求 fixed-weight binary 且 `0<h<n`，只重试公开桶映射，匹配失败返回错误；不会修改客户端秘密或回退到 classic。`KeyGenerator::try_generate(rng)` 复用生成工作区；已有客户端使用 `context.try_generate_server_key(&client, rng)`。只有算法比较或独立组件配线才使用具名的 `try_generate_with_parameters` / `try_generate_server_key_with_parameters`，显式传 KS、算法；CBS 专用工厂另接收必需 gadget。
 
-CBS 和 sparse 配置错误在秘密采样前返回。已有客户端在生成边界验证；新生成密钥依赖采样器保证。NTRU 若无法通过采样器幅度上界保证返回 q 的条件，则额外检查实际接受的环秘密；仅需环输出的 BR/CBS 不受该返回界限制。
+Context 绑定独立 CBS 参数时检查域、算法及共用输入 KS 配对；sparse 配置检查在秘密采样前执行。新生成密钥依赖采样器保证，已有客户端在生成边界验证。NTRU 若无法通过采样器上界保证返回 q 条件，则检查实际接受的环秘密；完整 CBS 组合同样承担该返回界；独立 BR/CBS 组件只检查实际运算所需的数值条件。
 
-CBS 传 `None` 生成 BR 和普通返回材料，传 `Some(config)` 则添加 trace/scheme-switch 密钥。BR、CBS 和返回密钥仍可独立生成；NTRU 公开提升在查表需要时单独请求。各后端的 `BlindRotationKey` 只持有 BR 材料，`ServerKey` 组合材料。GLWE 环 KS 和 NTRU LWE 返回的域不同，继续保留各自的接口。
+`context.try_generate_keys(rng)` 始终返回含 BR 和必需 KS 的 `ServerKey`。Context 添加 CBS 后，用 `try_generate_circuit_bootstrap_keys(rng)` 返回 `CircuitBootstrapServerKey { server_key, circuit_bootstrap }` 的组合；它只有一份 BR/KS，`server_key()` 和 `circuit_bootstrap_key()` 分别借用两部分。独立 BR、CBS、返回与 NTRU 公开提升接口仍保留。
 
-仅需环输出 CBS 或 NTRU one-hot 时，使用专门的成对入口：
+仅需环输出 CBS 或 NTRU one-hot 时，从 `CbsConfig` 创建 Context：
 
 ```rust,ignore
-let (client, server) = context.try_generate_circuit_bootstrap_keys(blind_rotation, cbs_config, rng)?;
+let context = TfheContext::try_from_cbs_config(config)?;
+let (client, server) = context.try_generate_circuit_bootstrap_keys(rng)?;
 let mut resources = server.bootstrap_resources(&context)?;
-let mut cbs = CircuitBootstrapEvaluator::try_new(
-    &resources, server.circuit_bootstrap_key(), &input_codec,
-)?;
+let mut cbs = context.circuit_bootstrap_evaluator(&resources, server.circuit_bootstrap_key())?;
 ```
 
-返回的 `CircuitBootstrapServerKey` 包含 BR 和必需的 CBS 材料。GLWE 仅在 KS→BR 时添加输入 KS；GLWE BR→KS 和 NTRU 均不生成普通返回密钥。NTRU one-hot 用相同组合绑定 `OneHotCircuitBootstrapEvaluator`。生成器提供同名方法，可复用 setup 工作区。混合 PBS/CBS 或高精度查表继续使用 `try_generate_keys(..., Some(cbs_config), ...)` 及完整 `ServerKey`。高级组合可以借用组件，或通过 `into_parts()` 移出组件，不复制密文缓冲。
+`CircuitBootstrapServerKey` 始终包含 BR、KS 和 CBS 材料；CBS 当前阶段仅借用 BR/CBS，并按 GLWE order 使用输入 KS。完整 CBS Context 也可执行普通 PBS：`context.evaluator(server.server_key())?`。NTRU one-hot 使用同一 Context 的 `one_hot_evaluator(&resources, key)`。默认工厂使用保存的输入 codec 和 gadget；自定义程序仍显式编译和绑定。两类组合的 `into_parts()` 移出拥有型组件，不复制密文数组。
 
 ## 客户端与服务端边界
 
@@ -170,9 +171,11 @@ GLWE 两后端同样使用短借用。独立 CBS 可用 `context.bootstrap_resou
 
 ## LUT 与资源生命周期
 
-后端接受纯数值 `PbsConfig` / `CbsConfig` 并派生公共环参数，`TfheContext::try_from_parameters` 自动创建选定类型的变换表。本 crate 从 [`primus_decompose`](../primus_decompose/README.zh_CN.md) 重新导出 `DecompositionConfig`（分解基与保留层数）。`GadgetEncryptionConfig { decomposition, noise_standard_deviation }` 集中 blind rotation 或 PBS key switching 的独立选择。`CbsGadgetConfig` 包含三组 `DecompositionConfig`：`output`、`trace` 和 `scheme_switch`。Trace 与 scheme-switch 密钥行继承累加环加密噪声并共享其不可变采样状态，basis 和随机采样仍然独立。各后端绑定自己的模数、布局与表示。`Option<CbsGadgetConfig>` 在配套密钥生成时选择是否启用 CBS；server key 持有对应参数和材料，各 evaluator 只持有自身工作区。
+后端接受纯数值 `PbsConfig` / `CbsConfig` 并派生公共环参数，`TfheContext::try_from_parameters` 自动创建选定类型的变换表。本 crate 从 [`primus_decompose`](../primus_decompose/README.zh_CN.md) 重新导出 `DecompositionConfig`（分解基与保留层数）。`GadgetEncryptionConfig { decomposition, noise_standard_deviation }` 集中 blind rotation 或 PBS key switching 的独立选择。`CbsGadgetConfig` 包含三组 `DecompositionConfig`：`output`、`trace` 和 `scheme_switch`。Trace 与 scheme-switch 密钥行继承累加环加密噪声并共享其不可变采样状态，basis 和随机采样仍然独立。各后端绑定自己的模数、布局与表示。`TfheContext` 保留完整 PBS/CBS 能力，独立组件使用显式高级工厂；server key 持有对应参数和材料，各 evaluator 只持有自身工作区。
 
-`GadgetEncryptionConfig<D = DecompositionConfig>` 默认接收分解配置；GLWE 的直接构造入口用已准备的 `ApproxSignedBasis<T>` 作为 D，移动其所有权而不重新构造。噪声标准差使用密钥模数下的系数单位：GLWE BR/KS 使用共同 q，NTRU BR 与 CBS trace/scheme switching 使用累加 Q，NTRU 返回 KS 使用外部 q。Config 本身不校验，由原有参数构造边界验证。`BlindRotationConfig::bsk_gadget` 中的噪声也用于累加环加密，以及 GLWE KS→BR 的新鲜外部 LWE 加密。KS 噪声仍独立配置；CBS trace/scheme-switch 密钥行继承累加环噪声。
+`LweConfig` 通过 `primus_lwe::LweEncryptionParameters::try_from(config)?` 转换为采样参数；具体模数同样使用 `BarrettModulus::try_from(config)`、`PowOf2Modulus::try_from(config)` 或 `NativeModulus::try_from(config)`。这些 setup 转换保留模数与采样错误，不准备消息 codec。
+
+`GadgetEncryptionConfig<D = DecompositionConfig>` 默认接收分解配置；GLWE 的直接构造入口用已准备的 `ApproxSignedBasis<T>` 作为 D，移动其所有权而不重新构造。噪声标准差使用密钥模数下的系数单位：GLWE BR/KS 使用共同 q，NTRU BR 与 CBS trace/scheme switching 使用累加 Q，NTRU 返回 KS 使用外部 q。Config 本身不校验，由原有参数构造边界验证。`PbsConfig::bsk_gadget` 中的噪声也用于累加环加密，以及 GLWE KS→BR 的新鲜外部 LWE 加密。KS 噪声仍独立配置；CBS trace/scheme-switch 密钥行继承累加环噪声。
 
 1. Family 参数描述外部 LWE 和 accumulator 环。
 2. 后端 context 绑定参数与 NTT/FFT table，并生成配套的 client/server key。
@@ -181,7 +184,7 @@ GLWE 两后端同样使用短借用。独立 CBS 可用 `context.bootstrap_resou
 
 前半区单函数或切片编译器为 `0..ceil(t_in/2)` 输入域编程，输出属于输出 codec 指定的 `0..t_out`。 其余输入不独立编程；奇数全域使用下文的独立入口。交错 LUT（ManyLUT）的有效输出数 `k` 为正， 补齐后的输出数为 `s = next_power_of_two(k)`，满足 `ceil(t/2) <= N/s`。callback 按输入优先 顺序接收 `(input, output_index)`，每个有效组合调用一次；切片包含相同顺序的 `D*k` 个值。 例如 `k=3` 时三个输出占用四个槽：编译器将第四槽置零，不调用 callback；求值端只返回三个密文。 所有输出共享一次盲旋转（BR）。GLWE 共享环 key switch 后分别提取；NTRU 每个输出分别返回并执行 LWE key switch。 输出越多，旋转分辨率与输入噪声余量越低。这是一个输入求多个函数，不是独立密文批处理。
 
-通过两家族的 `parameters.lookup_table_compiler(&codecs)?` 创建可复用的 `LookupTableCompiler`。TFHE 参数只保存密钥域和采样状态，不含明文模数；客户端和程序独立选择 codec。直接使用共享层时，`LookupTableCompiler::try_new(poly_length, &input_codec, accumulator_modulus, &output_codec)` 绑定相同的编码环境。它只复制所需编码状态，不分配内存，也不借用 parameters/context。方法如下：
+通过两家族的 `br.lookup_table_compiler(&codecs)?` 创建可复用的 `LookupTableCompiler`。TFHE 参数保存密钥域、采样状态及默认输入/输出消息模数；客户端和程序可独立绑定 codec 来覆盖默认选择。直接使用共享层时，`LookupTableCompiler::try_new(poly_length, &input_codec, accumulator_modulus, &output_codec)` 绑定相同的编码环境。它只复制所需编码状态，不分配内存，也不借用 parameters/context。方法如下：
 
 | 程序 | 函数输入 | 切片输入 |
 | --- | --- | --- |
@@ -221,8 +224,8 @@ Raw 构造器 `LookupTable::try_new` / `InterleavedLookupTable::try_new` 显式�
 
 | 工厂 | q 下的 `input_codec()` | Q 下的 `lut_output_codec()` | q 下的 `output_codec()` |
 | --- | --- | --- | --- |
-| `parameters.pbs_codecs(messages)?` | Rounded | Rounded | Rounded |
-| `parameters.factorized_pbs_codecs(messages)?` | Rounded | Scaled | Scaled |
+| `br.pbs_codecs(messages)?` | Rounded | Rounded | Rounded |
+| `br.factorized_pbs_codecs(messages)?` | Rounded | Scaled | Scaled |
 
 例如普通 PBS 或 ManyLUT，输入 `t_in=16`、输出 `t_out=4`：
 

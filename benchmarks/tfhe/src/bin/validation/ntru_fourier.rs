@@ -8,10 +8,10 @@ use primus_glwe::SecretKeyDistr;
 use primus_integer::AsInto;
 use primus_modulus::{NativeModulus, PowOf2Modulus};
 use primus_poly::PolyLength;
-use primus_tfhe::{BlindRotationAlgorithm, PbsMessageConfig};
+use primus_tfhe::{BlindRotationMethod, PbsMessageConfig};
 use primus_tfhe_benchmarks::parameters::{N, ntru};
 use primus_tfhe_benchmarks::{benchmark::PBS_WORKLOADS, parameters::SPARSE_WEIGHT};
-use primus_tfhe_ntru_fourier::{ClientKey, KeyGenerator, ServerKey, TfheContext};
+use primus_tfhe_ntru_fourier::{CircuitBootstrapServerKey, ClientKey, KeyGenerator, TfheContext};
 use primus_tfhe_ntru_lut::{
     FourierLookupTableEvaluator, HighPrecisionLookupTable, LookupTableConfig,
 };
@@ -38,10 +38,11 @@ fn validate_secret<T: TorusFftValue, Table: FftTable>(
 ) {
     let name = &format!("{name}/{secret:?}");
     for workload in PBS_WORKLOADS {
-        let context = TfheContext::<T, Table, PowOf2Modulus<T>>::from_parameters(ntru::pbs(
-            modulus, workload, secret,
-        ));
+        let context_parameters = &ntru::pbs(modulus, workload, secret);
+        let context =
+            TfheContext::<T, Table, PowOf2Modulus<T>>::from_parameters(context_parameters.clone());
         pbs(
+            context_parameters,
             &context,
             seed,
             &format!("{name}/{}", workload.name),
@@ -52,12 +53,28 @@ fn validate_secret<T: TorusFftValue, Table: FftTable>(
     // Fixed-weight keys have their own binary distribution. Run them once,
     // instead of repeating identical diagnostics in the ternary branch.
     if secret == SecretKeyDistr::UniformBinary {
+        let context_parameters = &ntru::diagnostic(modulus);
         let context =
-            TfheContext::<T, Table, PowOf2Modulus<T>>::from_parameters(ntru::diagnostic(modulus));
-        pbs(&context, seed, &format!("{name}/fixed_weight"), false, 16);
-        pbs(&context, seed, &format!("{name}/sparse"), true, 16);
+            TfheContext::<T, Table, PowOf2Modulus<T>>::from_parameters(context_parameters.clone());
+        pbs(
+            context_parameters,
+            &context,
+            seed,
+            &format!("{name}/fixed_weight"),
+            false,
+            16,
+        );
+        pbs(
+            context_parameters,
+            &context,
+            seed,
+            &format!("{name}/sparse"),
+            true,
+            16,
+        );
+        let context_parameters = &ntru::diagnostic(modulus);
         let context =
-            TfheContext::<T, Table, PowOf2Modulus<T>>::from_parameters(ntru::diagnostic(modulus));
+            TfheContext::<T, Table, PowOf2Modulus<T>>::from_parameters(context_parameters.clone());
         thresholds(&context, seed, &format!("{name}/mvb"));
     }
     circuit::<T, Table>(modulus, seed, secret, &format!("{name}/cbs"));
@@ -74,14 +91,21 @@ fn one_hot_and_lookup<T: TorusFftValue, Table: FftTable>(
 ) {
     // Public setup: both checks use the same key parameters and transform table.
     let parameters = ntru::circuit(modulus, secret);
-    let context = TfheContext::<T, Table, PowOf2Modulus<T>>::from_parameters(parameters);
+    let context_parameters = &parameters;
+    let context =
+        TfheContext::<T, Table, PowOf2Modulus<T>>::from_parameters(context_parameters.clone());
 
     // Client: generate both keys once; keep the secret key and RNG local.
     let mut rng = StdRng::seed_from_u64(seed);
     let (client_key, server_key) = context
-        .try_generate_keys(
-            BlindRotationAlgorithm::Classic,
-            Some(ntru::cbs::<T>()),
+        .try_generate_circuit_bootstrap_keys_with_parameters(
+            context_parameters.key_switching(),
+            BlindRotationMethod::Classic,
+            &primus_tfhe_ntru::CbsGadgetParameters::try_from_config(
+                context.parameters(),
+                ntru::cbs::<T>(),
+            )
+            .unwrap(),
             &mut rng,
         )
         .unwrap();
@@ -90,6 +114,7 @@ fn one_hot_and_lookup<T: TorusFftValue, Table: FftTable>(
     // rotation_step is public LUT geometry, reused by client-side diagnostics.
     let rotation_step = one_hot(&context, &client_key, &server_key, &mut rng, name, seed);
     lookup(
+        context_parameters,
         &context,
         &client_key,
         &server_key,
@@ -105,7 +130,7 @@ fn one_hot_and_lookup<T: TorusFftValue, Table: FftTable>(
 fn one_hot<T: TorusFftValue, Table: FftTable>(
     context: &TfheContext<T, Table, PowOf2Modulus<T>>,
     client_key: &ClientKey<T>,
-    server_key: &ServerKey<T>,
+    server_key: &CircuitBootstrapServerKey<T>,
     rng: &mut StdRng,
     name: &str,
     seed: u64,
@@ -134,7 +159,6 @@ fn one_hot<T: TorusFftValue, Table: FftTable>(
     // The client already knows these public parameters from key generation.
     let scalars: Vec<_> = server_key
         .circuit_bootstrap_key()
-        .unwrap()
         .parameters()
         .output_basis()
         .scalar_iter()
@@ -142,11 +166,11 @@ fn one_hot<T: TorusFftValue, Table: FftTable>(
 
     // Server: allocate the one-hot evaluator and encrypted selector storage.
     let mut resources = context
-        .bootstrap_resources(server_key.blind_rotation_key())
+        .bootstrap_resources(server_key.server_key().blind_rotation_key())
         .unwrap();
     let mut one_hot = primus_tfhe_ntru_fourier::OneHotCircuitBootstrapEvaluator::try_new(
         &resources,
-        server_key.circuit_bootstrap_key().unwrap(),
+        server_key.circuit_bootstrap_key(),
         &input_codec,
     )
     .unwrap();
@@ -201,10 +225,15 @@ fn one_hot<T: TorusFftValue, Table: FftTable>(
 
 /// Checks seven input chunks -> three output chunks through table selection,
 /// multi-input blind rotation and Q-to-q return, with a fixed decoding margin.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The diagnostic keeps operation, transform, key and sampling roles explicit."
+)]
 fn lookup<T: TorusFftValue, Table: FftTable>(
+    context_parameters: &primus_tfhe_ntru_fourier::PbsParameters<T, PowOf2Modulus<T>>,
     context: &TfheContext<T, Table, PowOf2Modulus<T>>,
     client_key: &ClientKey<T>,
-    server_key: &ServerKey<T>,
+    server_key: &CircuitBootstrapServerKey<T>,
     rotation_step: usize,
     rng: &mut StdRng,
     name: &str,
@@ -250,7 +279,13 @@ fn lookup<T: TorusFftValue, Table: FftTable>(
         digit,
     )
     .unwrap();
-    let mut evaluator = FourierLookupTableEvaluator::try_new(context, server_key, &table).unwrap();
+    let mut evaluator = FourierLookupTableEvaluator::try_new(
+        context,
+        context_parameters.key_switching(),
+        server_key,
+        &table,
+    )
+    .unwrap();
     let mut output = evaluator.allocate_output();
 
     // N-1/N crosses a table boundary; the maximum input exercises all chunks.
@@ -308,6 +343,7 @@ fn lookup<T: TorusFftValue, Table: FftTable>(
 /// Checks padded-domain endpoints, modular-affine PBS, three interleaved LUTs
 /// and repeated output/workspace use. The Boolean profile also chains gate outputs.
 fn pbs<T: TorusFftValue, Table: FftTable>(
+    context_parameters: &primus_tfhe_ntru_fourier::PbsParameters<T, PowOf2Modulus<T>>,
     context: &TfheContext<T, Table, PowOf2Modulus<T>>,
     seed: u64,
     name: &str,
@@ -331,15 +367,20 @@ fn pbs<T: TorusFftValue, Table: FftTable>(
     let mut generator = KeyGenerator::new(context);
     let client_key = generator.try_generate_client_key(&mut rng).unwrap();
     let blind_rotation = if sparse {
-        BlindRotationAlgorithm::Sparse {
+        BlindRotationMethod::Sparse {
             copy_count: 3,
             bucket_count: 2 * SPARSE_WEIGHT,
         }
     } else {
-        BlindRotationAlgorithm::Classic
+        BlindRotationMethod::Classic
     };
     let server_key = generator
-        .try_generate_server_key(&client_key, blind_rotation, None, &mut rng)
+        .try_generate_server_key_with_parameters(
+            context_parameters.key_switching(),
+            &client_key,
+            blind_rotation,
+            &mut rng,
+        )
         .unwrap();
 
     let encryptor = context
@@ -459,9 +500,7 @@ fn thresholds<T: TorusFftValue, Table: FftTable>(
 
     // Client: generate both keys; give only the evaluation key to the server.
     let mut rng = StdRng::seed_from_u64(seed);
-    let (client_key, server_key) = context
-        .try_generate_keys(BlindRotationAlgorithm::Classic, None, &mut rng)
-        .unwrap();
+    let (client_key, server_key) = context.try_generate_keys(&mut rng).unwrap();
 
     let encryptor = context
         .encryptor(client_key.external_lwe_secret_key(), codecs.input_codec())
@@ -517,8 +556,9 @@ fn circuit<T: TorusFftValue, Table: FftTable>(
     name: &str,
 ) {
     // Public setup: ordinary CBS uses t=4; one-hot binds its own t=8 program.
+    let context_parameters = &ntru::circuit(modulus, secret);
     let context =
-        TfheContext::<T, Table, PowOf2Modulus<T>>::from_parameters(ntru::circuit(modulus, secret));
+        TfheContext::<T, Table, PowOf2Modulus<T>>::from_parameters(context_parameters.clone());
     let (input_codec, ring_message_codec) = context
         .parameters()
         .circuit_bootstrap_codecs(T::as_from(4u32), T::as_from(4u32))
@@ -527,15 +567,20 @@ fn circuit<T: TorusFftValue, Table: FftTable>(
     // Client: generate both keys; give only the evaluation key to the server.
     let mut rng = StdRng::seed_from_u64(seed);
     let (client_key, server_key) = context
-        .try_generate_keys(
-            BlindRotationAlgorithm::Classic,
-            Some(ntru::cbs::<T>()),
+        .try_generate_circuit_bootstrap_keys_with_parameters(
+            context_parameters.key_switching(),
+            BlindRotationMethod::Classic,
+            &primus_tfhe_ntru::CbsGadgetParameters::try_from_config(
+                context.parameters(),
+                ntru::cbs::<T>(),
+            )
+            .unwrap(),
             &mut rng,
         )
         .unwrap();
 
     // Retain public output metadata for the client-side phase oracle.
-    let cbs_parameters = server_key.circuit_bootstrap_key().unwrap().parameters();
+    let cbs_parameters = server_key.circuit_bootstrap_key().parameters();
 
     // Client: encrypt both candidate messages; only choices go to the server.
     let encryptor = context
@@ -568,11 +613,11 @@ fn circuit<T: TorusFftValue, Table: FftTable>(
 
     // Server: bind the evaluation key and allocate CBS/CMux outputs locally.
     let mut resources = context
-        .bootstrap_resources(server_key.blind_rotation_key())
+        .bootstrap_resources(server_key.server_key().blind_rotation_key())
         .unwrap();
     let mut cbs = primus_tfhe_ntru_fourier::CircuitBootstrapEvaluator::try_new(
         &resources,
-        server_key.circuit_bootstrap_key().unwrap(),
+        server_key.circuit_bootstrap_key(),
         &input_codec,
     )
     .unwrap();

@@ -2,12 +2,11 @@
 //!
 //! # Start here
 //!
-//! 1. Select [`experimental::CLASSIC_PBS_U64`], a numerical [`PbsConfig`], and
-//!    call [`PbsConfig::try_prepare`] to prepare sampling state. For existing
-//!    LWE parameters/bases, use [`PbsParameters::try_new`].
-//! 2. Create a [`TfheContext`] and paired [`ClientKey`]/[`ServerKey`] with
-//!    [`TfheContext::try_generate_keys`] and the config's `blind_rotation.algorithm`;
-//!    `None` selects ordinary PBS material.
+//! 1. Select [`experimental::CLASSIC_PBS_U64`], a numerical [`PbsConfig`].
+//!    [`PbsParameters::try_from_config`] prepares its domain once; prepared
+//!    parameters can also be moved into a context directly.
+//! 2. Create a complete [`TfheContext`] with [`TfheContext::try_from_pbs_config`].
+//!    [`TfheContext::try_generate_keys`] generates the retained BR and KS choices; [`TfheContext::evaluator`] takes only the generated server key.
 //! 3. Prepare codecs with [`PbsParameters::pbs_codecs`] and [`PbsMessageConfig`].
 //!    Bind [`Encryptor`] to the input codec and [`Decryptor`] to the output codec;
 //!    create an [`Evaluator`] from the context. Output message moduli default to
@@ -27,8 +26,8 @@
 //! - [`boolean`]: Boolean clients and gates with plaintext modulus four.
 //! - [`circuit_bootstrap`]: optional trace/scheme-switch material and
 //!   [`CircuitBootstrapEvaluator`], producing accumulator-secret gadget controls for CMUX.
-//! - [`sparse`]: fixed-weight binary bucket material; choose [`BlindRotationAlgorithm::Sparse`]
-//!   with [`KeyGenerator::try_generate_server_key`] for an existing client.
+//! - [`sparse`]: fixed-weight binary bucket material; choose [`BlindRotationMethod::Sparse`]
+//!   in the operation config, then use [`KeyGenerator::try_generate_server_key`].
 //!
 //! [`Evaluator`] owns common [`BootstrapResources`] and client-return buffers.
 //! CBS/one-hot prepare only their LUT/projection state and borrow common resources
@@ -37,14 +36,19 @@
 //! Standalone CBS/one-hot can use resources without allocating return buffers.
 //! [`LweReturnEvaluator`] supports independent coefficient-domain returns.
 //!
-//! Ring-output CBS can use [`TfheContext::try_generate_circuit_bootstrap_keys`]
-//! without ordinary return material. [`PbsParameters::circuit_bootstrap_codecs`]
+//! [`TfheContext::try_generate_circuit_bootstrap_keys`] generates a complete CBS
+//! bundle, including the BR/KS [`ServerKey`] for downstream LWE returns. [`PbsParameters::circuit_bootstrap_codecs`]
 //! prepares the independent input and candidate ring-message encodings. Compile F
-//! with [`CbsParameters::compile_lookup_table_fn`] and bind the program
+//! with [`CbsGadgetParameters::compile_lookup_table_fn`] and bind the program
 //! with [`CircuitBootstrapEvaluator::try_with_lookup_table`]. CBS output uses its
 //! gadget basis; CMux requires bit-valued F across the programmed input domain.
 //!
 //! # Composition and representation
+//!
+//! [`PbsParameters`] and [`CbsParameters`] retain complete operation choices.
+//! [`TfheContext`] retains those capabilities while sharing one [`PbsParameters`]
+//! domain with required KS state and owning one transform table.
+//! Keys and mutable evaluation scratch remain independently owned.
 //!
 //! [`key`] contains evaluation material and component generation. Common workflow types
 //! are re-exported at this root; lower-level material is documented in its own module.
@@ -52,7 +56,8 @@
 //! [`CircuitBootstrapKey`] can be independently generated and borrowed through
 //! [`Evaluator::try_from_parts`] or [`BootstrapResources::try_new`] plus CBS/one-hot
 //! `try_new`. [`ServerKey::into_parts`] moves out the bundle's components.
-//! CBS/one-hot needs only BR and CBS material; high-precision LUT also needs return.
+//! [`CircuitBootstrapServerKey`] combines one [`ServerKey`] with required CBS material.
+//! CBS/one-hot evaluation borrows BR/CBS; downstream LWE returns reuse its KS key.
 //! Classic binary/ternary and sparse fixed-weight binary BR support PBS, MVB,
 //! CBS and one-hot. CBS/one-hot require trace and scheme-switch material.
 //! Only accumulator secrets undergo NTRU invertibility screening; external LWE secrets are independent.
@@ -106,7 +111,7 @@ pub use key::{
 pub use primus_tfhe_ntru::SparseNtruBootstrappingKey;
 
 pub use primus_tfhe::{
-    BivariateLookupTable, BlindRotationAlgorithm, CbsGadgetConfig, CircuitBootstrapCodecs,
+    BivariateLookupTable, BlindRotationMethod, CbsGadgetConfig, CircuitBootstrapCodecs,
     CircuitBootstrapLookupTable, ClientError, DecompositionConfig, FactorizedLookupTable,
     FactorizedPbsCodecs, GadgetEncryptionConfig, InterleavedLookupTable, LookupTable,
     LookupTableCompiler, Lwe, LweCiphertext, LweSecretKeyRef, PbsCodecs, PbsMessageConfig,
@@ -120,7 +125,7 @@ pub use primus_tfhe_ntru::{
 pub use circuit_bootstrap::CircuitBootstrapKey;
 #[doc(inline)]
 pub use circuit_bootstrap::{
-    CbsParameters, CircuitBootstrapEvaluator, FourierNgswSelectors, NlevSelectors,
+    CbsGadgetParameters, CircuitBootstrapEvaluator, FourierNgswSelectors, NlevSelectors,
     OneHotBootstrapError, OneHotCircuitBootstrapEvaluator, OneHotLookupTable, OneHotProjection,
 };
 
@@ -131,14 +136,6 @@ pub type Encryptor<'a, T, Key = LweSecretKeyRef<'a, T>, LM = NativeModulus<T>> =
 /// Client-key decryptor for the Fourier NTRU backend.
 pub type Decryptor<'a, T, LM = NativeModulus<T>> = primus_tfhe_ntru::Decryptor<'a, T, LM>;
 
-/// NTRU-TFHE parameters for the native-torus Fourier backend.
-pub type PbsParameters<T, LM = NativeModulus<T>> =
-    primus_tfhe_ntru::PbsParameters<T, NativeModulus<T>, LM>;
-
-/// Shared numerical blind-rotation choices for this backend.
-pub type BlindRotationConfig<T, LM = NativeModulus<T>> =
-    primus_tfhe_ntru::BlindRotationConfig<NativeModulus<T>, LM>;
-
 /// Complete numerical PBS choices for this backend.
 pub type PbsConfig<T, LM = NativeModulus<T>> = primus_tfhe_ntru::PbsConfig<T, NativeModulus<T>, LM>;
 
@@ -146,3 +143,14 @@ pub type PbsConfig<T, LM = NativeModulus<T>> = primus_tfhe_ntru::PbsConfig<T, Na
 pub type CbsConfig<T, LM = NativeModulus<T>> = primus_tfhe_ntru::CbsConfig<T, NativeModulus<T>, LM>;
 
 pub use primus_tfhe_ntru::{LweConfig, ModulusConfig, ModulusConfigError};
+
+/// Complete PBS parameters, including optional key switching and default messages.
+pub type PbsParameters<T, LM = NativeModulus<T>> =
+    primus_tfhe_ntru::PbsParameters<T, NativeModulus<T>, LM>;
+
+/// Complete ring-output CBS parameters and selector-input encoding.
+pub type CbsParameters<T, LM = NativeModulus<T>> =
+    primus_tfhe_ntru::CbsParameters<T, NativeModulus<T>, LM>;
+
+/// Prepared independent LWE return-key parameters.
+pub use primus_tfhe_ntru::LweReturnParameters;

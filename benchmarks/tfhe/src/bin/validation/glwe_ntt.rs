@@ -7,7 +7,7 @@ use primus_glwe::SecretKeyDistr;
 use primus_integer::{AsInto, FheUint};
 use primus_ntt::MonomialNttTable;
 use primus_poly::Polynomial;
-use primus_tfhe::{BlindRotationAlgorithm, PbsMessageConfig};
+use primus_tfhe::{BlindRotationMethod, PbsMessageConfig};
 use primus_tfhe_benchmarks::{
     benchmark::PBS_WORKLOADS,
     parameters::{N, SPARSE_WEIGHT, glwe},
@@ -23,8 +23,11 @@ pub fn validate<T: FheUint, Table: MonomialNttTable<ValueT = T>>(seed: u64, name
     for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
         for workload in PBS_WORKLOADS {
             let parameters = glwe::ntt_pbs(order, workload);
-            let context = TfheContext::<T, Table>::try_from_parameters(parameters).unwrap();
+            let context_parameters = &parameters;
+            let context =
+                TfheContext::<T, Table>::try_from_parameters(context_parameters.clone()).unwrap();
             pbs(
+                context_parameters,
                 &context,
                 workload.plaintext_modulus,
                 seed,
@@ -36,13 +39,15 @@ pub fn validate<T: FheUint, Table: MonomialNttTable<ValueT = T>>(seed: u64, name
             SecretKeyDistr::UniformBinary,
             SecretKeyDistr::UniformTernary,
         ] {
-            let context = TfheContext::<T, Table>::try_from_parameters(glwe::circuit(
+            let context_parameters = &glwe::circuit(
                 primus_tfhe_benchmarks::parameters::ntt_circuit_modulus(),
                 order,
                 secret,
-            ))
-            .unwrap();
+            );
+            let context =
+                TfheContext::<T, Table>::try_from_parameters(context_parameters.clone()).unwrap();
             pbs(
+                context_parameters,
                 &context,
                 4,
                 seed,
@@ -50,35 +55,48 @@ pub fn validate<T: FheUint, Table: MonomialNttTable<ValueT = T>>(seed: u64, name
                 false,
             );
             circuit(
+                context_parameters,
                 &context,
                 seed,
                 &format!("{name}/{order:?}/cbs/{secret:?}"),
                 false,
             );
         }
+        let context_parameters = &glwe::diagnostic(modulus, order);
         let context =
-            TfheContext::<T, Table>::try_from_parameters(glwe::diagnostic(modulus, order)).unwrap();
+            TfheContext::<T, Table>::try_from_parameters(context_parameters.clone()).unwrap();
         pbs(
+            context_parameters,
             &context,
             8,
             seed,
             &format!("{name}/{order:?}/fixed_weight"),
             false,
         );
-        pbs(&context, 8, seed, &format!("{name}/{order:?}/sparse"), true);
-        let context = TfheContext::<T, Table>::try_from_parameters(glwe::diagnostic(
+        pbs(
+            context_parameters,
+            &context,
+            8,
+            seed,
+            &format!("{name}/{order:?}/sparse"),
+            true,
+        );
+        let context_parameters = &glwe::diagnostic(
             primus_tfhe_benchmarks::parameters::ntt_circuit_modulus(),
             order,
-        ))
-        .unwrap();
+        );
+        let context =
+            TfheContext::<T, Table>::try_from_parameters(context_parameters.clone()).unwrap();
         circuit(
+            context_parameters,
             &context,
             seed,
             &format!("{name}/{order:?}/sparse_cbs"),
             true,
         );
+        let context_parameters = &glwe::diagnostic(modulus, order);
         let context =
-            TfheContext::<T, Table>::try_from_parameters(glwe::diagnostic(modulus, order)).unwrap();
+            TfheContext::<T, Table>::try_from_parameters(context_parameters.clone()).unwrap();
         thresholds(&context, seed, &format!("{name}/{order:?}/mvb"));
     }
 }
@@ -86,6 +104,7 @@ pub fn validate<T: FheUint, Table: MonomialNttTable<ValueT = T>>(seed: u64, name
 /// Checks padded-domain endpoints, modular-affine PBS, three interleaved LUTs
 /// and repeated output/workspace use. The Boolean profile also chains gate outputs.
 fn pbs<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
+    context_parameters: &primus_tfhe_glwe_ntt::PbsParameters<T>,
     context: &TfheContext<T, Table>,
     plaintext_modulus: u32,
     seed: u64,
@@ -109,15 +128,20 @@ fn pbs<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     let client_key = ClientKey::generate(context.parameters(), &mut rng);
     let mut generator = KeyGenerator::new(context);
     let blind_rotation = if sparse {
-        BlindRotationAlgorithm::Sparse {
+        BlindRotationMethod::Sparse {
             copy_count: 3,
             bucket_count: 2 * SPARSE_WEIGHT,
         }
     } else {
-        BlindRotationAlgorithm::Classic
+        BlindRotationMethod::Classic
     };
     let server_key = generator
-        .try_generate_server_key(&client_key, blind_rotation, None, &mut rng)
+        .try_generate_server_key_with_parameters(
+            context_parameters.glwe_key_switching(),
+            &client_key,
+            blind_rotation,
+            &mut rng,
+        )
         .unwrap();
 
     let encryptor = context
@@ -237,9 +261,7 @@ fn thresholds<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
 
     // Client: generate both keys; give only the evaluation key to the server.
     let mut rng = StdRng::seed_from_u64(seed);
-    let (client_key, server_key) = context
-        .try_generate_keys(BlindRotationAlgorithm::Classic, None, &mut rng)
-        .unwrap();
+    let (client_key, server_key) = context.try_generate_keys(&mut rng).unwrap();
 
     let encryptor = context
         .encryptor(client_key.external_lwe_secret_key(), codecs.input_codec())
@@ -288,6 +310,7 @@ fn thresholds<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
 /// Selects between two nonconstant GLWEs and checks every GGSW row/level phase.
 /// The 0 -> 1 -> 0 sequence also checks output/workspace reuse for CBS and CMux.
 fn circuit<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
+    context_parameters: &primus_tfhe_glwe_ntt::PbsParameters<T>,
     context: &TfheContext<T, Table>,
     seed: u64,
     name: &str,
@@ -303,24 +326,29 @@ fn circuit<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     let client_key = ClientKey::generate(context.parameters(), &mut rng);
     let mut generator = KeyGenerator::new(context);
     let blind_rotation = if sparse {
-        BlindRotationAlgorithm::Sparse {
+        BlindRotationMethod::Sparse {
             copy_count: 3,
             bucket_count: 2 * SPARSE_WEIGHT,
         }
     } else {
-        BlindRotationAlgorithm::Classic
+        BlindRotationMethod::Classic
     };
     let server_key = generator
-        .try_generate_server_key(
+        .try_generate_circuit_bootstrap_server_key_with_parameters(
+            context_parameters.glwe_key_switching(),
             &client_key,
             blind_rotation,
-            Some(glwe::cbs::<T>()),
+            &primus_tfhe_glwe::CbsGadgetParameters::try_from_config(
+                context.parameters(),
+                glwe::cbs::<T>(),
+            )
+            .unwrap(),
             &mut rng,
         )
         .unwrap();
 
     // Retain public output metadata for the client-side phase oracle.
-    let cbs = server_key.circuit_bootstrap_key().unwrap().parameters();
+    let cbs = server_key.circuit_bootstrap_key().parameters();
     let size = cbs.output_size();
 
     // Client: encrypt both candidate messages; only choices go to the server.
@@ -352,9 +380,9 @@ fn circuit<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
 
     // Server: bind the evaluation key and allocate CBS/CMux outputs locally.
     let mut resources = context
-        .bootstrap_resources_from_server_key(&server_key)
+        .bootstrap_resources_from_server_key(server_key.server_key())
         .unwrap();
-    let circuit_key = server_key.circuit_bootstrap_key().unwrap();
+    let circuit_key = server_key.circuit_bootstrap_key();
     let mut evaluator = primus_tfhe_glwe_ntt::CircuitBootstrapEvaluator::try_new(
         &resources,
         circuit_key,

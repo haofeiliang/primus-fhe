@@ -131,7 +131,9 @@ Message adapters live in the secret/public key's `message.rs`; raw encryption an
 
 `encrypt_glev_to` and `encrypt_ggsw_to` apply the gadget basis to a coefficient-domain ring polynomial without plaintext scaling. A GGSW control bit is therefore the constant polynomial `0` or `1`. Both use a gadget workspace constructed from `GadgetSize`: GLev requires a matching polynomial length; GGSW also requires a matching level count.
 
-Use `GlevParameters::try_from_parts(size, encryption, basis)` for gadget-only parameters: `size` is a checked `GlweSize`, `encryption` is an `Arc<GlweEncryptionParameters<T, M>>`, and `basis` is a prepared `ApproxSignedBasis<T>`. No plaintext modulus or codec is required. The constructor checks the basis modulus, fixed secret weight against the complete `kN` length, and gadget layout. It returns `GlevParameterError` and takes ownership without copying sampler tables or rebuilding the basis.
+`GgswParameters` is an alias of `GlevParameters`. Use `GgswParameters::try_new(size, modulus, secret_distr, decomposition, sigma)` to prepare gadget-only parameters from a checked `GlweSize` and a `DecompositionConfig`. It creates the sampler state and basis in one modulus domain, checks fixed secret weight against the complete `kN` length and derives the gadget layout. `sigma` is in coefficient units; errors are returned as `GlevParameterError`. No plaintext modulus or codec is required.
+
+Use `GlevParameters::try_from_parts(size, encryption, basis)` when those components are already prepared: `encryption` is an `Arc<GlweEncryptionParameters<T, M>>`, and `basis` is an `ApproxSignedBasis<T>`. The constructor checks the basis modulus, fixed secret weight against `kN` and gadget layout, taking ownership without copying sampler tables or rebuilding the basis.
 
 `GlweParameters::try_from_glev(&gadget, codec)` binds an ordinary `ScaledCodec` to an existing gadget domain. It shares the prepared sampling state and checks the codec modulus, without retaining or copying the gadget basis.
 

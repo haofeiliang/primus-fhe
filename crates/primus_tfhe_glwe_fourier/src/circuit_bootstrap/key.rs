@@ -3,7 +3,7 @@ use primus_glwe::{
     FourierGlweSchemeSwitchKey, FourierGlweSecretKey, FourierGlweTraceKey, GlweSecretKey,
 };
 
-use crate::{CbsParameters, KeyGenerationError, KeyGenerator, TfheContext};
+use crate::{CbsGadgetParameters, KeyGenerationError, KeyGenerator, TfheContext};
 
 /// Optional trace-projection and GLev-to-Fourier-GGSW scheme-switch keys.
 ///
@@ -14,7 +14,7 @@ use crate::{CbsParameters, KeyGenerationError, KeyGenerator, TfheContext};
 /// identity; consumers must use the same secret and FFT table instance as
 /// generation; see [`crate::CircuitBootstrapEvaluator::try_new`].
 pub struct CircuitBootstrapKey<T: TorusFftValue> {
-    parameters: CbsParameters<T>,
+    parameters: CbsGadgetParameters<T>,
     trace: FourierGlweTraceKey<T>,
     scheme_switch: FourierGlweSchemeSwitchKey<T>,
 }
@@ -23,7 +23,7 @@ pub struct CircuitBootstrapKey<T: TorusFftValue> {
 // binds output layout; a compatible alternate output basis remains valid.
 pub(super) struct CircuitBootstrapBinding<'a, T: TorusFftValue> {
     pub(super) key: &'a CircuitBootstrapKey<T>,
-    pub(super) parameters: &'a CbsParameters<T>,
+    pub(super) parameters: &'a CbsGadgetParameters<T>,
 }
 
 impl<'a, T: TorusFftValue> CircuitBootstrapBinding<'a, T> {
@@ -31,7 +31,7 @@ impl<'a, T: TorusFftValue> CircuitBootstrapBinding<'a, T> {
     // GLWE can reuse scheme-switch material with another compatible output basis.
     pub(super) fn try_new(
         tfhe: &crate::PbsParameters<T>,
-        parameters: &'a CbsParameters<T>,
+        parameters: &'a CbsGadgetParameters<T>,
         key: &'a CircuitBootstrapKey<T>,
     ) -> Result<Self, crate::TfheEvaluationError> {
         if !parameters.is_compatible(tfhe) {
@@ -49,11 +49,11 @@ impl<'a, T: TorusFftValue> CircuitBootstrapBinding<'a, T> {
 impl<T: TorusFftValue> CircuitBootstrapKey<T> {
     /// Returns the CBS parameters selected when this material was generated.
     #[must_use]
-    pub fn parameters(&self) -> &CbsParameters<T> {
+    pub fn parameters(&self) -> &CbsGadgetParameters<T> {
         &self.parameters
     }
 
-    pub(crate) fn is_compatible(&self, parameters: &CbsParameters<T>) -> bool {
+    pub(crate) fn is_compatible(&self, parameters: &CbsGadgetParameters<T>) -> bool {
         // Generation binds both keys to the same GLWE layout. The scheme-switch
         // key exposes that layout; the trace key only needs a basis comparison.
         self.scheme_switch.output_size() == parameters.output_size()
@@ -95,7 +95,7 @@ where
     pub fn try_generate_circuit_bootstrap_key<R>(
         &mut self,
         accumulator_secret: &GlweSecretKey<T>,
-        parameters: CbsParameters<T>,
+        parameters: CbsGadgetParameters<T>,
         rng: &mut R,
     ) -> Result<CircuitBootstrapKey<T>, KeyGenerationError>
     where
@@ -123,7 +123,7 @@ where
         &mut self,
         accumulator_secret: &GlweSecretKey<T>,
         fourier_secret: &FourierGlweSecretKey,
-        parameters: CbsParameters<T>,
+        parameters: CbsGadgetParameters<T>,
         rng: &mut R,
     ) -> CircuitBootstrapKey<T>
     where
@@ -163,7 +163,7 @@ where
     T: TorusFftValue,
     Table: FftTable,
 {
-    /// Generates optional CBS trace-projection and scheme-switch keys.
+    /// Generates CBS trace-projection and scheme-switch keys.
     ///
     /// Inherits [`KeyGenerator::try_generate_circuit_bootstrap_key`]'s secret
     /// and FFT table requirements. Reuse a [`KeyGenerator`] when generating
@@ -171,7 +171,7 @@ where
     pub fn try_generate_circuit_bootstrap_key<R>(
         &self,
         accumulator_secret: &GlweSecretKey<T>,
-        parameters: CbsParameters<T>,
+        parameters: CbsGadgetParameters<T>,
         rng: &mut R,
     ) -> Result<CircuitBootstrapKey<T>, KeyGenerationError>
     where

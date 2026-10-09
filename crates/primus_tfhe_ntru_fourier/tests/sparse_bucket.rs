@@ -1,5 +1,4 @@
 //! Independent coefficient phases and FFT error in NTRU bucket aggregation.
-use primus_lwe::LweEncryptionParameters;
 
 use num_traits::ConstZero;
 use primus_decompose::primitive::ApproxSignedBasis;
@@ -16,7 +15,7 @@ use primus_ntru::{
 };
 use primus_poly::{PolyLength, Polynomial};
 use primus_tfhe_ntru_fourier::{
-    BlindRotationAlgorithm, ClientKey, GadgetEncryptionConfig, KeyGenerator, PbsParameters,
+    BlindRotationMethod, ClientKey, GadgetEncryptionConfig, KeyGenerator, PbsParameters,
     TfheContext,
 };
 use rand::{SeedableRng, rngs::StdRng};
@@ -120,27 +119,35 @@ fn check<T: TorusFftValue, Table: FftTable>(level_count: Option<usize>) {
         FourierNtruSecretKey::generate_pair(params.encryption_parameters(), &mut fft, &mut rng)
             .unwrap();
     drop(fft);
-    let context = TfheContext::try_new(
-        PbsParameters::try_new(
-            LweEncryptionParameters::new(
-                LweDimension::new(DIM),
-                modulus,
-                client_params.secret_key_distr(),
-                0.7,
-            ),
-            NlevParameters::try_with_basis(&params, gadget.basis().clone()).unwrap(),
-            GadgetEncryptionConfig {
-                decomposition: primus_tfhe_ntru::DecompositionConfig {
-                    log_basis: DecompositionBaseLog::new(8),
-                    level_count: None,
-                },
-                noise_standard_deviation: client_params.noise_distribution().standard_deviation(),
+    let context_parameters = &PbsParameters::try_from_config(primus_tfhe_ntru::PbsConfig {
+        external_lwe: primus_tfhe::LweConfig {
+            dimension: LweDimension::new(DIM),
+            cipher_modulus: modulus.into(),
+            secret_key_distr: client_params.secret_key_distr(),
+            noise_standard_deviation: 0.7,
+        },
+        acc_modulus: modulus.into(),
+        bsk_poly_length: PolyLength::new(N),
+        bsk_secret_distr: SecretKeyDistr::SparseTernary,
+        bsk_gadget: GadgetEncryptionConfig {
+            decomposition: primus_tfhe::DecompositionConfig {
+                log_basis: (gadget.basis().clone()).log_basis(),
+                level_count: Some((gadget.basis().clone()).decompose_length()),
             },
-        )
-        .unwrap(),
-        table,
-    )
+            noise_standard_deviation: 0.7,
+        },
+        key_switching: GadgetEncryptionConfig {
+            decomposition: primus_tfhe_ntru::DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(8),
+                level_count: None,
+            },
+            noise_standard_deviation: client_params.noise_distribution().standard_deviation(),
+        },
+        algorithm: primus_tfhe::BlindRotationMethod::Classic,
+        messages: primus_tfhe::PbsMessageConfig::new(primus_integer::AsFrom::<u32>::as_from(4)),
+    })
     .unwrap();
+    let context = TfheContext::try_new(context_parameters.clone(), table).unwrap();
     let mut fft = context.new_fft_engine();
     let imported = ClientKey::new(client.clone(), secret.clone());
     let native_secret: Vec<T> = secret
@@ -204,13 +211,13 @@ fn check<T: TorusFftValue, Table: FftTable>(level_count: Option<usize>) {
     assert!(init_budget < q / 32 && init_error <= init_budget);
     for (copies, buckets) in [(3, 10), (1, 17)] {
         let server = KeyGenerator::new(&context)
-            .try_generate_server_key(
+            .try_generate_server_key_with_parameters(
+                context_parameters.key_switching(),
                 &imported,
-                BlindRotationAlgorithm::Sparse {
+                BlindRotationMethod::Sparse {
                     copy_count: copies,
                     bucket_count: buckets,
                 },
-                None,
                 &mut rng,
             )
             .unwrap();

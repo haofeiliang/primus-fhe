@@ -28,22 +28,21 @@ fn basis<T: FheUint>(basis: &ApproxSignedBasis<T>) -> Value {
 
 /// Actual GLWE parameters, including both key-noise roles and return order.
 pub fn glwe<T: FheUint, M: RingContext<T>>(p: &primus_tfhe_glwe::PbsParameters<T, M>) -> Value {
-    let br = p.blind_rotation_ggsw();
-    let ks = p
-        .glwe_key_switching()
-        .expect("PBS parameters include key switching")
-        .output();
+    let parameters = p;
+    let br = parameters.blind_rotation_params();
+    let output = p.glwe_key_switching().output();
+    let ks = json!({"kind": "ring_glwe", "basis": basis(output.basis()), "coefficient_sigma": output.noise_standard_deviation()});
     json!({
-        "word_bits": T::BITS, "q": modulus(p.cipher_modulus()), "Q": modulus(p.cipher_modulus()),
-        "small_lwe_dimension": p.small_lwe().dimension().get(),
-        "external_lwe_dimension": p.external_lwe_dimension().get(),
+        "word_bits": T::BITS, "q": modulus(parameters.cipher_modulus()), "Q": modulus(parameters.cipher_modulus()),
+        "small_lwe_dimension": parameters.small_lwe().dimension().get(),
+        "external_lwe_dimension": parameters.external_lwe_dimension().get(),
         "poly_length": br.poly_length().get(), "glwe_dimension": br.dimension().get(),
-        "small_lwe_secret": format!("{:?}", p.small_lwe().secret_key_distr()),
+        "small_lwe_secret": format!("{:?}", parameters.small_lwe().secret_key_distr()),
         "ring_secret": format!("{:?}", br.secret_key_distr()),
-        "small_lwe_sigma": p.small_lwe().noise_standard_deviation(),
+        "small_lwe_sigma": parameters.small_lwe().noise_standard_deviation(),
         "br": {"basis": basis(br.basis()), "coefficient_sigma": br.noise_standard_deviation()},
-        "ks": {"kind": "ring_glwe", "basis": basis(ks.basis()), "coefficient_sigma": ks.noise_standard_deviation()},
-        "order": format!("{:?}", p.pbs_order())
+        "ks": ks,
+        "order": format!("{:?}", parameters.pbs_order())
     })
 }
 
@@ -51,16 +50,18 @@ pub fn glwe<T: FheUint, M: RingContext<T>>(p: &primus_tfhe_glwe::PbsParameters<T
 pub fn ntru<T: FheUint, M: RingContext<T>, LM: RingContext<T>>(
     p: &primus_tfhe_ntru::PbsParameters<T, M, LM>,
 ) -> Value {
-    let br = p.blind_rotation();
-    let ring = p.accumulator_ntru();
+    let parameters = p;
+    let br = parameters.blind_rotation();
+    let ring = parameters.accumulator_ntru();
+    let ks = p.key_switching();
     json!({
-        "word_bits": T::BITS, "q": modulus(p.external_lwe().cipher_modulus()), "Q": modulus(ring.cipher_modulus()),
-        "external_lwe_dimension": p.external_lwe_dimension().get(), "poly_length": p.poly_length().get(),
-        "external_lwe_secret": format!("{:?}", p.external_lwe().secret_key_distr()),
+        "word_bits": T::BITS, "q": modulus(parameters.external_lwe().cipher_modulus()), "Q": modulus(ring.cipher_modulus()),
+        "external_lwe_dimension": parameters.external_lwe_dimension().get(), "poly_length": parameters.poly_length().get(),
+        "external_lwe_secret": format!("{:?}", parameters.external_lwe().secret_key_distr()),
         "ring_secret": format!("{:?}", ring.secret_key_distr()),
-        "external_lwe_sigma": p.external_lwe().noise_standard_deviation(),
+        "external_lwe_sigma": parameters.external_lwe().noise_standard_deviation(),
         "br": {"basis": basis(br.basis()), "coefficient_sigma": ring.noise_distribution().standard_deviation()},
-        "ks": {"kind": "ntru_to_lwe_at_q", "basis": basis(p.key_switching_basis().expect("PBS parameters include key switching")), "coefficient_sigma": p.key_switching_lwe().expect("PBS parameters include key switching").noise_standard_deviation()},
+        "ks": json!({"kind": "ntru_to_lwe_at_q", "basis": basis(ks.basis()), "coefficient_sigma": ks.lwe().noise_standard_deviation()}),
         "order": "BootstrapModulusSwitchKeyswitch"
     })
 }
@@ -82,11 +83,11 @@ pub fn cbs(config: primus_tfhe::CbsGadgetConfig, coefficient_sigma: f64) -> Valu
 /// One complete sparse mapping; dense/classic uses no copies or buckets.
 pub fn blind_rotation(sparse: bool) -> Value {
     match crate::benchmark::blind_rotation(sparse) {
-        primus_tfhe::BlindRotationAlgorithm::Sparse {
+        primus_tfhe::BlindRotationMethod::Sparse {
             copy_count,
             bucket_count,
         } => json!({"algorithm": "sparse", "copies": copy_count, "buckets": bucket_count}),
-        primus_tfhe::BlindRotationAlgorithm::Classic => json!({"algorithm": "classic"}),
+        primus_tfhe::BlindRotationMethod::Classic => json!({"algorithm": "classic"}),
     }
 }
 

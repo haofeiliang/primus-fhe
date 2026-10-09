@@ -4,9 +4,9 @@ use primus_lattice::LweDimension;
 use primus_ntt::{MonomialNttTable, U32NttTable, U64NttTable};
 use primus_poly::PolyLength;
 use primus_tfhe::PbsMessageConfig;
-use primus_tfhe_ntru::{BlindRotationConfig, LweConfig, PbsConfig};
+use primus_tfhe_ntru::{LweConfig, PbsConfig};
 use primus_tfhe_ntru_ntt::{
-    BlindRotationAlgorithm, DecompositionConfig, GadgetEncryptionConfig, TfheContext,
+    BlindRotationMethod, DecompositionConfig, GadgetEncryptionConfig, PbsParameters, TfheContext,
     TfheEvaluationError,
 };
 
@@ -30,48 +30,51 @@ fn check<T: FheUint, Table: MonomialNttTable<ValueT = T>>(ring_q: T) {
             level_count: None,
         };
         let config = PbsConfig {
-            blind_rotation: BlindRotationConfig {
-                external_lwe: LweConfig {
-                    dimension: LweDimension::new(DIM),
-                    cipher_modulus: external_modulus.into(),
-                    secret_key_distr: distr,
-                    noise_standard_deviation: 0.7,
-                },
-                acc_modulus: BarrettModulus::new(ring_q).into(),
-                acc_poly_length: PolyLength::new(N),
-                bsk_secret_distr: SecretKeyDistr::SparseTernary,
-                bsk_gadget: GadgetEncryptionConfig {
-                    decomposition: DecompositionConfig {
-                        log_basis: DecompositionBaseLog::new(8),
-                        level_count: None,
-                    },
-                    noise_standard_deviation: 0.7,
-                },
-                algorithm: BlindRotationAlgorithm::Classic,
+            external_lwe: LweConfig {
+                dimension: LweDimension::new(DIM),
+                cipher_modulus: external_modulus.into(),
+                secret_key_distr: distr,
+                noise_standard_deviation: 0.7,
             },
+            acc_modulus: BarrettModulus::new(ring_q).into(),
+            bsk_poly_length: PolyLength::new(N),
+            bsk_secret_distr: SecretKeyDistr::SparseTernary,
+            bsk_gadget: GadgetEncryptionConfig {
+                decomposition: DecompositionConfig {
+                    log_basis: DecompositionBaseLog::new(8),
+                    level_count: None,
+                },
+                noise_standard_deviation: 0.7,
+            },
+            algorithm: BlindRotationMethod::Classic,
             key_switching: GadgetEncryptionConfig {
                 decomposition,
                 noise_standard_deviation: 0.7,
             },
             messages: PbsMessageConfig::new(T::as_from(4u32)),
         };
+        let context_parameters = &PbsParameters::try_from_config(config).unwrap();
         let context =
-            TfheContext::<_, Table, _>::try_from_parameters(config.try_prepare().unwrap()).unwrap();
+            TfheContext::<_, Table, _>::try_from_parameters(context_parameters.clone()).unwrap();
         let input_codec = RoundedCodec::new(
             T::as_from(4u32),
             context.parameters().external_lwe().cipher_modulus(),
         );
         let mut rng = StdRng::seed_from_u64(0x513251);
         let blind_rotation = if distr.is_binary() {
-            BlindRotationAlgorithm::Sparse {
+            BlindRotationMethod::Sparse {
                 copy_count: 3,
                 bucket_count: 8,
             }
         } else {
-            BlindRotationAlgorithm::Classic
+            BlindRotationMethod::Classic
         };
         let (client, server) = context
-            .try_generate_keys(blind_rotation, None, &mut rng)
+            .try_generate_keys_with_parameters(
+                context_parameters.key_switching(),
+                blind_rotation,
+                &mut rng,
+            )
             .unwrap();
         // Both distributions have even support and cannot form an invertible native NTRU key.
         assert_eq!(
@@ -185,14 +188,14 @@ fn check<T: FheUint, Table: MonomialNttTable<ValueT = T>>(ring_q: T) {
             );
         }
         if distr.is_binary() {
-            let sparse_server = context
-                .try_generate_server_key(
+            let sparse_server = primus_tfhe_ntru_ntt::KeyGenerator::new(&context)
+                .try_generate_server_key_with_parameters(
+                    context_parameters.key_switching(),
                     &client,
-                    BlindRotationAlgorithm::Sparse {
+                    BlindRotationMethod::Sparse {
                         copy_count: 3,
                         bucket_count: 8,
                     },
-                    None,
                     &mut rng,
                 )
                 .unwrap();
@@ -226,10 +229,16 @@ fn check<T: FheUint, Table: MonomialNttTable<ValueT = T>>(ring_q: T) {
         }
         // Changing only q must reject a server key before online work.
         let mut wrong = config;
-        wrong.blind_rotation.external_lwe.cipher_modulus =
-            PowOf2Modulus::new(q / T::as_from(2u32)).into();
+        wrong.external_lwe.cipher_modulus = PowOf2Modulus::new(q / T::as_from(2u32)).into();
+        let wrong_parameters = &PbsParameters::try_from_config(wrong).unwrap();
         let wrong =
-            TfheContext::<_, Table, _>::try_from_parameters(wrong.try_prepare().unwrap()).unwrap();
+            TfheContext::<_, Table, _>::try_from_parameters(wrong_parameters.clone()).unwrap();
+        // Even a matching return-key/basis pair cannot be borrowed by a context
+        // with another q. Component binding must compare the two prepared domains.
+        assert_eq!(
+            wrong.evaluator(&server).err(),
+            Some(TfheEvaluationError::IncompatibleLweReturnKey)
+        );
         assert_eq!(
             wrong.evaluator(&server).err(),
             Some(TfheEvaluationError::IncompatibleLweReturnKey)

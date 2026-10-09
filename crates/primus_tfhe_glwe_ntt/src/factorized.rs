@@ -45,7 +45,7 @@ where
         let parameters = context.parameters();
         assert!(
             lookup_table.is_compatible_with_ciphertext_domain(
-                parameters.blind_rotation_ggsw().poly_length(),
+                parameters.blind_rotation_params().poly_length(),
                 parameters.small_lwe().cipher_modulus_value(),
                 parameters.cipher_modulus().explicit_value(),
             ),
@@ -117,7 +117,7 @@ where
         Self {
             context,
             shared_rotation: NttGlweCiphertext::zero(
-                context.parameters().blind_rotation_ggsw().glwe_len(),
+                context.parameters().blind_rotation_params().glwe_len(),
             ),
         }
     }
@@ -193,7 +193,7 @@ where
             "MVB output ciphertext dimension mismatch"
         );
 
-        let glwe = parameters.blind_rotation_ggsw();
+        let glwe = parameters.blind_rotation_params();
         let table = evaluator.resources.context.table();
         let resources = &mut evaluator.resources;
         resources.blind_rotate(input, &lookup_table.common_polynomial, 1);

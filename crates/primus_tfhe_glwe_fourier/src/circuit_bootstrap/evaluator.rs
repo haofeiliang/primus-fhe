@@ -10,7 +10,8 @@ use primus_tfhe::CircuitBootstrapLookupTable;
 use super::key::CircuitBootstrapBinding;
 
 use crate::{
-    BootstrapResources, CbsParameters, CircuitBootstrapKey, Lwe, TfheContext, TfheEvaluationError,
+    BootstrapResources, CbsGadgetParameters, CircuitBootstrapKey, Lwe, TfheContext,
+    TfheEvaluationError,
 };
 
 /// Classic binary/ternary or sparse binary CBS producing Fourier GGSW controls.
@@ -70,7 +71,7 @@ where
     /// or a noise margin; see [`primus_glwe::FourierGlweSchemeSwitchKey::apply_to`].
     pub fn try_with_parameters(
         resources: &BootstrapResources<'a, T, Table>,
-        parameters: &'a CbsParameters<T>,
+        parameters: &'a CbsGadgetParameters<T>,
         circuit_key: &'a CircuitBootstrapKey<T>,
         input_codec: &RoundedCodec<T, NativeModulus<T>>,
     ) -> Result<Self, TfheEvaluationError> {
@@ -113,7 +114,7 @@ where
     /// [`Self::try_with_parameters`]'s secret, representation and noise requirements.
     pub fn try_with_parameters_and_lookup_table(
         resources: &BootstrapResources<'a, T, Table>,
-        parameters: &'a CbsParameters<T>,
+        parameters: &'a CbsGadgetParameters<T>,
         circuit_key: &'a CircuitBootstrapKey<T>,
         lookup_table: CircuitBootstrapLookupTable<T>,
     ) -> Result<Self, TfheEvaluationError> {
@@ -179,7 +180,7 @@ where
     /// is the selected input codec's plaintext modulus. Noise must fit the coarser interleaved-LUT
     /// rotation intervals. Trace and scheme-switch errors, including native
     /// halving and FFT rounding, must fit the independent CBS error budget;
-    /// see [`CbsParameters`]. Sparse keys also require aggregation
+    /// see [`CbsGadgetParameters`]. Sparse keys also require aggregation
     /// noise from every bucket, including zero selections and dummies, and the
     /// aggregate FFT error to fit that budget. CMux requires `F(m)` in `{0, 1}`
     /// throughout the programmed domain. The default identity uses `F(m)=m`.
@@ -331,5 +332,37 @@ where
         resources.with_external_product(parameters.output_size(), |scratch, fft| {
             control.external_product_to(input, output, parameters.output_basis(), fft, scratch);
         });
+    }
+}
+
+impl<T, Table> TfheContext<T, Table>
+where
+    T: TorusFftValue,
+    Table: FftTable,
+{
+    /// Prepares the configured gadget identity CBS using shared resources and an independent key.
+    /// Uses this context's input encoding and gadgets; no return scratch is allocated.
+    /// Resources must belong to this exact context. Advanced constructors on
+    /// [`CircuitBootstrapEvaluator`] permit explicit programs and encoding overrides.
+    ///
+    /// # Correctness
+    /// Inherits [`CircuitBootstrapEvaluator::try_new`]'s secret, representation and noise contracts.
+    pub fn circuit_bootstrap_evaluator<'a>(
+        &'a self,
+        resources: &BootstrapResources<'a, T, Table>,
+        circuit_key: &'a CircuitBootstrapKey<T>,
+    ) -> Result<CircuitBootstrapEvaluator<'a, T, Table>, TfheEvaluationError> {
+        let parameters = self
+            .cbs_parameters()
+            .ok_or(TfheEvaluationError::MissingCircuitBootstrapParameters)?;
+        if !core::ptr::eq(self, resources.context()) {
+            return Err(TfheEvaluationError::IncompatibleCircuitBootstrapParameters);
+        }
+        CircuitBootstrapEvaluator::try_with_parameters(
+            resources,
+            parameters.gadget(),
+            circuit_key,
+            parameters.input_codec(),
+        )
     }
 }

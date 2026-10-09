@@ -19,8 +19,8 @@ use primus_integer::FheUint;
 use primus_ntt::{MonomialNttTable, U32NttTable, U64NttTable};
 use primus_tfhe_benchmarks::measurement::{Case as BenchmarkCase, Group, metadata};
 use primus_tfhe_glwe_ntt::{
-    BlindRotationAlgorithm, BlindRotationKey, ClientKey, KeyGenerator,
-    NttGlweBlindRotationWorkspace, ServerKey, SparseGlweBlindRotationWorkspace, TfheContext,
+    BlindRotationKey, BlindRotationMethod, ClientKey, KeyGenerator, NttGlweBlindRotationWorkspace,
+    ServerKey, SparseGlweBlindRotationWorkspace, TfheContext,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -50,6 +50,7 @@ pub(super) fn benchmark(c: &mut Group<'_>) {
 /// Owned server resources and one request, cached across Criterion samples.
 /// Client secrets are needed only for setup validation and are dropped afterward.
 struct Fixture<T: FheUint, Table: MonomialNttTable<ValueT = T>> {
+    parameters: primus_tfhe_glwe_ntt::PbsParameters<T>,
     context: TfheContext<T, Table>,
     server: ServerKey<T>,
     request: Request<T>,
@@ -59,21 +60,36 @@ impl<T: FheUint, Table: MonomialNttTable<ValueT = T>> Fixture<T, Table> {
     /// Fixed-weight classic/sparse use identical client/input seeds. Keygen has
     /// its own RNG; a failed sparse map retries without replacing the secret.
     fn new(case: Case, mode: Mode, name: &str) -> Self {
-        let context = TfheContext::<T, Table>::try_from_parameters(case.parameters(mode)).unwrap();
+        let parameters = case.parameters(mode);
+        let context_parameters = &parameters;
+        let context =
+            TfheContext::<T, Table>::try_from_parameters(context_parameters.clone()).unwrap();
         let client = ClientKey::generate(context.parameters(), &mut StdRng::seed_from_u64(42));
         let choice = match mode.sparse_counts(case) {
-            Some((copy_count, bucket_count)) => BlindRotationAlgorithm::Sparse {
+            Some((copy_count, bucket_count)) => BlindRotationMethod::Sparse {
                 copy_count,
                 bucket_count,
             },
-            None => BlindRotationAlgorithm::Classic,
+            None => BlindRotationMethod::Classic,
         };
         let server = KeyGenerator::new(&context)
-            .try_generate_server_key(&client, choice, None, &mut StdRng::seed_from_u64(4242))
+            .try_generate_server_key_with_parameters(
+                context_parameters.glwe_key_switching(),
+                &client,
+                choice,
+                &mut StdRng::seed_from_u64(4242),
+            )
             .unwrap();
         let mut request = Request::new(&context, case);
-        request.validate(&context, &client, &server, case, mode, name);
+        request.validate(
+            &mut context.evaluator(&server).unwrap(),
+            &client,
+            case,
+            mode,
+            name,
+        );
         Self {
+            parameters,
             context,
             server,
             request,
@@ -95,12 +111,13 @@ fn benchmark_case<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
         let benchmark = BenchmarkCase::new("glwe", "ntt", T::BITS, format!("{name}/{stage}"));
         c.bench_function(benchmark.id(), |b| {
             let Fixture {
+            parameters,
                 context,
                 server,
                 request,
             } = fixture.get_or_insert_with(|| Fixture::<T, Table>::new(case, mode, &name));
             metadata::record("sparse_paper", &benchmark, || serde_json::json!({
-                "parameters": metadata::glwe(context.parameters()), "small_q": case.lwe_modulus,
+                "parameters": metadata::glwe(parameters), "small_q": case.lwe_modulus,
                 "small_q_sigma": 3.19, "plaintext_modulus": case.plaintext_modulus,
                 "copy_bucket_counts": mode.sparse_counts(case), "stage": stage, "outputs": 1,
                 "adaptation": "q -> Q -> ring KS at Q -> extraction -> q; not OpenFHE LWE KS at Qprime"
@@ -126,7 +143,7 @@ fn benchmark_blind_rotation<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     request.lift_input();
     let modulus = context.parameters().cipher_modulus();
     let mut accumulator: GlweCiphertext<Vec<T>> =
-        GlweCiphertext::zero(context.parameters().blind_rotation_ggsw().glwe_len());
+        GlweCiphertext::zero(context.parameters().blind_rotation_params().glwe_len());
     match server.blind_rotation_key() {
         BlindRotationKey::Classic(key) => {
             let mut workspace = NttGlweBlindRotationWorkspace::new(key);

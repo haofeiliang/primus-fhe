@@ -1,15 +1,13 @@
-use primus_decompose::primitive::ApproxSignedBasis;
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_encoding::{PlaintextEmbedding, RoundedCodec};
 use primus_fft::{FftEngine, FftTable, RustFftTable, TfheFftTable};
-use primus_glwe::{GlweParameters, SecretKeyDistr};
+use primus_glwe::SecretKeyDistr;
 use primus_lattice::{GlweDimension, LweDimension};
 use primus_lattice::{glwe::TorusGlwe, lwe::Lwe};
-use primus_lwe::LweParameters;
 use primus_modulus::NativeModulus;
 use primus_poly::{PolyLength, Polynomial};
 use primus_tfhe_glwe_fourier::{
-    BlindRotationAlgorithm, BlindRotationKey, ClientKey, FourierGlweBlindRotationWorkspace,
+    BlindRotationKey, BlindRotationMethod, ClientKey, FourierGlweBlindRotationWorkspace,
     GadgetEncryptionConfig, KeyGenerator, PbsOrder, PbsParameters,
     SparseGlweBlindRotationWorkspace, TfheContext,
 };
@@ -75,40 +73,37 @@ fn check_raw<Table: FftTable>() {
     // k=2 checks every GGSW row; odd bucket count requires the final buffer copy.
     for (dimension, copies, buckets) in [(1, 3, 8), (2, 1, 17)] {
         let modulus = NativeModulus::new();
-        let basis = ApproxSignedBasis::new(
-            None,
-            DecompositionBaseLog::new(8),
-            Some(DecompositionLevelCount::new(3)),
-        );
-        let parameters = PbsParameters::try_new(
-            (LweParameters::new(
-                LweDimension::new(16),
-                8,
-                modulus,
-                SecretKeyDistr::fixed_hamming_weight_binary(16, 4),
-                0.7,
-            ))
-            .into_encryption_parameters(),
-            primus_glwe::GgswParameters::try_with_basis(
-                &(GlweParameters::new(
-                    GlweDimension::new(dimension),
-                    PolyLength::new(N),
-                    8,
-                    modulus,
-                    SecretKeyDistr::UniformTernary,
-                    0.7,
-                )),
-                basis.clone(),
-            )
-            .unwrap(),
-            GadgetEncryptionConfig {
-                decomposition: basis,
+        let parameters = PbsParameters::try_from_config(primus_tfhe_glwe::PbsConfig {
+            small_lwe: primus_tfhe::LweConfig {
+                dimension: LweDimension::new(16),
+                cipher_modulus: modulus.into(),
+                secret_key_distr: SecretKeyDistr::fixed_hamming_weight_binary(16, 4),
                 noise_standard_deviation: 0.7,
             },
-            PbsOrder::BootstrapKeyswitch,
-        )
+            bsk_dimension: GlweDimension::new(dimension),
+            bsk_poly_length: PolyLength::new(N),
+            bsk_secret_distr: SecretKeyDistr::UniformTernary,
+            bsk_gadget: GadgetEncryptionConfig {
+                decomposition: primus_tfhe::DecompositionConfig {
+                    log_basis: DecompositionBaseLog::new(8),
+                    level_count: Some(DecompositionLevelCount::new(3)),
+                },
+                noise_standard_deviation: 0.7,
+            },
+            key_switching: GadgetEncryptionConfig {
+                decomposition: primus_tfhe::DecompositionConfig {
+                    log_basis: DecompositionBaseLog::new(8),
+                    level_count: Some(DecompositionLevelCount::new(3)),
+                },
+                noise_standard_deviation: 0.7,
+            },
+            method: primus_tfhe::BlindRotationMethod::Classic,
+            messages: primus_tfhe::PbsMessageConfig::new(4),
+            order: PbsOrder::BootstrapKeyswitch,
+        })
         .unwrap();
-        let context = TfheContext::<u32, Table>::from_parameters(parameters);
+        let context_parameters = &parameters;
+        let context = TfheContext::<u32, Table>::from_parameters(context_parameters.clone());
 
         let mut rng = StdRng::seed_from_u64(0x4234_3252 + dimension as u64);
         let client = ClientKey::generate(context.parameters(), &mut rng);
@@ -117,7 +112,12 @@ fn check_raw<Table: FftTable>() {
             .try_generate_sparse_blind_rotation_key(&client, copies, buckets, &mut rng)
             .unwrap();
         let server = generator
-            .try_generate_server_key(&client, BlindRotationAlgorithm::Classic, None, &mut rng)
+            .try_generate_server_key_with_parameters(
+                context_parameters.glwe_key_switching(),
+                &client,
+                BlindRotationMethod::Classic,
+                &mut rng,
+            )
             .unwrap();
         let BlindRotationKey::Classic(classic) = server.blind_rotation_key() else {
             panic!("expected classic key")

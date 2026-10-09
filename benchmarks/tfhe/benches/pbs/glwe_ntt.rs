@@ -4,7 +4,6 @@
 //! Fixtures are initialized only for selected IDs, then reused across samples.
 //! Run: cargo bench -p primus_tfhe_benchmarks --bench pbs --features glwe-ntt
 
-use primus_tfhe::BlindRotationAlgorithm;
 use primus_tfhe::{PbsMessageConfig, RoundedPbsCodecs};
 use std::hint::black_box;
 
@@ -45,6 +44,7 @@ fn pbs<T, Table>(
         glwe::ntt_pbs::<T>(order, workload)
     };
     let codecs = parameters
+        .as_ref()
         .pbs_codecs(PbsMessageConfig::new(T::as_from(
             workload.plaintext_modulus,
         )))
@@ -57,6 +57,7 @@ fn pbs<T, Table>(
     let case = Case::new("glwe", backend, T::BITS, format!("{name}/complete"));
     c.bench_function(case.id(), |b| {
         let Fixture {
+            parameters,
             context,
             client,
             server,
@@ -80,7 +81,7 @@ fn pbs<T, Table>(
 
         metadata::record("pbs", &case, || {
             serde_json::json!({
-                "parameters": metadata::glwe(context.parameters()),
+                "parameters": metadata::glwe(parameters),
                 "blind_rotation": metadata::blind_rotation(false),
                 "plaintext_modulus": workload.plaintext_modulus,
                 "encoding": "rounded_padded",
@@ -110,6 +111,7 @@ pub fn bench_pbs(c: &mut Group<'_>) {
 /// Owned keys and request data. Evaluators borrow this fixture and own their
 /// scratch separately; constructing it is deferred until Criterion selects a case.
 struct Fixture<T: FheUint, Table: MonomialNttTable<ValueT = T>> {
+    parameters: primus_tfhe_glwe_ntt::PbsParameters<T>,
     context: TfheContext<T, Table>,
     client: primus_tfhe_glwe_ntt::ClientKey<T>,
     server: primus_tfhe_glwe_ntt::ServerKey<T>,
@@ -125,11 +127,11 @@ impl<T: FheUint, Table: MonomialNttTable<ValueT = T>> Fixture<T, Table> {
         codecs: RoundedPbsCodecs<T, primus_modulus::BarrettModulus<T>>,
         workload: PbsWorkload,
     ) -> Self {
-        let context = TfheContext::<T, Table>::try_from_parameters(parameters).unwrap();
+        let context_parameters = &parameters;
+        let context =
+            TfheContext::<T, Table>::try_from_parameters(context_parameters.clone()).unwrap();
         let mut rng = StdRng::seed_from_u64(42);
-        let (client, server) = context
-            .try_generate_keys(BlindRotationAlgorithm::Classic, None, &mut rng)
-            .unwrap();
+        let (client, server) = context.try_generate_keys(&mut rng).unwrap();
         let input = context
             .encryptor(client.external_lwe_secret_key(), codecs.input_codec())
             .unwrap()
@@ -143,6 +145,7 @@ impl<T: FheUint, Table: MonomialNttTable<ValueT = T>> Fixture<T, Table> {
             .compile_fn(|x| T::as_from((x + domain - 1) % domain))
             .unwrap();
         Self {
+            parameters,
             context,
             client,
             server,

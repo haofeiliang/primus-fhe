@@ -10,29 +10,32 @@
 ## 实验配套参数
 
 ```rust
-use primus_tfhe_ntru_fourier::experimental;
+use primus_tfhe_ntru_fourier::{experimental, TfheContext};
+use primus_fft::RustFftTable as Table;
 
 let config = experimental::CLASSIC_PBS_U64;
-let parameters = config.try_prepare()?;
+let context = TfheContext::<u64, Table, _>::try_from_pbs_config(config)?;
+let parameters = context.parameters();
+let br = context.parameters();
 // 可选：config.messages.with_output_modulus(8) 仅修改输出域。
-let codecs = parameters.pbs_codecs(config.messages)?;
+let codecs = br.pbs_codecs(parameters.messages())?;
 ```
 
-`PbsConfig` 用一个纯数值类型组合 BR/KS 与输入输出消息配置；`CbsConfig` 表示环输出 CBS，其 gadget 输出不使用普通消息 codec。`experimental` 另导出 `SPARSE_PBS_U64`、`CLASSIC_MANY_LUT_U64`、`CLASSIC_THRESHOLD_MVB_U64`、`CLASSIC_CBS_U64` 和 `CLASSIC_ONE_HOT_U64`。密钥生成使用 `config.blind_rotation.algorithm`。配置实现 `Copy`，可直接覆盖字段或使用 struct update，而无需先准备采样器。
+`PbsConfig` 用一个纯数值类型组合 BR/KS 与输入输出消息配置；`CbsConfig` 表示环输出 CBS，其 gadget 输出不使用普通消息 codec。`experimental` 另导出 `SPARSE_PBS_U64`、`CLASSIC_MANY_LUT_U64`、`CLASSIC_THRESHOLD_MVB_U64`、`CLASSIC_CBS_U64` 和 `CLASSIC_ONE_HOT_U64`。Context 保留算法、KS、消息选择与可选 CBS 状态，默认密钥生成不再补传这些参数。配置实现 `Copy`，可直接覆盖字段或使用 struct update，而无需先准备采样器。
 
 这些 u64 常量为算术样例，安全性与失败概率尚未评估。组合方式、独立消息覆盖和数值契约见[家族配置](../primus_tfhe_ntru/README.zh_CN.md#实验配套参数)。所有示例均从对应操作配置开始；高级显式组合继续使用家族构造器。`PbsParameters` 可供兼容编码复用；改变工作负载后仍须重新确定误差预算。
 
 ## 快速开始
 
-基础、sparse、ManyLUT 和 MVB 示例使用 `PbsMessageConfig`：`new(t)` 默认输入输出消息模数相同，`with_output_modulus(t_out)` 只修改输出。普通 PBS/ManyLUT 用 `parameters.pbs_codecs` 准备，MVB 用 `parameters.factorized_pbs_codecs` 准备；返回的 codec 分别表示输入、LUT 输出和返回输出。`context.decryptor(external_secret, codecs.output_codec())?` 同时接受 Rounded/Scaled 输出，随后用 `decrypt()` 得到消息。见[选择输出编码](../primus_tfhe/README.zh_CN.md#选择输出编码)。
+基础、sparse、ManyLUT 和 MVB 示例使用 `PbsMessageConfig`：`new(t)` 默认输入输出消息模数相同，`with_output_modulus(t_out)` 只修改输出。普通 PBS/ManyLUT 用 `br.pbs_codecs` 准备，MVB 用 `br.factorized_pbs_codecs` 准备；返回的 codec 分别表示输入、LUT 输出和返回输出。`context.decryptor(external_secret, codecs.output_codec())?` 同时接受 Rounded/Scaled 输出，随后用 `decrypt()` 得到消息。见[选择输出编码](../primus_tfhe/README.zh_CN.md#选择输出编码)。
 
 ```sh
 cargo run -p primus_tfhe_ntru_fourier --release --example ntru_fourier_basic --features rustfft
 ```
 
-[basic 示例](examples/ntru_fourier_basic.rs)展示参数 → context → 配对密钥 → 客户端 → 单个 LUT → 复用 evaluator 和密文缓冲。它计算 `x % 4`，输入和输出均采用 `t=32` 编码，直接用 `decrypt` 解码。 `parameters.lookup_table_compiler(&codecs)?` 直接绑定已准备的输入/输出编码，再用 `compiler.compile_fn(function)` 创建 LUT。通过 `PbsMessageConfig::with_output_modulus` 选择不同输出消息模数，见[选择输出编码](../primus_tfhe/README.zh_CN.md#选择输出编码)。 公钥加密通过 `context.public_encryptor(&public, codecs.input_codec())` 创建客户端，见[家族说明](../primus_tfhe_ntru/README.zh_CN.md#客户端与-lut)。 示例的外部 `q=2^24` 与环 `Q` 不同，LUT 编译在 `Q` 下，返回 LWE 在 `q` 下。
+[basic 示例](examples/ntru_fourier_basic.rs)展示参数 → context → 配对密钥 → 客户端 → 单个 LUT → 复用 evaluator 和密文缓冲。它计算 `x % 4`，输入和输出均采用 `t=32` 编码，直接用 `decrypt` 解码。 `br.lookup_table_compiler(&codecs)?` 直接绑定已准备的输入/输出编码，再用 `compiler.compile_fn(function)` 创建 LUT。通过 `PbsMessageConfig::with_output_modulus` 选择不同输出消息模数，见[选择输出编码](../primus_tfhe/README.zh_CN.md#选择输出编码)。 公钥加密通过 `context.public_encryptor(&public, codecs.input_codec())` 创建客户端，见[家族说明](../primus_tfhe_ntru/README.zh_CN.md#客户端与-lut)。 示例的外部 `q=2^24` 与环 `Q` 不同，LUT 编译在 `Q` 下，返回 LWE 在 `q` 下。
 
-示例固定 `Word = u64`，使用下表对应的操作配置。尺寸、模数表示、秘密分布、噪声和分解集中在 `experimental`；各个 `main` 只展示准备、公开函数、客户端和求值。CBS 使用 `config.gadget`，消费端独立选择候选环消息域。 Fourier 示例选择 RustFFT；需要 TFHE-FFT 时，同时切换 `Table` 导入、示例 target 的 `required-features` 和 `--features tfhe-fft`。 高级显式组合仍支持 u32/u64，见[家族配置](../primus_tfhe_ntru/README.zh_CN.md#实验配套参数)和[数值参数指南](../../guides/development/tfhe-parameters.md)。
+示例固定 `Word = u64`，使用下表对应的操作配置。尺寸、模数表示、秘密分布、噪声和分解集中在 `experimental`；各个 `main` 只展示准备、公开函数、客户端和求值。CBS 使用完整的 `CbsParameters`，消费端独立选择候选环消息域。 Fourier 示例选择 RustFFT；需要 TFHE-FFT 时，同时切换 `Table` 导入、示例 target 的 `required-features` 和 `--features tfhe-fft`。 高级显式组合仍支持 u32/u64，见[家族配置](../primus_tfhe_ntru/README.zh_CN.md#实验配套参数)和[数值参数指南](../../guides/development/tfhe-parameters.md)。
 
 注释标明客户端和服务端阶段。Basic 与 sparse 都计算 `x % 4`，默认输入输出消息模数相同；独立 ManyLUT 示例同时计算 `x % 4` 和 `x / 4`，显式设置 `t_in=16`、`t_out=8`，并用输出 codec 解密。每例复用 LUT、evaluator 和输出缓冲处理两次请求。见[双方职责与缓冲分配](../primus_tfhe/README.zh_CN.md#客户端与服务端边界)。
 
@@ -54,21 +57,23 @@ ManyLUT 通过交错共享一次盲旋转，多输出返回还共享一次 Q→q
 
 ## 参数与表示
 
+`PbsParameters::try_from_config(pbs_config)` 保存必需 KS、算法和消息选择；`CbsParameters::try_from_config(cbs_config.pbs, cbs_config.gadget)` 增补 CBS gadget 和输入编码。Context 构造保存一份公共参数和变换表。`parameters()` 始终提供完整 PBS 域，`cbs_parameters()` 查询额外 CBS 能力。PBS 和 CBS 共享必需 KS；CBS 输出环/gadget 密文后，后续运算可用同一 KS 返回 LWE。
+
 Fourier 环只支持 `NativeModulus`；`PowOf2Modulus` 环不受支持。 NTRU 的外部 LWE 模数 q 可独立使用 `PowOf2Modulus`。
 
-`PbsConfig::try_prepare` / `CbsConfig::try_prepare` 准备并检查数学配置； `TfheContext::<_, RustFftTable>::from_parameters(parameters)` 准备变换表。 已有表用 `TfheContext::try_new(parameters, table)` 绑定。 `BlindRotationConfig`、`PbsConfig`、`CbsConfig`、`PbsParameters`、`Encryptor` 和 `Decryptor` 将家族 API 特化为 `NativeModulus`。 `PbsParameters<T, LM>` / `TfheContext<T, Table, LM>` 的 `LM` 指定独立外部模数类型（默认沿用后端模数类型）；`BlindRotationConfig::acc_modulus` 指定环 `Q`。
+已有参数按值移入 `TfheContext::from_parameters(parameters)` 或 `from_cbs_parameters(parameters)`；已有表使用 `try_new(parameters, table)`。默认准备不复制公共 sampler。CBS 和 PBS 共用环 sampler 的既有 Arc，不再引入独立 BR 参数 owner。`PbsParameters::try_from_config(pbs)` 准备公共状态；`CbsParameters::try_from_config(pbs, gadget)` 或 `try_with_config(parameters, gadget)` 添加 CBS。后者直接移动已准备状态，输入消息模数取自 PBS 参数。 `LM` 选择外部 q 的模数类型，累加环 Q 由 `PbsConfig.acc_modulus` 指定。
 
 `RustFftTable` 和 `TfheFftTable` 均支持 u32/u64。变换域密钥、数据和 evaluator 必须使用同一个 FFT 表实例，长度相同不能证明表示一致。
 
 ## 求值材料
 
-`ServerKey` 组合独立拥有的 `BlindRotationKey`、`NtruLweKeySwitchingKey` 和可选 `CircuitBootstrapKey`。`into_parts()` 移出组件，不复制密文缓冲；`ServerKey::new(br, return_key, cbs)` 组合各 owner。独立生成分别使用 `KeyGenerator::try_generate_blind_rotation_key(&client, config, rng)`、`parameters.try_generate_lwe_return_key(&client, rng)` 和 `generator.try_generate_circuit_bootstrap_key(client.accumulator_ntru_secret_key(), cbs_parameters, rng)`。`BlindRotationAlgorithm` 选择 classic 或 sparse BR，不额外生成返回或 CBS 材料。独立生成可能重复转换累加秘密；成对生成复用同一次变换。
+`ServerKey` 组合必需的 `BlindRotationKey` 和 `NtruLweKeySwitchingKey`。`CircuitBootstrapServerKey::new(server_key, circuit_key)` 再组合必需 CBS key；两者的 `into_parts()` 均移动缓冲，不复制数组。高级工作流保留独立 BR、返回 KS 和 CBS 生成接口，`BlindRotationMethod` 选择 classic/sparse。独立生成可能重复转换秘密，成对生成复用已接受的变换表示。
 
-仅需环输出 CBS/one-hot 时，`context.try_generate_circuit_bootstrap_keys(blind_rotation, cbs_config, rng)` 返回 `(ClientKey, CircuitBootstrapServerKey)`。生成时 BR/CBS 共享已接受的累加秘密变换和逆，不生成返回密钥，也不施加返回 q 的幅度界。通过 `server.bootstrap_resources(&context)` 绑定资源，`server.circuit_bootstrap_key()` 直接取得 CBS 材料，见[材料选择](../primus_tfhe/README.zh_CN.md#选择盲旋转算法)。
+`context.try_generate_circuit_bootstrap_keys(rng)` 返回 `(ClientKey, CircuitBootstrapServerKey)`，共享已接受的累加秘密变换/逆元生成 BR/CBS，并生成必需返回 KS。完整组合须满足返回 q 的秘密幅度界。`server.bootstrap_resources(&context)` 只分配 BR 工作区，CBS/one-hot 本身不分配返回缓冲；`server.server_key()` 可绑定普通 PBS，`server.circuit_bootstrap_key()` 直接借用 CBS key。
 
-`Evaluator::try_from_parts(context, br, return_key)` 绑定普通 PBS。独立 CBS/one-hot 先用 `context.bootstrap_resources(br)?` 准备公共 BR/外积资源，再用 `try_new(&resources, circuit_key, &input_codec)` 准备操作状态，无需返回密钥；CBS 示例展示这一流程。独立材料必须采用相同实际秘密与FFT table 实例，形状和模数检查不能证明身份。
+`Evaluator::try_from_parts(context, parameters.key_switching(), br, return_key)` 绑定普通 PBS。独立 CBS/one-hot 先用 `context.bootstrap_resources(br)?` 准备公共 BR/外积资源，再用 `try_new(&resources, circuit_key, &input_codec)` 准备操作状态，无需返回密钥；CBS 示例展示这一流程。独立材料必须采用相同实际秘密与FFT table 实例，形状和模数检查不能证明身份。
 
-`server_key.blind_rotation_key().classic_controls()` 返回借用的 `ClassicControls` 视图，稀疏材料返回 `None`。视图的 `initializer()` 用于提升公开多项式；首坐标使用 NLEV bit，后续坐标使用 NGSW bit，ternary 秘密按正/负 bit 配对。CBS、one-hot 在所选 classic/sparse BR 上使用独立的 trace/scheme-switch 材料；MVB 不需要额外的提升或 CBS 材料。可选的 `circuit_bootstrap_key()` 仍可用于查看或组合 CBS 材料。
+`server_key.blind_rotation_key().classic_controls()` 返回借用的 `ClassicControls` 视图，稀疏材料返回 `None`。视图的 `initializer()` 用于提升公开多项式；首坐标使用 NLEV bit，后续坐标使用 NGSW bit，ternary 秘密按正/负 bit 配对。CBS、one-hot 在所选 classic/sparse BR 上使用独立的 trace/scheme-switch 材料；MVB 不需要额外的提升或 CBS 材料。`CircuitBootstrapServerKey::circuit_bootstrap_key()` 直接借用必需 CBS 材料。
 
 `KeyGenerator::try_generate_public_lift_key(accumulator_secret, &nlev_parameters, rng)` 为需要公开提升的高精度表独立生成 NLEV[1]。参数选择其 basis 和行噪声；查表绑定时同时提供密文及这些参数。Sparse PBS/CBS/one-hot 和无公开提升的表均无需此材料。
 
@@ -78,7 +83,7 @@ Fourier 环只支持 `NativeModulus`；`PowOf2Modulus` 环不受支持。 NTRU �
 
 `Resources` 将借用的 context/计算材料与拥有的复用缓冲组合起来，不拥有或复制密钥。`Workspace` 表示缓冲及形状元数据，包括底层 BR/外积 scratch。`Evaluator` 使用自己拥有或短借用的资源执行具体流程。借用期间须保留 context/key 的 owner；串行操作可共享一个可变资源实例，并发请求需要独立的可变资源。资源拥有 FFT engine，而 engine 借用 context 的表；更换资源 owner 时仍须保持表身份。
 
-仅使用 CBS/one-hot 时，单独保留 `BootstrapResources`，不分配返回缓冲。以后需要 PBS，可用 `Evaluator::try_from_resources(resources, return_key)` 接管公共资源并分配返回缓冲。`try_rebind_return_key` 更换兼容返回密钥而不重新分配；成功时丢弃待提交样本，失败保持原绑定。资源所有权变化不验证密钥的实际秘密身份。
+仅使用 CBS/one-hot 时，单独保留 `BootstrapResources`，不分配返回缓冲。以后需要 PBS，可用 `Evaluator::try_from_resources(resources, parameters.key_switching(), return_key)` 接管公共资源并分配返回缓冲。`try_rebind_return_key` 更换兼容返回密钥而不重新分配；成功时丢弃待提交样本，失败保持原绑定。资源所有权变化不验证密钥的实际秘密身份。
 
 ## 固定尺度分解式 MVB
 
@@ -94,27 +99,28 @@ Fourier 环只支持 `NativeModulus`；`PowOf2Modulus` 环不受支持。 NTRU �
 
 本后端重导出家族的[共享系数密钥](../primus_tfhe_ntru/README.zh_CN.md#sparse-系数密钥) `SparseNtruBootstrappingKey<T>`；生成、变换及桶聚合仍由各后端负责。
 
-`KeyGenerator::try_generate_server_key(&client, blind_rotation, cbs, rng)` 为已有客户端选择 `BlindRotationAlgorithm::Classic` 或 `Sparse { copy_count, bucket_count }`；同一个 fixed-weight binary 秘密支持两者。CBS 传 `None` 只生成普通 BR/返回材料，传 `Some(config)` 则添加 CBS 密钥。成对生成快捷入口 `context.try_generate_keys(blind_rotation, cbs, rng)` 接收同样的选择并复用变换后的秘密；独立组件不要求完整密钥包。见[算法和材料选择](../primus_tfhe/README.zh_CN.md#选择盲旋转算法)。
+普通 PBS 使用 `context.try_generate_keys(rng)` 和 `context.evaluator(&server)`；已有 client 使用 `context.try_generate_server_key(&client, rng)`。CBS 使用 `try_generate_circuit_bootstrap_keys` / `try_generate_circuit_bootstrap_server_key`，返回 `CircuitBootstrapServerKey`。`try_with_circuit_bootstrap(gadget)` 为 Context 添加 CBS 能力；普通工厂仍返回 BR/KS `ServerKey`。高级显式工厂分别接收 KS、算法，以及 CBS 工厂所需的 gadget。
 
 为 external-LWE 选择固定重量 binary 分布，并显式选择 sparse；秘密分布本身不决定算法。要求 `0<h<n`、`copy_count>=1`、`bucket_count>=max(copy_count,h)`。
 
 ```rust,ignore
-let blind_rotation = BlindRotationAlgorithm::Sparse { copy_count: 3, bucket_count: 2 * h };
-let (client, server) = context.try_generate_keys(blind_rotation, None, &mut rng)?;
+let config = experimental::SPARSE_PBS_U64;
+let context = TfheContext::<_, Table, _>::try_from_pbs_config(config)?;
+let (client, server) = context.try_generate_keys(&mut rng)?;
 let mut evaluator = context.evaluator(&server)?;
 ```
 
-普通/交错 PBS 复用原 evaluator，分解式 MVB 每次调用时借用它。将 `None` 改为 `Some(cbs_config)` 会复用累加秘密变换并生成 CBS/one-hot 材料。仅需环输出时，以同样的 sparse 选择调用 `try_generate_circuit_bootstrap_keys`，无需返回密钥。 `server.blind_rotation_key().sparse_blind_rotation_key()` 提供选择密文。
+普通/交错 PBS 复用原 evaluator，分解式 MVB 每次调用时借用它。`try_generate_circuit_bootstrap_keys` 复用累加秘密变换生成 BR/CBS，并生成必需 KS。仅需环输出时，从 sparse `CbsConfig` 创建 Context，再调用 `try_generate_circuit_bootstrap_keys`。`server.server_key().blind_rotation_key().sparse_blind_rotation_key()` 提供选择密文。
 
 外部秘密允许偶数重量。只有环秘密需要可逆且 Fourier 逆稳定；系数恢复和聚合 FFT 另引入数值误差。
 
 ## 可选电路自举
 
-`parameters.circuit_bootstrap_codecs(t_in, t_ring)?` 返回 Rounded 输入与 Scaled 候选环消息编码，自动提供正确的 q/Q，两个明文域独立。将前者传给输入 encryptor 和 CBS evaluator，后者传给 `accumulator_client`；它不描述 CBS 的 gadget 输出。
+`br.circuit_bootstrap_codecs(t_in, t_ring)?` 返回 Rounded 输入与 Scaled 候选环消息编码，自动提供正确的 q/Q，两个明文域独立。将前者传给输入 encryptor 和 CBS evaluator，后者传给 `accumulator_client`；它不描述 CBS 的 gadget 输出。
 
 用 `key.parameters().compile_lookup_table_fn(&input_codec, |m| u64::from(m >= 2))?` 编译整数函数，或将完整前半区结果切片传给 `compile_lookup_table_slice`。通过 `CircuitBootstrapEvaluator::try_with_lookup_table(&resources, key, program)?` 绑定返回的 `CircuitBootstrapLookupTable`；`try_new` 保留恒等函数默认入口。输出层使用 `g_j * F(m) mod Q`，无需输出消息 codec 或额外 BR。CMux 要求整个输入域上的 F 都是 bit；其他环整数遵循外积噪声契约。普通 CBS 示例使用 t_in=8，展示该谓词的正反分支。
 
-`context.try_generate_circuit_bootstrap_keys(blind_rotation, cbs_config, &mut rng)` 为环输出生成配对材料，`CircuitBootstrapServerKey` 持有 BR、必要的输入准备和 CBS 材料；`circuit_bootstrap_key()` 直接返回必需的密钥。混合 PBS/CBS 仍可用 `try_generate_keys(blind_rotation, Some(cbs_config), rng)` 生成完整 `ServerKey`。取出 `server.circuit_bootstrap_key()`，与公共资源一起传给 `CircuitBootstrapEvaluator::try_new`；该构造器显式要求 CBS 材料。使用 `allocate_output`、`circuit_bootstrap_to` 和 `cmux_to`；[CBS → CMUX 示例](examples/ntru_fourier_circuit_bootstrap.rs)展示完整消费链。
+`context.try_generate_circuit_bootstrap_keys(&mut rng)` 生成一个 BR/KS `ServerKey` 和必需 CBS key 的组合。通过 `server.server_key()` 创建 PBS evaluator，通过 `server.circuit_bootstrap_key()` 创建 CBS evaluator，共用同一份 BR/KS。`allocate_output`、`circuit_bootstrap_to` 和 `cmux_to` 逐次借用公共资源；[CBS → CMUX 示例](examples/ntru_fourier_circuit_bootstrap.rs)展示完整消费链。
 
 输出为 `f_acc` 下的 `FourierNgswCiphertext`。Circuit key 绑定完整输出 basis； `try_new(&resources, circuit_key, &input_codec)` 从该密钥取得参数。 须对最小输出 gadget 尺度预算 Native trace halving 和 FFT 误差。
 
@@ -145,7 +151,7 @@ let mut evaluator = context.evaluator(&server)?;
 
 完整 chunk 加密与查表工作流见 [fourier_lookup.rs](../primus_tfhe_ntru_lut/examples/fourier_lookup.rs)。
 
-自定义返回先绑定 `LweReturnEvaluator::new(server.key_switching_key(),
+自定义返回先绑定 `LweReturnEvaluator::new(server.key_switching_key().unwrap(),
 context.parameters().external_lwe().cipher_modulus())`，再按需准备 scalar/batch 工作区，
 显式传给 `return_at_to`、`return_prefix_to` 或流式操作。one-hot 与变换工作区可独立复用。
 详见[家族返回契约](../primus_tfhe_ntru/README.zh_CN.md#ntrulwe-返回)。

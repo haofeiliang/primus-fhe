@@ -15,7 +15,7 @@ use primus_modulus::NativeModulus;
 use primus_modulus::PowOf2Modulus;
 use primus_ntru::SecretKeyDistr;
 use primus_tfhe_benchmarks::{benchmark::PBS_WORKLOADS, parameters::ntru};
-use primus_tfhe_ntru_fourier::{BlindRotationAlgorithm, KeyGenerator, TfheContext};
+use primus_tfhe_ntru_fourier::{KeyGenerator, TfheContext};
 use rand::{SeedableRng, rngs::StdRng};
 
 // Keygen keeps one Boolean-sized fixture per secret distribution.
@@ -30,7 +30,9 @@ fn keygen<T: TorusFftValue, Table: FftTable>(c: &mut Group<'_>, backend: &str, t
     let name = format!("{kind}/{}", workload.name);
     let parameters = ntru::pbs(NativeModulus::<T>::new(), workload, secret);
     let fixture = std::cell::LazyCell::new(|| {
-        let context = TfheContext::<T, Table, PowOf2Modulus<T>>::from_parameters(parameters);
+        let context_parameters = &parameters;
+        let context =
+            TfheContext::<T, Table, PowOf2Modulus<T>>::from_parameters(context_parameters.clone());
         let mut rng = StdRng::seed_from_u64(42);
         let client = KeyGenerator::new(&context)
             .try_generate_client_key(&mut rng)
@@ -45,7 +47,7 @@ fn keygen<T: TorusFftValue, Table: FftTable>(c: &mut Group<'_>, backend: &str, t
 
         metadata::record("setup", &case, || {
             serde_json::json!({
-                "parameters": metadata::ntru(context.parameters()),
+                "parameters": metadata::ntru(&parameters),
                 "blind_rotation": metadata::blind_rotation(false),
                 "drop": "outside keygen timing; stage buffers outside timing",
                 "fft_layout_fingerprint": metadata::fft_layout(context.table()),
@@ -55,12 +57,7 @@ fn keygen<T: TorusFftValue, Table: FftTable>(c: &mut Group<'_>, backend: &str, t
             || (),
             |()| {
                 generator
-                    .try_generate_server_key(
-                        black_box(client),
-                        BlindRotationAlgorithm::Classic,
-                        None,
-                        &mut rng,
-                    )
+                    .try_generate_server_key(black_box(client), &mut rng)
                     .unwrap()
             },
             BatchSize::PerIteration,
@@ -73,7 +70,9 @@ fn fixed_weight_keygen<T: TorusFftValue, Table: FftTable>(c: &mut Group<'_>, bac
     let parameters = ntru::diagnostic(NativeModulus::<T>::new());
     let name = "fixed_weight";
     let fixture = std::cell::LazyCell::new(|| {
-        let context = TfheContext::<T, Table, PowOf2Modulus<T>>::from_parameters(parameters);
+        let context_parameters = &parameters;
+        let context =
+            TfheContext::<T, Table, PowOf2Modulus<T>>::from_parameters(context_parameters.clone());
         let mut rng = StdRng::seed_from_u64(42);
         let client = KeyGenerator::new(&context)
             .try_generate_client_key(&mut rng)
@@ -96,7 +95,7 @@ fn fixed_weight_keygen<T: TorusFftValue, Table: FftTable>(c: &mut Group<'_>, bac
 
             metadata::record("setup", &case, || {
                 serde_json::json!({
-                    "parameters": metadata::ntru(context.parameters()),
+                    "parameters": metadata::ntru(&parameters),
                     "blind_rotation": metadata::blind_rotation(sparse),
                     "drop": "outside keygen timing; stage buffers outside timing",
                     "fft_layout_fingerprint": metadata::fft_layout(context.table()),
@@ -106,7 +105,12 @@ fn fixed_weight_keygen<T: TorusFftValue, Table: FftTable>(c: &mut Group<'_>, bac
                 || (),
                 |()| {
                     generator
-                        .try_generate_server_key(black_box(client), blind_rotation, None, &mut rng)
+                        .try_generate_server_key_with_parameters(
+                            parameters.key_switching(),
+                            black_box(client),
+                            blind_rotation,
+                            &mut rng,
+                        )
                         .unwrap()
                 },
                 BatchSize::PerIteration,

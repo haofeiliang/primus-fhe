@@ -2,7 +2,7 @@
 //!
 //! These reproduce teaching workloads recorded on 2026-10-08 at revision
 //! `9a80c506`; security and decryption-failure probability are unassessed.
-//! Configs contain numerical choices; `try_prepare()` builds sampling state once.
+//! Configs contain numerical choices; parameter constructors build sampling state once.
 //! Functions, lane/factor geometry and complete noise budgets belong to the operation.
 
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
@@ -12,15 +12,14 @@ use primus_modulus::BarrettModulus;
 use primus_poly::PolyLength;
 
 use crate::{
-    BlindRotationAlgorithm, BlindRotationConfig, CbsConfig, CbsGadgetConfig, CbsInput,
-    DecompositionConfig, GadgetEncryptionConfig, LweConfig, ModulusConfig, PbsConfig,
-    PbsMessageConfig, PbsOrder,
+    BlindRotationMethod, CbsConfig, CbsGadgetConfig, DecompositionConfig, GadgetEncryptionConfig,
+    LweConfig, ModulusConfig, PbsConfig, PbsMessageConfig, PbsOrder,
 };
 
 const Q50: u64 = 1_125_899_906_826_241;
 const ALPHA: f64 = 2.046_151_696_979_124e-6;
 const BETA: f64 = 2.845_267_479_601_915e-15;
-const SPARSE: BlindRotationAlgorithm = BlindRotationAlgorithm::Sparse {
+const SPARSE: BlindRotationMethod = BlindRotationMethod::Sparse {
     copy_count: 3,
     bucket_count: 64,
 };
@@ -43,7 +42,7 @@ pub const SPARSE_PBS_U64: PbsConfig<u64> = fixed(
 pub const CLASSIC_MANY_LUT_U64: PbsConfig<u64> = fixed(
     ModulusConfig::Explicit(Q50),
     Q50 as f64,
-    BlindRotationAlgorithm::Classic,
+    BlindRotationMethod::Classic,
     16,
     8,
     PbsOrder::BootstrapKeyswitch,
@@ -54,7 +53,7 @@ pub const CLASSIC_MANY_LUT_U64: PbsConfig<u64> = fixed(
 pub const CLASSIC_THRESHOLD_MVB_U64: PbsConfig<u64> = fixed(
     ModulusConfig::Explicit(Q50),
     Q50 as f64,
-    BlindRotationAlgorithm::Classic,
+    BlindRotationMethod::Classic,
     128,
     2,
     PbsOrder::KeyswitchBootstrap,
@@ -65,7 +64,7 @@ pub const CLASSIC_THRESHOLD_MVB_U64: PbsConfig<u64> = fixed(
 pub const CLASSIC_CBS_U64: CbsConfig<u64> =
     circuit(ModulusConfig::Explicit(Q50), Q50 as f64, false);
 
-/// Sparse NTT CBS, n728/h32/N1024, input t=8, direct input and no return KS.
+/// Sparse NTT CBS, n728/h32/N1024, input t=8, direct small-LWE input and retained return KS.
 pub const SPARSE_CBS_U64: CbsConfig<u64> = circuit(ModulusConfig::Explicit(Q50), Q50 as f64, true);
 
 /// None keeps the maximum supported levels; the decomposition can still discard low bits.
@@ -80,26 +79,24 @@ const fn decomposition(base_log: u32) -> DecompositionConfig {
 const fn dense(modulus: ModulusConfig<BarrettModulus<u64>>, q: f64) -> PbsConfig<u64> {
     let ring_noise = if BETA * q < 6.4 { 6.4 } else { BETA * q };
     PbsConfig {
-        messages: PbsMessageConfig::new(32),
-        blind_rotation: BlindRotationConfig {
-            small_lwe: LweConfig {
-                dimension: LweDimension::new(866),
-                cipher_modulus: modulus,
-                secret_key_distr: SecretKeyDistr::UniformBinary,
-                noise_standard_deviation: ALPHA * q,
-            },
-            acc_dimension: GlweDimension::new(1),
-            acc_poly_length: PolyLength::new(2048),
-            bsk_secret_distr: SecretKeyDistr::UniformBinary,
-            bsk_gadget: GadgetEncryptionConfig {
-                decomposition: DecompositionConfig {
-                    log_basis: DecompositionBaseLog::new(23),
-                    level_count: Some(DecompositionLevelCount::new(1)),
-                },
-                noise_standard_deviation: ring_noise,
-            },
-            algorithm: BlindRotationAlgorithm::Classic,
+        small_lwe: LweConfig {
+            dimension: LweDimension::new(866),
+            cipher_modulus: modulus,
+            secret_key_distr: SecretKeyDistr::UniformBinary,
+            noise_standard_deviation: ALPHA * q,
         },
+        bsk_dimension: GlweDimension::new(1),
+        bsk_poly_length: PolyLength::new(2048),
+        bsk_secret_distr: SecretKeyDistr::UniformBinary,
+        bsk_gadget: GadgetEncryptionConfig {
+            decomposition: DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(23),
+                level_count: Some(DecompositionLevelCount::new(1)),
+            },
+            noise_standard_deviation: ring_noise,
+        },
+        method: BlindRotationMethod::Classic,
+        messages: PbsMessageConfig::new(32),
         key_switching: GadgetEncryptionConfig {
             decomposition: DecompositionConfig {
                 log_basis: DecompositionBaseLog::new(3),
@@ -115,7 +112,7 @@ const fn dense(modulus: ModulusConfig<BarrettModulus<u64>>, q: f64) -> PbsConfig
 const fn fixed(
     modulus: ModulusConfig<BarrettModulus<u64>>,
     q: f64,
-    algorithm: BlindRotationAlgorithm,
+    algorithm: BlindRotationMethod,
     input: u64,
     output: u64,
     order: PbsOrder,
@@ -125,55 +122,56 @@ const fn fixed(
         noise_standard_deviation: 6.4,
     };
     PbsConfig {
-        blind_rotation: BlindRotationConfig {
-            small_lwe: LweConfig {
-                dimension: LweDimension::new(728),
-                cipher_modulus: modulus,
-                secret_key_distr: SecretKeyDistr::FixedHammingWeightBinary { hamming_weight: 32 },
-                noise_standard_deviation: 3.2 * q / 16384.0,
-            },
-            acc_dimension: GlweDimension::new(1),
-            acc_poly_length: PolyLength::new(1024),
-            bsk_secret_distr: SecretKeyDistr::SparseTernary,
-            bsk_gadget: gadget,
-            algorithm,
+        small_lwe: LweConfig {
+            dimension: LweDimension::new(728),
+            cipher_modulus: modulus,
+            secret_key_distr: SecretKeyDistr::FixedHammingWeightBinary { hamming_weight: 32 },
+            noise_standard_deviation: 3.2 * q / 16384.0,
         },
+        bsk_dimension: GlweDimension::new(1),
+        bsk_poly_length: PolyLength::new(1024),
+        bsk_secret_distr: SecretKeyDistr::SparseTernary,
+        bsk_gadget: gadget,
+        method: algorithm,
         key_switching: gadget,
         order,
         messages: PbsMessageConfig::new(input).with_output_modulus(output),
     }
 }
 
-/// CBS shares only the BR domain and gadget descriptions; direct input has no KS fields.
+/// CBS adds trace/scheme-switch gadgets to the shared BR/KS domain.
 const fn circuit(
     modulus: ModulusConfig<BarrettModulus<u64>>,
     q: f64,
     sparse: bool,
 ) -> CbsConfig<u64> {
     let blind_rotation = if sparse {
-        fixed(modulus, q, SPARSE, 8, 8, PbsOrder::BootstrapKeyswitch).blind_rotation
+        fixed(modulus, q, SPARSE, 8, 8, PbsOrder::BootstrapKeyswitch)
     } else {
-        BlindRotationConfig {
+        PbsConfig {
             small_lwe: LweConfig {
                 dimension: LweDimension::new(800),
                 cipher_modulus: modulus,
                 secret_key_distr: SecretKeyDistr::UniformBinary,
                 noise_standard_deviation: ALPHA * q,
             },
-            acc_dimension: GlweDimension::new(1),
-            acc_poly_length: PolyLength::new(1024),
+            bsk_dimension: GlweDimension::new(1),
+            bsk_poly_length: PolyLength::new(1024),
             bsk_secret_distr: SecretKeyDistr::UniformTernary,
             bsk_gadget: GadgetEncryptionConfig {
                 decomposition: decomposition(8),
                 noise_standard_deviation: 6.4,
             },
-            algorithm: BlindRotationAlgorithm::Classic,
+            method: BlindRotationMethod::Classic,
+            key_switching: GadgetEncryptionConfig {
+                decomposition: decomposition(8),
+                noise_standard_deviation: 6.4,
+            },
+            messages: primus_tfhe::PbsMessageConfig::new(2),
+            order: PbsOrder::BootstrapKeyswitch,
         }
     };
     CbsConfig {
-        blind_rotation,
-        input_modulus: 8,
-        input: CbsInput::Direct,
         gadget: CbsGadgetConfig {
             trace: decomposition(8),
             scheme_switch: decomposition(8),
@@ -181,6 +179,11 @@ const fn circuit(
                 log_basis: DecompositionBaseLog::new(8),
                 level_count: Some(DecompositionLevelCount::new(2)),
             },
+        },
+        pbs: PbsConfig {
+            messages: primus_tfhe::PbsMessageConfig::new(8),
+            order: PbsOrder::BootstrapKeyswitch,
+            ..blind_rotation
         },
     }
 }

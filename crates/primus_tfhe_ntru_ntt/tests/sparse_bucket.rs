@@ -1,5 +1,4 @@
 //! Sparse key selection semantics and independent NLev/bucket error budgets.
-use primus_lwe::LweEncryptionParameters;
 
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_integer::{AsInto, FheUint};
@@ -14,7 +13,7 @@ use primus_ntru::{
 use primus_ntt::{MonomialNttTable, U32NttTable, U64NttTable};
 use primus_poly::{PolyLength, Polynomial};
 use primus_tfhe_ntru_ntt::{
-    BlindRotationAlgorithm, ClientKey, GadgetEncryptionConfig, KeyGenerator, PbsParameters,
+    BlindRotationMethod, ClientKey, GadgetEncryptionConfig, KeyGenerator, PbsParameters,
     TfheContext,
 };
 use rand::{SeedableRng, rngs::StdRng};
@@ -103,27 +102,35 @@ fn check_bucket<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, level_cou
         DecompositionBaseLog::new(8),
         level_count.map(DecompositionLevelCount::new),
     );
-    let context = TfheContext::try_new(
-        PbsParameters::try_new(
-            LweEncryptionParameters::new(
-                LweDimension::new(DIM),
-                modulus,
-                client_params.secret_key_distr(),
-                0.7,
-            ),
-            NlevParameters::try_with_basis(&params, gadget.basis().clone()).unwrap(),
-            GadgetEncryptionConfig {
-                decomposition: primus_tfhe_ntru::DecompositionConfig {
-                    log_basis: DecompositionBaseLog::new(8),
-                    level_count: None,
-                },
-                noise_standard_deviation: client_params.noise_distribution().standard_deviation(),
+    let context_parameters = &PbsParameters::try_from_config(primus_tfhe_ntru::PbsConfig {
+        external_lwe: primus_tfhe::LweConfig {
+            dimension: LweDimension::new(DIM),
+            cipher_modulus: modulus.into(),
+            secret_key_distr: client_params.secret_key_distr(),
+            noise_standard_deviation: 0.7,
+        },
+        acc_modulus: modulus.into(),
+        bsk_poly_length: PolyLength::new(N),
+        bsk_secret_distr: SecretKeyDistr::SparseTernary,
+        bsk_gadget: GadgetEncryptionConfig {
+            decomposition: primus_tfhe::DecompositionConfig {
+                log_basis: (gadget.basis().clone()).log_basis(),
+                level_count: Some((gadget.basis().clone()).decompose_length()),
             },
-        )
-        .unwrap(),
-        ntt,
-    )
+            noise_standard_deviation: 0.7,
+        },
+        key_switching: GadgetEncryptionConfig {
+            decomposition: primus_tfhe_ntru::DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(8),
+                level_count: None,
+            },
+            noise_standard_deviation: client_params.noise_distribution().standard_deviation(),
+        },
+        algorithm: primus_tfhe::BlindRotationMethod::Classic,
+        messages: primus_tfhe::PbsMessageConfig::new(primus_integer::AsFrom::<u32>::as_from(4)),
+    })
     .unwrap();
+    let context = TfheContext::try_new(context_parameters.clone(), ntt).unwrap();
     let ntt = context.table();
     let basis = gadget.basis();
     let scalars: Vec<i128> = basis.scalar_iter().map(|v| v.as_into()).collect();
@@ -177,13 +184,13 @@ fn check_bucket<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, level_cou
     for (copies, buckets) in [(3, 8), (1, DIM + 1)] {
         let imported = ClientKey::new(client.clone(), secret.clone());
         let server = KeyGenerator::new(&context)
-            .try_generate_server_key(
+            .try_generate_server_key_with_parameters(
+                context_parameters.key_switching(),
                 &imported,
-                BlindRotationAlgorithm::Sparse {
+                BlindRotationMethod::Sparse {
                     copy_count: copies,
                     bucket_count: buckets,
                 },
-                None,
                 &mut rng,
             )
             .unwrap();

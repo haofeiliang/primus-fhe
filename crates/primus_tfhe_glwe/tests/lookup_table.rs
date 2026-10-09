@@ -6,9 +6,8 @@ use primus_tfhe::PbsMessageConfig;
 
 #[test]
 fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
-    use primus_decompose::primitive::ApproxSignedBasis;
-    use primus_glwe::{GlweParameters, GlweSecretKey, GlweSize, SecretKeyDistr};
-    use primus_lwe::{LweParameters, LweSecretKey};
+    use primus_glwe::{GlweSecretKey, GlweSize, SecretKeyDistr};
+    use primus_lwe::LweSecretKey;
     use primus_tfhe_glwe::{
         ClientError, ClientKey, GadgetEncryptionConfig, PbsOrder, PbsParameters,
     };
@@ -17,35 +16,34 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
     let mut rng = StdRng::seed_from_u64(0x5041_4444_4544);
     for t in [3u32, 4, 5] {
         let modulus = NativeModulus::new();
-        let lwe = LweParameters::new(
-            LweDimension::new(4),
-            t,
-            modulus,
-            SecretKeyDistr::UniformBinary,
-            0.7,
-        );
-        let glwe = GlweParameters::new(
-            GlweDimension::new(1),
-            PolyLength::new(32),
-            t,
-            modulus,
-            SecretKeyDistr::UniformBinary,
-            0.7,
-        );
-        let bsk = ApproxSignedBasis::new(
-            glwe.cipher_modulus_value(),
-            DecompositionBaseLog::new(8),
-            None,
-        );
-        let parameters = PbsParameters::try_new(
-            lwe.into_encryption_parameters(),
-            primus_glwe::GgswParameters::try_with_basis(&glwe, bsk).unwrap(),
-            GadgetEncryptionConfig {
-                decomposition: ApproxSignedBasis::new(None, DecompositionBaseLog::new(8), None),
-                noise_standard_deviation: glwe.noise_distribution().standard_deviation(),
+        let parameters = PbsParameters::try_from_config(primus_tfhe_glwe::PbsConfig {
+            small_lwe: primus_tfhe::LweConfig {
+                dimension: LweDimension::new(4),
+                cipher_modulus: modulus.into(),
+                secret_key_distr: SecretKeyDistr::UniformBinary,
+                noise_standard_deviation: 0.7,
             },
-            PbsOrder::BootstrapKeyswitch,
-        )
+            bsk_dimension: GlweDimension::new(1),
+            bsk_poly_length: PolyLength::new(32),
+            bsk_secret_distr: SecretKeyDistr::UniformBinary,
+            bsk_gadget: GadgetEncryptionConfig {
+                decomposition: primus_tfhe::DecompositionConfig {
+                    log_basis: DecompositionBaseLog::new(8),
+                    level_count: None,
+                },
+                noise_standard_deviation: 0.7,
+            },
+            key_switching: GadgetEncryptionConfig {
+                decomposition: primus_tfhe::DecompositionConfig {
+                    log_basis: DecompositionBaseLog::new(8),
+                    level_count: None,
+                },
+                noise_standard_deviation: 0.7,
+            },
+            method: primus_tfhe::BlindRotationMethod::Classic,
+            messages: primus_tfhe::PbsMessageConfig::new(4),
+            order: PbsOrder::BootstrapKeyswitch,
+        })
         .unwrap();
         let key = ClientKey::new(
             LweSecretKey::new(vec![1, 0, 1, 1], SecretKeyDistr::UniformBinary, modulus),
@@ -56,16 +54,22 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
             ),
             PbsOrder::BootstrapKeyswitch,
         );
-        let codecs = parameters.pbs_codecs(PbsMessageConfig::new(t)).unwrap();
+        let codecs = parameters
+            .as_ref()
+            .pbs_codecs(PbsMessageConfig::new(t))
+            .unwrap();
         let codec = codecs.input_codec();
         let encryptor = parameters
+            .as_ref()
             .encryptor(key.external_lwe_secret_key(), codec)
             .unwrap();
         let decryptor = parameters
+            .as_ref()
             .decryptor(key.external_lwe_secret_key(), codec)
             .unwrap();
         let domain_len = t.div_ceil(2);
         let default = parameters
+            .as_ref()
             .lookup_table_compiler(&codecs)
             .unwrap()
             .compile_slice(&vec![t - 1; domain_len as usize])
@@ -78,9 +82,10 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
             ClientError::MessageOutsidePaddedDomain
         );
         let codecs = parameters
+            .as_ref()
             .pbs_codecs(PbsMessageConfig::new(t).with_output_modulus(8))
             .unwrap();
-        let compiler = parameters.lookup_table_compiler(&codecs).unwrap();
+        let compiler = parameters.as_ref().lookup_table_compiler(&codecs).unwrap();
         let values: Vec<_> = (0..domain_len).map(|m| 7 - m).collect();
         let single = compiler.compile_slice(&values).unwrap();
         let many = compiler

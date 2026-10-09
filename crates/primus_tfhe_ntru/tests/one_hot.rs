@@ -1,58 +1,57 @@
-use primus_decompose::primitive::ApproxSignedBasis;
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_encoding::RoundedCodec;
 use primus_lwe::LweDimension;
-use primus_lwe::LweEncryptionParameters;
 use primus_modulus::{BarrettModulus, NativeModulus, PowOf2Modulus};
-use primus_ntru::NlevParameters;
-use primus_ntru::{NtruParameters, SecretKeyDistr};
+use primus_ntru::SecretKeyDistr;
 use primus_poly::PolyLength;
 use primus_reduce::RingContext;
 use primus_tfhe_ntru::{
-    CbsGadgetConfig, CbsParameters, DecompositionConfig, GadgetEncryptionConfig,
+    CbsGadgetConfig, CbsGadgetParameters, DecompositionConfig, GadgetEncryptionConfig,
     OneHotBootstrapError, OneHotLookupTable, PbsParameters,
 };
 
-fn parameters<M: RingContext<u64>>(
+fn parameters<
+    M: RingContext<u64>
+        + TryFrom<primus_tfhe::ModulusConfig<M>, Error = primus_tfhe::ModulusConfigError>,
+>(
     modulus: M,
     t: u64,
     levels: usize,
 ) -> (
     PbsParameters<u64, M, PowOf2Modulus<u64>>,
-    CbsParameters<u64, M>,
+    CbsGadgetParameters<u64, M>,
 ) {
-    let ring = NtruParameters::new(
-        PolyLength::new(64),
-        t,
-        modulus,
-        SecretKeyDistr::SparseTernary,
-        0.7,
-    );
-    let blind_rotation_basis = ApproxSignedBasis::new(
-        ring.cipher_modulus_value(),
-        DecompositionBaseLog::new(3),
-        None,
-    );
     let full = DecompositionConfig {
         log_basis: DecompositionBaseLog::new(3),
         level_count: None,
     };
-    let tfhe = PbsParameters::try_new(
-        LweEncryptionParameters::new(
-            LweDimension::new(4),
-            PowOf2Modulus::new(1 << 20),
-            SecretKeyDistr::UniformBinary,
-            0.7,
-        ),
-        NlevParameters::try_with_basis(&ring, blind_rotation_basis).unwrap(),
-        GadgetEncryptionConfig {
+    let tfhe = PbsParameters::try_from_config(primus_tfhe_ntru::PbsConfig {
+        external_lwe: primus_tfhe::LweConfig {
+            dimension: LweDimension::new(4),
+            cipher_modulus: (PowOf2Modulus::new(1 << 20)).into(),
+            secret_key_distr: SecretKeyDistr::UniformBinary,
+            noise_standard_deviation: 0.7,
+        },
+        acc_modulus: modulus.into(),
+        bsk_poly_length: PolyLength::new(64),
+        bsk_secret_distr: SecretKeyDistr::SparseTernary,
+        bsk_gadget: GadgetEncryptionConfig {
+            decomposition: primus_tfhe::DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(3),
+                level_count: None,
+            },
+            noise_standard_deviation: 0.7,
+        },
+        key_switching: GadgetEncryptionConfig {
             decomposition: full,
             noise_standard_deviation: 0.7,
         },
-    )
+        algorithm: primus_tfhe::BlindRotationMethod::Classic,
+        messages: primus_tfhe::PbsMessageConfig::new(t),
+    })
     .unwrap();
-    let cbs = CbsParameters::try_from_config(
-        &tfhe,
+    let cbs = CbsGadgetParameters::try_from_config(
+        tfhe.as_ref(),
         CbsGadgetConfig {
             output: DecompositionConfig {
                 log_basis: DecompositionBaseLog::new(3),
@@ -66,12 +65,18 @@ fn parameters<M: RingContext<u64>>(
     (tfhe, cbs)
 }
 
-fn geometry<M: RingContext<u64>>(modulus: M, q: u128) {
+fn geometry<
+    M: RingContext<u64>
+        + TryFrom<primus_tfhe::ModulusConfig<M>, Error = primus_tfhe::ModulusConfigError>,
+>(
+    modulus: M,
+    q: u128,
+) {
     for t in [4, 8, 16] {
         for levels in [1, 3, 4] {
             let (tfhe, cbs) = parameters(modulus, t, levels);
-            let input_codec = RoundedCodec::new(t, tfhe.external_lwe().cipher_modulus());
-            let lut = OneHotLookupTable::try_new(&tfhe, &cbs, &input_codec).unwrap();
+            let input_codec = RoundedCodec::new(t, tfhe.as_ref().external_lwe().cipher_modulus());
+            let lut = OneHotLookupTable::try_new(tfhe.as_ref(), &cbs, &input_codec).unwrap();
             let n = 64i64;
             let m_count = (t / 2) as i64;
             let w = levels.next_power_of_two() as i64;
@@ -121,22 +126,22 @@ fn geometry<M: RingContext<u64>>(modulus: M, q: u128) {
     }
     for t in [2, 6] {
         let (tfhe, cbs) = parameters(modulus, t, 3);
-        let input_codec = RoundedCodec::new(t, tfhe.external_lwe().cipher_modulus());
+        let input_codec = RoundedCodec::new(t, tfhe.as_ref().external_lwe().cipher_modulus());
         assert_eq!(
-            OneHotLookupTable::try_new(&tfhe, &cbs, &input_codec).unwrap_err(),
+            OneHotLookupTable::try_new(tfhe.as_ref(), &cbs, &input_codec).unwrap_err(),
             OneHotBootstrapError::InvalidPlaintextModulus
         );
     }
     // Ordinary CBS fits exactly; one-hot additionally needs a nonempty guard.
     let (tfhe, cbs) = parameters(modulus, 32, 3);
-    let input_codec = RoundedCodec::new(32, tfhe.external_lwe().cipher_modulus());
+    let input_codec = RoundedCodec::new(32, tfhe.as_ref().external_lwe().cipher_modulus());
     assert_eq!(
-        OneHotLookupTable::try_new(&tfhe, &cbs, &input_codec).unwrap_err(),
+        OneHotLookupTable::try_new(tfhe.as_ref(), &cbs, &input_codec).unwrap_err(),
         OneHotBootstrapError::InsufficientCapacity
     );
     // The same CBS key geometry can bind a smaller message domain.
-    let input_codec = RoundedCodec::new(8, tfhe.external_lwe().cipher_modulus());
-    assert!(OneHotLookupTable::try_new(&tfhe, &cbs, &input_codec).is_ok());
+    let input_codec = RoundedCodec::new(8, tfhe.as_ref().external_lwe().cipher_modulus());
+    assert!(OneHotLookupTable::try_new(tfhe.as_ref(), &cbs, &input_codec).is_ok());
 }
 
 #[test]

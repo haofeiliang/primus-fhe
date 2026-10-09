@@ -12,11 +12,11 @@
 | 类型 | 职责 |
 | --- | --- |
 | `DecompositionBaseLog` / `DecompositionLevelCount` | 经过检查的基数对数和正的保留层数 |
-| `DecompositionConfig` | 尚未绑定模数的基数和保留层数；`try_build` 准备 primitive basis |
+| `DecompositionConfig` | 基数和保留层数；`ApproxSignedBasis::try_from((config, modulus))` 绑定模数 |
 | `primitive::ApproxSignedBasis<T>` | 单 limb 输入，使用显式模数或隐式 native 模数 `2^T::BITS` |
 | `big_integer::BigUintApproxSignedBasis<T>` | 定宽、多 limb 输入，使用显式整数模数 |
 | `OnceSignedDecomposer`、`OnceBigUintSignedDecomposer` | 提取一个保留层，由对应 basis 的 `decomposer_iter()` 返回 |
-| `ApproxSignedBasisError` | `try_new` 返回的构造参数错误 |
+| `ApproxSignedBasisError` | `try_new` 和 `TryFrom` 返回的构造参数错误 |
 
 `T: FheUint` 在 primitive basis 中是无符号系数类型，在 BigUint basis 中是 limb 类型。 `BigUint` 来自 [`primus_integer`](../primus_integer/README.zh_CN.md)，不是动态扩容的 大整数库。应一次构造 basis，复用其权重和提取窗口。
 
@@ -52,7 +52,7 @@ Primitive 的 `scalar_iter()` 返回 `Copied<slice::Iter<T>>`，BigUint 对应�
 
 两种 basis 还要求 `log_basis < T::BITS`、模数不小于 `B`，并且保留层数适合分解位宽。多 limb basis 的层数可以大于一个 limb 的位数。对这些配对错误，basis 的 `new` 会 panic，`try_new` 返回 `ApproxSignedBasisError`。
 
-`DecompositionConfig { log_basis, level_count }` 将分解选择与模数分开。 `config.try_build::<u32>(None)` 准备 native basis，`config.try_build(Some(q))` 使用显式模数。校验和错误由 `primitive::ApproxSignedBasis::try_new` 提供；config 本身不持有预计算存储。
+`DecompositionConfig { log_basis, level_count }` 将分解选择与模数分开。 `ApproxSignedBasis::<u32>::try_from((config, None))` 准备 native basis，`ApproxSignedBasis::try_from((config, Some(q)))` 使用显式模数。校验和错误由 `primitive::ApproxSignedBasis::try_new` 提供；config 本身不持有预计算存储。
 
 不同表示的分解位宽 `m` 定义如下：
 

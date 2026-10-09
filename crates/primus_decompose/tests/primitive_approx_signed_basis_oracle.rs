@@ -1,5 +1,7 @@
-use primus_decompose::{ApproxSignedBasisError, primitive::ApproxSignedBasis};
-use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_decompose::{
+    ApproxSignedBasisError, DecompositionBaseLog, DecompositionConfig, DecompositionLevelCount,
+    primitive::ApproxSignedBasis,
+};
 use primus_integer::FheUint;
 
 // Recompose with wide arithmetic, independently of the digit extraction,
@@ -76,11 +78,14 @@ fn exhaustive_explicit_moduli_match_contract() {
             };
             let full_length = value_bits / log_basis;
             for length in 1..=full_length as usize {
-                let basis = ApproxSignedBasis::new(
+                let basis = ApproxSignedBasis::try_from((
+                    DecompositionConfig {
+                        log_basis: DecompositionBaseLog::new(log_basis),
+                        level_count: Some(DecompositionLevelCount::new(length)),
+                    },
                     Some(q),
-                    DecompositionBaseLog::new(log_basis),
-                    Some(DecompositionLevelCount::new(length)),
-                );
+                ))
+                .unwrap();
                 for value in 0..q {
                     assert_decomposition_contract(&basis, value, Some(q));
                 }
@@ -93,11 +98,14 @@ fn exhaustive_explicit_moduli_match_contract() {
 fn native_dropped_bits_use_round_half_up() {
     // Exhaust u16 to cover carry propagation through every retained level,
     // including rounding across the native modulus.
-    let basis = ApproxSignedBasis::<u16>::new(
+    let basis = ApproxSignedBasis::<u16>::try_from((
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(4),
+            level_count: Some(DecompositionLevelCount::new(3)),
+        },
         None,
-        DecompositionBaseLog::new(4),
-        Some(DecompositionLevelCount::new(3)),
-    );
+    ))
+    .unwrap();
     let q = 1u128 << u16::BITS;
     let step = 1u128 << basis.drop_bits();
     let half_step = step / 2;
@@ -175,11 +183,13 @@ fn invalid_parameters_are_rejected() {
         ),
     ] {
         assert_eq!(
-            ApproxSignedBasis::<u32>::try_new(
+            ApproxSignedBasis::<u32>::try_from((
+                DecompositionConfig {
+                    log_basis: DecompositionBaseLog::new(log_basis),
+                    level_count: retained.map(DecompositionLevelCount::new),
+                },
                 modulus,
-                DecompositionBaseLog::new(log_basis),
-                retained.map(DecompositionLevelCount::new)
-            )
+            ))
             .unwrap_err(),
             expected
         );

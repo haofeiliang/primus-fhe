@@ -29,6 +29,7 @@ fn ordinary<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     // Pair classic and sparse BR using identical parameters and client seed.
     let parameters = glwe::diagnostic(ntt_circuit_modulus::<T>(), order);
     let (input_codec, ring_message_codec) = parameters
+        .as_ref()
         .circuit_bootstrap_codecs(T::as_from(4u32), T::as_from(4u32))
         .unwrap();
     let name = format!("{kind}/{order:?}/complete");
@@ -40,6 +41,7 @@ fn ordinary<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     let case = Case::new("glwe", backend, T::BITS, &name);
     c.bench_function(case.id(), |b| {
         let Fixture {
+            parameters,
             context,
             client,
             server,
@@ -47,8 +49,8 @@ fn ordinary<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
             lhs,
             rhs,
         } = &*fixture;
-        let mut resources = context.bootstrap_resources_from_server_key(server).unwrap();
-        let circuit_key = server.circuit_bootstrap_key().unwrap();
+        let mut resources = context.bootstrap_resources_from_server_key(server.server_key()).unwrap();
+        let circuit_key = server.circuit_bootstrap_key();
         let mut evaluator =
             CircuitBootstrapEvaluator::try_new(&resources, circuit_key, &input_codec).unwrap();
         let mut output = evaluator.allocate_output();
@@ -70,9 +72,9 @@ fn ordinary<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
 
         metadata::record("cbs", &case, || {
             serde_json::json!({
-                "parameters": metadata::glwe(context.parameters()),
+                "parameters": metadata::glwe(parameters),
                 "blind_rotation": metadata::blind_rotation(sparse),
-                "cbs": metadata::cbs(glwe::cbs::<T>(), context.parameters().blind_rotation_ggsw().noise_standard_deviation()),
+                "cbs": metadata::cbs(glwe::cbs::<T>(), context.parameters().blind_rotation_params().noise_standard_deviation()),
                 "encoding": "rounded_padded",
                 "plaintext_modulus": 4,
                 "outputs": 1,
@@ -98,9 +100,10 @@ pub fn bench_cbs(c: &mut Group<'_>) {
 /// Owned keys and request data. Evaluators borrow this fixture and own their
 /// scratch separately; constructing it is deferred until Criterion selects a case.
 struct Fixture<T: FheUint, Table: MonomialNttTable<ValueT = T>> {
+    parameters: primus_tfhe_glwe_ntt::PbsParameters<T>,
     context: TfheContext<T, Table>,
     client: primus_tfhe_glwe_ntt::ClientKey<T>,
-    server: primus_tfhe_glwe_ntt::ServerKey<T>,
+    server: primus_tfhe_glwe_ntt::CircuitBootstrapServerKey<T>,
     input: primus_lwe::LweCiphertext<T>,
     lhs: primus_glwe::GlweCiphertext<Vec<T>>,
     rhs: primus_glwe::GlweCiphertext<Vec<T>>,
@@ -116,13 +119,25 @@ impl<T: FheUint, Table: MonomialNttTable<ValueT = T>> Fixture<T, Table> {
         sparse: bool,
         message: T,
     ) -> Self {
-        let context = TfheContext::<T, Table>::try_from_parameters(parameters).unwrap();
+        let context_parameters = &parameters;
+        let context =
+            TfheContext::<T, Table>::try_from_parameters(context_parameters.clone()).unwrap();
         let mut rng = StdRng::seed_from_u64(42);
         let mut generator = KeyGenerator::new(&context);
         let client = ClientKey::generate(context.parameters(), &mut rng);
         let blind_rotation = primus_tfhe_benchmarks::benchmark::blind_rotation(sparse);
         let server = generator
-            .try_generate_server_key(&client, blind_rotation, Some(glwe::cbs::<T>()), &mut rng)
+            .try_generate_circuit_bootstrap_server_key_with_parameters(
+                context_parameters.glwe_key_switching(),
+                &client,
+                blind_rotation,
+                &primus_tfhe_glwe::CbsGadgetParameters::try_from_config(
+                    context.parameters(),
+                    glwe::cbs::<T>(),
+                )
+                .unwrap(),
+                &mut rng,
+            )
             .unwrap();
         // Separate input randomness from scheme-dependent key generation.
         let mut rng = StdRng::seed_from_u64(43);
@@ -137,6 +152,7 @@ impl<T: FheUint, Table: MonomialNttTable<ValueT = T>> Fixture<T, Table> {
         let lhs = ring.encrypt(&[T::ZERO; N], &mut rng);
         let rhs = ring.encrypt(&[T::ONE; N], &mut rng);
         Self {
+            parameters,
             context,
             client,
             server,

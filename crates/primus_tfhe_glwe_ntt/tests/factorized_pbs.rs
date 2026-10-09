@@ -4,14 +4,13 @@ use primus_poly::PolyLength;
 use primus_tfhe::PbsMessageConfig;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-use primus_decompose::primitive::ApproxSignedBasis;
 use primus_encoding::{PlaintextEmbedding, RoundedCodec, ScaledCodec};
-use primus_glwe::{GlweParameters, SecretKeyDistr};
-use primus_lwe::{LweCiphertext, LweParameters};
+use primus_glwe::SecretKeyDistr;
+use primus_lwe::LweCiphertext;
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
 use primus_tfhe_glwe_ntt::{
-    BlindRotationAlgorithm, ClientKey, FactorizedLookupTable, GadgetEncryptionConfig,
+    BlindRotationMethod, ClientKey, FactorizedLookupTable, GadgetEncryptionConfig,
     InterleavedLookupTable, KeyGenerator, LookupTable, LookupTableError, NttFactorizedLookupTable,
     PbsOrder, PbsParameters, TfheContext,
 };
@@ -21,38 +20,49 @@ const N: usize = 128;
 const Q: u32 = 132_120_577;
 const DOMAIN: usize = 8;
 
-fn context(order: PbsOrder, distribution: SecretKeyDistr) -> TfheContext<u32, U32NttTable> {
+fn context(
+    order: PbsOrder,
+    distribution: SecretKeyDistr,
+) -> (
+    primus_tfhe_glwe_ntt::PbsParameters<u32>,
+    TfheContext<u32, U32NttTable>,
+) {
     let modulus = BarrettModulus::new(Q);
-    let parameters = PbsParameters::try_new(
-        (LweParameters::new(LweDimension::new(8), 15, modulus, distribution, 0.7))
-            .into_encryption_parameters(),
-        primus_glwe::GgswParameters::try_with_basis(
-            &(
-                // d=2 also exercises multiplication of all mask components, not just a,b.
-                GlweParameters::new(
-                    GlweDimension::new(2),
-                    PolyLength::new(N),
-                    15,
-                    modulus,
-                    SecretKeyDistr::UniformBinary,
-                    0.7,
-                )
-            ),
-            ApproxSignedBasis::new(Some(Q), DecompositionBaseLog::new(8), None),
-        )
-        .unwrap(),
-        GadgetEncryptionConfig {
-            decomposition: ApproxSignedBasis::new(Some(Q), DecompositionBaseLog::new(8), None),
+    let parameters = PbsParameters::try_from_config(primus_tfhe_glwe::PbsConfig {
+        small_lwe: primus_tfhe::LweConfig {
+            dimension: LweDimension::new(8),
+            cipher_modulus: modulus.into(),
+            secret_key_distr: distribution,
             noise_standard_deviation: 0.7,
         },
+        bsk_dimension: GlweDimension::new(2),
+        bsk_poly_length: PolyLength::new(N),
+        bsk_secret_distr: SecretKeyDistr::UniformBinary,
+        bsk_gadget: GadgetEncryptionConfig {
+            decomposition: primus_tfhe::DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(8),
+                level_count: None,
+            },
+            noise_standard_deviation: 0.7,
+        },
+        key_switching: GadgetEncryptionConfig {
+            decomposition: primus_tfhe::DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(8),
+                level_count: None,
+            },
+            noise_standard_deviation: 0.7,
+        },
+        method: primus_tfhe::BlindRotationMethod::Classic,
+        messages: primus_tfhe::PbsMessageConfig::new(4),
         order,
-    )
+    })
     .unwrap();
-    TfheContext::try_new(
-        parameters,
+    let context = TfheContext::try_new(
+        parameters.clone(),
         U32NttTable::new(PolyLength::new(N), modulus).unwrap(),
     )
-    .unwrap()
+    .unwrap();
+    (parameters, context)
 }
 
 fn value(m: usize, i: usize) -> u32 {
@@ -66,28 +76,37 @@ fn value(m: usize, i: usize) -> u32 {
 #[test]
 fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
     for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
-        let context = context(order, SecretKeyDistr::fixed_hamming_weight_binary(8, 2));
+        let (context_parameters, context) =
+            context(order, SecretKeyDistr::fixed_hamming_weight_binary(8, 2));
         let mvb_codecs = context
             .parameters()
             .factorized_pbs_codecs(PbsMessageConfig::new(15).with_output_modulus(8))
             .unwrap();
         let input_codec = *mvb_codecs.input_codec();
         let codec = *mvb_codecs.lut_output_codec();
-        let modulus = context.parameters().blind_rotation_ggsw().cipher_modulus();
+        let modulus = context
+            .parameters()
+            .blind_rotation_params()
+            .cipher_modulus();
         let mut rng = StdRng::seed_from_u64(0x5034_3201);
         let mut generator = KeyGenerator::new(&context);
         let client = ClientKey::generate(context.parameters(), &mut rng);
         let classic = generator
-            .try_generate_server_key(&client, BlindRotationAlgorithm::Classic, None, &mut rng)
+            .try_generate_server_key_with_parameters(
+                context_parameters.glwe_key_switching(),
+                &client,
+                BlindRotationMethod::Classic,
+                &mut rng,
+            )
             .unwrap();
         let sparse = generator
-            .try_generate_server_key(
+            .try_generate_server_key_with_parameters(
+                context_parameters.glwe_key_switching(),
                 &client,
-                BlindRotationAlgorithm::Sparse {
+                BlindRotationMethod::Sparse {
                     copy_count: 3,
                     bucket_count: 4,
                 },
-                None,
                 &mut rng,
             )
             .unwrap();
@@ -205,7 +224,8 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
             .compile_factorized_lookup_table_fn(&mvb_codecs, DOMAIN, 3, value)
             .unwrap();
         // Same q,N, but deliberately a different instance.
-        let other_context = self::context(order, SecretKeyDistr::fixed_hamming_weight_binary(8, 2));
+        let (_, other_context) =
+            self::context(order, SecretKeyDistr::fixed_hamming_weight_binary(8, 2));
 
         let foreign = other_context
             .compile_factorized_lookup_table_fn(&mvb_codecs, DOMAIN, 3, value)
@@ -286,7 +306,7 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
 #[test]
 fn factorized_pbs_accepts_ternary_controls() {
     for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
-        let context = context(order, SecretKeyDistr::fixed_composition_ternary(8, 2, 2));
+        let (_, context) = context(order, SecretKeyDistr::fixed_composition_ternary(8, 2, 2));
         // Cover the default without adding another key-generation case.
         let messages = if order == PbsOrder::BootstrapKeyswitch {
             PbsMessageConfig::new(16)
@@ -300,9 +320,7 @@ fn factorized_pbs_accepts_ternary_controls() {
         let input_codec = *mvb_codecs.input_codec();
         let codec = *mvb_codecs.output_codec();
         let mut rng = StdRng::seed_from_u64(0x0054_334d_5642);
-        let (client, server) = context
-            .try_generate_keys(BlindRotationAlgorithm::Classic, None, &mut rng)
-            .unwrap();
+        let (client, server) = context.try_generate_keys(&mut rng).unwrap();
         let lut = context
             .compile_factorized_lookup_table_fn(&mvb_codecs, DOMAIN, 3, value)
             .unwrap();

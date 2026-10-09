@@ -5,19 +5,18 @@ use primus_tfhe::PbsMessageConfig;
 #[path = "../../primus_tfhe/tests/common/boolean.rs"]
 mod boolean;
 
-use primus_decompose::primitive::ApproxSignedBasis;
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_encoding::{PlaintextEmbedding, RoundedCodec};
-use primus_glwe::{GlweParameters, SecretKeyDistr};
+use primus_glwe::SecretKeyDistr;
 use primus_lattice::{GlweDimension, LweDimension};
-use primus_lwe::{LweCiphertext, LweParameters};
+use primus_lwe::LweCiphertext;
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
 use primus_poly::PolyLength;
 use primus_tfhe::{BivariateLookupTable, ProgrammableBootstrap, ProgrammableBootstrapInterleaved};
 use primus_tfhe_glwe_ntt::{
-    BlindRotationAlgorithm, ClientKey, GadgetEncryptionConfig, KeyGenerator, PbsOrder,
-    PbsParameters, TfheContext, TfheEvaluationError,
+    BlindRotationMethod, ClientKey, GadgetEncryptionConfig, KeyGenerator, PbsOrder, PbsParameters,
+    TfheContext, TfheEvaluationError,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -29,67 +28,74 @@ fn context(
     plaintext_modulus: u32,
     weight: usize,
     log_basis: u32,
-) -> TfheContext<u32, U32NttTable> {
+) -> (
+    primus_tfhe_glwe_ntt::PbsParameters<u32>,
+    TfheContext<u32, U32NttTable>,
+) {
     let modulus = BarrettModulus::new(Q);
-    let parameters = PbsParameters::try_new(
-        (LweParameters::new(
-            LweDimension::new(16),
-            plaintext_modulus,
-            modulus,
-            SecretKeyDistr::fixed_hamming_weight_binary(16, weight),
-            0.7,
-        ))
-        .into_encryption_parameters(),
-        primus_glwe::GgswParameters::try_with_basis(
-            &(GlweParameters::new(
-                GlweDimension::new(1),
-                PolyLength::new(N),
-                plaintext_modulus,
-                modulus,
-                SecretKeyDistr::UniformBinary,
-                0.7,
-            )),
-            ApproxSignedBasis::new(
-                Some(Q),
-                DecompositionBaseLog::new(log_basis),
-                Some(DecompositionLevelCount::new(3)),
-            ),
-        )
-        .unwrap(),
-        GadgetEncryptionConfig {
-            decomposition: ApproxSignedBasis::new(Some(Q), DecompositionBaseLog::new(9), None),
+    let parameters = PbsParameters::try_from_config(primus_tfhe_glwe::PbsConfig {
+        small_lwe: primus_tfhe::LweConfig {
+            dimension: LweDimension::new(16),
+            cipher_modulus: modulus.into(),
+            secret_key_distr: SecretKeyDistr::fixed_hamming_weight_binary(16, weight),
+            noise_standard_deviation: 0.7,
+        },
+        bsk_dimension: GlweDimension::new(1),
+        bsk_poly_length: PolyLength::new(N),
+        bsk_secret_distr: SecretKeyDistr::UniformBinary,
+        bsk_gadget: GadgetEncryptionConfig {
+            decomposition: primus_tfhe::DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(log_basis),
+                level_count: Some(DecompositionLevelCount::new(3)),
+            },
+            noise_standard_deviation: 0.7,
+        },
+        // Independent KS noise reaches complete sparse server-key generation.
+        key_switching: GadgetEncryptionConfig {
+            decomposition: primus_tfhe::DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(9),
+                level_count: None,
+            },
             noise_standard_deviation: 1.25,
-        }, // Independent KS noise also reaches complete sparse server-key generation.
+        },
+        method: primus_tfhe::BlindRotationMethod::Classic,
+        messages: primus_tfhe::PbsMessageConfig::new(plaintext_modulus),
         order,
-    )
+    })
     .unwrap();
-    TfheContext::try_new(
-        parameters,
+    let context = TfheContext::try_new(
+        parameters.clone(),
         U32NttTable::new(PolyLength::new(N), modulus).unwrap(),
     )
-    .unwrap()
+    .unwrap();
+    (parameters, context)
 }
 
 #[test]
 fn sparse_pbs_preserves_external_secret_and_interleaved_outputs_in_both_orders() {
     for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
-        let context = context(order, 8, 4, 7);
+        let (context_parameters, context) = self::context(order, 8, 4, 7);
         let input_codec =
             primus_encoding::RoundedCodec::new(8, context.parameters().cipher_modulus());
         let mut generator = KeyGenerator::new(&context);
         let mut rng = StdRng::seed_from_u64(0x5035_5042);
         let (client, sparse_key) = generator
-            .try_generate(
-                BlindRotationAlgorithm::Sparse {
+            .try_generate_with_parameters(
+                context_parameters.glwe_key_switching(),
+                BlindRotationMethod::Sparse {
                     copy_count: 3,
                     bucket_count: 8,
                 },
-                None,
                 &mut rng,
             )
             .unwrap();
         let classic_key = generator
-            .try_generate_server_key(&client, BlindRotationAlgorithm::Classic, None, &mut rng)
+            .try_generate_server_key_with_parameters(
+                context_parameters.glwe_key_switching(),
+                &client,
+                BlindRotationMethod::Classic,
+                &mut rng,
+            )
             .unwrap();
         let mut sparse = context.evaluator(&sparse_key).unwrap();
         let mut classic = context.evaluator(&classic_key).unwrap();
@@ -168,7 +174,7 @@ fn sparse_pbs_preserves_external_secret_and_interleaved_outputs_in_both_orders()
         sparse.apply_lookup_table_to(input.as_view(), &single, outputs[0].as_mut_view());
         check(&outputs[0], function(1));
         // A matching layout alone does not bind the sparse weight or gadget basis.
-        for incompatible in [self::context(order, 8, 5, 7), self::context(order, 8, 4, 8)] {
+        for (_, incompatible) in [self::context(order, 8, 5, 7), self::context(order, 8, 4, 8)] {
             assert!(matches!(
                 incompatible.evaluator(&sparse_key),
                 Err(TfheEvaluationError::IncompatibleBlindRotationKey)
@@ -194,19 +200,19 @@ fn centered_error(phase: u32, expected: u32) -> i64 {
 #[test]
 fn sparse_boolean_gates_chain_in_both_orders() {
     for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
-        let context = context(order, 4, 4, 7);
+        let (context_parameters, context) = self::context(order, 4, 4, 7);
         let input_codec =
             primus_encoding::RoundedCodec::new(4, context.parameters().cipher_modulus());
         let mut rng = StdRng::seed_from_u64(0xB303_0004);
         let client = ClientKey::generate(context.parameters(), &mut rng);
         let server = KeyGenerator::new(&context)
-            .try_generate_server_key(
+            .try_generate_server_key_with_parameters(
+                context_parameters.glwe_key_switching(),
                 &client,
-                BlindRotationAlgorithm::Sparse {
+                BlindRotationMethod::Sparse {
                     copy_count: 3,
                     bucket_count: 8,
                 },
-                None,
                 &mut rng,
             )
             .unwrap();
@@ -250,19 +256,19 @@ fn sparse_boolean_gates_chain_in_both_orders() {
 #[test]
 fn sparse_bivariate_and_odd_full_domain_respect_input_margins_in_both_orders() {
     for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
-        let context = context(order, 15, 4, 7);
+        let (context_parameters, context) = self::context(order, 15, 4, 7);
         let input_codec =
             primus_encoding::RoundedCodec::new(15, context.parameters().cipher_modulus());
         let mut rng = StdRng::seed_from_u64(0xB303_000F);
         let client = ClientKey::generate(context.parameters(), &mut rng);
         let server = KeyGenerator::new(&context)
-            .try_generate_server_key(
+            .try_generate_server_key_with_parameters(
+                context_parameters.glwe_key_switching(),
                 &client,
-                BlindRotationAlgorithm::Sparse {
+                BlindRotationMethod::Sparse {
                     copy_count: 3,
                     bucket_count: 8,
                 },
-                None,
                 &mut rng,
             )
             .unwrap();

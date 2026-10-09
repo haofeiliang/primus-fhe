@@ -12,6 +12,140 @@ For the newer matched classic/sparse PBS and CBS comparison, see the
 the CPU-dependent CBS regression and distinguishes retained heap from requested
 live-heap peak. The cleanup measurements below remain historical.
 
+## Shared operation owner and optional KS, 2026-10-09
+
+These measurements describe an intermediate revision. The current API requires
+KS for both PBS and CBS and composes `CircuitBootstrapServerKey` from `ServerKey`
+and required CBS material. The timings below do not measure the additional KS
+generation/storage of a previously ring-only CBS bundle.
+
+The boxed-owner revision measured below uses one `PbsConfig`/`PbsParameters`
+domain with optional KS;
+CBS adds gadgets and selector encoding. A context moves complete parameters into
+one boxed owner, with no additional shared BR Arc or common sampler clone.
+The existing ring-sampler Arcs remain shared by BR/trace/scheme-switch. Moving
+PBS into combined PBS/CBS state replaces the owner box at setup, without copying
+sampler tables; no context mutation or allocation is added to online requests.
+Keys and evaluation scratch retain separate ownership.
+
+Measured inline context sizes for that revision on x86_64 were 288 B for both NTT backends (`U64NttTable`)
+and 88 B for both RustFFT backends. NTRU uses external `PowOf2Modulus<u64>`.
+These exclude boxed parameters and all referenced heap. A preliminary inline-owner
+variant measured 1288/1064 B for GLWE and 1696/1448 B for NTRU with its default
+external modulus types; the boxed owner avoids reserving that space in CBS-only
+contexts. These are type sizes, not a peak-memory or allocation-count measurement.
+The change moves existing parameter metadata to the owner box; it does not claim
+a proportional reduction in total retained memory.
+
+Frozen executables compare the preceding complete-context implementation with
+the measured boxed-owner design. CPU 4, stable rustc 1.98.1, repository native CPU
+flags, features `ntt,fourier,rustfft`, identical numerical fixtures and timing
+boundaries. Point estimates in milliseconds; 15 samples, 1 s warm-up, 3 s target
+measurement. All listed ordinary workloads still use KS and independent secrets.
+A subsequent API cleanup renamed BSK geometry and the BR-selection enum,
+centralized numerical constructors, and removed the ordinary shared-secret
+no-KS path. Optional KS now serves ring-output CBS; ordinary PBS still uses KS.
+The table records the earlier revision, not a new measurement of that cleanup.
+No speedup is claimed for the cleanup; PBS/return kernel schedules are unchanged.
+
+| Complete workload, u64 | Before consolidation | Final owner |
+| --- | ---: | ---: |
+| pbs GLWE NTT | 6.915 | 7.292 |
+| pbs GLWE RustFFT | 8.212 | 8.364 |
+| pbs NTRU NTT | 16.231 | 16.203 |
+| pbs NTRU RustFFT | 19.894 | 19.953 |
+| cbs GLWE NTT | 13.009 | 12.646 |
+| cbs GLWE RustFFT | 14.831 | 15.645 |
+| cbs NTRU NTT | 4.160 | 4.152 |
+| cbs NTRU RustFFT | 5.063 | 5.084 |
+| high_precision_lut LUT NTT | 48.927 | 48.729 |
+| high_precision_lut LUT RustFFT | 56.548 | 56.857 |
+| setup GLWE NTT | 19.135 | 17.450 |
+| setup GLWE RustFFT | 19.421 | 17.026 |
+| setup NTRU NTT | 63.331 | 61.512 |
+| setup NTRU RustFFT | 70.016 | 70.207 |
+
+The first pair showed positive differences in GLWE NTT PBS and GLWE RustFFT CBS.
+Repeating those cases with the final executable first and the preceding executable
+second gave the following point estimates, with 20 samples, 1 s warm-up and 4 s
+target measurement:
+
+| Reverse-order repeat, u64 | Before consolidation | Final owner | Difference |
+| --- | ---: | ---: | ---: |
+| GLWE NTT PBS | 7.093 ms | 7.145 ms | +0.74% |
+| GLWE RustFFT CBS | 14.588 ms | 14.612 ms | +0.16% |
+
+These repeats did not reproduce the initial roughly 5% differences. Earlier
+inline-owner trials also showed process/order drift in PBS and Fourier lookup;
+the measurements do not identify its cause or prove that smaller differences
+are absent. This is an API/storage check, not an algorithmic speedup claim.
+Context access remains a small inlined borrow; kernels retain their mathematical
+schedules and allocate no new online storage. These results do not cover CPU 8,
+u32 performance, TFHE-FFT performance, SIMD performance or a security-equivalent
+system comparison.
+
+Reproduce with the existing targets and matched filters:
+
+```sh
+taskset -c 4 cargo bench -p primus_tfhe_benchmarks --bench pbs --features ntt,fourier,rustfft -- \
+  '^pbs/binary/shortint_2_2/(KeyswitchBootstrap/)?complete/.*/u64$' --sample-size 15 --warm-up-time 1 --measurement-time 3
+taskset -c 4 cargo bench -p primus_tfhe_benchmarks --bench cbs --features ntt,fourier,rustfft -- \
+  '^cbs/classic/(KeyswitchBootstrap/)?complete/.*/u64$' --sample-size 15 --warm-up-time 1 --measurement-time 3
+taskset -c 4 cargo bench -p primus_tfhe_benchmarks --bench high_precision_lut --features ntt,fourier,rustfft -- \
+  '^high_precision_lut/classic/c8_d5_o8/evaluate/.*/u64$' --sample-size 15 --warm-up-time 1 --measurement-time 3
+taskset -c 4 cargo bench -p primus_tfhe_benchmarks --bench setup --features ntt,fourier,rustfft -- \
+  '^setup/binary/boolean/(BootstrapKeyswitch/)?server_keygen/.*/u64$' --sample-size 15 --warm-up-time 1 --measurement-time 3
+```
+
+## Complete-context API recheck, 2026-10-09
+
+This intermediate implementation preceded the consolidation above. It retained
+prepared PBS/CBS operation state. Numerical
+tables, key buffers and online workspaces retain their existing ownership and
+layouts. Historical inline context sizes on x86_64, excluding referenced heap:
+
+| Backend, u64 | Previous BR-only context | Complete context |
+| --- | ---: | ---: |
+| GLWE NTT | 312 B | 624 B |
+| GLWE RustFFT | 112 B | 424 B |
+| NTRU NTT | 304 B | 1000 B |
+| NTRU RustFFT | 104 B | 800 B |
+
+PBS state is inline; optional CBS state has a setup-time box only when enabled.
+The shared BR domain and sampling state use their existing shared owners. This
+is a metadata-size check, not a new allocation-count measurement. Context setup
+does not allocate evaluation scratch or copy a transform table or evaluation key.
+
+CPU 4, stable rustc 1.98.1, repository `target-cpu=native`, features
+`ntt,fourier,rustfft`: frozen before/after executables used identical fixtures
+and timing boundaries for binary shortint PBS, classic CBS, c8/d5/o8 lookup and
+Boolean server keygen. Complete-request repeats did not reproduce the initially
+large PBS/CBS differences. This does not establish a speedup or cover other CPUs,
+u32 performance, TFHE-FFT performance or SIMD performance.
+
+Configured GLWE RustFFT server keygen initially measured 19.355/19.373 ms,
+against 18.468/18.756 ms before the API change. An explicit-parameter call in the
+new implementation measured 18.462 ms against 18.634 ms for the old executable.
+Inlining the small imported-client preparation boundary, while retaining the
+shared material-generation kernel, removed the observed regression:
+
+| Ordered pair | Before | Configured keygen with inlined preparation |
+| --- | ---: | ---: |
+| before then after | 18.466 ms | 18.500 ms |
+| after then before | 18.489 ms | 18.538 ms |
+
+Each pair used 20 Criterion samples, 1 s warm-up and 3 s target measurement.
+These are point estimates from complete server-key generation, with returned-key
+drop outside timing. They support retaining this small inlining adjustment for
+the measured setup path; they do not identify a hardware cause or establish an
+algorithmic gain. Recheck when the compiler, FFT engine or keygen layout changes.
+
+```sh
+taskset -c 4 cargo bench -p primus_tfhe_benchmarks --bench setup --features ntt,fourier,rustfft -- \
+  '^setup/binary/boolean/BootstrapKeyswitch/server_keygen/glwe/rustfft/u64$' \
+  --sample-size 20 --warm-up-time 1 --measurement-time 3
+```
+
 ## Scope and enumeration cost
 
 The cleanup starts from `e76ed14`. It changes benchmark harnesses, parameters

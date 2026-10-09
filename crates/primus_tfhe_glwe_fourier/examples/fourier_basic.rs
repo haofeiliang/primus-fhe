@@ -14,18 +14,19 @@ type Word = u64;
 
 fn main() {
     let config = experimental::CLASSIC_PBS_U64;
-    let parameters = config.try_prepare().unwrap();
-    let context = TfheContext::<Word, Table>::from_parameters(parameters);
+    let context = TfheContext::<Word, Table>::try_from_pbs_config(config).unwrap();
+    let parameters = context.parameters();
 
     // Input and output messages both use t=32, independently of the keys.
-    // To change only the output domain, use config.messages.with_output_modulus(t_out) here.
-    let codecs = context.parameters().pbs_codecs(config.messages).unwrap();
+    // To change only the output domain, use parameters.messages().with_output_modulus(t_out) here.
+    let codecs = context
+        .parameters()
+        .pbs_codecs(parameters.messages())
+        .unwrap();
 
     // Client: keep client_key secret; send only server_key to the server.
     let mut rng = StdRng::seed_from_u64(42);
-    let (client_key, server_key) = context
-        .try_generate_keys(config.blind_rotation.algorithm, None, &mut rng)
-        .unwrap();
+    let (client_key, server_key) = context.try_generate_keys(&mut rng).unwrap();
     // Ordinary messages borrow only the external secret from the setup bundle.
     let external_secret = client_key.external_lwe_secret_key();
     let encryptor = context

@@ -1,7 +1,8 @@
 //! GLev/GGSW layouts and signed-decomposition basis.
 
 use primus_decompose::{
-    DecompositionBaseLog, DecompositionLevelCount, primitive::ApproxSignedBasis,
+    DecompositionBaseLog, DecompositionConfig, DecompositionLevelCount,
+    primitive::ApproxSignedBasis,
 };
 use primus_distr::DiscreteGaussian;
 use primus_integer::FheUint;
@@ -11,6 +12,7 @@ use primus_reduce::RingContext;
 use std::sync::Arc;
 
 use super::{GlevParameterError, GlweEncryptionParameters, GlweParameters};
+
 use crate::SecretKeyDistr;
 
 /// GLWE parameters and decomposition basis shared by GLev and GGSW operations.
@@ -34,6 +36,38 @@ where
     T: FheUint,
     M: RingContext<T>,
 {
+    /// Creates [`GlevParameters`] / [`GgswParameters`] in one ciphertext modulus domain.
+    ///
+    /// Prepares fresh sampling state and a signed decomposition basis, without a
+    /// plaintext codec. Noise standard deviation is in coefficient units at
+    /// `cipher_modulus`. The validated `glwe_size` supplies the complete secret length `kN`.
+    /// This checks construction, not transform availability or a noise/security budget.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for invalid noise or secret support, invalid decomposition,
+    /// fixed secret weight exceeding `kN`, or gadget layout overflow.
+    pub fn try_new(
+        glwe_size: GlweSize,
+        cipher_modulus: M,
+        secret_key_distr: SecretKeyDistr,
+        decomposition: DecompositionConfig,
+        noise_standard_deviation: f64,
+    ) -> Result<Self, GlevParameterError> {
+        let encryption_parameters = GlweEncryptionParameters::try_new(
+            cipher_modulus,
+            secret_key_distr,
+            noise_standard_deviation,
+        )?;
+        let basis = ApproxSignedBasis::try_from((decomposition, cipher_modulus.explicit_value()))?;
+        encryption_parameters
+            .secret_key_sampler()
+            .validate_length(glwe_size.mask_len())?;
+        // The basis was built in this encryption domain; only its combined
+        // gadget layout remains to be checked after validating the secret length.
+        Self::try_from_matching_parts(glwe_size, Arc::new(encryption_parameters), basis)
+    }
+
     /// Binds a GLWE layout and prepared sampling state to a gadget basis.
     ///
     /// Takes ownership of the shared state and basis without rebuilding sampler
@@ -283,5 +317,5 @@ where
     }
 }
 
-/// Ggsw Parameters.
+/// GGSW parameters share the GLWE domain and gadget layout of [`GlevParameters`].
 pub type GgswParameters<T, M> = GlevParameters<T, M>;

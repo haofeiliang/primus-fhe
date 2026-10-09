@@ -36,7 +36,7 @@ name = "fourier_lookup"
 required-features = ["rustfft"]
 
 [features]
-default = []
+default = ["ntt"]
 ntt = [
     "dep:primus_modulus",
     "dep:primus_tfhe",

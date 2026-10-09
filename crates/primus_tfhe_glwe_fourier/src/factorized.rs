@@ -42,10 +42,10 @@ impl<'a, T: TorusFftValue, Table: FftTable> FourierFactorizedLookupTable<'a, T, 
             "Fourier MVB requires u32 or u64 coefficients"
         );
         let parameters = context.parameters();
-        let n = parameters.blind_rotation_ggsw().poly_length().get();
+        let n = parameters.blind_rotation_params().poly_length().get();
         assert!(
             lookup_table.is_compatible_with_ciphertext_domain(
-                parameters.blind_rotation_ggsw().poly_length(),
+                parameters.blind_rotation_params().poly_length(),
                 parameters.small_lwe().cipher_modulus_value(),
                 parameters.cipher_modulus().explicit_value(),
             ),
@@ -115,12 +115,12 @@ impl<'a, T: TorusFftValue, Table: FftTable> FactorizedEvaluator<'a, T, Table> {
         Self {
             context,
             shared_rotation: FourierGlwe::zero(
-                context.parameters().blind_rotation_ggsw().glwe_len() / 2,
+                context.parameters().blind_rotation_params().glwe_len() / 2,
             ),
             product: FourierPolynomial::zero(
                 context
                     .parameters()
-                    .blind_rotation_ggsw()
+                    .blind_rotation_params()
                     .poly_length()
                     .fourier_poly_len(),
             ),
@@ -194,7 +194,7 @@ impl<'a, T: TorusFftValue, Table: FftTable> FactorizedEvaluator<'a, T, Table> {
             "MVB output ciphertext dimension mismatch"
         );
 
-        let glwe = parameters.blind_rotation_ggsw();
+        let glwe = parameters.blind_rotation_params();
         let n = glwe.poly_length().get();
         let resources = &mut evaluator.resources;
         resources.blind_rotate(input, &lookup_table.common_polynomial, 1);

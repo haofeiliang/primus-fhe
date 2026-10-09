@@ -12,7 +12,7 @@ pub use pair::OneHotProjection;
 mod selectors;
 pub use selectors::FourierNgswSelectors;
 
-use crate::{BootstrapResources, CbsParameters, CircuitBootstrapKey, Lwe, TfheContext};
+use crate::{BootstrapResources, CbsGadgetParameters, CircuitBootstrapKey, Lwe, TfheContext};
 
 /// One-hot extension of CBS for classic binary/ternary and sparse binary BR.
 ///
@@ -88,7 +88,7 @@ where
 
     /// Returns the shared CBS bases and accumulator layouts.
     #[must_use]
-    pub fn parameters(&self) -> &'a CbsParameters<T> {
+    pub fn parameters(&self) -> &'a CbsGadgetParameters<T> {
         self.circuit_key.parameters()
     }
 
@@ -220,7 +220,7 @@ where
     /// The BR basis must resolve the smallest output gadget scale. Budget trace,
     /// decomposition and scheme-switch f/f² amplification separately; Fourier
     /// also uses native floor halving and FFT rounding. Geometry checks are not
-    /// noise or security certification. See [`CbsParameters`].
+    /// noise or security certification. See [`CbsGadgetParameters`].
     ///
     /// # Panics
     /// Rejects a different context binding, input dimension or exact output lengths before BR or output writes.
@@ -445,5 +445,27 @@ where
             output.as_mut_view(),
             resources,
         );
+    }
+}
+
+impl<T, Table, LM> TfheContext<T, Table, LM>
+where
+    T: TorusFftValue,
+    Table: FftTable,
+    LM: primus_reduce::RingContext<T>,
+{
+    /// Prepares one-hot CBS from this context's configured input encoding and gadgets.
+    /// Shares the CBS/BR keys and takes resources only for setup and online calls.
+    /// Requires one-hot selector capacity in addition to ordinary CBS compatibility.
+    ///
+    /// # Correctness
+    /// Inherits [`OneHotCircuitBootstrapEvaluator::try_new`]'s secret and representation contracts.
+    pub fn one_hot_evaluator<'a>(
+        &'a self,
+        resources: &BootstrapResources<'a, T, Table, LM>,
+        circuit_key: &'a CircuitBootstrapKey<T>,
+    ) -> Result<OneHotCircuitBootstrapEvaluator<'a, T, Table, LM>, OneHotBootstrapError> {
+        let parameters = self.check_circuit_bootstrap_binding(resources, circuit_key)?;
+        OneHotCircuitBootstrapEvaluator::try_new(resources, circuit_key, parameters.input_codec())
     }
 }

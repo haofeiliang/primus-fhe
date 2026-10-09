@@ -18,9 +18,7 @@ use primus_glwe::{FourierGlweKeySwitchingWorkspace, GlweCiphertext};
 use primus_lwe::LweCiphertext;
 use primus_modulus::NativeModulus;
 use primus_tfhe_benchmarks::{benchmark::PBS_WORKLOADS, parameters::glwe};
-use primus_tfhe_glwe_fourier::{
-    BlindRotationAlgorithm, BlindRotationKey, FourierGlweBlindRotationWorkspace,
-};
+use primus_tfhe_glwe_fourier::{BlindRotationKey, FourierGlweBlindRotationWorkspace};
 use primus_tfhe_glwe_fourier::{ClientKey, KeyGenerator, PbsOrder, TfheContext};
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -45,7 +43,8 @@ where
         glwe::fourier_pbs::<T>(order, workload)
     };
     let fixture = std::cell::LazyCell::new(|| {
-        let context = TfheContext::<T, Table>::from_parameters(parameters);
+        let context_parameters = &parameters;
+        let context = TfheContext::<T, Table>::from_parameters(context_parameters.clone());
         let mut rng = StdRng::seed_from_u64(42);
         let client = ClientKey::generate(context.parameters(), &mut rng);
         (context, client)
@@ -58,7 +57,7 @@ where
 
         metadata::record("setup", &case, || {
             serde_json::json!({
-                "parameters": metadata::glwe(context.parameters()),
+                "parameters": metadata::glwe(&parameters),
                 "blind_rotation": metadata::blind_rotation(false),
                 "drop": "outside keygen timing; stage buffers outside timing",
                 "fft_layout_fingerprint": metadata::fft_layout(context.table()),
@@ -68,12 +67,7 @@ where
             || (),
             |()| {
                 generator
-                    .try_generate_server_key(
-                        black_box(client),
-                        BlindRotationAlgorithm::Classic,
-                        None,
-                        &mut rng,
-                    )
+                    .try_generate_server_key(black_box(client), &mut rng)
                     .unwrap()
             },
             BatchSize::PerIteration,
@@ -86,26 +80,22 @@ where
 // prerequisite BR are setup only. The `pbs` target covers both execution orders.
 fn stages<T: TorusFftValue, Table: FftTable>(c: &mut Group<'_>, backend: &str) {
     let fixture = std::cell::LazyCell::new(|| {
-        let context = TfheContext::<T, Table>::from_parameters(glwe::fourier_pbs(
-            PbsOrder::BootstrapKeyswitch,
-            PBS_WORKLOADS[0],
-        ));
+        let operation = glwe::fourier_pbs(PbsOrder::BootstrapKeyswitch, PBS_WORKLOADS[0]);
+        let context = TfheContext::<T, Table>::from_parameters(operation.clone());
         let mut rng = StdRng::seed_from_u64(42);
-        let (client, server) = context
-            .try_generate_keys(BlindRotationAlgorithm::Classic, None, &mut rng)
-            .unwrap();
-        (context, client, server)
+        let (client, server) = context.try_generate_keys(&mut rng).unwrap();
+        (operation, context, client, server)
     });
     for stage in ["glwe_key_switching", "blind_rotation"] {
         let mut verified = false;
         let case = Case::new("glwe", backend, T::BITS, format!("stages/{stage}"));
         c.bench_function(case.id(), |b| {
-            let (context, client, server_key) = &*fixture;
+            let (operation, context, client, server_key) = &*fixture;
             let parameters = context.parameters();
             let codecs = parameters
                 .pbs_codecs(PbsMessageConfig::new(T::as_from(4u32)))
                 .unwrap();
-            let poly_length = parameters.blind_rotation_ggsw().poly_length();
+            let poly_length = parameters.blind_rotation_params().poly_length();
 
             let mut rng = StdRng::seed_from_u64(43);
             let input = context
@@ -122,24 +112,16 @@ fn stages<T: TorusFftValue, Table: FftTable>(c: &mut Group<'_>, backend: &str) {
             else {
                 panic!("stage fixture requires classic PBS");
             };
-            let modulus = parameters.blind_rotation_ggsw().cipher_modulus();
+            let modulus = parameters.blind_rotation_params().cipher_modulus();
             let mut fft = context.new_fft_engine();
             let mut blind_rotation = FourierGlweBlindRotationWorkspace::new(bootstrapping_key);
-            let key_switching_parameters = parameters
-                .glwe_key_switching()
-                .expect("PBS parameters include key switching")
-                .output();
+            let key_switching_parameters = operation.glwe_key_switching().output();
             let mut key_switching =
                 FourierGlweKeySwitchingWorkspace::new(key_switching_parameters.glwe_size());
             let mut main_glwe: GlweCiphertext<Vec<T>> =
-                GlweCiphertext::zero(parameters.blind_rotation_ggsw().glwe_len());
-            let mut switched: GlweCiphertext<Vec<T>> = GlweCiphertext::zero(
-                parameters
-                    .glwe_key_switching()
-                    .expect("PBS parameters include key switching")
-                    .output()
-                    .glwe_len(),
-            );
+                GlweCiphertext::zero(parameters.blind_rotation_params().glwe_len());
+            let mut switched: GlweCiphertext<Vec<T>> =
+                GlweCiphertext::zero(operation.glwe_key_switching().output().glwe_len());
             let mut small_lwe: LweCiphertext<T> =
                 LweCiphertext::zero(parameters.small_lwe().dimension().get());
 
@@ -171,7 +153,7 @@ fn stages<T: TorusFftValue, Table: FftTable>(c: &mut Group<'_>, backend: &str) {
 
             metadata::record("setup", &case, || {
                 serde_json::json!({
-                    "parameters": metadata::glwe(context.parameters()),
+                    "parameters": metadata::glwe(operation),
                     "blind_rotation": metadata::blind_rotation(false),
                     "stage": stage,
                     "plaintext_modulus": 4,
@@ -214,7 +196,8 @@ fn fixed_weight_keygen<T: TorusFftValue, Table: FftTable>(
     let parameters = glwe::diagnostic(NativeModulus::<T>::new(), order);
     let name = format!("fixed_weight/{order:?}");
     let fixture = std::cell::LazyCell::new(|| {
-        let context = TfheContext::<T, Table>::from_parameters(parameters);
+        let context_parameters = &parameters;
+        let context = TfheContext::<T, Table>::from_parameters(context_parameters.clone());
         let mut rng = StdRng::seed_from_u64(42);
         let client = ClientKey::generate(context.parameters(), &mut rng);
         (context, client)
@@ -235,7 +218,7 @@ fn fixed_weight_keygen<T: TorusFftValue, Table: FftTable>(
 
             metadata::record("setup", &case, || {
                 serde_json::json!({
-                    "parameters": metadata::glwe(context.parameters()),
+                    "parameters": metadata::glwe(&parameters),
                     "blind_rotation": metadata::blind_rotation(sparse),
                     "drop": "outside keygen timing; stage buffers outside timing",
                     "fft_layout_fingerprint": metadata::fft_layout(context.table()),
@@ -245,7 +228,12 @@ fn fixed_weight_keygen<T: TorusFftValue, Table: FftTable>(
                 || (),
                 |()| {
                     generator
-                        .try_generate_server_key(black_box(client), blind_rotation, None, &mut rng)
+                        .try_generate_server_key_with_parameters(
+                            parameters.glwe_key_switching(),
+                            black_box(client),
+                            blind_rotation,
+                            &mut rng,
+                        )
                         .unwrap()
                 },
                 BatchSize::PerIteration,

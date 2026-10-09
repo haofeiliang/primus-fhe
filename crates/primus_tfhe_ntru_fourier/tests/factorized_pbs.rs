@@ -1,8 +1,8 @@
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_lattice::LweDimension;
 use primus_poly::PolyLength;
-use primus_tfhe::{BlindRotationAlgorithm, PbsMessageConfig};
-use primus_tfhe_ntru::{BlindRotationConfig, LweConfig};
+use primus_tfhe::{BlindRotationMethod, PbsMessageConfig};
+use primus_tfhe_ntru::{LweConfig, PbsConfig, PbsParameters};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use primus_encoding::{PlaintextEmbedding::Unsigned, RoundedCodec, ScaledCodec};
@@ -20,8 +20,13 @@ const N: usize = 128;
 const DIM: usize = 8;
 const DOMAIN: usize = 8;
 
-fn context<T: TorusFftValue, Table: FftTable>(distr: SecretKeyDistr) -> TfheContext<T, Table> {
-    let parameters = BlindRotationConfig {
+fn context<T: TorusFftValue, Table: FftTable>(
+    distr: SecretKeyDistr,
+) -> (
+    primus_tfhe_ntru_fourier::PbsParameters<T>,
+    TfheContext<T, Table>,
+) {
+    let parameters = PbsParameters::try_from_config(PbsConfig {
         external_lwe: LweConfig {
             dimension: LweDimension::new(DIM),
             cipher_modulus: NativeModulus::new().into(),
@@ -29,7 +34,7 @@ fn context<T: TorusFftValue, Table: FftTable>(distr: SecretKeyDistr) -> TfheCont
             noise_standard_deviation: 0.7,
         },
         acc_modulus: NativeModulus::new().into(),
-        acc_poly_length: PolyLength::new(N),
+        bsk_poly_length: PolyLength::new(N),
         bsk_secret_distr: SecretKeyDistr::SparseTernary,
         bsk_gadget: GadgetEncryptionConfig {
             decomposition: DecompositionConfig {
@@ -38,20 +43,19 @@ fn context<T: TorusFftValue, Table: FftTable>(distr: SecretKeyDistr) -> TfheCont
             },
             noise_standard_deviation: 0.7,
         },
-        algorithm: BlindRotationAlgorithm::Classic,
-    }
-    .try_prepare()
-    .and_then(|parameters| {
-        parameters.try_with_key_switching(GadgetEncryptionConfig {
+        algorithm: BlindRotationMethod::Classic,
+        key_switching: GadgetEncryptionConfig {
             decomposition: DecompositionConfig {
                 log_basis: DecompositionBaseLog::new(8),
                 level_count: Some(DecompositionLevelCount::new(3)),
             },
             noise_standard_deviation: 0.7,
-        })
+        },
+        messages: primus_tfhe::PbsMessageConfig::new(primus_integer::AsFrom::<u32>::as_from(4)),
     })
     .unwrap();
-    TfheContext::from_parameters(parameters)
+    let context = TfheContext::from_parameters(parameters.clone());
+    (parameters, context)
 }
 
 fn value(m: usize, i: usize) -> usize {
@@ -63,7 +67,7 @@ fn value(m: usize, i: usize) -> usize {
 }
 
 fn check_complete<T: TorusFftValue, Table: FftTable>(distr: SecretKeyDistr) {
-    let context = context::<T, Table>(distr);
+    let (_, context) = self::context::<T, Table>(distr);
     // Existing binary/ternary cases cover both an override and equal-message default.
     // t_out=10 retains the non-power-of-two even-scale case for both word sizes.
     let messages = if matches!(distr, SecretKeyDistr::FixedCompositionTernary { .. }) {
@@ -79,9 +83,7 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(distr: SecretKeyDistr) {
     let codec = *mvb_codecs.lut_output_codec();
     let modulus = NativeModulus::new();
     let mut rng = StdRng::seed_from_u64(0x4235_3301);
-    let (client, server) = context
-        .try_generate_keys(BlindRotationAlgorithm::Classic, None, &mut rng)
-        .unwrap();
+    let (client, server) = context.try_generate_keys(&mut rng).unwrap();
     // Two full return tiles and a singleton tail reuse one polynomial buffer.
     let output_count = 17;
     let lut = context
@@ -158,12 +160,11 @@ fn factorized_pbs_preserves_scaled_outputs_and_reuses_workspace() {
 
 #[test]
 fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
-    let context = context::<u32, RustFftTable>(SecretKeyDistr::fixed_hamming_weight_binary(DIM, 3));
+    let (_, context) =
+        context::<u32, RustFftTable>(SecretKeyDistr::fixed_hamming_weight_binary(DIM, 3));
     let input_codec = RoundedCodec::new(15, context.parameters().external_lwe().cipher_modulus());
     let mut rng = StdRng::seed_from_u64(0x4235_3302);
-    let (client, server) = context
-        .try_generate_keys(BlindRotationAlgorithm::Classic, None, &mut rng)
-        .unwrap();
+    let (client, server) = context.try_generate_keys(&mut rng).unwrap();
     let codec = ScaledCodec::new(8u32, NativeModulus::new());
     let compile = || {
         FactorizedLookupTable::try_new(
@@ -177,7 +178,7 @@ fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
         .unwrap()
     };
     let lut = FourierFactorizedLookupTable::new(&context, compile());
-    let other =
+    let (_, other) =
         self::context::<u32, RustFftTable>(SecretKeyDistr::fixed_hamming_weight_binary(DIM, 3));
     let foreign = FourierFactorizedLookupTable::new(&other, compile());
     let input = context

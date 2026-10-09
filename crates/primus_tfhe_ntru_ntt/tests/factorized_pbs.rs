@@ -5,8 +5,8 @@ use primus_modulus::BarrettModulus;
 use primus_ntru::SecretKeyDistr;
 use primus_ntt::U32NttTable;
 use primus_poly::PolyLength;
-use primus_tfhe::{BlindRotationAlgorithm, PbsMessageConfig};
-use primus_tfhe_ntru::{BlindRotationConfig, LweConfig};
+use primus_tfhe::{BlindRotationMethod, PbsMessageConfig};
+use primus_tfhe_ntru::{LweConfig, PbsConfig, PbsParameters};
 use primus_tfhe_ntru_ntt::{
     DecompositionConfig, FactorizedLookupTable, GadgetEncryptionConfig, InterleavedLookupTable,
     LookupTable, LookupTableError, LweCiphertext, NttFactorizedLookupTable, TfheContext,
@@ -18,8 +18,13 @@ const N: usize = 128;
 const Q: u32 = 132_120_577;
 const DOMAIN: usize = 8;
 
-fn context(distr: SecretKeyDistr) -> TfheContext<u32, U32NttTable> {
-    let parameters = BlindRotationConfig {
+fn context(
+    distr: SecretKeyDistr,
+) -> (
+    primus_tfhe_ntru_ntt::PbsParameters<u32>,
+    TfheContext<u32, U32NttTable>,
+) {
+    let parameters = PbsParameters::try_from_config(PbsConfig {
         external_lwe: LweConfig {
             dimension: LweDimension::new(3),
             cipher_modulus: BarrettModulus::new(Q).into(),
@@ -27,7 +32,7 @@ fn context(distr: SecretKeyDistr) -> TfheContext<u32, U32NttTable> {
             noise_standard_deviation: 0.7,
         },
         acc_modulus: BarrettModulus::new(Q).into(),
-        acc_poly_length: PolyLength::new(N),
+        bsk_poly_length: PolyLength::new(N),
         bsk_secret_distr: SecretKeyDistr::SparseTernary,
         bsk_gadget: GadgetEncryptionConfig {
             decomposition: DecompositionConfig {
@@ -36,20 +41,19 @@ fn context(distr: SecretKeyDistr) -> TfheContext<u32, U32NttTable> {
             },
             noise_standard_deviation: 0.7,
         },
-        algorithm: BlindRotationAlgorithm::Classic,
-    }
-    .try_prepare()
-    .and_then(|parameters| {
-        parameters.try_with_key_switching(GadgetEncryptionConfig {
+        algorithm: BlindRotationMethod::Classic,
+        key_switching: GadgetEncryptionConfig {
             decomposition: DecompositionConfig {
                 log_basis: DecompositionBaseLog::new(8),
                 level_count: None,
             },
             noise_standard_deviation: 0.7,
-        })
+        },
+        messages: PbsMessageConfig::new(4),
     })
     .unwrap();
-    TfheContext::try_from_parameters(parameters).unwrap()
+    let context = TfheContext::try_from_parameters(parameters.clone()).unwrap();
+    (parameters, context)
 }
 
 fn value(message: usize, output: usize) -> u32 {
@@ -61,7 +65,7 @@ fn value(message: usize, output: usize) -> u32 {
 }
 
 fn check_complete(distr: SecretKeyDistr) {
-    let context = context(distr);
+    let (_, context) = self::context(distr);
     // Reuse the existing distributions to cover equal and distinct message moduli.
     let messages = if distr == SecretKeyDistr::UniformBinary {
         PbsMessageConfig::new(15).with_output_modulus(8)
@@ -76,9 +80,7 @@ fn check_complete(distr: SecretKeyDistr) {
     let codec = *mvb_codecs.lut_output_codec();
     let modulus = context.parameters().accumulator_ntru().cipher_modulus();
     let mut rng = StdRng::seed_from_u64(0xB301);
-    let (client, server) = context
-        .try_generate_keys(BlindRotationAlgorithm::Classic, None, &mut rng)
-        .unwrap();
+    let (client, server) = context.try_generate_keys(&mut rng).unwrap();
     let encryptor = context
         .encryptor(client.external_lwe_secret_key(), &input_codec)
         .unwrap();
@@ -183,7 +185,7 @@ fn check_complete(distr: SecretKeyDistr) {
         .compile_factorized_lookup_table_fn(&mvb_codecs, DOMAIN, 3, value)
         .unwrap();
     // Identical parameters do not establish NTT context identity.
-    let other_context = self::context(distr);
+    let (_, other_context) = self::context(distr);
 
     let foreign = other_context
         .compile_factorized_lookup_table_fn(&mvb_codecs, DOMAIN, 3, value)

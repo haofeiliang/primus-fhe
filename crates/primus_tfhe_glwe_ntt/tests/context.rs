@@ -1,18 +1,16 @@
 //! Context/table and decomposition binding, plus independently created
 //! client/server keys in both GLWE PBS orders.
 
-use primus_decompose::primitive::ApproxSignedBasis;
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_glwe::{
-    GlevParameters, GlweEncryptionParameters, GlweParameters, NttGlweGadgetEncryptWorkspace,
+    GlevParameters, GlweEncryptionParameters, NttGlweGadgetEncryptWorkspace,
     NttGlweKeySwitchingKey, NttGlweSecretKey, SecretKeyDistr,
 };
 use primus_lattice::{GlweDimension, LweDimension};
-use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
 use primus_poly::PolyLength;
-use primus_tfhe::{BlindRotationAlgorithm, PbsMessageConfig};
+use primus_tfhe::PbsMessageConfig;
 use primus_tfhe_glwe_ntt::{
     ClientKey, GadgetEncryptionConfig, KeyGenerator, PbsOrder, PbsParameters, TfheContext,
     TfheContextError, TfheEvaluationError,
@@ -36,33 +34,34 @@ fn parameters_with_bases(
     distribution: SecretKeyDistr,
 ) -> PbsParameters<u32> {
     let modulus = BarrettModulus::new(MODULUS);
-    let lwe = LweParameters::new(LweDimension::new(4), 4, modulus, distribution, 0.7);
-    let glwe = GlweParameters::new(
-        GlweDimension::new(1),
-        PolyLength::new(POLY_LENGTH),
-        4,
-        modulus,
-        SecretKeyDistr::UniformBinary,
-        0.7,
-    );
-    let bootstrapping = ApproxSignedBasis::new(
-        glwe.cipher_modulus_value(),
-        DecompositionBaseLog::new(bootstrapping_log_basis),
-        Some(DecompositionLevelCount::new(3)),
-    );
-    PbsParameters::try_new(
-        lwe.into_encryption_parameters(),
-        primus_glwe::GgswParameters::try_with_basis(&glwe, bootstrapping).unwrap(),
-        GadgetEncryptionConfig {
-            decomposition: ApproxSignedBasis::new(
-                Some(MODULUS),
-                DecompositionBaseLog::new(key_switching_log_basis),
-                Some(DecompositionLevelCount::new(4)),
-            ),
+    PbsParameters::try_from_config(primus_tfhe_glwe::PbsConfig {
+        small_lwe: primus_tfhe::LweConfig {
+            dimension: LweDimension::new(4),
+            cipher_modulus: modulus.into(),
+            secret_key_distr: distribution,
+            noise_standard_deviation: 0.7,
+        },
+        bsk_dimension: GlweDimension::new(1),
+        bsk_poly_length: PolyLength::new(POLY_LENGTH),
+        bsk_secret_distr: SecretKeyDistr::UniformBinary,
+        bsk_gadget: GadgetEncryptionConfig {
+            decomposition: primus_tfhe::DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(bootstrapping_log_basis),
+                level_count: Some(DecompositionLevelCount::new(3)),
+            },
+            noise_standard_deviation: 0.7,
+        },
+        key_switching: GadgetEncryptionConfig {
+            decomposition: primus_tfhe::DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(key_switching_log_basis),
+                level_count: Some(DecompositionLevelCount::new(4)),
+            },
             noise_standard_deviation: KS_SIGMA,
         },
+        method: primus_tfhe::BlindRotationMethod::Classic,
+        messages: primus_tfhe::PbsMessageConfig::new(4),
         order,
-    )
+    })
     .unwrap()
 }
 
@@ -70,13 +69,10 @@ fn parameters_with_bases(
 fn server_keys_are_bound_to_their_decomposition_bases() {
     let modulus = BarrettModulus::new(MODULUS);
     let source_table = U32NttTable::new(PolyLength::new(POLY_LENGTH), modulus).unwrap();
-    let source =
-        TfheContext::try_new(parameters(PbsOrder::BootstrapKeyswitch), source_table).unwrap();
+    let source_parameters = &parameters(PbsOrder::BootstrapKeyswitch);
+    let source = TfheContext::try_new(source_parameters.clone(), source_table).unwrap();
     let mut rng = StdRng::seed_from_u64(0x4241_5349_534b_4559);
-    let (_, server_key) = source
-        .try_generate_keys(BlindRotationAlgorithm::Classic, None, &mut rng)
-        .unwrap();
-    assert!(server_key.circuit_bootstrap_key().is_none());
+    let (_, server_key) = source.try_generate_keys(&mut rng).unwrap();
 
     for (br_log, ks_log, distribution, expected) in [
         (
@@ -101,7 +97,8 @@ fn server_keys_are_bound_to_their_decomposition_bases() {
         let parameters =
             parameters_with_bases(PbsOrder::BootstrapKeyswitch, br_log, ks_log, distribution);
         let table = U32NttTable::new(PolyLength::new(POLY_LENGTH), modulus).unwrap();
-        let context = TfheContext::try_new(parameters, table).unwrap();
+        let context_parameters = &parameters;
+        let context = TfheContext::try_new(context_parameters.clone(), table).unwrap();
         assert_eq!(context.evaluator(&server_key).err().unwrap(), expected);
     }
 }
@@ -110,7 +107,8 @@ fn server_keys_are_bound_to_their_decomposition_bases() {
 fn rejects_incompatible_ntt_tables() {
     let modulus = BarrettModulus::new(MODULUS);
     let wrong_length = U32NttTable::new(PolyLength::new(POLY_LENGTH * 2), modulus).unwrap();
-    let error = TfheContext::try_new(parameters(PbsOrder::BootstrapKeyswitch), wrong_length)
+    let error_parameters = &parameters(PbsOrder::BootstrapKeyswitch);
+    let error = TfheContext::try_new(error_parameters.clone(), wrong_length)
         .err()
         .expect("the length mismatch must be rejected");
     assert!(matches!(error,
@@ -124,7 +122,8 @@ fn rejects_incompatible_ntt_tables() {
         BarrettModulus::new(OTHER_MODULUS),
     )
     .unwrap();
-    let error = TfheContext::try_new(parameters(PbsOrder::BootstrapKeyswitch), wrong_modulus)
+    let error_parameters = &parameters(PbsOrder::BootstrapKeyswitch);
+    let error = TfheContext::try_new(error_parameters.clone(), wrong_modulus)
         .err()
         .expect("the modulus mismatch must be rejected");
     assert!(matches!(
@@ -141,16 +140,13 @@ fn split_keys_support_both_pbs_orders() {
     for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
         let modulus = BarrettModulus::new(MODULUS);
         let table = U32NttTable::new(PolyLength::new(POLY_LENGTH), modulus).unwrap();
-        let context = TfheContext::try_new(
-            parameters_with_bases(
-                order,
-                8,
-                4,
-                SecretKeyDistr::fixed_composition_ternary(4, 1, 1),
-            ),
-            table,
-        )
-        .unwrap();
+        let context_parameters = &parameters_with_bases(
+            order,
+            8,
+            4,
+            SecretKeyDistr::fixed_composition_ternary(4, 1, 1),
+        );
+        let context = TfheContext::try_new(context_parameters.clone(), table).unwrap();
         let input_codec =
             primus_encoding::RoundedCodec::new(4, context.parameters().cipher_modulus());
         let mut rng = StdRng::seed_from_u64(43);
@@ -160,17 +156,27 @@ fn split_keys_support_both_pbs_orders() {
         let blind_rotation = generator
             .try_generate_blind_rotation_key(
                 &client,
-                primus_tfhe_glwe_ntt::BlindRotationAlgorithm::Classic,
+                primus_tfhe_glwe_ntt::BlindRotationMethod::Classic,
                 &mut rng,
             )
             .unwrap();
         let mut key_rng = StdRng::seed_from_u64(44);
         let mut reference_rng = StdRng::seed_from_u64(44);
         let key_switching = generator
-            .try_generate_glwe_key_switching_key(&client, &mut key_rng)
+            .try_generate_glwe_key_switching_key(
+                context_parameters.glwe_key_switching(),
+                &client,
+                &mut key_rng,
+            )
             .unwrap();
-        check_key_switching_noise(&context, &client, &key_switching, &mut reference_rng);
-        let server = primus_tfhe_glwe_ntt::ServerKey::new(blind_rotation, key_switching, None);
+        check_key_switching_noise(
+            context_parameters,
+            &context,
+            &client,
+            &key_switching,
+            &mut reference_rng,
+        );
+        let server = primus_tfhe_glwe_ntt::ServerKey::new(blind_rotation, key_switching);
         let codecs = context
             .parameters()
             .pbs_codecs(PbsMessageConfig::new(input_codec.plaintext_modulus()))
@@ -226,16 +232,13 @@ fn split_keys_support_both_pbs_orders() {
 /// Rebuilds KS rows with an independently specified sampler and the same coins.
 /// Exact key equality detects using BR/fresh-LWE noise even when PBS still decodes.
 fn check_key_switching_noise(
+    context_parameters: &PbsParameters<u32>,
     context: &TfheContext<u32, U32NttTable>,
     client: &ClientKey<u32>,
     actual: &NttGlweKeySwitchingKey<u32>,
     rng: &mut StdRng,
 ) {
-    let output = context
-        .parameters()
-        .glwe_key_switching()
-        .expect("PBS parameters include key switching")
-        .output();
+    let output = context_parameters.glwe_key_switching().output();
     let expected_parameters = GlevParameters::try_from_parts(
         output.glwe_size(),
         Arc::new(GlweEncryptionParameters::new(
@@ -258,4 +261,89 @@ fn check_key_switching_noise(
         &mut workspace,
     );
     assert_eq!(actual.as_slice(), expected.as_slice());
+}
+
+/// Configured capabilities fail before sampling, share one BR domain, and bind
+/// independently supplied keys using the retained gadget/input choices.
+#[test]
+fn operation_state_controls_material_and_binding() {
+    use primus_tfhe_glwe_ntt::{CbsGadgetConfig, DecompositionConfig, KeyGenerationError};
+    use rand::RngExt;
+
+    let parameters = parameters(PbsOrder::KeyswitchBootstrap);
+    let context = TfheContext::<_, U32NttTable>::try_from_parameters(parameters.clone()).unwrap();
+    let mut rng = StdRng::seed_from_u64(0x4341504142494c49);
+    let mut untouched = StdRng::seed_from_u64(0x4341504142494c49);
+    assert!(matches!(
+        context.try_generate_circuit_bootstrap_keys(&mut rng),
+        Err(KeyGenerationError::MissingCircuitBootstrapParameters)
+    ));
+    assert_eq!(rng.random::<u64>(), untouched.random::<u64>());
+
+    let full = DecompositionConfig {
+        log_basis: DecompositionBaseLog::new(8),
+        level_count: None,
+    };
+    let gadget = CbsGadgetConfig {
+        output: DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(8),
+            level_count: Some(DecompositionLevelCount::new(2)),
+        },
+        trace: full,
+        scheme_switch: full,
+    };
+    let context = context.try_with_circuit_bootstrap(gadget).unwrap();
+    assert_eq!(context.parameters().messages(), parameters.messages());
+    // KS sigma differs from BR sigma in this fixture. The CBS input stage
+    // must reuse that independently chosen KS state in KS→BR order.
+    let input = context
+        .cbs_parameters()
+        .unwrap()
+        .pbs_parameters()
+        .input_key_switching()
+        .unwrap();
+    assert_eq!(input.output().noise_standard_deviation(), KS_SIGMA);
+    let (_, server) = context
+        .try_generate_circuit_bootstrap_keys(&mut rng)
+        .unwrap();
+    let circuit = server.circuit_bootstrap_key();
+    let pbs = context.evaluator(server.server_key()).unwrap();
+    context
+        .circuit_bootstrap_evaluator(pbs.bootstrap_resources(), circuit)
+        .unwrap();
+
+    // Complete CBS parameters retain the configured KS, so restoring the
+    // context also retains ordinary PBS. Mutable resources remain context-bound.
+    let restored = TfheContext::<_, U32NttTable>::try_from_cbs_parameters(
+        context.cbs_parameters().unwrap().clone(),
+    )
+    .unwrap();
+
+    let restored_pbs = restored.evaluator(server.server_key()).unwrap();
+    restored
+        .circuit_bootstrap_evaluator(restored_pbs.bootstrap_resources(), circuit)
+        .unwrap();
+    assert!(matches!(
+        restored.circuit_bootstrap_evaluator(pbs.bootstrap_resources(), circuit),
+        Err(TfheEvaluationError::IncompatibleCircuitBootstrapParameters)
+    ));
+
+    // Equal rings are insufficient when independent operation state selected
+    // another BR algorithm; the discrepancy is rejected during context setup.
+    let different_algorithm = parameters.as_ref().clone().with_blind_rotation_method(
+        primus_tfhe::BlindRotationMethod::Sparse {
+            copy_count: 3,
+            bucket_count: 4,
+        },
+    );
+    let different =
+        primus_tfhe_glwe::CbsParameters::try_with_config(different_algorithm, gadget).unwrap();
+    assert!(matches!(
+        TfheContext::<_, U32NttTable>::try_from_parameters(parameters.clone())
+            .unwrap()
+            .try_with_cbs_parameters(different),
+        Err(primus_tfhe_glwe_ntt::TfheContextError::Parameters(
+            primus_tfhe_glwe_ntt::TfheParameterError::IncompatibleComponents
+        ))
+    ));
 }

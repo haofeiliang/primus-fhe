@@ -1,20 +1,18 @@
 //! Classic/sparse differential PBS, ManyLUT and factorized MVB on reused workspaces;
 //! bucket layouts and quantization margins are part of the fixture.
 
-use primus_decompose::primitive::ApproxSignedBasis;
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_encoding::{PlaintextEmbedding, RoundedCodec, ScaledCodec};
 use primus_fft::{FftTable, RustFftTable, TfheFftTable, TorusFftValue};
 use primus_lattice::LweDimension;
-use primus_lwe::{LweCiphertext, LweParameters};
+use primus_lwe::LweCiphertext;
 use primus_modulus::NativeModulus;
-use primus_ntru::NlevParameters;
-use primus_ntru::{NtruParameters, SecretKeyDistr};
+use primus_ntru::SecretKeyDistr;
 use primus_poly::PolyLength;
 use primus_tfhe::PbsMessageConfig;
 use primus_tfhe::rotation::RotationModulusSwitch;
 use primus_tfhe_ntru_fourier::{
-    BlindRotationAlgorithm, GadgetEncryptionConfig, KeyGenerator, PbsParameters, TfheContext,
+    BlindRotationMethod, GadgetEncryptionConfig, KeyGenerator, PbsParameters, TfheContext,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -23,42 +21,44 @@ use rand::{SeedableRng, rngs::StdRng};
 const N: usize = 256;
 const DIM: usize = 16;
 
-fn context<T: TorusFftValue, Table: FftTable>(distr: SecretKeyDistr) -> TfheContext<T, Table> {
+fn context<T: TorusFftValue, Table: FftTable>(
+    distr: SecretKeyDistr,
+) -> (
+    primus_tfhe_ntru_fourier::PbsParameters<T>,
+    TfheContext<T, Table>,
+) {
     let modulus = NativeModulus::new();
-    let lwe = LweParameters::new(
-        LweDimension::new(DIM),
-        T::as_from(16usize),
-        modulus,
-        distr,
-        0.7,
-    );
 
-    let acc = NtruParameters::new(
-        PolyLength::new(N),
-        T::as_from(16usize),
-        modulus,
-        SecretKeyDistr::SparseTernary,
-        0.7,
-    );
-    let blind_rotation_basis = ApproxSignedBasis::new(
-        acc.cipher_modulus_value(),
-        DecompositionBaseLog::new(8),
-        None,
-    );
-    TfheContext::from_parameters(
-        PbsParameters::try_new(
-            lwe.into_encryption_parameters(),
-            NlevParameters::try_with_basis(&acc, blind_rotation_basis).unwrap(),
-            GadgetEncryptionConfig {
-                decomposition: primus_tfhe_ntru::DecompositionConfig {
-                    log_basis: DecompositionBaseLog::new(8),
-                    level_count: None,
-                },
-                noise_standard_deviation: 0.7,
+    let parameters = PbsParameters::try_from_config(primus_tfhe_ntru::PbsConfig {
+        external_lwe: primus_tfhe::LweConfig {
+            dimension: LweDimension::new(DIM),
+            cipher_modulus: modulus.into(),
+            secret_key_distr: distr,
+            noise_standard_deviation: 0.7,
+        },
+        acc_modulus: modulus.into(),
+        bsk_poly_length: PolyLength::new(N),
+        bsk_secret_distr: SecretKeyDistr::SparseTernary,
+        bsk_gadget: GadgetEncryptionConfig {
+            decomposition: primus_tfhe::DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(8),
+                level_count: None,
             },
-        )
-        .unwrap(),
-    )
+            noise_standard_deviation: 0.7,
+        },
+        key_switching: GadgetEncryptionConfig {
+            decomposition: primus_tfhe_ntru::DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(8),
+                level_count: None,
+            },
+            noise_standard_deviation: 0.7,
+        },
+        algorithm: primus_tfhe::BlindRotationMethod::Classic,
+        messages: primus_tfhe::PbsMessageConfig::new(primus_integer::AsFrom::<u32>::as_from(4)),
+    })
+    .unwrap();
+    let context = TfheContext::from_parameters(parameters.clone());
+    (parameters, context)
 }
 
 // Independent LWE phase under the binary external secret; no backend decryption.
@@ -79,7 +79,8 @@ fn phase<T: TorusFftValue>(cipher: &LweCiphertext<T>, secret: &[T], q: i128) -> 
 }
 
 fn check_complete<T: TorusFftValue, Table: FftTable>(weight: usize) {
-    let context = context::<T, Table>(SecretKeyDistr::fixed_hamming_weight_binary(DIM, weight));
+    let (context_parameters, context) =
+        context::<T, Table>(SecretKeyDistr::fixed_hamming_weight_binary(DIM, weight));
     let input_codec = RoundedCodec::new(
         T::as_from(16u32),
         context.parameters().external_lwe().cipher_modulus(),
@@ -101,7 +102,12 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(weight: usize) {
         );
     }
     let classic_key = generator
-        .try_generate_server_key(&client, BlindRotationAlgorithm::Classic, None, &mut rng)
+        .try_generate_server_key_with_parameters(
+            context_parameters.key_switching(),
+            &client,
+            BlindRotationMethod::Classic,
+            &mut rng,
+        )
         .unwrap();
     let mut classic = context.evaluator(&classic_key).unwrap();
     let modulus = context.parameters().external_lwe().cipher_modulus();
@@ -154,18 +160,17 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(weight: usize) {
     for &(copies, buckets, seed) in cases {
         let mut key_rng = StdRng::seed_from_u64(seed);
         let server = generator
-            .try_generate_server_key(
+            .try_generate_server_key_with_parameters(
+                context_parameters.key_switching(),
                 &client,
-                BlindRotationAlgorithm::Sparse {
+                BlindRotationMethod::Sparse {
                     copy_count: copies,
                     bucket_count: buckets,
                 },
-                None,
                 &mut key_rng,
             )
             .unwrap();
         assert!(server.blind_rotation_key().classic_controls().is_none());
-        assert!(server.circuit_bootstrap_key().is_none());
         let key = server
             .blind_rotation_key()
             .sparse_bootstrapping_key()
@@ -322,7 +327,7 @@ fn sparse_generation_rejects_invalid_secrets_buckets_and_cbs_before_sampling() {
             Error::SparseBootstrapping(SparseError::InvalidSecretWeight),
         ),
     ] {
-        let context = context::<u32, RustFftTable>(distr);
+        let (context_parameters, context) = self::context::<u32, RustFftTable>(distr);
         let mut secret = vec![0; N];
         secret[..weight].fill(1u32);
         let mut acc = vec![0; N];
@@ -338,14 +343,14 @@ fn sparse_generation_rejects_invalid_secrets_buckets_and_cbs_before_sampling() {
         rng = StdRng::seed_from_u64(0xBAD);
         let mut untouched = StdRng::seed_from_u64(0xBAD);
         assert_eq!(
-            context
-                .try_generate_server_key(
+            primus_tfhe_ntru_fourier::KeyGenerator::new(&context)
+                .try_generate_server_key_with_parameters(
+                    context_parameters.key_switching(),
                     &client,
-                    BlindRotationAlgorithm::Sparse {
+                    BlindRotationMethod::Sparse {
                         copy_count: 3,
                         bucket_count: 8
                     },
-                    None,
                     &mut rng
                 )
                 .err(),
@@ -353,7 +358,8 @@ fn sparse_generation_rejects_invalid_secrets_buckets_and_cbs_before_sampling() {
         );
         assert_eq!(rng.next_u64(), untouched.next_u64());
     }
-    let context = context::<u32, RustFftTable>(SecretKeyDistr::fixed_hamming_weight_binary(DIM, 5));
+    let (context_parameters, context) =
+        context::<u32, RustFftTable>(SecretKeyDistr::fixed_hamming_weight_binary(DIM, 5));
     let mut generator = KeyGenerator::new(&context);
     // Rejection paths need only the client; no BR/return key is consumed here.
     let client = generator.try_generate_client_key(&mut rng).unwrap();
@@ -374,13 +380,13 @@ fn sparse_generation_rejects_invalid_secrets_buckets_and_cbs_before_sampling() {
         let mut untouched = StdRng::seed_from_u64(0xBAD);
         assert_eq!(
             generator
-                .try_generate_server_key(
+                .try_generate_server_key_with_parameters(
+                    context_parameters.key_switching(),
                     &client,
-                    BlindRotationAlgorithm::Sparse {
+                    BlindRotationMethod::Sparse {
                         copy_count: copies,
                         bucket_count: buckets
                     },
-                    None,
                     &mut rng
                 )
                 .err(),
@@ -391,13 +397,13 @@ fn sparse_generation_rejects_invalid_secrets_buckets_and_cbs_before_sampling() {
         let mut untouched = StdRng::seed_from_u64(0xBAD);
         assert_eq!(
             generator
-                .try_generate(
-                    BlindRotationAlgorithm::Sparse {
+                .try_generate_with_parameters(
+                    context_parameters.key_switching(),
+                    BlindRotationMethod::Sparse {
                         copy_count: copies,
                         bucket_count: buckets
                     },
-                    None,
-                    &mut rng,
+                    &mut rng
                 )
                 .err(),
             Some(Error::SparseBootstrapping(expected))
@@ -412,13 +418,13 @@ fn sparse_generation_rejects_invalid_secrets_buckets_and_cbs_before_sampling() {
     let mut untouched = StdRng::seed_from_u64(0xBAD);
     assert_eq!(
         generator
-            .try_generate_server_key(
+            .try_generate_server_key_with_parameters(
+                context_parameters.key_switching(),
                 &noninvertible,
-                BlindRotationAlgorithm::Sparse {
+                BlindRotationMethod::Sparse {
                     copy_count: 3,
                     bucket_count: 8
                 },
-                None,
                 &mut rng
             )
             .err(),
@@ -426,7 +432,7 @@ fn sparse_generation_rejects_invalid_secrets_buckets_and_cbs_before_sampling() {
     );
     assert_eq!(rng.next_u64(), untouched.next_u64());
 
-    // Optional CBS configuration is validated before sparse-map or key sampling.
+    // Independently supplied CBS configuration is validated before sparse-map or key sampling.
     let decomposition = DecompositionConfig {
         log_basis: DecompositionBaseLog::new(8),
         level_count: None,
@@ -442,36 +448,8 @@ fn sparse_generation_rejects_invalid_secrets_buckets_and_cbs_before_sampling() {
         },
         scheme_switch: decomposition,
     };
-    // Fresh CBS setup must also reject the config before sampling either secret.
-    let mut fresh_rng = StdRng::seed_from_u64(43);
     assert!(
-        generator
-            .try_generate_circuit_bootstrap_keys(
-                BlindRotationAlgorithm::Sparse {
-                    copy_count: 3,
-                    bucket_count: 8
-                },
-                invalid_cbs,
-                &mut fresh_rng,
-            )
+        primus_tfhe_ntru::CbsParameters::try_with_config(context.parameters().clone(), invalid_cbs)
             .is_err()
     );
-    assert_eq!(fresh_rng.next_u64(), StdRng::seed_from_u64(43).next_u64());
-
-    rng = StdRng::seed_from_u64(0xBAD);
-    let mut untouched = StdRng::seed_from_u64(0xBAD);
-    assert!(
-        generator
-            .try_generate_server_key(
-                &client,
-                BlindRotationAlgorithm::Sparse {
-                    copy_count: 3,
-                    bucket_count: 8
-                },
-                Some(invalid_cbs),
-                &mut rng
-            )
-            .is_err()
-    );
-    assert_eq!(rng.next_u64(), untouched.next_u64());
 }

@@ -12,7 +12,7 @@ use primus_ntru::SecretKeyDistr;
 use primus_ntt::{MonomialNttTable, U64NttTable};
 use primus_tfhe_benchmarks::parameters::ntt_modulus;
 use primus_tfhe_benchmarks::{benchmark::PBS_WORKLOADS, parameters::ntru};
-use primus_tfhe_ntru_ntt::{BlindRotationAlgorithm, KeyGenerator, TfheContext};
+use primus_tfhe_ntru_ntt::{KeyGenerator, TfheContext};
 use rand::{SeedableRng, rngs::StdRng};
 
 // Keygen keeps one Boolean-sized fixture per secret distribution.
@@ -31,8 +31,11 @@ fn keygen<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     let name = format!("{kind}/{}", workload.name);
     let parameters = ntru::pbs(ntt_modulus::<T>(), workload, secret);
     let fixture = std::cell::LazyCell::new(|| {
-        let context =
-            TfheContext::<T, Table, PowOf2Modulus<T>>::try_from_parameters(parameters).unwrap();
+        let context_parameters = &parameters;
+        let context = TfheContext::<T, Table, PowOf2Modulus<T>>::try_from_parameters(
+            context_parameters.clone(),
+        )
+        .unwrap();
         let mut rng = StdRng::seed_from_u64(42);
         let client = KeyGenerator::new(&context)
             .try_generate_client_key(&mut rng)
@@ -47,7 +50,7 @@ fn keygen<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
 
         metadata::record("setup", &case, || {
             serde_json::json!({
-                "parameters": metadata::ntru(context.parameters()),
+                "parameters": metadata::ntru(&parameters),
                 "blind_rotation": metadata::blind_rotation(false),
                 "drop": "outside keygen timing; stage buffers outside timing",
             })
@@ -56,12 +59,7 @@ fn keygen<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
             || (),
             |()| {
                 generator
-                    .try_generate_server_key(
-                        black_box(client),
-                        BlindRotationAlgorithm::Classic,
-                        None,
-                        &mut rng,
-                    )
+                    .try_generate_server_key(black_box(client), &mut rng)
                     .unwrap()
             },
             BatchSize::PerIteration,
@@ -77,8 +75,11 @@ fn fixed_weight_keygen<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     let parameters = ntru::diagnostic(ntt_modulus::<T>());
     let name = "fixed_weight";
     let fixture = std::cell::LazyCell::new(|| {
-        let context =
-            TfheContext::<T, Table, PowOf2Modulus<T>>::try_from_parameters(parameters).unwrap();
+        let context_parameters = &parameters;
+        let context = TfheContext::<T, Table, PowOf2Modulus<T>>::try_from_parameters(
+            context_parameters.clone(),
+        )
+        .unwrap();
         let mut rng = StdRng::seed_from_u64(42);
         let client = KeyGenerator::new(&context)
             .try_generate_client_key(&mut rng)
@@ -101,7 +102,7 @@ fn fixed_weight_keygen<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
 
             metadata::record("setup", &case, || {
                 serde_json::json!({
-                    "parameters": metadata::ntru(context.parameters()),
+                    "parameters": metadata::ntru(&parameters),
                     "blind_rotation": metadata::blind_rotation(sparse),
                     "drop": "outside keygen timing; stage buffers outside timing",
                 })
@@ -110,7 +111,12 @@ fn fixed_weight_keygen<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
                 || (),
                 |()| {
                     generator
-                        .try_generate_server_key(black_box(client), blind_rotation, None, &mut rng)
+                        .try_generate_server_key_with_parameters(
+                            parameters.key_switching(),
+                            black_box(client),
+                            blind_rotation,
+                            &mut rng,
+                        )
                         .unwrap()
                 },
                 BatchSize::PerIteration,

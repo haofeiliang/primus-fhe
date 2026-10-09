@@ -1,12 +1,10 @@
 use primus_decompose::DecompositionBaseLog;
-use primus_decompose::primitive::ApproxSignedBasis;
 use primus_encoding::{PlaintextEmbedding, RoundedCodec};
 use primus_fft::{FftTable, RustFftTable, TfheFftTable, TorusFftValue};
 use primus_lattice::LweDimension;
-use primus_lwe::{LweCiphertext, LweParameters};
+use primus_lwe::LweCiphertext;
 use primus_modulus::{BarrettModulus, NativeModulus};
-use primus_ntru::NlevParameters;
-use primus_ntru::{NtruParameters, SecretKeyDistr};
+use primus_ntru::SecretKeyDistr;
 use primus_poly::PolyLength;
 use primus_reduce::{ReduceAdd, ReduceSub};
 use primus_tfhe::{
@@ -14,7 +12,7 @@ use primus_tfhe::{
     ProgrammableBootstrap, ProgrammableBootstrapInterleaved,
 };
 use primus_tfhe_ntru_fourier::{
-    BlindRotationAlgorithm, GadgetEncryptionConfig, PbsParameters, TfheContext,
+    BlindRotationMethod, GadgetEncryptionConfig, PbsParameters, TfheContext,
 };
 use rand::{SeedableRng, rngs::StdRng};
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -23,37 +21,34 @@ const N: usize = 128;
 
 fn parameters<T: TorusFftValue>(distr: SecretKeyDistr, dimension: usize) -> PbsParameters<T> {
     let modulus = NativeModulus::new();
-    let lwe = LweParameters::new(
-        LweDimension::new(dimension),
-        T::as_from(15u32),
-        modulus,
-        distr,
-        0.7,
-    );
-    let acc = NtruParameters::new(
-        PolyLength::new(N),
-        T::as_from(15u32),
-        modulus,
-        SecretKeyDistr::SparseTernary,
-        0.7,
-    );
-    let blind_rotation_basis = ApproxSignedBasis::new(
-        acc.cipher_modulus_value(),
-        DecompositionBaseLog::new(8),
-        None,
-    );
 
-    PbsParameters::try_new(
-        lwe.into_encryption_parameters(),
-        NlevParameters::try_with_basis(&acc, blind_rotation_basis).unwrap(),
-        GadgetEncryptionConfig {
+    PbsParameters::try_from_config(primus_tfhe_ntru::PbsConfig {
+        external_lwe: primus_tfhe::LweConfig {
+            dimension: LweDimension::new(dimension),
+            cipher_modulus: modulus.into(),
+            secret_key_distr: distr,
+            noise_standard_deviation: 0.7,
+        },
+        acc_modulus: modulus.into(),
+        bsk_poly_length: PolyLength::new(N),
+        bsk_secret_distr: SecretKeyDistr::SparseTernary,
+        bsk_gadget: GadgetEncryptionConfig {
+            decomposition: primus_tfhe::DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(8),
+                level_count: None,
+            },
+            noise_standard_deviation: 0.7,
+        },
+        key_switching: GadgetEncryptionConfig {
             decomposition: primus_tfhe_ntru::DecompositionConfig {
                 log_basis: DecompositionBaseLog::new(8),
                 level_count: None,
             },
             noise_standard_deviation: 0.7,
         },
-    )
+        algorithm: primus_tfhe::BlindRotationMethod::Classic,
+        messages: primus_tfhe::PbsMessageConfig::new(primus_integer::AsFrom::<u32>::as_from(4)),
+    })
     .unwrap()
 }
 
@@ -66,18 +61,17 @@ fn value<T: TorusFftValue>(input: usize, output: usize) -> T {
     }
 }
 
-fn check_context<T: TorusFftValue, TABLE>(context: TfheContext<T, TABLE>)
+fn check_context<T: TorusFftValue, TABLE>(context_parameters: PbsParameters<T>, table: TABLE)
 where
     TABLE: FftTable,
 {
+    let context = TfheContext::try_new(context_parameters.clone(), table).unwrap();
     let input_codec = RoundedCodec::new(
         T::as_from(15u32),
         context.parameters().external_lwe().cipher_modulus(),
     );
     let mut rng = StdRng::seed_from_u64(0x4d41_4e59_5042_5301);
-    let (client_key, server_key) = context
-        .try_generate_keys(BlindRotationAlgorithm::Classic, None, &mut rng)
-        .unwrap();
+    let (client_key, server_key) = context.try_generate_keys(&mut rng).unwrap();
     assert_eq!(
         server_key.blind_rotation_key().input_distribution(),
         context.parameters().external_lwe().secret_key_distr()
@@ -92,14 +86,20 @@ where
     } else {
         SecretKeyDistr::UniformBinary
     };
-    let incompatible = TfheContext::<_, TABLE>::from_parameters(parameters(other_distribution, 4));
+    let incompatible_parameters = &parameters(other_distribution, 4);
+    let incompatible = TfheContext::<_, TABLE>::from_parameters(incompatible_parameters.clone());
     assert_eq!(
         incompatible.evaluator(&server_key).err(),
         Some(primus_tfhe::TfheEvaluationError::IncompatibleBlindRotationKey)
     );
     // Re-import the generated coefficient secrets through the validation path.
     let imported = primus_tfhe_ntru_fourier::KeyGenerator::new(&context)
-        .try_generate_server_key(&client_key, BlindRotationAlgorithm::Classic, None, &mut rng)
+        .try_generate_server_key_with_parameters(
+            context_parameters.key_switching(),
+            &client_key,
+            BlindRotationMethod::Classic,
+            &mut rng,
+        )
         .unwrap();
     assert!(context.evaluator(&imported).is_ok());
     let public = context
@@ -479,18 +479,12 @@ fn pbs_u32_preserves_outputs_and_validates_domains() {
         SecretKeyDistr::fixed_composition_ternary(4, 1, 2),
     ] {
         check_context(
-            TfheContext::try_new(
-                parameters::<u32>(case, 4),
-                RustFftTable::new(PolyLength::new(N)),
-            )
-            .unwrap(),
+            parameters::<u32>(case, 4),
+            RustFftTable::new(PolyLength::new(N)),
         );
         check_context(
-            TfheContext::try_new(
-                parameters::<u32>(case, 4),
-                TfheFftTable::new(PolyLength::new(N)),
-            )
-            .unwrap(),
+            parameters::<u32>(case, 4),
+            TfheFftTable::new(PolyLength::new(N)),
         );
     }
 }
@@ -502,24 +496,21 @@ fn pbs_u64_preserves_outputs_and_validates_domains() {
         SecretKeyDistr::fixed_composition_ternary(4, 1, 2),
     ] {
         check_context(
-            TfheContext::try_new(
-                parameters::<u64>(case, 4),
-                RustFftTable::new(PolyLength::new(N)),
-            )
-            .unwrap(),
+            parameters::<u64>(case, 4),
+            RustFftTable::new(PolyLength::new(N)),
         );
         check_context(
-            TfheContext::try_new(
-                parameters::<u64>(case, 4),
-                TfheFftTable::new(PolyLength::new(N)),
-            )
-            .unwrap(),
+            parameters::<u64>(case, 4),
+            TfheFftTable::new(PolyLength::new(N)),
         );
     }
 }
 
 // Imported secrets fix the first selector independently of keygen randomness.
-fn check_first_controls<T: TorusFftValue, Table: FftTable>(context: TfheContext<T, Table>) {
+fn check_first_controls<T: TorusFftValue, Table: FftTable>(
+    context_parameters: &PbsParameters<T>,
+    context: TfheContext<T, Table>,
+) {
     let input_codec = RoundedCodec::new(
         T::as_from(15u32),
         context.parameters().external_lwe().cipher_modulus(),
@@ -558,7 +549,12 @@ fn check_first_controls<T: TorusFftValue, Table: FftTable>(context: TfheContext<
             generated.accumulator_ntru_secret_key().clone(),
         );
         let server = generator
-            .try_generate_server_key(&client, BlindRotationAlgorithm::Classic, None, &mut rng)
+            .try_generate_server_key_with_parameters(
+                context_parameters.key_switching(),
+                &client,
+                BlindRotationMethod::Classic,
+                &mut rng,
+            )
             .unwrap();
         let mut evaluator = context.evaluator(&server).unwrap();
         let decryptor = context
@@ -616,12 +612,15 @@ fn first_controls_cover_secret_values_and_single_coordinate_keys() {
             SecretKeyDistr::UniformBinary,
             SecretKeyDistr::UniformTernary,
         ] {
-            check_first_controls(TfheContext::<u32, RustFftTable>::from_parameters(
-                parameters(distr, dimension),
-            ));
-            check_first_controls(TfheContext::<u32, TfheFftTable>::from_parameters(
-                parameters(distr, dimension),
-            ));
+            let params = parameters(distr, dimension);
+            check_first_controls(
+                &params,
+                TfheContext::<u32, RustFftTable>::from_parameters(params.clone()),
+            );
+            check_first_controls(
+                &params,
+                TfheContext::<u32, TfheFftTable>::from_parameters(params.clone()),
+            );
         }
     }
 }

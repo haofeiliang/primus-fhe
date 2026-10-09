@@ -14,24 +14,19 @@ type Word = u64;
 
 fn main() {
     let config = experimental::SPARSE_CBS_U64;
-    let parameters = config.try_prepare().unwrap();
-    let context = TfheContext::<Word, Table>::from_parameters(parameters);
-    let poly_length = config.blind_rotation.acc_poly_length.get();
+    let context = TfheContext::<Word, Table>::try_from_cbs_config(config).unwrap();
+    let poly_length = config.pbs.bsk_poly_length.get();
 
     // Padded t=8 accepts integers 0..4, independently of the candidate ring messages.
     let (input_codec, ring_message_codec) = context
         .parameters()
-        .circuit_bootstrap_codecs(config.input_modulus, 8)
+        .circuit_bootstrap_codecs(config.pbs.messages.input_modulus, 8)
         .unwrap();
 
-    // Client: generate sparse BR/CBS material, without an unused return key.
+    // Client: generate sparse BR/CBS material and KS for downstream LWE returns.
     let mut rng = StdRng::seed_from_u64(42);
     let (client_key, server_key) = context
-        .try_generate_circuit_bootstrap_keys(
-            config.blind_rotation.algorithm,
-            config.gadget,
-            &mut rng,
-        )
+        .try_generate_circuit_bootstrap_keys(&mut rng)
         .unwrap();
     // The integer input is encrypted with the external LWE secret.
     let external_secret = client_key.external_lwe_secret_key();

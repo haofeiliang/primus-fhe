@@ -3,6 +3,9 @@
 /// An error produced while constructing a TFHE evaluator.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum TfheEvaluationError {
+    /// The context has no complete ring-output CBS configuration.
+    #[error("context has no circuit-bootstrap parameters")]
+    MissingCircuitBootstrapParameters,
     /// Boolean gates require input modulus 4 and signed LUT values at modulus-8 scale.
     #[error("Boolean evaluation requires plaintext modulus 4 and ciphertext moduli greater than 8")]
     InvalidBooleanEncoding,
@@ -18,9 +21,6 @@ pub enum TfheEvaluationError {
     /// NTRU return material has another ring, target dimension or Q→q decomposition.
     #[error("LWE return key is incompatible with the evaluation context")]
     IncompatibleLweReturnKey,
-    /// The server key was generated without CBS material.
-    #[error("server key has no circuit-bootstrap material")]
-    MissingCircuitBootstrapKey,
     /// CBS parameters belong to another accumulator or input domain.
     #[error("circuit-bootstrap parameters do not match the TFHE context")]
     IncompatibleCircuitBootstrapParameters,

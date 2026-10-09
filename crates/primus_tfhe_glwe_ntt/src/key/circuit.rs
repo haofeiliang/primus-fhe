@@ -1,51 +1,38 @@
-//! Material generation for ring-output CBS workflows.
+//! CBS material composed with the ordinary BR and KS server key.
 
-use primus_glwe::{NttGlweKeySwitchingKey, NttGlweSecretKey};
+use primus_glwe::NttGlweSecretKey;
 use primus_integer::FheUint;
 use primus_ntt::MonomialNttTable;
 
 use crate::{
-    BlindRotationAlgorithm, BlindRotationKey, BootstrapResources, CbsGadgetConfig, CbsParameters,
-    CircuitBootstrapKey, ClientKey, KeyGenerationError, KeyGenerator, TfheContext,
-    TfheEvaluationError,
+    BootstrapResources, CbsGadgetParameters, CircuitBootstrapKey, ClientKey, KeyGenerationError,
+    KeyGenerator, ServerKey, TfheContext, TfheEvaluationError,
 };
 
-/// Evaluation material for ring-output circuit bootstrapping.
-/// GLWE KS→BR includes input KS; BR→KS contains only BR and CBS material.
-/// The CBS key is always present. For ordinary PBS/MVB, use [`crate::ServerKey`] instead.
+/// Complete CBS material with one BR key, one KS key and trace/scheme-switch keys.
+/// The ordinary server key also serves PBS and downstream LWE returns; CBS
+/// resources allocate only the input/BR scratch used by circuit bootstrapping.
 pub struct CircuitBootstrapServerKey<T: FheUint> {
-    blind_rotation: BlindRotationKey<T>,
-    input_key_switching: Option<NttGlweKeySwitchingKey<T>>,
+    server_key: ServerKey<T>,
     circuit_bootstrap: CircuitBootstrapKey<T>,
 }
 
 impl<T: FheUint> CircuitBootstrapServerKey<T> {
-    /// Moves existing components into a bundle without copying or checking them.
-    /// Pass input KS for KS→BR and `None` for BR→KS. Resource/evaluator binding
-    /// validates layouts; shared secret and transform identity remain caller requirements.
+    /// Moves existing material into a bundle without copying or checking it.
+    /// Binding validates layouts; actual paired secrets and transform identity
+    /// remain caller requirements.
     #[must_use]
-    pub fn new(
-        blind_rotation: BlindRotationKey<T>,
-        input_key_switching: Option<NttGlweKeySwitchingKey<T>>,
-        circuit_bootstrap: CircuitBootstrapKey<T>,
-    ) -> Self {
+    pub fn new(server_key: ServerKey<T>, circuit_bootstrap: CircuitBootstrapKey<T>) -> Self {
         Self {
-            blind_rotation,
-            input_key_switching,
+            server_key,
             circuit_bootstrap,
         }
     }
 
-    /// Borrows the classic or sparse BR material.
+    /// Borrows the BR and KS material for PBS or downstream LWE returns.
     #[must_use]
-    pub fn blind_rotation_key(&self) -> &BlindRotationKey<T> {
-        &self.blind_rotation
-    }
-
-    /// Borrows the input KS material; generated bundles contain it only for KS→BR.
-    #[must_use]
-    pub fn input_key_switching_key(&self) -> Option<&NttGlweKeySwitchingKey<T>> {
-        self.input_key_switching.as_ref()
+    pub fn server_key(&self) -> &ServerKey<T> {
+        &self.server_key
     }
 
     /// Borrows the required trace and scheme-switch material.
@@ -54,23 +41,13 @@ impl<T: FheUint> CircuitBootstrapServerKey<T> {
         &self.circuit_bootstrap
     }
 
-    /// Moves components out for reuse, for example when adding an ordinary return path.
+    /// Moves out ordinary and CBS material without copying ciphertext buffers.
     #[must_use]
-    pub fn into_parts(
-        self,
-    ) -> (
-        BlindRotationKey<T>,
-        Option<NttGlweKeySwitchingKey<T>>,
-        CircuitBootstrapKey<T>,
-    ) {
-        (
-            self.blind_rotation,
-            self.input_key_switching,
-            self.circuit_bootstrap,
-        )
+    pub fn into_parts(self) -> (ServerKey<T>, CircuitBootstrapKey<T>) {
+        (self.server_key, self.circuit_bootstrap)
     }
 
-    /// Binds BR and required input preparation, with no output-return workspace.
+    /// Binds CBS input preparation and BR without allocating output-return scratch.
     /// Bind the CBS evaluator separately with [`Self::circuit_bootstrap_key`].
     /// Inherits [`BootstrapResources::try_new`]'s secret/transform requirements.
     pub fn bootstrap_resources<'a, Table>(
@@ -80,7 +57,7 @@ impl<T: FheUint> CircuitBootstrapServerKey<T> {
     where
         Table: MonomialNttTable<ValueT = T>,
     {
-        context.bootstrap_resources(&self.blind_rotation, self.input_key_switching.as_ref())
+        context.bootstrap_resources_from_server_key(&self.server_key)
     }
 }
 
@@ -89,49 +66,173 @@ where
     T: FheUint,
     Table: MonomialNttTable<ValueT = T>,
 {
-    /// Generates a fresh client and the material needed for ring-output CBS.
-    /// GLWE KS→BR includes input KS; BR→KS contains only BR and CBS material.
-    /// The accepted accumulator transform is shared by BR and CBS, then dropped
-    /// before preparing any input KS. Matching retries only the public sparse map.
+    /// Generates a client and complete CBS material, including the ordinary KS key.
+    /// Shares the accepted ring representation between BR and CBS, then releases
+    /// it before preparing KS. Sparse matching retries only the public map.
     ///
     /// # Errors
-    /// CBS and sparse configuration errors precede secret sampling. Propagates
-    /// secret-generation and matching errors without returning partial material.
+    /// Missing CBS state and invalid sparse choices precede secret sampling.
+    /// Propagates secret-generation, return-domain and matching failures.
     ///
     /// # Correctness
-    /// Requires the BR/CBS noise budgets documented by
-    /// [`Self::try_generate`] for the selected algorithm; no output KS is generated.
+    /// Inherits [`Self::try_generate`]'s BR/KS contracts and
+    /// [`Self::try_generate_circuit_bootstrap_key`]'s CBS noise requirements.
     pub fn try_generate_circuit_bootstrap_keys<R: rand::Rng + rand::CryptoRng>(
         &mut self,
-        blind_rotation: BlindRotationAlgorithm,
-        circuit_bootstrap: CbsGadgetConfig,
         rng: &mut R,
     ) -> Result<(ClientKey<T>, CircuitBootstrapServerKey<T>), KeyGenerationError> {
-        let parameters =
-            CbsParameters::try_from_config(self.context.parameters(), circuit_bootstrap)?;
+        let operation = self
+            .context
+            .cbs_parameters()
+            .ok_or(KeyGenerationError::MissingCircuitBootstrapParameters)?;
+        self.generate_circuit_pair(
+            operation.pbs_parameters().glwe_key_switching(),
+            operation.as_ref().blind_rotation_method(),
+            operation.gadget(),
+            rng,
+        )
+    }
+
+    /// Generates a CBS pair from independently prepared KS/CBS parameters.
+    /// Checks their common domain before sampling any secrets or key rows.
+    /// Inherits [`Self::try_generate_circuit_bootstrap_keys`]'s numerical contracts.
+    pub fn try_generate_circuit_bootstrap_keys_with_parameters<R: rand::Rng + rand::CryptoRng>(
+        &mut self,
+        key_switching: &crate::GlweKeySwitchingParameters<T>,
+        blind_rotation: crate::BlindRotationMethod,
+        circuit: &CbsGadgetParameters<T>,
+        rng: &mut R,
+    ) -> Result<(ClientKey<T>, CircuitBootstrapServerKey<T>), KeyGenerationError> {
+        self.context
+            .parameters()
+            .check_key_switching_parameters(key_switching)?;
+        self.check_circuit_bootstrap_parameters(circuit)?;
+        self.generate_circuit_pair(key_switching, blind_rotation, circuit, rng)
+    }
+
+    /// Samples secrets only after the owning boundary paired KS/CBS parameters.
+    fn generate_circuit_pair<R: rand::Rng + rand::CryptoRng>(
+        &mut self,
+        key_switching: &crate::GlweKeySwitchingParameters<T>,
+        blind_rotation: crate::BlindRotationMethod,
+        circuit: &CbsGadgetParameters<T>,
+        rng: &mut R,
+    ) -> Result<(ClientKey<T>, CircuitBootstrapServerKey<T>), KeyGenerationError> {
         let sparse_layout = self.prepare_blind_rotation(blind_rotation)?;
         let client = ClientKey::generate(self.context.parameters(), rng);
         let transformed =
             NttGlweSecretKey::from_coeff_secret_key(client.glwe_secret_key(), self.context.table());
+        let server = self.generate_circuit_server_with_main(
+            key_switching,
+            &client,
+            transformed,
+            sparse_layout,
+            circuit,
+            rng,
+        )?;
+        Ok((client, server))
+    }
+
+    /// Generates the configured CBS bundle for independently supplied client secrets.
+    /// Checks compatibility before converting the secret or sampling key rows.
+    /// Inherits [`Self::try_generate_circuit_bootstrap_keys`]'s numerical contracts.
+    pub fn try_generate_circuit_bootstrap_server_key<R: rand::Rng + rand::CryptoRng>(
+        &mut self,
+        client: &ClientKey<T>,
+        rng: &mut R,
+    ) -> Result<CircuitBootstrapServerKey<T>, KeyGenerationError> {
+        let operation = self
+            .context
+            .cbs_parameters()
+            .ok_or(KeyGenerationError::MissingCircuitBootstrapParameters)?;
+        self.generate_circuit_for_client(
+            operation.pbs_parameters().glwe_key_switching(),
+            client,
+            operation.as_ref().blind_rotation_method(),
+            operation.gadget(),
+            rng,
+        )
+    }
+
+    /// Generates CBS material with independently prepared KS/CBS parameters.
+    /// Checks their common domain before secret conversion or key-row sampling.
+    /// Inherits [`Self::try_generate_circuit_bootstrap_keys`]'s numerical contracts;
+    /// the supplied decomposition/noise choices need their own joint noise budget.
+    pub fn try_generate_circuit_bootstrap_server_key_with_parameters<
+        R: rand::Rng + rand::CryptoRng,
+    >(
+        &mut self,
+        key_switching: &crate::GlweKeySwitchingParameters<T>,
+        client: &ClientKey<T>,
+        blind_rotation: crate::BlindRotationMethod,
+        circuit: &CbsGadgetParameters<T>,
+        rng: &mut R,
+    ) -> Result<CircuitBootstrapServerKey<T>, KeyGenerationError> {
+        self.context
+            .parameters()
+            .check_key_switching_parameters(key_switching)?;
+        self.check_circuit_bootstrap_parameters(circuit)?;
+        self.generate_circuit_for_client(key_switching, client, blind_rotation, circuit, rng)
+    }
+
+    /// Validates imported secrets, then shares their ring representation across BR/CBS.
+    fn generate_circuit_for_client<R: rand::Rng + rand::CryptoRng>(
+        &mut self,
+        key_switching: &crate::GlweKeySwitchingParameters<T>,
+        client: &ClientKey<T>,
+        blind_rotation: crate::BlindRotationMethod,
+        circuit: &CbsGadgetParameters<T>,
+        rng: &mut R,
+    ) -> Result<CircuitBootstrapServerKey<T>, KeyGenerationError> {
+        client.check_compatible(self.context.parameters())?;
+        let sparse_layout = self.prepare_blind_rotation(blind_rotation)?;
+        let transformed =
+            NttGlweSecretKey::from_coeff_secret_key(client.glwe_secret_key(), self.context.table());
+        self.generate_circuit_server_with_main(
+            key_switching,
+            client,
+            transformed,
+            sparse_layout,
+            circuit,
+            rng,
+        )
+    }
+
+    /// Consumes the validated ring representation for BR/CBS before allocating KS rows.
+    fn generate_circuit_server_with_main<R: rand::Rng + rand::CryptoRng>(
+        &mut self,
+        key_switching: &crate::GlweKeySwitchingParameters<T>,
+        client: &ClientKey<T>,
+        transformed: NttGlweSecretKey<T>,
+        sparse_layout: Option<crate::sparse::SparseKeyLayout>,
+        circuit: &CbsGadgetParameters<T>,
+        rng: &mut R,
+    ) -> Result<CircuitBootstrapServerKey<T>, KeyGenerationError> {
         let blind_rotation =
-            self.generate_blind_rotation_key_with_main(&client, &transformed, sparse_layout, rng)?;
+            self.generate_blind_rotation_key_with_main(client, &transformed, sparse_layout, rng)?;
         let circuit_bootstrap = self.generate_circuit_bootstrap_key_with_main(
             client.glwe_secret_key(),
             &transformed,
-            parameters,
+            circuit.clone(),
             rng,
         );
         drop(transformed);
-        let input_key_switching = match self.context.parameters().pbs_order() {
-            crate::PbsOrder::BootstrapKeyswitch => None,
-            crate::PbsOrder::KeyswitchBootstrap => {
-                Some(self.generate_glwe_key_switching_key(&client, rng))
-            }
-        };
-        Ok((
-            client,
-            CircuitBootstrapServerKey::new(blind_rotation, input_key_switching, circuit_bootstrap),
+        let key = self.generate_glwe_key_switching_key(key_switching, client, rng);
+        Ok(CircuitBootstrapServerKey::new(
+            ServerKey::new(blind_rotation, key),
+            circuit_bootstrap,
         ))
+    }
+
+    /// Checks independently prepared CBS state before any secret or key sampling.
+    fn check_circuit_bootstrap_parameters(
+        &self,
+        circuit_bootstrap: &CbsGadgetParameters<T>,
+    ) -> Result<(), KeyGenerationError> {
+        if !circuit_bootstrap.is_compatible(self.context.parameters()) {
+            return Err(KeyGenerationError::IncompatibleCircuitBootstrapParameters);
+        }
+        Ok(())
     }
 }
 
@@ -140,17 +241,38 @@ where
     T: FheUint,
     Table: MonomialNttTable<ValueT = T>,
 {
-    /// Generates a client and a ring-output CBS bundle with only the required keys.
+    /// Generates paired client/CBS keys with one BR and one KS key.
     /// Inherits [`KeyGenerator::try_generate_circuit_bootstrap_keys`]'s contracts.
     pub fn try_generate_circuit_bootstrap_keys<R: rand::Rng + rand::CryptoRng>(
         &self,
-        blind_rotation: BlindRotationAlgorithm,
-        circuit_bootstrap: CbsGadgetConfig,
         rng: &mut R,
     ) -> Result<(ClientKey<T>, CircuitBootstrapServerKey<T>), KeyGenerationError> {
-        KeyGenerator::new(self).try_generate_circuit_bootstrap_keys(
+        KeyGenerator::new(self).try_generate_circuit_bootstrap_keys(rng)
+    }
+
+    /// Generates a complete CBS bundle for an existing client.
+    /// Inherits [`KeyGenerator::try_generate_circuit_bootstrap_server_key`]'s contracts.
+    pub fn try_generate_circuit_bootstrap_server_key<R: rand::Rng + rand::CryptoRng>(
+        &self,
+        client: &ClientKey<T>,
+        rng: &mut R,
+    ) -> Result<CircuitBootstrapServerKey<T>, KeyGenerationError> {
+        KeyGenerator::new(self).try_generate_circuit_bootstrap_server_key(client, rng)
+    }
+
+    /// Generates a CBS pair using independently prepared material parameters.
+    /// Inherits [`KeyGenerator::try_generate_circuit_bootstrap_keys_with_parameters`]'s contracts.
+    pub fn try_generate_circuit_bootstrap_keys_with_parameters<R: rand::Rng + rand::CryptoRng>(
+        &self,
+        key_switching: &crate::GlweKeySwitchingParameters<T>,
+        blind_rotation: crate::BlindRotationMethod,
+        circuit: &CbsGadgetParameters<T>,
+        rng: &mut R,
+    ) -> Result<(ClientKey<T>, CircuitBootstrapServerKey<T>), KeyGenerationError> {
+        KeyGenerator::new(self).try_generate_circuit_bootstrap_keys_with_parameters(
+            key_switching,
             blind_rotation,
-            circuit_bootstrap,
+            circuit,
             rng,
         )
     }

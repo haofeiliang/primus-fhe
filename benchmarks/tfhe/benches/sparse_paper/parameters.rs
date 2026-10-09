@@ -11,9 +11,9 @@ use primus_integer::FheUint;
 use primus_lwe::LweDimension;
 use primus_modulus::BarrettModulus;
 use primus_poly::PolyLength;
-use primus_tfhe::BlindRotationAlgorithm;
-use primus_tfhe_glwe::{BlindRotationConfig, LweConfig};
+use primus_tfhe::BlindRotationMethod;
 use primus_tfhe_glwe::{GadgetEncryptionConfig, PbsOrder, PbsParameters};
+use primus_tfhe_glwe::{LweConfig, PbsConfig};
 
 /// Geometry quoted by the paper and arithmetic choices resolved for this backend.
 #[derive(Clone, Copy)]
@@ -146,7 +146,7 @@ impl Case {
             log_basis: DecompositionBaseLog::new(base_log),
             level_count: None,
         };
-        BlindRotationConfig {
+        PbsParameters::try_from_config(PbsConfig {
             small_lwe: LweConfig {
                 dimension: LweDimension::new(self.dimension(mode)),
                 cipher_modulus: modulus.into(),
@@ -154,8 +154,8 @@ impl Case {
                 noise_standard_deviation: 3.19 * self.ring_modulus as f64
                     / f64::from(self.lwe_modulus),
             },
-            acc_dimension: GlweDimension::new(1),
-            acc_poly_length: PolyLength::new(self.poly_length),
+            bsk_dimension: GlweDimension::new(1),
+            bsk_poly_length: PolyLength::new(self.poly_length),
             bsk_secret_distr: SecretKeyDistr::UniformTernary,
             bsk_gadget: GadgetEncryptionConfig {
                 decomposition: DecompositionConfig {
@@ -170,23 +170,19 @@ impl Case {
                 },
                 noise_standard_deviation: 3.19,
             },
-            algorithm: match mode.sparse_counts(self) {
-                Some((copy_count, bucket_count)) => BlindRotationAlgorithm::Sparse {
+            method: match mode.sparse_counts(self) {
+                Some((copy_count, bucket_count)) => BlindRotationMethod::Sparse {
                     copy_count,
                     bucket_count,
                 },
-                None => BlindRotationAlgorithm::Classic,
+                None => BlindRotationMethod::Classic,
             },
-        }
-        .try_prepare()
-        .and_then(|parameters| {
-            parameters.try_with_key_switching(
-                GadgetEncryptionConfig {
-                    decomposition: decomposition(self.ks_base_log),
-                    noise_standard_deviation: 3.19,
-                },
-                PbsOrder::BootstrapKeyswitch,
-            )
+            key_switching: GadgetEncryptionConfig {
+                decomposition: decomposition(self.ks_base_log),
+                noise_standard_deviation: 3.19,
+            },
+            messages: primus_tfhe::PbsMessageConfig::new(T::as_from(self.plaintext_modulus)),
+            order: PbsOrder::BootstrapKeyswitch,
         })
         .unwrap()
     }

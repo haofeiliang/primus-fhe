@@ -1,13 +1,11 @@
 use primus_decompose::DecompositionBaseLog;
-use primus_decompose::primitive::ApproxSignedBasis;
 use primus_encoding::RoundedCodec;
 use primus_fft::{FftTable, RustFftTable, TfheFftTable, TorusFftValue};
-use primus_glwe::{GlweParameters, SecretKeyDistr};
+use primus_glwe::SecretKeyDistr;
 use primus_lattice::{GlweDimension, LweDimension};
-use primus_lwe::{LweCiphertext, LweParameters};
+use primus_lwe::LweCiphertext;
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_poly::PolyLength;
-use primus_tfhe::BlindRotationAlgorithm;
 use primus_tfhe::{
     BivariateLookupTable, InterleavedLookupTable, LookupTable, Lwe, PbsMessageConfig,
     ProgrammableBootstrap, ProgrammableBootstrapInterleaved,
@@ -22,35 +20,34 @@ const N: usize = 256;
 
 fn parameters<T: TorusFftValue>(order: PbsOrder) -> PbsParameters<T> {
     let modulus = NativeModulus::new();
-    let lwe = LweParameters::new(
-        LweDimension::new(8),
-        T::as_from(15u32),
-        modulus,
-        SecretKeyDistr::fixed_composition_ternary(8, 2, 2),
-        0.7,
-    );
-    let glwe = GlweParameters::new(
-        GlweDimension::new(1),
-        PolyLength::new(N),
-        T::as_from(15u32),
-        modulus,
-        SecretKeyDistr::UniformBinary,
-        0.7,
-    );
-    let bsk = ApproxSignedBasis::new(
-        glwe.cipher_modulus_value(),
-        DecompositionBaseLog::new(8),
-        None,
-    );
-    PbsParameters::try_new(
-        lwe.into_encryption_parameters(),
-        primus_glwe::GgswParameters::try_with_basis(&glwe, bsk).unwrap(),
-        GadgetEncryptionConfig {
-            decomposition: ApproxSignedBasis::new(None, DecompositionBaseLog::new(8), None),
-            noise_standard_deviation: glwe.noise_distribution().standard_deviation(),
+    PbsParameters::try_from_config(primus_tfhe_glwe::PbsConfig {
+        small_lwe: primus_tfhe::LweConfig {
+            dimension: LweDimension::new(8),
+            cipher_modulus: modulus.into(),
+            secret_key_distr: SecretKeyDistr::fixed_composition_ternary(8, 2, 2),
+            noise_standard_deviation: 0.7,
         },
+        bsk_dimension: GlweDimension::new(1),
+        bsk_poly_length: PolyLength::new(N),
+        bsk_secret_distr: SecretKeyDistr::UniformBinary,
+        bsk_gadget: GadgetEncryptionConfig {
+            decomposition: primus_tfhe::DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(8),
+                level_count: None,
+            },
+            noise_standard_deviation: 0.7,
+        },
+        key_switching: GadgetEncryptionConfig {
+            decomposition: primus_tfhe::DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(8),
+                level_count: None,
+            },
+            noise_standard_deviation: 0.7,
+        },
+        method: primus_tfhe::BlindRotationMethod::Classic,
+        messages: primus_tfhe::PbsMessageConfig::new(primus_integer::AsFrom::<u32>::as_from(4)),
         order,
-    )
+    })
     .unwrap()
 }
 
@@ -63,18 +60,17 @@ fn value<T: TorusFftValue>(input: usize, output: usize) -> T {
     }
 }
 
-fn check_context<T: TorusFftValue, TABLE>(context: TfheContext<T, TABLE>)
+fn check_context<T: TorusFftValue, TABLE>(context_parameters: PbsParameters<T>, table: TABLE)
 where
     TABLE: FftTable,
 {
+    let context = TfheContext::try_new(context_parameters.clone(), table).unwrap();
     let mut rng = StdRng::seed_from_u64(0x4d41_4e59_5042_5301);
     let input_codec = primus_encoding::RoundedCodec::new(
         T::as_from(15u32),
         context.parameters().cipher_modulus(),
     );
-    let (client_key, server_key) = context
-        .try_generate_keys(BlindRotationAlgorithm::Classic, None, &mut rng)
-        .unwrap();
+    let (client_key, server_key) = context.try_generate_keys(&mut rng).unwrap();
     let encryptor = context
         .encryptor(client_key.external_lwe_secret_key(), &input_codec)
         .unwrap();
@@ -381,18 +377,12 @@ where
 fn pbs_u32_preserves_outputs_and_validates_domains() {
     for case in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
         check_context(
-            TfheContext::try_new(
-                parameters::<u32>(case),
-                RustFftTable::new(PolyLength::new(N)),
-            )
-            .unwrap(),
+            parameters::<u32>(case),
+            RustFftTable::new(PolyLength::new(N)),
         );
         check_context(
-            TfheContext::try_new(
-                parameters::<u32>(case),
-                TfheFftTable::new(PolyLength::new(N)),
-            )
-            .unwrap(),
+            parameters::<u32>(case),
+            TfheFftTable::new(PolyLength::new(N)),
         );
     }
 }
@@ -401,18 +391,12 @@ fn pbs_u32_preserves_outputs_and_validates_domains() {
 fn pbs_u64_preserves_outputs_and_validates_domains() {
     for case in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
         check_context(
-            TfheContext::try_new(
-                parameters::<u64>(case),
-                RustFftTable::new(PolyLength::new(N)),
-            )
-            .unwrap(),
+            parameters::<u64>(case),
+            RustFftTable::new(PolyLength::new(N)),
         );
         check_context(
-            TfheContext::try_new(
-                parameters::<u64>(case),
-                TfheFftTable::new(PolyLength::new(N)),
-            )
-            .unwrap(),
+            parameters::<u64>(case),
+            TfheFftTable::new(PolyLength::new(N)),
         );
     }
 }

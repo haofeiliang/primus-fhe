@@ -29,6 +29,7 @@ fn ordinary<T: TorusFftValue, Table: FftTable>(c: &mut Group<'_>, backend: &str,
     let kind = if sparse { "sparse" } else { "classic" };
     let parameters = ntru::diagnostic(NativeModulus::<T>::new());
     let (input_codec, ring_message_codec) = parameters
+        .as_ref()
         .circuit_bootstrap_codecs(T::as_from(4u32), T::as_from(4u32))
         .unwrap();
     let name = format!("{kind}/complete");
@@ -40,6 +41,7 @@ fn ordinary<T: TorusFftValue, Table: FftTable>(c: &mut Group<'_>, backend: &str,
     let case = Case::new("ntru", backend, T::BITS, &name);
     c.bench_function(case.id(), |b| {
         let Fixture {
+            parameters,
             context,
             client,
             server,
@@ -48,11 +50,11 @@ fn ordinary<T: TorusFftValue, Table: FftTable>(c: &mut Group<'_>, backend: &str,
             rhs,
         } = &*fixture;
         let mut resources = context
-            .bootstrap_resources(server.blind_rotation_key())
+            .bootstrap_resources(server.server_key().blind_rotation_key())
             .unwrap();
         let mut evaluator = CircuitBootstrapEvaluator::try_new(
             &resources,
-            server.circuit_bootstrap_key().unwrap(),
+            server.circuit_bootstrap_key(),
             &input_codec,
         )
         .unwrap();
@@ -75,7 +77,7 @@ fn ordinary<T: TorusFftValue, Table: FftTable>(c: &mut Group<'_>, backend: &str,
 
         metadata::record("cbs", &case, || {
             serde_json::json!({
-                "parameters": metadata::ntru(context.parameters()),
+                "parameters": metadata::ntru(parameters),
                 "blind_rotation": metadata::blind_rotation(sparse),
                 "cbs": metadata::cbs(ntru::cbs::<T>(), context.parameters().accumulator_ntru().noise_distribution().standard_deviation()),
                 "encoding": "rounded_padded",
@@ -100,6 +102,7 @@ fn ordinary<T: TorusFftValue, Table: FftTable>(c: &mut Group<'_>, backend: &str,
 fn one_hot<T: TorusFftValue, Table: FftTable>(c: &mut Group<'_>, backend: &str, sparse: bool) {
     let parameters = ntru::diagnostic(NativeModulus::<T>::new());
     let (input_codec, ring_message_codec) = parameters
+        .as_ref()
         .circuit_bootstrap_codecs(T::as_from(8u32), T::as_from(8u32))
         .unwrap();
     let br = if sparse { "sparse" } else { "classic" };
@@ -114,17 +117,18 @@ fn one_hot<T: TorusFftValue, Table: FftTable>(c: &mut Group<'_>, backend: &str, 
         let case = Case::new("ntru", backend, T::BITS, &name);
         c.bench_function(case.id(), |b| {
             let Fixture {
+            parameters,
                 context,
                 server,
                 input,
                 ..
             } = &*fixture;
             let mut resources = context
-                .bootstrap_resources(server.blind_rotation_key())
+                .bootstrap_resources(server.server_key().blind_rotation_key())
                 .unwrap();
             let mut evaluator = OneHotCircuitBootstrapEvaluator::try_new(
                 &resources,
-                server.circuit_bootstrap_key().unwrap(),
+                server.circuit_bootstrap_key(),
                 &input_codec,
             )
             .unwrap();
@@ -144,7 +148,7 @@ fn one_hot<T: TorusFftValue, Table: FftTable>(c: &mut Group<'_>, backend: &str, 
             }
             metadata::record("cbs", &case, || {
                 serde_json::json!({
-                    "parameters": metadata::ntru(context.parameters()),
+                    "parameters": metadata::ntru(parameters),
                     "blind_rotation": metadata::blind_rotation(sparse),
                     "cbs": metadata::cbs(ntru::cbs::<T>(), context.parameters().accumulator_ntru().noise_distribution().standard_deviation()),
                     "encoding": "rounded_padded",
@@ -194,9 +198,10 @@ pub fn bench_cbs(c: &mut Group<'_>) {
 /// Owned keys and request data. Evaluators borrow this fixture and own their
 /// scratch separately; constructing it is deferred until Criterion selects a case.
 struct Fixture<T: TorusFftValue, Table: FftTable> {
+    parameters: primus_tfhe_ntru_fourier::PbsParameters<T, PowOf2Modulus<T>>,
     context: TfheContext<T, Table, PowOf2Modulus<T>>,
     client: primus_tfhe_ntru_fourier::ClientKey<T>,
-    server: primus_tfhe_ntru_fourier::ServerKey<T>,
+    server: primus_tfhe_ntru_fourier::CircuitBootstrapServerKey<T>,
     input: primus_lwe::LweCiphertext<T>,
     lhs: primus_ntru::NtruCiphertext<Vec<T>>,
     rhs: primus_ntru::NtruCiphertext<Vec<T>>,
@@ -212,13 +217,25 @@ impl<T: TorusFftValue, Table: FftTable> Fixture<T, Table> {
         sparse: bool,
         message: T,
     ) -> Self {
-        let context = TfheContext::<T, Table, PowOf2Modulus<T>>::from_parameters(parameters);
+        let context_parameters = &parameters;
+        let context =
+            TfheContext::<T, Table, PowOf2Modulus<T>>::from_parameters(context_parameters.clone());
         let mut rng = StdRng::seed_from_u64(42);
         let mut generator = KeyGenerator::new(&context);
         let client = generator.try_generate_client_key(&mut rng).unwrap();
         let blind_rotation = primus_tfhe_benchmarks::benchmark::blind_rotation(sparse);
         let server = generator
-            .try_generate_server_key(&client, blind_rotation, Some(ntru::cbs::<T>()), &mut rng)
+            .try_generate_circuit_bootstrap_server_key_with_parameters(
+                context_parameters.key_switching(),
+                &client,
+                blind_rotation,
+                &primus_tfhe_ntru::CbsGadgetParameters::try_from_config(
+                    context.parameters(),
+                    ntru::cbs::<T>(),
+                )
+                .unwrap(),
+                &mut rng,
+            )
             .unwrap();
         // Input/candidate encryption is identical across the two BR choices.
         let mut rng = StdRng::seed_from_u64(43);
@@ -233,6 +250,7 @@ impl<T: TorusFftValue, Table: FftTable> Fixture<T, Table> {
         let lhs = ring.encrypt(&[T::ZERO; N], &mut rng);
         let rhs = ring.encrypt(&[T::ONE; N], &mut rng);
         Self {
+            parameters,
             context,
             client,
             server,

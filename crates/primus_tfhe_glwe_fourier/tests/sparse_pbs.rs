@@ -1,19 +1,18 @@
 //! Classic/sparse differential PBS and ManyLUT on reused workspaces;
 //! bucket layouts and quantization margins are part of the fixture.
 
-use primus_decompose::primitive::ApproxSignedBasis;
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_encoding::{PlaintextEmbedding, RoundedCodec};
 use primus_fft::{FftTable, RustFftTable, TfheFftTable};
-use primus_glwe::{GlweParameters, SecretKeyDistr};
+use primus_glwe::SecretKeyDistr;
 use primus_lattice::{GlweDimension, LweDimension};
-use primus_lwe::{LweCiphertext, LweParameters};
+use primus_lwe::LweCiphertext;
 use primus_modulus::NativeModulus;
 use primus_poly::PolyLength;
 use primus_tfhe::{PbsMessageConfig, ProgrammableBootstrap, ProgrammableBootstrapInterleaved};
 use primus_tfhe_glwe_fourier::{
-    BlindRotationAlgorithm, ClientKey, GadgetEncryptionConfig, KeyGenerator, PbsOrder,
-    PbsParameters, TfheContext, TfheEvaluationError,
+    BlindRotationMethod, ClientKey, GadgetEncryptionConfig, KeyGenerator, PbsOrder, PbsParameters,
+    TfheContext, TfheEvaluationError,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -23,66 +22,69 @@ fn context<Table: FftTable>(
     order: PbsOrder,
     weight: usize,
     log_basis: u32,
-) -> TfheContext<u64, Table> {
+) -> (
+    primus_tfhe_glwe_fourier::PbsParameters<u64>,
+    TfheContext<u64, Table>,
+) {
     let modulus = NativeModulus::new();
-    let parameters = PbsParameters::try_new(
-        (LweParameters::new(
-            LweDimension::new(16),
-            15,
-            modulus,
-            SecretKeyDistr::fixed_hamming_weight_binary(16, weight),
-            0.7,
-        ))
-        .into_encryption_parameters(),
-        primus_glwe::GgswParameters::try_with_basis(
-            &(GlweParameters::new(
-                GlweDimension::new(1),
-                PolyLength::new(N),
-                15,
-                modulus,
-                SecretKeyDistr::UniformTernary,
-                0.7,
-            )),
-            ApproxSignedBasis::new(
-                None,
-                DecompositionBaseLog::new(log_basis),
-                Some(DecompositionLevelCount::new(6)),
-            ),
-        )
-        .unwrap(),
-        GadgetEncryptionConfig {
-            decomposition: ApproxSignedBasis::new(
-                None,
-                DecompositionBaseLog::new(8),
-                Some(DecompositionLevelCount::new(6)),
-            ),
+    let parameters = PbsParameters::try_from_config(primus_tfhe_glwe::PbsConfig {
+        small_lwe: primus_tfhe::LweConfig {
+            dimension: LweDimension::new(16),
+            cipher_modulus: modulus.into(),
+            secret_key_distr: SecretKeyDistr::fixed_hamming_weight_binary(16, weight),
+            noise_standard_deviation: 0.7,
+        },
+        bsk_dimension: GlweDimension::new(1),
+        bsk_poly_length: PolyLength::new(N),
+        bsk_secret_distr: SecretKeyDistr::UniformTernary,
+        bsk_gadget: GadgetEncryptionConfig {
+            decomposition: primus_tfhe::DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(log_basis),
+                level_count: Some(DecompositionLevelCount::new(6)),
+            },
+            noise_standard_deviation: 0.7,
+        },
+        // Independent KS noise also reaches complete sparse server-key generation.
+        key_switching: GadgetEncryptionConfig {
+            decomposition: primus_tfhe::DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(8),
+                level_count: Some(DecompositionLevelCount::new(6)),
+            },
             noise_standard_deviation: 1.25,
-        }, // Independent KS noise also reaches complete sparse server-key generation.
+        },
+        method: BlindRotationMethod::Classic,
+        messages: PbsMessageConfig::new(4),
         order,
-    )
+    })
     .unwrap();
-    TfheContext::from_parameters(parameters)
+    let context = TfheContext::from_parameters(parameters.clone());
+    (parameters, context)
 }
 
 fn check_pbs<Table: FftTable>() {
     for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
-        let context = context::<Table>(order, 4, 8);
+        let (context_parameters, context) = self::context::<Table>(order, 4, 8);
         let input_codec =
             primus_encoding::RoundedCodec::new(15, context.parameters().cipher_modulus());
         let mut generator = KeyGenerator::new(&context);
         let mut rng = StdRng::seed_from_u64(0x4234_3250);
         let (client, sparse_key) = generator
-            .try_generate(
-                BlindRotationAlgorithm::Sparse {
+            .try_generate_with_parameters(
+                context_parameters.glwe_key_switching(),
+                BlindRotationMethod::Sparse {
                     copy_count: 3,
                     bucket_count: 8,
                 },
-                None,
                 &mut rng,
             )
             .unwrap();
         let classic_key = generator
-            .try_generate_server_key(&client, BlindRotationAlgorithm::Classic, None, &mut rng)
+            .try_generate_server_key_with_parameters(
+                context_parameters.glwe_key_switching(),
+                &client,
+                BlindRotationMethod::Classic,
+                &mut rng,
+            )
             .unwrap();
         let mut sparse = context.evaluator(&sparse_key).unwrap();
         let mut classic = context.evaluator(&classic_key).unwrap();
@@ -171,22 +173,22 @@ fn sparse_pbs_preserves_external_secret_and_interleaved_outputs_in_both_orders()
 #[test]
 fn sparse_keys_bind_parameters() {
     let order = PbsOrder::BootstrapKeyswitch;
-    let context = context::<RustFftTable>(order, 4, 8);
+    let (context_parameters, context) = self::context::<RustFftTable>(order, 4, 8);
     let mut rng = StdRng::seed_from_u64(0x4234_3243);
     let client = ClientKey::generate(context.parameters(), &mut rng);
     let mut generator = KeyGenerator::new(&context);
     let server = generator
-        .try_generate_server_key(
+        .try_generate_server_key_with_parameters(
+            context_parameters.glwe_key_switching(),
             &client,
-            BlindRotationAlgorithm::Sparse {
+            BlindRotationMethod::Sparse {
                 copy_count: 3,
                 bucket_count: 8,
             },
-            None,
             &mut rng,
         )
         .unwrap();
-    for incompatible in [
+    for (_, incompatible) in [
         self::context::<RustFftTable>(order, 5, 8),
         self::context::<RustFftTable>(order, 4, 7),
     ] {

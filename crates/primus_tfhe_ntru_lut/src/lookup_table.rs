@@ -117,7 +117,7 @@ pub(crate) struct Layout {
 impl Layout {
     /// Derives the chunk geometry and checks domain size and coefficient capacity.
     /// Allocation sizes are checked separately during compilation; this allocates nothing.
-    fn try_new<T: FheUint>(
+    pub(crate) fn try_new<T: FheUint>(
         plaintext_modulus: T,
         polynomial_length: usize,
         config: LookupTableConfig,

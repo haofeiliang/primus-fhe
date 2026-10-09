@@ -1,19 +1,17 @@
 //! Context/table and decomposition binding, plus independently created
 //! client/server keys in both GLWE PBS orders.
 
-use primus_decompose::primitive::ApproxSignedBasis;
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_fft::{FftTable, RustFftTable};
 use primus_glwe::{
     FourierGlweGadgetEncryptWorkspace, FourierGlweKeySwitchingKey, FourierGlweSecretKey,
-    GadgetSize, GlevParameters, GlweCiphertext, GlweEncryptionParameters, GlweParameters,
-    SecretKeyDistr,
+    GadgetSize, GlevParameters, GlweCiphertext, GlweEncryptionParameters, SecretKeyDistr,
 };
 use primus_lattice::{GlweDimension, LweDimension};
-use primus_lwe::{LweCiphertext, LweParameters};
+use primus_lwe::LweCiphertext;
 use primus_modulus::NativeModulus;
 use primus_poly::{PolyLength, Polynomial};
-use primus_tfhe::{BlindRotationAlgorithm, PbsMessageConfig};
+use primus_tfhe::PbsMessageConfig;
 use primus_tfhe_glwe_fourier::{
     BlindRotationKey, ClientKey, FourierGlweBlindRotationWorkspace, GadgetEncryptionConfig,
     KeyGenerator, PbsOrder, PbsParameters, TfheContext, TfheContextError, TfheEvaluationError,
@@ -36,46 +34,42 @@ fn parameters_with_bases(
     key_switching_log_basis: u32,
     distribution: SecretKeyDistr,
 ) -> PbsParameters<u32> {
-    let lwe = LweParameters::new(
-        LweDimension::new(4),
-        4,
-        NativeModulus::new(),
-        distribution,
-        0.7,
-    );
-    let glwe = GlweParameters::new(
-        GlweDimension::new(1),
-        PolyLength::new(POLY_LENGTH),
-        4,
-        NativeModulus::new(),
-        SecretKeyDistr::UniformBinary,
-        0.7,
-    );
-    let bootstrapping = ApproxSignedBasis::new(
-        glwe.cipher_modulus_value(),
-        DecompositionBaseLog::new(bootstrapping_log_basis),
-        Some(DecompositionLevelCount::new(3)),
-    );
-    PbsParameters::try_new(
-        lwe.into_encryption_parameters(),
-        primus_glwe::GgswParameters::try_with_basis(&glwe, bootstrapping).unwrap(),
-        GadgetEncryptionConfig {
-            decomposition: ApproxSignedBasis::new(
-                None,
-                DecompositionBaseLog::new(key_switching_log_basis),
-                Some(DecompositionLevelCount::new(4)),
-            ),
+    PbsParameters::try_from_config(primus_tfhe_glwe::PbsConfig {
+        small_lwe: primus_tfhe::LweConfig {
+            dimension: LweDimension::new(4),
+            cipher_modulus: NativeModulus::new().into(),
+            secret_key_distr: distribution,
+            noise_standard_deviation: 0.7,
+        },
+        bsk_dimension: GlweDimension::new(1),
+        bsk_poly_length: PolyLength::new(POLY_LENGTH),
+        bsk_secret_distr: SecretKeyDistr::UniformBinary,
+        bsk_gadget: GadgetEncryptionConfig {
+            decomposition: primus_tfhe::DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(bootstrapping_log_basis),
+                level_count: Some(DecompositionLevelCount::new(3)),
+            },
+            noise_standard_deviation: 0.7,
+        },
+        key_switching: GadgetEncryptionConfig {
+            decomposition: primus_tfhe::DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(key_switching_log_basis),
+                level_count: Some(DecompositionLevelCount::new(4)),
+            },
             noise_standard_deviation: KS_SIGMA,
         },
+        method: primus_tfhe::BlindRotationMethod::Classic,
+        messages: primus_tfhe::PbsMessageConfig::new(4),
         order,
-    )
+    })
     .unwrap()
 }
 
 #[test]
 fn rejects_a_fourier_table_with_the_wrong_length() {
     let table = RustFftTable::new(PolyLength::new(POLY_LENGTH * 2));
-    let error = TfheContext::try_new(parameters(PbsOrder::BootstrapKeyswitch), table)
+    let error_parameters = &parameters(PbsOrder::BootstrapKeyswitch);
+    let error = TfheContext::try_new(error_parameters.clone(), table)
         .err()
         .expect("the mismatched table must be rejected");
 
@@ -89,16 +83,13 @@ fn rejects_a_fourier_table_with_the_wrong_length() {
 fn split_keys_support_both_pbs_orders() {
     for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
         let table = RustFftTable::new(PolyLength::new(POLY_LENGTH));
-        let context = TfheContext::try_new(
-            parameters_with_bases(
-                order,
-                8,
-                4,
-                SecretKeyDistr::fixed_composition_ternary(4, 1, 1),
-            ),
-            table,
-        )
-        .unwrap();
+        let context_parameters = &parameters_with_bases(
+            order,
+            8,
+            4,
+            SecretKeyDistr::fixed_composition_ternary(4, 1, 1),
+        );
+        let context = TfheContext::try_new(context_parameters.clone(), table).unwrap();
         let input_codec =
             primus_encoding::RoundedCodec::new(4, context.parameters().cipher_modulus());
         let mut rng = StdRng::seed_from_u64(43);
@@ -108,17 +99,27 @@ fn split_keys_support_both_pbs_orders() {
         let blind_rotation = generator
             .try_generate_blind_rotation_key(
                 &client,
-                primus_tfhe_glwe_fourier::BlindRotationAlgorithm::Classic,
+                primus_tfhe_glwe_fourier::BlindRotationMethod::Classic,
                 &mut rng,
             )
             .unwrap();
         let mut key_rng = StdRng::seed_from_u64(44);
         let mut reference_rng = StdRng::seed_from_u64(44);
         let key_switching = generator
-            .try_generate_glwe_key_switching_key(&client, &mut key_rng)
+            .try_generate_glwe_key_switching_key(
+                context_parameters.glwe_key_switching(),
+                &client,
+                &mut key_rng,
+            )
             .unwrap();
-        check_key_switching_noise(&context, &client, &key_switching, &mut reference_rng);
-        let server = primus_tfhe_glwe_fourier::ServerKey::new(blind_rotation, key_switching, None);
+        check_key_switching_noise(
+            context_parameters,
+            &context,
+            &client,
+            &key_switching,
+            &mut reference_rng,
+        );
+        let server = primus_tfhe_glwe_fourier::ServerKey::new(blind_rotation, key_switching);
         let codecs = context
             .parameters()
             .pbs_codecs(PbsMessageConfig::new(input_codec.plaintext_modulus()))
@@ -174,16 +175,13 @@ fn split_keys_support_both_pbs_orders() {
 /// Rebuilds KS rows with an independently specified sampler and the same coins.
 /// Both generators use the same FFT table, so their transformed keys agree exactly.
 fn check_key_switching_noise(
+    context_parameters: &PbsParameters<u32>,
     context: &TfheContext<u32, RustFftTable>,
     client: &ClientKey<u32>,
     actual: &FourierGlweKeySwitchingKey<u32>,
     rng: &mut StdRng,
 ) {
-    let output = context
-        .parameters()
-        .glwe_key_switching()
-        .expect("PBS parameters include key switching")
-        .output();
+    let output = context_parameters.glwe_key_switching().output();
     let expected_parameters = GlevParameters::try_from_parts(
         output.glwe_size(),
         Arc::new(GlweEncryptionParameters::new(
@@ -211,16 +209,15 @@ fn check_key_switching_noise(
 
 #[test]
 fn server_keys_are_bound_to_both_decomposition_bases() {
+    let source_parameters = &parameters(PbsOrder::BootstrapKeyswitch);
     let source = TfheContext::try_new(
-        parameters(PbsOrder::BootstrapKeyswitch),
+        source_parameters.clone(),
         RustFftTable::new(PolyLength::new(POLY_LENGTH)),
     )
     .unwrap();
     let mut rng = StdRng::seed_from_u64(42);
-    let (_, server_key) = source
-        .try_generate_keys(BlindRotationAlgorithm::Classic, None, &mut rng)
-        .unwrap();
-    assert!(server_key.circuit_bootstrap_key().is_none());
+    let (_, server_key) = source.try_generate_keys(&mut rng).unwrap();
+
     for (br_log, ks_log, distribution, expected) in [
         (
             7,
@@ -244,23 +241,23 @@ fn server_keys_are_bound_to_both_decomposition_bases() {
         let parameters =
             parameters_with_bases(PbsOrder::BootstrapKeyswitch, br_log, ks_log, distribution);
         let table = RustFftTable::new(PolyLength::new(POLY_LENGTH));
-        let context = TfheContext::try_new(parameters, table).unwrap();
+        let context_parameters = &parameters;
+        let context = TfheContext::try_new(context_parameters.clone(), table).unwrap();
         assert_eq!(context.evaluator(&server_key).err().unwrap(), expected);
     }
 }
 
 #[test]
 fn public_blind_rotation_rejects_mismatches_before_output_writes() {
+    let context_parameters = &parameters(PbsOrder::BootstrapKeyswitch);
     let context = TfheContext::try_new(
-        parameters(PbsOrder::BootstrapKeyswitch),
+        context_parameters.clone(),
         RustFftTable::new(PolyLength::new(POLY_LENGTH)),
     )
     .unwrap();
 
     let mut rng = StdRng::seed_from_u64(42);
-    let (_, server_key) = context
-        .try_generate_keys(BlindRotationAlgorithm::Classic, None, &mut rng)
-        .unwrap();
+    let (_, server_key) = context.try_generate_keys(&mut rng).unwrap();
     let BlindRotationKey::Classic(key) = server_key.blind_rotation_key() else {
         panic!("raw classic rotation test requires a classic key");
     };
@@ -367,4 +364,87 @@ fn public_blind_rotation_rejects_mismatches_before_output_writes() {
         assert!(rejected.is_err());
         assert_eq!(output.as_ref(), before);
     }
+}
+
+/// Configured capabilities fail before sampling, share one BR domain, and bind
+/// independently supplied keys using the retained gadget/input choices.
+#[test]
+fn operation_state_controls_material_and_binding() {
+    use primus_tfhe_glwe_fourier::{CbsGadgetConfig, DecompositionConfig, KeyGenerationError};
+    use rand::RngExt;
+
+    let parameters = parameters(PbsOrder::KeyswitchBootstrap);
+    let context = TfheContext::<_, RustFftTable>::from_parameters(parameters.clone());
+    let mut rng = StdRng::seed_from_u64(0x4341504142494c49);
+    let mut untouched = StdRng::seed_from_u64(0x4341504142494c49);
+    assert!(matches!(
+        context.try_generate_circuit_bootstrap_keys(&mut rng),
+        Err(KeyGenerationError::MissingCircuitBootstrapParameters)
+    ));
+    assert_eq!(rng.random::<u64>(), untouched.random::<u64>());
+
+    let full = DecompositionConfig {
+        log_basis: DecompositionBaseLog::new(8),
+        level_count: None,
+    };
+    let gadget = CbsGadgetConfig {
+        output: DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(8),
+            level_count: Some(DecompositionLevelCount::new(2)),
+        },
+        trace: full,
+        scheme_switch: full,
+    };
+    let context = context.try_with_circuit_bootstrap(gadget).unwrap();
+    assert_eq!(context.parameters().messages(), parameters.messages());
+    // KS sigma differs from BR sigma in this fixture. The CBS input stage
+    // must reuse that independently chosen KS state in KS→BR order.
+    let input = context
+        .cbs_parameters()
+        .unwrap()
+        .pbs_parameters()
+        .input_key_switching()
+        .unwrap();
+    assert_eq!(input.output().noise_standard_deviation(), KS_SIGMA);
+    let (_, server) = context
+        .try_generate_circuit_bootstrap_keys(&mut rng)
+        .unwrap();
+    let circuit = server.circuit_bootstrap_key();
+    let pbs = context.evaluator(server.server_key()).unwrap();
+    context
+        .circuit_bootstrap_evaluator(pbs.bootstrap_resources(), circuit)
+        .unwrap();
+
+    // Complete CBS parameters retain the configured KS, so restoring the
+    // context also retains ordinary PBS. Mutable resources remain context-bound.
+    let restored = TfheContext::<_, RustFftTable>::from_cbs_parameters(
+        context.cbs_parameters().unwrap().clone(),
+    );
+
+    let restored_pbs = restored.evaluator(server.server_key()).unwrap();
+    restored
+        .circuit_bootstrap_evaluator(restored_pbs.bootstrap_resources(), circuit)
+        .unwrap();
+    assert!(matches!(
+        restored.circuit_bootstrap_evaluator(pbs.bootstrap_resources(), circuit),
+        Err(TfheEvaluationError::IncompatibleCircuitBootstrapParameters)
+    ));
+
+    // Equal rings are insufficient when independent operation state selected
+    // another BR algorithm; the discrepancy is rejected during context setup.
+    let different_algorithm = parameters.as_ref().clone().with_blind_rotation_method(
+        primus_tfhe::BlindRotationMethod::Sparse {
+            copy_count: 3,
+            bucket_count: 4,
+        },
+    );
+    let different =
+        primus_tfhe_glwe::CbsParameters::try_with_config(different_algorithm, gadget).unwrap();
+    assert!(matches!(
+        TfheContext::<_, RustFftTable>::from_parameters(parameters.clone())
+            .try_with_cbs_parameters(different),
+        Err(primus_tfhe_glwe_fourier::TfheContextError::Parameters(
+            primus_tfhe_glwe_fourier::TfheParameterError::IncompatibleComponents
+        ))
+    ));
 }

@@ -2,9 +2,10 @@ use primus_integer::{FheUint, SignedInteger};
 use primus_ntru::NtruSecretKey;
 use primus_reduce::RingContext;
 
-use crate::{PbsParameters, TfheKeyError};
+use crate::{LweReturnParameters, PbsParameters, TfheKeyError};
 
-/// Independent external LWE and accumulator NTRU secrets for TFHE setup.
+/// External LWE and accumulator NTRU secrets for TFHE setup.
+/// The external LWE and accumulator NTRU secrets are sampled independently.
 /// Ordinary clients need only [`Self::external_lwe_secret_key`]; ring clients
 /// need only [`Self::accumulator_ntru_secret_key`]. [`Self::into_parts`] separates
 /// the owners without copying secret buffers.
@@ -36,7 +37,7 @@ impl<T: FheUint> ClientKey<T> {
         &self.accumulator_ntru_secret_key
     }
 
-    /// Returns the independent external LWE secret, encoded at external modulus q.
+    /// Returns the external LWE secret, encoded at external modulus q.
     #[must_use]
     pub fn external_lwe_secret_key(&self) -> &primus_lwe::LweSecretKey<T> {
         &self.external_lwe_secret_key
@@ -49,7 +50,7 @@ impl<T: FheUint> ClientKey<T> {
         self.external_lwe_secret_key.dimension()
     }
 
-    /// Checks the full setup bundle before generating PBS or return material.
+    /// Checks the full setup bundle before generating PBS/CBS or return material.
     /// Validates shapes, the recorded LWE modulus, distribution labels and canonical
     /// binary/ternary external residues before borrowing raw key views.
     /// Accumulator coefficients must have magnitude below an explicit external q.
@@ -63,7 +64,7 @@ impl<T: FheUint> ClientKey<T> {
     }
 
     /// Checks only that every accumulator coefficient has magnitude below return q.
-    /// This is needed for Q→q return-key generation, not ring-only BR/CBS.
+    /// This is needed for Q→q return-key generation, not standalone BR/CBS component generation.
     /// It does not check shapes, distribution labels or invertibility. A generator
     /// may skip this scan when its sampler's inclusive bound is below q; imported
     /// keys still need [`Self::check_compatible`]'s complete boundary.
@@ -85,7 +86,7 @@ impl<T: FheUint> ClientKey<T> {
     }
 
     /// Checks the two secret roles used by blind-rotation generation.
-    /// Unlike full PBS setup, this does not require f to fit the return modulus q.
+    /// Unlike complete PBS/CBS generation, this does not require f to fit the return modulus q.
     /// Backend conversion still owns the accumulator's representation requirements.
     pub fn check_blind_rotation_compatible<M: RingContext<T>, LM: RingContext<T>>(
         &self,
@@ -110,17 +111,15 @@ impl<T: FheUint, M: RingContext<T>, LM: RingContext<T>> PbsParameters<T, M, LM> 
     /// Checks the full secret pair including the magnitude of f at external q.
     /// Independent BR/CBS material must use the same actual secrets; layout and
     /// modulus checks cannot establish identity or an adequate noise budget.
-    pub fn try_generate_lwe_return_key<R: rand::Rng + rand::CryptoRng>(
+    pub fn try_generate_lwe_return_key_with_parameters<R: rand::Rng + rand::CryptoRng>(
         &self,
+        parameters: &LweReturnParameters<T, LM>,
         client_key: &ClientKey<T>,
         rng: &mut R,
     ) -> Result<primus_ntru::NtruLweKeySwitchingKey<T>, crate::KeyGenerationError> {
-        let output = self
-            .key_switching_lwe()
-            .ok_or(crate::KeyGenerationError::MissingKeySwitchingParameters)?;
-        let basis = self
-            .key_switching_basis()
-            .expect("return sampler and basis are stored together");
+        self.check_lwe_return_parameters(parameters)?;
+        let output = parameters.lwe();
+        let basis = parameters.basis();
         client_key.check_compatible(self)?;
         Ok(primus_ntru::NtruLweKeySwitchingKey::generate(
             client_key.accumulator_ntru_secret_key(),
@@ -135,16 +134,29 @@ impl<T: FheUint, M: RingContext<T>, LM: RingContext<T>> PbsParameters<T, M, LM> 
     /// Checks return geometry, source Q and the complete target-q decomposition.
     /// This does not prove source/target secret identity. Call once when composing
     /// an evaluator with independently generated return material.
-    pub fn check_lwe_return_key(
+    pub fn check_lwe_return_key_with_parameters(
         &self,
+        parameters: &LweReturnParameters<T, LM>,
         key: &primus_ntru::NtruLweKeySwitchingKey<T>,
     ) -> Result<(), primus_tfhe::TfheEvaluationError> {
-        if key.poly_length() != self.poly_length().get()
-            || key.input_modulus() != self.accumulator_ntru().cipher_modulus_value()
-            || key.output_dimension() != self.external_lwe_dimension()
-            || Some(key.basis()) != self.key_switching_basis()
+        self.check_lwe_return_parameters(parameters)
+            .map_err(|_| primus_tfhe::TfheEvaluationError::IncompatibleLweReturnKey)?;
+        check_return_key_components(self, parameters, key)
+    }
+
+    /// Checks an independently prepared return component before any key sampling.
+    /// The return noise may differ; target dimension, modulus and secret role must agree.
+    pub fn check_lwe_return_parameters(
+        &self,
+        parameters: &LweReturnParameters<T, LM>,
+    ) -> Result<(), crate::KeyGenerationError> {
+        let expected = self.external_lwe();
+        let actual = parameters.lwe();
+        if expected.dimension() != actual.dimension()
+            || expected.cipher_modulus_value() != actual.cipher_modulus_value()
+            || expected.secret_key_distr() != actual.secret_key_distr()
         {
-            return Err(primus_tfhe::TfheEvaluationError::IncompatibleLweReturnKey);
+            return Err(crate::KeyGenerationError::IncompatibleKeySwitchingParameters);
         }
         Ok(())
     }
@@ -188,5 +200,34 @@ impl<T: FheUint, M: RingContext<T>, LM: RingContext<T>> PbsParameters<T, M, LM> 
             return Err(TfheKeyError::AccumulatorSecretKeyDistributionMismatch);
         }
         Ok(())
+    }
+}
+
+/// Compares actual return rows after the owning operation established its Q/q target pairing.
+/// Used by complete PBS binding and the independently checked BR composition boundary.
+fn check_return_key_components<T: FheUint, M: RingContext<T>, LM: RingContext<T>>(
+    domain: &PbsParameters<T, M, LM>,
+    parameters: &LweReturnParameters<T, LM>,
+    key: &primus_ntru::NtruLweKeySwitchingKey<T>,
+) -> Result<(), primus_tfhe::TfheEvaluationError> {
+    if key.poly_length() != domain.poly_length().get()
+        || key.input_modulus() != domain.accumulator_ntru().cipher_modulus_value()
+        || key.output_dimension() != domain.external_lwe_dimension()
+        || key.basis() != parameters.basis()
+    {
+        return Err(primus_tfhe::TfheEvaluationError::IncompatibleLweReturnKey);
+    }
+    Ok(())
+}
+
+impl<T: FheUint, M: RingContext<T>, LM: RingContext<T>> crate::PbsParameters<T, M, LM> {
+    /// Checks imported return rows against this complete operation's ring and target.
+    /// Target parameters are already paired; this does not establish actual secret identity.
+    pub fn check_lwe_return_key(
+        &self,
+        key: &primus_ntru::NtruLweKeySwitchingKey<T>,
+    ) -> Result<(), primus_tfhe::TfheEvaluationError> {
+        let parameters = self.key_switching();
+        check_return_key_components(self, parameters, key)
     }
 }

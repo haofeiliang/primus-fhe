@@ -122,6 +122,11 @@ impl From<DecompositionLevelCount> for usize {
 }
 
 /// Signed gadget decomposition before binding it to a ciphertext modulus.
+///
+/// Convert `(config, modulus)` with [`ApproxSignedBasis::try_from`]. The modulus
+/// is `None` for the implicit native modulus `2^T::BITS`, or `Some(q)` for an
+/// explicit modulus. Conversion validates the radix and retained levels through
+/// [`ApproxSignedBasis::try_new`], once the word width and modulus are known.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DecompositionConfig {
     /// Base-2 logarithm of the radix. The checked value is at least 2;
@@ -132,16 +137,12 @@ pub struct DecompositionConfig {
     pub level_count: Option<DecompositionLevelCount>,
 }
 
-impl DecompositionConfig {
-    /// Prepares a single-limb basis, checking [`ApproxSignedBasis::try_new`]'s
-    /// radix and retained-level constraints.
-    ///
-    /// `None` selects the implicit native modulus `2^T::BITS`; `Some(q)` selects
-    /// an explicit modulus. Modulus/word-width and paired-level validation waits until both are known.
-    pub fn try_build<T: FheUint>(
-        self,
-        modulus: Option<T>,
-    ) -> Result<ApproxSignedBasis<T>, ApproxSignedBasisError> {
-        ApproxSignedBasis::try_new(modulus, self.log_basis, self.level_count)
+impl<T: FheUint> TryFrom<(DecompositionConfig, Option<T>)> for ApproxSignedBasis<T> {
+    type Error = ApproxSignedBasisError;
+
+    fn try_from(
+        (decomposition, modulus): (DecompositionConfig, Option<T>),
+    ) -> Result<Self, Self::Error> {
+        Self::try_new(modulus, decomposition.log_basis, decomposition.level_count)
     }
 }

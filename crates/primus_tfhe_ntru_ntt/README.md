@@ -10,29 +10,32 @@ NTRU-based TFHE with an explicit field modulus. Start with the [task and encodin
 ## Experimental paired parameters
 
 ```rust
-use primus_tfhe_ntru_ntt::experimental;
+use primus_tfhe_ntru_ntt::{experimental, TfheContext};
+use primus_ntt::U64NttTable as Table;
 
 let config = experimental::CLASSIC_PBS_U64;
-let parameters = config.try_prepare()?;
-// Optional: config.messages.with_output_modulus(8) changes only the output.
-let codecs = parameters.pbs_codecs(config.messages)?;
+let context = TfheContext::<u64, Table, _>::try_from_pbs_config(config)?;
+let parameters = context.parameters();
+let br = context.parameters();
+// Optional: parameters.messages().with_output_modulus(8) changes only this program's output.
+let codecs = br.pbs_codecs(parameters.messages())?;
 ```
 
-`PbsConfig` is one complete numerical description, containing BR/KS choices and input/output messages. `CbsConfig` describes ring-output CBS; its gadget output has no ordinary message codec. `experimental` also exports `SPARSE_PBS_U64`, `CLASSIC_MANY_LUT_U64`, `CLASSIC_THRESHOLD_MVB_U64`, `CLASSIC_CBS_U64` and `CLASSIC_ONE_HOT_U64`. Use `config.blind_rotation.algorithm` during key generation. Configs are `Copy`, so field overrides and struct-update syntax work without preparing samplers first.
+`PbsConfig` is one complete numerical description, containing BR/KS choices and input/output messages. `CbsConfig` describes ring-output CBS; its gadget output has no ordinary message codec. `experimental` also exports `SPARSE_PBS_U64`, `CLASSIC_MANY_LUT_U64`, `CLASSIC_THRESHOLD_MVB_U64`, `CLASSIC_CBS_U64` and `CLASSIC_ONE_HOT_U64`. The context retains the selected algorithm, KS, messages and optional CBS state; default keygen does not receive them again. Configs are `Copy`, so field overrides and struct-update syntax work without preparing samplers first.
 
 These u64 constants are arithmetic examples, with unassessed security and failure probability. See the [family configs](../primus_tfhe_ntru/README.md#experimental-paired-parameters) for composition, independent message overrides and numerical contracts. Every example starts from the matching operation config; advanced explicit composition remains available through the family constructors. Prepared `PbsParameters` remain reusable with compatible encodings; changing a workload still needs a new error budget.
 
 ## Quick start
 
-The basic, sparse, ManyLUT and MVB examples use `PbsMessageConfig`: `new(t)` defaults to equal message moduli, while `with_output_modulus(t_out)` changes only the output. Prepare with `parameters.pbs_codecs` for ordinary PBS/ManyLUT or `parameters.factorized_pbs_codecs` for MVB; the returned codecs distinguish input, LUT output and returned output. `context.decryptor(external_secret, codecs.output_codec())?` accepts Rounded or Scaled outputs; use `decrypt()` to obtain the message. See [choosing the output encoding](../primus_tfhe/README.md#choosing-the-output-encoding).
+The basic, sparse, ManyLUT and MVB examples use `PbsMessageConfig`: `new(t)` defaults to equal message moduli, while `with_output_modulus(t_out)` changes only the output. Prepare with `br.pbs_codecs` for ordinary PBS/ManyLUT or `br.factorized_pbs_codecs` for MVB; the returned codecs distinguish input, LUT output and returned output. `context.decryptor(external_secret, codecs.output_codec())?` accepts Rounded or Scaled outputs; use `decrypt()` to obtain the message. See [choosing the output encoding](../primus_tfhe/README.md#choosing-the-output-encoding).
 
 ```sh
 cargo run -p primus_tfhe_ntru_ntt --release --example ntru_ntt_basic
 ```
 
-The [basic example](examples/ntru_ntt_basic.rs) shows parameters → context → paired keys → clients → one compiled LUT → reused evaluator and ciphertext buffers. It computes `x % 4`, keeping `t=32` encoding for both input and output, and decodes with `decrypt`. `parameters.lookup_table_compiler(&codecs)?` binds the prepared input/output encodings; `compiler.compile_fn(function)` creates the LUT. Choose a different output message modulus with `PbsMessageConfig::with_output_modulus`; see [choosing the output encoding](../primus_tfhe/README.md#choosing-the-output-encoding). Public-key encryption starts with `context.public_encryptor(&public, codecs.input_codec())`; see the [family guide](../primus_tfhe_ntru/README.md#clients-and-luts). The example uses external `q=2^24`, distinct from ring `Q`: LUT compilation is at `Q` and the returned LWE is at `q`.
+The [basic example](examples/ntru_ntt_basic.rs) shows parameters → context → paired keys → clients → one compiled LUT → reused evaluator and ciphertext buffers. It computes `x % 4`, keeping `t=32` encoding for both input and output, and decodes with `decrypt`. `br.lookup_table_compiler(&codecs)?` binds the prepared input/output encodings; `compiler.compile_fn(function)` creates the LUT. Choose a different output message modulus with `PbsMessageConfig::with_output_modulus`; see [choosing the output encoding](../primus_tfhe/README.md#choosing-the-output-encoding). Public-key encryption starts with `context.public_encryptor(&public, codecs.input_codec())`; see the [family guide](../primus_tfhe_ntru/README.md#clients-and-luts). The example uses external `q=2^24`, distinct from ring `Q`: LUT compilation is at `Q` and the returned LWE is at `q`.
 
-Examples use `Word = u64` and the operation config listed below. Dimensions, modulus representation, secret distributions, noise and decompositions live in `experimental`; each `main` shows only preparation, the public function, clients and evaluation. CBS uses `config.gadget` and independently chooses the candidate ring-message domain. Explicit u32/u64 parameter composition remains available; see the [family configs](../primus_tfhe_ntru/README.md#experimental-paired-parameters) and [parameter guide](../../guides/development/tfhe-parameters.md).
+Examples use `Word = u64` and the operation config listed below. Dimensions, modulus representation, secret distributions, noise and decompositions live in `experimental`; each `main` shows only preparation, the public function, clients and evaluation. CBS uses the prepared `CbsParameters` and independently chooses the candidate ring-message domain. Explicit u32/u64 parameter composition remains available; see the [family configs](../primus_tfhe_ntru/README.md#experimental-paired-parameters) and [parameter guide](../../guides/development/tfhe-parameters.md).
 
 Comments identify client and server stages. Basic and sparse both compute `x % 4` with equal input/output message moduli. The separate ManyLUT example computes `x % 4` and `x / 4`, sets `t_in=16` and `t_out=8`, and decrypts with the output codec. Each example reuses the LUT, evaluator and output buffers for two requests. See [client/server roles and buffer allocation](../primus_tfhe/README.md#client-and-server-roles).
 
@@ -52,19 +55,21 @@ Client factories take only the relevant secret: pass `client_key.external_lwe_se
 
 ## Parameters and representation
 
-`PbsConfig::try_prepare` / `CbsConfig::try_prepare` prepare mathematical choices; `TfheContext::<_, U32NttTable>::try_from_parameters(parameters)` prepares the transform table. Use `TfheContext::try_new(parameters, table)` to bind an existing table. `BlindRotationConfig`, `PbsConfig`, `CbsConfig`, `PbsParameters`, `Encryptor` and `Decryptor` specialize the family API to `BarrettModulus`. `LM` in `PbsParameters<T, LM>` / `TfheContext<T, Table, LM>` selects the independent external modulus type, defaulting to the backend modulus type. `BlindRotationConfig::acc_modulus` supplies ring `Q`.
+`PbsParameters::try_from_config(pbs_config)` retains required KS, the algorithm and messages; `CbsParameters::try_from_config(cbs_config.pbs, cbs_config.gadget)` adds CBS gadgets and input encoding. Context construction retains one common parameter owner and transform table. `parameters()` always exposes the complete PBS domain; `cbs_parameters()` queries additional CBS capability. PBS and CBS share required KS, which downstream consumers can use to return ring/gadget computations to LWE.
+
+Move prepared parameters into `TfheContext::try_from_parameters(parameters)` or `try_from_cbs_parameters(parameters)`; `try_new(parameters, table)` accepts an existing table. Default preparation does not copy the common sampler. CBS and PBS retain the ring sampler's existing Arc without a separate BR parameter owner. `PbsParameters::try_from_config(pbs)` prepares common state; `CbsParameters::try_from_config(pbs, gadget)` or `try_with_config(parameters, gadget)` adds CBS. The latter moves prepared state; selector messages come from the PBS parameters. `LM` selects the external-q modulus type; `PbsConfig.acc_modulus` specifies ring Q.
 
 NTT tables must implement `MonomialNttTable`; built-in tables support it. Context construction checks length and modulus. The accumulator's `NttNtruSecretKey` records Q, and ordinary/gadget encryption checks it against the parameters/table before sampling. All transformed keys/values must follow the supplied table's roots and evaluation order; matching Q/N cannot prove representation or secret identity.
 
 ## Evaluation material
 
-`ServerKey` bundles independently owned `BlindRotationKey`, `NtruLweKeySwitchingKey` and optional `CircuitBootstrapKey`. `into_parts()` moves them out without copying ciphertext buffers; `ServerKey::new(br, return_key, cbs)` combines owners. For independent generation, use `KeyGenerator::try_generate_blind_rotation_key(&client, config, rng)`, `parameters.try_generate_lwe_return_key(&client, rng)` and `generator.try_generate_circuit_bootstrap_key(client.accumulator_ntru_secret_key(), cbs_parameters, rng)`. `BlindRotationAlgorithm` selects classic or sparse BR without generating return or CBS material. Component generation may repeat accumulator conversion; paired generation reuses the transform.
+`ServerKey` bundles required `BlindRotationKey` and `NtruLweKeySwitchingKey`. `CircuitBootstrapServerKey::new(server_key, circuit_key)` adds required CBS material; both `into_parts()` methods move buffers without copying arrays. Independent BR, return-KS and CBS generation remain available, with `BlindRotationMethod` selecting classic/sparse. Component generation may repeat secret conversion; paired generation shares the accepted transform.
 
-For ring-output CBS/one-hot, `context.try_generate_circuit_bootstrap_keys(blind_rotation, cbs_config, rng)` returns `(ClientKey, CircuitBootstrapServerKey)`. It shares the accepted accumulator transform and inverse across BR/CBS, generates no return key and imposes no return-q magnitude bound. Bind resources with `server.bootstrap_resources(&context)` and obtain CBS material directly with `server.circuit_bootstrap_key()`. See [material selection](../primus_tfhe/README.md#selecting-blind-rotation).
+`context.try_generate_circuit_bootstrap_keys(rng)` returns `(ClientKey, CircuitBootstrapServerKey)`, sharing the accepted accumulator transform/inverse across BR/CBS and generating required return KS. Complete bundles must satisfy the return-q secret-magnitude bound. `server.bootstrap_resources(&context)` allocates only BR scratch; CBS/one-hot evaluation allocates no return buffers. Borrow `server.server_key()` for PBS and `server.circuit_bootstrap_key()` for CBS.
 
-`Evaluator::try_from_parts(context, br, return_key)` binds ordinary PBS. Standalone CBS/one-hot first prepares common BR/external-product resources with `context.bootstrap_resources(br)?`, then operation state with `try_new(&resources, circuit_key, &input_codec)`. No return key is needed; the CBS example uses the grouped workflow above. Independent material must use the same actual secrets and transform representation. Shape and modulus checks do not prove identity.
+`Evaluator::try_from_parts(context, parameters.key_switching(), br, return_key)` binds ordinary PBS. Standalone CBS/one-hot first prepares common BR/external-product resources with `context.bootstrap_resources(br)?`, then operation state with `try_new(&resources, circuit_key, &input_codec)`. No return key is needed; the CBS example uses the grouped workflow above. Independent material must use the same actual secrets and transform representation. Shape and modulus checks do not prove identity.
 
-`server_key.blind_rotation_key().classic_controls()` returns a borrowed `ClassicControls` view, or `None` for sparse material. Its `initializer()` lifts public polynomials; coordinate zero uses NLEV bits and later coordinates use NGSW bits, with positive/negative pairs for ternary secrets. CBS and one-hot use the selected classic or sparse BR with independent trace/scheme-switch material. MVB needs no additional lifting or CBS material. The optional `circuit_bootstrap_key()` remains available for inspecting or composing CBS material.
+`server_key.blind_rotation_key().classic_controls()` returns a borrowed `ClassicControls` view, or `None` for sparse material. Its `initializer()` lifts public polynomials; coordinate zero uses NLEV bits and later coordinates use NGSW bits, with positive/negative pairs for ternary secrets. CBS and one-hot use the selected classic or sparse BR with independent trace/scheme-switch material. MVB needs no additional lifting or CBS material. `CircuitBootstrapServerKey::circuit_bootstrap_key()` directly borrows required CBS material.
 
 `KeyGenerator::try_generate_public_lift_key(accumulator_secret, &nlev_parameters, rng)` generates independent NLEV[1] for high-precision tables that need it. The parameters select its basis and row noise; keep the ciphertext and parameters together for lookup binding. Sparse PBS/CBS/one-hot and tables without a public lift require no such material.
 
@@ -74,7 +79,7 @@ Ordinary/interleaved `Evaluator` owns common `BootstrapResources` and scalar/bat
 
 `Resources` groups borrowed context/evaluation material with owned reusable buffers; it does not own or copy the keys. `Workspace` denotes buffer storage and shape metadata, including lower-level BR/EP scratch. `Evaluator` executes a specific workflow using owned or briefly borrowed resources. Keep the context/key owners alive; serial operations can share one mutable resource instance, while concurrent requests need separate mutable resources. The context owns the NTT table; key views and products must preserve its representation.
 
-For CBS/one-hot alone, keep standalone `BootstrapResources` without return buffers. To add PBS later, `Evaluator::try_from_resources(resources, return_key)` takes common resources and allocates return buffers. `try_rebind_return_key` changes compatible return material without reallocation; success discards pending samples, while failure preserves the old binding. Resource ownership does not establish actual secret identity.
+For CBS/one-hot alone, keep standalone `BootstrapResources` without return buffers. To add PBS later, `Evaluator::try_from_resources(resources, parameters.key_switching(), return_key)` takes common resources and allocates return buffers. `try_rebind_return_key` changes compatible return material without reallocation; success discards pending samples, while failure preserves the old binding. Resource ownership does not establish actual secret identity.
 
 ## Fixed-scale factorized MVB
 
@@ -90,25 +95,26 @@ Run the [17-threshold example](examples/ntru_ntt_mvb_thresholds.rs) with `--exam
 
 This backend re-exports the family's [shared coefficient key](../primus_tfhe_ntru/README.md#sparse-coefficient-keys), `SparseNtruBootstrappingKey<T>`. Generation, transforms and bucket aggregation remain backend-specific.
 
-`KeyGenerator::try_generate_server_key(&client, blind_rotation, cbs, rng)` selects `BlindRotationAlgorithm::Classic` or `Sparse { copy_count, bucket_count }` for an existing client. A fixed-weight binary secret supports both choices. `None` for CBS keeps ordinary BR/return material; `Some(config)` also generates CBS keys. The paired `context.try_generate_keys(blind_rotation, cbs, rng)` shortcut accepts the same choice and reuses transformed secrets; independent components do not require a complete bundle. See [algorithm and material choices](../primus_tfhe/README.md#selecting-blind-rotation).
+Ordinary PBS uses `context.try_generate_keys(rng)` and `context.evaluator(&server)`; an existing client uses `context.try_generate_server_key(&client, rng)`. CBS uses `try_generate_circuit_bootstrap_keys` / `try_generate_circuit_bootstrap_server_key`, returning `CircuitBootstrapServerKey`. `try_with_circuit_bootstrap(gadget)` adds CBS capability to the context; ordinary factories still return a BR/KS `ServerKey`. Explicit advanced factories take KS and algorithm choices, plus the required gadgets for CBS factories.
 
 Select a fixed-weight binary external-LWE distribution and choose sparse generation explicitly; the distribution alone does not select the algorithm. Require `0<h<n`, `copy_count>=1` and `bucket_count>=max(copy_count,h)`.
 
 ```rust,ignore
-let blind_rotation = BlindRotationAlgorithm::Sparse { copy_count: 3, bucket_count: 2 * h };
-let (client, server) = context.try_generate_keys(blind_rotation, None, &mut rng)?;
+let config = experimental::SPARSE_PBS_U64;
+let context = TfheContext::<_, Table, _>::try_from_pbs_config(config)?;
+let (client, server) = context.try_generate_keys(&mut rng)?;
 let mut evaluator = context.evaluator(&server)?;
 ```
 
-Ordinary/interleaved PBS use the same evaluator; factorized MVB borrows it per call. Pass `Some(cbs_config)` in place of `None` to include CBS/one-hot material, reusing the accumulator transform. For ring-only operations, use `try_generate_circuit_bootstrap_keys` with the same sparse choice. `server.blind_rotation_key().sparse_blind_rotation_key()` exposes selectors.
+Ordinary/interleaved PBS use the same evaluator; factorized MVB borrows it per call. `try_generate_circuit_bootstrap_keys` generates CBS/one-hot material while sharing the accumulator transform with BR. For ring-only operations, construct the context from a sparse `CbsConfig` and call `try_generate_circuit_bootstrap_keys`. `server.server_key().blind_rotation_key().sparse_blind_rotation_key()` exposes selectors.
 
 ## Optional circuit bootstrapping
 
-`parameters.circuit_bootstrap_codecs(t_in, t_ring)?` returns Rounded input and Scaled candidate ring codecs with the correct q/Q and independent plaintext domains. Pass the former to the input encryptor and CBS evaluator, and the latter to `accumulator_client`; it does not describe the CBS gadget output.
+`br.circuit_bootstrap_codecs(t_in, t_ring)?` returns Rounded input and Scaled candidate ring codecs with the correct q/Q and independent plaintext domains. Pass the former to the input encryptor and CBS evaluator, and the latter to `accumulator_client`; it does not describe the CBS gadget output.
 
 Compile a custom integer function with `key.parameters().compile_lookup_table_fn(&input_codec, |m| u64::from(m >= 2))?`, or pass the complete front-half result slice to `compile_lookup_table_slice`. Bind the resulting `CircuitBootstrapLookupTable` with `CircuitBootstrapEvaluator::try_with_lookup_table(&resources, key, program)?`; `try_new` keeps the identity default. Output lanes use `g_j * F(m) mod Q`, with no output message codec or extra BR. CMux requires bit-valued F throughout the input domain; other ring integers require the external-product noise contract. The ordinary CBS examples use t_in=8 and show both branches of this predicate.
 
-Use `context.try_generate_circuit_bootstrap_keys(blind_rotation, cbs_config, &mut rng)` for ring outputs. Its `CircuitBootstrapServerKey` owns BR, required input preparation and CBS material; `circuit_bootstrap_key()` returns the required key directly. Mixed PBS/CBS workflows can still generate a complete `ServerKey` with `try_generate_keys(blind_rotation, Some(cbs_config), rng)`. Obtain `server.circuit_bootstrap_key()` and pass it with common resources to `CircuitBootstrapEvaluator::try_new`, which explicitly requires CBS material. Use `allocate_output`, `circuit_bootstrap_to` and `cmux_to`; the [CBS → CMUX example](examples/ntru_ntt_circuit_bootstrap.rs) shows their complete consumption chain.
+Use `context.try_generate_circuit_bootstrap_keys(&mut rng)` to generate a BR/KS `ServerKey` plus required CBS key. Borrow `server.server_key()` for the PBS evaluator and `server.circuit_bootstrap_key()` for the CBS evaluator, sharing the same BR/KS. `allocate_output`, `circuit_bootstrap_to` and `cmux_to` lend common resources to each operation; the [CBS → CMUX example](examples/ntru_ntt_circuit_bootstrap.rs) shows the full consumption chain.
 
 The output is `NttNgswCiphertext` under `f_acc`. The circuit key binds the complete output basis; `try_new(&resources, circuit_key, &input_codec)` obtains parameters from that key. NTT trace normalization requires odd Q below `2^(T::BITS-1)`.
 
@@ -139,7 +145,7 @@ For a consumer that immediately processes each result, `new_sparse_pair_workspac
 
 A complete chunk-encryption and lookup workflow is in [ntt_lookup.rs](../primus_tfhe_ntru_lut/examples/ntt_lookup.rs).
 
-For custom returns, bind `LweReturnEvaluator::new(server.key_switching_key(),
+For custom returns, bind `LweReturnEvaluator::new(server.key_switching_key().unwrap(),
 context.parameters().external_lwe().cipher_modulus())`, then prepare only the
 needed scalar/batch workspace. Pass it explicitly to `return_at_to`,
 `return_prefix_to`, or the stream operations; one-hot and transform scratch remain

@@ -1,19 +1,27 @@
 use primus_fft::{FftEngine, FftTable, TorusFftValue};
 use primus_glwe::GlweCiphertext;
 
-use crate::{LweCiphertext, PbsParameters, TfheContextError};
+use crate::{
+    CbsConfig, CbsGadgetConfig, CbsParameters, LweCiphertext, PbsConfig, PbsParameters,
+    TfheContextError,
+};
 
-/// A validated binding between native-torus TFHE parameters and an FFT table.
-///
-/// The table is immutable and may be shared with any number of independent
-/// [`FftEngine`] instances. Transform scratch is deliberately not stored in
-/// this context.
+/// One boxed owner of the configured operation state, without duplicated samplers.
+/// Mixed operations retain their PBS parameters inside the same CBS owner;
+/// there is no second BR/domain handle or duplicated sampling state.
+enum OperationParameters<T: TorusFftValue> {
+    Pbs(Box<PbsParameters<T>>),
+    Cbs(Box<CbsParameters<T>>),
+}
+
+/// Immutable PBS/CBS parameters and one Fourier transform table.
+/// Keys and mutable evaluation workspaces are owned independently.
 pub struct TfheContext<T, Table>
 where
     T: TorusFftValue,
     Table: FftTable,
 {
-    parameters: PbsParameters<T>,
+    parameters: OperationParameters<T>,
     table: Table,
 }
 
@@ -22,65 +30,132 @@ where
     T: TorusFftValue,
     Table: FftTable,
 {
-    /// Builds the selected FFT table using the accumulator polynomial length.
-    ///
-    /// Use [`Self::try_new`] to inject an existing table instead; all transformed
-    /// keys must use the bound table. The parameters already establish its length.
+    /// Prepares and moves one complete BR/KS domain into its transform environment.
+    /// No evaluation scratch is allocated.
+    pub fn try_from_pbs_config(config: PbsConfig<T>) -> Result<Self, TfheContextError> {
+        let parameters = PbsParameters::try_from_config(config)?;
+        Ok(Self::from_parameters(parameters))
+    }
+
+    /// Prepares complete CBS state with the required shared KS.
+    /// Input and ring secrets remain independent; the common domain is owned once.
+    pub fn try_from_cbs_config(config: CbsConfig<T>) -> Result<Self, TfheContextError> {
+        let parameters = CbsParameters::try_from_config(config.pbs, config.gadget)?;
+        Ok(Self::from_cbs_parameters(parameters))
+    }
+
+    /// Moves prepared PBS parameters into a new transform environment.
+    /// Borrow them afterward through [`Self::parameters`]; no sampler is cloned.
     #[must_use]
     pub fn from_parameters(parameters: PbsParameters<T>) -> Self {
-        let table = Table::new(parameters.blind_rotation_ggsw().poly_length());
-        Self { parameters, table }
+        let table = Table::new(parameters.blind_rotation_params().poly_length());
+        Self {
+            parameters: OperationParameters::Pbs(Box::new(parameters)),
+            table,
+        }
     }
 
-    /// Binds TFHE parameters to a compatible Fourier table.
+    /// Moves complete CBS parameters into a new transform environment.
+    /// Direct-input CBS keeps its independent small and ring secret roles.
+    #[must_use]
+    pub fn from_cbs_parameters(parameters: CbsParameters<T>) -> Self {
+        let domain = parameters.pbs_parameters();
+        let table = Table::new(domain.blind_rotation_params().poly_length());
+        Self {
+            parameters: OperationParameters::Cbs(Box::new(parameters)),
+            table,
+        }
+    }
+
+    /// Binds a prepared PBS domain to an independently supplied transform table.
+    /// Checks only the table pairing; ownership moves without cloning samplers.
     pub fn try_new(parameters: PbsParameters<T>, table: Table) -> Result<Self, TfheContextError> {
-        let expected = parameters.blind_rotation_ggsw().poly_length().get();
+        let expected = parameters.blind_rotation_params().poly_length().get();
         let actual = table.poly_length().get();
-        if actual != expected {
+        if expected != actual {
             return Err(TfheContextError::PolynomialLengthMismatch { expected, actual });
         }
-        Ok(Self { parameters, table })
+        Ok(Self {
+            parameters: OperationParameters::Pbs(Box::new(parameters)),
+            table,
+        })
     }
 
-    /// Returns the validated TFHE parameters.
+    /// Adds CBS by moving the same PBS domain into the combined operation owner.
+    /// Only new gadgets and selector encoding are prepared; the table is retained.
+    pub fn try_with_circuit_bootstrap(
+        self,
+        gadget: CbsGadgetConfig,
+    ) -> Result<Self, TfheContextError> {
+        let parameters = match self.parameters {
+            OperationParameters::Pbs(parameters) => *parameters,
+            OperationParameters::Cbs(parameters) => parameters.into_parts().0,
+        };
+        let parameters = CbsParameters::try_with_config(parameters, gadget)?;
+        Ok(Self {
+            parameters: OperationParameters::Cbs(Box::new(parameters)),
+            table: self.table,
+        })
+    }
+
+    /// Adds independently prepared CBS after checking its domain, algorithm and
+    /// shared KS domain. The existing PBS owner replaces the duplicate domain.
+    pub fn try_with_cbs_parameters(
+        self,
+        parameters: CbsParameters<T>,
+    ) -> Result<Self, TfheContextError> {
+        let common = match self.parameters {
+            OperationParameters::Pbs(parameters) => *parameters,
+            OperationParameters::Cbs(parameters) => parameters.into_parts().0,
+        };
+        let parameters = parameters.try_with_pbs_parameters(common)?;
+        Ok(Self {
+            parameters: OperationParameters::Cbs(Box::new(parameters)),
+            table: self.table,
+        })
+    }
+
+    /// Borrows complete CBS state, which contains the single common domain.
     #[must_use]
-    #[inline]
-    pub fn parameters(&self) -> &PbsParameters<T> {
-        &self.parameters
+    pub fn cbs_parameters(&self) -> Option<&CbsParameters<T>> {
+        match &self.parameters {
+            OperationParameters::Cbs(parameters) => Some(parameters),
+            OperationParameters::Pbs(_) => None,
+        }
     }
 
-    /// Returns the immutable Fourier table.
+    /// Borrows the common checked domain used by numerical kernels and clients.
+    #[must_use]
+    #[inline(always)]
+    pub fn parameters(&self) -> &PbsParameters<T> {
+        match &self.parameters {
+            OperationParameters::Pbs(parameters) => parameters,
+            OperationParameters::Cbs(parameters) => parameters.pbs_parameters(),
+        }
+    }
+
+    /// Borrows the immutable transform table; transformed keys use this representation.
     #[must_use]
     #[inline]
     pub fn table(&self) -> &Table {
         &self.table
     }
 
-    /// Creates an FFT engine with an independent backend scratch allocation.
+    /// Creates independent reusable FFT scratch, borrowing the immutable table.
     #[must_use]
-    #[inline]
     pub fn new_fft_engine(&self) -> FftEngine<'_, Table> {
         FftEngine::new(&self.table)
     }
 
-    /// Allocates zero storage for an external LWE ciphertext (mask and body).
-    /// Uses the dimension selected by the parameters; no key or encryption is involved.
+    /// Allocates zero storage for an external LWE; this does not encrypt a message.
     #[must_use]
     pub fn allocate_lwe_ciphertext(&self) -> LweCiphertext<T> {
-        LweCiphertext::zero(self.parameters.external_lwe_dimension().get())
+        LweCiphertext::zero(self.parameters().external_lwe_dimension().get())
     }
 
-    /// Allocates a zeroed coefficient-domain GLWE with the accumulator layout.
-    /// Requires only public parameters; this does not encrypt a message.
+    /// Allocates zero storage in the accumulator layout, without encrypting.
     #[must_use]
     pub fn allocate_accumulator_ciphertext(&self) -> GlweCiphertext<Vec<T>> {
-        GlweCiphertext::zero(self.parameters.blind_rotation_ggsw().glwe_len())
-    }
-
-    /// Decomposes this context into its parameters and Fourier table.
-    #[must_use]
-    #[inline]
-    pub fn into_parts(self) -> (PbsParameters<T>, Table) {
-        (self.parameters, self.table)
+        GlweCiphertext::zero(self.parameters().blind_rotation_params().glwe_len())
     }
 }

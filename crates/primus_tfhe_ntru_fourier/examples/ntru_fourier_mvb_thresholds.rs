@@ -17,21 +17,19 @@ const OUTPUTS: usize = 17;
 
 fn main() {
     let config = experimental::CLASSIC_THRESHOLD_MVB_U64;
-    let parameters = config.try_prepare().unwrap();
-    let context = TfheContext::<Word, Table, _>::from_parameters(parameters);
+    let context = TfheContext::<Word, Table, _>::try_from_pbs_config(config).unwrap();
+    let parameters = context.parameters();
 
     // Numeric threshold flags use Scaled t=2; the input keeps Rounded t=128.
     let codecs = context
         .parameters()
-        .factorized_pbs_codecs(config.messages)
+        .factorized_pbs_codecs(parameters.messages())
         .unwrap();
     let thresholds: Vec<_> = (1..=OUTPUTS).map(|i| i * DOMAIN / (OUTPUTS + 1)).collect();
 
     // Client: keep client_key and the decryptor; give server_key to the server.
     let mut rng = StdRng::seed_from_u64(42);
-    let (client_key, server_key) = context
-        .try_generate_keys(config.blind_rotation.algorithm, None, &mut rng)
-        .unwrap();
+    let (client_key, server_key) = context.try_generate_keys(&mut rng).unwrap();
     // Ordinary messages borrow only the external secret from the setup bundle.
     let external_secret = client_key.external_lwe_secret_key();
     let encryptor = context

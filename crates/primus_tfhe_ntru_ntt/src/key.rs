@@ -17,69 +17,49 @@ use primus_ntru::{NtruLweKeySwitchingKey, NttNtruGadgetEncryptWorkspace, NttNtru
 use primus_ntt::MonomialNttTable;
 use zeroize::Zeroizing;
 
-use crate::{
-    BlindRotationAlgorithm, CbsGadgetConfig, CbsParameters, CircuitBootstrapKey, ClientKey,
-    KeyGenerationError, TfheContext,
-};
+use crate::{BlindRotationMethod, ClientKey, KeyGenerationError, TfheContext};
 
-/// Owning PBS bundle: blind rotation, LWE return, and optional CBS material.
+/// Owning PBS bundle: blind rotation and required LWE return material.
 /// Components can be generated independently and moved in or out without copying
 /// ciphertext buffers. Evaluator binding validates the required components only.
 pub struct ServerKey<T: FheUint> {
     blind_rotation: BlindRotationKey<T>,
     key_switching_key: NtruLweKeySwitchingKey<T>,
-    circuit_bootstrap: Option<Box<CircuitBootstrapKey<T>>>,
 }
 
 impl<T: FheUint> ServerKey<T> {
-    /// Combines independently owned components without copying or checking them.
-    /// Bind an evaluator to check layouts/moduli; shared secret and transform
-    /// identity remain caller requirements.
+    /// Moves BR and KS material into one bundle without copying buffers.
+    /// Evaluator binding checks layouts; actual secret and transform identity
+    /// remain caller requirements.
     #[must_use]
     pub fn new(
         blind_rotation: BlindRotationKey<T>,
         key_switching_key: NtruLweKeySwitchingKey<T>,
-        circuit_bootstrap: Option<CircuitBootstrapKey<T>>,
     ) -> Self {
         Self {
             blind_rotation,
             key_switching_key,
-            circuit_bootstrap: circuit_bootstrap.map(Box::new),
         }
     }
 
-    /// Borrows the independently owned blind-rotation material.
+    /// Borrows the selected classic or sparse blind-rotation material.
     #[must_use]
+    #[inline]
     pub fn blind_rotation_key(&self) -> &BlindRotationKey<T> {
         &self.blind_rotation
     }
 
-    /// Borrows the Q→q, f→s return key.
+    /// Borrows the required Q→q, f→s return key.
     #[must_use]
+    #[inline]
     pub fn key_switching_key(&self) -> &NtruLweKeySwitchingKey<T> {
         &self.key_switching_key
     }
 
-    /// Borrows the optional trace and scheme-switch material.
+    /// Moves out BR and KS material without copying ciphertext buffers.
     #[must_use]
-    pub fn circuit_bootstrap_key(&self) -> Option<&CircuitBootstrapKey<T>> {
-        self.circuit_bootstrap.as_deref()
-    }
-
-    /// Moves out BR, return and optional CBS material without copying buffers.
-    #[must_use]
-    pub fn into_parts(
-        self,
-    ) -> (
-        BlindRotationKey<T>,
-        NtruLweKeySwitchingKey<T>,
-        Option<CircuitBootstrapKey<T>>,
-    ) {
-        (
-            self.blind_rotation,
-            self.key_switching_key,
-            self.circuit_bootstrap.map(|key| *key),
-        )
+    pub fn into_parts(self) -> (BlindRotationKey<T>, NtruLweKeySwitchingKey<T>) {
+        (self.blind_rotation, self.key_switching_key)
     }
 }
 
@@ -137,34 +117,42 @@ where
     ) -> Result<(ClientKey<T>, NttNtruSecretKey<T>), KeyGenerationError> {
         let parameters = self.context.parameters();
         let client = primus_lwe::LweSecretKey::generate(parameters.external_lwe(), rng);
-        let (accumulator, transformed) = NttNtruSecretKey::generate_pair(
+        let (accumulator, transformed) = NttNtruSecretKey::generate_padded_pair(
             parameters.accumulator_ntru(),
+            parameters.poly_length().get(),
             self.context.table(),
             rng,
         )?;
         let client_key = ClientKey::new(client, accumulator);
+        // Sampling proves the usual q bound. For unusually small q, check the
+        // accepted sample rather than rejecting every key from this distribution.
+        if parameters
+            .accumulator_ntru()
+            .secret_key_sampler()
+            .maximum_magnitude()
+            > parameters.external_lwe().cipher_modulus_minus_one()
+        {
+            client_key
+                .check_accumulator_return_modulus(parameters.external_lwe().cipher_modulus())?;
+        }
         Ok((client_key, transformed))
     }
 
-    /// Generates BR, ordinary return and optional CBS material for one existing client.
+    /// Generates BR and required NTRU-to-LWE return KS material for an existing client.
     /// `blind_rotation` selects the algorithm independently of the client's distribution.
-    /// Sparse generation requires a fixed-weight binary secret with `0 < h < n` and
-    /// valid bucket counts. It retries only the public map (at most eight attempts),
-    /// never the client secret, and never falls back to classic. Invalid CBS configuration
-    /// is rejected before sampling; a failed matching returns no partial server key.
+    /// Checks imported secrets and the independently supplied KS domain before sampling.
+    /// Sparse generation retries only the public map (at most eight attempts), never
+    /// resamples the client secret or falls back to classic, and returns no partial key.
     ///
     /// # Correctness
     /// Inherits [`Self::try_generate_classic_blind_rotation_key`] and
-    /// [`Self::try_generate_sparse_blind_rotation_key`]'s secret, transform and noise
-    /// requirements for the selected algorithm. CBS additionally inherits
-    /// [`Self::try_generate_circuit_bootstrap_key`]'s requirements; PBS correctness
-    /// alone does not establish a margin at the smallest CBS gadget scale. Budget
-    /// ordinary modulus/key-switch return noise separately from the BR noise.
-    pub fn try_generate_server_key<R>(
+    /// [`Self::try_generate_sparse_blind_rotation_key`]'s secret and transform
+    /// requirements for the selected algorithm. Budget Q-to-q modulus-switch and return-KS noise separately from BR noise.
+    pub fn try_generate_server_key_with_parameters<R>(
         &mut self,
+        key_switching: &crate::LweReturnParameters<T, LM>,
         client_key: &ClientKey<T>,
-        blind_rotation: BlindRotationAlgorithm,
-        circuit_bootstrap: Option<CbsGadgetConfig>,
+        blind_rotation: BlindRotationMethod,
         rng: &mut R,
     ) -> Result<ServerKey<T>, KeyGenerationError>
     where
@@ -172,9 +160,39 @@ where
     {
         self.context
             .parameters()
-            .key_switching_lwe()
-            .ok_or(KeyGenerationError::MissingKeySwitchingParameters)?;
-        let circuit_parameters = self.prepare_circuit_bootstrap(circuit_bootstrap)?;
+            .check_lwe_return_parameters(key_switching)?;
+        self.generate_for_client(key_switching, client_key, blind_rotation, rng)
+    }
+
+    /// Generates configured BR and KS material for an existing client.
+    /// Checks the imported secrets before conversion or sampling; retains its input distribution.
+    ///
+    /// # Correctness
+    /// Inherits [`Self::try_generate_server_key_with_parameters`]'s noise and transform contracts.
+    pub fn try_generate_server_key<R: rand::Rng + rand::CryptoRng>(
+        &mut self,
+        client_key: &ClientKey<T>,
+        rng: &mut R,
+    ) -> Result<ServerKey<T>, KeyGenerationError> {
+        let context = self.context;
+        let parameters = context.parameters();
+        self.generate_for_client(
+            parameters.key_switching(),
+            client_key,
+            context.parameters().algorithm(),
+            rng,
+        )
+    }
+
+    /// Validates imported secrets and prepares sparse matching before transforming
+    /// one accepted accumulator representation for BR generation.
+    fn generate_for_client<R: rand::Rng + rand::CryptoRng>(
+        &mut self,
+        key_switching: &crate::LweReturnParameters<T, LM>,
+        client_key: &ClientKey<T>,
+        blind_rotation: BlindRotationMethod,
+        rng: &mut R,
+    ) -> Result<ServerKey<T>, KeyGenerationError> {
         client_key.check_compatible(self.context.parameters())?;
         let sparse_layout = self.prepare_blind_rotation(blind_rotation)?;
         let transformed = NttNtruSecretKey::try_from_coeff_secret_key(
@@ -186,16 +204,16 @@ where
             self.context.table(),
         )?;
         self.generate_server_key_from_transformed(
+            key_switching,
             client_key,
             transformed,
             sparse_layout,
-            circuit_parameters,
             rng,
         )
     }
 
     /// Encrypts selected BR controls after key compatibility and layout preparation.
-    /// Borrows the same accumulator representation later used by CBS generation.
+    /// The borrowed accumulator representation can also be reused by paired CBS generation.
     fn generate_blind_rotation_key_with_main<R: rand::Rng + rand::CryptoRng>(
         &mut self,
         client_key: &ClientKey<T>,
@@ -218,15 +236,15 @@ where
         })
     }
 
-    /// Consumes the accepted ring representation for BR and CBS, then releases it
-    /// before allocating ordinary return material. The caller established client
-    /// compatibility and the return-q bound by sampling or validation.
+    /// Consumes the accepted accumulator transform for BR, then releases it before
+    /// allocating return-KS rows. Sampling or validation established client
+    /// compatibility and the external-q secret-magnitude bound.
     fn generate_server_key_from_transformed<R>(
         &mut self,
+        key_switching: &crate::LweReturnParameters<T, LM>,
         client_key: &ClientKey<T>,
         accumulator_ntt: NttNtruSecretKey<T>,
         sparse_layout: Option<crate::sparse::SparseKeyLayout>,
-        circuit_parameters: Option<CbsParameters<T>>,
         rng: &mut R,
     ) -> Result<ServerKey<T>, KeyGenerationError>
     where
@@ -239,33 +257,16 @@ where
             sparse_layout,
             rng,
         )?;
-        let circuit_bootstrap = circuit_parameters.map(|parameters| {
-            self.generate_circuit_bootstrap_key_with_main(
-                client_key.accumulator_ntru_secret_key(),
-                &accumulator_ntt,
-                parameters,
-                rng,
-            )
-        });
         drop(accumulator_ntt);
         let key_switching_key = NtruLweKeySwitchingKey::generate(
             client_key.accumulator_ntru_secret_key(),
             parameters.accumulator_ntru().cipher_modulus(),
             client_key.external_lwe_secret_key(),
-            parameters
-                .key_switching_lwe()
-                .expect("return parameters were checked before key generation"),
-            parameters
-                .key_switching_basis()
-                .expect("return sampler and basis are stored together")
-                .clone(),
+            key_switching.lwe(),
+            key_switching.basis().clone(),
             rng,
         );
-        Ok(ServerKey::new(
-            blind_rotation,
-            key_switching_key,
-            circuit_bootstrap,
-        ))
+        Ok(ServerKey::new(blind_rotation, key_switching_key))
     }
 
     /// Generates only BR material, selecting classic or sparse from the config.
@@ -283,17 +284,17 @@ where
     pub fn try_generate_blind_rotation_key<R>(
         &mut self,
         client_key: &ClientKey<T>,
-        blind_rotation: BlindRotationAlgorithm,
+        blind_rotation: BlindRotationMethod,
         rng: &mut R,
     ) -> Result<BlindRotationKey<T>, KeyGenerationError>
     where
         R: rand::Rng + rand::CryptoRng,
     {
         match blind_rotation {
-            BlindRotationAlgorithm::Classic => {
+            BlindRotationMethod::Classic => {
                 self.try_generate_classic_blind_rotation_key(client_key, rng)
             }
-            BlindRotationAlgorithm::Sparse {
+            BlindRotationMethod::Sparse {
                 copy_count,
                 bucket_count,
             } => self.try_generate_sparse_blind_rotation_key(
@@ -503,20 +504,18 @@ where
         controls
     }
 
-    /// Generates a fresh classic or sparse pair, reusing the accepted transform and inverse.
-    /// Sparse selection keeps the external distribution and retries only the public map.
-    /// Enabling CBS inherits [`Self::try_generate_circuit_bootstrap_key`]'s
-    /// mathematical and security requirements.
-    /// Returns a key-generation error when the bounded rejection search is exhausted.
+    /// Generates a fresh classic or sparse pair with BR and required NTRU-to-LWE return KS.
+    /// Checks the independently supplied KS domain and sparse choices before sampling.
+    /// Sparse matching retries only the public map and returns no partial pair.
+    /// Propagates bounded NTRU rejection/conversion failures; the accepted secret
+    /// must also have coefficient magnitudes below an explicit return modulus q.
     ///
-    /// Distribution and fixed-weight validity is established by parameter construction.
-    /// CBS and sparse configuration errors precede secret sampling. Matching
-    /// never resamples the external secret. The accepted accumulator must also
-    /// have coefficient magnitudes below an explicit return modulus q.
-    pub fn try_generate<R>(
+    /// # Correctness
+    /// Inherits [`Self::try_generate_server_key_with_parameters`]'s numerical contracts.
+    pub fn try_generate_with_parameters<R>(
         &mut self,
-        blind_rotation: BlindRotationAlgorithm,
-        circuit_bootstrap: Option<CbsGadgetConfig>,
+        key_switching: &crate::LweReturnParameters<T, LM>,
+        blind_rotation: BlindRotationMethod,
         rng: &mut R,
     ) -> Result<(ClientKey<T>, ServerKey<T>), KeyGenerationError>
     where
@@ -524,28 +523,43 @@ where
     {
         self.context
             .parameters()
-            .key_switching_lwe()
-            .ok_or(KeyGenerationError::MissingKeySwitchingParameters)?;
-        let circuit_parameters = self.prepare_circuit_bootstrap(circuit_bootstrap)?;
+            .check_lwe_return_parameters(key_switching)?;
+        self.generate_pair(key_switching, blind_rotation, rng)
+    }
+
+    /// Generates the configured BR and KS pair.
+    /// Reuses the prepared KS state and retries only sparse public maps.
+    ///
+    /// # Correctness
+    /// Inherits [`Self::try_generate_with_parameters`]'s noise and representation contracts.
+    pub fn try_generate<R: rand::Rng + rand::CryptoRng>(
+        &mut self,
+        rng: &mut R,
+    ) -> Result<(ClientKey<T>, ServerKey<T>), KeyGenerationError> {
+        let context = self.context;
+        let parameters = context.parameters();
+        self.generate_pair(
+            parameters.key_switching(),
+            context.parameters().algorithm(),
+            rng,
+        )
+    }
+
+    /// Samples secrets after the owning boundary paired BR and KS parameters.
+    /// Sparse preflight happens before sampling; BR consumes the accepted ring transform.
+    fn generate_pair<R: rand::Rng + rand::CryptoRng>(
+        &mut self,
+        key_switching: &crate::LweReturnParameters<T, LM>,
+        blind_rotation: BlindRotationMethod,
+        rng: &mut R,
+    ) -> Result<(ClientKey<T>, ServerKey<T>), KeyGenerationError> {
         let sparse_layout = self.prepare_blind_rotation(blind_rotation)?;
         let (client_key, transformed) = self.generate_client_key_with_main(rng)?;
-        let parameters = self.context.parameters();
-        // Sampling proves the usual q bound. For unusually small q, check the
-        // accepted sample rather than rejecting every key from this distribution.
-        if parameters
-            .accumulator_ntru()
-            .secret_key_sampler()
-            .maximum_magnitude()
-            > parameters.external_lwe().cipher_modulus_minus_one()
-        {
-            client_key
-                .check_accumulator_return_modulus(parameters.external_lwe().cipher_modulus())?;
-        }
         let server_key = self.generate_server_key_from_transformed(
+            key_switching,
             &client_key,
             transformed,
             sparse_layout,
-            circuit_parameters,
             rng,
         )?;
         Ok((client_key, server_key))
@@ -554,26 +568,15 @@ where
     /// Prepares the selected BR layout before sampling: `None` denotes classic.
     fn prepare_blind_rotation(
         &self,
-        blind_rotation: BlindRotationAlgorithm,
+        blind_rotation: BlindRotationMethod,
     ) -> Result<Option<crate::sparse::SparseKeyLayout>, KeyGenerationError> {
         Ok(match blind_rotation {
-            BlindRotationAlgorithm::Classic => None,
-            BlindRotationAlgorithm::Sparse {
+            BlindRotationMethod::Classic => None,
+            BlindRotationMethod::Sparse {
                 copy_count,
                 bucket_count,
             } => Some(self.prepare_sparse_layout(copy_count, bucket_count)?),
         })
-    }
-
-    /// Prepares optional CBS bases before any secret or evaluation-key sampling.
-    fn prepare_circuit_bootstrap(
-        &self,
-        circuit_bootstrap: Option<CbsGadgetConfig>,
-    ) -> Result<Option<CbsParameters<T>>, KeyGenerationError> {
-        circuit_bootstrap
-            .map(|config| CbsParameters::try_from_config(self.context.parameters(), config))
-            .transpose()
-            .map_err(Into::into)
     }
 }
 
@@ -583,39 +586,36 @@ where
     Table: MonomialNttTable<ValueT = T>,
     LM: primus_reduce::RingContext<T>,
 {
-    /// Generates a fresh classic or sparse client/server pair; `None` selects PBS only and
-    /// `Some(config)` also generates the configured CBS material.
-    /// Inherits [`KeyGenerator::try_generate`]'s configuration, rejection-sampling and return-q
-    /// checks, and its CBS requirements.
-    ///
-    /// Distribution and fixed-weight validity is established by parameter construction.
-    pub fn try_generate_keys<R>(
+    /// Generates paired client and BR/KS server keys using this context's choices.
+    /// Inherits [`KeyGenerator::try_generate`]'s contracts.
+    pub fn try_generate_keys<R: rand::Rng + rand::CryptoRng>(
         &self,
-        blind_rotation: BlindRotationAlgorithm,
-        circuit_bootstrap: Option<CbsGadgetConfig>,
+        rng: &mut R,
+    ) -> Result<(ClientKey<T>, ServerKey<T>), KeyGenerationError> {
+        KeyGenerator::new(self).try_generate(rng)
+    }
+
+    /// Generates configured server material for independently generated client secrets.
+    /// Inherits [`KeyGenerator::try_generate_server_key`]'s contracts.
+    pub fn try_generate_server_key<R: rand::Rng + rand::CryptoRng>(
+        &self,
+        client_key: &ClientKey<T>,
+        rng: &mut R,
+    ) -> Result<ServerKey<T>, KeyGenerationError> {
+        KeyGenerator::new(self).try_generate_server_key(client_key, rng)
+    }
+
+    /// Generates a fresh BR/KS pair with independently supplied KS and BR choices.
+    /// Inherits [`KeyGenerator::try_generate_with_parameters`]'s contracts.
+    pub fn try_generate_keys_with_parameters<R>(
+        &self,
+        key_switching: &crate::LweReturnParameters<T, LM>,
+        blind_rotation: BlindRotationMethod,
         rng: &mut R,
     ) -> Result<(ClientKey<T>, ServerKey<T>), KeyGenerationError>
     where
         R: rand::Rng + rand::CryptoRng,
     {
-        KeyGenerator::new(self).try_generate(blind_rotation, circuit_bootstrap, rng)
-    }
-
-    /// Generates server material for an existing client, selecting classic or sparse BR.
-    /// Inherits [`KeyGenerator::try_generate_server_key`]'s sampling, errors
-    /// and noise contracts, including optional CBS/one-hot material.
-    pub fn try_generate_server_key<R: rand::Rng + rand::CryptoRng>(
-        &self,
-        client_key: &ClientKey<T>,
-        blind_rotation: BlindRotationAlgorithm,
-        circuit_bootstrap: Option<CbsGadgetConfig>,
-        rng: &mut R,
-    ) -> Result<ServerKey<T>, KeyGenerationError> {
-        KeyGenerator::new(self).try_generate_server_key(
-            client_key,
-            blind_rotation,
-            circuit_bootstrap,
-            rng,
-        )
+        KeyGenerator::new(self).try_generate_with_parameters(key_switching, blind_rotation, rng)
     }
 }

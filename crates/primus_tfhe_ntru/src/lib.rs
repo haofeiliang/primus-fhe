@@ -2,9 +2,12 @@
 //!
 //! # Role in the backend workflow
 //!
-//! [`PbsConfig`] / [`CbsConfig`] compose numerical operation choices;
-//! [`PbsParameters`] owns prepared key domains and sampling state and
-//! provides a [`LookupTableCompiler`] for Rounded LUTs. [`ClientKey`] owns the
+//! Prepare [`PbsConfig`] with [`PbsParameters::try_from_config`], or pass the PBS
+//! and gadget fields of [`CbsConfig`] to [`CbsParameters::try_from_config`].
+//! Common parameters own KS and default messages. CBS adds its input encoding and
+//! [`CbsGadgetParameters`], retaining existing KS without preparing unused return state.
+//! Both share [`PbsParameters`] for numerical domains and sampling state.
+//! It also provides a [`LookupTableCompiler`] for Rounded LUTs. [`ClientKey`] owns the
 //! complete setup secrets; [`Encryptor`] and [`Decryptor`] borrow only the external
 //! message secret and bind its codec. Choose the NTT/Fourier
 //! backend for transform tables, key generation and evaluators. Shared sparse
@@ -19,7 +22,7 @@
 //! [`PbsParameters::factorized_pbs_codecs`] instead prepares Scaled MVB outputs.
 //! Bind returned LWE decryption to the prepared output codec, not the input codec.
 //! For CBS, [`PbsParameters::circuit_bootstrap_codecs`] prepares input and candidate
-//! ring-message codecs; [`CbsParameters::compile_lookup_table_fn`]
+//! ring-message codecs; [`CbsGadgetParameters::compile_lookup_table_fn`]
 //! programs gadget-scaled integers independently of those candidate messages.
 //!
 //! # Public-key clients
@@ -62,8 +65,8 @@ mod one_hot;
 mod parameters;
 mod sparse;
 
-pub use circuit_bootstrap::CbsParameters;
-pub use config::{BlindRotationConfig, CbsConfig, PbsConfig};
+pub use circuit_bootstrap::CbsGadgetParameters;
+pub use config::{CbsConfig, PbsConfig};
 pub use error::{
     CircuitBootstrapParameterError, KeyGenerationError, SparseBootstrappingKeyError,
     TfheClientError, TfheKeyError, TfheParameterError,
@@ -71,7 +74,7 @@ pub use error::{
 pub use key::ClientKey;
 pub use lwe_return::{LweReturnBatchWorkspace, LweReturnEvaluator};
 pub use one_hot::{NlevSelectors, OneHotBootstrapError, OneHotLookupTable};
-pub use parameters::PbsParameters;
+pub use parameters::{CbsParameters, LweReturnParameters, PbsParameters};
 pub use primus_tfhe::{LweConfig, ModulusConfig, ModulusConfigError};
 pub use sparse::SparseNtruBootstrappingKey;
 

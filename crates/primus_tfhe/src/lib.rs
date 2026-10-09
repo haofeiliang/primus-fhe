@@ -52,7 +52,7 @@ pub use lookup_table::{
 pub use message::{
     CircuitBootstrapCodecs, FactorizedPbsCodecs, PbsCodecs, PbsMessageConfig, RoundedPbsCodecs,
 };
-pub use parameters::{BlindRotationAlgorithm, CbsGadgetConfig, GadgetEncryptionConfig};
+pub use parameters::{BlindRotationMethod, CbsGadgetConfig, GadgetEncryptionConfig};
 pub use primus_decompose::{DecompositionBaseLog, DecompositionConfig, DecompositionLevelCount};
 pub use primus_lattice::lwe::Lwe;
 pub use primus_lwe::{LweCiphertext, LweSecretKeyRef};

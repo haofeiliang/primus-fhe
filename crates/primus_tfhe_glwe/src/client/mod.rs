@@ -74,7 +74,7 @@ impl<T: FheUint, M: RingContext<T>> PbsParameters<T, M> {
                 LwePublicKey::generate(key, self.small_lwe(), rng)
             }
             crate::PbsOrder::KeyswitchBootstrap => {
-                let glwe = self.blind_rotation_ggsw();
+                let glwe = self.blind_rotation_params();
                 let lwe = primus_lwe::LweEncryptionParameters::new(
                     self.external_lwe_dimension(),
                     self.cipher_modulus(),
@@ -102,7 +102,9 @@ impl<T: FheUint, M: RingContext<T>> PbsParameters<T, M> {
         self.check_codec_modulus(codec.ciphertext_modulus())?;
         let noise = match self.pbs_order() {
             crate::PbsOrder::BootstrapKeyswitch => self.small_lwe().noise_distribution(),
-            crate::PbsOrder::KeyswitchBootstrap => self.blind_rotation_ggsw().noise_distribution(),
+            crate::PbsOrder::KeyswitchBootstrap => {
+                self.blind_rotation_params().noise_distribution()
+            }
         };
         LweClientParameters::try_from_parts(self.external_lwe_dimension(), codec, noise)
     }

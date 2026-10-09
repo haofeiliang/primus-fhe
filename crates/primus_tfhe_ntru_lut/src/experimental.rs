@@ -2,22 +2,13 @@
 //!
 //! The 2026-10-08 teaching workload uses n800/h32/N1024, alpha*q24 input noise,
 //! two-bit chunks and c8/d5/o8. Its public function is `(x*x+3*x+7) mod 65536`.
-//! These constants share the matching one-hot CBS description and add return-q
-//! material and layout. Candidate CMux codecs, tables and keys are not constructed.
+//! These constants share the matching one-hot CBS description, including its
+//! required return-KS material, and add public table layout. Candidate CMux codecs, tables and keys are not constructed.
 
-use primus_decompose::{DecompositionBaseLog, DecompositionConfig};
 use primus_modulus::PowOf2Modulus;
-use primus_tfhe_ntru::GadgetEncryptionConfig;
 
 use crate::{HighPrecLutConfig, LookupTableConfig};
 
-const RETURN: GadgetEncryptionConfig = GadgetEncryptionConfig {
-    decomposition: DecompositionConfig {
-        log_basis: DecompositionBaseLog::new(3),
-        level_count: None,
-    },
-    noise_standard_deviation: 3.2,
-};
 const LAYOUT: LookupTableConfig = LookupTableConfig {
     input_chunk_count: 8,
     coefficient_chunk_count: 5,
@@ -32,7 +23,6 @@ pub const NTT_CLASSIC_LOOKUP_U64: HighPrecLutConfig<
     PowOf2Modulus<u64>,
 > = HighPrecLutConfig {
     one_hot: primus_tfhe_ntru_ntt::experimental::CLASSIC_ONE_HOT_U64,
-    key_switching: RETURN,
     layout: LAYOUT,
 };
 
@@ -44,6 +34,5 @@ pub const FOURIER_CLASSIC_LOOKUP_U64: HighPrecLutConfig<
     PowOf2Modulus<u64>,
 > = HighPrecLutConfig {
     one_hot: primus_tfhe_ntru_fourier::experimental::CLASSIC_ONE_HOT_U64,
-    key_switching: RETURN,
     layout: LAYOUT,
 };

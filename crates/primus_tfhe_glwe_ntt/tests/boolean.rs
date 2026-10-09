@@ -3,15 +3,12 @@
 #[path = "../../primus_tfhe/tests/common/boolean.rs"]
 mod boolean;
 
-use primus_decompose::primitive::ApproxSignedBasis;
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
-use primus_glwe::{GlweParameters, SecretKeyDistr};
+use primus_glwe::SecretKeyDistr;
 use primus_lattice::{GlweDimension, LweDimension};
-use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
 use primus_poly::PolyLength;
-use primus_tfhe::BlindRotationAlgorithm;
 use primus_tfhe_glwe_ntt::{
     BooleanError, BooleanGate, GadgetEncryptionConfig, LweCiphertext, PbsOrder, PbsParameters,
     TfheContext,
@@ -25,39 +22,34 @@ const MODULUS: u32 = 132_120_577;
 /// Small parameters for client factories and both PBS orders.
 fn parameters(pbs_order: PbsOrder) -> PbsParameters<u32> {
     let modulus = BarrettModulus::new(MODULUS);
-    let lwe = LweParameters::new(
-        LweDimension::new(4),
-        4,
-        modulus,
-        SecretKeyDistr::UniformBinary,
-        0.7,
-    );
-    let glwe = GlweParameters::new(
-        GlweDimension::new(1),
-        PolyLength::new(POLY_LENGTH),
-        4,
-        modulus,
-        SecretKeyDistr::UniformBinary,
-        0.7,
-    );
-    let bootstrapping = ApproxSignedBasis::new(
-        glwe.cipher_modulus_value(),
-        DecompositionBaseLog::new(8),
-        Some(DecompositionLevelCount::new(3)),
-    );
-    PbsParameters::try_new(
-        lwe.into_encryption_parameters(),
-        primus_glwe::GgswParameters::try_with_basis(&glwe, bootstrapping).unwrap(),
-        GadgetEncryptionConfig {
-            decomposition: ApproxSignedBasis::new(
-                Some(MODULUS),
-                DecompositionBaseLog::new(4),
-                Some(DecompositionLevelCount::new(4)),
-            ),
-            noise_standard_deviation: glwe.noise_distribution().standard_deviation(),
+    PbsParameters::try_from_config(primus_tfhe_glwe::PbsConfig {
+        small_lwe: primus_tfhe::LweConfig {
+            dimension: LweDimension::new(4),
+            cipher_modulus: modulus.into(),
+            secret_key_distr: SecretKeyDistr::UniformBinary,
+            noise_standard_deviation: 0.7,
         },
-        pbs_order,
-    )
+        bsk_dimension: GlweDimension::new(1),
+        bsk_poly_length: PolyLength::new(POLY_LENGTH),
+        bsk_secret_distr: SecretKeyDistr::UniformBinary,
+        bsk_gadget: GadgetEncryptionConfig {
+            decomposition: primus_tfhe::DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(8),
+                level_count: Some(DecompositionLevelCount::new(3)),
+            },
+            noise_standard_deviation: 0.7,
+        },
+        key_switching: GadgetEncryptionConfig {
+            decomposition: primus_tfhe::DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(4),
+                level_count: Some(DecompositionLevelCount::new(4)),
+            },
+            noise_standard_deviation: 0.7,
+        },
+        method: primus_tfhe::BlindRotationMethod::Classic,
+        messages: primus_tfhe::PbsMessageConfig::new(4),
+        order: pbs_order,
+    })
     .unwrap()
 }
 
@@ -67,13 +59,12 @@ fn boolean_factories_support_truth_tables_and_reused_output_in_both_orders() {
     for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
         let modulus = BarrettModulus::new(MODULUS);
         let table = U32NttTable::new(PolyLength::new(POLY_LENGTH), modulus).unwrap();
-        let context = TfheContext::try_new(parameters(order), table).unwrap();
+        let context_parameters = &parameters(order);
+        let context = TfheContext::try_new(context_parameters.clone(), table).unwrap();
         let input_codec =
             primus_encoding::RoundedCodec::new(4, context.parameters().cipher_modulus());
         let mut rng = StdRng::seed_from_u64(42);
-        let (client_key, server_key) = context
-            .try_generate_keys(BlindRotationAlgorithm::Classic, None, &mut rng)
-            .unwrap();
+        let (client_key, server_key) = context.try_generate_keys(&mut rng).unwrap();
         let encryptor = context
             .boolean_encryptor(client_key.external_lwe_secret_key(), &input_codec)
             .unwrap();

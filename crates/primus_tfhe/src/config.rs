@@ -9,7 +9,8 @@ use primus_reduce::{Modulus, RingContext};
 ///
 /// `M` retains the reduction representation: an explicit power of two uses
 /// [`PowOf2Modulus`], a native torus uses [`NativeModulus`], and NTT primes use
-/// [`BarrettModulus`]. Ratios and masks are prepared once by [`Self::try_build`].
+/// [`BarrettModulus`]. [`TryFrom`] validates the representation and prepares
+/// the reducer's ratios or masks once.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModulusConfig<M: Modulus> {
     /// The full-width modulus `2^M::ValueT::BITS`; valid only for NativeModulus.
@@ -30,16 +31,6 @@ pub enum ModulusConfigError {
     /// The native torus is implicit; no representable explicit value equals it.
     #[error("Native requires the implicit full-width modulus")]
     Native,
-}
-
-impl<M: Modulus> ModulusConfig<M> {
-    /// Prepares the concrete reducer, validating its numerical representation.
-    pub fn try_build(self) -> Result<M, ModulusConfigError>
-    where
-        M: TryFrom<Self, Error = ModulusConfigError>,
-    {
-        M::try_from(self)
-    }
 }
 
 impl<M: Modulus> From<M> for ModulusConfig<M> {
@@ -89,6 +80,8 @@ impl<T: FheUint> TryFrom<ModulusConfig<NativeModulus<T>>> for NativeModulus<T> {
 }
 
 /// Numerical LWE choices, with no prepared distribution or message codec.
+/// Convert with `LweEncryptionParameters::try_from(config)` to validate the
+/// modulus representation and prepare sampling state.
 #[derive(Debug, Clone, Copy)]
 pub struct LweConfig<M: Modulus> {
     /// Secret dimension.
@@ -112,17 +105,19 @@ pub enum LweConfigError {
     Parameters(#[from] primus_lwe::LweParameterError),
 }
 
-impl<M: Modulus> LweConfig<M> {
-    /// Checks the numerical choices and prepares LWE sampling state once.
-    pub fn try_prepare<T: FheUint>(self) -> Result<LweEncryptionParameters<T, M>, LweConfigError>
-    where
-        M: RingContext<T> + TryFrom<ModulusConfig<M>, Error = ModulusConfigError>,
-    {
-        Ok(LweEncryptionParameters::try_new(
-            self.dimension,
-            self.cipher_modulus.try_build()?,
-            self.secret_key_distr,
-            self.noise_standard_deviation,
+impl<T, M> TryFrom<LweConfig<M>> for LweEncryptionParameters<T, M>
+where
+    T: FheUint,
+    M: RingContext<T> + TryFrom<ModulusConfig<M>, Error = ModulusConfigError>,
+{
+    type Error = LweConfigError;
+
+    fn try_from(config: LweConfig<M>) -> Result<Self, Self::Error> {
+        Ok(Self::try_new(
+            config.dimension,
+            M::try_from(config.cipher_modulus)?,
+            config.secret_key_distr,
+            config.noise_standard_deviation,
         )?)
     }
 }

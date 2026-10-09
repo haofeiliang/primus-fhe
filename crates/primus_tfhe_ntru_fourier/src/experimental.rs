@@ -2,7 +2,7 @@
 //!
 //! These reproduce teaching workloads recorded on 2026-10-08 at revision
 //! `9a80c506`; security and decryption-failure probability are unassessed.
-//! Configs contain numerical choices; `try_prepare()` builds sampling state once.
+//! Configs contain numerical choices; parameter constructors build sampling state once.
 //! Functions, lane/factor geometry and complete noise budgets belong to the operation.
 
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
@@ -12,13 +12,13 @@ use primus_ntru::SecretKeyDistr;
 use primus_poly::PolyLength;
 
 use crate::{
-    BlindRotationAlgorithm, BlindRotationConfig, CbsConfig, CbsGadgetConfig, DecompositionConfig,
-    GadgetEncryptionConfig, LweConfig, ModulusConfig, PbsConfig, PbsMessageConfig,
+    BlindRotationMethod, CbsConfig, CbsGadgetConfig, DecompositionConfig, GadgetEncryptionConfig,
+    LweConfig, ModulusConfig, PbsConfig, PbsMessageConfig,
 };
 
 const EXTERNAL_Q: u64 = 1 << 24;
 const ALPHA: f64 = 2.046_151_696_979_124e-6;
-const SPARSE: BlindRotationAlgorithm = BlindRotationAlgorithm::Sparse {
+const SPARSE: BlindRotationMethod = BlindRotationMethod::Sparse {
     copy_count: 3,
     bucket_count: 64,
 };
@@ -31,7 +31,7 @@ pub const CLASSIC_PBS_U64: PbsConfig<u64, PowOf2Modulus<u64>> = pbs(
         2048,
         SecretKeyDistr::UniformBinary,
         ALPHA * EXTERNAL_Q as f64,
-        BlindRotationAlgorithm::Classic,
+        BlindRotationMethod::Classic,
     ),
     PbsMessageConfig::new(32),
 );
@@ -41,23 +41,15 @@ pub const SPARSE_PBS_U64: PbsConfig<u64, PowOf2Modulus<u64>> =
     fixed(ModulusConfig::Native, SPARSE, 32, 32);
 
 /// Classic Fourier ManyLUT, n728/h32/N1024, t_in=16/t_out=8, two lanes/stride two.
-pub const CLASSIC_MANY_LUT_U64: PbsConfig<u64, PowOf2Modulus<u64>> = fixed(
-    ModulusConfig::Native,
-    BlindRotationAlgorithm::Classic,
-    16,
-    8,
-);
+pub const CLASSIC_MANY_LUT_U64: PbsConfig<u64, PowOf2Modulus<u64>> =
+    fixed(ModulusConfig::Native, BlindRotationMethod::Classic, 16, 8);
 
 /// Classic Fourier threshold MVB, n728/h32/N1024, Rounded t_in=128/Scaled t_out=2, D64/k17.
-pub const CLASSIC_THRESHOLD_MVB_U64: PbsConfig<u64, PowOf2Modulus<u64>> = fixed(
-    ModulusConfig::Native,
-    BlindRotationAlgorithm::Classic,
-    128,
-    2,
-);
+pub const CLASSIC_THRESHOLD_MVB_U64: PbsConfig<u64, PowOf2Modulus<u64>> =
+    fixed(ModulusConfig::Native, BlindRotationMethod::Classic, 128, 2);
 
 /// Classic Fourier CBS, n800/N1024, selector t=8 and three base-256 output levels.
-/// Ring CMux candidates have their own message modulus; no LWE return is prepared.
+/// Ring CMux candidates have their own message modulus; return KS is retained for downstream use.
 pub const CLASSIC_CBS_U64: CbsConfig<u64, PowOf2Modulus<u64>> =
     circuit(ModulusConfig::Native, SecretKeyDistr::UniformBinary);
 
@@ -76,31 +68,31 @@ const fn decomposition(base_log: u32) -> DecompositionConfig {
     }
 }
 
-/// PBS adds return-q decomposition/noise to an otherwise shared BR domain.
+/// PBS selects messages in the shared BR/KS domain.
 const fn pbs(
-    blind_rotation: BlindRotationConfig<u64, PowOf2Modulus<u64>>,
+    blind_rotation: PbsConfig<u64, PowOf2Modulus<u64>>,
     messages: PbsMessageConfig<u64>,
 ) -> PbsConfig<u64, PowOf2Modulus<u64>> {
     PbsConfig {
-        blind_rotation,
         key_switching: GadgetEncryptionConfig {
             decomposition: decomposition(3),
             noise_standard_deviation: 3.2,
         },
         messages,
+        ..blind_rotation
     }
 }
 
-/// Raw q/Q choices are shared by PBS, CBS and lookup without preparing unused state.
+/// Raw q/Q and return-KS choices are shared by PBS, CBS and lookup.
 const fn blind_rotation(
     modulus: ModulusConfig<NativeModulus<u64>>,
     n: usize,
     length: usize,
     secret: SecretKeyDistr,
     noise: f64,
-    algorithm: BlindRotationAlgorithm,
-) -> BlindRotationConfig<u64, PowOf2Modulus<u64>> {
-    BlindRotationConfig {
+    algorithm: BlindRotationMethod,
+) -> PbsConfig<u64, PowOf2Modulus<u64>> {
+    PbsConfig {
         external_lwe: LweConfig {
             dimension: LweDimension::new(n),
             cipher_modulus: ModulusConfig::Explicit(EXTERNAL_Q),
@@ -108,20 +100,25 @@ const fn blind_rotation(
             noise_standard_deviation: noise,
         },
         acc_modulus: modulus,
-        acc_poly_length: PolyLength::new(length),
+        bsk_poly_length: PolyLength::new(length),
         bsk_secret_distr: SecretKeyDistr::SparseTernary,
         bsk_gadget: GadgetEncryptionConfig {
             decomposition: decomposition(8),
             noise_standard_deviation: 0.7,
         },
         algorithm,
+        key_switching: GadgetEncryptionConfig {
+            decomposition: decomposition(3),
+            noise_standard_deviation: 3.2,
+        },
+        messages: primus_tfhe::PbsMessageConfig::new(2),
     }
 }
 
 /// The diagnostic fixed-weight profile has different fresh noise from the one-hot teaching profile.
 const fn fixed(
     modulus: ModulusConfig<NativeModulus<u64>>,
-    algorithm: BlindRotationAlgorithm,
+    algorithm: BlindRotationMethod,
     input: u64,
     output: u64,
 ) -> PbsConfig<u64, PowOf2Modulus<u64>> {
@@ -144,15 +141,6 @@ const fn circuit(
     secret: SecretKeyDistr,
 ) -> CbsConfig<u64, PowOf2Modulus<u64>> {
     CbsConfig {
-        blind_rotation: blind_rotation(
-            modulus,
-            800,
-            1024,
-            secret,
-            ALPHA * EXTERNAL_Q as f64,
-            BlindRotationAlgorithm::Classic,
-        ),
-        input_modulus: 8,
         gadget: CbsGadgetConfig {
             trace: decomposition(8),
             scheme_switch: decomposition(8),
@@ -160,6 +148,21 @@ const fn circuit(
                 log_basis: DecompositionBaseLog::new(8),
                 level_count: Some(DecompositionLevelCount::new(3)),
             },
+        },
+        pbs: PbsConfig {
+            messages: primus_tfhe::PbsMessageConfig::new(8),
+            key_switching: GadgetEncryptionConfig {
+                decomposition: decomposition(3),
+                noise_standard_deviation: 3.2,
+            },
+            ..blind_rotation(
+                modulus,
+                800,
+                1024,
+                secret,
+                ALPHA * EXTERNAL_Q as f64,
+                BlindRotationMethod::Classic,
+            )
         },
     }
 }

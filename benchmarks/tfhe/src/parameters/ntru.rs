@@ -6,13 +6,12 @@
 use primus_glwe::SecretKeyDistr;
 use primus_integer::FheUint;
 use primus_lwe::LweDimension;
-use primus_lwe::LweEncryptionParameters;
 use primus_modulus::PowOf2Modulus;
 use primus_reduce::RingContext;
 use primus_tfhe::PolyLength;
 use primus_tfhe::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_tfhe_ntru::{
-    CbsGadgetConfig, DecompositionConfig, GadgetEncryptionConfig, PbsParameters,
+    CbsGadgetConfig, DecompositionConfig, GadgetEncryptionConfig, PbsMessageConfig, PbsParameters,
 };
 
 use super::{DIMENSION, N, SPARSE_DIMENSION, SPARSE_WEIGHT};
@@ -40,7 +39,8 @@ pub fn pbs<T, M>(
 ) -> PbsParameters<T, M, PowOf2Modulus<T>>
 where
     T: FheUint,
-    M: RingContext<T>,
+    M: RingContext<T>
+        + TryFrom<primus_tfhe::ModulusConfig<M>, Error = primus_tfhe::ModulusConfigError>,
 {
     parameters(
         modulus,
@@ -48,6 +48,7 @@ where
         workload.poly_length,
         secret,
         (1u64 << 24) as f64 * LWE_STD_DEV,
+        PbsMessageConfig::new(T::as_from(workload.plaintext_modulus)),
     )
 }
 
@@ -60,46 +61,37 @@ fn parameters<T, M>(
     poly_length: usize,
     secret: SecretKeyDistr,
     lwe_standard_deviation: f64,
+    messages: PbsMessageConfig<T>,
 ) -> PbsParameters<T, M, PowOf2Modulus<T>>
 where
     T: FheUint,
-    M: RingContext<T>,
+    M: RingContext<T>
+        + TryFrom<primus_tfhe::ModulusConfig<M>, Error = primus_tfhe::ModulusConfigError>,
 {
     super::require_word::<T>();
-    let q = T::ONE << 24u32;
-    let external_lwe = LweEncryptionParameters::new(
-        LweDimension::new(lwe_dimension),
-        PowOf2Modulus::new(q),
-        secret,
-        lwe_standard_deviation,
-    );
-    // Preserve the NTRU ring noise: CBS multiplies errors by f/f².
-    // Fresh LWE and return KS retain independent q-domain budgets.
-    let bsk_gadget = GadgetEncryptionConfig {
-        decomposition: full(if T::BITS == 32 { 2 } else { 8 }),
-        noise_standard_deviation: 0.7,
-    };
-    let blind_rotation = primus_ntru::NlevParameters::try_from_parts(
-        std::sync::Arc::new(primus_ntru::NtruEncryptionParameters::new(
-            PolyLength::new(poly_length),
-            modulus,
-            SecretKeyDistr::SparseTernary,
-            bsk_gadget.noise_standard_deviation,
-        )),
-        bsk_gadget
-            .decomposition
-            .try_build(modulus.explicit_value())
-            .unwrap(),
-    )
-    .unwrap();
-    PbsParameters::try_new(
-        external_lwe,
-        blind_rotation,
-        GadgetEncryptionConfig {
+    // Ring noise remains 0.7: CBS multiplies errors by f/f². Fresh LWE and
+    // return KS retain independent coefficient-unit budgets at q=2^24.
+    PbsParameters::try_from_config(primus_tfhe_ntru::PbsConfig {
+        external_lwe: primus_tfhe::LweConfig {
+            dimension: LweDimension::new(lwe_dimension),
+            cipher_modulus: primus_tfhe::ModulusConfig::Explicit(T::ONE << 24u32),
+            secret_key_distr: secret,
+            noise_standard_deviation: lwe_standard_deviation,
+        },
+        acc_modulus: modulus.into(),
+        bsk_poly_length: PolyLength::new(poly_length),
+        bsk_secret_distr: SecretKeyDistr::SparseTernary,
+        bsk_gadget: GadgetEncryptionConfig {
+            decomposition: full(if T::BITS == 32 { 2 } else { 8 }),
+            noise_standard_deviation: 0.7,
+        },
+        key_switching: GadgetEncryptionConfig {
             decomposition: full(3),
             noise_standard_deviation: 3.2,
         },
-    )
+        algorithm: primus_tfhe::BlindRotationMethod::Classic,
+        messages,
+    })
     .unwrap()
 }
 
@@ -113,7 +105,8 @@ where
 pub fn circuit<T, M>(modulus: M, secret: SecretKeyDistr) -> PbsParameters<T, M, PowOf2Modulus<T>>
 where
     T: FheUint,
-    M: RingContext<T>,
+    M: RingContext<T>
+        + TryFrom<primus_tfhe::ModulusConfig<M>, Error = primus_tfhe::ModulusConfigError>,
 {
     parameters(
         modulus,
@@ -121,6 +114,7 @@ where
         N,
         secret,
         (1u64 << 24) as f64 * LWE_STD_DEV,
+        PbsMessageConfig::new(T::as_from(4u32)),
     )
 }
 
@@ -160,7 +154,8 @@ pub fn cbs<T: FheUint>() -> CbsGadgetConfig {
 pub fn diagnostic<T, M>(modulus: M) -> PbsParameters<T, M, PowOf2Modulus<T>>
 where
     T: FheUint,
-    M: RingContext<T>,
+    M: RingContext<T>
+        + TryFrom<primus_tfhe::ModulusConfig<M>, Error = primus_tfhe::ModulusConfigError>,
 {
     parameters(
         modulus,
@@ -168,5 +163,6 @@ where
         N,
         SecretKeyDistr::fixed_hamming_weight_binary(SPARSE_DIMENSION, SPARSE_WEIGHT),
         3.2 * (1u64 << 24) as f64 / 16384.0,
+        PbsMessageConfig::new(T::as_from(8u32)),
     )
 }

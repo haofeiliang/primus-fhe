@@ -307,7 +307,7 @@ The temporary consumer uses their unchanged numerical operations and the
 existing public generator:
 
 ```rust
-let choice = BlindRotationAlgorithm::Sparse {
+let choice = BlindRotationConfig::Sparse {
     copy_count: r,
     bucket_count: buckets,
 };

@@ -11,44 +11,40 @@
 
 该 family 的默认依赖只使用系数类型、sparse 密钥存储、参数和客户端运算，不引入 NTT/FFT。需要同态求值时选择下述具体后端；其普通依赖会启用对应表示。
 
-`BlindRotationConfig::acc_poly_length` 接收 `primus_poly::PolyLength`。用 `PolyLength::try_new(n)?`（已知常量可用 `new`）构造一次，供参数、尺寸与变换表复用。无效整数由 `PolyLengthError` 报告；参数构造仍负责组合布局、模数及采样器检查。
+`PbsConfig::bsk_poly_length` 接收 `primus_poly::PolyLength`。用 `PolyLength::try_new(n)?`（已知常量可用 `new`）构造一次，供参数、尺寸与变换表复用。无效整数由 `PolyLengthError` 报告；参数构造仍负责组合布局、模数及采样器检查。
 
 ## 实验配套参数
 
-`PbsConfig` 用一个类型描述 PBS/ManyLUT/MVB：共用 `BlindRotationConfig`、独立 KS 配置和 `PbsMessageConfig`，GLWE 另含执行 order。`CbsConfig` 组合相同 BR 域、`CbsGadgetConfig` 与 selector 输入消息模数。配置是可复制的纯数值描述，不包含准备后的采样器或 codec。
+`PbsConfig` 直接描述 PBS/ManyLUT/MVB 的 LWE/环域、`bsk_gadget`、`method`、必需的 `key_switching` 与 `messages`。`CbsConfig { pbs, gadget }` 在同一域上补充 CBS 分解；selector 输入消息模数来自 `pbs.messages.input_modulus`。配置是可复制的数值描述，不含准备后的 sampler 或 codec。
 
-`config.blind_rotation` 用 `acc_dimension`、`acc_poly_length` 描述 accumulator/BSK 的环布局，`bsk_secret_distr` 描述加密 BSK 密文的环秘密分布，`bsk_gadget` 描述其分解和行噪声。输入 LWE 秘密另由 `small_lwe.secret_key_distr` 描述。`algorithm: BlindRotationAlgorithm` 选择 Classic 或 Sparse；Sparse 的桶参数保存在对应枚举变体中。
+`bsk_dimension` 和 `bsk_poly_length` 描述 accumulator/BSK 共用的环布局；`bsk_secret_distr` 描述加密 BSK 的环秘密，`bsk_gadget` 描述其分解与行噪声。BR 输出使用该环秘密；公开的 `(0, LUT * X^(-b))` 初始化不采样加密噪声。输入 LWE 秘密在 LWE 配置中单独描述。`method: BlindRotationMethod` 选择 classic 或 sparse 及其桶几何。
 
-BR 输出使用与 BSK 密文相同的环秘密。公开 accumulator 以平凡密文 `(0, LUT * X^(-b))` 初始化，不使用秘密或采样加密噪声。环加密客户端复用 `bsk_gadget` 的噪声配置。
+`PbsParameters::try_from_config(pbs_config)` 返回含必需 KS、算法和默认消息选择的 `PbsParameters`。`CbsParameters::try_from_config(cbs_config.pbs, cbs_config.gadget)` 将它与 `CbsGadgetParameters`、输入 codec 组合。后端 Context 用一个 Box 保存完整操作状态；`try_from_pbs_config` / `try_from_cbs_config` 移入准备后的参数。`parameters()` 始终借用完整 PBS 域；`cbs_parameters()` 查询额外的 CBS 能力。`try_with_circuit_bootstrap(gadget)` 添加 CBS 时复用同一份公共参数和变换表。
 
-选择具体后端的 `experimental::CLASSIC_PBS_U64`：[GLWE NTT](../primus_tfhe_glwe_ntt/src/experimental.rs) 或 [GLWE Fourier](../primus_tfhe_glwe_fourier/src/experimental.rs)，再调用 `config.try_prepare()?`。每个后端另定义 `SPARSE_PBS_U64`、`CLASSIC_MANY_LUT_U64`、`CLASSIC_THRESHOLD_MVB_U64`、`CLASSIC_CBS_U64` 和 `SPARSE_CBS_U64`。`CbsInput::Direct` 不准备 KS，`CbsInput::Keyswitch { key_switching }` 准备 KS→BR 输入阶段。
+PBS 和 CBS 的 `key_switching` 都是必需的 `GadgetEncryptionConfig`，分解和噪声可独立于 BR 选择。CBS 当前阶段输出环/gadget 密文；后续消费结果返回 LWE 时复用同一份 KS。输入 LWE 与环秘密仍独立采样。 GLWE KS→BR 在输入准备时执行 KS，BR→KS 在返回阶段执行。
 
-准备后的 `PbsParameters` 保存共享密钥域与采样状态，不持有唯一消息编码。普通 PBS/ManyLUT 使用 `parameters.pbs_codecs(config.messages)?`，MVB 使用 `factorized_pbs_codecs`。`PbsMessageConfig::new(t)` 默认输入输出模数相同；`config.messages.with_output_modulus(t_out)` 仅覆盖输出。`from_input_bits(b)` 为输入增加一位 padding，使 t=2^(b+1)，不表示输出已有 padding。教学 ManyLUT/MVB 常量明确使用 16→8、128→2。
+参数入口为 `PbsParameters::try_from_config(pbs_config)`、`CbsParameters::try_from_config(pbs_config, gadget_config)` 和 `CbsParameters::try_with_config(pbs_parameters, gadget_config)`；最后一种移动已有公共状态，不重建 sampler。已有参数按值移入 Context，BR、trace、scheme-switch 继续共享既有环 sampler Arc；显式 `clone()` 可能复制 LWE sampler 数据。
 
-CBS 使用 `config.input_modulus`；CMux 候选消息模数由消费端选择。`parameters.circuit_bootstrap_codecs(config.input_modulus, t_ring)?` 准备这两个独立编码。`CbsParameters` 表示 trace/scheme-switch 与输出 gadget basis，不描述普通 LWE 输出编码。密钥生成传入 `config.blind_rotation.algorithm` 与 `config.gadget`，无需生成闲置返回密钥。
-
-本 family 提供共享配置类型，具体后端定义自己的实验参数常量。这些仅为算术教学配置，安全性与失败概率**尚未评估**；覆盖消息、算法或数值字段后须重新确定操作与误差预算。[参数指南](../../guides/development/tfhe-parameters.md#scope-of-paired-parameter-entries)记录来源与条件，公开函数仍由调用方显式编译。`PbsParameters::try_new` 接收已有 LWE 参数或预计算 basis。
-
-已有准备输入可用 `PbsParameters::try_without_key_switching(lwe, blind_rotation)` 移入 LWE 与 gadget 状态，不重新构造采样器或准备闲置 KS；需要时再调用 `try_with_key_switching`，GLWE 同时指定 PBS order。`try_new` 直接组合这些角色。
+具体后端的 `experimental::*_U64` 提供 PBS、ManyLUT、MVB 和 CBS 等教学配置。`PbsMessageConfig::new(t)` 默认输入/输出消息模数相同，`.with_output_modulus(t_out)` 可单独修改输出。普通 PBS 用 `parameters.pbs_codecs(parameters.messages())?`，MVB 用 `factorized_pbs_codecs`；CBS 保存输入 codec，候选环消息模数由消费方选择。这些配置没有安全性或失败概率评估，来源与操作条件见[参数指南](../../guides/development/tfhe-parameters.md#scope-of-paired-parameter-entries)。
 
 ## 参数与外部密钥域
 
 `PbsParameters<T, M>` 和客户端使用同一个密文模数类型 `M`；两后端的类型别名固定各自的模数实现。
 
-数值 PBS 配置使用 `PbsConfig::try_prepare()`：`blind_rotation.small_lwe` 描述不含 codec 的 small LWE 域；`blind_rotation` 同时描述 accumulator/BSK 布局、环秘密与 `bsk_gadget`。`key_switching` 独立选择环 KS 分解和噪声，`order` 选择 PBS 顺序。两组 gadget 均使用 `GadgetEncryptionConfig { decomposition, noise_standard_deviation }`，分解由 `DecompositionConfig { log_basis, level_count }` 描述。`level_count: None` 选择支持的最大层数，仍可能丢弃低位（见[分解精度](../primus_decompose/README.zh_CN.md)）。`CbsConfig` 补充 output/trace/scheme-switch 分解，只准备该顺序所需的输入 KS。已有 LWE/环参数或预计算 basis 时，使用下述直接入口。
+数值 PBS 配置的 `small_lwe` 描述不含 codec 的 small LWE 域，`bsk_dimension`、`bsk_poly_length`、`bsk_secret_distr`、`bsk_gadget` 描述 accumulator/BSK 的环状态。`key_switching` 独立选择环 KS 分解和噪声，`order` 选择 PBS 顺序。两组 gadget 均使用 `GadgetEncryptionConfig { decomposition, noise_standard_deviation }`，分解由 `DecompositionConfig { log_basis, level_count }` 描述。`level_count: None` 选择支持的最大层数，仍可能丢弃低位（见[分解精度](../primus_decompose/README.zh_CN.md)）。`CbsConfig` 补充 output/trace/scheme-switch 分解；其 PBS 部分可保留已有 KS，直接环输出入口可省略返回 KS。
 
 调整 KS 噪声只影响环 KS 密钥生成，两种 PBS order 均如此。Accumulator 噪声也用于 KS→BR 的新鲜外部加密；新鲜 small-LWE 噪声仍独立配置，CBS trace/scheme-switch 密钥行继承 accumulator 噪声。所有标准差均以系数单位表示。非法 KS 采样参数在构造时返回 `TfheParameterError::KeySwitchingEncryption`。
 
 维数选择使用 `LweDimension`，GLWE 另用 `GlweDimension`；分解选择使用 `DecompositionBaseLog` 和 `Option<DecompositionLevelCount>`。这些单位只构造一次，参数访问器返回的值直接传给工作区。在原始存储或内核边界用 `.get()` 提取整数；组合长度和 basis/模数兼容性仍由构造器检查。
 
-`PbsParameters::try_new(small_lwe, blind_rotation_ggsw, key_switching, order)` 接收 small LWE 采样域、已构造的 GGSW 参数和 `GadgetEncryptionConfig<ApproxSignedBasis<T>>`，再派生补零的密钥切换目标。预计算 KS basis 直接移入参数，不重新构造。密文模数必须匹配，small secret 支持 binary 或 ternary 家族，且 `n <= kN`。旋转域 `2N` 必须能由输入系数类型 `T` 表示。Ternary LWE 密钥按 `0/1/q-1` 保存；构造补零 GLWE 密钥时将 `q-1` 还原为 signed `-1`。均匀、自定义概率及固定重量/正负计数分布复用同一流程，Gaussian small secret 不支持。
+`PbsParameters::try_from_config` 一次准备 LWE/环 sampler 与选定的分解，然后派生补零的 KS 目标。Small secret 支持 binary 或 ternary 家族，要求 `n <= kN`，旋转域 `2N` 必须能由输入系数类型 `T` 表示。Ternary LWE 密钥按 `0/1/q-1` 保存；构造 KS 目标时将 `q-1` 还原为 signed `-1`。均匀、自定义概率及固定重量/正负计数分布复用同一流程，Gaussian small secret 不支持。
 
 | `PbsOrder` | 完整 PBS 链 | 外部 LWE 秘密 / 维数 |
 | --- | --- | --- |
 | `BootstrapKeyswitch` | BR → 环密钥切换 → compact extraction | Small LWE / `n` |
 | `KeyswitchBootstrap` | Inverse extraction → 环密钥切换 → compact extraction → BR → full extraction | GLWE 系数向量 / `kN` |
 
-两种 order 均返回各自的外部秘密域。后端 `context.allocate_lwe_ciphertext()` 根据 `external_lwe_dimension()` 分配输出， 用 `client_key.external_lwe_secret_key()` 借用对应秘密。 `blind_rotation_ggsw()` 描述累加环域和 GGSW 控制项， `glwe_key_switching()` 描述环密钥切换。 Basis/布局兼容不能证明实际秘密一致。
+两种 order 均返回各自的外部秘密域。后端 `context.allocate_lwe_ciphertext()` 根据 `external_lwe_dimension()` 分配输出， 用 `client_key.external_lwe_secret_key()` 借用对应秘密。 `blind_rotation_params()` 描述累加环域和 GGSW 控制项， `glwe_key_switching()` 描述环密钥切换。 Basis/布局兼容不能证明实际秘密一致。
 
 `ClientKey::new` 导入系数秘密。完整 setup 检查与 BR→KS 外部绑定会核对拥有型 LWE 秘密记录的模数；即使 binary 系数相同，异模数也返回 `TfheKeyError::LweSecretKeyModulusMismatch`。这些边界也检查 small-LWE 的 binary/ternary 系数范围，无效值返回 `TfheKeyError::InvalidLweSecretKeyCoefficient`。Accumulator 仍支持 Gaussian 秘密，其幅值要求继续由后端契约规定。
 
@@ -60,35 +56,35 @@ CBS 使用 `config.input_modulus`；CMux 候选消息模数由消费端选择。
 
 ## 客户端与 LUT
 
-使用 `PbsMessageConfig::new(t_in)` 默认选择相同输入/输出消息模数，或通过 `.with_output_modulus(t_out)` 覆盖输出。`parameters.pbs_codecs(messages)?` 准备 Rounded codec；`parameters.factorized_pbs_codecs(messages)?` 为 MVB 准备 Rounded 输入和 Scaled 输出。两者通过 `input_codec()`、`lut_output_codec()`、`output_codec()` 区分角色，自动派生正确的密文模数，不复制密钥、不分配缓冲。编译与输出解码见[选择输出编码](../primus_tfhe/README.zh_CN.md#选择输出编码)。
+使用 `PbsMessageConfig::new(t_in)` 默认选择相同输入/输出消息模数，或通过 `.with_output_modulus(t_out)` 覆盖输出。`br.pbs_codecs(messages)?` 准备 Rounded codec；`br.factorized_pbs_codecs(messages)?` 为 MVB 准备 Rounded 输入和 Scaled 输出。两者通过 `input_codec()`、`lut_output_codec()`、`output_codec()` 区分角色，自动派生正确的密文模数，不复制密钥、不分配缓冲。编译与输出解码见[选择输出编码](../primus_tfhe/README.zh_CN.md#选择输出编码)。
 
 `ClientKey` 保留为生成服务端密钥的完整 setup 组合。普通消息先取 `let external_secret = client.external_lwe_secret_key();`：BR→KS 借用 `ExternalLweSecretKey::SmallLwe(&small)`，KS→BR 借用 `ExternalLweSecretKey::ExtractedGlwe(&glwe)`。也可直接用这两个变体借用独立持有的秘密；`into_parts()` 无复制地移出两把密钥。消息客户端只检查该外部角色，setup 仍检查完整组合。环客户端只接收 `client.glwe_secret_key()`。
 
-优先通过 `context.try_generate_keys(blind_rotation, circuit_bootstrap, rng)` 生成配套 client/server 密钥；仅需系数秘密时使用 `ClientKey::generate(&parameters, &mut rng)`。
+优先通过 `context.try_generate_keys(rng)` 生成配套 client/server 密钥；仅需系数秘密时使用 `ClientKey::generate(&parameters, &mut rng)`。
 
-独立于密钥生成选择 `RoundedCodec`。通过 context 的 `encryptor(external_secret, &codec)`、`public_encryptor(&public, &codec)`、`decryptor(external_secret, &codec)` 绑定外部密钥；`parameters.try_generate_public_key(external_secret, rng)` 生成对应的 LWE 公钥。两种 PBS 顺序使用各自的外部秘密与维数。公钥加密的总噪声要求见 [LWE 公钥契约](../primus_lwe/README.zh_CN.md#公钥加密)。
+独立于密钥生成选择 `RoundedCodec`。通过 context 的 `encryptor(external_secret, &codec)`、`public_encryptor(&public, &codec)`、`decryptor(external_secret, &codec)` 绑定外部密钥；`br.try_generate_public_key(external_secret, rng)` 生成对应的 LWE 公钥。两种 PBS 顺序使用各自的外部秘密与维数。公钥加密的总噪声要求见 [LWE 公钥契约](../primus_lwe/README.zh_CN.md#公钥加密)。
 
 客户端读写接收 LWE 借用视图：向 `encrypt_to` 传入 `output.as_mut_view()`，向 `decrypt` 或 `decrypt_phase` 传入 `ciphertext.as_view()`。分配型加密方法仍返回 `LweCiphertext<T>`；Boolean 客户端遵循同样的约定。
 
 解密 LUT 结果时，将返回输出 codec 传给 `decryptor(external_secret, &output_codec)`，再调用 `decrypt()`。Rounded 和 Scaled 均可绑定，包括消息模数与输入不同的 MVB 输出。已准备的解码状态按值复制，秘密保持借用；`decrypt_phase` 继续供诊断使用。
 
-前半区 LUT 使用 `encrypt_padded`，奇数全域 LUT 使用普通 `encrypt`。用 `parameters.pbs_codecs(PbsMessageConfig::new(t_in))?` 准备编码，默认输出消息模数与输入相同；需要不同时，在准备前调用 `.with_output_modulus(t_out)`。`parameters.lookup_table_compiler(&codecs)?` 直接绑定选定的输入/输出编码，支持 `compile_fn` / `compile_slice` 及交错、奇数全域方法。输出 decryptor 绑定 `codecs.output_codec()`。输入、LUT 和返回密文使用同一密文模数。ManyLUT、Boolean、双输入和 MVB 的接口及编码要求见[公共指南](../primus_tfhe/README.zh_CN.md)。
+前半区 LUT 使用 `encrypt_padded`，奇数全域 LUT 使用普通 `encrypt`。用 `br.pbs_codecs(PbsMessageConfig::new(t_in))?` 准备编码，默认输出消息模数与输入相同；需要不同时，在准备前调用 `.with_output_modulus(t_out)`。`br.lookup_table_compiler(&codecs)?` 直接绑定选定的输入/输出编码，支持 `compile_fn` / `compile_slice` 及交错、奇数全域方法。输出 decryptor 绑定 `codecs.output_codec()`。输入、LUT 和返回密文使用同一密文模数。ManyLUT、Boolean、双输入和 MVB 的接口及编码要求见[公共指南](../primus_tfhe/README.zh_CN.md)。
 
 ## Boolean 与 CBS
 
-`let (input_codec, ring_message_codec) = parameters.circuit_bootstrap_codecs(8, 8)?;` 为 CBS → CMux 准备 Rounded 输入与 Scaled 候选环消息编码，两个明文模数独立指定。参数自动提供共同密文模数 q=Q；只准备实际使用的这两个编码，不准备额外的返回编码。环消息 codec 不表示 CBS 输出的 gadget 标度；容量与噪声余量仍遵循操作契约。已准备的具体 codec 仍可直接绑定。
+`let (input_codec, ring_message_codec) = br.circuit_bootstrap_codecs(8, 8)?;` 为 CBS → CMux 准备 Rounded 输入与 Scaled 候选环消息编码，两个明文模数独立指定。参数自动提供共同密文模数 q=Q；只准备实际使用的这两个编码，不准备额外的返回编码。环消息 codec 不表示 CBS 输出的 gadget 标度；容量与噪声余量仍遵循操作契约。已准备的具体 codec 仍可直接绑定。
 
 用 `key.parameters().compile_lookup_table_fn(&input_codec, |m| u64::from(m >= 2))?` 编译整数函数，或将完整前半区结果切片传给 `compile_lookup_table_slice`。通过 `CircuitBootstrapEvaluator::try_with_lookup_table(&resources, key, program)?` 绑定返回的 `CircuitBootstrapLookupTable`；`try_new` 保留恒等函数默认入口。输出层使用 `g_j * F(m) mod Q`，无需输出消息 codec 或额外 BR。CMux 要求整个输入域上的 F 都是 bit；其他环整数遵循外积噪声契约。两个后端均支持 classic binary/ternary 和 sparse binary 程序。
 
-两个后端均提供 `context.try_generate_circuit_bootstrap_keys(blind_rotation, cbs_config, rng)`，返回 client 和仅含环输出所需材料的 `CircuitBootstrapServerKey`。CBS 在该组合中始终存在，不生成普通返回材料。GLWE KS→BR 仍包含输入 KS。混合 PBS/CBS 仍使用完整 `ServerKey`，见[材料选择](../primus_tfhe/README.zh_CN.md#选择盲旋转算法)。
+两个后端均提供 `context.try_generate_circuit_bootstrap_keys(rng)`，返回 `(ClientKey, CircuitBootstrapServerKey)`。该类型组合一个 BR/KS `ServerKey` 和必需 CBS key；`server.server_key()` 可绑定普通 PBS，CBS 借用同一 BR。KS→BR 的输入准备使用已有 KS，BR→KS 的 CBS 不分配返回 scratch，后续 LWE 返回仍可复用 KS。见[材料选择](../primus_tfhe/README.zh_CN.md#选择盲旋转算法)。
 
 显式传入 t=4 的 `RoundedCodec` 时，context 提供 `boolean_encryptor`、`boolean_public_encryptor`、`boolean_decryptor` 和 `boolean_evaluator`。这些接口使用普通 PBS 材料；调用与串联约定见[公共 Boolean 契约](../primus_tfhe/README.zh_CN.md#boolean-门)。
 
 输入编码与 ManyLUT 容量在 CBS 程序绑定时检查：两后端均使用 `CircuitBootstrapEvaluator::try_new(&resources, key, &input_codec)`。默认构造使用密钥自带参数，`try_with_parameters` 显式选择兼容的替代输出 basis。同一套密钥可服务多个明文模数，前提是各程序满足容量与噪声余量。`accumulator_client(client.glwe_secret_key(), scaled_codec)` 独立绑定普通环消息，其 `ScaledCodec` 不必采用输入 LWE 的明文模数。
 
-CBS 是两个后端的可选能力，提供独立的 output basis、trace/scheme-switch 参数及密钥， 两种 PBS order 均支持经典 binary/ternary 和 sparse binary。CBS 输出留在 accumulator secret 下，使用 gadget 尺度。`CbsParameters<T, M>` 由公共层定义，后端提供具体模数别名； 同层数的不同输出 basis 可复用 scheme-switch key。噪声与变换要求见对应后端契约。
+CBS 是两个后端的可选能力，提供独立的 output basis、trace/scheme-switch 参数及密钥， 两种 PBS order 均支持经典 binary/ternary 和 sparse binary。CBS 输出留在 accumulator secret 下，使用 gadget 尺度。`CbsGadgetParameters<T, M>` 由公共层定义，后端提供具体模数别名； 同层数的不同输出 basis 可复用 scheme-switch key。噪声与变换要求见对应后端契约。
 
-`CbsParameters::try_from_config` 从 BR 派生 trace 与 scheme-switch 参数，保持相同 GLWE 布局，通过 `Arc` 共享不可变的采样状态。分解 basis 和随机采样仍然独立。
+`CbsGadgetParameters::try_from_config` 从 BR 派生 trace 与 scheme-switch 参数，保持相同 GLWE 布局，通过 `Arc` 共享不可变的采样状态。分解 basis 和随机采样仍然独立。
 
 后端可独立生成和持有 BR、环 KS 与 CBS 材料，也保留完整 `ServerKey` 的便捷生成。CBS 生成只接收累加器秘密；BR→KS 的独立 CBS 不需要环 KS，KS→BR 仍需用它处理输入。普通 PBS 在两种顺序下都需要 BR 和环 KS。接口及示例见对应后端说明。
 

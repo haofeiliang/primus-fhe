@@ -133,7 +133,7 @@ Blind rotation uses `−u_bar`. Quantizing a decrypted phase once is not equival
 
 GLWE keeps `q=Q`. `BootstrapKeyswitch` applies BR→ring KS→compact extraction, with an external small-LWE secret of dimension n. `KeyswitchBootstrap` applies ring KS→compact extraction→BR→full extraction, with an external extracted-ring secret of dimension kN. Fresh input σ also changes with this order as described above. These are distinct client domains, not interchangeable order labels.
 
-NTRU uses independent q and Q. LUT coefficients are encoded at Q; the current ordinary return performs coefficient Q→q switching, sample extraction, then LWE KS. Rounding is not exact re-encoding at q. Output-codec capacity and error must be checked at the actual returned modulus, including the return-key noise. Ring-output CBS/one-hot can use ring-only material; full high-precision evaluation needs the return material.
+NTRU uses independent q and Q. LUT coefficients are encoded at Q; the current ordinary return performs coefficient Q→q switching, sample extraction, then LWE KS. Rounding is not exact re-encoding at q. Output-codec capacity and error must be checked at the actual returned modulus, including the return-key noise. Complete CBS/one-hot bundles retain return material for downstream LWE results; the CBS stage itself allocates no return scratch.
 
 ### Factorized output recovery
 
@@ -182,18 +182,19 @@ Operation configs are pure numerical descriptions, separate from runtime state:
 
 | Type | Composition and role |
 | --- | --- |
-| `ModulusConfig<M>` / `LweConfig<M>` | Constant-friendly modulus/dimension/distribution/noise choices; M keeps Native, PowOf2 and Barrett representations distinct; standard `TryFrom` prepares a reducer at setup |
-| `BlindRotationAlgorithm` | Classic/Sparse choice with algorithm-specific sparse bucket geometry; no encryption parameters |
-| Family `BlindRotationConfig` | LWE domain, shared accumulator/BSK ring layout via `acc_*`, BSK encryption secret via `bsk_secret_distr`, `bsk_gadget` decomposition/noise and explicit `algorithm`; GLWE shares q, NTRU separates q/Q |
-| Family `PbsConfig` | Shared `blind_rotation` config, independent KS, `PbsMessageConfig`, and GLWE order; ordinary PBS/ManyLUT/MVB choose their compiler and output encoding |
-| Family `CbsConfig` | Shared `blind_rotation` config, `CbsGadgetConfig` and selector-input t; GLWE `CbsInput` adds only required KS→BR input material |
-| `HighPrecLutConfig` | NTRU CBS config as `one_hot`, independent return-KS and public chunk-count/partition layout; tau derives from one-hot input t |
-| `PbsParameters` | Prepared PBS input/accumulator domains, BR and optional KS sampling state; CBS/one-hot/lookup reuse their PBS stage; no unique message codec or function |
-| `CbsParameters` | Additional trace/scheme-switch/output gadget state for CBS; shares the accumulator's encryption parameters with `PbsParameters` |
-| `PbsParameters::try_new` / `try_without_key_switching` | Existing prepared LWE parameters or bases, without a raw-config round trip |
+| `ModulusConfig<M>` / `LweConfig<M>` | Constant-friendly modulus/dimension/distribution/noise choices; M keeps Native, PowOf2 and Barrett representations distinct; `M::try_from(modulus_config)` prepares a reducer; `LweEncryptionParameters::try_from(lwe_config)` prepares its samplers at setup |
+| `BlindRotationMethod` | Classic/Sparse choice with algorithm-specific sparse bucket geometry; no encryption parameters |
+| Family `PbsConfig` | LWE domain, accumulator/BSK layout (`bsk_dimension`/`bsk_poly_length`, NTRU `acc_modulus`), ring secret (`bsk_secret_distr`), BR gadget/algorithm, required KS and default input/output messages; GLWE also selects order |
+| Family `CbsConfig` | `pbs` common config plus `CbsGadgetConfig`; selector t is `pbs.messages.input_modulus`. Only GLWE KS→BR requires input KS |
+| `HighPrecLutConfig` | NTRU CBS as `one_hot` including required return-KS, plus public chunk-count/partition layout; tau derives from one-hot input t |
+| `PbsParameters` | Owns checked LWE/ring state, algorithm, required KS and messages. PBS and CBS share KS with independently sampled secrets |
+| `CbsGadgetParameters` | Prepared trace/scheme-switch/output gadgets sharing the existing ring sampler Arc |
+| `CbsParameters` | One common `PbsParameters` owner, CBS gadgets and selector input codec; no additional ordinary return state |
+| `HighPrecLutParameters` | Complete NTRU CBS, required return, checked chunk layout and q/Q codecs; no function enumeration or transforms |
+| Parameter preparation | `PbsParameters::try_from_config(pbs)` prepares one common domain. CBS uses `try_from_config(pbs, gadget)` or `try_with_config(parameters, gadget)`; the latter moves prepared state without sampler rebuilding. CBS derives its gadgets and selector encoding from that common domain |
 
-In `BlindRotationConfig`, GLWE uses `acc_dimension`/`acc_poly_length` and NTRU uses
-`acc_modulus`/`acc_poly_length`. `bsk_secret_distr` samples the ring secret used
+In `PbsConfig`, GLWE uses `bsk_dimension`/`bsk_poly_length` and NTRU uses
+`acc_modulus`/`bsk_poly_length`. `bsk_secret_distr` samples the ring secret used
 to encrypt BSK ciphertexts and decrypt BR output; the input LWE secret remains
 in `small_lwe` or `external_lwe`. GLWE's public `(0, LUT * X^(-b))` initializer
 needs no secret and samples no encryption noise. NTRU lifting propagates noise
@@ -210,18 +211,22 @@ online algorithm/config dispatch.
 
 ```rust,ignore
 let config = primus_tfhe_ntru_ntt::experimental::CLASSIC_PBS_U64;
-let parameters = config.try_prepare()?;
-let messages = config.messages.with_output_modulus(8); // Optional independent output.
-let codecs = parameters.pbs_codecs(messages)?;
-// Pass config.blind_rotation.algorithm explicitly when generating keys.
+let context = primus_tfhe_ntru_ntt::TfheContext::<_, primus_ntt::U64NttTable, _>::try_from_pbs_config(config)?;
+let parameters = context.parameters();
+let messages = parameters.messages().with_output_modulus(8); // Optional independent output.
+let codecs = context.parameters().pbs_codecs(messages)?;
+let (client, server) = context.try_generate_keys(rng)?;
+let evaluator = context.evaluator(&server)?;
 ```
 
 For explicit numerical customization, copy the operation config, override the
 relevant fields, then prepare it. For example, NTRU's
-`config.key_switching.noise_standard_deviation` changes return-key row noise;
+`config.key_switching.as_mut().unwrap().noise_standard_deviation` changes return-key row noise;
 GLWE uses the same field for ring-KS row noise. It does not change fresh input or
 BR row noise. Alternatively, compose `PbsConfig` / `CbsConfig` from their raw
-fields, or use `PbsParameters::try_new` with already prepared LWE/gadget state.
+fields and call `PbsParameters::try_from_config`. Add CBS with
+`CbsParameters::try_from_config(pbs, gadget)` or
+`try_with_config(parameters, gadget)` when the common state is already prepared.
 These entries retain the concrete modulus representation. Overrides must satisfy
 the constructor contracts and require their own security/error analysis; they
 do not inherit evidence for the teaching workload.
@@ -230,20 +235,32 @@ do not inherit evidence for the teaching workload.
 `from_input_bits(b)` describes 2^b padded inputs and codec t=2^(b+1),
 with that same default full output modulus; it does not imply output padding or
 PBS reconsumption. Teaching constants use 32→32, 16→8 and 128→2;
-MVB uses `factorized_pbs_codecs` for Scaled outputs. `try_prepare()` builds key
-sampling state; message encodings and function/geometry checks belong to codec
-preparation, compilation and binding. Key parameters retain no unique codec.
+MVB uses `factorized_pbs_codecs` for Scaled outputs. `PbsParameters::try_from_config` and `CbsParameters::try_from_config` retain message choices and prepare operation-specific state.
+PBS codec modes, function ranges and program capacity remain compilation/binding
+conditions; valid construction alone does not certify an operation noise budget.
 
-CBS and one-hot share `CbsConfig`; one-hot derives selector count, stride and
-guard from t/N/output levels. BR→KS GLWE CBS and NTRU ring-output CBS prepare
-**no return-KS basis or sampler**. GLWE KS→BR CBS explicitly uses
-`CbsInput::Keyswitch { key_switching }`. Ordinary PBS/key-switch generation
-rejects missing KS parameters before RNG consumption. CBS input is
-`config.input_modulus`; a CMux consumer independently chooses t_ring, using
-`parameters.circuit_bootstrap_codecs(config.input_modulus, t_ring)`.
-`CbsGadgetConfig` and prepared `CbsParameters` describe the gadget output,
-which is not an ordinarily encoded LWE message. The public function remains
-an explicit compilation argument.
+A backend `TfheContext` owns complete PBS/CBS capabilities and one transform table.
+One Box owns complete operation parameters. Move prepared state into
+`from_parameters` / `try_from_parameters` or the CBS
+counterparts by value; default preparation does not clone the LWE sampler.
+`parameters()` always borrows the complete PBS domain, including required KS.
+`cbs_parameters()` exposes additional CBS capability through retained gadgets
+and input encoding. Adding CBS to PBS moves its
+common owner into the complete CBS state, without a second domain or input KS.
+Factories reject missing capabilities and check independently supplied material.
+Existing ring-sampler Arcs remain shared by BR, trace and scheme-switch.
+
+CBS and one-hot share `CbsConfig`, including required `pbs.key_switching`
+and independently sampled input/ring secrets. GLWE KS→BR uses that KS for input
+preparation; other CBS paths retain it for downstream returns.
+`ServerKey` owns BR/KS; `CircuitBootstrapServerKey` combines one `ServerKey`
+with one required `CircuitBootstrapKey`, without duplicating BR.
+Complete CBS contexts also provide ordinary PBS. Teaching CBS configs retain
+GLWE base-log 8/full levels with sigma=6.4, or NTRU return base-log 3/full levels
+at q24 with sigma=3.2; these return choices have no security/DFR claim. CBS prepares `input_codec()` from
+`pbs.messages.input_modulus`; a CMux consumer independently chooses t_ring via
+`parameters.circuit_bootstrap_codecs(t_in, t_ring)`. Gadget output has no ordinary
+message decoder. Functions remain explicit compilation inputs.
 
 Numerical sources belong to the four concrete backends:
 [GLWE NTT](../../crates/primus_tfhe_glwe_ntt/src/experimental.rs),
@@ -252,14 +269,12 @@ Numerical sources belong to the four concrete backends:
 [NTRU Fourier](../../crates/primus_tfhe_ntru_fourier/src/experimental.rs).
 With a backend enabled, [LUT experimental configs](../../crates/primus_tfhe_ntru_lut/src/experimental.rs)
 provide `NTT_CLASSIC_LOOKUP_U64` and `FOURIER_CLASSIC_LOOKUP_U64`.
-Each combines the corresponding one-hot `CbsConfig`, required return choices,
-and c8/d5/o8 layout. `config.try_chunk_format()` derives tau=2 from input t=8,
-without a second width setting. `config.try_prepare()` adds return state;
-key generation takes `config.one_hot.blind_rotation.algorithm` and
-`config.one_hot.gadget`. No unused CMux candidate codec is created.
-Prepare chunk codecs with
-`parameters.pbs_codecs(PbsMessageConfig::new(config.one_hot.input_modulus))`;
-the function and independent chunk counts remain explicit compilation inputs.
+Each combines the corresponding one-hot `CbsConfig` (including required KS)
+with c8/d5/o8 layout; lookup reuses that KS without preparing a second copy. `try_prepare()` returns complete `HighPrecLutParameters`;
+`chunk_format()`, `layout()`, `codecs()` and `one_hot()` expose the prepared state.
+It checks the uniform radix/bit width, independent chunk counts, coefficient
+capacity and one-hot level spacing without enumerating the function. No unused
+CMux candidate codec is created.
 
 ### Reusing material and changing a workload
 
@@ -354,7 +369,7 @@ to one undifferentiated profile.
 
 ## Teaching examples
 
-TFHE examples fix `Word = u64`, with `U64NttTable` for NTT and `RustFftTable` for Fourier. They retain the existing u64 profiles: Barrett Q50 for TFHE NTT, Native64 for Fourier, and independent PowOf2 q24 for NTRU returns. All 26 TFHE/LUT examples select their matching `experimental` config and prepare parameters once with `config.try_prepare()`. Ordinary PBS/ManyLUT prepare codecs from `config.messages`; MVB uses the same message config with `factorized_pbs_codecs`. CBS/one-hot use `config.input_modulus` and `config.gadget`; high-precision lookup derives its chunk format from `config.one_hot.input_modulus` and takes counts/partition from `config.layout`. Ordinary CBS examples use t_in=8 and compute the predicate m >= 2 inside the same BR; CBS benchmarks and parameter diagnostics retain their identity t_in=4 workload. CBS/one-hot examples obtain their Rounded input and Scaled candidate ring codecs from `parameters.circuit_bootstrap_codecs(t_in, t_ring)`, keeping the two plaintext domains independent without manually choosing q/Q. This does not establish a noise budget. GLWE basic/CBS/ManyLUT examples fix BR→KS, and factorized MVB fixes KS→BR. Word-width comparisons remain in tests, benchmarks and parameter diagnostics. The LWE basic and NTRU automorphism examples also use u64; the latter retains its small Q27 prime and `log_basis=3` decomposition. Application bytes, indexes and floating-point values keep their own types.
+TFHE examples fix `Word = u64`, with `U64NttTable` for NTT and `RustFftTable` for Fourier. They retain the existing u64 profiles: Barrett Q50 for TFHE NTT, Native64 for Fourier, and independent PowOf2 q24 for NTRU returns. All 26 TFHE/LUT examples select their matching `experimental` config. Backend examples prepare a complete context directly with `try_from_pbs_config` / `try_from_cbs_config`; high-precision examples still prepare their LUT operation and bind the backend through the explicit BR component constructor. Ordinary PBS/ManyLUT prepare codecs from `config.messages`; MVB uses the same message config with `factorized_pbs_codecs`. CBS/one-hot use `config.input_modulus` and `config.gadget`; high-precision lookup derives its chunk format from `config.one_hot.input_modulus` and takes counts/partition from `config.layout`. Ordinary CBS examples use t_in=8 and compute the predicate m >= 2 inside the same BR; CBS benchmarks and parameter diagnostics retain their identity t_in=4 workload. CBS/one-hot examples obtain their Rounded input and Scaled candidate ring codecs from `br.circuit_bootstrap_codecs(t_in, t_ring)`, keeping the two plaintext domains independent without manually choosing q/Q. This does not establish a noise budget. GLWE basic/CBS/ManyLUT examples fix BR→KS, and factorized MVB fixes KS→BR. Word-width comparisons remain in tests, benchmarks and parameter diagnostics. The LWE basic and NTRU automorphism examples also use u64; the latter retains its small Q27 prime and `log_basis=3` decomposition. Application bytes, indexes and floating-point values keep their own types.
 
 Examples do not import benchmark parameter factories. Typed constants centralize the basic fixtures; the remaining local configuration functions keep their numerical choices explicit. The workflow appears in `main` before any parameter helpers. Client and server stages appear directly in `main`, identified by comments. Server setup uses public context, encoding and evaluation keys; CBS/one-hot candidates are encrypted by the client. High-precision lookup compiles the public function separately from key generation and evaluation. Each workload makes two requests with reused buffers. No example imports code from `benches/` or `tests/`.
 

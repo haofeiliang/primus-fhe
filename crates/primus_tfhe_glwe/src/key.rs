@@ -32,12 +32,12 @@ impl<T: FheUint> ClientKey<T> {
         M: RingContext<T>,
         R: rand::Rng + rand::CryptoRng,
     {
-        let glwe = parameters.blind_rotation_ggsw();
+        let bsk_params = parameters.blind_rotation_params();
         Self::new(
             LweSecretKey::generate(parameters.small_lwe(), rng),
             GlweSecretKey::generate(
-                glwe.glwe_size(),
-                glwe.encryption_parameters().secret_key_sampler(),
+                bsk_params.glwe_size(),
+                bsk_params.encryption_parameters().secret_key_sampler(),
                 rng,
             ),
             parameters.pbs_order(),
@@ -112,7 +112,7 @@ impl<T: FheUint> ClientKey<T> {
     {
         let lwe_secret_key = &self.small_lwe_secret_key;
         let lwe_dimension = lwe_secret_key.dimension();
-        let poly_length = parameters.blind_rotation_ggsw().poly_length().get();
+        let poly_length = parameters.blind_rotation_params().poly_length().get();
         let capacity = lwe_dimension
             .checked_next_multiple_of(poly_length)
             .expect("validated TFHE dimensions must fit in usize");
@@ -143,7 +143,7 @@ impl<T: FheUint> ClientKey<T> {
             key,
             GlweSize::new(
                 GlweDimension::new(capacity / poly_length),
-                parameters.blind_rotation_ggsw().poly_length(),
+                parameters.blind_rotation_params().poly_length(),
             ),
             distribution,
         )
@@ -223,19 +223,19 @@ impl<T: FheUint, M: RingContext<T>> PbsParameters<T, M> {
     /// This does not inspect the small-LWE secret, prove key identity, or validate
     /// signed coefficient magnitudes required by the selected transform backend.
     pub fn check_accumulator_secret_key(&self, key: &GlweSecretKey<T>) -> Result<(), TfheKeyError> {
-        if key.dimension() != self.blind_rotation_ggsw().dimension() {
+        if key.dimension() != self.blind_rotation_params().dimension() {
             return Err(TfheKeyError::GlweDimensionMismatch {
-                expected: self.blind_rotation_ggsw().dimension().get(),
+                expected: self.blind_rotation_params().dimension().get(),
                 actual: key.dimension().get(),
             });
         }
-        if key.poly_length() != self.blind_rotation_ggsw().poly_length() {
+        if key.poly_length() != self.blind_rotation_params().poly_length() {
             return Err(TfheKeyError::PolynomialLengthMismatch {
-                expected: self.blind_rotation_ggsw().poly_length().get(),
+                expected: self.blind_rotation_params().poly_length().get(),
                 actual: key.poly_length().get(),
             });
         }
-        if key.distr() != self.blind_rotation_ggsw().secret_key_distr() {
+        if key.distr() != self.blind_rotation_params().secret_key_distr() {
             return Err(TfheKeyError::GlweSecretKeyDistributionMismatch);
         }
         Ok(())

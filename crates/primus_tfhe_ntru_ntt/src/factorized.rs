@@ -184,16 +184,20 @@ where
         self.prepare_shared_rotation(input, &lookup_table.common_polynomial, evaluator);
 
         let n = self.context.parameters().poly_length().get();
-        let batch_size = evaluator.batch_return.batch_capacity();
         let mut factors = NttPolynomialIter::new(&lookup_table.factors, n);
-        for outputs in outputs.chunks_mut(batch_size) {
-            evaluator.batch_return.begin_batch();
+        let binding = &evaluator.lwe_return;
+        let batch = &mut evaluator.batch_return;
+        for outputs in outputs.chunks_mut(batch.batch_capacity()) {
+            batch.begin_batch();
             for factor in factors.by_ref().take(outputs.len()) {
-                self.prepare_factor_return(factor, evaluator);
+                self.prepare_factor_product(factor, &mut evaluator.resources);
+                binding.append_at(
+                    evaluator.resources.blind_rotation.current.as_view(),
+                    0,
+                    batch,
+                );
             }
-            evaluator
-                .lwe_return
-                .return_batch_to(outputs, &mut evaluator.batch_return);
+            binding.return_batch_to(outputs, batch);
         }
     }
 
@@ -245,14 +249,13 @@ where
             .write_ntt_form(&mut self.shared_rotation, resources.context.table());
     }
 
-    /// Multiply one factor and extract its independently rounded q-domain sample.
-    /// Only the LWE slot survives; the next factor may overwrite the product buffers.
-    fn prepare_factor_return(
+    /// Multiply one factor into the reusable coefficient accumulator.
+    /// The caller returns its phase before the next factor overwrites the product.
+    fn prepare_factor_product(
         &mut self,
         factor: NttPolynomial<&[T]>,
-        evaluator: &mut Evaluator<'a, T, Table, LM>,
+        resources: &mut crate::BootstrapResources<'a, T, Table, LM>,
     ) {
-        let resources = &mut evaluator.resources;
         let parameters = resources.context.parameters();
         let mut product = NttNtru::new(resources.blind_rotation.current.as_mut());
         self.shared_rotation.mul_ntt_polynomial_to(
@@ -261,11 +264,6 @@ where
             parameters.accumulator_ntru().cipher_modulus(),
         );
         product.into_coeff_form(resources.context.table());
-        evaluator.lwe_return.append_at(
-            resources.blind_rotation.current.as_view(),
-            0,
-            &mut evaluator.batch_return,
-        );
     }
 }
 

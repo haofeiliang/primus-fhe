@@ -4,14 +4,14 @@ use primus_integer::FheUint;
 use primus_ntru::{NttNtruSchemeSwitchKey, NttNtruSecretKey, NttNtruTraceKey};
 use primus_ntt::MonomialNttTable;
 
-use crate::{CbsParameters, KeyGenerationError, KeyGenerator, TfheContext};
+use crate::{CbsGadgetParameters, KeyGenerationError, KeyGenerator, TfheContext};
 
 /// Additional keys for NTRU CBS; ordinary BR material is owned by [`crate::BlindRotationKey`].
 /// Both keys use the accumulator secret, not the post-PBS client secret.
 /// Publishing the scheme-switch material requires the secret-dependent-message
 /// security assumption documented on [`NttNtruSchemeSwitchKey`].
 pub struct CircuitBootstrapKey<T: FheUint> {
-    parameters: CbsParameters<T>,
+    parameters: CbsGadgetParameters<T>,
     trace: NttNtruTraceKey<T>,
     scheme_switch: NttNtruSchemeSwitchKey<T>,
 }
@@ -30,9 +30,17 @@ impl<T: FheUint> CircuitBootstrapKey<T> {
         Ok(())
     }
 
+    /// Matches the configured gadget decomposition; the evaluator separately
+    /// validates its accumulator domain. NTRU scheme switching fixes the output basis.
+    pub(crate) fn is_compatible(&self, parameters: &CbsGadgetParameters<T>) -> bool {
+        self.parameters.output_basis() == parameters.output_basis()
+            && self.parameters.trace().basis() == parameters.trace().basis()
+            && self.parameters.scheme_switch().basis() == parameters.scheme_switch().basis()
+    }
+
     /// Returns the CBS parameters selected when this material was generated.
     #[must_use]
-    pub fn parameters(&self) -> &CbsParameters<T> {
+    pub fn parameters(&self) -> &CbsGadgetParameters<T> {
         &self.parameters
     }
 
@@ -59,14 +67,14 @@ where
     ///
     /// Checks parameters and the accumulator layout/distribution before sampling. The caller
     /// selects the CBS decomposition and noise/security budgets described on
-    /// [`CbsParameters`]. Actual secret identity must be shared with
+    /// [`CbsGadgetParameters`]. Actual secret identity must be shared with
     /// the server key later used by the evaluator.
     /// Accumulator coefficients inherit
     /// [`NttNtruSecretKey::try_from_coeff_secret_key`]'s magnitude bound.
     pub fn try_generate_circuit_bootstrap_key<R>(
         &mut self,
         secret: &primus_ntru::NtruSecretKey<T>,
-        parameters: CbsParameters<T>,
+        parameters: CbsGadgetParameters<T>,
         rng: &mut R,
     ) -> Result<CircuitBootstrapKey<T>, KeyGenerationError>
     where
@@ -91,7 +99,7 @@ where
         &mut self,
         secret: &primus_ntru::NtruSecretKey<T>,
         transformed: &NttNtruSecretKey<T>,
-        parameters: CbsParameters<T>,
+        parameters: CbsGadgetParameters<T>,
         rng: &mut R,
     ) -> CircuitBootstrapKey<T>
     where
@@ -128,12 +136,31 @@ where
     Table: MonomialNttTable<ValueT = T>,
     LM: primus_reduce::RingContext<T>,
 {
-    /// Generates optional CBS material under this client's accumulator secret.
+    /// Pairs independently bound resources and a gadget key with configured CBS
+    /// before compiling a default CBS/one-hot LUT or allocating projection storage.
+    pub(crate) fn check_circuit_bootstrap_binding(
+        &self,
+        resources: &crate::BootstrapResources<'_, T, Table, LM>,
+        circuit_key: &CircuitBootstrapKey<T>,
+    ) -> Result<&crate::CbsParameters<T, LM>, crate::TfheEvaluationError> {
+        let parameters = self
+            .cbs_parameters()
+            .ok_or(crate::TfheEvaluationError::MissingCircuitBootstrapParameters)?;
+        if !core::ptr::eq(self, resources.context()) {
+            return Err(crate::TfheEvaluationError::IncompatibleCircuitBootstrapParameters);
+        }
+        if !circuit_key.is_compatible(parameters.gadget()) {
+            return Err(crate::TfheEvaluationError::IncompatibleCircuitBootstrapKey);
+        }
+        Ok(parameters)
+    }
+
+    /// Generates standalone CBS material under this client's accumulator secret.
     /// Inherits [`KeyGenerator::try_generate_circuit_bootstrap_key`]'s contracts.
     pub fn try_generate_circuit_bootstrap_key<R: rand::Rng + rand::CryptoRng>(
         &self,
         secret: &primus_ntru::NtruSecretKey<T>,
-        parameters: crate::CbsParameters<T>,
+        parameters: crate::CbsGadgetParameters<T>,
         rng: &mut R,
     ) -> Result<crate::CircuitBootstrapKey<T>, crate::KeyGenerationError> {
         KeyGenerator::new(self).try_generate_circuit_bootstrap_key(secret, parameters, rng)

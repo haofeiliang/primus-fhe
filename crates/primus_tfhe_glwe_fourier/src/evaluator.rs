@@ -8,7 +8,7 @@ use primus_tfhe::{
 use primus_tfhe_glwe::PbsOrder;
 
 use crate::{
-    BlindRotationKey, Lwe, ServerKey, TfheContext,
+    BlindRotationKey, GlweKeySwitchingParameters, Lwe, ServerKey, TfheContext,
     bootstrap::{BootstrapResources, KeySwitchingResources},
     error::TfheEvaluationError,
 };
@@ -22,6 +22,7 @@ where
     Table: FftTable,
 {
     pub(crate) resources: BootstrapResources<'a, T, Table>,
+    key_switching: &'a GlweKeySwitchingParameters<T>,
     lwe_return: LweReturn<'a, T>,
 }
 
@@ -78,11 +79,15 @@ where
         context: &'a TfheContext<T, Table>,
         server_key: &'a ServerKey<T>,
     ) -> Result<Self, TfheEvaluationError> {
-        Self::try_from_parts(
+        let parameters = context.parameters();
+        let key_switching = parameters.glwe_key_switching();
+        let key = server_key.glwe_key_switching_key();
+        let resources = BootstrapResources::try_from_bound_keys(
             context,
             server_key.blind_rotation_key(),
-            server_key.glwe_key_switching_key(),
-        )
+            Some((key_switching, key)),
+        )?;
+        Ok(Self::from_resources(resources, key_switching, key))
     }
 
     /// Binds independent BR and ring KS material for either PBS order.
@@ -94,12 +99,20 @@ where
     /// Inherits [`Self::try_new`]'s transform requirements.
     pub fn try_from_parts(
         context: &'a TfheContext<T, Table>,
+        key_switching: &'a GlweKeySwitchingParameters<T>,
         blind_rotation_key: &'a BlindRotationKey<T>,
         key_switching_key: &'a FourierGlweKeySwitchingKey<T>,
     ) -> Result<Self, TfheEvaluationError> {
-        let resources =
-            BootstrapResources::try_new(context, blind_rotation_key, Some(key_switching_key))?;
-        Ok(Self::from_resources(resources, key_switching_key))
+        let resources = BootstrapResources::try_new(
+            context,
+            blind_rotation_key,
+            Some((key_switching, key_switching_key)),
+        )?;
+        Ok(Self::from_resources(
+            resources,
+            key_switching,
+            key_switching_key,
+        ))
     }
 
     /// Complete the output stage with an already checked KS key;
@@ -107,18 +120,19 @@ where
     #[must_use]
     fn from_resources(
         mut resources: BootstrapResources<'a, T, Table>,
+        key_switching: &'a GlweKeySwitchingParameters<T>,
         key: &'a FourierGlweKeySwitchingKey<T>,
     ) -> Self {
         resources.rebind_input_key_switching_key(key);
-        let parameters = resources.context.parameters();
-        let lwe_return = match parameters.pbs_order() {
+        let lwe_return = match resources.context.parameters().pbs_order() {
             PbsOrder::BootstrapKeyswitch => {
-                LweReturn::Keyswitch(KeySwitchingResources::new(parameters, key))
+                LweReturn::Keyswitch(KeySwitchingResources::new(key_switching, key))
             }
             PbsOrder::KeyswitchBootstrap => LweReturn::Extract,
         };
         Self {
             resources,
+            key_switching,
             lwe_return,
         }
     }
@@ -147,10 +161,15 @@ where
     /// The KS key must use the resources' paired secrets and FFT table instance.
     pub fn try_from_resources(
         resources: BootstrapResources<'a, T, Table>,
+        key_switching: &'a GlweKeySwitchingParameters<T>,
         key: &'a FourierGlweKeySwitchingKey<T>,
     ) -> Result<Self, TfheEvaluationError> {
-        crate::key::check_glwe_key_switching_key(resources.context.parameters(), key)?;
-        Ok(Self::from_resources(resources, key))
+        crate::key::check_glwe_key_switching_key(
+            resources.context.parameters(),
+            key_switching,
+            key,
+        )?;
+        Ok(Self::from_resources(resources, key_switching, key))
     }
 
     /// Rebinds compatible KS material without reallocating either order's active stage.
@@ -162,7 +181,7 @@ where
         &mut self,
         key: &'a FourierGlweKeySwitchingKey<T>,
     ) -> Result<(), TfheEvaluationError> {
-        crate::key::check_glwe_key_switching_key(self.resources.context.parameters(), key)?;
+        crate::key::check_bound_glwe_key_switching_key(self.key_switching, key)?;
         self.resources.rebind_input_key_switching_key(key);
         if let LweReturn::Keyswitch(resources) = &mut self.lwe_return {
             resources.key = key;
@@ -209,7 +228,7 @@ where
         let parameters = self.resources.context.parameters();
         assert!(
             lookup_table.is_compatible_with_ciphertext_domain(
-                parameters.blind_rotation_ggsw().poly_length(),
+                parameters.blind_rotation_params().poly_length(),
                 parameters.small_lwe().cipher_modulus_value(),
                 parameters.cipher_modulus().explicit_value(),
             ),
@@ -276,7 +295,7 @@ where
         let parameters = self.resources.context.parameters();
         assert!(
             lookup_table.is_compatible_with_ciphertext_domain(
-                parameters.blind_rotation_ggsw().poly_length(),
+                parameters.blind_rotation_params().poly_length(),
                 parameters.small_lwe().cipher_modulus_value(),
                 parameters.cipher_modulus().explicit_value(),
             ),
@@ -318,7 +337,7 @@ where
         outputs: impl Iterator<Item = Lwe<&'out mut [T]>>,
     ) {
         let resources = &mut self.resources;
-        let glwe = resources.context.parameters().blind_rotation_ggsw();
+        let glwe = resources.context.parameters().blind_rotation_params();
         match &mut self.lwe_return {
             LweReturn::Keyswitch(ks) => {
                 ks.key.key_switch_to(
@@ -338,7 +357,7 @@ where
             }
             LweReturn::Extract => {
                 for (index, mut output) in outputs.enumerate() {
-                    resources.accumulator.extract_lwe_at_to(
+                    resources.accumulator.extract_compact_lwe_at_to(
                         index,
                         &mut output,
                         glwe.poly_length().get(),

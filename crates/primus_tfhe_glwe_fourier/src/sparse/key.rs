@@ -59,12 +59,14 @@ where
             .ok_or(Error::StorageSizeOverflow)?;
         let data_len = entries
             .checked_add(bucket_count)
-            .and_then(|count| count.checked_mul(parameters.blind_rotation_ggsw().size().ggsw_len()))
+            .and_then(|count| {
+                count.checked_mul(parameters.blind_rotation_params().size().ggsw_len())
+            })
             .ok_or(Error::StorageSizeOverflow)?;
         Layout::array::<usize>(entries).map_err(|_| Error::StorageSizeOverflow)?;
         Layout::array::<usize>(offsets).map_err(|_| Error::StorageSizeOverflow)?;
         Layout::array::<T>(data_len).map_err(|_| Error::StorageSizeOverflow)?;
-        Layout::array::<Complex64>(parameters.blind_rotation_ggsw().size().fourier_ggsw_len())
+        Layout::array::<Complex64>(parameters.blind_rotation_params().size().fourier_ggsw_len())
             .map_err(|_| Error::StorageSizeOverflow)?;
         if copy_count == 0 || bucket_count < copy_count.max(hamming_weight) {
             return Err(
@@ -182,7 +184,7 @@ where
             data_len,
         } = prepared;
         let parameters = self.context.parameters();
-        let size = parameters.blind_rotation_ggsw().size();
+        let size = parameters.blind_rotation_params().size();
 
         // Flatten the private selectors in final bucket order, including each
         // dummy. One batch reuses level transforms across consecutive zeros;
@@ -207,7 +209,7 @@ where
             );
         }
         drop(selected_input_indices);
-        let gadget = parameters.blind_rotation_ggsw();
+        let gadget = parameters.blind_rotation_params();
         self.gadget.resize(size);
         let mut data = vec![T::ZERO; data_len];
         let mut transformed = FourierGgsw::<Vec<Complex64>>::zero(size.fourier_ggsw_len());

@@ -85,9 +85,9 @@ where
         }
         BooleanEvaluator::try_new(
             self.parameters().external_lwe_dimension(),
-            self.parameters().blind_rotation_ggsw().poly_length(),
+            self.parameters().blind_rotation_params().poly_length(),
             codec,
-            self.parameters().blind_rotation_ggsw().cipher_modulus(),
+            self.parameters().blind_rotation_params().cipher_modulus(),
             self.evaluator(server_key)?,
         )
     }

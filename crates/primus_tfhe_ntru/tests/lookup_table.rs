@@ -1,16 +1,13 @@
 use primus_decompose::DecompositionBaseLog;
-use primus_decompose::primitive::ApproxSignedBasis;
 use primus_encoding::RoundedCodec;
 use primus_lwe::LweDimension;
-use primus_lwe::LweEncryptionParameters;
 use primus_modulus::NativeModulus;
-use primus_ntru::NlevParameters;
-use primus_ntru::{NtruParameters, NtruSecretKey, SecretKeyDistr};
+use primus_ntru::{NtruSecretKey, SecretKeyDistr};
 use primus_poly::PolyLength;
-use primus_tfhe::BlindRotationAlgorithm;
+use primus_tfhe::BlindRotationMethod;
 use primus_tfhe::PbsMessageConfig;
-use primus_tfhe_ntru::{BlindRotationConfig, LweConfig};
 use primus_tfhe_ntru::{ClientError, ClientKey, GadgetEncryptionConfig, PbsParameters};
+use primus_tfhe_ntru::{LweConfig, PbsConfig};
 
 const N: usize = 32;
 const LWE_DIMENSION: usize = 4;
@@ -18,34 +15,33 @@ const LWE_DIMENSION: usize = 4;
 fn parameters_with_plaintext(t: u32) -> PbsParameters<u32, NativeModulus<u32>> {
     let modulus = NativeModulus::new();
 
-    let accumulator = NtruParameters::new(
-        PolyLength::new(N),
-        t,
-        modulus,
-        SecretKeyDistr::gaussian(3.2),
-        0.7,
-    );
-    let blind_rotation_basis = ApproxSignedBasis::new(
-        accumulator.cipher_modulus_value(),
-        DecompositionBaseLog::new(8),
-        None,
-    );
-    PbsParameters::try_new(
-        LweEncryptionParameters::new(
-            LweDimension::new(LWE_DIMENSION),
-            modulus,
-            SecretKeyDistr::UniformBinary,
-            0.7,
-        ),
-        NlevParameters::try_with_basis(&accumulator, blind_rotation_basis).unwrap(),
-        GadgetEncryptionConfig {
+    PbsParameters::try_from_config(primus_tfhe_ntru::PbsConfig {
+        external_lwe: primus_tfhe::LweConfig {
+            dimension: LweDimension::new(LWE_DIMENSION),
+            cipher_modulus: modulus.into(),
+            secret_key_distr: SecretKeyDistr::UniformBinary,
+            noise_standard_deviation: 0.7,
+        },
+        acc_modulus: modulus.into(),
+        bsk_poly_length: PolyLength::new(N),
+        bsk_secret_distr: SecretKeyDistr::gaussian(3.2),
+        bsk_gadget: GadgetEncryptionConfig {
+            decomposition: primus_tfhe::DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(8),
+                level_count: None,
+            },
+            noise_standard_deviation: 0.7,
+        },
+        key_switching: GadgetEncryptionConfig {
             decomposition: primus_tfhe_ntru::DecompositionConfig {
                 log_basis: DecompositionBaseLog::new(8),
                 level_count: None,
             },
             noise_standard_deviation: 0.7,
         },
-    )
+        algorithm: primus_tfhe::BlindRotationMethod::Classic,
+        messages: primus_tfhe::PbsMessageConfig::new(t),
+    })
     .unwrap()
 }
 
@@ -77,16 +73,22 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
     let key = imported_key([1, 0, 1, 1], NativeModulus::new());
     for t in [3u32, 4, 5] {
         let parameters = parameters_with_plaintext(t);
-        let codecs = parameters.pbs_codecs(PbsMessageConfig::new(t)).unwrap();
+        let codecs = parameters
+            .as_ref()
+            .pbs_codecs(PbsMessageConfig::new(t))
+            .unwrap();
         let input_codec = codecs.input_codec();
         let encryptor = parameters
+            .as_ref()
             .encryptor(key.external_lwe_secret_key(), input_codec)
             .unwrap();
         let decryptor = parameters
+            .as_ref()
             .decryptor(key.external_lwe_secret_key(), input_codec)
             .unwrap();
         let domain_len = t.div_ceil(2);
         let default = parameters
+            .as_ref()
             .lookup_table_compiler(&codecs)
             .unwrap()
             .compile_slice(&vec![t - 1; domain_len as usize])
@@ -102,9 +104,10 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
             ClientError::MessageOutsidePaddedDomain
         );
         let codecs = parameters
+            .as_ref()
             .pbs_codecs(PbsMessageConfig::new(t).with_output_modulus(8))
             .unwrap();
-        let compiler = parameters.lookup_table_compiler(&codecs).unwrap();
+        let compiler = parameters.as_ref().lookup_table_compiler(&codecs).unwrap();
         let values: Vec<_> = (0..domain_len).map(|m| 7 - m).collect();
         let single = compiler.compile_slice(&values).unwrap();
         let many = compiler
@@ -130,7 +133,7 @@ fn codec_binding_checks_domains_without_preparing_an_unused_default() {
         log_basis: DecompositionBaseLog::new(2),
         level_count: None,
     };
-    let parameters = BlindRotationConfig {
+    let parameters = PbsParameters::try_from_config(PbsConfig {
         external_lwe: LweConfig {
             dimension: LweDimension::new(LWE_DIMENSION),
             cipher_modulus: BarrettModulus::new(257).into(),
@@ -138,44 +141,49 @@ fn codec_binding_checks_domains_without_preparing_an_unused_default() {
             noise_standard_deviation: 0.7,
         },
         acc_modulus: BarrettModulus::new(41).into(),
-        acc_poly_length: PolyLength::new(N),
+        bsk_poly_length: PolyLength::new(N),
         bsk_secret_distr: SecretKeyDistr::gaussian(3.2),
         bsk_gadget: GadgetEncryptionConfig {
             decomposition: basis,
             noise_standard_deviation: 0.7,
         },
-        algorithm: BlindRotationAlgorithm::Classic,
-    }
-    .try_prepare()
-    .and_then(|parameters| {
-        parameters.try_with_key_switching(GadgetEncryptionConfig {
+        algorithm: BlindRotationMethod::Classic,
+        key_switching: GadgetEncryptionConfig {
             decomposition: basis,
             noise_standard_deviation: 0.7,
-        })
+        },
+        messages: primus_tfhe::PbsMessageConfig::new(4),
     })
     .unwrap();
-    let key = imported_key([1, 0, 1, 1], parameters.external_lwe().cipher_modulus());
+    let key = imported_key(
+        [1, 0, 1, 1],
+        parameters.as_ref().external_lwe().cipher_modulus(),
+    );
     let foreign = RoundedCodec::new(4, BarrettModulus::new(129));
     assert!(matches!(
-        parameters.encryptor(key.external_lwe_secret_key(), &foreign),
+        parameters
+            .as_ref()
+            .encryptor(key.external_lwe_secret_key(), &foreign),
         Err(TfheClientError::Client(ClientError::CodecModulusMismatch))
     ));
     assert!(matches!(
-        parameters.decryptor(key.external_lwe_secret_key(), &foreign),
+        parameters
+            .as_ref()
+            .decryptor(key.external_lwe_secret_key(), &foreign),
         Err(TfheClientError::Client(ClientError::CodecModulusMismatch))
     ));
     let foreign_codecs = PbsMessageConfig::new(4)
         .try_rounded_codecs(
             foreign.ciphertext_modulus(),
-            parameters.accumulator_ntru().cipher_modulus(),
+            parameters.as_ref().accumulator_ntru().cipher_modulus(),
         )
         .unwrap();
     assert!(matches!(
-        parameters.lookup_table_compiler(&foreign_codecs),
+        parameters.as_ref().lookup_table_compiler(&foreign_codecs),
         Err(LookupTableError::InputModulusMismatch)
     ));
     assert!(matches!(
-        parameters.pbs_codecs(PbsMessageConfig::new(64)),
+        parameters.as_ref().pbs_codecs(PbsMessageConfig::new(64)),
         Err(LookupTableError::OutputEncoding(_))
     ));
     // t_in=64 is valid at q=257 but cannot encode an unused default at Q=41.
@@ -185,8 +193,8 @@ fn codec_binding_checks_domains_without_preparing_an_unused_default() {
         PbsMessageConfig::new(64).with_output_modulus(8),
     ] {
         let domain = messages.input_modulus.div_ceil(2) as usize;
-        let codecs = parameters.pbs_codecs(messages).unwrap();
-        let compiler = parameters.lookup_table_compiler(&codecs).unwrap();
+        let codecs = parameters.as_ref().pbs_codecs(messages).unwrap();
+        let compiler = parameters.as_ref().lookup_table_compiler(&codecs).unwrap();
         let single = compiler.compile_fn(|_| 7).unwrap();
         let many = compiler.compile_interleaved_fn(1, |_, _| 7).unwrap();
         assert_eq!(single.input_domain_len(), domain);
@@ -203,8 +211,9 @@ fn codec_binding_checks_domains_without_preparing_an_unused_default() {
             Err(LookupTableError::OutputOutOfRange { input: 0 })
         ));
 
-        let codecs = parameters.factorized_pbs_codecs(messages).unwrap();
+        let codecs = parameters.as_ref().factorized_pbs_codecs(messages).unwrap();
         let factorized = parameters
+            .as_ref()
             .compile_factorized_lookup_table_fn(&codecs, domain, 3, |_, _| 7)
             .unwrap();
         assert_eq!(factorized.input_domain_len(), domain);
@@ -218,7 +227,9 @@ fn codec_binding_checks_domains_without_preparing_an_unused_default() {
                 .all(|&x| x == 23)
         ); // 5/2 mod 41.
         assert!(matches!(
-            parameters.compile_factorized_lookup_table_fn(&codecs, domain, 1, |_, _| 8),
+            parameters
+                .as_ref()
+                .compile_factorized_lookup_table_fn(&codecs, domain, 1, |_, _| 8),
             Err(LookupTableError::OutputOutOfRange { input: 0 })
         ));
     }
@@ -234,7 +245,10 @@ fn codec_binding_checks_domains_without_preparing_an_unused_default() {
             .try_rounded_codecs(input_modulus, output_modulus)
             .unwrap();
         assert_eq!(
-            parameters.lookup_table_compiler(&rounded).unwrap_err(),
+            parameters
+                .as_ref()
+                .lookup_table_compiler(&rounded)
+                .unwrap_err(),
             expected
         );
         let factorized = PbsMessageConfig::new(8)
@@ -242,6 +256,7 @@ fn codec_binding_checks_domains_without_preparing_an_unused_default() {
             .unwrap();
         assert_eq!(
             parameters
+                .as_ref()
                 .compile_factorized_lookup_table_fn(&factorized, 4, 1, |_, _| panic!(
                     "mismatched domains must reject before callback"
                 ))
@@ -265,7 +280,7 @@ fn cbs_ring_messages_do_not_require_a_return_codec() {
         },
         noise_standard_deviation: 0.7,
     };
-    let parameters = BlindRotationConfig {
+    let parameters = PbsParameters::try_from_config(PbsConfig {
         external_lwe: LweConfig {
             dimension: LweDimension::new(LWE_DIMENSION),
             cipher_modulus: BarrettModulus::new(17u32).into(),
@@ -273,13 +288,13 @@ fn cbs_ring_messages_do_not_require_a_return_codec() {
             noise_standard_deviation: 0.7,
         },
         acc_modulus: BarrettModulus::new(97).into(),
-        acc_poly_length: PolyLength::new(N),
+        bsk_poly_length: PolyLength::new(N),
         bsk_secret_distr: SecretKeyDistr::UniformBinary,
         bsk_gadget: gadget,
-        algorithm: BlindRotationAlgorithm::Classic,
-    }
-    .try_prepare()
-    .and_then(|parameters| parameters.try_with_key_switching(gadget))
+        algorithm: BlindRotationMethod::Classic,
+        key_switching: gadget,
+        messages: primus_tfhe::PbsMessageConfig::new(4),
+    })
     .unwrap();
 
     // At t=12, q=17 satisfies the domain but fails fixed-scale recovery;
@@ -289,10 +304,14 @@ fn cbs_ring_messages_do_not_require_a_return_codec() {
         (24, CodecError::CiphertextModulusTooSmall),
     ] {
         assert_eq!(
-            ScaledCodec::try_new(ring_t, parameters.external_lwe().cipher_modulus()).unwrap_err(),
+            ScaledCodec::try_new(ring_t, parameters.as_ref().external_lwe().cipher_modulus())
+                .unwrap_err(),
             return_error
         );
-        let (input, ring) = parameters.circuit_bootstrap_codecs(4, ring_t).unwrap();
+        let (input, ring) = parameters
+            .as_ref()
+            .circuit_bootstrap_codecs(4, ring_t)
+            .unwrap();
         assert_eq!(input.ciphertext_modulus().value(), 17);
         assert_eq!(input.plaintext_modulus(), 4);
         assert_eq!(ring.ciphertext_modulus().value(), 97);
@@ -305,17 +324,17 @@ fn cbs_ring_messages_do_not_require_a_return_codec() {
 
     // Reject errors in either actual codec role, including Q scale recovery.
     assert!(matches!(
-        parameters.circuit_bootstrap_codecs(0, 12),
+        parameters.as_ref().circuit_bootstrap_codecs(0, 12),
         Err(LookupTableError::InputEncoding(_))
     ));
     for ring_t in [1, 97] {
         assert!(matches!(
-            parameters.circuit_bootstrap_codecs(4, ring_t),
+            parameters.as_ref().circuit_bootstrap_codecs(4, ring_t),
             Err(LookupTableError::OutputEncoding(_))
         ));
     }
     assert!(matches!(
-        parameters.circuit_bootstrap_codecs(4, 40),
+        parameters.as_ref().circuit_bootstrap_codecs(4, 40),
         Err(LookupTableError::OutputEncoding(
             CodecError::InsufficientScaleRecovery
         ))

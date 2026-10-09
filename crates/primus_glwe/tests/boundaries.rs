@@ -1,6 +1,6 @@
 //! Public encryption boundaries reject incompatible domains and storage before writes.
 
-use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_decompose::{DecompositionBaseLog, DecompositionConfig, DecompositionLevelCount};
 use primus_encoding::{PlaintextEmbedding, ScaledCodec};
 use primus_lattice::GlweDimension;
 use primus_poly::PolyLength;
@@ -130,13 +130,30 @@ fn independent_parameter_parts_check_secret_weight_and_codec_domain() {
     for k in [1, 2] {
         let size = GlweSize::new(GlweDimension::new(k), PolyLength::new(32));
         let gadget = GlevParameters::try_from_parts(size, Arc::clone(&inner), basis.clone());
+        let fresh_gadget = GlevParameters::try_new(
+            size,
+            modulus,
+            inner.secret_key_distr(),
+            DecompositionConfig {
+                log_basis: basis.log_basis(),
+                level_count: None,
+            },
+            inner.noise_distribution().standard_deviation(),
+        );
         let ordinary = GlweParameters::try_from_parts(size, Arc::clone(&inner), codec);
         if k == 1 {
             assert!(matches!(gadget, Err(GlevParameterError::SecretKey(_))));
+            assert!(matches!(
+                fresh_gadget,
+                Err(GlevParameterError::SecretKey(_))
+            ));
             assert!(matches!(ordinary, Err(GlweParameterError::SecretKey(_))));
         } else {
             let gadget = gadget.unwrap();
+            let fresh_gadget = fresh_gadget.unwrap();
             let ordinary = ordinary.unwrap();
+            assert_eq!(fresh_gadget.basis(), &basis);
+            assert_eq!(fresh_gadget.glwe_size(), size);
             // Binding and cloning outer parameters retain the prepared samplers.
             assert!(std::ptr::eq(
                 gadget.clone().encryption_parameters(),

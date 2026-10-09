@@ -33,6 +33,7 @@ fn backend<T: FheUint, Table: MonomialNttTable<ValueT = T>>(c: &mut Group<'_>, b
         } = workload;
         let parameters = ntru::diagnostic(ntt_modulus::<T>());
         let codecs = parameters
+            .as_ref()
             .factorized_pbs_codecs(
                 PbsMessageConfig::new(T::as_from(2 * domain)).with_output_modulus(T::TWO),
             )
@@ -52,7 +53,7 @@ fn backend<T: FheUint, Table: MonomialNttTable<ValueT = T>>(c: &mut Group<'_>, b
             c.bench_function(case.id(), |b| {
                 metadata::record("mvb", &case, || {
                     serde_json::json!({
-                        "parameters": metadata::ntru(fixture.context.parameters()),
+                        "parameters": metadata::ntru(&fixture.parameters),
                         "blind_rotation": metadata::blind_rotation(sparse),
                         "encoding": "rounded_padded_input_scaled_bit_output",
                         "input_plaintext_modulus": 2 * domain,
@@ -79,6 +80,7 @@ pub fn bench_mvb(c: &mut Group<'_>) {
 /// Owned request shared by the algorithms, with explicit input, ring-table and
 /// returned-phase codecs. Evaluator scratch/output remain local to each callback.
 struct Fixture<T: FheUint, Table: MonomialNttTable<ValueT = T>> {
+    parameters: primus_tfhe_ntru_ntt::PbsParameters<T, PowOf2Modulus<T>>,
     context: TfheContext<T, Table, PowOf2Modulus<T>>,
     client: primus_tfhe_ntru_ntt::ClientKey<T>,
     server: primus_tfhe_ntru_ntt::ServerKey<T>,
@@ -94,14 +96,22 @@ impl<T: FheUint, Table: MonomialNttTable<ValueT = T>> Fixture<T, Table> {
         codecs: FactorizedPbsCodecs<T, primus_modulus::BarrettModulus<T>, PowOf2Modulus<T>>,
         workload: ThresholdWorkload,
     ) -> Self {
-        let context =
-            TfheContext::<T, Table, PowOf2Modulus<T>>::try_from_parameters(parameters).unwrap();
+        let context_parameters = &parameters;
+        let context = TfheContext::<T, Table, PowOf2Modulus<T>>::try_from_parameters(
+            context_parameters.clone(),
+        )
+        .unwrap();
         let mut rng = StdRng::seed_from_u64(42);
         let mut generator = KeyGenerator::new(&context);
         let client = generator.try_generate_client_key(&mut rng).unwrap();
         let blind_rotation = primus_tfhe_benchmarks::benchmark::blind_rotation(workload.sparse);
         let server = generator
-            .try_generate_server_key(&client, blind_rotation, None, &mut rng)
+            .try_generate_server_key_with_parameters(
+                context_parameters.key_switching(),
+                &client,
+                blind_rotation,
+                &mut rng,
+            )
             .unwrap();
         let input = context
             .encryptor(client.external_lwe_secret_key(), codecs.input_codec())
@@ -109,6 +119,7 @@ impl<T: FheUint, Table: MonomialNttTable<ValueT = T>> Fixture<T, Table> {
             .encrypt_padded(T::as_from(workload.domain / 2), &mut rng)
             .unwrap();
         Self {
+            parameters,
             codecs,
             workload,
             context,

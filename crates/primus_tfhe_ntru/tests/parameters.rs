@@ -2,16 +2,14 @@ use primus_decompose::primitive::ApproxSignedBasis;
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_encoding::RoundedCodec;
 use primus_lwe::LweDimension;
-use primus_lwe::LweEncryptionParameters;
-use primus_lwe::LweParameters;
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
 use primus_poly::PolyLength;
-use primus_tfhe::BlindRotationAlgorithm;
-use primus_tfhe_ntru::{BlindRotationConfig, LweConfig, PbsConfig, PbsMessageConfig};
+use primus_tfhe::BlindRotationMethod;
 use primus_tfhe_ntru::{
     DecompositionConfig, GadgetEncryptionConfig, PbsParameters, TfheParameterError,
 };
+use primus_tfhe_ntru::{LweConfig, PbsConfig, PbsMessageConfig};
 use std::error::Error;
 
 const N: usize = 32;
@@ -24,97 +22,96 @@ const DECOMPOSITION: DecompositionConfig = DecompositionConfig {
 #[test]
 fn independent_domains_and_noise_are_preserved() {
     let config = PbsConfig {
-        blind_rotation: BlindRotationConfig {
-            external_lwe: LweConfig {
-                dimension: LweDimension::new(N * 2),
-                cipher_modulus: BarrettModulus::new(65_537).into(),
-                secret_key_distr: SecretKeyDistr::UniformBinary,
-                noise_standard_deviation: 0.7,
-            },
-            acc_modulus: BarrettModulus::new(Q).into(),
-            acc_poly_length: PolyLength::new(N),
-            bsk_secret_distr: SecretKeyDistr::SparseTernary,
-            bsk_gadget: GadgetEncryptionConfig {
-                decomposition: DecompositionConfig {
-                    log_basis: DecompositionBaseLog::new(9),
-                    level_count: Some(DecompositionLevelCount::new(3)),
-                },
-                noise_standard_deviation: 1.25,
-            },
-            algorithm: BlindRotationAlgorithm::Classic,
+        external_lwe: LweConfig {
+            dimension: LweDimension::new(N * 2),
+            cipher_modulus: BarrettModulus::new(65_537).into(),
+            secret_key_distr: SecretKeyDistr::UniformBinary,
+            noise_standard_deviation: 0.7,
         },
+        acc_modulus: BarrettModulus::new(Q).into(),
+        bsk_poly_length: PolyLength::new(N),
+        bsk_secret_distr: SecretKeyDistr::SparseTernary,
+        bsk_gadget: GadgetEncryptionConfig {
+            decomposition: DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(9),
+                level_count: Some(DecompositionLevelCount::new(3)),
+            },
+            noise_standard_deviation: 1.25,
+        },
+        algorithm: BlindRotationMethod::Classic,
         key_switching: GadgetEncryptionConfig {
             decomposition: DECOMPOSITION,
             noise_standard_deviation: 2.5,
         },
         messages: PbsMessageConfig::new(4),
     };
-    let parameters = config.try_prepare().unwrap();
+    let parameters = PbsParameters::try_from_config(config).unwrap();
     // Binding ordinary ring messages reuses the gadget's sampler allocation.
     let ordinary = NtruParameters::try_from_nlev(
-        parameters.blind_rotation(),
-        primus_encoding::ScaledCodec::new(4, parameters.accumulator_ntru().cipher_modulus()),
+        parameters.as_ref().blind_rotation(),
+        primus_encoding::ScaledCodec::new(
+            4,
+            parameters.as_ref().accumulator_ntru().cipher_modulus(),
+        ),
     )
     .unwrap();
     assert!(std::ptr::eq(
         ordinary.encryption_parameters(),
-        parameters.accumulator_ntru()
+        parameters.as_ref().accumulator_ntru()
     ));
-    assert_eq!(parameters.poly_length(), PolyLength::new(N));
+    assert_eq!(parameters.as_ref().poly_length(), PolyLength::new(N));
     assert_eq!(
-        parameters.external_lwe_dimension(),
+        parameters.as_ref().external_lwe_dimension(),
         LweDimension::new(N * 2)
     );
     assert_eq!(
-        parameters.accumulator_ntru().cipher_modulus_value(),
+        parameters
+            .as_ref()
+            .accumulator_ntru()
+            .cipher_modulus_value(),
         Some(Q)
     );
     assert_eq!(
-        parameters.external_lwe().cipher_modulus_value(),
+        parameters.as_ref().external_lwe().cipher_modulus_value(),
         Some(65_537)
     );
+    assert_eq!(parameters.key_switching().basis().modulus(), Some(65_537));
     assert_eq!(
-        parameters
-            .key_switching_basis()
-            .expect("PBS parameters include key switching")
-            .modulus(),
-        Some(65_537)
-    );
-    assert_eq!(
-        parameters.accumulator_ntru().secret_key_distr(),
+        parameters.as_ref().accumulator_ntru().secret_key_distr(),
         SecretKeyDistr::SparseTernary
     );
     assert_eq!(
-        parameters
-            .key_switching_lwe()
-            .expect("PBS parameters include key switching")
-            .secret_key_distr(),
+        parameters.key_switching().lwe().secret_key_distr(),
         SecretKeyDistr::UniformBinary
     );
-    assert_eq!(parameters.external_lwe().noise_standard_deviation(), 0.7);
     assert_eq!(
         parameters
+            .as_ref()
+            .external_lwe()
+            .noise_standard_deviation(),
+        0.7
+    );
+    assert_eq!(
+        parameters
+            .as_ref()
             .accumulator_ntru()
             .noise_distribution()
             .standard_deviation(),
         1.25
     );
     assert_eq!(
-        parameters
-            .key_switching_lwe()
-            .expect("PBS parameters include key switching")
-            .noise_standard_deviation(),
+        parameters.key_switching().lwe().noise_standard_deviation(),
         2.5
     );
     for blind_rotation in [true, false] {
         let mut invalid = config;
         let decomposition = if blind_rotation {
-            &mut invalid.blind_rotation.bsk_gadget.decomposition
+            &mut invalid.bsk_gadget.decomposition
         } else {
             &mut invalid.key_switching.decomposition
         };
         decomposition.level_count = Some(DecompositionLevelCount::new(usize::MAX));
-        let error = invalid.try_prepare().err().unwrap();
+        let error = PbsParameters::try_from_config(invalid).err().unwrap();
         match error {
             TfheParameterError::BootstrappingParameters(_) if blind_rotation => assert!(
                 error
@@ -136,13 +133,6 @@ fn independent_domains_and_noise_are_preserved() {
 #[test]
 fn external_control_domain_is_checked() {
     let modulus = NativeModulus::<u32>::new();
-    let accumulator = NtruParameters::new(
-        PolyLength::new(N),
-        4,
-        modulus,
-        SecretKeyDistr::SparseTernary,
-        0.7,
-    );
     for distr in [
         SecretKeyDistr::UniformBinary,
         SecretKeyDistr::UniformTernary,
@@ -152,29 +142,30 @@ fn external_control_domain_is_checked() {
         SecretKeyDistr::fixed_composition_ternary(N, 3, 4),
         SecretKeyDistr::gaussian(3.2),
     ] {
-        let external = LweParameters::new(
-            LweDimension::new(N),
-            4,
-            BarrettModulus::new(65_537),
-            distr,
-            0.7,
-        );
-        let result = PbsParameters::try_new(
-            external.into_encryption_parameters(),
-            NlevParameters::try_with_basis(
-                &accumulator,
-                ApproxSignedBasis::new(
-                    accumulator.cipher_modulus_value(),
-                    DecompositionBaseLog::new(9),
-                    None,
-                ),
-            )
-            .unwrap(),
-            GadgetEncryptionConfig {
+        let result = PbsParameters::try_from_config(primus_tfhe_ntru::PbsConfig {
+            external_lwe: primus_tfhe::LweConfig {
+                dimension: LweDimension::new(N),
+                cipher_modulus: (BarrettModulus::new(65_537)).into(),
+                secret_key_distr: distr,
+                noise_standard_deviation: 0.7,
+            },
+            acc_modulus: modulus.into(),
+            bsk_poly_length: PolyLength::new(N),
+            bsk_secret_distr: SecretKeyDistr::SparseTernary,
+            bsk_gadget: GadgetEncryptionConfig {
+                decomposition: primus_tfhe::DecompositionConfig {
+                    log_basis: DecompositionBaseLog::new(9),
+                    level_count: None,
+                },
+                noise_standard_deviation: 0.7,
+            },
+            key_switching: GadgetEncryptionConfig {
                 decomposition: DECOMPOSITION,
                 noise_standard_deviation: 0.7,
             },
-        );
+            algorithm: primus_tfhe::BlindRotationMethod::Classic,
+            messages: primus_tfhe::PbsMessageConfig::new(4),
+        });
         if distr.is_binary() || distr.is_ternary() {
             assert!(result.is_ok());
         } else {
@@ -194,37 +185,31 @@ fn rotation_domain_must_be_representable_by_input_coefficients() {
         (15, Some(TfheParameterError::RotationDomainTooLarge)),
         (16, Some(TfheParameterError::RotationDomainTooLarge)),
     ] {
-        let external = LweParameters::new(
-            LweDimension::new(1),
-            2,
-            modulus,
-            SecretKeyDistr::UniformBinary,
-            0.7,
-        );
-        let ring = NtruParameters::new(
-            PolyLength::new(1 << log_n),
-            2,
-            modulus,
-            SecretKeyDistr::UniformBinary,
-            0.7,
-        );
         assert_eq!(
-            PbsParameters::try_new(
-                external.into_encryption_parameters(),
-                NlevParameters::try_with_basis(
-                    &ring,
-                    ApproxSignedBasis::new(
-                        ring.cipher_modulus_value(),
-                        DecompositionBaseLog::new(4),
-                        None
-                    )
-                )
-                .unwrap(),
-                GadgetEncryptionConfig {
+            PbsParameters::try_from_config(primus_tfhe_ntru::PbsConfig {
+                external_lwe: primus_tfhe::LweConfig {
+                    dimension: LweDimension::new(1),
+                    cipher_modulus: modulus.into(),
+                    secret_key_distr: SecretKeyDistr::UniformBinary,
+                    noise_standard_deviation: 0.7
+                },
+                acc_modulus: modulus.into(),
+                bsk_poly_length: PolyLength::new(1 << log_n),
+                bsk_secret_distr: SecretKeyDistr::UniformBinary,
+                bsk_gadget: GadgetEncryptionConfig {
+                    decomposition: primus_tfhe::DecompositionConfig {
+                        log_basis: DecompositionBaseLog::new(4),
+                        level_count: None
+                    },
+                    noise_standard_deviation: 0.7
+                },
+                key_switching: GadgetEncryptionConfig {
                     decomposition: DECOMPOSITION,
                     noise_standard_deviation: 0.7,
-                }
-            )
+                },
+                algorithm: primus_tfhe::BlindRotationMethod::Classic,
+                messages: primus_tfhe::PbsMessageConfig::new(4)
+            })
             .err(),
             expected
         );
@@ -239,22 +224,20 @@ fn configs_return_accumulator_and_return_key_errors() {
         level_count: Some(DecompositionLevelCount::new(1)),
     };
     let config = PbsConfig {
-        blind_rotation: BlindRotationConfig {
-            external_lwe: LweConfig {
-                dimension: LweDimension::new(4),
-                cipher_modulus: primus_modulus::PowOf2Modulus::new(256u32).into(),
-                secret_key_distr: SecretKeyDistr::UniformBinary,
-                noise_standard_deviation: 0.7,
-            },
-            acc_modulus: BarrettModulus::new(257).into(),
-            acc_poly_length: PolyLength::new(32),
-            bsk_secret_distr: SecretKeyDistr::SparseTernary,
-            bsk_gadget: GadgetEncryptionConfig {
-                decomposition: basis,
-                noise_standard_deviation: 0.7,
-            },
-            algorithm: BlindRotationAlgorithm::Classic,
+        external_lwe: LweConfig {
+            dimension: LweDimension::new(4),
+            cipher_modulus: primus_modulus::PowOf2Modulus::new(256u32).into(),
+            secret_key_distr: SecretKeyDistr::UniformBinary,
+            noise_standard_deviation: 0.7,
         },
+        acc_modulus: BarrettModulus::new(257).into(),
+        bsk_poly_length: PolyLength::new(32),
+        bsk_secret_distr: SecretKeyDistr::SparseTernary,
+        bsk_gadget: GadgetEncryptionConfig {
+            decomposition: basis,
+            noise_standard_deviation: 0.7,
+        },
+        algorithm: BlindRotationMethod::Classic,
         key_switching: GadgetEncryptionConfig {
             decomposition: basis,
             noise_standard_deviation: 0.7,
@@ -262,18 +245,17 @@ fn configs_return_accumulator_and_return_key_errors() {
         messages: PbsMessageConfig::new(4),
     };
     let mut invalid = config;
-    invalid.blind_rotation.bsk_gadget.noise_standard_deviation = f64::NAN;
+    invalid.bsk_gadget.noise_standard_deviation = f64::NAN;
     assert!(matches!(
-        invalid.try_prepare(),
+        PbsParameters::try_from_config(invalid),
         Err(TfheParameterError::AccumulatorParameters(
             NtruParameterError::Noise(_)
         ))
     ));
     let mut invalid = config;
-    invalid.blind_rotation.bsk_secret_distr =
-        SecretKeyDistr::FixedHammingWeightBinary { hamming_weight: 33 };
+    invalid.bsk_secret_distr = SecretKeyDistr::FixedHammingWeightBinary { hamming_weight: 33 };
     assert!(matches!(
-        invalid.try_prepare(),
+        PbsParameters::try_from_config(invalid),
         Err(TfheParameterError::AccumulatorParameters(
             NtruParameterError::SecretKey(_)
         ))
@@ -281,7 +263,7 @@ fn configs_return_accumulator_and_return_key_errors() {
     let mut invalid = config;
     invalid.key_switching.noise_standard_deviation = 0.0;
     assert!(matches!(
-        invalid.try_prepare(),
+        PbsParameters::try_from_config(invalid),
         Err(TfheParameterError::KeySwitchingEncryption(
             primus_lwe::LweParameterError::Noise(_)
         ))
@@ -289,46 +271,44 @@ fn configs_return_accumulator_and_return_key_errors() {
 }
 
 // These constructors do not depend on a transform table or encrypted keys.
-fn check_circuit_parameters<M: primus_reduce::RingContext<u64>>(
+fn check_circuit_parameters<
+    M: primus_reduce::RingContext<u64>
+        + TryFrom<primus_tfhe::ModulusConfig<M>, Error = primus_tfhe::ModulusConfigError>,
+>(
     modulus: M,
     foreign_modulus: Option<M>,
 ) {
     use primus_tfhe_ntru::{
-        CbsGadgetConfig, CbsParameters, CircuitBootstrapParameterError as Error,
+        CbsGadgetConfig, CbsGadgetParameters, CircuitBootstrapParameterError as Error,
     };
     let make = |plain| {
-        let acc = NtruParameters::new(
-            PolyLength::new(N),
-            plain,
-            modulus,
-            SecretKeyDistr::SparseTernary,
-            0.7,
-        );
-
-        PbsParameters::try_new(
-            LweEncryptionParameters::new(
-                LweDimension::new(16),
-                modulus,
-                SecretKeyDistr::UniformBinary,
-                0.7,
-            ),
-            NlevParameters::try_with_basis(
-                &acc,
-                ApproxSignedBasis::new(
-                    acc.cipher_modulus_value(),
-                    DecompositionBaseLog::new(10),
-                    None,
-                ),
-            )
-            .unwrap(),
-            GadgetEncryptionConfig {
+        PbsParameters::try_from_config(primus_tfhe_ntru::PbsConfig {
+            external_lwe: primus_tfhe::LweConfig {
+                dimension: LweDimension::new(16),
+                cipher_modulus: modulus.into(),
+                secret_key_distr: SecretKeyDistr::UniformBinary,
+                noise_standard_deviation: 0.7,
+            },
+            acc_modulus: modulus.into(),
+            bsk_poly_length: PolyLength::new(N),
+            bsk_secret_distr: SecretKeyDistr::SparseTernary,
+            bsk_gadget: GadgetEncryptionConfig {
+                decomposition: primus_tfhe::DecompositionConfig {
+                    log_basis: DecompositionBaseLog::new(10),
+                    level_count: None,
+                },
+                noise_standard_deviation: 0.7,
+            },
+            key_switching: GadgetEncryptionConfig {
                 decomposition: primus_tfhe_ntru::DecompositionConfig {
                     log_basis: DecompositionBaseLog::new(10),
                     level_count: None,
                 },
                 noise_standard_deviation: 0.7,
             },
-        )
+            algorithm: primus_tfhe::BlindRotationMethod::Classic,
+            messages: primus_tfhe::PbsMessageConfig::new(plain),
+        })
         .unwrap()
     };
     let tfhe = make(N as u64); // Only two interleaved outputs fit this domain.
@@ -346,8 +326,8 @@ fn check_circuit_parameters<M: primus_reduce::RingContext<u64>>(
             level_count: Some(DecompositionLevelCount::new(4)),
         },
     };
-    let configured = CbsParameters::try_from_config(&tfhe, config).unwrap();
-    assert_eq!(configured.poly_length(), tfhe.poly_length());
+    let configured = CbsGadgetParameters::try_from_config(tfhe.as_ref(), config).unwrap();
+    assert_eq!(configured.poly_length(), tfhe.as_ref().poly_length());
     assert_eq!(configured.trace().basis().log_basis().get(), 9);
     assert_eq!(configured.trace().basis().decompose_length().get(), 3);
     assert_eq!(configured.scheme_switch().basis().log_basis().get(), 10);
@@ -359,7 +339,7 @@ fn check_circuit_parameters<M: primus_reduce::RingContext<u64>>(
     for parameters in [configured.trace(), configured.scheme_switch()] {
         assert!(std::ptr::eq(
             parameters.encryption_parameters(),
-            tfhe.accumulator_ntru(),
+            tfhe.as_ref().accumulator_ntru(),
         ));
         assert_eq!(
             parameters
@@ -379,7 +359,7 @@ fn check_circuit_parameters<M: primus_reduce::RingContext<u64>>(
             "trace" => invalid.trace.level_count = Some(DecompositionLevelCount::new(usize::MAX)),
             _ => invalid.scheme_switch.level_count = Some(DecompositionLevelCount::new(usize::MAX)),
         }
-        let error = CbsParameters::try_from_config(&tfhe, invalid)
+        let error = CbsGadgetParameters::try_from_config(tfhe.as_ref(), invalid)
             .err()
             .unwrap();
         match role {
@@ -389,7 +369,7 @@ fn check_circuit_parameters<M: primus_reduce::RingContext<u64>>(
             ),
         }
     }
-    let trace = tfhe.blind_rotation().clone();
+    let trace = tfhe.as_ref().blind_rotation().clone();
     let output = |levels| {
         ApproxSignedBasis::new(
             modulus.explicit_value(),
@@ -397,10 +377,14 @@ fn check_circuit_parameters<M: primus_reduce::RingContext<u64>>(
             Some(DecompositionLevelCount::new(levels)),
         )
     };
-    assert!(CbsParameters::try_new(&tfhe, output(2), trace.clone(), trace.clone()).is_ok());
+    assert!(
+        CbsGadgetParameters::try_new(tfhe.as_ref(), output(2), trace.clone(), trace.clone())
+            .is_ok()
+    );
     // Capacity depends on the input encoding, so reject when compiling the
     // CBS program; the same key parameters accept a smaller plaintext domain.
-    let cbs = CbsParameters::try_new(&tfhe, output(3), trace.clone(), trace.clone()).unwrap();
+    let cbs = CbsGadgetParameters::try_new(tfhe.as_ref(), output(3), trace.clone(), trace.clone())
+        .unwrap();
     let crowded = RoundedCodec::new(N as u64, modulus);
     assert!(cbs.compile_lookup_table(&crowded).is_err());
     let fitting = RoundedCodec::new(4, modulus);
@@ -423,8 +407,8 @@ fn check_circuit_parameters<M: primus_reduce::RingContext<u64>>(
     });
     for foreign in std::iter::once(&foreign_ring).chain(foreign_modulus.as_ref()) {
         assert!(matches!(
-            CbsParameters::try_new(
-                &tfhe,
+            CbsGadgetParameters::try_new(
+                tfhe.as_ref(),
                 output(2),
                 NlevParameters::with_ntru_params(
                     foreign,
@@ -438,8 +422,8 @@ fn check_circuit_parameters<M: primus_reduce::RingContext<u64>>(
         ));
     }
     assert!(matches!(
-        CbsParameters::try_new(
-            &tfhe,
+        CbsGadgetParameters::try_new(
+            tfhe.as_ref(),
             ApproxSignedBasis::new(
                 if modulus.explicit_value().is_some() {
                     None
@@ -466,8 +450,8 @@ fn circuit_parameters_check_capacity_ring_and_basis_domain() {
 
     // An explicit power-of-two Q is valid for ordinary parameter construction,
     // but CBS modular halving requires an odd modulus. Native remains supported.
-    use primus_tfhe_ntru::{CbsGadgetConfig, CbsParameters, CircuitBootstrapParameterError};
-    let tfhe = BlindRotationConfig {
+    use primus_tfhe_ntru::{CbsGadgetConfig, CbsGadgetParameters, CircuitBootstrapParameterError};
+    let tfhe = PbsParameters::try_from_config(PbsConfig {
         external_lwe: LweConfig {
             dimension: LweDimension::new(4),
             cipher_modulus: NativeModulus::<u64>::new().into(),
@@ -475,20 +459,18 @@ fn circuit_parameters_check_capacity_ring_and_basis_domain() {
             noise_standard_deviation: 0.7,
         },
         acc_modulus: primus_modulus::PowOf2Modulus::new(1u64 << 16).into(),
-        acc_poly_length: PolyLength::new(N),
+        bsk_poly_length: PolyLength::new(N),
         bsk_secret_distr: SecretKeyDistr::SparseTernary,
         bsk_gadget: GadgetEncryptionConfig {
             decomposition: DECOMPOSITION,
             noise_standard_deviation: 0.7,
         },
-        algorithm: BlindRotationAlgorithm::Classic,
-    }
-    .try_prepare()
-    .and_then(|parameters| {
-        parameters.try_with_key_switching(GadgetEncryptionConfig {
+        algorithm: BlindRotationMethod::Classic,
+        key_switching: GadgetEncryptionConfig {
             decomposition: DECOMPOSITION,
             noise_standard_deviation: 0.7,
-        })
+        },
+        messages: primus_tfhe::PbsMessageConfig::new(4),
     })
     .unwrap();
     let config = CbsGadgetConfig {
@@ -496,15 +478,78 @@ fn circuit_parameters_check_capacity_ring_and_basis_domain() {
         trace: DECOMPOSITION,
         scheme_switch: DECOMPOSITION,
     };
-    let trace = tfhe.blind_rotation();
+    let trace = tfhe.as_ref().blind_rotation();
     // Both derived and independently supplied components retain this check.
     for result in [
-        CbsParameters::try_from_config(&tfhe, config),
-        CbsParameters::try_new(&tfhe, trace.basis().clone(), trace.clone(), trace.clone()),
+        CbsGadgetParameters::try_from_config(tfhe.as_ref(), config),
+        CbsGadgetParameters::try_new(
+            tfhe.as_ref(),
+            trace.basis().clone(),
+            trace.clone(),
+            trace.clone(),
+        ),
     ] {
         assert_eq!(
             result.err(),
             Some(CircuitBootstrapParameterError::UnsupportedTraceModulus)
         );
     }
+}
+
+/// Complete CBS shares accumulator samplers and prepares selector encoding at external q.
+#[test]
+fn complete_cbs_reuses_br_and_keeps_selector_encoding_at_q() {
+    use primus_tfhe_ntru::{CbsConfig, CbsGadgetConfig, CbsParameters};
+    let config = CbsConfig {
+        gadget: CbsGadgetConfig {
+            output: DECOMPOSITION,
+            trace: DECOMPOSITION,
+            scheme_switch: DECOMPOSITION,
+        },
+        pbs: PbsConfig {
+            external_lwe: LweConfig {
+                dimension: LweDimension::new(4),
+                cipher_modulus: BarrettModulus::new(65_537u32).into(),
+                secret_key_distr: SecretKeyDistr::UniformBinary,
+                noise_standard_deviation: 0.7,
+            },
+            acc_modulus: BarrettModulus::new(Q).into(),
+            bsk_poly_length: PolyLength::new(N),
+            bsk_secret_distr: SecretKeyDistr::SparseTernary,
+            bsk_gadget: GadgetEncryptionConfig {
+                decomposition: DECOMPOSITION,
+                noise_standard_deviation: 1.25,
+            },
+            algorithm: BlindRotationMethod::Classic,
+            key_switching: GadgetEncryptionConfig {
+                decomposition: DecompositionConfig {
+                    log_basis: DecompositionBaseLog::new(2),
+                    level_count: None,
+                },
+                noise_standard_deviation: 0.7,
+            },
+            messages: primus_tfhe::PbsMessageConfig::new(4),
+        },
+    };
+    let br = PbsParameters::try_from_config(config.pbs).unwrap();
+    let operation = CbsParameters::try_with_config(br.clone(), config.gadget).unwrap();
+    assert!(br.has_same_domain(operation.pbs_parameters()));
+    assert!(std::ptr::eq(
+        br.accumulator_ntru(),
+        operation.gadget().trace().encryption_parameters()
+    ));
+    assert_eq!(
+        operation.input_codec().ciphertext_modulus(),
+        br.external_lwe().cipher_modulus()
+    );
+    assert_eq!(operation.input_codec().plaintext_modulus(), 4);
+    let equal = CbsParameters::try_from_config(config.pbs, config.gadget).unwrap();
+    assert!(br.has_same_domain(equal.as_ref()));
+    let mut foreign = config;
+    foreign.pbs.external_lwe.dimension = LweDimension::new(5);
+    let foreign_parameters = CbsParameters::try_from_config(foreign.pbs, foreign.gadget).unwrap();
+    assert!(!br.has_same_domain(foreign_parameters.as_ref()));
+    foreign = config;
+    foreign.pbs.messages.input_modulus = 1;
+    assert!(CbsParameters::try_from_config(foreign.pbs, foreign.gadget).is_err());
 }

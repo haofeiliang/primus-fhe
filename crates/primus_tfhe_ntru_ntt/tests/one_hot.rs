@@ -1,19 +1,14 @@
-use primus_decompose::primitive::ApproxSignedBasis;
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_encoding::RoundedCodec;
 use primus_encoding::ScaledCodec;
 use primus_lattice::LweDimension;
-use primus_lwe::LweEncryptionParameters;
 use primus_modulus::{BarrettModulus, PowOf2Modulus};
-use primus_ntru::NlevParameters;
-use primus_ntru::{
-    NtruCiphertext, NtruParameters, NttNtruExternalProductWorkspace, SecretKeyDistr,
-};
+use primus_ntru::{NtruCiphertext, NttNtruExternalProductWorkspace, SecretKeyDistr};
 use primus_ntt::U64NttTable;
 use primus_poly::PolyLength;
 use primus_tfhe::PbsMessageConfig;
 use primus_tfhe_ntru_ntt::{
-    BlindRotationAlgorithm, CbsGadgetConfig, CircuitBootstrapEvaluator, DecompositionConfig,
+    BlindRotationMethod, CbsGadgetConfig, CircuitBootstrapEvaluator, DecompositionConfig,
     GadgetEncryptionConfig, OneHotCircuitBootstrapEvaluator, PbsParameters, TfheContext,
 };
 use rand::{SeedableRng, rngs::StdRng};
@@ -60,33 +55,43 @@ fn selectors(distr: SecretKeyDistr, sparse: bool) {
         log_basis: DecompositionBaseLog::new(10),
         level_count: None,
     };
-    let ring = NtruParameters::new(
-        PolyLength::new(N),
-        2 * M as u64,
-        modulus,
-        SecretKeyDistr::SparseTernary,
-        0.7,
-    );
-    let blind_rotation_basis = ApproxSignedBasis::new(
-        ring.cipher_modulus_value(),
-        DecompositionBaseLog::new(10),
-        None,
-    );
-    let tfhe = PbsParameters::try_new(
-        LweEncryptionParameters::new(
-            LweDimension::new(4),
-            PowOf2Modulus::new(1u64 << 24),
-            distr,
-            0.7,
-        ),
-        NlevParameters::try_with_basis(&ring, blind_rotation_basis).unwrap(),
-        GadgetEncryptionConfig {
+    let tfhe = PbsParameters::try_from_config(primus_tfhe_ntru::PbsConfig {
+        external_lwe: primus_tfhe::LweConfig {
+            dimension: LweDimension::new(4),
+            cipher_modulus: (PowOf2Modulus::new(1u64 << 24)).into(),
+            secret_key_distr: distr,
+            noise_standard_deviation: 0.7,
+        },
+        acc_modulus: modulus.into(),
+        bsk_poly_length: PolyLength::new(N),
+        bsk_secret_distr: SecretKeyDistr::SparseTernary,
+        bsk_gadget: GadgetEncryptionConfig {
+            decomposition: primus_tfhe::DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(10),
+                level_count: None,
+            },
+            noise_standard_deviation: 0.7,
+        },
+        key_switching: GadgetEncryptionConfig {
             decomposition: full,
             noise_standard_deviation: 0.7,
         },
-    )
+        algorithm: primus_tfhe::BlindRotationMethod::Classic,
+        messages: primus_tfhe::PbsMessageConfig::new(8),
+    })
     .unwrap();
-    let context = TfheContext::<_, U64NttTable, _>::try_from_parameters(tfhe).unwrap();
+    let blind_rotation = if sparse {
+        BlindRotationMethod::Sparse {
+            copy_count: 3,
+            bucket_count: 8,
+        }
+    } else {
+        BlindRotationMethod::Classic
+    };
+    let tfhe = tfhe.with_algorithm(blind_rotation);
+    let context_parameters = &tfhe;
+    let context =
+        TfheContext::<_, U64NttTable, _>::try_from_parameters(context_parameters.clone()).unwrap();
     let input_codec = RoundedCodec::new(8, context.parameters().external_lwe().cipher_modulus());
     let mut rng = StdRng::seed_from_u64(0x4f48434253);
     let cbs_config = CbsGadgetConfig {
@@ -97,24 +102,13 @@ fn selectors(distr: SecretKeyDistr, sparse: bool) {
         trace: full,
         scheme_switch: full,
     };
+    let context = context.try_with_circuit_bootstrap(cbs_config).unwrap();
     let mut generator = primus_tfhe_ntru_ntt::KeyGenerator::new(&context);
-    let blind_rotation = if sparse {
-        BlindRotationAlgorithm::Sparse {
-            copy_count: 3,
-            bucket_count: 8,
-        }
-    } else {
-        BlindRotationAlgorithm::Classic
-    };
     let (client, server) = generator
-        .try_generate_circuit_bootstrap_keys(blind_rotation, cbs_config, &mut rng)
+        .try_generate_circuit_bootstrap_keys(&mut rng)
         .unwrap();
-    let (br, circuit) = server.into_parts();
-    // Only the mixed PBS checks below need the separate ordinary return key.
-    let return_key = context
-        .parameters()
-        .try_generate_lwe_return_key(&client, &mut rng)
-        .unwrap();
+    let (server, circuit) = server.into_parts();
+    let (br, return_key) = server.into_parts();
     // One-hot preparation depends on the context/CBS key, not on BR controls.
     // In the sparse case prepare using a classic BR over the same two secrets,
     // then lend sparse resources for every numerical check below.
@@ -137,8 +131,12 @@ fn selectors(distr: SecretKeyDistr, sparse: bool) {
     } else {
         resources
     };
-    let mut pbs =
-        primus_tfhe_ntru_ntt::Evaluator::try_from_resources(resources, &return_key).unwrap();
+    let mut pbs = primus_tfhe_ntru_ntt::Evaluator::try_from_resources(
+        resources,
+        context_parameters.key_switching(),
+        &return_key,
+    )
+    .unwrap();
     assert_eq!(evaluator.lookup_table().selector_count(), M);
     assert_eq!(evaluator.lookup_table().rotation_step(), 4);
     let scalars: Vec<_> = evaluator

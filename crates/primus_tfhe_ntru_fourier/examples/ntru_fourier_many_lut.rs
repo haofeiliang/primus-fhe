@@ -14,18 +14,19 @@ type Word = u64;
 
 fn main() {
     let config = experimental::CLASSIC_MANY_LUT_U64;
-    let parameters = config.try_prepare().unwrap();
-    let context = TfheContext::<Word, Table, _>::from_parameters(parameters);
+    let context = TfheContext::<Word, Table, _>::try_from_pbs_config(config).unwrap();
+    let parameters = context.parameters();
 
     // One padded input in 0..8 uses Rounded t=16; both outputs use Rounded t=8.
     // config.messages carries both domains; with_output_modulus overrides only the output.
-    let codecs = context.parameters().pbs_codecs(config.messages).unwrap();
+    let codecs = context
+        .parameters()
+        .pbs_codecs(parameters.messages())
+        .unwrap();
 
     // Client: keep the external secret; send server_key to the server.
     let mut rng = StdRng::seed_from_u64(42);
-    let (client_key, server_key) = context
-        .try_generate_keys(config.blind_rotation.algorithm, None, &mut rng)
-        .unwrap();
+    let (client_key, server_key) = context.try_generate_keys(&mut rng).unwrap();
     // Ordinary messages borrow only the external secret from the setup bundle.
     let external_secret = client_key.external_lwe_secret_key();
     let encryptor = context

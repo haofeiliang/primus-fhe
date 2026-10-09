@@ -3,6 +3,7 @@
 //! evaluation focuses on chunk digits, table boundaries and reused zero selectors.
 #![cfg(any(feature = "ntt", feature = "rustfft", feature = "tfhe-fft"))]
 
+use primus_decompose::primitive::ApproxSignedBasis;
 use primus_encoding::RoundedCodec;
 #[cfg(feature = "rustfft")]
 use primus_fft::RustFftTable;
@@ -12,7 +13,6 @@ use primus_fft::TfheFftTable;
 use primus_fft::{FftTable, TorusFftValue};
 use primus_integer::FheUint;
 use primus_lattice::LweDimension;
-use primus_lwe::LweEncryptionParameters;
 use primus_modulus::{BarrettModulus, NativeModulus, PowOf2Modulus};
 use primus_ntru::{NlevParameters, NtruEncryptionParameters, SecretKeyDistr};
 #[cfg(feature = "ntt")]
@@ -20,7 +20,7 @@ use primus_ntt::{MonomialNttTable, U32NttTable, U64NttTable};
 use primus_poly::PolyLength;
 use primus_reduce::RingContext;
 use primus_tfhe::LweCiphertext;
-use primus_tfhe::{BlindRotationAlgorithm, DecompositionBaseLog, DecompositionLevelCount};
+use primus_tfhe::{BlindRotationMethod, DecompositionBaseLog, DecompositionLevelCount};
 use primus_tfhe_ntru::{
     CbsGadgetConfig, DecompositionConfig, GadgetEncryptionConfig, PbsParameters,
 };
@@ -35,17 +35,15 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 const N: usize = 64;
 
 // Small independent LWE secret at q=2^24; only the accumulator uses the transform.
-fn parameters<T: FheUint, M: RingContext<T>>(
+fn parameters<
+    T: FheUint,
+    M: RingContext<T>
+        + TryFrom<primus_tfhe::ModulusConfig<M>, Error = primus_tfhe::ModulusConfigError>,
+>(
     modulus: M,
     distr: SecretKeyDistr,
     dimension: usize,
 ) -> PbsParameters<T, M, PowOf2Modulus<T>> {
-    let external_lwe = LweEncryptionParameters::new(
-        LweDimension::new(dimension),
-        PowOf2Modulus::new(T::ONE << 24u32),
-        distr,
-        0.7,
-    );
     let bsk_gadget = GadgetEncryptionConfig {
         decomposition: DecompositionConfig {
             log_basis: DecompositionBaseLog::new(8),
@@ -53,44 +51,50 @@ fn parameters<T: FheUint, M: RingContext<T>>(
         },
         noise_standard_deviation: 0.7,
     };
-    let blind_rotation = primus_ntru::NlevParameters::try_from_parts(
-        std::sync::Arc::new(primus_ntru::NtruEncryptionParameters::new(
-            PolyLength::new(N),
-            modulus,
-            SecretKeyDistr::SparseTernary,
-            bsk_gadget.noise_standard_deviation,
-        )),
-        bsk_gadget
-            .decomposition
-            .try_build(modulus.explicit_value())
-            .unwrap(),
-    )
-    .unwrap();
-    PbsParameters::try_new(
-        external_lwe,
-        blind_rotation,
-        GadgetEncryptionConfig {
+    PbsParameters::try_from_config(primus_tfhe_ntru::PbsConfig {
+        external_lwe: primus_tfhe::LweConfig {
+            dimension: LweDimension::new(dimension),
+            cipher_modulus: (PowOf2Modulus::new(T::ONE << 24u32)).into(),
+            secret_key_distr: distr,
+            noise_standard_deviation: 0.7,
+        },
+        acc_modulus: modulus.into(),
+        bsk_poly_length: PolyLength::new(N),
+        bsk_secret_distr: SecretKeyDistr::SparseTernary,
+        bsk_gadget: GadgetEncryptionConfig {
+            decomposition: bsk_gadget.decomposition,
+            noise_standard_deviation: bsk_gadget.noise_standard_deviation,
+        },
+        key_switching: GadgetEncryptionConfig {
             decomposition: DecompositionConfig {
                 log_basis: DecompositionBaseLog::new(8),
                 level_count: None,
             },
             noise_standard_deviation: 0.7,
         },
-    )
+        algorithm: primus_tfhe::BlindRotationMethod::Classic,
+        messages: primus_tfhe::PbsMessageConfig::new(primus_integer::AsFrom::<u32>::as_from(4)),
+    })
     .unwrap()
 }
 
 // Independent lift basis, deliberately different from BR's logB=8.
 // The same constructor supplies malformed ring metadata for binding checks.
-fn lift_parameters<T: FheUint, M: RingContext<T>>(
+fn lift_parameters<
+    T: FheUint,
+    M: RingContext<T>
+        + TryFrom<primus_tfhe::ModulusConfig<M>, Error = primus_tfhe::ModulusConfigError>,
+>(
     poly_length: PolyLength,
     modulus: M,
 ) -> NlevParameters<T, M> {
-    let basis = DecompositionConfig {
-        log_basis: DecompositionBaseLog::new(4),
-        level_count: None,
-    }
-    .try_build(modulus.explicit_value())
+    let basis = ApproxSignedBasis::try_from((
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(4),
+            level_count: None,
+        },
+        modulus.explicit_value(),
+    ))
     .unwrap();
     NlevParameters::try_from_parts(
         std::sync::Arc::new(NtruEncryptionParameters::new(
@@ -378,23 +382,34 @@ fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T) {
         (SecretKeyDistr::fixed_hamming_weight_binary(4, 2), true, 4),
     ] {
         // One material set serves both t=4 and t=8 chunk programs.
+        let context_parameters = &parameters(BarrettModulus::new(q), distr, dimension);
         let context = primus_tfhe_ntru_ntt::TfheContext::<_, Table, _>::try_from_parameters(
-            parameters(BarrettModulus::new(q), distr, dimension),
+            context_parameters.clone(),
         )
         .unwrap();
         let mut rng = StdRng::seed_from_u64(0x48504c5554);
         let mut generator = primus_tfhe_ntru_ntt::KeyGenerator::new(&context);
         let client = generator.try_generate_client_key(&mut rng).unwrap();
         let blind_rotation = if sparse {
-            BlindRotationAlgorithm::Sparse {
+            BlindRotationMethod::Sparse {
                 copy_count: 3,
                 bucket_count: 8,
             }
         } else {
-            BlindRotationAlgorithm::Classic
+            BlindRotationMethod::Classic
         };
         let server = generator
-            .try_generate_server_key(&client, blind_rotation, Some(cbs::<T>()), &mut rng)
+            .try_generate_circuit_bootstrap_server_key_with_parameters(
+                context_parameters.key_switching(),
+                &client,
+                blind_rotation,
+                &primus_tfhe_ntru::CbsGadgetParameters::try_from_config(
+                    context.parameters(),
+                    cbs::<T>(),
+                )
+                .unwrap(),
+                &mut rng,
+            )
             .unwrap();
         // Generate NLEV[1] independently; reuse it only for plans with explicit Lift.
         let lift_params =
@@ -431,16 +446,22 @@ fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T) {
                     assert!(table.needs_public_lift());
                     if sparse {
                         assert!(matches!(
-                            NttLookupTableEvaluator::try_new(&context, &server, &table),
+                            NttLookupTableEvaluator::try_new(
+                                &context,
+                                context_parameters.key_switching(),
+                                &server,
+                                &table
+                            ),
                             Err(LookupTableError::MissingPublicLiftKey)
                         ));
                     }
                     let bind = |public_lift| {
                         NttLookupTableEvaluator::try_from_parts(
                             &context,
-                            server.blind_rotation_key(),
-                            server.key_switching_key(),
-                            server.circuit_bootstrap_key().unwrap(),
+                            context_parameters.key_switching(),
+                            server.server_key().blind_rotation_key(),
+                            server.server_key().key_switching_key(),
+                            server.circuit_bootstrap_key(),
                             public_lift,
                             &table,
                         )
@@ -498,6 +519,7 @@ fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T) {
                 let mut evaluator = if matches!(mapping, Mapping::Distinct) {
                     NttLookupTableEvaluator::try_with_public_lift(
                         &context,
+                        context_parameters.key_switching(),
                         &server,
                         &table,
                         (primus_ntru::NttNlevCiphertext::new(&[][..]), &lift_params),
@@ -505,9 +527,10 @@ fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T) {
                 } else if radix == 2 {
                     NttLookupTableEvaluator::try_from_parts(
                         &context,
-                        server.blind_rotation_key(),
-                        server.key_switching_key(),
-                        server.circuit_bootstrap_key().unwrap(),
+                        context_parameters.key_switching(),
+                        server.server_key().blind_rotation_key(),
+                        server.server_key().key_switching_key(),
+                        server.circuit_bootstrap_key(),
                         (table.needs_public_lift()
                             && (sparse || !matches!(mapping, Mapping::Constant)))
                         .then(|| (lift.as_view(), &lift_params)),
@@ -519,12 +542,18 @@ fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T) {
                     // Explicit material also overrides classic BR's initializer.
                     NttLookupTableEvaluator::try_with_public_lift(
                         &context,
+                        context_parameters.key_switching(),
                         &server,
                         &table,
                         (lift.as_view(), &lift_params),
                     )
                 } else {
-                    NttLookupTableEvaluator::try_new(&context, &server, &table)
+                    NttLookupTableEvaluator::try_new(
+                        &context,
+                        context_parameters.key_switching(),
+                        &server,
+                        &table,
+                    )
                 }
                 .unwrap();
                 let case = format!(
@@ -560,8 +589,9 @@ fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T) {
                 ),
                 Err(LookupTableError::IncompatibleParameters)
             ));
+            let other_parameters = &parameters(BarrettModulus::new(q), distr, dimension + 1);
             let other = primus_tfhe_ntru_ntt::TfheContext::<_, Table, _>::try_from_parameters(
-                parameters(BarrettModulus::new(q), distr, dimension + 1),
+                other_parameters.clone(),
             )
             .unwrap();
             let table = HighPrecisionLookupTable::try_new(
@@ -573,7 +603,12 @@ fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T) {
             )
             .unwrap();
             assert!(matches!(
-                NttLookupTableEvaluator::try_new(&other, &server, &table),
+                NttLookupTableEvaluator::try_new(
+                    &other,
+                    other_parameters.key_switching(),
+                    &server,
+                    &table
+                ),
                 Err(LookupTableError::Evaluation(
                     primus_tfhe::TfheEvaluationError::IncompatibleLweReturnKey
                 ))
@@ -587,7 +622,12 @@ fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T) {
             )
             .unwrap();
             assert!(matches!(
-                NttLookupTableEvaluator::try_new(&context, &server, &table),
+                NttLookupTableEvaluator::try_new(
+                    &context,
+                    context_parameters.key_switching(),
+                    &server,
+                    &table
+                ),
                 Err(LookupTableError::IncompatibleParameters)
             ));
         }
@@ -603,22 +643,33 @@ fn fourier<T: TorusFftValue, Table: FftTable>() {
         (SecretKeyDistr::fixed_hamming_weight_binary(4, 2), true, 4),
     ] {
         // One material set serves both t=4 and t=8 chunk programs.
+        let context_parameters = &parameters(NativeModulus::new(), distr, dimension);
         let context = primus_tfhe_ntru_fourier::TfheContext::<_, Table, _>::from_parameters(
-            parameters(NativeModulus::new(), distr, dimension),
+            context_parameters.clone(),
         );
         let mut rng = StdRng::seed_from_u64(0x48504c5554);
         let mut generator = primus_tfhe_ntru_fourier::KeyGenerator::new(&context);
         let client = generator.try_generate_client_key(&mut rng).unwrap();
         let blind_rotation = if sparse {
-            BlindRotationAlgorithm::Sparse {
+            BlindRotationMethod::Sparse {
                 copy_count: 3,
                 bucket_count: 8,
             }
         } else {
-            BlindRotationAlgorithm::Classic
+            BlindRotationMethod::Classic
         };
         let server = generator
-            .try_generate_server_key(&client, blind_rotation, Some(cbs::<T>()), &mut rng)
+            .try_generate_circuit_bootstrap_server_key_with_parameters(
+                context_parameters.key_switching(),
+                &client,
+                blind_rotation,
+                &primus_tfhe_ntru::CbsGadgetParameters::try_from_config(
+                    context.parameters(),
+                    cbs::<T>(),
+                )
+                .unwrap(),
+                &mut rng,
+            )
             .unwrap();
         // Fourier lifting uses the same table instance, with an independent logB=4 basis.
         let lift_params = lift_parameters(context.parameters().poly_length(), NativeModulus::new());
@@ -654,16 +705,22 @@ fn fourier<T: TorusFftValue, Table: FftTable>() {
                     assert!(table.needs_public_lift());
                     if sparse {
                         assert!(matches!(
-                            FourierLookupTableEvaluator::try_new(&context, &server, &table),
+                            FourierLookupTableEvaluator::try_new(
+                                &context,
+                                context_parameters.key_switching(),
+                                &server,
+                                &table
+                            ),
                             Err(LookupTableError::MissingPublicLiftKey)
                         ));
                     }
                     let bind = |public_lift| {
                         FourierLookupTableEvaluator::try_from_parts(
                             &context,
-                            server.blind_rotation_key(),
-                            server.key_switching_key(),
-                            server.circuit_bootstrap_key().unwrap(),
+                            context_parameters.key_switching(),
+                            server.server_key().blind_rotation_key(),
+                            server.server_key().key_switching_key(),
+                            server.circuit_bootstrap_key(),
                             public_lift,
                             &table,
                         )
@@ -708,6 +765,7 @@ fn fourier<T: TorusFftValue, Table: FftTable>() {
                 let mut evaluator = if matches!(mapping, Mapping::Distinct) {
                     FourierLookupTableEvaluator::try_with_public_lift(
                         &context,
+                        context_parameters.key_switching(),
                         &server,
                         &table,
                         (
@@ -718,9 +776,10 @@ fn fourier<T: TorusFftValue, Table: FftTable>() {
                 } else if radix == 2 {
                     FourierLookupTableEvaluator::try_from_parts(
                         &context,
-                        server.blind_rotation_key(),
-                        server.key_switching_key(),
-                        server.circuit_bootstrap_key().unwrap(),
+                        context_parameters.key_switching(),
+                        server.server_key().blind_rotation_key(),
+                        server.server_key().key_switching_key(),
+                        server.circuit_bootstrap_key(),
                         (table.needs_public_lift()
                             && (sparse || !matches!(mapping, Mapping::Constant)))
                         .then(|| (lift.as_view(), &lift_params)),
@@ -732,12 +791,18 @@ fn fourier<T: TorusFftValue, Table: FftTable>() {
                     // Explicit material also overrides classic BR's initializer.
                     FourierLookupTableEvaluator::try_with_public_lift(
                         &context,
+                        context_parameters.key_switching(),
                         &server,
                         &table,
                         (lift.as_view(), &lift_params),
                     )
                 } else {
-                    FourierLookupTableEvaluator::try_new(&context, &server, &table)
+                    FourierLookupTableEvaluator::try_new(
+                        &context,
+                        context_parameters.key_switching(),
+                        &server,
+                        &table,
+                    )
                 }
                 .unwrap();
                 let case = format!(
@@ -773,8 +838,9 @@ fn fourier<T: TorusFftValue, Table: FftTable>() {
                 ),
                 Err(LookupTableError::IncompatibleParameters)
             ));
+            let other_parameters = &parameters(NativeModulus::new(), distr, dimension + 1);
             let other = primus_tfhe_ntru_fourier::TfheContext::<_, Table, _>::from_parameters(
-                parameters(NativeModulus::new(), distr, dimension + 1),
+                other_parameters.clone(),
             );
             let table = HighPrecisionLookupTable::try_new(
                 other.parameters().poly_length(),
@@ -785,7 +851,12 @@ fn fourier<T: TorusFftValue, Table: FftTable>() {
             )
             .unwrap();
             assert!(matches!(
-                FourierLookupTableEvaluator::try_new(&other, &server, &table),
+                FourierLookupTableEvaluator::try_new(
+                    &other,
+                    other_parameters.key_switching(),
+                    &server,
+                    &table
+                ),
                 Err(LookupTableError::Evaluation(
                     primus_tfhe::TfheEvaluationError::IncompatibleLweReturnKey
                 ))
@@ -799,7 +870,12 @@ fn fourier<T: TorusFftValue, Table: FftTable>() {
             )
             .unwrap();
             assert!(matches!(
-                FourierLookupTableEvaluator::try_new(&context, &server, &table),
+                FourierLookupTableEvaluator::try_new(
+                    &context,
+                    context_parameters.key_switching(),
+                    &server,
+                    &table
+                ),
                 Err(LookupTableError::IncompatibleParameters)
             ));
         }

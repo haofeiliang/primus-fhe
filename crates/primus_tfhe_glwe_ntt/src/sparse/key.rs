@@ -51,7 +51,9 @@ where
             .ok_or(Error::StorageSizeOverflow)?;
         let data_len = entries
             .checked_add(bucket_count)
-            .and_then(|count| count.checked_mul(parameters.blind_rotation_ggsw().size().ggsw_len()))
+            .and_then(|count| {
+                count.checked_mul(parameters.blind_rotation_params().size().ggsw_len())
+            })
             .ok_or(Error::StorageSizeOverflow)?;
         Layout::array::<usize>(entries).map_err(|_| Error::StorageSizeOverflow)?;
         Layout::array::<usize>(offsets).map_err(|_| Error::StorageSizeOverflow)?;
@@ -129,7 +131,7 @@ where
         let parameters = self.context.parameters();
         let input = client_key.small_lwe_secret_key();
         let input_dimension = input.dimension();
-        let size = parameters.blind_rotation_ggsw().size();
+        let size = parameters.blind_rotation_params().size();
         let mut nonzero_indices = Zeroizing::new(Vec::with_capacity(hamming_weight));
         for (index, &coefficient) in input.as_ref().iter().enumerate() {
             if coefficient == T::ONE {
@@ -155,7 +157,7 @@ where
         drop(nonzero_indices);
 
         let ntt = self.context.table();
-        let gadget = parameters.blind_rotation_ggsw();
+        let gadget = parameters.blind_rotation_params();
         self.gadget.resize(size);
         let mut data = vec![T::ZERO; data_len];
         let max_bucket_len = map

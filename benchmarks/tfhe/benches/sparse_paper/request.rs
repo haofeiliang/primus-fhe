@@ -9,7 +9,7 @@ use primus_reduce::{
     Modulus, ModulusSwitch, PrepareModulusSwitch, ReduceAdd, ReduceAddAssign, ReduceSub,
 };
 use primus_tfhe::{LookupTable, rotation::RotationModulusSwitch};
-use primus_tfhe_glwe_ntt::{ClientKey, Evaluator, ServerKey, TfheContext};
+use primus_tfhe_glwe_ntt::{ClientKey, Evaluator, TfheContext};
 use rand::{SeedableRng, rngs::StdRng};
 
 use super::parameters::{Case, Mode};
@@ -51,7 +51,7 @@ impl<T: FheUint> Request<T> {
         let lut = if is_gate {
             LookupTable::try_new(
                 2,
-                context.parameters().blind_rotation_ggsw().poly_length(),
+                context.parameters().blind_rotation_params().poly_length(),
                 T::as_from(4u32),
                 modulus,
                 modulus,
@@ -124,9 +124,8 @@ impl<T: FheUint> Request<T> {
     /// numerical diagnostic, not a failure-probability or security estimate.
     pub fn validate<Table: MonomialNttTable<ValueT = T>>(
         &mut self,
-        context: &TfheContext<T, Table>,
+        evaluator: &mut Evaluator<'_, T, Table>,
         client: &ClientKey<T>,
-        server: &ServerKey<T>,
         case: Case,
         mode: Mode,
         name: &str,
@@ -140,7 +139,7 @@ impl<T: FheUint> Request<T> {
             3.19,
         );
         let secret = external_secret(client, q);
-        let mut evaluator = context.evaluator(server).unwrap();
+        let context = evaluator.bootstrap_resources().context();
         let mut max_error = T::ZERO;
         let messages: Vec<_> = if self.rhs.is_some() {
             vec![
@@ -173,7 +172,7 @@ impl<T: FheUint> Request<T> {
                         &mut rng,
                     );
                 }
-                self.evaluate(&mut evaluator);
+                self.evaluate(evaluator);
                 self.check_lifted_exponents(case);
                 let expected = T::as_from(expected);
                 assert_eq!(
@@ -207,9 +206,9 @@ impl<T: FheUint> Request<T> {
                 &mut rng,
             );
         }
-        self.evaluate(&mut evaluator);
+        self.evaluate(evaluator);
 
-        let gadget = context.parameters().blind_rotation_ggsw();
+        let gadget = context.parameters().blind_rotation_params();
         let levels = gadget.basis().decompose_length().get();
         let controls = match mode {
             Mode::DenseClassic => 2 * case.dense_dimension,

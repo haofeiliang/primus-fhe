@@ -49,7 +49,7 @@ where
             .parameters()
             .check_accumulator_secret_key(secret_key)?;
         let parameters =
-            GlweParameters::try_from_glev(context.parameters().blind_rotation_ggsw(), codec)
+            GlweParameters::try_from_glev(context.parameters().blind_rotation_params(), codec)
                 .map_err(|_| crate::ClientError::CodecModulusMismatch)?;
         let mut fft = context.new_fft_engine();
         let secret = FourierGlweSecretKey::from_coeff_secret_key(secret_key, &mut fft);
@@ -114,7 +114,7 @@ where
         let n = self
             .context
             .parameters()
-            .blind_rotation_ggsw()
+            .blind_rotation_params()
             .poly_length()
             .get();
         let mut output = vec![T::ZERO; n];

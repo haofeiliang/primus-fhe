@@ -37,6 +37,7 @@ fn backend<T: TorusFftValue, Table: FftTable>(c: &mut Group<'_>, backend: &str, 
         } = workload;
         let parameters = glwe::diagnostic(NativeModulus::<T>::new(), order);
         let codecs = parameters
+            .as_ref()
             .factorized_pbs_codecs(
                 PbsMessageConfig::new(T::as_from(2 * domain)).with_output_modulus(T::TWO),
             )
@@ -56,7 +57,7 @@ fn backend<T: TorusFftValue, Table: FftTable>(c: &mut Group<'_>, backend: &str, 
             c.bench_function(case.id(), |b| {
                 metadata::record("mvb", &case, || {
                     serde_json::json!({
-                        "parameters": metadata::glwe(fixture.context.parameters()),
+                        "parameters": metadata::glwe(&fixture.parameters),
                         "blind_rotation": metadata::blind_rotation(sparse),
                         "encoding": "rounded_padded_input_scaled_bit_output",
                         "input_plaintext_modulus": 2 * domain,
@@ -90,6 +91,7 @@ pub fn bench_mvb(c: &mut Group<'_>) {
 /// Owned request shared by the algorithms, with explicit input, ring-table and
 /// returned-phase codecs. Evaluator scratch/output remain local to each callback.
 struct Fixture<T: TorusFftValue, Table: FftTable> {
+    parameters: primus_tfhe_glwe_fourier::PbsParameters<T>,
     context: TfheContext<T, Table>,
     client: primus_tfhe_glwe_fourier::ClientKey<T>,
     server: primus_tfhe_glwe_fourier::ServerKey<T>,
@@ -105,13 +107,19 @@ impl<T: TorusFftValue, Table: FftTable> Fixture<T, Table> {
         codecs: FactorizedPbsCodecs<T, primus_modulus::NativeModulus<T>>,
         workload: ThresholdWorkload,
     ) -> Self {
-        let context = TfheContext::<T, Table>::from_parameters(parameters);
+        let context_parameters = &parameters;
+        let context = TfheContext::<T, Table>::from_parameters(context_parameters.clone());
         let mut rng = StdRng::seed_from_u64(42);
         let mut generator = KeyGenerator::new(&context);
         let client = ClientKey::generate(context.parameters(), &mut rng);
         let blind_rotation = primus_tfhe_benchmarks::benchmark::blind_rotation(workload.sparse);
         let server = generator
-            .try_generate_server_key(&client, blind_rotation, None, &mut rng)
+            .try_generate_server_key_with_parameters(
+                context_parameters.glwe_key_switching(),
+                &client,
+                blind_rotation,
+                &mut rng,
+            )
             .unwrap();
         let input = context
             .encryptor(client.external_lwe_secret_key(), codecs.input_codec())
@@ -119,6 +127,7 @@ impl<T: TorusFftValue, Table: FftTable> Fixture<T, Table> {
             .encrypt_padded(T::as_from(workload.domain / 2), &mut rng)
             .unwrap();
         Self {
+            parameters,
             codecs,
             workload,
             context,
@@ -159,7 +168,7 @@ impl<T: TorusFftValue, Table: FftTable> Fixture<T, Table> {
                     w.domain,
                     self.context
                         .parameters()
-                        .blind_rotation_ggsw()
+                        .blind_rotation_params()
                         .poly_length(),
                     T::as_from(2 * w.domain),
                     self.codecs.input_codec().ciphertext_modulus(),
@@ -199,7 +208,7 @@ impl<T: TorusFftValue, Table: FftTable> Fixture<T, Table> {
             w.domain,
             self.context
                 .parameters()
-                .blind_rotation_ggsw()
+                .blind_rotation_params()
                 .poly_length(),
             w.outputs,
             T::as_from(2 * w.domain),

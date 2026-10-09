@@ -7,8 +7,9 @@ use primus_tfhe::TfheEvaluationError;
 use primus_tfhe_glwe::PbsOrder;
 
 use crate::{
-    BlindRotationKey, FourierGlweBlindRotationWorkspace, FourierGlweBootstrappingKey, Lwe,
-    ServerKey, SparseGlweBlindRotationWorkspace, SparseGlweBootstrappingKey, TfheContext,
+    BlindRotationKey, FourierGlweBlindRotationWorkspace, FourierGlweBootstrappingKey,
+    GlweKeySwitchingParameters, Lwe, ServerKey, SparseGlweBlindRotationWorkspace,
+    SparseGlweBootstrappingKey, TfheContext,
 };
 
 /// Borrowed ring key-switch key with owned scratch and switched output.
@@ -23,13 +24,10 @@ pub(crate) struct KeySwitchingResources<'a, T: TorusFftValue> {
 impl<'a, T: TorusFftValue> KeySwitchingResources<'a, T> {
     #[must_use]
     pub(crate) fn new(
-        parameters: &crate::PbsParameters<T>,
+        parameters: &GlweKeySwitchingParameters<T>,
         key: &'a FourierGlweKeySwitchingKey<T>,
     ) -> Self {
-        let output = parameters
-            .glwe_key_switching()
-            .expect("KS parameters were checked before resource allocation")
-            .output();
+        let output = parameters.output();
         Self {
             key,
             scratch: FourierGlweKeySwitchingWorkspace::new(output.glwe_size()),
@@ -96,7 +94,29 @@ where
     pub fn try_new(
         context: &'a TfheContext<T, Table>,
         blind_rotation_key: &'a BlindRotationKey<T>,
-        input_key_switching_key: Option<&'a FourierGlweKeySwitchingKey<T>>,
+        input_key_switching_key: Option<(
+            &GlweKeySwitchingParameters<T>,
+            &'a FourierGlweKeySwitchingKey<T>,
+        )>,
+    ) -> Result<Self, TfheEvaluationError> {
+        if let Some((key_parameters, _)) = input_key_switching_key {
+            context
+                .parameters()
+                .check_key_switching_parameters(key_parameters)
+                .map_err(|_| TfheEvaluationError::IncompatibleGlweKeySwitchingKey)?;
+        }
+        Self::try_from_bound_keys(context, blind_rotation_key, input_key_switching_key)
+    }
+
+    /// Binds keys after complete Context or the independent boundary paired KS parameters.
+    /// Checks actual BR/KS material before allocation, without rechecking saved parameters.
+    pub(crate) fn try_from_bound_keys(
+        context: &'a TfheContext<T, Table>,
+        blind_rotation_key: &'a BlindRotationKey<T>,
+        input_key_switching_key: Option<(
+            &GlweKeySwitchingParameters<T>,
+            &'a FourierGlweKeySwitchingKey<T>,
+        )>,
     ) -> Result<Self, TfheEvaluationError> {
         let parameters = context.parameters();
         if !blind_rotation_key.is_compatible(parameters) {
@@ -105,8 +125,8 @@ where
 
         // Validate supplied material even when BR→KS does not use it for input preparation.
         // KS→BR must reject missing material before allocating any scratch.
-        if let Some(key) = input_key_switching_key {
-            crate::key::check_glwe_key_switching_key(parameters, key)?;
+        if let Some((key_parameters, key)) = input_key_switching_key {
+            crate::key::check_bound_glwe_key_switching_key(key_parameters, key)?;
         } else if parameters.pbs_order() == PbsOrder::KeyswitchBootstrap {
             return Err(TfheEvaluationError::MissingGlweKeySwitchingKey);
         }
@@ -126,15 +146,16 @@ where
             },
             input: match parameters.pbs_order() {
                 PbsOrder::BootstrapKeyswitch => InputPreparation::Direct,
-                PbsOrder::KeyswitchBootstrap => InputPreparation::Keyswitch {
-                    key_switching: KeySwitchingResources::new(
-                        parameters,
-                        input_key_switching_key.expect("KS→BR material was checked above"),
-                    ),
-                    small_lwe: LweCiphertext::zero(parameters.small_lwe().dimension().get()),
-                },
+                PbsOrder::KeyswitchBootstrap => {
+                    let (key_parameters, key) =
+                        input_key_switching_key.expect("KS→BR material was checked above");
+                    InputPreparation::Keyswitch {
+                        key_switching: KeySwitchingResources::new(key_parameters, key),
+                        small_lwe: LweCiphertext::zero(parameters.small_lwe().dimension().get()),
+                    }
+                }
             },
-            accumulator: GlweCiphertext::zero(parameters.blind_rotation_ggsw().glwe_len()),
+            accumulator: GlweCiphertext::zero(parameters.blind_rotation_params().glwe_len()),
         })
     }
 
@@ -207,7 +228,7 @@ where
                 key_switching: ks,
                 small_lwe,
             } => {
-                let glwe = parameters.blind_rotation_ggsw();
+                let glwe = parameters.blind_rotation_params();
                 input.inverse_extract_glwe_to(
                     &mut self.accumulator,
                     glwe.poly_length().get(),
@@ -267,10 +288,18 @@ where
         &'a self,
         server_key: &'a ServerKey<T>,
     ) -> Result<BootstrapResources<'a, T, Table>, TfheEvaluationError> {
-        let input_key_switching_key = (self.parameters().pbs_order()
-            == PbsOrder::KeyswitchBootstrap)
-            .then_some(server_key.glwe_key_switching_key());
-        self.bootstrap_resources(server_key.blind_rotation_key(), input_key_switching_key)
+        let key_switching = self.parameters().glwe_key_switching();
+        let input_key_switching_key =
+            if self.parameters().pbs_order() == PbsOrder::KeyswitchBootstrap {
+                Some((key_switching, server_key.glwe_key_switching_key()))
+            } else {
+                None
+            };
+        BootstrapResources::try_from_bound_keys(
+            self,
+            server_key.blind_rotation_key(),
+            input_key_switching_key,
+        )
     }
 
     /// Prepares BR/EP resources and the input KS required by KS→BR.
@@ -278,7 +307,10 @@ where
     pub fn bootstrap_resources<'a>(
         &'a self,
         blind_rotation_key: &'a BlindRotationKey<T>,
-        input_key_switching_key: Option<&'a FourierGlweKeySwitchingKey<T>>,
+        input_key_switching_key: Option<(
+            &GlweKeySwitchingParameters<T>,
+            &'a FourierGlweKeySwitchingKey<T>,
+        )>,
     ) -> Result<BootstrapResources<'a, T, Table>, TfheEvaluationError> {
         BootstrapResources::try_new(self, blind_rotation_key, input_key_switching_key)
     }

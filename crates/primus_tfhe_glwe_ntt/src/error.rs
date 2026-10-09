@@ -11,6 +11,10 @@ pub use primus_tfhe_glwe::{
 /// Failure to construct an NTT table or bind it to TFHE parameters.
 #[derive(Debug, thiserror::Error)]
 pub enum TfheContextError<T: FheUint> {
+    /// Preparing the selected operation or pairing independent operation state failed.
+    #[error(transparent)]
+    Parameters(#[from] TfheParameterError),
+
     /// The selected transform table could not be constructed.
     #[error("failed to construct transform table")]
     TransformTable(#[from] primus_ntt::NttError<T>),
