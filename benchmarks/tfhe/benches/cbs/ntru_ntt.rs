@@ -6,7 +6,6 @@
 //! Fixtures are initialized only for selected IDs, then reused across samples.
 //! Run: cargo bench -p primus_tfhe_benchmarks --bench cbs --features ntru-ntt
 
-use primus_encoding::ScaledCodec;
 use primus_tfhe_benchmarks::measurement::{Case, Group, metadata};
 use std::hint::black_box;
 
@@ -15,9 +14,7 @@ use primus_modulus::PowOf2Modulus;
 use primus_ntt::{MonomialNttTable, U64NttTable};
 use primus_tfhe_benchmarks::parameters::ntt_circuit_modulus;
 use primus_tfhe_benchmarks::parameters::{N, ntru};
-use primus_tfhe_ntru_ntt::{
-    CircuitBootstrapEvaluator, KeyGenerator, OneHotCircuitBootstrapEvaluator, TfheContext,
-};
+use primus_tfhe_ntru_ntt::{KeyGenerator, OneHotEvaluator, TfheContext};
 use rand::{SeedableRng, rngs::StdRng};
 
 // CBS consumes a bit and emits a gadget control, not an LWE result. Verify
@@ -29,13 +26,11 @@ fn ordinary<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
 ) {
     let kind = if sparse { "sparse" } else { "classic" };
     let parameters = ntru::diagnostic(ntt_circuit_modulus::<T>());
-    let (input_codec, ring_message_codec) = parameters
-        .as_ref()
-        .circuit_bootstrap_codecs(T::as_from(4u32), T::as_from(4u32))
-        .unwrap();
+    let input_modulus = T::as_from(4u32);
+    let t_ring = T::as_from(4u32);
     let name = format!("{kind}/complete");
     let fixture = std::cell::LazyCell::new(|| {
-        Fixture::<T, Table>::new(parameters, input_codec, ring_message_codec, sparse, T::ONE)
+        Fixture::<T, Table>::new(parameters, input_modulus, t_ring, sparse, T::ONE)
     });
     let mut verified = false;
     c.throughput(criterion::Throughput::Elements(1));
@@ -50,26 +45,20 @@ fn ordinary<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
             lhs,
             rhs,
         } = &*fixture;
-        let mut resources = context
-            .bootstrap_resources(server.server_key().blind_rotation_key())
-            .unwrap();
-        let mut evaluator = CircuitBootstrapEvaluator::try_new(
-            &resources,
-            server.circuit_bootstrap_key(),
-            &input_codec,
-        )
-        .unwrap();
+        let mut evaluator = context.circuit_bootstrap_evaluator(server).unwrap();
         let mut output = evaluator.allocate_output();
         if !verified {
-            evaluator.circuit_bootstrap_to(input.as_view(), &mut output, &mut resources);
+            evaluator.circuit_bootstrap_to(input.as_view(), output.as_mut_view());
             let mut selected = context.allocate_accumulator_ciphertext();
-            evaluator.cmux_to(&output, lhs, rhs, &mut selected, &mut resources);
+            evaluator.cmux_to(
+                output.as_view(),
+                lhs.as_view(),
+                rhs.as_view(),
+                selected.as_mut_view(),
+            );
             let mut decoded = vec![T::ZERO; N];
             context
-                .accumulator_client(
-                    client.accumulator_ntru_secret_key(),
-                    ring_message_codec,
-                )
+                .accumulator_client(client.accumulator_ntru_secret_key(), t_ring)
                 .unwrap()
                 .decrypt_to(&selected, &mut decoded);
             assert!(decoded.iter().all(|&value| value == T::ONE));
@@ -90,8 +79,7 @@ fn ordinary<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
         b.iter(|| {
             evaluator.circuit_bootstrap_to(
                 black_box(input.as_view()),
-                black_box(&mut output),
-                &mut resources,
+                black_box(output.as_mut_view()),
             )
         });
     });
@@ -105,13 +93,11 @@ fn one_hot<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     sparse: bool,
 ) {
     let parameters = ntru::diagnostic(ntt_circuit_modulus::<T>());
-    let (input_codec, ring_message_codec) = parameters
-        .as_ref()
-        .circuit_bootstrap_codecs(T::as_from(8u32), T::as_from(8u32))
-        .unwrap();
+    let input_modulus = T::as_from(8u32);
+    let t_ring = T::as_from(8u32);
     let br = if sparse { "sparse" } else { "classic" };
     let fixture = std::cell::LazyCell::new(|| {
-        Fixture::<T, Table>::new(parameters, input_codec, ring_message_codec, sparse, T::TWO)
+        Fixture::<T, Table>::new(parameters, input_modulus, t_ring, sparse, T::TWO)
     });
     for compact in [false, true] {
         let kind = if compact { "nonzero" } else { "full" };
@@ -121,21 +107,13 @@ fn one_hot<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
         let case = Case::new("ntru", backend, T::BITS, &name);
         c.bench_function(case.id(), |b| {
             let Fixture {
-            parameters,
+                parameters,
                 context,
                 server,
                 input,
                 ..
             } = &*fixture;
-            let mut resources = context
-                .bootstrap_resources(server.server_key().blind_rotation_key())
-                .unwrap();
-            let mut evaluator = OneHotCircuitBootstrapEvaluator::try_new(
-                &resources,
-                server.circuit_bootstrap_key(),
-                &input_codec,
-            )
-            .unwrap();
+            let mut evaluator = context.one_hot_evaluator(server).unwrap();
             let mut output = if compact {
                 evaluator.allocate_nonzero_ngsw_output()
             } else {
@@ -143,11 +121,11 @@ fn one_hot<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
             };
             if !verified {
                 if compact {
-                    evaluator.one_hot_nonzero_ngsw_to(input.as_view(), &mut output, &mut resources);
+                    evaluator.one_hot_nonzero_ngsw_to(input.as_view(), &mut output);
                 } else {
-                    evaluator.one_hot_ngsw_to(input.as_view(), &mut output, &mut resources);
+                    evaluator.one_hot_ngsw_to(input.as_view(), &mut output);
                 }
-                fixture.check_one_hot(&output, &evaluator, &mut resources, compact, ring_message_codec);
+                fixture.check_one_hot(&output, &mut evaluator, compact, t_ring);
                 verified = true;
             }
             metadata::record("cbs", &case, || {
@@ -167,7 +145,6 @@ fn one_hot<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
                     evaluator.one_hot_nonzero_ngsw_to(
                         black_box(input.as_view()),
                         black_box(&mut output),
-                        &mut resources,
                     )
                 });
             } else {
@@ -175,7 +152,6 @@ fn one_hot<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
                     evaluator.one_hot_ngsw_to(
                         black_box(input.as_view()),
                         black_box(&mut output),
-                        &mut resources,
                     )
                 });
             }
@@ -207,19 +183,21 @@ impl<T: FheUint, Table: MonomialNttTable<ValueT = T>> Fixture<T, Table> {
     /// preserved so the baseline keeps identical client and encryption randomness.
     fn new(
         parameters: primus_tfhe_ntru_ntt::PbsParameters<T, PowOf2Modulus<T>>,
-        input_codec: primus_encoding::RoundedCodec<T, PowOf2Modulus<T>>,
-        ring_message_codec: primus_encoding::ScaledCodec<T, primus_modulus::BarrettModulus<T>>,
+        input_modulus: T,
+        t_ring: T,
         sparse: bool,
         message: T,
     ) -> Self {
-        let parameters = parameters.with_messages(primus_tfhe::PbsMessageConfig::new(
-            input_codec.plaintext_modulus(),
-        ));
+        let parameters =
+            parameters.with_messages(primus_tfhe::PbsMessageConfig::new(input_modulus));
         let context_parameters = &parameters;
         let context = TfheContext::<T, Table, PowOf2Modulus<T>>::try_from_parameters(
             context_parameters.clone(),
         )
         .unwrap();
+        let context = context
+            .try_with_circuit_bootstrap(ntru::cbs::<T>())
+            .unwrap();
         let mut rng = StdRng::seed_from_u64(42);
         let mut generator = KeyGenerator::new(&context);
         let client = generator.try_generate_client_key(&mut rng).unwrap();
@@ -229,11 +207,7 @@ impl<T: FheUint, Table: MonomialNttTable<ValueT = T>> Fixture<T, Table> {
                 context_parameters.key_switching(),
                 &client,
                 blind_rotation,
-                &primus_tfhe_ntru::CbsGadgetParameters::try_from_config(
-                    context.parameters(),
-                    ntru::cbs::<T>(),
-                )
-                .unwrap(),
+                context.cbs_parameters().unwrap().gadget(),
                 &mut rng,
             )
             .unwrap();
@@ -245,7 +219,7 @@ impl<T: FheUint, Table: MonomialNttTable<ValueT = T>> Fixture<T, Table> {
             .encrypt_padded(message, &mut rng)
             .unwrap();
         let mut ring = context
-            .accumulator_client(client.accumulator_ntru_secret_key(), ring_message_codec)
+            .accumulator_client(client.accumulator_ntru_secret_key(), t_ring)
             .unwrap();
         let lhs = ring.encrypt(&[T::ZERO; N], &mut rng);
         let rhs = ring.encrypt(&[T::ONE; N], &mut rng);
@@ -264,10 +238,9 @@ impl<T: FheUint, Table: MonomialNttTable<ValueT = T>> Fixture<T, Table> {
     fn check_one_hot<'a>(
         &self,
         output: &[T],
-        evaluator: &OneHotCircuitBootstrapEvaluator<'a, T, Table, PowOf2Modulus<T>>,
-        resources: &mut primus_tfhe_ntru_ntt::BootstrapResources<'a, T, Table, PowOf2Modulus<T>>,
+        evaluator: &mut OneHotEvaluator<'a, T, Table, PowOf2Modulus<T>>,
         compact: bool,
-        ring_message_codec: ScaledCodec<T, primus_modulus::BarrettModulus<T>>,
+        t_ring: T,
     ) {
         let Self {
             context,
@@ -279,7 +252,7 @@ impl<T: FheUint, Table: MonomialNttTable<ValueT = T>> Fixture<T, Table> {
         let mut selected = context.allocate_accumulator_ciphertext();
         let mut decoded = vec![T::ZERO; N];
         let mut ring = context
-            .accumulator_client(client.accumulator_ntru_secret_key(), ring_message_codec)
+            .accumulator_client(client.accumulator_ntru_secret_key(), t_ring)
             .unwrap();
         // Both views iterate mathematical r, even when storage omits delta_0.
         let selectors = if compact {
@@ -288,7 +261,12 @@ impl<T: FheUint, Table: MonomialNttTable<ValueT = T>> Fixture<T, Table> {
             evaluator.ngsw_selectors(output)
         };
         for (r, control) in selectors.iter() {
-            evaluator.cmux_to(&control, lhs, rhs, &mut selected, resources);
+            evaluator.cmux_to(
+                control,
+                lhs.as_view(),
+                rhs.as_view(),
+                selected.as_mut_view(),
+            );
             ring.decrypt_to(&selected, &mut decoded);
             let expected = if r == 2 { T::ONE } else { T::ZERO };
             assert!(decoded.iter().all(|&value| value == expected));

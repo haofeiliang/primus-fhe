@@ -460,7 +460,7 @@ where
     ///
     /// # Correctness
     /// Inherits [`OneHotCircuitBootstrapEvaluator::try_new`]'s secret and representation contracts.
-    pub fn one_hot_evaluator<'a>(
+    pub fn one_hot_evaluator_with_resources<'a>(
         &'a self,
         resources: &BootstrapResources<'a, T, Table, LM>,
         circuit_key: &'a CircuitBootstrapKey<T>,

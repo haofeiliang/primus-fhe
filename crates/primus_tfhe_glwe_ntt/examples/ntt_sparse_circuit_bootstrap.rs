@@ -4,7 +4,7 @@
 //! Arithmetic profiles: guides/development/tfhe-parameters.md (not security presets).
 
 use primus_ntt::U64NttTable as Table;
-use primus_tfhe_glwe_ntt::{CircuitBootstrapEvaluator, TfheContext, experimental};
+use primus_tfhe_glwe_ntt::{TfheContext, experimental};
 use rand::{SeedableRng, rngs::StdRng};
 
 // The paired experimental entry fixes u64 coefficients and the operation domains.
@@ -14,12 +14,6 @@ fn main() {
     let config = experimental::SPARSE_CBS_U64;
     let context = TfheContext::<Word, Table>::try_from_cbs_config(config).unwrap();
     let poly_length = config.pbs.bsk_poly_length.get();
-
-    // Padded t=8 accepts integers 0..4, independently of the candidate ring messages.
-    let (input_codec, ring_message_codec) = context
-        .parameters()
-        .circuit_bootstrap_codecs(config.pbs.messages.input_modulus, 8)
-        .unwrap();
 
     // Client: generate sparse BR/CBS material and KS for downstream LWE returns.
     let mut rng = StdRng::seed_from_u64(42);
@@ -32,7 +26,7 @@ fn main() {
 
     // Candidate ring messages use an independent t=8 space under the accumulator secret.
     let mut ring_client = context
-        .accumulator_client(client_key.glwe_secret_key(), ring_message_codec)
+        .accumulator_client(client_key.glwe_secret_key(), 8)
         .unwrap();
     // Encrypt both candidates with the accumulator secret used by the CBS output.
     let lhs_message = vec![1; poly_length];
@@ -43,20 +37,12 @@ fn main() {
     let mut decoded = vec![0; poly_length];
 
     // Server: receive the encrypted candidates; allocate the control and result.
-    let mut resources = server_key.bootstrap_resources(&context).unwrap();
     // Compile F(m) = [m >= 2] once. CBS emits gadget-scaled F(m), so CMux
     // consumes a bit even when the encrypted input itself is not a bit.
-    let program = server_key
-        .circuit_bootstrap_key()
-        .parameters()
-        .compile_lookup_table_fn(&input_codec, |m| Word::from(m >= 2))
+    let program = context.compile_cbs_fn(|m| Word::from(m >= 2)).unwrap();
+    let mut cbs = context
+        .circuit_bootstrap_evaluator_with_lookup_table(&server_key, program)
         .unwrap();
-    let mut cbs = CircuitBootstrapEvaluator::try_with_lookup_table(
-        &resources,
-        server_key.circuit_bootstrap_key(),
-        program,
-    )
-    .unwrap();
     let mut control = cbs.allocate_output();
     let mut selected = context.allocate_accumulator_ciphertext();
 
@@ -67,8 +53,13 @@ fn main() {
             .unwrap();
 
         // Server: one CBS computes the predicate; CMux selects rhs when it is true.
-        cbs.circuit_bootstrap_to(input.as_view(), &mut control, &mut resources);
-        cbs.cmux_to(&control, &lhs, &rhs, &mut selected, &mut resources);
+        cbs.circuit_bootstrap_to(input.as_view(), control.as_mut_view());
+        cbs.cmux_to(
+            control.as_view(),
+            lhs.as_view(),
+            rhs.as_view(),
+            selected.as_mut_view(),
+        );
 
         // Client: decrypt the returned ring ciphertext, reusing the decoding buffer.
         ring_client.decrypt_to(&selected, &mut decoded);

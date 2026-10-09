@@ -87,7 +87,7 @@ where
 
     /// Allocates projection storage after compilation or external program binding
     /// establishes the program/key/context pairing. No checks are repeated here.
-    fn from_lookup_table(
+    pub(super) fn from_lookup_table(
         context: &'a TfheContext<T, Table, LM>,
         circuit_key: &'a CircuitBootstrapKey<T>,
         lookup_table: CircuitBootstrapLookupTable<T>,
@@ -275,7 +275,7 @@ where
     ///
     /// # Correctness
     /// Inherits [`CircuitBootstrapEvaluator::try_new`]'s secret, representation and noise contracts.
-    pub fn circuit_bootstrap_evaluator<'a>(
+    pub fn circuit_bootstrap_evaluator_with_resources<'a>(
         &'a self,
         resources: &BootstrapResources<'a, T, Table, LM>,
         circuit_key: &'a CircuitBootstrapKey<T>,

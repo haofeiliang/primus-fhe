@@ -99,6 +99,13 @@ impl<T: FheUint> InterleavedLookupTable<T> {
         self.input_domain_len
     }
 
+    /// Returns the Rounded input message modulus used to place rotation intervals.
+    /// Distinct moduli can have the same front-half domain length.
+    #[must_use]
+    pub fn input_plaintext_modulus(&self) -> T {
+        self.encoding.input_plaintext_modulus
+    }
+
     /// Checks the polynomial length and input/accumulator encoding domains.
     ///
     /// Output scale is not compared: raw Boolean and gadget-scaled outputs

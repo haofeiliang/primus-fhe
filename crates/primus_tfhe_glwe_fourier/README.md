@@ -47,7 +47,7 @@ Comments identify client and server stages. Basic and sparse both compute `x % 4
 
 ManyLUT interleaves outputs within one blind rotation; factorized MVB uses public factors and a different evaluation interface.
 
-Client factories take only the relevant secret: pass `client_key.external_lwe_secret_key()` to `encryptor` / `decryptor` and the Boolean variants, or `client_key.glwe_secret_key()` to `accumulator_client`. Complete `ClientKey` bundles are used for server-key generation; no secret buffers are copied to select a role.
+Client factories take only the relevant secret: pass `client_key.external_lwe_secret_key()` to `encryptor` / `pbs_decryptor` / `mvb_decryptor` and the Boolean variants, or `client_key.glwe_secret_key()` to `accumulator_client`. Complete `ClientKey` bundles are used for server-key generation; no secret buffers are copied to select a role.
 
 ## Parameters and representation
 
@@ -63,23 +63,21 @@ Choose `PbsOrder::BootstrapKeyswitch` for external dimension n or `KeyswitchBoot
 
 ## Reusing evaluators
 
-Ordinary/interleaved `Evaluator` owns common `BootstrapResources` and its return stage. CBS owns only LUT/projection state and borrows `pbs.bootstrap_resources_mut()` as the final execution argument. MVB uses `FactorizedEvaluator::new(&pbs)` and takes `&mut pbs` per request. Ordinary PBS resumes when the borrow ends, without evaluator conversion or recovery. The same FFT engine serves input/output KS, BR, trace, scheme switch and factor products; borrowing does not create another FFT workspace.
+Ordinary/interleaved `Evaluator` owns common `BootstrapResources` and its return stage. Default `CbsEvaluator` combines the CBS program, projection buffers and required input/BR resources. Independent `CircuitBootstrapEvaluator` briefly borrows `pbs.bootstrap_resources_mut()` per call. MVB uses `FactorizedEvaluator::new(&pbs)` and takes `&mut pbs` per request. Serial operations can reuse the same resource instance.
 
 `Resources` groups borrowed context/evaluation material with owned reusable buffers; it does not own or copy the keys. `Workspace` denotes buffer storage and shape metadata, including lower-level BR/EP scratch. `Evaluator` executes a specific workflow using owned or briefly borrowed resources. Keep the context/key owners alive; serial operations can share one mutable resource instance, while concurrent requests need separate mutable resources. The resources own the FFT engine, which borrows the context’s table; switching resource owners must preserve that table identity.
 
 `ServerKey` remains the convenient complete PBS bundle. Advanced workflows can own `BlindRotationKey`, the ring KS key and `CircuitBootstrapKey` separately; `ServerKey::new(br, ks)` / `into_parts` move BR/KS, while `CircuitBootstrapServerKey::new(server_key, circuit_key)` / `into_parts` move the CBS composition without copying ciphertext arrays. `KeyGenerator::try_generate_blind_rotation_key(&client, config, rng)` uses `BlindRotationMethod` to select classic or sparse BR, without generating return or CBS material; `try_generate_glwe_key_switching_key` generates ring KS separately; `try_generate_circuit_bootstrap_key(accumulator_secret, cbs_parameters.gadget().clone(), rng)` needs only the accumulator secret. Separate generation may transform secrets again; paired generation retains its existing transform reuse.
 
-`context.try_generate_circuit_bootstrap_keys(rng)` returns `(ClientKey, CircuitBootstrapServerKey)`, containing a required BR/KS `ServerKey` and CBS key. `server.bootstrap_resources(&context)` prepares only BR and any input-KS workspace; BR→KS CBS allocates no return scratch. Bind CBS with `server.circuit_bootstrap_key()`; downstream LWE returns reuse KS in `server.server_key()`. See [material selection](../primus_tfhe/README.md#selecting-blind-rotation).
+`context.try_generate_circuit_bootstrap_keys(rng)` returns `(ClientKey, CircuitBootstrapServerKey)`, containing a required BR/KS `ServerKey` and CBS key. `server.bootstrap_resources(&context)` prepares only BR and any input-KS workspace; BR→KS CBS allocates no return scratch. Use `context.circuit_bootstrap_evaluator(&server)` for identity CBS; downstream LWE returns reuse KS in `server.server_key()`. See [material selection](../primus_tfhe/README.md#selecting-blind-rotation).
 
-For CBS with an existing `CircuitBootstrapServerKey`, prepare only the required common resources:
+The default CBS workflow takes the complete server key and prepares its resources:
 
 ```rust,ignore
-let mut resources = server.bootstrap_resources(&context)?;
-let circuit_key = server.circuit_bootstrap_key();
-let mut cbs = context.circuit_bootstrap_evaluator(&resources, circuit_key)?;
+let mut cbs = context.circuit_bootstrap_evaluator(&server)?;
 ```
 
-The factory selects input KS for KS→BR and omits output-KS scratch for BR→KS. Default `context.circuit_bootstrap_evaluator(&resources, circuit_key)` uses the context's input encoding and gadgets; explicit `try_new` uses the circuit key's parameters. If PBS is already prepared, pass `pbs.bootstrap_resources()` instead; subsequent CBS calls borrow `pbs.bootstrap_resources_mut()`.
+The factory selects input KS for KS→BR; BR→KS allocates no return scratch. `cbs.into_parts()` moves out operation state and common resources for subsequent PBS reuse. With an existing PBS evaluator, use `context.circuit_bootstrap_evaluator_with_resources(pbs.bootstrap_resources(), circuit_key)?` and borrow its resources per call. Low-level `try_new` permits explicit input encodings.
 
 For independently generated material, use `context.bootstrap_resources(br, input_ks)`: BR→KS accepts `None`, while KS→BR requires `Some((ks_parameters, ks))`. Standalone CBS does not require an ordinary return key. `Evaluator::try_from_parts(context, parameters.glwe_key_switching(), br, ks)` binds complete PBS/ManyLUT. Both entries support classic/sparse. Layout, basis and modulus checks do not establish actual secret or transform identity.
 
@@ -112,19 +110,13 @@ Both orders support ordinary/interleaved PBS, MVB and CBS. `try_generate_circuit
 
 ## Circuit bootstrapping
 
-`br.circuit_bootstrap_codecs(t_in, t_ring)?` returns Rounded input and Scaled candidate ring codecs with the correct q/Q and independent plaintext domains. Pass the former to the input encryptor and CBS evaluator, and the latter to `accumulator_client`; it does not describe the CBS gadget output.
+The Context retains Rounded input encoding and CBS gadgets. Encrypt with `context.encryptor(external_secret)?`; `context.accumulator_client(client.glwe_secret_key(), t_ring)?` independently prepares Scaled ring clients at Q. Candidate t_ring may differ from input or ordinary PBS output message moduli. CBS output uses gadget scales.
 
-Compile a custom integer function with `key.parameters().compile_lookup_table_fn(&input_codec, |m| u64::from(m >= 2))?`, or pass the complete front-half result slice to `compile_lookup_table_slice`. Bind the resulting `CircuitBootstrapLookupTable` with `CircuitBootstrapEvaluator::try_with_lookup_table(&resources, key, program)?`; `try_new` keeps the identity default. Output lanes use `g_j * F(m) mod Q`, with no output message codec or extra BR. CMux requires bit-valued F throughout the input domain; other ring integers require the external-product noise contract. The ordinary CBS examples use t_in=8 and show both branches of this predicate.
+Compile an integer function with `context.compile_cbs_fn(|m| u64::from(m >= 2))?`, or pass the complete front-half result slice to `compile_cbs_slice`; `compile_cbs_identity()` supplies identity. `context.circuit_bootstrap_evaluator_with_lookup_table(&server, program)?` moves in the program and combines reusable resources; `context.circuit_bootstrap_evaluator(&server)?` prepares identity CBS. Binding checks input message intervals, q/Q, basis and key layouts; equal input counts do not establish equal encodings. Output lanes contain `g_j * F(m) mod Q`; CMux requires bit-valued F throughout the domain, while other ring integers require the external-product noise contract.
 
-Use `context.try_generate_circuit_bootstrap_keys(&mut rng)` to generate a BR/KS `ServerKey` plus required CBS key. Borrow `server.server_key()` for the PBS evaluator and `server.circuit_bootstrap_key()` for the CBS evaluator, sharing the same BR/KS. `allocate_output`, `circuit_bootstrap_to` and `cmux_to` lend common resources to each operation; the [CBS → CMUX example](examples/fourier_circuit_bootstrap.rs) shows the full consumption chain.
+`context.try_generate_circuit_bootstrap_keys(&mut rng)` generates a complete `CircuitBootstrapServerKey`. Default `CbsEvaluator` calls `circuit_bootstrap_to(input.as_view(), control.as_mut_view())` and `cmux_to(control.as_view(), lhs.as_view(), rhs.as_view(), selected.as_mut_view())` need no separate resources argument. The [CBS → CMUX example](examples/fourier_circuit_bootstrap.rs) shows two requests; ordinary PBS borrows `server.server_key()`.
 
-The [sparse CBS example](examples/fourier_sparse_circuit_bootstrap.rs) shows the fixed-weight secret, sparse key generation and CBS configuration together. Both PBS orders work; subsequent CBS and CMux calls are identical.
-
-Input encoding and interleaved capacity are checked at program compilation; binding checks its domain and basis, so compatible programs can reuse the keys with another `t`.
-
-The output is `FourierGgsw` under the accumulator secret. The key binds output layout and trace/scheme-switch bases; `try_with_parameters(&resources, parameters, circuit_key, &input_codec)` explicitly selects another output basis with the same level count. For a precompiled program at that basis, use `try_with_parameters_and_lookup_table(&resources, parameters, circuit_key, program)`. Budget native trace halving and FFT error against the smallest output gadget scale.
-
-Standalone component generation must use paired secrets and the same transform representation; shape checks cannot prove identity. See [CBS input/output and consumption](../primus_tfhe/README.md#cbs-output-and-consumption) and the [family CBS contract](../primus_tfhe_glwe/README.md#boolean-and-cbs).
+Use low-level `CircuitBootstrapEvaluator` for per-call resource borrowing, other input encodings or GLWE output-basis overrides. Actual secret/transform identity, candidates' common encoding and noise margins remain caller contracts. See the [shared CBS contract](../primus_tfhe/README.md#cbs-output-and-consumption).
 
 ## Lower-level composition
 

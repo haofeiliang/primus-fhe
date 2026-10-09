@@ -210,6 +210,8 @@ GLWE 参数分别由[共享模数/采样状态](../../crates/primus_glwe/src/par
 
 Resources 借用 context/key 的 owner，只拥有准备好的缓冲；Fourier 后端还拥有借用 context 表的 FFT engine。串行 PBS/MVB/CBS/one-hot 可相互借用公共资源，并发 worker 通常需要独立可变实例。GLWE 的 `KeySwitchingResources` 将环 KS 密钥与底层 workspace、switched 输出绑定；NTRU 的 `BlindRotationResources` 将 classic controls 或 sparse key 与所选 BR 缓冲绑定，内部外积 workspace 仍是纯存储。这些内部组合使用 `Resources`，不增加新的公开 wrapper；缓冲类型带有辅助运算方法，也不必因此改叫 `Evaluator`。参见 [TFHE 资源组合](tfhe-parameters-and-boundaries.md#输入盲旋转与返回组合)。
 
+默认 `CbsEvaluator` / `OneHotEvaluator` 从完整服务端密钥准备原有公共资源，并组合操作状态；它们不复制材料或变换表。`into_parts()` 移出底层状态和资源，继续服务串行 PBS/CBS/one-hot 复用；显式逐调用借用接口仍可用。
+
 工作区长度相同不证明 basis、模数、表或秘密相容。在重复操作前构造缓冲，遵循接口的覆盖/累加规则；借用工作区或调用方 accumulator 需要恢复时须明确恢复契约。秘密密钥和工作区擦除后的状态可能不同，复用前阅读各类型的 `zeroize` 契约。
 
 ## 按实际消费者选择拥有型容器

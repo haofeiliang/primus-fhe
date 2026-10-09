@@ -27,20 +27,23 @@
 //! - [`factorized`]: a prepared MVB program and [`FactorizedEvaluator`], with Scaled outputs.
 //! - [`boolean`]: Boolean clients and gates with plaintext modulus four.
 //! - [`circuit_bootstrap`]: optional trace/scheme-switch material and
-//!   [`CircuitBootstrapEvaluator`], producing accumulator-secret gadget controls for CMUX.
+//!   [`CbsEvaluator`], producing accumulator-secret gadget controls for CMUX.
 //! - [`sparse`]: fixed-weight binary bucket material; choose [`BlindRotationMethod::Sparse`]
 //!   in the operation config, then use [`KeyGenerator::try_generate_server_key`].
 //!
 //! [`Evaluator`] owns common [`BootstrapResources`] and the ordinary return stage.
-//! CBS borrows common resources per operation; MVB borrows the complete evaluator.
+//! Default [`CbsEvaluator`] owns its input/BR resources; low-level
+//! [`CircuitBootstrapEvaluator`] borrows common resources per call.
+//! MVB borrows the complete PBS evaluator.
 //! Standalone resources include input KS for KS→BR, but no output KS for BR→KS.
 //! The specialized constructors document their allocation and borrowing contracts.
 //!
 //! [`TfheContext::try_generate_circuit_bootstrap_keys`] generates a complete CBS
-//! bundle, including the BR/KS [`ServerKey`] for downstream LWE returns. [`PbsParameters::circuit_bootstrap_codecs`]
-//! prepares the independent input and candidate ring-message encodings. Compile F
-//! with [`CbsGadgetParameters::compile_lookup_table_fn`] and bind the program
-//! with [`CircuitBootstrapEvaluator::try_with_lookup_table`]. CBS output uses its
+//! bundle, including the BR/KS [`ServerKey`] for downstream LWE returns.
+//! [`TfheContext::compile_cbs_fn`] compiles F using retained input/gadgets;
+//! [`TfheContext::circuit_bootstrap_evaluator_with_lookup_table`] binds the complete
+//! key and moves the program into [`CbsEvaluator`]. Candidate ring clients take
+//! independent t_ring via [`TfheContext::accumulator_client`]. CBS output uses its
 //! gadget basis; CMux requires bit-valued F across the programmed input domain.
 //!
 //! # Composition and representation
@@ -101,7 +104,7 @@ pub use bootstrapping_key::NttGlweBootstrappingKey;
 #[doc(no_inline)]
 pub use circuit_bootstrap::CircuitBootstrapKey;
 #[doc(inline)]
-pub use circuit_bootstrap::{CbsGadgetParameters, CircuitBootstrapEvaluator};
+pub use circuit_bootstrap::{CbsEvaluator, CbsGadgetParameters, CircuitBootstrapEvaluator};
 pub use context::TfheContext;
 #[doc(inline)]
 pub use evaluator::Evaluator;

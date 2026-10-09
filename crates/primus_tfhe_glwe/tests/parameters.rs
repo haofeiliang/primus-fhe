@@ -639,7 +639,7 @@ fn configs_return_role_specific_sampling_errors() {
 /// Complete CBS reuses BR sampling state and retains KS for the selected input path.
 #[test]
 fn complete_cbs_reuses_br_and_checks_input_stage() {
-    use primus_tfhe_glwe::{CbsGadgetConfig, CbsParameters, PbsParameters};
+    use primus_tfhe_glwe::{CbsGadgetConfig, CbsParameters, PbsParameters, TfheParameterError};
 
     let br = PbsParameters::try_from_config(config()).unwrap();
     let decomposition = DecompositionConfig {
@@ -657,6 +657,25 @@ fn complete_cbs_reuses_br_and_checks_input_stage() {
     };
     let direct = CbsParameters::try_with_config(br.clone(), gadget).unwrap();
     assert!(br.has_same_domain(direct.pbs_parameters()));
+    // Independent composition must retain CBS's input intervals. Changing only
+    // ordinary PBS's output message modulus does not affect the gadget program.
+    assert!(matches!(
+        direct.clone().try_with_pbs_parameters(
+            br.clone()
+                .with_messages(primus_tfhe::PbsMessageConfig::new(3))
+        ),
+        Err(TfheParameterError::IncompatibleComponents)
+    ));
+    let other_output = direct
+        .clone()
+        .try_with_pbs_parameters(
+            br.clone()
+                .with_messages(primus_tfhe::PbsMessageConfig::new(4).with_output_modulus(8)),
+        )
+        .unwrap();
+    assert_eq!(other_output.input_codec().plaintext_modulus(), 4);
+    assert_eq!(other_output.pbs_parameters().messages().output_modulus, 8);
+
     assert!(std::ptr::eq(
         br.blind_rotation_params().encryption_parameters(),
         direct.gadget().trace().encryption_parameters()

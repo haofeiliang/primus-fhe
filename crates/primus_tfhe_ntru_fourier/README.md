@@ -48,7 +48,7 @@ Comments identify client and server stages. Basic and sparse both compute `x % 4
 
 ManyLUT interleaves outputs within one blind rotation, shares one Q→q conversion across multiple outputs, and batches their LWE key switches; factorized MVB uses public factors and a different evaluation interface. NTRU sparse supports ordinary/interleaved PBS, factorized MVB, CBS and one-hot. Sparse BR requires a fixed-weight binary external secret.
 
-Client factories take only the relevant secret: pass `client_key.external_lwe_secret_key()` to `encryptor` / `decryptor` and the Boolean variants, or `client_key.accumulator_ntru_secret_key()` to `accumulator_client`. Complete `ClientKey` bundles are used for server-key generation; no secret buffers are copied to select a role.
+Client factories take only the relevant secret: pass `client_key.external_lwe_secret_key()` to `encryptor` / `pbs_decryptor` / `mvb_decryptor` and the Boolean variants, or `client_key.accumulator_ntru_secret_key()` to `accumulator_client`. Complete `ClientKey` bundles are used for server-key generation; no secret buffers are copied to select a role.
 
 ## Parameters and representation
 
@@ -64,7 +64,7 @@ Both `RustFftTable` and `TfheFftTable` support u32/u64. Keys, values and evaluat
 
 `ServerKey` bundles required `BlindRotationKey` and `NtruLweKeySwitchingKey`. `CircuitBootstrapServerKey::new(server_key, circuit_key)` adds required CBS material; both `into_parts()` methods move buffers without copying arrays. Independent BR, return-KS and CBS generation remain available, with `BlindRotationMethod` selecting classic/sparse. Component generation may repeat secret conversion; paired generation shares the accepted transform.
 
-`context.try_generate_circuit_bootstrap_keys(rng)` returns `(ClientKey, CircuitBootstrapServerKey)`, sharing the accepted accumulator transform/inverse across BR/CBS and generating required return KS. Complete bundles must satisfy the return-q secret-magnitude bound. `server.bootstrap_resources(&context)` allocates only BR scratch; CBS/one-hot evaluation allocates no return buffers. Borrow `server.server_key()` for PBS and `server.circuit_bootstrap_key()` for CBS.
+`context.try_generate_circuit_bootstrap_keys(rng)` returns `(ClientKey, CircuitBootstrapServerKey)`, sharing the accepted accumulator transform/inverse across BR/CBS and generating required return KS. Complete bundles must satisfy the return-q secret-magnitude bound. `server.bootstrap_resources(&context)` allocates only BR scratch; CBS/one-hot evaluation allocates no return buffers. Borrow `server.server_key()` for PBS; default CBS/one-hot factories take the complete bundle.
 
 `Evaluator::try_from_parts(context, parameters.key_switching(), br, return_key)` binds ordinary PBS. Standalone CBS/one-hot first prepares common BR/external-product resources with `context.bootstrap_resources(br)?`, then operation state with `try_new(&resources, circuit_key, &input_codec)`. No return key is needed; the CBS example uses the grouped workflow above. Independent material must use the same actual secrets and FFT table instance. Shape and modulus checks do not prove identity.
 
@@ -74,11 +74,11 @@ Both `RustFftTable` and `TfheFftTable` support u32/u64. Keys, values and evaluat
 
 ## Reusing evaluators
 
-Ordinary/interleaved `Evaluator` owns common `BootstrapResources` and scalar/batch return buffers. CBS/one-hot retain only their LUT and projection buffers; pass `pbs.bootstrap_resources_mut()` as the final execution argument. Construct factorized MVB with `FactorizedEvaluator::new(&pbs)` and pass `&mut pbs` as its final execution argument. Ordinary PBS resumes as soon as the borrow ends, without converting or recovering evaluators. Online `_to` calls reuse all buffers. Operation state checks the same context before writes. Classic/sparse resource instances can share it when their actual input and accumulator secrets match; context identity does not establish secret identity.
+Ordinary/interleaved `Evaluator` owns common `BootstrapResources` and scalar/batch return buffers. Default `CbsEvaluator` / `OneHotEvaluator` own their program, projection buffers and common resources without return scratch. Independent `CircuitBootstrapEvaluator` / `OneHotCircuitBootstrapEvaluator` briefly borrow `pbs.bootstrap_resources_mut()` per call. MVB uses `FactorizedEvaluator::new(&pbs)` and borrows `&mut pbs` per request. Online `_to` calls reuse all buffers; independent resources must pair actual secrets and the same transform representation.
 
 `Resources` groups borrowed context/evaluation material with owned reusable buffers; it does not own or copy the keys. `Workspace` denotes buffer storage and shape metadata, including lower-level BR/EP scratch. `Evaluator` executes a specific workflow using owned or briefly borrowed resources. Keep the context/key owners alive; serial operations can share one mutable resource instance, while concurrent requests need separate mutable resources. The resources own the FFT engine, which borrows the context’s table; switching resource owners must preserve that table identity.
 
-For CBS/one-hot alone, keep standalone `BootstrapResources` without return buffers. To add PBS later, `Evaluator::try_from_resources(resources, parameters.key_switching(), return_key)` takes common resources and allocates return buffers. `try_rebind_return_key` changes compatible return material without reallocation; success discards pending samples, while failure preserves the old binding. Resource ownership does not establish actual secret identity.
+Use `cbs.into_parts()` or `one_hot.into_parts()` to move out operation state and common resources without copying or reallocating buffers. Subsequent `Evaluator::try_from_resources(resources, parameters.key_switching(), return_key)` adds only ordinary PBS return scratch; prepared CBS state can still borrow it. `try_rebind_return_key` reuses return buffers with compatible material; success discards pending samples and failure preserves the old binding.
 
 ## Fixed-scale factorized MVB
 
@@ -109,19 +109,19 @@ Ordinary/interleaved PBS use the same evaluator; factorized MVB borrows it per c
 
 ## Optional circuit bootstrapping
 
-`br.circuit_bootstrap_codecs(t_in, t_ring)?` returns Rounded input and Scaled candidate ring codecs with the correct q/Q and independent plaintext domains. Pass the former to the input encryptor and CBS evaluator, and the latter to `accumulator_client`; it does not describe the CBS gadget output.
+The Context retains Rounded input encoding and CBS gadgets. Encrypt with `context.encryptor(external_secret)?`; `context.accumulator_client(client.accumulator_ntru_secret_key(), t_ring)?` independently prepares Scaled ring clients at Q. Candidate t_ring may differ from input or ordinary PBS output message moduli. CBS output uses gadget scales.
 
-Compile a custom integer function with `key.parameters().compile_lookup_table_fn(&input_codec, |m| u64::from(m >= 2))?`, or pass the complete front-half result slice to `compile_lookup_table_slice`. Bind the resulting `CircuitBootstrapLookupTable` with `CircuitBootstrapEvaluator::try_with_lookup_table(&resources, key, program)?`; `try_new` keeps the identity default. Output lanes use `g_j * F(m) mod Q`, with no output message codec or extra BR. CMux requires bit-valued F throughout the input domain; other ring integers require the external-product noise contract. The ordinary CBS examples use t_in=8 and show both branches of this predicate.
+Compile an integer function with `context.compile_cbs_fn(|m| u64::from(m >= 2))?`, or pass the complete front-half result slice to `compile_cbs_slice`; `compile_cbs_identity()` supplies identity. `context.circuit_bootstrap_evaluator_with_lookup_table(&server, program)?` moves in the program and combines reusable resources; `context.circuit_bootstrap_evaluator(&server)?` prepares identity CBS. Binding checks input message intervals, q/Q, basis and key layouts; equal input counts do not establish equal encodings. Output lanes contain `g_j * F(m) mod Q`; CMux requires bit-valued F throughout the domain, while other ring integers require the external-product noise contract.
 
-Use `context.try_generate_circuit_bootstrap_keys(&mut rng)` to generate a BR/KS `ServerKey` plus required CBS key. Borrow `server.server_key()` for the PBS evaluator and `server.circuit_bootstrap_key()` for the CBS evaluator, sharing the same BR/KS. `allocate_output`, `circuit_bootstrap_to` and `cmux_to` lend common resources to each operation; the [CBS → CMUX example](examples/ntru_fourier_circuit_bootstrap.rs) shows the full consumption chain.
+`context.try_generate_circuit_bootstrap_keys(&mut rng)` generates a complete `CircuitBootstrapServerKey`. Default `CbsEvaluator` calls `circuit_bootstrap_to(input.as_view(), control.as_mut_view())` and `cmux_to(control.as_view(), lhs.as_view(), rhs.as_view(), selected.as_mut_view())` need no separate resources argument. The [CBS → CMUX example](examples/ntru_fourier_circuit_bootstrap.rs) shows two requests; ordinary PBS borrows `server.server_key()`.
+
+Use low-level `CircuitBootstrapEvaluator` for per-call resource borrowing or other input encodings. Actual secret/transform identity, candidates' common encoding and noise margins remain caller contracts. See the [shared CBS contract](../primus_tfhe/README.md#cbs-output-and-consumption).
 
 The output is `FourierNgswCiphertext` under `f_acc`. The circuit key binds the complete output basis; `try_new(&resources, circuit_key, &input_codec)` obtains parameters from that key. Budget native trace halving and FFT error against the smallest output gadget scale.
 
-Standalone component generation must use paired secrets and the same transform representation; shape checks cannot prove identity. See [CBS input/output and consumption](../primus_tfhe/README.md#cbs-output-and-consumption) and the [family CBS contract](../primus_tfhe_ntru/README.md#cbs-and-examples).
-
 ## One-hot CBS
 
-The [one-hot example](examples/ntru_fourier_one_hot.rs) generates four selectors and uses δ₂, selected by `TARGET=2`, in a CMux. Change `TARGET` for another branch. Bind `OneHotCircuitBootstrapEvaluator::try_new(&resources, circuit_key, &input_codec)`, allocate once and reuse `_to` calls.
+The [one-hot example](examples/ntru_fourier_one_hot.rs) generates four selectors and uses δ₂, selected by `TARGET=2`, in a CMux. Change `TARGET` for another branch. Use `context.one_hot_evaluator(&server)?` to prepare a `OneHotEvaluator`, allocate once and reuse `_to` calls without a separate resource argument.
 
 See the [family one-hot contract](../primus_tfhe_ntru/README.md#one-hot-cbs) for full/nonzero output APIs, layout and input guards. NLEV output contains coefficients at Q; use `write_fourier_form` before a public-polynomial external product. NGSW is already in Fourier representation. Inputs, keys and candidates must satisfy this page's transform contract.
 
@@ -134,9 +134,9 @@ cover `1..M` and return `None` for `selector(0)`. These views check the exact
 batch length and borrow the existing buffer without copying or allocating.
 `cbs.nlev_selectors(&output)` similarly borrows a complete coefficient NLEV batch.
 
-After obtaining one control, call `cbs.cmux_to(&control, &lhs, &rhs, &mut selected, &mut resources)`: delta_r=0 selects lhs and delta_r=1 selects rhs. `cbs.external_product_to(&control, &input, &mut output, &mut resources)` multiplies the selector by a ring ciphertext. Both calls reuse the bound output basis, transform environment and shared scratch; candidates still require the CMux/product secret, modulus, encoding and noise contracts. Full and nonzero batches use the same consumption interface, with one selector per call.
+After obtaining one control, call `cbs.cmux_to(control, lhs.as_view(), rhs.as_view(), selected.as_mut_view())`: delta_r=0 selects lhs and delta_r=1 selects rhs. `cbs.external_product_to(control, input.as_view(), output.as_mut_view())` multiplies the selector by a ring ciphertext. Both calls reuse the bound output basis, transform environment and shared scratch; candidates still require the CMux/product secret, modulus, encoding and noise contracts. Full and nonzero batches use the same consumption interface, with one selector per call.
 
-For a consumer that immediately processes each result, `new_sparse_pair_workspace(&resources)` allocates one additional input state and `with_sparse_pair` blind-rotates two sparse inputs together. Its callback receives index 0 then 1 and a scoped `OneHotProjection`: `project_to` writes full NLEV and/or nonzero NGSW into reusable buffers. Complete consumption within each callback; the high-precision LUT evaluator uses this path automatically. Fourier projection returns the shared FFT engine for immediate NLEV conversion.
+For a consumer that immediately processes each result, use `one_hot.into_parts()` to obtain low-level state and resources. Its `new_sparse_pair_workspace(&resources)` allocates one additional input state and `with_sparse_pair` blind-rotates two sparse inputs together. Its callback receives index 0 then 1 and a scoped `OneHotProjection`: `project_to` writes full NLEV and/or nonzero NGSW into reusable buffers. Complete consumption within each callback; the high-precision LUT evaluator uses this path automatically. Fourier projection returns the shared FFT engine for immediate NLEV conversion.
 
 ## High-precision lookup
 

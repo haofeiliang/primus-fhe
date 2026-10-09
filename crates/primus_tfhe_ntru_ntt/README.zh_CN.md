@@ -74,11 +74,11 @@ NTT 表需要实现 `MonomialNttTable`，内置表均支持。Context 检查长�
 
 ## 复用 evaluator
 
-普通/interleaved `Evaluator` 拥有公共 `BootstrapResources` 和 scalar/batch 返回缓冲。CBS/one-hot 只保存 LUT 与投影缓冲，调用时最后一个参数传 `pbs.bootstrap_resources_mut()`；factorized MVB 使用 `FactorizedEvaluator::new(&pbs)` 构造，调用时最后一个参数传 `&mut pbs`。借用结束即可继续普通 PBS，无需转换或恢复 evaluator；在线 `_to` 复用所有缓冲。操作状态在写入前检查同一 context。实际输入与累加秘密相同的 classic/sparse 资源可以共享准备状态；context 身份不证明秘密身份。
+普通/交错 `Evaluator` 拥有公共 `BootstrapResources` 及单项/批量返回缓冲。默认 `CbsEvaluator` / `OneHotEvaluator` 拥有各自的程序、投影缓冲和公共资源，不分配返回 scratch；独立 `CircuitBootstrapEvaluator` / `OneHotCircuitBootstrapEvaluator` 每次短借用 `pbs.bootstrap_resources_mut()`。MVB 用 `FactorizedEvaluator::new(&pbs)` 构造，每次借用 `&mut pbs`。在线 `_to` 调用复用所有缓冲；独立资源须配对实际秘密与同一变换表示。
 
 `Resources` 将借用的 context/计算材料与拥有的复用缓冲组合起来，不拥有或复制密钥。`Workspace` 表示缓冲及形状元数据，包括底层 BR/外积 scratch。`Evaluator` 使用自己拥有或短借用的资源执行具体流程。借用期间须保留 context/key 的 owner；串行操作可共享一个可变资源实例，并发请求需要独立的可变资源。NTT 表由 context 拥有，密钥视图与乘积必须保持该表的表示。
 
-仅使用 CBS/one-hot 时，单独保留 `BootstrapResources`，不分配返回缓冲。以后需要 PBS，可用 `Evaluator::try_from_resources(resources, parameters.key_switching(), return_key)` 接管公共资源并分配返回缓冲。`try_rebind_return_key` 更换兼容返回密钥而不重新分配；成功时丢弃待提交样本，失败保持原绑定。资源所有权变化不验证密钥的实际秘密身份。
+通过 `cbs.into_parts()` 或 `one_hot.into_parts()` 移动取出操作状态与公共资源，不复制或重新分配缓冲。后续 `Evaluator::try_from_resources(resources, parameters.key_switching(), return_key)` 只补充普通 PBS 的返回工作区；已准备的 CBS 状态可继续短借用它。`try_rebind_return_key` 复用返回缓冲更换兼容材料；成功会丢弃待返回样本，失败保留原绑定。
 
 ## 固定尺度分解式 MVB
 
@@ -109,19 +109,19 @@ let mut evaluator = context.evaluator(&server)?;
 
 ## 可选电路自举
 
-`br.circuit_bootstrap_codecs(t_in, t_ring)?` 返回 Rounded 输入与 Scaled 候选环消息编码，自动提供正确的 q/Q，两个明文域独立。将前者传给输入 encryptor 和 CBS evaluator，后者传给 `accumulator_client`；它不描述 CBS 的 gadget 输出。
+Context 保存 Rounded 输入编码与 CBS gadget。使用 `context.encryptor(external_secret)?` 加密；`context.accumulator_client(client.accumulator_ntru_secret_key(), t_ring)?` 独立准备 Q 下的 Scaled 候选环客户端，t_ring 不必等于输入或普通 PBS 输出消息模数。CBS 输出采用 gadget 标度。
 
-用 `key.parameters().compile_lookup_table_fn(&input_codec, |m| u64::from(m >= 2))?` 编译整数函数，或将完整前半区结果切片传给 `compile_lookup_table_slice`。通过 `CircuitBootstrapEvaluator::try_with_lookup_table(&resources, key, program)?` 绑定返回的 `CircuitBootstrapLookupTable`；`try_new` 保留恒等函数默认入口。输出层使用 `g_j * F(m) mod Q`，无需输出消息 codec 或额外 BR。CMux 要求整个输入域上的 F 都是 bit；其他环整数遵循外积噪声契约。普通 CBS 示例使用 t_in=8，展示该谓词的正反分支。
+用 `context.compile_cbs_fn(|m| u64::from(m >= 2))?` 编译整数函数，或将完整前半区结果切片传给 `compile_cbs_slice`；`compile_cbs_identity()` 提供恒等函数。`context.circuit_bootstrap_evaluator_with_lookup_table(&server, program)?` 移入程序并组合复用资源，`context.circuit_bootstrap_evaluator(&server)?` 则准备恒等 CBS。工厂核对输入消息区间、q/Q、basis 和密钥布局；相同输入数量不能证明编码相同。输出层为 `g_j * F(m) mod Q`；CMux 要求整个输入域上 F 都为 bit，其他环整数遵循外积噪声契约。
 
-`context.try_generate_circuit_bootstrap_keys(&mut rng)` 生成一个 BR/KS `ServerKey` 和必需 CBS key 的组合。通过 `server.server_key()` 创建 PBS evaluator，通过 `server.circuit_bootstrap_key()` 创建 CBS evaluator，共用同一份 BR/KS。`allocate_output`、`circuit_bootstrap_to` 和 `cmux_to` 逐次借用公共资源；[CBS → CMUX 示例](examples/ntru_ntt_circuit_bootstrap.rs)展示完整消费链。
+`context.try_generate_circuit_bootstrap_keys(&mut rng)` 生成完整 `CircuitBootstrapServerKey`。默认 `CbsEvaluator` 的 `circuit_bootstrap_to(input.as_view(), control.as_mut_view())` 与 `cmux_to(control.as_view(), lhs.as_view(), rhs.as_view(), selected.as_mut_view())` 不需要另传 resources。[CBS → CMUX 示例](examples/ntru_ntt_circuit_bootstrap.rs)展示两次请求；普通 PBS 可借用 `server.server_key()`。
+
+逐调用借用公共资源或其他输入编码使用底层 `CircuitBootstrapEvaluator`。实际秘密/变换身份、候选共同编码和噪声余量仍为调用方契约。见[共享 CBS 契约](../primus_tfhe/README.zh_CN.md#cbs-输出与消费)。
 
 输出为 `f_acc` 下的 `NttNgswCiphertext`。Circuit key 绑定完整输出 basis； `try_new(&resources, circuit_key, &input_codec)` 从该密钥取得参数。 NTT trace 归一化要求奇数 Q 且小于 `2^(T::BITS-1)`。
 
-独立生成组件时须配对秘密并使用同一变换表示，形状检查不能证明身份。 输入/输出与消费要求见[共享 CBS 契约](../primus_tfhe/README.zh_CN.md#cbs-输出与消费)及 [家族 CBS 说明](../primus_tfhe_ntru/README.zh_CN.md#cbs-与示例)。
-
 ## One-hot CBS
 
-[One-hot 示例](examples/ntru_ntt_one_hot.rs)生成四个 selector，并用 `TARGET=2` 对应的 δ₂ 控制 CMux；修改 `TARGET` 选择其他分支。绑定 `OneHotCircuitBootstrapEvaluator::try_new(&resources, circuit_key, &input_codec)`，分配后复用 `_to` 调用。
+[One-hot 示例](examples/ntru_ntt_one_hot.rs)生成四个 selector，并用 `TARGET=2` 对应的 δ₂ 控制 CMux；修改 `TARGET` 选择其他分支。用 `context.one_hot_evaluator(&server)?` 创建 `OneHotEvaluator`，分配后复用 `_to` 调用，无需另传资源。
 
 完整/非零输出接口、布局与输入保护区见[家族 one-hot 契约](../primus_tfhe_ntru/README.zh_CN.md#one-hot-cbs)。NLEV 输出为 Q 下的系数，需要 `write_ntt_form` 转换才能做公开多项式外积；NGSW 已在 NTT 表示。输入、密钥和候选必须满足本页的变换契约。
 
@@ -134,9 +134,9 @@ let mut evaluator = context.evaluator(&server)?;
 `None`。视图检查精确批次长度，直接借用原缓冲，不复制、不分配。
 `cbs.nlev_selectors(&output)` 同样借用完整的系数域 NLEV 批次。
 
-取得单个 control 后，调用 `cbs.cmux_to(&control, &lhs, &rhs, &mut selected, &mut resources)`：δᵣ=0 选择 lhs，δᵣ=1 选择 rhs。`cbs.external_product_to(&control, &input, &mut output, &mut resources)` 则计算 selector 与环密文的乘积。两个入口复用已绑定的 output basis、变换环境和共享 scratch；候选的秘密、模数、编码与噪声仍须符合 CMux/外积契约。完整/非零批次使用相同消费接口，传入的是一个 selector。
+取得单个 control 后，调用 `cbs.cmux_to(control, lhs.as_view(), rhs.as_view(), selected.as_mut_view())`：δᵣ=0 选择 lhs，δᵣ=1 选择 rhs。`cbs.external_product_to(control, input.as_view(), output.as_mut_view())` 则计算 selector 与环密文的乘积。两个入口复用已绑定的 output basis、变换环境和共享 scratch；候选的秘密、模数、编码与噪声仍须符合 CMux/外积契约。完整/非零批次使用相同消费接口，传入的是一个 selector。
 
-需要立即消费每个结果时，`new_sparse_pair_workspace(&resources)` 分配一个额外输入状态，`with_sparse_pair` 一起执行两个 sparse 输入的盲旋转。回调依次收到索引 0、1 和受限的 `OneHotProjection`；`project_to` 将完整 NLEV 和/或非零 NGSW 写入复用缓冲，每次回调内完成消费。高精度 LUT evaluator 自动使用此路径。
+需要立即消费每个结果时，先用 `one_hot.into_parts()` 取得底层状态和资源；其 `new_sparse_pair_workspace(&resources)` 分配一个额外输入状态，`with_sparse_pair` 一起执行两个 sparse 输入的盲旋转。回调依次收到索引 0、1 和受限的 `OneHotProjection`；`project_to` 将完整 NLEV 和/或非零 NGSW 写入复用缓冲，每次回调内完成消费。高精度 LUT evaluator 自动使用此路径。
 
 ## 高精度查表
 

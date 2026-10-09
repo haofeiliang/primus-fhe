@@ -19,7 +19,7 @@
 | 分解式 MVB | Rounded 前半区前缀 | k 个 unsigned Scaled LWE | 普通密钥 | 预处理程序 + `FactorizedEvaluator`，共享一次 BR、逐输出乘法 |
 | 有界双输入 | 同秘密/编码，`x<B,y<R` 且 `B*R<=ceil(t/2)` | 一个 Rounded LWE | 普通密钥 | `BivariateLookupTable`，另复用一个打包 LWE |
 | Boolean 门 | `t=4` 下的 Rounded 0/1 | 可直接串联的同编码 Boolean LWE | 普通密钥 | `BooleanEvaluator` 持有门 LUT 和临时密文 |
-| CBS → CMUX | Rounded 前半区；CMUX 要求 F(m) 为 bit | accumulator 秘密下的 GGSW/NGSW gadget 控制，再选择环密文 | BR + trace/SS；GLWE KS→BR 另需输入 KS | `CircuitBootstrapEvaluator`；环客户端独立使用 `AccumulatorClient` |
+| CBS → CMUX | Rounded 前半区；CMUX 要求 F(m) 为 bit | accumulator 秘密下的 GGSW/NGSW gadget 控制，再选择环密文 | BR + trace/SS；GLWE KS→BR 另需输入 KS | `CbsEvaluator`；环客户端独立使用 `AccumulatorClient` |
 | One-hot CBS | 一个 padded chunk，t=2M | δ_r(m) 的 NLEV/NGSW selectors | NTRU CBS 材料 | [One-hot 接口](../primus_tfhe_ntru/README.zh_CN.md#one-hot-cbs) |
 | 高精度查表 | 多个独立加密、统一位宽的 chunks | 可独立指定数量的输出 chunks | NTRU CBS 和返回密钥；按需提供公开提升 | [高精度查表](../primus_tfhe_ntru_lut/README.zh_CN.md) |
 
@@ -66,11 +66,10 @@ Context 绑定独立 CBS 参数时检查域、算法及共用输入 KS 配对；
 ```rust,ignore
 let context = TfheContext::try_from_cbs_config(config)?;
 let (client, server) = context.try_generate_circuit_bootstrap_keys(rng)?;
-let mut resources = server.bootstrap_resources(&context)?;
-let mut cbs = context.circuit_bootstrap_evaluator(&resources, server.circuit_bootstrap_key())?;
+let mut cbs = context.circuit_bootstrap_evaluator(&server)?;
 ```
 
-`CircuitBootstrapServerKey` 始终包含 BR、KS 和 CBS 材料；CBS 当前阶段仅借用 BR/CBS，并按 GLWE order 使用输入 KS。完整 CBS Context 也可执行普通 PBS：`context.evaluator(server.server_key())?`。NTRU one-hot 使用同一 Context 的 `one_hot_evaluator(&resources, key)`。默认工厂使用保存的输入 codec 和 gadget；自定义程序仍显式编译和绑定。两类组合的 `into_parts()` 移出拥有型组件，不复制密文数组。
+`CircuitBootstrapServerKey` 始终包含 BR、KS 和 CBS 材料；CBS 当前阶段仅借用 BR/CBS，并按 GLWE order 使用输入 KS。完整 CBS Context 也可执行普通 PBS：`context.evaluator(server.server_key())?`。NTRU one-hot 使用同一 Context 的 `one_hot_evaluator(&server)`。默认工厂组合保存的输入 codec/gadget 与拥有的公共资源；`compile_cbs_fn` / `compile_cbs_slice` 按同一输入选择编译自定义程序。两类组合的 `into_parts()` 移出拥有型组件，不复制密文数组。
 
 ## 客户端与服务端边界
 
@@ -119,49 +118,42 @@ assert!(!decryptor.decrypt(output.as_view())?);
 
 ## CBS 输出与消费
 
-四后端都在同一个 CBS evaluator 中绑定输出布局与消费参数。下例为 GLWE，独立选择 Rounded 输入 codec 和 Scaled accumulator codec。NTRU 使用 `client_key.accumulator_ntru_secret_key()` 取代 GLWE 访问器，接收相同的 codec 参数，输入 codec 使用外部 q，环 codec 使用累加 Q：
+四后端都在默认 `CbsEvaluator` 中组合 CBS 程序、投影缓冲与所需公共资源。下例为 GLWE，Context 的输入消息模数配置为 t_in=8；NTRU 使用 `client_key.accumulator_ntru_secret_key()` 取代 GLWE 访问器。共用的 `context.encryptor` 读取配置的 Rounded 输入编码；候选环客户端仅接收独立的 t_ring，由 Context 提供累加模数 Q。
 
 ```rust,ignore
-// 客户端：加密两条候选消息。
-let (input_codec, ring_codec) = context.parameters().circuit_bootstrap_codecs(8, 8)?;
-let mut ring_client = context.accumulator_client(client_key.glwe_secret_key(), ring_codec)?;
+// 客户端：候选在累加 Q 下使用独立的 t_ring=8。
+let mut ring_client = context.accumulator_client(client_key.glwe_secret_key(), 8)?;
 let lhs = ring_client.encrypt(&lhs_message, &mut rng);
 let rhs = ring_client.encrypt(&rhs_message, &mut rng);
 let mut decoded = vec![0; lhs_message.len()];
-let external_secret = client_key.external_lwe_secret_key();
-let input = context.parameters()
-    .encryptor_with_codec(external_secret, &input_codec)?
+let input = context.encryptor(client_key.external_lwe_secret_key())?
     .encrypt_padded(3, &mut rng)?;
 
-// 服务端：在同一次 CBS 内计算 F(m) = [m >= 2]，返回 selected。
-let mut pbs = context.evaluator(server_key.server_key())?;
-let key = server_key.circuit_bootstrap_key();
-let program = key.parameters().compile_lookup_table_fn(&input_codec, |m| u64::from(m >= 2))?;
-let mut cbs = CircuitBootstrapEvaluator::try_with_lookup_table(
-    pbs.bootstrap_resources(), key, program,
-)?;
+// 服务端：计算 F(m) = [m >= 2]，再选择环密文。
+let program = context.compile_cbs_fn(|m| u64::from(m >= 2))?;
+let mut cbs = context.circuit_bootstrap_evaluator_with_lookup_table(&server_key, program)?;
 let mut control = cbs.allocate_output();
 let mut selected = context.allocate_accumulator_ciphertext();
-cbs.circuit_bootstrap_to(input.as_view(), &mut control, pbs.bootstrap_resources_mut());
-cbs.cmux_to(&control, &lhs, &rhs, &mut selected, pbs.bootstrap_resources_mut());
+cbs.circuit_bootstrap_to(input.as_view(), control.as_mut_view());
+cbs.cmux_to(control.as_view(), lhs.as_view(), rhs.as_view(), selected.as_mut_view());
 
 // 客户端：解密返回结果。
 ring_client.decrypt_to(&selected, &mut decoded);
 ```
 
-`compile_lookup_table_fn` 在 `0..ceil(t_in/2)` 上求值一个整数函数，将每个输出层编译为 `g_j * F(m) mod Q`。`compile_lookup_table_slice` 接收完整的结果切片（此例为 `[0, 0, 1, 1]`）。返回的 `CircuitBootstrapLookupTable` 保留 gadget basis 与输入域，`try_with_lookup_table` 检查 N、q/Q 和完整 basis 后将它移入 evaluator。普通 Rounded/Scaled `InterleavedLookupTable` 不能代替这个程序。`try_new` 与 `compile_lookup_table` 保留恒等函数 `F(m)=m` 的便捷用法。编译在离线阶段完成；更换相容函数不需要新计算密钥或额外盲旋转。
+`compile_cbs_fn` 在完整 `0..ceil(t_in/2)` 上求值，将每层编译为 `g_j * F(m) mod Q`。`compile_cbs_slice` 接收恰好该数量的结果（此例为 `[0, 0, 1, 1]`）；`compile_cbs_identity` 编译恒等函数。默认绑定核对程序的输入消息区间、N、q/Q 与完整 gadget basis，再移动程序；输入数量相同不足以证明编码相同。`circuit_bootstrap_evaluator(&server)` 是恒等快捷入口。改变兼容函数不需要新密钥或额外 BR。
 
-用于 CMux 时，整个输入域上的函数结果必须是 0 或 1，输入本身可以是整数。一般规范环整数（小于显式 Q）可用于外积，但需满足对应乘法与噪声预算。输入 t、函数整数结果、候选环消息 t 和输出 gadget basis 是独立角色。此入口支持 unsigned 前半区；one-hot 保留专用 selector 表。
+CMux 要求完整输入域上的 F 为 0 或 1；输入本身可以不是 bit。其他 canonical 环整数（显式 Q 时小于 Q）可作为外积控制，需要独立乘法与噪声预算。输入 t、函数整数值、候选 t_ring 与 gadget basis 分别承担不同数学角色。One-hot 使用专用 selector 表，通过 `context.one_hot_evaluator(&server)` 创建同样拥有公共资源的 `OneHotEvaluator`。
 
-四个后端均借用公共资源，并从 circuit key 取得默认 CBS 输出参数，见下文资源复用。
+`allocate_output` 返回后端的原始 GGSW/NGSW；候选与返回环密文为系数域 GLWE/NTRU。`cmux_to` 在 0 时选择 lhs、1 时选择 rhs；`external_product_to` 也可消费非 bit gadget。控制须匹配 evaluator 的 basis、实际累加秘密及变换表示；候选须采用同一秘密/模数及共同编码。这些身份和噪声余量由调用方保证；公开入口在写输出前检查精确长度。
 
-`allocate_output` 返回后端原有的 GGSW/NGSW，环密文仍是系数域 GLWE/NTRU。 `cmux_to` 在控制位为 0/1 时选择 lhs/rhs；`external_product_to` 也允许非 bit 的 gadget 控制。控制必须使用此 evaluator 的输出 basis、accumulator 私钥和变换表示， 候选使用该私钥/模数与相同编码。身份及噪声余量由调用方保证；所有密文长度在写输出前检查。
+`AccumulatorClient` 拥有准备好的累加秘密和转换缓冲，并借用 Context。它加解密 N 个 Scaled 环消息系数；该消息域独立于外部 LWE。准备 t_ring 编码、密钥检查或 NTRU 秘密转换失败会返回 `TfheClientError`。形状错误在写入/消耗 RNG 前 panic；非法明文可能已消耗随机数。创建一次后复用 `_to` 和输出缓冲。
 
-`AccumulatorClient` 持有已准备的 accumulator 私钥与复用转换缓冲区，并借用 context。 它使用 accumulator codec 加解密 N 个无符号系数；该环域与外部 LWE 客户端分开。 形状错误在写入或消耗随机数前 panic；明文越界可能消耗随机数。 准备失败返回 `TfheClientError`：两家族均检查密钥以及传入 Scaled codec 的模数；NTRU 还检查秘密变换。
-
-准备一次，随后复用 `_to` 调用与输出缓冲，在线无需分配。
+显式输入编码、逐调用资源借用和 GLWE 替代 output basis 使用底层 `CircuitBootstrapEvaluator` / `OneHotCircuitBootstrapEvaluator`；候选原始 Scaled 配对可用 `AccumulatorClient::try_new`。它们服务独立数值组合和已有 PBS 资源复用。
 
 ## 复用 evaluator
+
+默认 `CbsEvaluator` / `OneHotEvaluator` 只组合原有操作缓冲与 `BootstrapResources`，不复制 Context、密钥或变换表，也不分配普通返回 scratch。`into_parts()` 移动取出操作状态和公共资源；随后可将资源转给 PBS，并继续通过底层 evaluator 短借用它。串行复用不要求同时保留多个同形 scratch；并发 worker 需要独立可变资源。
 
 Context 保存不可变参数和变换表，ServerKey 保存求值材料；Evaluator 持有可变工作区。 编译后的 LUT/程序可以长期保留，多次调用 `_to` 写入预分配输出。
 

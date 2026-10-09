@@ -27,22 +27,23 @@
 //! - [`factorized`]: a prepared MVB program and [`FactorizedEvaluator`], with Scaled outputs.
 //! - [`boolean`]: Boolean clients and gates with plaintext modulus four.
 //! - [`circuit_bootstrap`]: optional trace/scheme-switch material and
-//!   [`CircuitBootstrapEvaluator`], producing accumulator-secret gadget controls for CMUX.
+//!   [`CbsEvaluator`], producing accumulator-secret gadget controls for CMUX.
 //! - [`sparse`]: fixed-weight binary bucket material; choose [`BlindRotationMethod::Sparse`]
 //!   in the operation config, then use [`KeyGenerator::try_generate_server_key`].
 //!
 //! [`Evaluator`] owns common [`BootstrapResources`] and client-return buffers.
-//! CBS/one-hot prepare only their LUT/projection state and borrow common resources
-//! for each call. [`FactorizedEvaluator`] borrows PBS for each request, retaining
-//! only its extra NTT polynomial. No ownership conversion is needed to alternate.
+//! Default [`CbsEvaluator`] / [`OneHotEvaluator`] own common BR resources;
+//! low-level CBS/one-hot state borrows them per call. [`FactorizedEvaluator`]
+//! borrows PBS for each request, retaining only its extra NTT polynomial. Low-level state alternates without ownership conversion.
 //! Standalone CBS/one-hot can use resources without allocating return buffers.
 //! [`LweReturnEvaluator`] supports independent coefficient-domain returns.
 //!
 //! [`TfheContext::try_generate_circuit_bootstrap_keys`] generates a complete CBS
-//! bundle, including the BR/KS [`ServerKey`] for downstream LWE returns. [`PbsParameters::circuit_bootstrap_codecs`]
-//! prepares the independent input and candidate ring-message encodings. Compile F
-//! with [`CbsGadgetParameters::compile_lookup_table_fn`] and bind the program
-//! with [`CircuitBootstrapEvaluator::try_with_lookup_table`]. CBS output uses its
+//! bundle, including the BR/KS [`ServerKey`] for downstream LWE returns.
+//! [`TfheContext::compile_cbs_fn`] compiles F using retained input/gadgets;
+//! [`TfheContext::circuit_bootstrap_evaluator_with_lookup_table`] binds the complete
+//! key and moves the program into [`CbsEvaluator`]. Candidate ring clients take
+//! independent t_ring via [`TfheContext::accumulator_client`]. CBS output uses its
 //! gadget basis; CMux requires bit-valued F across the programmed input domain.
 //!
 //! # Composition and representation
@@ -127,8 +128,9 @@ pub use primus_tfhe_ntru::{
 pub use circuit_bootstrap::CircuitBootstrapKey;
 #[doc(inline)]
 pub use circuit_bootstrap::{
-    CbsGadgetParameters, CircuitBootstrapEvaluator, NlevSelectors, NttNgswSelectors,
-    OneHotBootstrapError, OneHotCircuitBootstrapEvaluator, OneHotLookupTable, OneHotProjection,
+    CbsEvaluator, CbsGadgetParameters, CircuitBootstrapEvaluator, NlevSelectors, NttNgswSelectors,
+    OneHotBootstrapError, OneHotCircuitBootstrapEvaluator, OneHotEvaluator, OneHotLookupTable,
+    OneHotProjection,
 };
 
 /// Secret-key or LWE public-key encryptor for the exact NTT NTRU backend.

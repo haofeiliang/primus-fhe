@@ -144,8 +144,8 @@ PBS trait、四后端、Boolean 门、双输入打包、CBS、one-hot 与 MVB �
 | BR/环 KS basis 与密钥噪声 | TFHE 密钥参数；BR 使用 accumulator noise，环 KS 使用独立 key-switching noise |
 | CBS output/trace/SS basis、布局与继承的 accumulator noise | `CbsGadgetParameters`；不依赖输入明文模数 |
 | Rounded 消息编码及 external fresh noise | client 工厂接收 `&RoundedCodec`，检查 codec 的 q；BR→KS 使用 small noise，KS→BR 使用 accumulator noise |
-| 普通环消息 Scaled 编码 | `accumulator_client(client, codec)` 一次绑定；复用 gadget 共享采样状态，不复制 Gaussian 预计算 |
-| CBS 输入与候选环消息编码准备 | `PbsParameters::circuit_bootstrap_codecs(t_in, t_ring)` 返回 Rounded 输入与 Scaled 环消息；两个明文域独立，共用 q=Q；不表示 gadget 输出 |
+| 普通环消息 Scaled 编码 | `context.accumulator_client(accumulator_secret, t_ring)` 按累加 Q 一次准备；复用 gadget 共享采样状态，不复制 Gaussian 预计算 |
+| CBS 输入与候选环消息编码准备 | `CbsParameters` 保留配置的 Rounded 输入；Context 共用输入 encryptor，候选工厂独立接收 t_ring，共用 q=Q；不表示 gadget 输出 |
 | 输入 t、编程域、单表/ManyLUT 的中心、输出编码和容量 | 普通 LUT compiler / factorized compiler；CBS 由 `compile_lookup_table(&input_codec)` 在 evaluator 构造时检查 |
 | online ciphertext 与所选程序的消息编码一致、实际噪声余量 | 调用方契约；raw 密文没有编码/噪声元数据，不能据布局判定 |
 
@@ -162,7 +162,7 @@ PBS trait、四后端、Boolean 门、双输入打包、CBS、one-hot 与 MVB �
 | CBS output/trace/SS basis、布局与继承的 accumulator noise | `CbsGadgetParameters`；scheme-switch key 继续绑定完整 output basis |
 | Rounded 输入 t/q、默认或独立输出 t/Q | client/compiler 绑定；输入 q 不符拒绝；默认输出 codec 在 Q 无法构造时返回 `OutputEncoding` |
 | CBS 输入域和 ManyLUT 容量 | CBS LUT 编译/绑定；独立 CBS 参数只拥有 Q，输入 q 由后端绑定检查 |
-| CBS/one-hot 输入与候选环消息编码准备 | `PbsParameters::circuit_bootstrap_codecs(t_in, t_ring)` 仅准备 Rounded(t_in,q) 和 Scaled(t_ring,Q)，不准备无用的 Scaled(t_ring,q)；后续绑定仍检查实际资源组合 |
+| CBS/one-hot 输入与候选环消息编码准备 | `CbsParameters` 保留 Rounded(t_in,q)；候选工厂接收独立 t_ring 并准备 Scaled(t_ring,Q)，不准备无用的返回编码；绑定检查实际资源组合 |
 | one-hot 的 t=2M、W、stride、非空 guard 与存储长度 | `OneHotLookupTable::try_new(tfhe, cbs, &input_codec)`；后端支持 classic binary/ternary 与 sparse fixed-weight binary |
 | 高精度 chunk 位宽、数量、`M^d≤N`、表枚举和存储长度 | `HighPrecisionLookupTable::try_new(poly_length, ring_modulus, &input_codec, config, function)`；表保存 t/q/Q，evaluator 按表中 t 绑定 one-hot 并验证容量 |
 | 在线输入的实际编码和噪声、返回输出的 q 域 decoder | 调用方契约；表在 Q 编码，Q→q 仍为最近舍入，不重新编码 |
@@ -216,7 +216,7 @@ BR 不依赖返回 basis；位控制也不绑定外部 q。外部模数由输入
 
 四后端的 `try_generate_circuit_bootstrap_keys(rng)` 返回 `CircuitBootstrapServerKey`，组合一个必需 BR/KS `ServerKey` 与一个必需 `CircuitBootstrapKey`，只有一份 BR/KS。`server.server_key()` 用于普通 PBS 或后续 LWE 返回，`server.circuit_bootstrap_key()` 直接借用 CBS 材料；`new` / `into_parts` 移动组件而不复制密文数组。
 
-`server.bootstrap_resources(context)` 仅绑定 BR 和所选输入准备，不分配无用返回 scratch。`context.circuit_bootstrap_evaluator(&resources, key)` / NTRU `one_hot_evaluator(&resources, key)` 使用已保存的输入编码和 gadget；显式程序/codec 构造器继续支持高级覆盖。高精度 LUT 绑定完整 CBS 组合并复用其 KS，独立 parts 仍承担各自配对检查。
+`server.bootstrap_resources(context)` 仅绑定 BR 和所选输入准备，不分配无用返回 scratch。`context.circuit_bootstrap_evaluator(&server)` / NTRU `one_hot_evaluator(&server)` 使用已保存的输入编码和 gadget，并组合这些资源；显式程序/codec 构造器继续支持高级覆盖。高精度 LUT 绑定完整 CBS 组合并复用其 KS，独立 parts 仍承担各自配对检查。
 
 GLWE 复用已有独立 `BlindRotationKey::{Classic,Sparse}` 和底层环 KS owner。新增 classic BR、环 KS 独立生成入口；CBS 生成只接收累加器秘密。`ServerKey::new` / `into_parts` 移动组合；完整生成保持原有临时变换复用。GLWE 独立绑定关系如下：
 
@@ -245,11 +245,19 @@ GLWE 复用已有独立 `BlindRotationKey::{Classic,Sparse}` 和底层环 KS own
 
 四后端各自的公共 `BootstrapResources` 绑定 input 准备、所选 BR key/scratch、系数 accumulator 与 Fourier FFT engine。GLWE KS→BR 保留输入 KS，BR→KS 直接使用外部 input。Context/key/table 的 owner 由调用方保留，common resources 拥有缓冲；Fourier engine 借用该 context 的 FFT table。串行操作短借用同一 common，多个并发请求使用各自的可变资源。普通 `Evaluator` 组合完整返回阶段：GLWE BR→KS 的输出 KS、KS→BR 的直接提取，或 NTRU 返回对象；必需资源不再是可能缺失的 `Option`。
 
-NTRU 两后端将公共 BR/外积资源放入各自的 `BootstrapResources`，Fourier 还在其中绑定同一个 FFT engine。普通 `Evaluator` 拥有公共资源与返回缓冲；CBS/one-hot 只持 LUT/投影状态，MVB 持额外变换域多项式。执行时短借用资源或 PBS，在借用边界检查同一 context；准备状态不缓存 BR 控制，实际秘密配对的 classic/sparse 资源可以互换，检查不证明独立材料的秘密身份。LUT 独立拥有公共资源、one-hot 状态与返回缓冲：NTT 仅 scalar，Fourier 仅 batch。没有 evaluator 嵌套或恢复协议；Fourier 因子保持整数变换，gadget 保持 torus 变换，streamed tile 顺序不变。
+NTRU 两后端将公共 BR/外积资源放入各自的 `BootstrapResources`，Fourier 还在其中绑定同一个 FFT engine。普通 `Evaluator` 拥有公共资源与返回缓冲；底层 CBS/one-hot 只持 LUT/投影状态，MVB 持额外变换域多项式。执行时短借用资源或 PBS，在借用边界检查同一 context；准备状态不缓存 BR 控制，实际秘密配对的 classic/sparse 资源可以互换，检查不证明独立材料的秘密身份。LUT 独立拥有公共资源、one-hot 状态与返回缓冲：NTT 仅 scalar，Fourier 仅 batch。没有 evaluator 嵌套或恢复协议；Fourier 因子保持整数变换，gadget 保持 torus 变换，streamed tile 顺序不变。
 
-GLWE 两后端的普通 PBS 拥有公共资源和完整返回阶段，CBS 只保存 LUT/投影，MVB 保存额外变换域 GLWE（Fourier 另有一个多项式乘积缓冲），执行时短借用。GLWE 操作状态不缓存 BR 控制，借用边界只检查同一 context；各公共资源已绑定合法 classic/sparse 材料，实际秘密仍由调用方配对。`try_from_resources(resources, ks)` 只在 BR→KS 分配输出 KS，KS→BR 复用输入 KS；`try_rebind_key_switching_key` 检查后零分配换绑。外积 `with_rebound` 保留 GLWE 几何并临时切换 level 布局，返回或 unwind 后恢复；没有将 NTRU 布局假设套入 GLWE。
+GLWE 两后端的普通 PBS 拥有公共资源和完整返回阶段，底层 CBS 只保存 LUT/投影，MVB 保存额外变换域 GLWE（Fourier 另有一个多项式乘积缓冲），执行时短借用。GLWE 操作状态不缓存 BR 控制，借用边界只检查同一 context；各公共资源已绑定合法 classic/sparse 材料，实际秘密仍由调用方配对。`try_from_resources(resources, ks)` 只在 BR→KS 分配输出 KS，KS→BR 复用输入 KS；`try_rebind_key_switching_key` 检查后零分配换绑。外积 `with_rebound` 保留 GLWE 几何并临时切换 level 布局，返回或 unwind 后恢复；没有将 NTRU 布局假设套入 GLWE。
 
 GLWE Fourier 的公共资源保存唯一 FFT engine，KS、BR、trace、scheme switch、CMux 与 MVB 串行复用。Factor 保持整数变换，gadget/GLWE 保持 torus 变换，native trace halving 的舍入契约不变；没有独立 evaluator 的 FFT plan 复制或隐式创建。普通 PBS 仍通过 context 的便捷工厂创建，调用方不需要知道内部工作区布局。详见[资源组合表](workspaces-and-storage.md#glwe-resource-ownership)。
+
+
+默认 `CbsEvaluator` / NTRU `OneHotEvaluator` 直接组合底层操作状态与已有
+`BootstrapResources`，接收完整 `CircuitBootstrapServerKey`。不复制 BR/CBS 密钥、
+Context 或变换表，也不增加返回缓冲；在线调用不再要求用户传 resources。
+`into_parts()` 移出原有状态和资源，支持后续 PBS 接管资源、串行短借用或 sparse pair。
+默认工厂使用 Context 保存的 CBS 输入编码和 gadget；独立材料仍在绑定边界验证，
+完整参数组合还要求保留该输入消息模数，普通 PBS 输出消息模数可独立变化。
 
 ## CBS、CMux、MVB 与高精度查表
 
@@ -262,7 +270,7 @@ GLWE Fourier 的公共资源保存唯一 FFT engine，KS、BR、trace、scheme s
 
 CBS 输出保留累加环秘密，不走 ordinary PBS 的返回链路；GLWE `KeyswitchBootstrap` 仍在 BR 前处理输入 KS。普通 CBS 投影的是可能有非零尾部的 ManyLUT 累加器，不能直接替换为只适用于特定稀疏消息的 prefix expansion。
 
-NTRU 普通 CBS 与 one-hot 都通过 evaluator 的 `cmux_to` / `external_product_to` 消费单个 NGSW。One-hot 的完整/非零视图按数学 r 取得 control，两个入口使用已绑定的 output basis 与 context，并短借用公共 BR/EP 资源；Fourier 同时复用其中的 FFT engine。公开入口检查 context 身份与精确单项长度，数学上的秘密、basis/变换身份、候选编码和噪声余量仍由调用方保证。消费函数只读 evaluator，修改调用方输出与显式借用的 scratch，不增加持久状态或在线分配。底层 scratch 借用继续服务高精度 LUT 的多项式选择与 NLEV 公开提升。
+NTRU 普通 CBS 与 one-hot 都通过 evaluator 的 `cmux_to` / `external_product_to` 消费单个 NGSW。One-hot 的完整/非零视图按数学 r 取得 control，两个入口使用已绑定的 output basis 与 context，并短借用公共 BR/EP 资源；Fourier 同时复用其中的 FFT engine。公开入口检查 context 身份与精确单项长度，数学上的秘密、basis/变换身份、候选编码和噪声余量仍由调用方保证。底层消费函数只读操作状态，修改调用方输出与短借用的 scratch；默认 evaluator 从自己的资源字段提供该借用，没有额外在线分配。底层 scratch 借用继续服务高精度 LUT 的多项式选择与 NLEV 公开提升。
 
 GLWE 的 NTT/Fourier 后端在两种 PBS 顺序下都支持 classic/sparse PBS、ManyLUT、MVB 和普通 CBS。NTRU 的 NTT/Fourier 后端还支持 one-hot 和高精度 LUT；sparse 查表需要公开提升时，由调用方提供独立 `NLEV[1]` 材料，没有提升节点则不需要。GLWE one-hot/高精度后端、sparse ternary、multi-bit BR 和 RNS hoisting 尚未实现；现有参数测量不代表这些能力或全参数覆盖。
 
@@ -322,13 +330,16 @@ RNS GLWE 提供 `CrtGlweParameters::try_new`，其 `new` 是调用同一校验�
 
 ## 自定义 CBS 程序
 
-`CbsGadgetParameters::compile_lookup_table_fn`（或 `_slice`）在完整 unsigned
-Rounded 前半区编译一个整数函数 F。各层包含 `g_j * F(m) mod Q`，交错 padding
-由输出 basis 决定。`CircuitBootstrapLookupTable` 保留该 basis 和已编译的 q/Q/N 域；
-四个后端的 `CircuitBootstrapEvaluator::try_with_lookup_table` 在 setup 时验证配对。
-GLWE 的替代 basis 入口还显式接收所选 CBS 参数。普通消息表的形状不能证明 gadget 标度。
+Context 的 `compile_cbs_fn` / `compile_cbs_slice` 使用保存的 Rounded 输入编码与
+CBS gadget，在完整 unsigned 前半区编译整数函数 F；`compile_cbs_identity` 是恒等快捷入口。
+各层包含 `g_j * F(m) mod Q`，交错 padding 由输出 basis 决定。
+`circuit_bootstrap_evaluator_with_lookup_table(&server, program)` 在 setup 时验证
+输入消息区间、q/Q/N/basis，再移动程序并组合默认资源。t=3 与 t=4 的输入数量相同，
+但区间不同，默认绑定拒绝混用；普通消息表的形状也不能证明 gadget 标度。
 
-恒等函数便利入口从同一已验证参数编译，直接准备 projection storage，不重复外部程序
-配对检查。在线仍以复用存储完成一次 BR、trace 和 scheme switching，不调用闭包、编译、
-分配或增加检查。CMux 要求整个域上的 F 为 bit；整数外积控制需要对应乘法与噪声预算。
+底层 `CbsGadgetParameters::compile_lookup_table_fn` 和
+`CircuitBootstrapEvaluator::try_with_lookup_table` 支持显式输入编码及借用资源；
+GLWE 替代 basis 还显式接收所选 CBS 参数。在线仍以复用存储完成一次 BR、trace 和
+scheme switching，不调用闭包或编译程序，不新增分配/数值内核检查。
+CMux 要求整个域上的 F 为 bit；整数外积控制需要对应乘法与噪声预算。
 程序检查不证明秘密/变换身份或这些噪声余量。One-hot 保留专用查表几何。

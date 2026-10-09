@@ -173,6 +173,14 @@ impl<T: FheUint> CircuitBootstrapLookupTable<T> {
         self.lookup_table.input_domain_len()
     }
 
+    /// Returns the Rounded input message modulus that fixes this program's intervals.
+    /// A default Context binding compares this with its configured input encoding;
+    /// equal domain lengths alone do not establish the same intervals.
+    #[must_use]
+    pub fn input_plaintext_modulus(&self) -> T {
+        self.lookup_table.input_plaintext_modulus()
+    }
+
     /// Returns the rotation stride, including padding after the effective gadget levels.
     #[must_use]
     #[inline]

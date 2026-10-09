@@ -2,9 +2,11 @@
 
 mod evaluator;
 mod key;
+mod workflow;
 
 pub use evaluator::CircuitBootstrapEvaluator;
 pub use key::CircuitBootstrapKey;
+pub use workflow::CbsEvaluator;
 
 /// GLWE circuit-bootstrap parameters with a Barrett ciphertext modulus.
 ///

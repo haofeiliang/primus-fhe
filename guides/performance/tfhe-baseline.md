@@ -12,6 +12,58 @@ For the newer matched classic/sparse PBS and CBS comparison, see the
 the CPU-dependent CBS regression and distinguishes retained heap from requested
 live-heap peak. The cleanup measurements below remain historical.
 
+## Default CBS and one-hot workflow, 2026-10-09
+
+`CbsEvaluator` and NTRU `OneHotEvaluator` combine the existing low-level operation
+state with `BootstrapResources`. Their owned buffer sets are the same as the
+previous separate owners: input/BR/EP/FFT resources and projection storage, without
+ordinary output-return scratch. Keys and the Context's transform table remain
+borrowed. `into_parts()` moves both owners out for serial composition; it copies
+and allocates no buffers. No new Context field or online buffer is introduced.
+The configured Context already retains CBS input/gadget metadata; migrated
+fixtures now enable that capability. This comparison excludes configuration,
+compilation/binding, keygen, encryption, allocation and CMux correctness probes.
+
+Before: `0b93d616`, with manually paired low-level CBS/one-hot state. After: default
+Context workflow factories and borrowed ciphertext views. Both measure one
+complete CBS or one selector batch into reused output storage. CPU 4, stable
+rustc 1.98.1, repository CPU flags, features `ntt,fourier,rustfft`; the same
+n728/h32/N1024 secrets, seed 42 keygen, seed 43 inputs, moduli, decompositions,
+noise and timing boundaries. Ordinary CBS uses t=4; one-hot uses t=8, M=4.
+GLWE measures KS→BR; classic/sparse use their existing matched fixed-weight
+fixtures. Each case uses 15 samples, 1 s warm-up and 3 s target measurement.
+
+| Complete workload, u64 | Separate owners, ms | Default workflow, ms |
+| --- | ---: | ---: |
+| classic/complete/glwe/ntt | 12.661 | 12.630 |
+| classic/complete/glwe/rustfft | 15.792 | 15.655 |
+| classic/complete/ntru/ntt | 4.232 | 4.193 |
+| classic/complete/ntru/rustfft | 5.235 | 5.174 |
+| one_hot/classic/M4/full/ntru/ntt | 4.824 | 4.837 |
+| one_hot/classic/M4/full/ntru/rustfft | 5.915 | 5.710 |
+| one_hot/classic/M4/nonzero/ntru/ntt | 4.582 | 4.597 |
+| one_hot/classic/M4/nonzero/ntru/rustfft | 5.689 | 5.528 |
+| one_hot/sparse/M4/full/ntru/ntt | 3.935 | 3.779 |
+| one_hot/sparse/M4/full/ntru/rustfft | 4.475 | 4.463 |
+| one_hot/sparse/M4/nonzero/ntru/ntt | 3.755 | 3.589 |
+| one_hot/sparse/M4/nonzero/ntru/rustfft | 4.273 | 4.254 |
+| sparse/complete/glwe/ntt | 14.315 | 14.376 |
+| sparse/complete/glwe/rustfft | 15.764 | 15.887 |
+| sparse/complete/ntru/ntt | 3.234 | 3.246 |
+| sparse/complete/ntru/rustfft | 3.747 | 3.759 |
+
+The single matched pairs range from −4.41% to +0.78%. They show no large
+measured increase in these workloads; the negative differences do not establish
+an optimization, since arithmetic kernels and schedules were not changed.
+This is an API/storage check limited to CPU 4/u64/RustFFT scalar performance;
+u32, TFHE-FFT and SIMD are covered by correctness/compilation, not these timings.
+It does not measure keygen/binding cost or establish security-equivalent profiles.
+
+```sh
+taskset -c 4 cargo bench -p primus_tfhe_benchmarks --bench cbs --features ntt,fourier,rustfft -- \
+  '^cbs/(classic|sparse|one_hot)/' --sample-size 15 --warm-up-time 1 --measurement-time 3
+```
+
 ## Shared operation owner and optional KS, 2026-10-09
 
 These measurements describe an intermediate revision. The current API requires

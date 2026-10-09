@@ -3,7 +3,9 @@
 use primus_encoding::RoundedCodec;
 use primus_integer::FheUint;
 use primus_reduce::RingContext;
-use primus_tfhe::{ModulusConfig, ModulusConfigError};
+use primus_tfhe::{
+    CircuitBootstrapLookupTable, LookupTableError, ModulusConfig, ModulusConfigError,
+};
 
 use crate::{
     CbsGadgetConfig, CbsGadgetParameters, PbsConfig, PbsOrder, PbsParameters, TfheParameterError,
@@ -69,6 +71,39 @@ impl<T: FheUint, M: RingContext<T>> CbsParameters<T, M> {
         &self.input_codec
     }
 
+    /// Compiles the gadget identity F(m)=m using the retained input encoding.
+    /// The output is a gadget control, independently of ordinary PBS's output codec.
+    /// Inherits [`Self::compile_lookup_table_fn`]'s domain and noise contracts.
+    pub fn compile_lookup_table(&self) -> Result<CircuitBootstrapLookupTable<T>, LookupTableError> {
+        self.gadget.compile_lookup_table(&self.input_codec)
+    }
+
+    /// Compiles F on the complete unsigned Rounded domain `0..ceil(t_in/2)`.
+    /// Each result is a canonical ring integer; CMux requires every result to be
+    /// a bit. Encoding validity and capacity do not establish a CBS noise margin.
+    /// Inherits [`CbsGadgetParameters::compile_lookup_table_fn`]'s contracts.
+    pub fn compile_lookup_table_fn<F>(
+        &self,
+        function: F,
+    ) -> Result<CircuitBootstrapLookupTable<T>, LookupTableError>
+    where
+        F: Fn(usize) -> T,
+    {
+        self.gadget
+            .compile_lookup_table_fn(&self.input_codec, function)
+    }
+
+    /// Compiles the complete F(0), ..., F(ceil(t_in/2)-1) slice.
+    /// Inherits [`Self::compile_lookup_table_fn`]'s domain, result and noise contracts;
+    /// rejects both missing and extra entries before compilation.
+    pub fn compile_lookup_table_slice(
+        &self,
+        values: &[T],
+    ) -> Result<CircuitBootstrapLookupTable<T>, LookupTableError> {
+        self.gadget
+            .compile_lookup_table_slice(&self.input_codec, values)
+    }
+
     /// Checks an independently prepared common domain before Context composition.
     /// Metadata compatibility does not establish actual secret identity.
     fn check_pbs_pairing(
@@ -77,6 +112,7 @@ impl<T: FheUint, M: RingContext<T>> CbsParameters<T, M> {
     ) -> Result<(), TfheParameterError> {
         if !self.pbs.has_same_domain(parameters)
             || self.pbs.blind_rotation_method() != parameters.blind_rotation_method()
+            || self.input_codec.plaintext_modulus() != parameters.messages().input_modulus
         {
             return Err(TfheParameterError::IncompatibleComponents);
         }
@@ -94,6 +130,8 @@ impl<T: FheUint, M: RingContext<T>> CbsParameters<T, M> {
     }
 
     /// Replaces the common owner after checking independent component pairing.
+    /// The input message modulus must retain the prepared CBS encoding;
+    /// ordinary PBS may independently choose another output message modulus.
     /// Does not rebuild its samplers or the CBS gadgets.
     pub fn try_with_pbs_parameters(
         mut self,

@@ -19,7 +19,7 @@ Choose the function and encoding first, then the GLWE/NTRU family, NTT/Fourier r
 | Factorized MVB | Rounded front-half prefix | k unsigned Scaled LWEs | Ordinary key | Prepared program + `FactorizedEvaluator`; one BR, per-output products |
 | Bounded two-input function | Same secret/codec, `x<B,y<R`, `B*R<=ceil(t/2)` | One Rounded LWE | Ordinary key | `BivariateLookupTable` and one reusable packed LWE |
 | Boolean gates | Rounded 0/1 with `t=4` | Same Boolean LWE encoding, ready for chaining | Ordinary key | `BooleanEvaluator` owns gate LUTs and temporary ciphertexts |
-| CBS → CMUX | Rounded front half; CMUX requires bit-valued F(m) | Accumulator-secret GGSW/NGSW gadget control, then a selected ring ciphertext | BR + trace/SS; input KS for GLWE KS→BR | `CircuitBootstrapEvaluator`; separate `AccumulatorClient` for ring clients |
+| CBS → CMUX | Rounded front half; CMUX requires bit-valued F(m) | Accumulator-secret GGSW/NGSW gadget control, then a selected ring ciphertext | BR + trace/SS; input KS for GLWE KS→BR | `CbsEvaluator`; separate `AccumulatorClient` for ring clients |
 | One-hot CBS | One padded chunk, t=2M | NLEV/NGSW selectors for δ_r(m) | NTRU CBS material | [One-hot API](../primus_tfhe_ntru/README.md#one-hot-cbs) |
 | High-precision lookup | Separately encrypted chunks of uniform width | Independently chosen output chunk count | NTRU CBS and return keys; public lift when required | [High-precision lookup](../primus_tfhe_ntru_lut/README.md) |
 
@@ -66,11 +66,10 @@ For ring-output CBS or NTRU one-hot, construct the context from `CbsConfig`:
 ```rust,ignore
 let context = TfheContext::try_from_cbs_config(config)?;
 let (client, server) = context.try_generate_circuit_bootstrap_keys(rng)?;
-let mut resources = server.bootstrap_resources(&context)?;
-let mut cbs = context.circuit_bootstrap_evaluator(&resources, server.circuit_bootstrap_key())?;
+let mut cbs = context.circuit_bootstrap_evaluator(&server)?;
 ```
 
-`CircuitBootstrapServerKey` always contains BR, KS and CBS material. The CBS stage borrows BR/CBS and uses input KS when required by GLWE order. Every complete CBS context also supports ordinary PBS: `context.evaluator(server.server_key())?`. NTRU one-hot uses the same context's `one_hot_evaluator(&resources, key)`. Default factories use retained input codecs and gadgets; custom programs remain explicit compilation/binding inputs. Each bundle's `into_parts()` moves owners without copying ciphertext arrays.
+`CircuitBootstrapServerKey` always contains BR, KS and CBS material. The CBS stage borrows BR/CBS and uses input KS when required by GLWE order. Every complete CBS context also supports ordinary PBS: `context.evaluator(server.server_key())?`. NTRU one-hot uses the same context's `one_hot_evaluator(&server)`. Default factories combine retained input codecs/gadgets with owned reusable resources; `compile_cbs_fn` / `compile_cbs_slice` compile custom programs for the same input selection. Each bundle's `into_parts()` moves owners without copying ciphertext arrays.
 
 ## Client and server roles
 
@@ -119,49 +118,42 @@ assert!(!decryptor.decrypt(output.as_view())?);
 
 ## CBS output and consumption
 
-All four backends bind CBS output layout and consumption to the same evaluator. This GLWE example selects a Rounded input codec and an independent Scaled accumulator codec. NTRU uses `client_key.accumulator_ntru_secret_key()` instead of the GLWE accessor and takes the same codec arguments, with the input codec at external q and the ring codec at accumulator Q:
+All four backends combine the CBS program, projection buffers and required common resources in default `CbsEvaluator`. This GLWE example uses a Context configured with input t_in=8; NTRU replaces the GLWE secret accessor with `client_key.accumulator_ntru_secret_key()`. The shared `context.encryptor` derives the configured Rounded input encoding; candidate ring clients take an independent t_ring, with accumulator Q supplied by the Context.
 
 ```rust,ignore
-// Client: encrypt the two candidate messages.
-let (input_codec, ring_codec) = context.parameters().circuit_bootstrap_codecs(8, 8)?;
-let mut ring_client = context.accumulator_client(client_key.glwe_secret_key(), ring_codec)?;
+// CLIENT: candidates use their own t_ring=8 space at accumulator Q.
+let mut ring_client = context.accumulator_client(client_key.glwe_secret_key(), 8)?;
 let lhs = ring_client.encrypt(&lhs_message, &mut rng);
 let rhs = ring_client.encrypt(&rhs_message, &mut rng);
 let mut decoded = vec![0; lhs_message.len()];
-let external_secret = client_key.external_lwe_secret_key();
-let input = context.parameters()
-    .encryptor_with_codec(external_secret, &input_codec)?
+let input = context.encryptor(client_key.external_lwe_secret_key())?
     .encrypt_padded(3, &mut rng)?;
 
-// Server: compute F(m) = [m >= 2] inside the same CBS, then return selected.
-let mut pbs = context.evaluator(server_key.server_key())?;
-let key = server_key.circuit_bootstrap_key();
-let program = key.parameters().compile_lookup_table_fn(&input_codec, |m| u64::from(m >= 2))?;
-let mut cbs = CircuitBootstrapEvaluator::try_with_lookup_table(
-    pbs.bootstrap_resources(), key, program,
-)?;
+// SERVER: compute F(m) = [m >= 2], then select a ring ciphertext.
+let program = context.compile_cbs_fn(|m| u64::from(m >= 2))?;
+let mut cbs = context.circuit_bootstrap_evaluator_with_lookup_table(&server_key, program)?;
 let mut control = cbs.allocate_output();
 let mut selected = context.allocate_accumulator_ciphertext();
-cbs.circuit_bootstrap_to(input.as_view(), &mut control, pbs.bootstrap_resources_mut());
-cbs.cmux_to(&control, &lhs, &rhs, &mut selected, pbs.bootstrap_resources_mut());
+cbs.circuit_bootstrap_to(input.as_view(), control.as_mut_view());
+cbs.cmux_to(control.as_view(), lhs.as_view(), rhs.as_view(), selected.as_mut_view());
 
-// Client: decrypt the response.
+// CLIENT: decrypt the response.
 ring_client.decrypt_to(&selected, &mut decoded);
 ```
 
-`compile_lookup_table_fn` evaluates one integer function over `0..ceil(t_in/2)` and programs every lane as `g_j * F(m) mod Q`. `compile_lookup_table_slice` takes exactly that many results (here `[0, 0, 1, 1]`). The returned `CircuitBootstrapLookupTable` retains its gadget basis and input domain; `try_with_lookup_table` checks N, q/Q and the exact basis before moving it into the evaluator. A raw Rounded/Scaled `InterleavedLookupTable` cannot substitute for this program. `try_new` and `compile_lookup_table` remain the identity `F(m)=m` shortcuts. Compilation is offline; changing compatible functions needs no new evaluation key or extra blind rotation.
+`compile_cbs_fn` evaluates the complete `0..ceil(t_in/2)` domain and programs each lane as `g_j * F(m) mod Q`. `compile_cbs_slice` takes exactly that many results (here `[0, 0, 1, 1]`); `compile_cbs_identity` compiles identity. Default binding checks input message intervals, N, q/Q and the exact gadget basis before moving the program; equal input counts do not establish equal encodings. `circuit_bootstrap_evaluator(&server)` is the identity shortcut. Changing compatible functions needs no new key or extra BR.
 
-CMux requires every programmed result to be 0 or 1; the input itself need not be a bit. General canonical ring integers (less than explicit Q) can instead be consumed by external products with a suitable multiplication/noise budget. Input t, integer function results, candidate ring-message t and output gadget basis are independent roles. This API supports the unsigned front-half domain; one-hot retains its dedicated selector tables.
+CMux requires F to be 0 or 1 throughout the input domain; the input itself need not be a bit. Other canonical ring integers (less than explicit Q) can be external-product controls with an independent multiplication/noise budget. Input t, integer function values, candidate t_ring and gadget basis have separate mathematical roles. One-hot uses dedicated selector tables; `context.one_hot_evaluator(&server)` creates `OneHotEvaluator` with its own common resources.
 
-All four backends borrow common resources and take the default CBS output parameters from the circuit key; see resource reuse below.
+`allocate_output` returns the backend's raw GGSW/NGSW; candidates and returned ring ciphertexts use coefficient-domain GLWE/NTRU. `cmux_to` selects lhs for zero and rhs for one; `external_product_to` also consumes non-bit gadgets. Controls must match the evaluator's basis, actual accumulator secret and transform representation; candidates need that secret/modulus and a common encoding. These identities and noise margins remain caller contracts; public entries check exact lengths before output writes.
 
-`allocate_output` returns the backend's raw GGSW/NGSW, and ring ciphertexts remain coefficient-domain GLWE/NTRU values. `cmux_to` selects `lhs` for zero and `rhs` for one; `external_product_to` also accepts non-bit gadget controls. Controls must use this evaluator's output basis, accumulator secret and transform representation. Candidates must use that secret/modulus and a common encoding. These identities and the noise margin remain caller contracts; every ciphertext length is checked before output writes.
+`AccumulatorClient` owns the prepared accumulator secret and conversion buffers while borrowing the Context. It encrypts/decrypts N Scaled ring-message coefficients, independently of external LWE messages. Invalid t_ring encoding, keys or NTRU secret conversion return `TfheClientError` at preparation. Shape errors panic before writes or RNG consumption; invalid plaintexts may consume randomness. Construct once and reuse `_to` calls and output buffers.
 
-`AccumulatorClient` owns the prepared accumulator secret and reusable conversion buffers, borrowing its context. It encrypts/decrypts N unsigned coefficients using the accumulator codec; this ring domain is separate from external LWE clients. Invalid shapes panic before writes or RNG consumption; invalid plaintext values may consume randomness. Preparation returns `TfheClientError`: both families check keys and the supplied Scaled codec modulus; NTRU also checks secret conversion.
-
-Construct once and reuse `_to` calls and output buffers for allocation-free evaluation.
+Use low-level `CircuitBootstrapEvaluator` / `OneHotCircuitBootstrapEvaluator` for explicit input encodings, per-call resource borrowing and GLWE output-basis overrides; `AccumulatorClient::try_new` binds an explicit Scaled candidate codec. These interfaces serve independent numerical combinations and existing PBS resource reuse.
 
 ## Reusing evaluators
+
+Default `CbsEvaluator` / `OneHotEvaluator` combine the existing operation buffers and `BootstrapResources`, without copying the Context, keys or transform table, or allocating ordinary return scratch. `into_parts()` moves out operation state and resources; PBS can then take the resources, while low-level evaluators keep borrowing them. Serial reuse need not retain multiple identical scratch sets; concurrent workers need separate mutable resources.
 
 A context owns immutable parameters/tables; the server key owns evaluation material; an evaluator owns mutable workspace. Keep compiled LUTs/programs and use `_to` with preallocated output ciphertexts.
 

@@ -1,6 +1,5 @@
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_encoding::RoundedCodec;
-use primus_encoding::ScaledCodec;
 use primus_lattice::LweDimension;
 use primus_modulus::{BarrettModulus, PowOf2Modulus};
 use primus_ntru::{NtruCiphertext, NttNtruExternalProductWorkspace, SecretKeyDistr};
@@ -106,6 +105,35 @@ fn selectors(distr: SecretKeyDistr, sparse: bool) {
     let (client, server) = generator
         .try_generate_circuit_bootstrap_keys(&mut rng)
         .unwrap();
+    // The default owner also supports compact controls and repeated requests.
+    // These ring candidates use t_ring=4 independently of one-hot's input t=8.
+    {
+        let mut evaluator = context.one_hot_evaluator(&server).unwrap();
+        let mut output = evaluator.allocate_nonzero_ngsw_output();
+        let encryptor = context.encryptor(client.external_lwe_secret_key()).unwrap();
+        let mut candidates = context
+            .accumulator_client(client.accumulator_ntru_secret_key(), 4)
+            .unwrap();
+        let lhs = candidates.encrypt(&[1; N], &mut rng);
+        let rhs = candidates.encrypt(&[3; N], &mut rng);
+        let mut selected = context.allocate_accumulator_ciphertext();
+        for message in [2, 0] {
+            let input = encryptor.encrypt_padded(message, &mut rng).unwrap();
+            evaluator.one_hot_nonzero_ngsw_to(input.as_view(), &mut output);
+            for (r, control) in evaluator.nonzero_ngsw_selectors(&output).iter() {
+                evaluator.cmux_to(
+                    control,
+                    lhs.as_view(),
+                    rhs.as_view(),
+                    selected.as_mut_view(),
+                );
+                assert_eq!(
+                    candidates.decrypt(&selected),
+                    vec![if r == message as usize { 3 } else { 1 }; N]
+                );
+            }
+        }
+    }
     let (server, circuit) = server.into_parts();
     let (br, return_key) = server.into_parts();
     // One-hot preparation depends on the context/CBS key, not on BR controls.
@@ -212,10 +240,7 @@ fn selectors(distr: SecretKeyDistr, sparse: bool) {
     let mut accumulator = context
         .accumulator_client(
             client.accumulator_ntru_secret_key(),
-            ScaledCodec::new(
-                input_codec.plaintext_modulus(),
-                context.parameters().accumulator_ntru().cipher_modulus(),
-            ),
+            input_codec.plaintext_modulus(),
         )
         .unwrap();
     let choices = [1, 3].map(|m| {

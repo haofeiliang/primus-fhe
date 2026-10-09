@@ -15,9 +15,7 @@ use primus_fft::TfheFftTable;
 use primus_fft::{FftTable, TorusFftValue};
 use primus_modulus::NativeModulus;
 use primus_tfhe_benchmarks::parameters::{N, glwe};
-use primus_tfhe_glwe_fourier::{
-    CircuitBootstrapEvaluator, ClientKey, KeyGenerator, PbsOrder, TfheContext,
-};
+use primus_tfhe_glwe_fourier::{ClientKey, KeyGenerator, PbsOrder, TfheContext};
 use rand::{SeedableRng, rngs::StdRng};
 
 // CBS consumes a bit and emits a gadget control, not an LWE result. Verify
@@ -30,13 +28,11 @@ where
     let kind = if sparse { "sparse" } else { "classic" };
     // Pair classic and sparse BR using identical parameters and client seed.
     let parameters = glwe::diagnostic(NativeModulus::<T>::new(), order);
-    let (input_codec, ring_message_codec) = parameters
-        .as_ref()
-        .circuit_bootstrap_codecs(T::as_from(4u32), T::as_from(4u32))
-        .unwrap();
+    let input_modulus = T::as_from(4u32);
+    let t_ring = T::as_from(4u32);
     let name = format!("{kind}/{order:?}/complete");
     let fixture = std::cell::LazyCell::new(|| {
-        Fixture::<T, Table>::new(parameters, input_codec, ring_message_codec, sparse, T::ONE)
+        Fixture::<T, Table>::new(parameters, input_modulus, t_ring, sparse, T::ONE)
     });
     let mut verified = false;
     c.throughput(criterion::Throughput::Elements(1));
@@ -51,21 +47,20 @@ where
             lhs,
             rhs,
         } = &*fixture;
-        let mut resources = context.bootstrap_resources_from_server_key(server.server_key()).unwrap();
-        let circuit_key = server.circuit_bootstrap_key();
-        let mut evaluator =
-            CircuitBootstrapEvaluator::try_new(&resources, circuit_key, &input_codec).unwrap();
+        let mut evaluator = context.circuit_bootstrap_evaluator(server).unwrap();
         let mut output = evaluator.allocate_output();
         if !verified {
-            evaluator.circuit_bootstrap_to(input.as_view(), &mut output, &mut resources);
+            evaluator.circuit_bootstrap_to(input.as_view(), output.as_mut_view());
             let mut selected = context.allocate_accumulator_ciphertext();
-            evaluator.cmux_to(&output, lhs, rhs, &mut selected, &mut resources);
+            evaluator.cmux_to(
+                output.as_view(),
+                lhs.as_view(),
+                rhs.as_view(),
+                selected.as_mut_view(),
+            );
             let mut decoded = vec![T::ZERO; N];
             context
-                .accumulator_client(
-                    client.glwe_secret_key(),
-                    ring_message_codec,
-                )
+                .accumulator_client(client.glwe_secret_key(), t_ring)
                 .unwrap()
                 .decrypt_to(&selected, &mut decoded);
             assert!(decoded.iter().all(|&value| value == T::ONE));
@@ -87,8 +82,7 @@ where
         b.iter(|| {
             evaluator.circuit_bootstrap_to(
                 black_box(input.as_view()),
-                black_box(&mut output),
-                &mut resources,
+                black_box(output.as_mut_view()),
             )
         });
     });
@@ -124,16 +118,18 @@ impl<T: TorusFftValue, Table: FftTable> Fixture<T, Table> {
     /// preserved so the baseline keeps identical client and encryption randomness.
     fn new(
         parameters: primus_tfhe_glwe_fourier::PbsParameters<T>,
-        input_codec: primus_encoding::RoundedCodec<T, primus_modulus::NativeModulus<T>>,
-        ring_message_codec: primus_encoding::ScaledCodec<T, primus_modulus::NativeModulus<T>>,
+        input_modulus: T,
+        t_ring: T,
         sparse: bool,
         message: T,
     ) -> Self {
-        let parameters = parameters.with_messages(primus_tfhe::PbsMessageConfig::new(
-            input_codec.plaintext_modulus(),
-        ));
+        let parameters =
+            parameters.with_messages(primus_tfhe::PbsMessageConfig::new(input_modulus));
         let context_parameters = &parameters;
         let context = TfheContext::<T, Table>::from_parameters(context_parameters.clone());
+        let context = context
+            .try_with_circuit_bootstrap(glwe::cbs::<T>())
+            .unwrap();
         let mut rng = StdRng::seed_from_u64(42);
         let mut generator = KeyGenerator::new(&context);
         let client = ClientKey::generate(context.parameters(), &mut rng);
@@ -143,11 +139,7 @@ impl<T: TorusFftValue, Table: FftTable> Fixture<T, Table> {
                 context_parameters.glwe_key_switching(),
                 &client,
                 blind_rotation,
-                &primus_tfhe_glwe::CbsGadgetParameters::try_from_config(
-                    context.parameters(),
-                    glwe::cbs::<T>(),
-                )
-                .unwrap(),
+                context.cbs_parameters().unwrap().gadget(),
                 &mut rng,
             )
             .unwrap();
@@ -159,7 +151,7 @@ impl<T: TorusFftValue, Table: FftTable> Fixture<T, Table> {
             .encrypt_padded(message, &mut rng)
             .unwrap();
         let mut ring = context
-            .accumulator_client(client.glwe_secret_key(), ring_message_codec)
+            .accumulator_client(client.glwe_secret_key(), t_ring)
             .unwrap();
         let lhs = ring.encrypt(&[T::ZERO; N], &mut rng);
         let rhs = ring.encrypt(&[T::ONE; N], &mut rng);

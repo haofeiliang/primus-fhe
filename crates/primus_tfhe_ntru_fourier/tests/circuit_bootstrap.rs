@@ -4,7 +4,6 @@
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_encoding::RoundedCodec;
-use primus_encoding::ScaledCodec;
 use primus_fft::{Complex64, FftTable, RustFftTable, TfheFftTable};
 use primus_lattice::LweDimension;
 use primus_modulus::{NativeModulus, PowOf2Modulus};
@@ -86,6 +85,33 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr, sparse: bool) {
     let (client, ring_server) = generator
         .try_generate_circuit_bootstrap_keys(&mut rng)
         .unwrap();
+    // The configured workflow owns its scratch and evaluates a custom bit
+    // function. Candidate t_ring=8 is independent of the input t=4.
+    {
+        let mut candidates = context
+            .accumulator_client(client.accumulator_ntru_secret_key(), 8)
+            .unwrap();
+        let lhs = candidates.encrypt(&[1; N], &mut rng);
+        let rhs = candidates.encrypt(&[3; N], &mut rng);
+        let encryptor = context.encryptor(client.external_lwe_secret_key()).unwrap();
+        let program = context.compile_cbs_fn(|m| 1 - m as u64).unwrap();
+        let mut cbs = context
+            .circuit_bootstrap_evaluator_with_lookup_table(&ring_server, program)
+            .unwrap();
+        let mut control = cbs.allocate_output();
+        let mut selected = context.allocate_accumulator_ciphertext();
+        for (message, expected) in [(0, 3), (1, 1)] {
+            let input = encryptor.encrypt_padded(message, &mut rng).unwrap();
+            cbs.circuit_bootstrap_to(input.as_view(), control.as_mut_view());
+            cbs.cmux_to(
+                control.as_view(),
+                lhs.as_view(),
+                rhs.as_view(),
+                selected.as_mut_view(),
+            );
+            assert_eq!(candidates.decrypt(&selected), vec![expected; N]);
+        }
+    }
     {
         let resources = ring_server.bootstrap_resources(&context).unwrap();
         let _cbs = CircuitBootstrapEvaluator::try_new(
@@ -142,10 +168,7 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr, sparse: bool) {
     let mut accumulator_client = context
         .accumulator_client(
             client.accumulator_ntru_secret_key(),
-            ScaledCodec::new(
-                input_codec.plaintext_modulus(),
-                context.parameters().accumulator_ntru().cipher_modulus(),
-            ),
+            input_codec.plaintext_modulus(),
         )
         .unwrap();
     let choices = [1u64, 3].map(|message| {

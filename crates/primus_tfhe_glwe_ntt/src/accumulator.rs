@@ -138,12 +138,16 @@ where
     Table: MonomialNttTable<ValueT = T>,
 {
     /// Prepares private-key encryption/decryption in the accumulator ring domain.
+    /// Builds Scaled encoding at ring Q for `t_ring`, independently of the
+    /// external LWE input/output message moduli and CBS gadget scales.
     /// Inherits [`crate::AccumulatorClient::try_new`]'s contracts and errors.
     pub fn accumulator_client(
         &self,
         secret_key: &GlweSecretKey<T>,
-        codec: ScaledCodec<T, BarrettModulus<T>>,
+        t_ring: T,
     ) -> Result<crate::AccumulatorClient<'_, T, Table>, crate::TfheClientError> {
+        let codec = ScaledCodec::try_new(t_ring, self.parameters().cipher_modulus())
+            .map_err(crate::ClientError::from)?;
         crate::AccumulatorClient::try_new(self, secret_key, codec)
     }
 }

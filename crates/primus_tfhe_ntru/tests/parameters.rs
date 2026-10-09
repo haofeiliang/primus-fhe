@@ -534,6 +534,25 @@ fn complete_cbs_reuses_br_and_keeps_selector_encoding_at_q() {
     let br = PbsParameters::try_from_config(config.pbs).unwrap();
     let operation = CbsParameters::try_with_config(br.clone(), config.gadget).unwrap();
     assert!(br.has_same_domain(operation.pbs_parameters()));
+    // Independent composition must retain CBS's input intervals. Changing only
+    // ordinary PBS's output message modulus does not affect the gadget program.
+    assert!(matches!(
+        operation.clone().try_with_pbs_parameters(
+            br.clone()
+                .with_messages(primus_tfhe::PbsMessageConfig::new(3))
+        ),
+        Err(TfheParameterError::IncompatibleComponents)
+    ));
+    let other_output = operation
+        .clone()
+        .try_with_pbs_parameters(
+            br.clone()
+                .with_messages(primus_tfhe::PbsMessageConfig::new(4).with_output_modulus(8)),
+        )
+        .unwrap();
+    assert_eq!(other_output.input_codec().plaintext_modulus(), 4);
+    assert_eq!(other_output.pbs_parameters().messages().output_modulus, 8);
+
     assert!(std::ptr::eq(
         br.accumulator_ntru(),
         operation.gadget().trace().encryption_parameters()

@@ -15,11 +15,6 @@ fn main() {
     let config = experimental::CLASSIC_ONE_HOT_U64;
     let context = TfheContext::<Word, Table, _>::try_from_cbs_config(config).unwrap();
     let poly_length = config.pbs.bsk_poly_length.get();
-    // Padded t=8 encodes four selector values independently of the ring messages.
-    let (_, ring_message_codec) = context
-        .parameters()
-        .circuit_bootstrap_codecs(config.pbs.messages.input_modulus, 8)
-        .unwrap();
 
     // Client: independent LWE/NTRU secrets; send evaluation material and both encrypted choices.
     let mut rng = StdRng::seed_from_u64(42);
@@ -32,7 +27,7 @@ fn main() {
 
     // Candidate ring messages use their own t=8 space at accumulator Q.
     let mut ring_client = context
-        .accumulator_client(client_key.accumulator_ntru_secret_key(), ring_message_codec)
+        .accumulator_client(client_key.accumulator_ntru_secret_key(), 8)
         .unwrap();
     let lhs = ring_client.encrypt(&vec![1; poly_length], &mut rng);
     let rhs = ring_client.encrypt(&vec![3; poly_length], &mut rng);
@@ -40,10 +35,7 @@ fn main() {
     let mut decoded = vec![0; poly_length];
 
     // Server: reserve one transformed NGSW per value in 0..4 and one ring result.
-    let mut resources = server_key.bootstrap_resources(&context).unwrap();
-    let mut cbs = context
-        .one_hot_evaluator(&resources, server_key.circuit_bootstrap_key())
-        .unwrap();
+    let mut cbs = context.one_hot_evaluator(&server_key).unwrap();
     let mut selectors = cbs.allocate_ngsw_output();
     let mut selected = context.allocate_accumulator_ciphertext();
 
@@ -54,9 +46,14 @@ fn main() {
             .unwrap();
 
         // Server: selector r encrypts [message == r]; r=0 is included in this full batch.
-        cbs.one_hot_ngsw_to(input.as_view(), &mut selectors, &mut resources);
+        cbs.one_hot_ngsw_to(input.as_view(), &mut selectors);
         let control = cbs.ngsw_selectors(&selectors).selector(TARGET).unwrap();
-        cbs.cmux_to(&control, &lhs, &rhs, &mut selected, &mut resources);
+        cbs.cmux_to(
+            control,
+            lhs.as_view(),
+            rhs.as_view(),
+            selected.as_mut_view(),
+        );
 
         // Client: equality selects rhs=3; all other inputs select lhs=1.
         ring_client.decrypt_to(&selected, &mut decoded);

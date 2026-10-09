@@ -69,9 +69,9 @@ Classic PBS、ManyLUT、CBS、Boolean 和 MVB 支持 binary/ternary 外部秘密
 
 ## CBS 与示例
 
-`let (input_codec, ring_message_codec) = br.circuit_bootstrap_codecs(8, 8)?;` 为 CBS → CMux 准备 Rounded 输入与 Scaled 候选环消息编码，两个明文模数独立指定。参数自动提供输入 q 与累加环 Q；只准备实际使用的这两个编码，不要求候选环消息能在 q 下返回。环消息 codec 不表示 CBS 输出的 gadget 标度；容量与噪声余量仍遵循操作契约。已准备的具体 codec 仍可直接绑定。
+`CbsParameters` 保存输入 Rounded 编码与 gadget，通过 `compile_lookup_table` / `_fn` / `_slice` 编译恒等或自定义整数函数。后端 Context 的 `compile_cbs_identity` / `compile_cbs_fn` / `compile_cbs_slice` 使用相同状态；输入加密共用 `context.encryptor`。候选环客户端接收独立 t_ring，并按累加 Q 准备 Scaled 编码。独立 codec 配对使用底层显式编译与客户端接口。
 
-用 `key.parameters().compile_lookup_table_fn(&input_codec, |m| u64::from(m >= 2))?` 编译整数函数，或将完整前半区结果切片传给 `compile_lookup_table_slice`。通过 `CircuitBootstrapEvaluator::try_with_lookup_table(&resources, key, program)?` 绑定返回的 `CircuitBootstrapLookupTable`；`try_new` 保留恒等函数默认入口。输出层使用 `g_j * F(m) mod Q`，无需输出消息 codec 或额外 BR。CMux 要求整个输入域上的 F 都是 bit；其他环整数遵循外积噪声契约。两个后端均支持 classic binary/ternary 和 sparse binary 程序。
+通过 `context.circuit_bootstrap_evaluator_with_lookup_table(&server, program)?` 创建拥有公共资源的默认 `CbsEvaluator`；`context.circuit_bootstrap_evaluator(&server)?` 编译并绑定恒等函数。输出为 `g_j * F(m) mod Q`，无需输出消息 codec 或额外 BR；CMux 要求完整输入域上的 F 为 bit，其他整数遵循外积噪声契约。NTT/Fourier 均支持 classic binary/ternary 与 sparse binary。显式输入编码和逐调用资源借用保留在底层 `CircuitBootstrapEvaluator`。
 
 两个后端均提供 `context.try_generate_circuit_bootstrap_keys(rng)`，返回 `(ClientKey, CircuitBootstrapServerKey)`。该组合含一个 BR/KS `ServerKey` 和一个必需的 `CircuitBootstrapKey`，同样服务 one-hot 和高精度 LUT。通过 `server.server_key()` 绑定普通 PBS，CBS/one-hot 借用相同 BR，无重复密钥。完整组合也检查返回 q 的秘密幅度界；在线 CBS 仍不分配返回 scratch。见[材料选择](../primus_tfhe/README.zh_CN.md#选择盲旋转算法)。
 
@@ -79,13 +79,13 @@ Classic PBS、ManyLUT、CBS、Boolean 和 MVB 支持 binary/ternary 外部秘密
 
 `context.try_with_circuit_bootstrap(gadget)?` 为 PBS Context 添加 CBS，随后 `context.try_generate_keys(rng)` 复用主秘密变换、生成混合材料。CBS 跳过普通返回路径，在 f 下生成 NGSW；CMux 消费的函数须为 bit，候选环密文共享 f、Q 和编码。
 
-`CbsGadgetParameters` 独立选择 output、trace、scheme-switch basis。输出保留请求的层数，scheme-switch key 绑定完整 output basis；相同长度不能证明 basis 或实际秘密相同。BR 分解必须能解析 LUT 和最小输出 gadget 尺度。CBS 的输入编码和 ManyLUT 容量在程序编译时检查，evaluator 绑定检查域和 basis；同一密钥材料可服务多个 t。`accumulator_client(client.accumulator_ntru_secret_key(), scaled_codec)` 独立绑定 Q 下的普通环消息，复用 gadget 的采样状态；其明文模数可与输入 LWE 不同。
+`CbsGadgetParameters` 独立选择 output、trace、scheme-switch basis。输出保留请求的层数，scheme-switch key 绑定完整 output basis；相同长度不能证明 basis 或实际秘密相同。BR 分解必须能解析 LUT 和最小输出 gadget 尺度。CBS 的输入编码和 ManyLUT 容量在程序编译时检查，evaluator 绑定检查域和 basis；同一密钥材料可服务多个 t。`accumulator_client(client.accumulator_ntru_secret_key(), t_ring)` 独立绑定 Q 下的普通环消息，复用 gadget 的采样状态；其明文模数可与输入 LWE 不同。
 
 NTT reverse trace 使用模逆元，Fourier 使用原生整数减半并引入 FFT 误差。Scheme switching 的输入误差乘 f、分解误差乘 f²；发布 `NGSW_f[f]` 材料需要独立论证 key-dependent-message/circular-security 假设，见 [NTRU 契约](../primus_ntru/README.zh_CN.md#同一秘密下的-scheme-switching)。
 
 ## One-hot CBS
 
-`OneHotCircuitBootstrapEvaluator::try_new(&resources, circuit_key, &input_codec)` 复用 CBS 材料，支持 classic binary/ternary 或 sparse fixed-weight binary BR，并在每次调用时借用公共资源。要求 t=2M、M=2^tau、tau>=1；输入用 `encrypt_padded` 加密 0..M。输出基有 L 层时，令 W=next_power_of_two(L)，要求 2MW<=N。
+后端 `context.one_hot_evaluator(&server)?` 使用相同 CBS 能力，组合 selector 状态和公共资源。底层 `OneHotCircuitBootstrapEvaluator::try_new(&resources, circuit_key, &input_codec)` 服务显式数值组合与逐调用资源借用。两者支持 classic binary/ternary 或 sparse fixed-weight binary BR。要求 t=2M、M=2^tau、tau>=1；用 `encrypt_padded` 加密 0..M。输出有 L 层时，令 W=next_power_of_two(L)，要求 2MW<=N。
 
 完整接口通过 `allocate_nlev_output` / `allocate_ngsw_output` 分配，再用 `one_hot_nlev_to`、`one_hot_ngsw_to` 或 `one_hot_to` 写入 δ_r(m)，r=0..M-1。NLEV 是 Q 下的系数表示，NGSW 是后端变换表示。布局为 `[selector][level][row element]`，层顺序与 `output_basis().scalar_iter()` 一致；每行 N 个整数，Fourier NGSW 每行 N/2 个复数。NLEV 先变换后可用于公开多项式提升，NGSW 用于加密候选的 CMux。
 

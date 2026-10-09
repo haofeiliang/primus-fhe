@@ -224,6 +224,8 @@ Names distinguish reusable storage (`Workspace`), validated environments (`Conte
 
 Resources borrow context/key owners; they own only their prepared buffers and, in Fourier backends, the FFT engine borrowing the context’s table. Serial PBS/MVB/CBS/one-hot operations can lend common resources to each other; concurrent workers normally need separate mutable instances. GLWE `KeySwitchingResources` binds a ring KS key to its lower-level workspace and switched output. NTRU `BlindRotationResources` binds classic controls or a sparse key to the selected BR buffers; their external-product workspaces remain pure storage. These internal combinations use `Resources` without introducing another public wrapper. A buffer helper does not itself require an `Evaluator` name. See [TFHE resource composition](tfhe-parameters-and-boundaries.md#输入盲旋转与返回组合).
 
+Default `CbsEvaluator` / `OneHotEvaluator` prepare existing common resources from complete server keys and combine operation state, without copying material or transform tables. `into_parts()` moves out low-level state and resources for serial PBS/CBS/one-hot reuse; explicit per-call borrowing remains available.
+
 A workspace with the right length does not prove basis, modulus, table or key compatibility. Construct reusable buffers before the repeated operation, preserve the API's overwrite/accumulate rules, and document when a borrowed workspace or caller-owned accumulator must be restored. Secret-key erasure and workspace erasure may have different postconditions; read each type's `zeroize` contract before reuse.
 
 ## Choose owned containers by their consumers

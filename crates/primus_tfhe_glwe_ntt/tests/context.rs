@@ -305,6 +305,10 @@ fn operation_state_controls_material_and_binding() {
 
     let parameters = parameters(PbsOrder::KeyswitchBootstrap);
     let context = TfheContext::<_, U32NttTable>::try_from_parameters(parameters.clone()).unwrap();
+    assert!(matches!(
+        context.compile_cbs_identity(),
+        Err(TfheEvaluationError::MissingCircuitBootstrapParameters)
+    ));
     let mut rng = StdRng::seed_from_u64(0x4341504142494c49);
     let mut untouched = StdRng::seed_from_u64(0x4341504142494c49);
     assert!(matches!(
@@ -339,10 +343,28 @@ fn operation_state_controls_material_and_binding() {
     let (_, server) = context
         .try_generate_circuit_bootstrap_keys(&mut rng)
         .unwrap();
+    // t=3 and t=4 have the same number of unsigned inputs, but different
+    // Rounded intervals. The configured workflow must reject that pairing.
+    context.circuit_bootstrap_evaluator(&server).unwrap();
+    let other_input = primus_encoding::RoundedCodec::new(3, context.parameters().cipher_modulus());
+    let other_program = context
+        .cbs_parameters()
+        .unwrap()
+        .gadget()
+        .compile_lookup_table(&other_input)
+        .unwrap();
+    assert_eq!(
+        other_program.input_domain_len(),
+        context.compile_cbs_identity().unwrap().input_domain_len()
+    );
+    assert!(matches!(
+        context.circuit_bootstrap_evaluator_with_lookup_table(&server, other_program),
+        Err(TfheEvaluationError::IncompatibleCircuitBootstrapLookupTable)
+    ));
     let circuit = server.circuit_bootstrap_key();
     let pbs = context.evaluator(server.server_key()).unwrap();
     context
-        .circuit_bootstrap_evaluator(pbs.bootstrap_resources(), circuit)
+        .circuit_bootstrap_evaluator_with_resources(pbs.bootstrap_resources(), circuit)
         .unwrap();
 
     // Complete CBS parameters retain the configured KS, so restoring the
@@ -354,10 +376,10 @@ fn operation_state_controls_material_and_binding() {
 
     let restored_pbs = restored.evaluator(server.server_key()).unwrap();
     restored
-        .circuit_bootstrap_evaluator(restored_pbs.bootstrap_resources(), circuit)
+        .circuit_bootstrap_evaluator_with_resources(restored_pbs.bootstrap_resources(), circuit)
         .unwrap();
     assert!(matches!(
-        restored.circuit_bootstrap_evaluator(pbs.bootstrap_resources(), circuit),
+        restored.circuit_bootstrap_evaluator_with_resources(pbs.bootstrap_resources(), circuit),
         Err(TfheEvaluationError::IncompatibleCircuitBootstrapParameters)
     ));
 

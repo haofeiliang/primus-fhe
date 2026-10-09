@@ -139,7 +139,7 @@ where
     /// Allocates projection storage after the entry point has established the key,
     /// parameters and program pairing; the identity compiler already establishes
     /// its program's geometry/basis, so that path does not recheck them.
-    fn from_binding(
+    pub(super) fn from_binding(
         context: &'a TfheContext<T, Table>,
         circuit: CircuitBootstrapBinding<'a, T>,
         lookup_table: CircuitBootstrapLookupTable<T>,
@@ -396,7 +396,7 @@ where
     ///
     /// # Correctness
     /// Inherits [`CircuitBootstrapEvaluator::try_new`]'s secret, representation and noise contracts.
-    pub fn circuit_bootstrap_evaluator<'a>(
+    pub fn circuit_bootstrap_evaluator_with_resources<'a>(
         &'a self,
         resources: &BootstrapResources<'a, T, Table>,
         circuit_key: &'a CircuitBootstrapKey<T>,

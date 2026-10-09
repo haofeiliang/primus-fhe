@@ -602,7 +602,10 @@ fn circuit<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
         .encryptor_with_codec(client_key.external_lwe_secret_key(), &input_codec)
         .unwrap();
     let mut accumulator = context
-        .accumulator_client(client_key.accumulator_ntru_secret_key(), ring_message_codec)
+        .accumulator_client(
+            client_key.accumulator_ntru_secret_key(),
+            ring_message_codec.plaintext_modulus(),
+        )
         .unwrap();
     // Vary all coefficients so CMux cannot pass by selecting only a constant term.
     let messages = [0, 1].map(|offset| {

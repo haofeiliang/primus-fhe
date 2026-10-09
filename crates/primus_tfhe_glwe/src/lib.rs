@@ -25,9 +25,9 @@
 //! through [`PbsMessageConfig`]; its output override preserves independent domains.
 //! [`PbsParameters::factorized_pbs_codecs`] instead prepares Scaled MVB outputs.
 //! Bind returned LWE decryption to the prepared output codec, not the input codec.
-//! For CBS, [`PbsParameters::circuit_bootstrap_codecs`] prepares input and candidate
-//! ring-message codecs; [`CbsGadgetParameters::compile_lookup_table_fn`]
-//! programs gadget-scaled integers independently of those candidate messages.
+//! For CBS, [`CbsParameters::compile_lookup_table_fn`] uses its retained input
+//! encoding and programs gadget-scaled integers. Backend contexts share the
+//! ordinary input encryptor; candidate ring clients take independent t_ring at Q.
 //!
 //! # Public-key clients
 //!

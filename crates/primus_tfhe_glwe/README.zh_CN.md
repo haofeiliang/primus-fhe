@@ -72,15 +72,15 @@ PBS 和 CBS 的 `key_switching` 都是必需的 `GadgetEncryptionConfig`，分�
 
 ## Boolean 与 CBS
 
-`let (input_codec, ring_message_codec) = br.circuit_bootstrap_codecs(8, 8)?;` 为 CBS → CMux 准备 Rounded 输入与 Scaled 候选环消息编码，两个明文模数独立指定。参数自动提供共同密文模数 q=Q；只准备实际使用的这两个编码，不准备额外的返回编码。环消息 codec 不表示 CBS 输出的 gadget 标度；容量与噪声余量仍遵循操作契约。已准备的具体 codec 仍可直接绑定。
+`CbsParameters` 保存输入 Rounded 编码与 gadget，通过 `compile_lookup_table` / `_fn` / `_slice` 编译恒等或自定义整数函数。后端 Context 的 `compile_cbs_identity` / `compile_cbs_fn` / `compile_cbs_slice` 使用相同状态；输入加密共用 `context.encryptor`。候选环客户端接收独立 t_ring，并按累加 Q 准备 Scaled 编码。独立 codec 配对使用底层显式编译与客户端接口。
 
-用 `key.parameters().compile_lookup_table_fn(&input_codec, |m| u64::from(m >= 2))?` 编译整数函数，或将完整前半区结果切片传给 `compile_lookup_table_slice`。通过 `CircuitBootstrapEvaluator::try_with_lookup_table(&resources, key, program)?` 绑定返回的 `CircuitBootstrapLookupTable`；`try_new` 保留恒等函数默认入口。输出层使用 `g_j * F(m) mod Q`，无需输出消息 codec 或额外 BR。CMux 要求整个输入域上的 F 都是 bit；其他环整数遵循外积噪声契约。两个后端均支持 classic binary/ternary 和 sparse binary 程序。
+通过 `context.circuit_bootstrap_evaluator_with_lookup_table(&server, program)?` 创建拥有公共资源的默认 `CbsEvaluator`；`context.circuit_bootstrap_evaluator(&server)?` 编译并绑定恒等函数。输出为 `g_j * F(m) mod Q`，无需输出消息 codec 或额外 BR；CMux 要求完整输入域上的 F 为 bit，其他整数遵循外积噪声契约。NTT/Fourier 均支持 classic binary/ternary 与 sparse binary。显式输入编码和逐调用资源借用保留在底层 `CircuitBootstrapEvaluator`。
 
 两个后端均提供 `context.try_generate_circuit_bootstrap_keys(rng)`，返回 `(ClientKey, CircuitBootstrapServerKey)`。该类型组合一个 BR/KS `ServerKey` 和必需 CBS key；`server.server_key()` 可绑定普通 PBS，CBS 借用同一 BR。KS→BR 的输入准备使用已有 KS，BR→KS 的 CBS 不分配返回 scratch，后续 LWE 返回仍可复用 KS。见[材料选择](../primus_tfhe/README.zh_CN.md#选择盲旋转算法)。
 
 显式传入 t=4 的 `RoundedCodec` 时，context 提供 `boolean_encryptor`、`boolean_public_encryptor`、`boolean_decryptor` 和 `boolean_evaluator`。这些接口使用普通 PBS 材料；调用与串联约定见[公共 Boolean 契约](../primus_tfhe/README.zh_CN.md#boolean-门)。
 
-输入编码与 ManyLUT 容量在 CBS 程序绑定时检查：两后端均使用 `CircuitBootstrapEvaluator::try_new(&resources, key, &input_codec)`。默认构造使用密钥自带参数，`try_with_parameters` 显式选择兼容的替代输出 basis。同一套密钥可服务多个明文模数，前提是各程序满足容量与噪声余量。`accumulator_client(client.glwe_secret_key(), scaled_codec)` 独立绑定普通环消息，其 `ScaledCodec` 不必采用输入 LWE 的明文模数。
+输入编码与 ManyLUT 容量在 CBS 程序绑定时检查：两后端均使用 `CircuitBootstrapEvaluator::try_new(&resources, key, &input_codec)`。默认构造使用密钥自带参数，`try_with_parameters` 显式选择兼容的替代输出 basis。同一套密钥可服务多个明文模数，前提是各程序满足容量与噪声余量。`accumulator_client(client.glwe_secret_key(), t_ring)` 独立绑定普通环消息，其 `ScaledCodec` 不必采用输入 LWE 的明文模数。
 
 CBS 是两个后端的可选能力，提供独立的 output basis、trace/scheme-switch 参数及密钥， 两种 PBS order 均支持经典 binary/ternary 和 sparse binary。CBS 输出留在 accumulator secret 下，使用 gadget 尺度。`CbsGadgetParameters<T, M>` 由公共层定义，后端提供具体模数别名； 同层数的不同输出 basis 可复用 scheme-switch key。噪声与变换要求见对应后端契约。
 

@@ -161,12 +161,19 @@ where
     LM: primus_reduce::RingContext<T>,
 {
     /// Prepares private-key encryption/decryption in the accumulator ring domain.
+    /// Builds Scaled encoding at ring Q for `t_ring`, independently of the
+    /// external LWE input/output message moduli and CBS gadget scales.
     /// Inherits [`crate::AccumulatorClient::try_new`]'s contracts and errors.
     pub fn accumulator_client(
         &self,
         secret_key: &NtruSecretKey<T>,
-        codec: ScaledCodec<T, primus_modulus::BarrettModulus<T>>,
+        t_ring: T,
     ) -> Result<crate::AccumulatorClient<'_, T, Table, LM>, TfheClientError> {
+        let codec = ScaledCodec::try_new(
+            t_ring,
+            self.parameters().accumulator_ntru().cipher_modulus(),
+        )
+        .map_err(crate::ClientError::from)?;
         crate::AccumulatorClient::try_new(self, secret_key, codec)
     }
 }
