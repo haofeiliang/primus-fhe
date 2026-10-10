@@ -142,7 +142,7 @@ ring_client.decrypt_to(&selected, &mut decoded);
 
 `compile_cbs_fn` 在完整 `0..ceil(t_in/2)` 上求值，将每层编译为 `g_j * F(m) mod Q`。`compile_cbs_slice` 接收恰好该数量的结果（此例为 `[0, 0, 1, 1]`）；`compile_cbs_identity` 编译恒等函数。默认绑定核对程序的输入消息区间、N、q/Q 与完整 gadget basis，再移动程序；输入数量相同不足以证明编码相同。`circuit_bootstrap_evaluator(&server)` 是恒等快捷入口。改变兼容函数不需要新密钥或额外 BR。
 
-CMux 要求完整输入域上的 F 为 0 或 1；输入本身可以不是 bit。其他 canonical 环整数（显式 Q 时小于 Q）可作为外积控制，需要独立乘法与噪声预算。输入 t、函数整数值、候选 t_ring 与 gadget basis 分别承担不同数学角色。One-hot 使用专用 selector 表，通过 `context.one_hot_evaluator(&server)` 创建同样拥有公共资源的 `OneHotEvaluator`。
+CMux 要求完整输入域上的 F 为 0 或 1；输入本身可以不是 bit。其他 canonical 环整数（显式 Q 时小于 Q）可作为外积控制，需要独立乘法与噪声预算。输入 t、函数整数值、候选 t_ring 与 gadget basis 分别承担不同数学角色。One-hot 使用专用 selector 表，通过 `context.one_hot_evaluator(&server)` 创建同样拥有公共资源的 `OneHotEvaluator`。 NTRU 两后端的 `cmux_k_to` 消费 δ₁…δ(M−1)，以 C0 为默认项选择其余加密候选，复用既有工作区；用法见 [NTT](../primus_tfhe_ntru_ntt/README.zh_CN.md#one-hot-cbs) / [Fourier](../primus_tfhe_ntru_fourier/README.zh_CN.md#one-hot-cbs)。
 
 `allocate_output` 返回后端的原始 GGSW/NGSW；候选与返回环密文为系数域 GLWE/NTRU。`cmux_to` 在 0 时选择 lhs、1 时选择 rhs；`external_product_to` 也可消费非 bit gadget。控制须匹配 evaluator 的 basis、实际累加秘密及变换表示；候选须采用同一秘密/模数及共同编码。这些身份和噪声余量由调用方保证；公开入口在写输出前检查精确长度。
 

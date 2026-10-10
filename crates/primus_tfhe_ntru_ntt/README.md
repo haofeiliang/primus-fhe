@@ -50,7 +50,7 @@ cargo run -p primus_tfhe_ntru_ntt --release --example ntru_ntt_boolean
 | Interleaved ManyLUT with a separate output message modulus | `CLASSIC_MANY_LUT_U64` | [many_lut](examples/ntru_ntt_many_lut.rs) |
 | CBS → CMux → ring addition | `CLASSIC_CBS_U64` | [circuit_bootstrap](examples/ntru_ntt_circuit_bootstrap.rs) |
 | Factorized MVB | `CLASSIC_THRESHOLD_MVB_U64` | [thresholds](examples/ntru_ntt_mvb_thresholds.rs) |
-| One-hot CBS → CMux | `CLASSIC_ONE_HOT_U64` | [one_hot](examples/ntru_ntt_one_hot.rs) |
+| One-hot CBS → four-way record selection | `CLASSIC_ONE_HOT_U64` | [one_hot](examples/ntru_ntt_one_hot.rs) |
 | High-precision lookup | `primus_tfhe_ntru_lut::experimental::NTT_CLASSIC_LOOKUP_U64` | [lookup](../primus_tfhe_ntru_lut/examples/ntt_lookup.rs) |
 
 ManyLUT interleaves outputs within one blind rotation, shares one Q→q conversion across multiple outputs, and batches their LWE key switches; factorized MVB uses public factors and a different evaluation interface. NTRU sparse supports ordinary/interleaved PBS, factorized MVB, CBS and one-hot. Sparse BR requires a fixed-weight binary external secret.
@@ -138,20 +138,34 @@ The output is `NttNgswCiphertext` under `f_acc`. The circuit key binds the compl
 
 ## One-hot CBS
 
-The [one-hot example](examples/ntru_ntt_one_hot.rs) generates four selectors and uses δ₂, selected by `TARGET=2`, in a CMux. Change `TARGET` for another branch. Use `context.one_hot_evaluator(&server)?` to prepare a `OneHotEvaluator`, allocate once and reuse `_to` calls without a separate resource argument.
+The [one-hot example](examples/ntru_ntt_one_hot.rs) uses a two-bit input to select one of four encrypted records. It generates only δ₁…δ₃ and calls `cmux_k_to` once, with C0 as the default. Four requests cover every branch, and the client checks all coefficients. Candidates use independent Scaled `t_ring=8`; repeated records occupy coefficient messages, not independent SIMD slots. Use `context.one_hot_evaluator(&server)?` to prepare a `OneHotEvaluator`, allocate once and reuse `_to` calls without a separate resource argument.
 
 See the [family one-hot contract](../primus_tfhe_ntru/README.md#one-hot-cbs) for full/nonzero output APIs, layout and input guards. NLEV output contains coefficients at Q; use `write_ntt_form` before a public-polynomial external product. NGSW is already in NTT representation. Inputs, keys and candidates must satisfy this page's transform contract.
 
 `ngsw_selector_len()` returns the length of one transformed NGSW selector; `ngsw_batch_len()` returns the complete batch length, including branch zero. Both count NTT ring elements, not bytes.
 
-For consumption, borrow a `NttNgswSelectors` with `cbs.ngsw_selectors(&output)` or
-`cbs.nonzero_ngsw_selectors(&output)`. Use `selector(r)` to access δᵣ, and
+For consumption, borrow a `NttNgswSelectors` with `one_hot.ngsw_selectors(&output)` or
+`one_hot.nonzero_ngsw_selectors(&output)`. Use `selector(r)` to access δᵣ, and
 `iter()` for `(r, control)` pairs. Full batches cover `0..M`; compact batches
 cover `1..M` and return `None` for `selector(0)`. These views check the exact
 batch length and borrow the existing buffer without copying or allocating.
-`cbs.nlev_selectors(&output)` similarly borrows a complete coefficient NLEV batch.
+`one_hot.nlev_selectors(&output)` similarly borrows a complete coefficient NLEV batch.
 
-After obtaining one control, call `cbs.cmux_to(control, lhs.as_view(), rhs.as_view(), selected.as_mut_view())`: delta_r=0 selects lhs and delta_r=1 selects rhs. `cbs.external_product_to(control, input.as_view(), output.as_mut_view())` multiplies the selector by a ring ciphertext. Both calls reuse the bound output basis, transform environment and shared scratch; candidates still require the CMux/product secret, modulus, encoding and noise contracts. Full and nonzero batches use the same consumption interface, with one selector per call.
+For multiway selection, pass the nonzero batch and candidates in C1…C(M−1) order; all-zero controls select C0:
+
+```rust,ignore
+one_hot.one_hot_nonzero_ngsw_to(input.as_view(), &mut selectors);
+one_hot.cmux_k_to(
+    one_hot.nonzero_ngsw_selectors(&selectors),
+    candidates[0].as_view(),
+    &candidates[1..],
+    selected.as_mut_view(),
+);
+```
+
+`cmux_k_to` checks the branch range `1..M`; the existing kernel checks counts and exact ciphertext lengths. Full `0..M` batches are not accepted here; full output and single-control consumption remain available when δ₀ is needed. All products share the existing transform-domain accumulator and one inverse transform, without extra workspace or online allocation. Candidates share the accumulator secret, modulus and encoding. Budget the sum of all external-product errors rather than reusing serial CMux estimates.
+
+After obtaining one control, call `one_hot.cmux_to(control, lhs.as_view(), rhs.as_view(), selected.as_mut_view())`: delta_r=0 selects lhs and delta_r=1 selects rhs. `one_hot.external_product_to(control, input.as_view(), output.as_mut_view())` multiplies the selector by a ring ciphertext. Both calls reuse the bound output basis, transform environment and shared scratch; candidates still require the CMux/product secret, modulus, encoding and noise contracts. Full and nonzero batches use the same consumption interface, with one selector per call.
 
 For a consumer that immediately processes each result, use `one_hot.into_parts()` to obtain low-level state and resources. Its `new_sparse_pair_workspace(&resources)` allocates one additional input state and `with_sparse_pair` blind-rotates two sparse inputs together. Its callback receives index 0 then 1 and a scoped `OneHotProjection`: `project_to` writes full NLEV and/or nonzero NGSW into reusable buffers. Complete consumption within each callback; the high-precision LUT evaluator uses this path automatically.
 

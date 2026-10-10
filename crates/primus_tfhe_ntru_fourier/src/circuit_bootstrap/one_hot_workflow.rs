@@ -160,6 +160,59 @@ where
             .cmux_to(&control, &lhs, &rhs, &mut output, &mut self.resources);
     }
 
+    /// Selects one coefficient-ring ciphertext using the nonzero one-hot branches.
+    ///
+    /// Computes `default + sum_r delta_r * (candidates[r-1] - default)`.
+    /// `selectors` must represent exactly `1..M`, where M is the configured
+    /// selector count; candidates are C1 through C(M-1) in that order. All-zero
+    /// nonzero-branch controls select C0 (`default`). Use [`Self::nonzero_ngsw_selectors`]
+    /// with [`Self::one_hot_nonzero_ngsw_to`] to omit delta_0.
+    /// Products share the existing transform-domain accumulator and are inverted
+    /// once. Output is overwritten; no initialization, reset or allocation is needed.
+    ///
+    /// # Correctness
+    /// Selectors must use this evaluator's output basis, accumulator secret and
+    /// transform representation and encrypt mutually exclusive bits. Candidates
+    /// and default must share that secret, modulus and encoding. Inherits
+    /// [`FourierNgswCiphertext::cmux_k_to`]'s residue and layout requirements;
+    /// neither bit values nor noise bounds are checked. Budget the sum of all
+    /// external-product errors; serial CMux estimates are not interchangeable.
+    /// Fourier rounding occurs after the sum and may differ from serial CMux.
+    /// Candidate items borrow coefficient-domain ciphertexts via `Into`; a
+    /// borrowed ciphertext slice or an exact-size iterator of views does not copy
+    /// their buffers.
+    ///
+    /// # Panics
+    /// Panics before output writes on a wrong selector range, unequal reported
+    /// selector/candidate counts or invalid default/output lengths. Individual
+    /// controls and candidates are checked as consumed: a later malformed pair
+    /// or panicking iterator may leave partially written output and scratch.
+    /// See [`FourierNgswCiphertext::cmux_k_to`] for the inherited checks and reuse contract.
+    pub fn cmux_k_to<'b, I>(
+        &mut self,
+        selectors: FourierNgswSelectors<'_>,
+        default: NtruCiphertext<&[T]>,
+        candidates: I,
+        output: NtruCiphertext<&mut [T]>,
+    ) where
+        I: IntoIterator<Item: Into<NtruCiphertext<&'b [T]>>, IntoIter: ExactSizeIterator>,
+    {
+        assert_eq!(
+            selectors.selector_range(),
+            1..self.lookup_table().selector_count(),
+            "one-hot CMUX requires selectors for branches 1..M"
+        );
+        FourierNgswCiphertext::cmux_k_to(
+            selectors.iter().map(|(_, control)| control),
+            default,
+            candidates,
+            output,
+            self.parameters().output_basis(),
+            &mut self.resources.fft,
+            self.resources.blind_rotation.rotation.external_product(),
+        );
+    }
+
     /// Multiplies a ring ciphertext by a selector control.
     /// Inherits [`OneHotCircuitBootstrapEvaluator::external_product_to`]'s contracts.
     pub fn external_product_to(

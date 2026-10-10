@@ -8,6 +8,81 @@ traffic, live peak, code size and latency are different metrics; a smaller buffe
 or fewer allocations alone do not prove faster evaluation. The original tables,
 regressions and rechecks remain below, with their own parameters and toolchains.
 
+## One-hot four-way consumption, 2026-10-10
+
+At `21440eab`, four-way record selection can generate compact δ1…δ3, copy C0
+into a result and apply three serial `cmux_to` calls using alternating result and
+scratch ciphertexts. The new `OneHotEvaluator::cmux_k_to` in both NTRU backends
+binds the existing lattice k-CMux kernel to that same selector batch, C0 and
+C1…C3. It computes `C0 + sum_r delta_r*(Cr-C0)` with one transform-domain sum
+and inverse transform. No kernel, decomposition, BR or selector type changed.
+
+Temporary external consumers used `experimental::CLASSIC_ONE_HOT_U64`: u64,
+n800/h32/N1024, Rounded input t=8 (M=4), three base-256 output gadget levels,
+Scaled candidate t_ring=8, seed 42. NTT used Q50; Fourier used Native, with
+RustFFT and TFHE-FFT measured separately. Both used external q24. Candidate
+records were `[0,1,2,3]`, `[1,3,0,2]`, `[3,0,1,2]`, `[2,1,3,0]`, repeated across
+all coefficients, rather than independent SIMD slots. Sparse changed only the
+BR algorithm to three copies/64 buckets on the same fixed-weight config.
+
+One Criterion iteration measured **one complete nonzero one-hot generation and
+four-way selection** at input 3. Both methods generated only δ1…δ3. Context,
+keys, candidate/input encryption, evaluator and all output buffers were outside
+`b.iter`; decryption validated all coefficients before sampling. The serial
+method included copying C0 and three CMux calls; the fused method used one
+multiway call. AMD Ryzen 9 9955HX3D, rustc 1.98.1, release, repository compiler
+flags, RustFFT/TFHE-FFT features enabled, no Cargo `simd` feature. Criterion used
+30 samples, 1 s warmup and a 3 s measurement target, extended when necessary.
+Adjacent serial/fused runs were pinned to the same CPU; each CPU is a separate
+comparison, not a comparison between cores.
+
+| Backend / BR | CPU 4 serial → fused | CPU 8 serial → fused |
+| --- | --- | --- |
+| NTRU NTT / classic | 5.107 → 5.052 ms | 5.959 → 5.990 ms |
+| NTRU RustFFT / classic | 6.060 → 6.044 ms | 7.475 → 7.408 ms |
+| NTRU TFHE-FFT / classic | 4.736 → 4.749 ms | 6.220 → 6.224 ms |
+| NTRU NTT / sparse | 4.007 → 3.984 ms | 4.739 → 4.681 ms |
+| NTRU RustFFT / sparse | 4.706 → 4.718 ms | 5.381 → 5.300 ms |
+| NTRU TFHE-FFT / sparse | 4.384 → 4.396 ms | 5.027 → 4.986 ms |
+
+These are point estimates for the complete pipeline. Classic changes were
+within approximately -1% to +0.5%; sparse point estimates ranged from -1.5%
+to +0.3%. These paired runs showed no material regression and do not establish
+a general speedup. The retained benefit is simpler consumption and one less
+coefficient ciphertext buffer; fewer inverse transforms alone are not an end-to-end speedup claim.
+
+Constructor accounting covered the owning evaluator, compact selectors, result
+and (serial only) alternating scratch, excluding context, keys, candidates and
+allocator overhead:
+
+| Backend | Allocations serial → fused | Retained requested heap serial → fused |
+| --- | --- | --- |
+| NTRU NTT | 13 → 12 | 230400 → 222208 bytes |
+| NTRU RustFFT | 15 → 14 | 263168 → 254976 bytes |
+| NTRU TFHE-FFT | 15 → 14 | 263168 → 254976 bytes |
+
+The 8192-byte difference is one N1024/u64 ciphertext. Compact selectors occupy
+73728 bytes in each representation. Both paths allocated zero times from their
+first online request. Seeds 42/4242, all four branches and classic/sparse passed
+for all three transform engines. Shape diagnostics rejected full selector
+ranges, unequal candidate counts and incorrect default/output/first-candidate
+lengths before output writes. A malformed later candidate was rejected while
+streaming; a subsequent valid call recovered without clearing scratch and
+without allocating.
+
+The fused noise propagation differs from serial CMux: budget the sum of the
+external-product errors, and Fourier rounding occurs after summation. Successful
+fixed-seed decryption does not establish failure probability or a general noise
+bound. No bitwise ciphertext equality was required between methods.
+
+To repeat, use the named configs and record patterns. Prepare both methods'
+compact selector storage and outputs once. Serial consumption copies C0, then
+iterates `nonzero_ngsw_selectors(...).iter()` and swaps two result buffers after
+each `cmux_to`; fused consumption passes that view, C0 and `&candidates[1..]` to
+`cmux_k_to`. Time selector generation plus consumption together with the same
+input, seed, features and CPU. The temporary consumers and counters were removed;
+backend-local permanent benches follow the API cleanup.
+
 ## MVB owning PBS state, 2026-10-10
 
 Compared `aba0b657` with the implementation where `FactorizedEvaluator` owns

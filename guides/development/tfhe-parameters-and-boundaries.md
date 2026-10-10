@@ -276,6 +276,8 @@ CBS 输出保留累加环秘密，不走 ordinary PBS 的返回链路；GLWE `Ke
 
 NTRU 普通 CBS 与 one-hot 都通过 evaluator 的 `cmux_to` / `external_product_to` 消费单个 NGSW。One-hot 的完整/非零视图按数学 r 取得 control，两个入口使用已绑定的 output basis 与 context，并短借用公共 BR/EP 资源；Fourier 同时复用其中的 FFT engine。公开入口检查 context 身份与精确单项长度，数学上的秘密、basis/变换身份、候选编码和噪声余量仍由调用方保证。底层消费函数只读操作状态，修改调用方输出与短借用的 scratch；默认 evaluator 从自己的资源字段提供该借用，没有额外在线分配。底层 scratch 借用继续服务高精度 LUT 的多项式选择与 NLEV 公开提升。
 
+NTRU `OneHotEvaluator::cmux_k_to` 接收紧凑非零 selector 视图、C0/default、按 C1…C(M−1) 顺序借用的候选和可复用输出，计算 `C0 + sum delta_r*(Cr-C0)`。该入口只新增 `1..M` 分支范围检查；数量、default/output 长度及逐项 control/candidate 长度由已有 k-CMux 内核检查，不逐层重复。数量或固定缓冲不匹配时尚未写入输出；后续配对无效或迭代器 panic 可能留下部分输出，下一次有效调用无需手动清空 scratch。视图只保证布局，秘密、basis/变换身份、共同候选编码以及所有外积误差之和的噪声预算仍由调用方保证。所有乘积复用现有变换域累加器，一次逆变换后加 C0；Fourier 求和后舍入，不要求与顺序 CMux 的密文系数逐项相等。
+
 GLWE 的 NTT/Fourier 后端在两种 PBS 顺序下都支持 classic/sparse PBS、ManyLUT、MVB 和普通 CBS。NTRU 的 NTT/Fourier 后端还支持 one-hot 和高精度 LUT；sparse 查表需要公开提升时，由调用方提供独立 `NLEV[1]` 材料，没有提升节点则不需要。GLWE one-hot/高精度后端、sparse ternary、multi-bit BR 和 RNS hoisting 尚未实现；现有参数测量不代表这些能力或全参数覆盖。
 
 NTT 与 native Fourier 的 reverse trace 归一化契约不同：前者使用模逆除二，后者包含系数减半的舍入误差。NTRU scheme-switch key 绑定完整 output basis，GLWE 的 key 绑定 output layout，可在相同输出层数等兼容条件下复用不同 output basis；这解释了两家族 CBS 绑定接口的差别。

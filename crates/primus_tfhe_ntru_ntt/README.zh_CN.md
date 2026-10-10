@@ -50,7 +50,7 @@ cargo run -p primus_tfhe_ntru_ntt --release --example ntru_ntt_boolean
 | 交错多输出 ManyLUT，独立输出消息模数 | `CLASSIC_MANY_LUT_U64` | [many_lut](examples/ntru_ntt_many_lut.rs) |
 | CBS → CMux → 环加法 | `CLASSIC_CBS_U64` | [circuit_bootstrap](examples/ntru_ntt_circuit_bootstrap.rs) |
 | 分解式 MVB | `CLASSIC_THRESHOLD_MVB_U64` | [thresholds](examples/ntru_ntt_mvb_thresholds.rs) |
-| One-hot CBS → CMux | `CLASSIC_ONE_HOT_U64` | [one_hot](examples/ntru_ntt_one_hot.rs) |
+| One-hot CBS → 四路记录选择 | `CLASSIC_ONE_HOT_U64` | [one_hot](examples/ntru_ntt_one_hot.rs) |
 | 高精度查表 | `primus_tfhe_ntru_lut::experimental::NTT_CLASSIC_LOOKUP_U64` | [lookup](../primus_tfhe_ntru_lut/examples/ntt_lookup.rs) |
 
 ManyLUT 通过交错共享一次盲旋转，多输出返回还共享一次 Q→q 转换并分块进行 LWE key switch；分解式 MVB 通过公共因子生成多输出，是不同的求值接口。 NTRU sparse 支持普通/交错 PBS、分解式 MVB、CBS 和 one-hot；稀疏 BR 要求 fixed-weight binary 外部秘密。
@@ -140,20 +140,34 @@ let context = TfheContext::<u64, Table, _>::try_from_cbs_config(config)?;
 
 ## One-hot CBS
 
-[One-hot 示例](examples/ntru_ntt_one_hot.rs)生成四个 selector，并用 `TARGET=2` 对应的 δ₂ 控制 CMux；修改 `TARGET` 选择其他分支。用 `context.one_hot_evaluator(&server)?` 创建 `OneHotEvaluator`，分配后复用 `_to` 调用，无需另传资源。
+[One-hot 示例](examples/ntru_ntt_one_hot.rs)用两位输入选择四个加密记录。只生成 δ₁…δ₃，以 C0 为默认项，通过一次 `cmux_k_to` 选择 C0…C3；四次请求覆盖所有分支，客户端检查全部系数。候选使用独立 Scaled `t_ring=8`，记录重复铺入系数，不表示独立 SIMD 槽。用 `context.one_hot_evaluator(&server)?` 创建 `OneHotEvaluator`，分配后复用 `_to` 调用，无需另传资源。
 
 完整/非零输出接口、布局与输入保护区见[家族 one-hot 契约](../primus_tfhe_ntru/README.zh_CN.md#one-hot-cbs)。NLEV 输出为 Q 下的系数，需要 `write_ntt_form` 转换才能做公开多项式外积；NGSW 已在 NTT 表示。输入、密钥和候选必须满足本页的变换契约。
 
 `ngsw_selector_len()` 返回单个变换域 NGSW selector 的长度；`ngsw_batch_len()` 返回包含分支零的完整批次长度。两者均以NTT 环元素个数计量，不是字节数。
 
-消费时通过 `cbs.ngsw_selectors(&output)` 或
-`cbs.nonzero_ngsw_selectors(&output)` 借用 `NttNgswSelectors`。
+消费时通过 `one_hot.ngsw_selectors(&output)` 或
+`one_hot.nonzero_ngsw_selectors(&output)` 借用 `NttNgswSelectors`。
 `selector(r)` 按数学编号取得 δᵣ，`iter()` 返回 `(r, control)`。
 完整批次覆盖 `0..M`，紧凑批次覆盖 `1..M`，后者的 `selector(0)` 返回
 `None`。视图检查精确批次长度，直接借用原缓冲，不复制、不分配。
-`cbs.nlev_selectors(&output)` 同样借用完整的系数域 NLEV 批次。
+`one_hot.nlev_selectors(&output)` 同样借用完整的系数域 NLEV 批次。
 
-取得单个 control 后，调用 `cbs.cmux_to(control, lhs.as_view(), rhs.as_view(), selected.as_mut_view())`：δᵣ=0 选择 lhs，δᵣ=1 选择 rhs。`cbs.external_product_to(control, input.as_view(), output.as_mut_view())` 则计算 selector 与环密文的乘积。两个入口复用已绑定的 output basis、变换环境和共享 scratch；候选的秘密、模数、编码与噪声仍须符合 CMux/外积契约。完整/非零批次使用相同消费接口，传入的是一个 selector。
+多路选择传入非零批次和按 C1…C(M−1) 排列的候选，全部 control 为零时选择 C0：
+
+```rust,ignore
+one_hot.one_hot_nonzero_ngsw_to(input.as_view(), &mut selectors);
+one_hot.cmux_k_to(
+    one_hot.nonzero_ngsw_selectors(&selectors),
+    candidates[0].as_view(),
+    &candidates[1..],
+    selected.as_mut_view(),
+);
+```
+
+`cmux_k_to` 检查分支范围为 `1..M`；底层内核检查数量与精确密文长度。完整 `0..M` 批次不能传入此入口；需要 δ₀ 时仍可使用完整输出与单项消费。所有外积共享现有变换域累加器，仅执行一次逆变换，不新增工作区或在线分配。候选共享累加环秘密、模数和编码；噪声预算须覆盖全部外积误差之和，不能直接套用顺序 CMux 的估计。
+
+取得单个 control 后，调用 `one_hot.cmux_to(control, lhs.as_view(), rhs.as_view(), selected.as_mut_view())`：δᵣ=0 选择 lhs，δᵣ=1 选择 rhs。`one_hot.external_product_to(control, input.as_view(), output.as_mut_view())` 则计算 selector 与环密文的乘积。两个入口复用已绑定的 output basis、变换环境和共享 scratch；候选的秘密、模数、编码与噪声仍须符合 CMux/外积契约。完整/非零批次使用相同消费接口，传入的是一个 selector。
 
 需要立即消费每个结果时，先用 `one_hot.into_parts()` 取得底层状态和资源；其 `new_sparse_pair_workspace(&resources)` 分配一个额外输入状态，`with_sparse_pair` 一起执行两个 sparse 输入的盲旋转。回调依次收到索引 0、1 和受限的 `OneHotProjection`；`project_to` 将完整 NLEV 和/或非零 NGSW 写入复用缓冲，每次回调内完成消费。高精度 LUT evaluator 自动使用此路径。
 

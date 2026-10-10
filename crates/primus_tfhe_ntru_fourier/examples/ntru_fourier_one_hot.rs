@@ -1,4 +1,4 @@
-//! Build four one-hot gadget controls from a two-bit input; use delta_2 in a CMux.
+//! Select one of four encrypted records using a two-bit input and one-hot CBS.
 //!
 //! Run: `cargo run --release -p primus_tfhe_ntru_fourier --example ntru_fourier_one_hot --features rustfft`
 //! To use TfheFftTable, switch the Table import, this target's
@@ -11,14 +11,14 @@ use rand::{SeedableRng, rngs::StdRng};
 
 // The paired experimental entry fixes u64 coefficients and the operation domains.
 type Word = u64;
-const TARGET: usize = 2; // Public selector r in 0..4; delta_r encrypts [input == r].
+const RECORDS: [[Word; 4]; 4] = [[0, 1, 2, 3], [1, 3, 0, 2], [3, 0, 1, 2], [2, 1, 3, 0]];
 
 fn main() {
     let config = experimental::CLASSIC_ONE_HOT_U64;
     let context = TfheContext::<Word, Table, _>::try_from_cbs_config(config).unwrap();
     let poly_length = config.pbs.bsk_poly_length.get();
 
-    // Client: independent LWE/NTRU secrets; send evaluation material and both encrypted choices.
+    // Client: keep the independent LWE/NTRU secrets; send server_key and encrypted records.
     let mut rng = StdRng::seed_from_u64(42);
     let (client_key, server_key) = context
         .try_generate_circuit_bootstrap_keys(&mut rng)
@@ -31,36 +31,43 @@ fn main() {
     let mut ring_client = context
         .accumulator_client(client_key.accumulator_ntru_secret_key(), 8)
         .unwrap();
-    let lhs = ring_client.encrypt(&vec![1; poly_length], &mut rng);
-    let rhs = ring_client.encrypt(&vec![3; poly_length], &mut rng);
+    // Repeat each record across coefficients; these are not independent SIMD slots.
+    let candidates = RECORDS.map(|record| {
+        let plaintext: Vec<_> = record.into_iter().cycle().take(poly_length).collect();
+        ring_client.encrypt(&plaintext, &mut rng)
+    });
     let mut input = context.allocate_lwe_ciphertext();
     let mut decoded = vec![0; poly_length];
 
-    // Server: reserve one transformed NGSW per value in 0..4 and one ring result.
-    let mut cbs = context.one_hot_evaluator(&server_key).unwrap();
-    let mut selectors = cbs.allocate_ngsw_output();
+    // Server: keep delta_1..delta_3 and one result; C0 is the default branch.
+    let mut one_hot = context.one_hot_evaluator(&server_key).unwrap();
+    let mut selectors = one_hot.allocate_nonzero_ngsw_output();
     let mut selected = context.allocate_accumulator_ciphertext();
 
-    for message in [TARGET as Word, 0] {
+    for message in [0, 1, 2, 3] {
         // Client -> server: one padded two-bit input; the server never sees message.
         encryptor
             .encrypt_padded_to(message, input.as_mut_view(), &mut rng)
             .unwrap();
 
-        // Server: selector r encrypts [message == r]; r=0 is included in this full batch.
-        cbs.one_hot_ngsw_to(input.as_view(), &mut selectors);
-        let control = cbs.ngsw_selectors(&selectors).selector(TARGET).unwrap();
-        cbs.cmux_to(
-            control,
-            lhs.as_view(),
-            rhs.as_view(),
+        // Server: zero nonzero-branch controls choose C0; otherwise delta_r selects Cr.
+        one_hot.one_hot_nonzero_ngsw_to(input.as_view(), &mut selectors);
+        one_hot.cmux_k_to(
+            one_hot.nonzero_ngsw_selectors(&selectors),
+            candidates[0].as_view(),
+            &candidates[1..],
             selected.as_mut_view(),
         );
 
-        // Client: equality selects rhs=3; all other inputs select lhs=1.
+        // Client: check every coefficient against the original record; print its prefix.
         ring_client.decrypt_to(&selected, &mut decoded);
-        let expected = if message == TARGET as Word { 3 } else { 1 };
-        assert!(decoded.iter().all(|&value| value == expected));
-        println!("input {message}: delta_{TARGET} selected {expected}");
+        let expected = RECORDS[message as usize];
+        assert!(
+            decoded
+                .iter()
+                .zip(expected.iter().cycle())
+                .all(|(actual, expected)| actual == expected)
+        );
+        println!("input {message}: selected record {:?}", &decoded[..4]);
     }
 }
