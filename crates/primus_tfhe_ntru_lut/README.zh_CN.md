@@ -141,6 +141,17 @@ Evaluator 借用 context、server key 和 table，并在构造时分配全部缓
 
 [参数指南](../../guides/development/tfhe-parameters.md)记录示例选择及数值限制，[实现说明](IMPLEMENTATION.md)记录算法和内部缓冲布局。
 
+## 基准
+
+```sh
+cargo bench -p primus_tfhe_ntru_lut --bench lookup_create -- 'c4_'
+cargo bench -p primus_tfhe_ntru_lut --bench lookup_evaluate -- 'c4_'
+```
+
+`lookup_create` 测完整公开 LUT 的创建，**包含分配与 drop**；随机映射在计时外准备，无需密钥或变换。`lookup_evaluate` 测一次完整同态请求，密钥、表、输入和缓冲区均预先准备。默认 classic BR，运行 NTT/RustFFT；添加 `--features tfhe-fft` 可同时测量 TFHE-FFT。
+
+两者均使用 M=16、d=3、N=4096 和独立的四个输出 chunk。把 `c4_` 换成 `c5_` 或 `c6_`，可分别选择 16、20、24 位输入的计时，输出始终为 16 位。完整表分别占 2/32/512 MiB。Criterion 只过滤计时，其他 case 的计时外准备与求值校验仍会运行。引擎选择、计时和内存见[基准指南](../../guides/development/testing.md#high-precision-lut-benchmarks)，实验数值配置见[参数指南](../../guides/development/tfhe-parameters.md#random-high-precision-lut-benchmark)。
+
 ## Features
 
 使用 `--no-default-features` 时，提供 `ChunkFormat`、`HighPrecisionLookupTable`、`LookupTableConfig`、相关错误及公开多项式访问，无需变换或 evaluator。`try_new` 接收 `PolyLength`、累加 Q、输入 codec 和 chunk 配置；普通依赖不包含 LWE/GLWE/NTRU/TFHE 材料或变换 crate。编译保留完整的不可变公开表及其几何，回调顺序、系数编码和表布局不随 feature 改变。

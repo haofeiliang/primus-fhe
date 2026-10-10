@@ -238,7 +238,7 @@ NTT 工作流以 u32 覆盖 classic 连续 PBS 和 sparse 消费，以 u64 覆�
 
 ## TFHE benchmarks
 
-四后端的 `benches/` 按操作组织，每个文件就地准备自己需要的数据；高精度 LUT 的创建/求值基准另行恢复。选一个包和操作即可运行：
+四后端的 `benches/` 按操作组织，每个文件就地准备自己需要的数据；高精度 LUT 的独立创建/求值入口见[下节](#high-precision-lut-benchmarks)。选一个包和操作即可运行：
 
 ```sh
 cargo bench -p primus_tfhe_glwe_ntt --bench pbs
@@ -280,6 +280,45 @@ GLWE 的 k=1，PBS/ManyLUT/CBS 用 BR→KS 的 small-LWE 输入域；MVB 用 KS�
 各角色噪声和所有 basis 的确切数值见[参数指南](tfhe-parameters.md#noise-by-key-role)及[分解表](tfhe-parameters.md#decomposition-by-operation)：GLWE 与 NTRU 的 BR/KS 噪声、分解和返回方法不同；u32/u64 也不是单纯换存储字宽。共享 N 不等于同安全性或同误差预算。当前基准只做有限样本解密校验，不提供参数安全性或失败概率结论。u32 差异集中在 PBS；其余操作保持单个 u64 工作负载，双字宽算法回归由前面的普通测试负责。
 
 用 `just bench-smoke <package> <target> [--features ...]` 只校验构造、请求和解密，不进行性能采样。单项默认20样本、1秒预热、目标测量时间3秒；Criterion 可因请求耗时较长而自动延长，可通过其参数调整。正式比较应固定 CPU、工具链、features 和参数；不同核型/缓存组各自比较，不把跨 CPU 的差异当成实现回退。没有恢复共享 support、集中 benchmark 包或报告脚本；报告使用 Criterion 自身输出。历史结果见[性能记录](../performance/README.zh_CN.md)，旧命令须在对应版本运行。
+
+## High-precision LUT benchmarks
+
+`primus_tfhe_ntru_lut/benches/` 保留两个独立文件，不依赖共享 support 或报告框架：
+
+```sh
+cargo bench -p primus_tfhe_ntru_lut --bench lookup_create -- 'c4_'
+cargo bench -p primus_tfhe_ntru_lut --bench lookup_evaluate -- 'c4_'
+```
+
+把过滤器换为 `c5_` / `c6_`，或去掉它测量全部三个尺寸。`lookup_create` 按 Q50/native64 编码分别测量，不重复两个 FFT 引擎相同的公开编译工作。它也可加 `--no-default-features` 单独运行。`lookup_evaluate` 默认测 NTT 和 RustFFT；单选引擎用 `--no-default-features --features ntt`、`rustfft` 或 `tfhe-fft`，在默认之外增加 TFHE-FFT 用 `--features tfhe-fft`。
+
+| target / 结果名 | 计时范围 | 计时外工作 |
+| --- | --- | --- |
+| `lookup_create` / `lookup/create_and_drop/{q50,native64}/m16_d3_c{c}_o4/u64` | 一次 `HighPrecisionLookupTable::try_new` 的检查、分配、完整枚举/编码/存储及 drop | 固定 seed 随机函数、codec 与几何；不生成任何密钥 |
+| `lookup_evaluate` / `lookup/evaluate/{ntt,rustfft,tfhe-fft}/classic/m16_d3_c{c}_o4/u64` | 一次 `evaluate_to`：所有输入 chunk 的 one-hot CBS、完整选表树、三个低位聚合旋转、Q→q 和独立 LWE KS | context、随机函数、LUT 编译、密钥、加密及所有输出/workspace 分配；两个输入与计时后的解密校验 |
+
+每次迭代处理一个完整表或一个完整请求，throughput 不按输出数放大。随机映射为 seed 202 的完整 `Vec<u16>`，每个输入独立取一个16位结果；四个输出 digit 可重复，既不检测也不重采样重复。密文系数为 u64，u16 只是明文函数的紧凑存储。求值 key seed=42、input seed=1042，与函数随机性分离；计时输入 `0xabcdef & (M^c-1)`。第一层始终执行完整 M 项 NLEV 提升，后续层用非零 NGSW；默认 classic，无隐式 sparse 替换，本轮不恢复 sparse 对照矩阵或评估 pair 调度收益。
+
+M=16、d=3、N=4096、o=4 固定，c 独立改变输入域和选表树深度；每个多项式恰有 M^d=N 个有效系数。
+
+| c / 输入位数 | 每输出 P=16^(c−3) 个多项式 | 完整 LUT 系数存储 `o*P*N*8` | 明文随机映射 `M^c*2` |
+| --- | --- | --- | --- |
+| 4 / 16 | 16 | 2 MiB | 128 KiB |
+| 5 / 20 | 256 | 32 MiB | 2 MiB |
+| 6 / 24 | 4096 | 512 MiB | 32 MiB |
+
+这些数值不含 keys、workspace、变换表与分配器开销；创建基准一次创建并释放一张表，不批量保留大表。求值的临时选表 ciphertext 栈只保留 `M*(c-d-1)` 个 NTRU，即 0/512 KiB/1 MiB 的系数数据，其他 selectors/控制及 scratch 另计。所有输出共享已准备的 selectors/低位旋转控制，但完整公开树不剪枝。
+
+默认10个样本、1秒预热、目标3秒测量，使用 Flat sampling；慢请求仍可能超过目标时间。这些是重复使用固定输入、表和工作区的稳态延迟，不包含网络或冷启动。Criterion 的过滤器只控制采样：预处理都在 `bench_function` 外，过滤为 c4 也会准备 c5/c6、执行求值校验，所以同样需要容纳最大表。创建与求值分成独立 target，创建测量不会被求值准备拖慢。`--list` 也会执行这些计时外准备；只查看名称时可直接阅读文件中的 ID。
+
+数值配置、one-hot 输入保护界与有限样本验证见[参数指南](tfhe-parameters.md#random-high-precision-lut-benchmark)。这组随机函数基准与 N1024/M4 分段教学示例不同，不能互换性能或噪声结论。源码采用推荐公开接口，不为 benchmark 添加生产 API。普通测试仍使用小参数，不运行这些大尺寸工作负载。
+
+只检查构造与完整请求、不采样：
+
+```sh
+just bench-smoke primus_tfhe_ntru_lut lookup_create --no-default-features
+just bench-smoke primus_tfhe_ntru_lut lookup_evaluate --features tfhe-fft
+```
 
 ## 成本记录方法
 

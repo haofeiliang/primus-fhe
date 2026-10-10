@@ -31,7 +31,17 @@ name = "fourier_lookup"
 required-features = ["rustfft"]
 
 [dev-dependencies]
+criterion = { workspace = true }
+rand = { workspace = true }
 primus_modulus = { path = "../primus_modulus" }
+
+[[bench]]
+name = "lookup_create"
+harness = false
+
+[[bench]]
+name = "lookup_evaluate"
+harness = false
 
 [features]
 default = ["ntt", "rustfft"]

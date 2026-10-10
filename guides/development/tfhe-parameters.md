@@ -112,6 +112,28 @@ and checked the actual left-closed guard `−A ≤ e < A`. This includes roundin
 
 The 27-bit u32 candidate did not provide a sufficient joint CBS/product budget at n=800. Q30 alone with a coarse three-level output also failed. Small internal digits and four output levels balance selector error against product decomposition error. The selected profiles retain the existing NTRU secret distribution, dimensions and ring noise, without seed selection or relaxed acceptance thresholds. Intermediate trials with larger ring noise are not supported presets.
 
+### Random high-precision LUT benchmark
+
+The crate-local [creation](../../crates/primus_tfhe_ntru_lut/benches/lookup_create.rs) and [evaluation](../../crates/primus_tfhe_ntru_lut/benches/lookup_evaluate.rs) benchmarks use a separate arithmetic fixture: u64 coefficients, M=16, d=3, N=4096, c∈{4,5,6}, and independently fixed o=4. Input widths are 16/20/24 bits; outputs are 16 bits. A full seeded random function replaces the piecewise teaching function. All polynomials and the complete selection tree are retained, including any repetitions. Commands, timing and storage are in the [benchmark guide](testing.md#high-precision-lut-benchmarks).
+
+| Role | NTT | RustFFT / TFHE-FFT |
+| --- | --- | --- |
+| External LWE | n800, fixed-weight binary h32, `PowOf2Modulus(2^24)` | same |
+| Fresh input sigma | αq24 ≈34.33, α=2.046151696979124e−6 | same |
+| Accumulator | `BarrettModulus(1125899906826241)` (Q50), N4096, SparseTernary | `NativeModulus<u64>`, N4096, SparseTernary |
+| BR / trace / scheme-switch rows | sigma 0.7, base-log6, 8 levels, 2 dropped bits | sigma 0.7, base-log6, 10 levels, 4 dropped bits |
+| CBS output | base-log6, 4 levels, 26 dropped bits | base-log6, 4 levels, 40 dropped bits |
+| Return LWE KS | q24, sigma 3.2, base-log3, 8 levels, no dropped bits | same |
+| Encodings / algorithm | Rounded t=32, digits 0..16, classic BR | same |
+
+This is not just the teaching profile with a larger ring: inner decompositions use base 64 rather than 256, and output uses four base-64 levels rather than three base-256 levels. The retained output precision remains 24 bits, with smaller decomposition digits. The work of NTT and FFT differs in inner level count, representation, trace and rounding; equal dimensions do not establish equal noise or security. The two FFT engines prepare their own compatible material. No sparse performance claim is made by this classic-only fixture.
+
+Here L=W=4 and A=N/(2MW)=32. Encoding is exact at q24 for t=32. Fresh noise is bounded by floor(12σ)=411; each independently quantized mask/body contributes at most 1/2 in W units. For h32 binary input, the deterministic pre-BR guard bound is
+
+`|e| ≤ (h+1)/2 + 2N*411/(q*W) = 16.5 + 411/8192 < 32`.
+
+This checks the input selection window for every sample in this sampler's support; it does not bound BR/CBS, product-chain or returned error. The four output chunks decode with q-domain half spacing 2^18=262144. A temporary release diagnostic checked c4/c5/c6, all three engines, key seeds 42/43, function seed 202 and input seeds 1042/1043. Each checked zero, a mixed low-digit value, `0xabcdef` masked to the domain, and the domain maximum: 72 complete requests / 288 returned chunk phases passed. Maximum observed centered residual was 3888, below the decoding half spacing. These correlated, finite observations are arithmetic evidence only; they neither estimate failure probability nor certify security. The diagnostic added no public API and was removed after verification. Permanent benches check two inputs before timing and recheck the final result afterward.
+
 ## Operation conditions and error budgets
 
 Here `t_in/t_out` denote message moduli, `q/Q` denote external/ring ciphertext moduli, and `D` is the programmed input count. For the ordinary padded input, `D=ceil(t_in/2)` and messages lie in `0..D`; low-level prefix compilers can choose a smaller nonempty D. Odd full-domain LUTs have a separate contract. A capacity check alone does not establish a usable rotation margin.

@@ -141,6 +141,17 @@ Inputs must satisfy the [one-hot guard](../primus_tfhe_ntru/README.md#one-hot-cb
 
 The [parameter guide](../../guides/development/tfhe-parameters.md) records example choices and their numerical limits, and the [implementation notes](IMPLEMENTATION.md) describe the algorithm and internal buffers.
 
+## Benchmarks
+
+```sh
+cargo bench -p primus_tfhe_ntru_lut --bench lookup_create -- 'c4_'
+cargo bench -p primus_tfhe_ntru_lut --bench lookup_evaluate -- 'c4_'
+```
+
+`lookup_create` measures full public LUT creation **including allocation and drop**; the random mapping is prepared outside timing, and no keys or transforms are needed. `lookup_evaluate` measures one complete homomorphic request with prebuilt keys, table, input and buffers. It uses classic BR and defaults to NTT/RustFFT; add `--features tfhe-fft` to include TFHE-FFT.
+
+Both use M=16, d=3, N=4096 and four independent output chunks. Replace `c4_` with `c5_` or `c6_` to select 16-, 20- or 24-bit input timing; output stays 16 bits. The full table occupies 2/32/512 MiB, respectively. Criterion filters timing only: untimed preparation and evaluation checks still run for other cases. See the [benchmark guide](../../guides/development/testing.md#high-precision-lut-benchmarks) for engine selection, timing and memory, and the [parameter guide](../../guides/development/tfhe-parameters.md#random-high-precision-lut-benchmark) for the experimental numerical profile.
+
 ## Features
 
 With `--no-default-features`: `ChunkFormat`, public table compilation and inspection, `LookupTableConfig` and their errors need no transform or evaluator. `HighPrecisionLookupTable::try_new` takes `PolyLength`, accumulator Q, an input codec and chunk configuration; its normal dependencies include no LWE/GLWE/NTRU/TFHE material or transform crate. Compilation retains the complete immutable public table and its geometry. Features do not change callback order, coefficient encoding or table layout.
