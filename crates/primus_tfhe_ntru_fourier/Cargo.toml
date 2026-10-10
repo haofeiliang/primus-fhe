@@ -29,6 +29,10 @@ name = "ntru_fourier_basic"
 required-features = ["rustfft"]
 
 [[example]]
+name = "ntru_fourier_boolean"
+required-features = ["rustfft"]
+
+[[example]]
 name = "ntru_fourier_circuit_bootstrap"
 required-features = ["rustfft"]
 

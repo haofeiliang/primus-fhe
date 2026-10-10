@@ -30,15 +30,22 @@ let context = TfheContext::<u64, Table>::try_from_pbs_config(config)?;
 cargo run -p primus_tfhe_glwe_ntt --release --example ntt_basic
 ```
 
-[basic 示例](examples/ntt_basic.rs)展示配置 → context → 配对密钥 → 客户端 → LUT → 复用 evaluator 和缓冲。它计算 `x % 4`，输入/输出均采用 `t=32`。`context.pbs_lookup_table_compiler()?.compile_fn(function)` 编译公开 LUT，公钥客户端用 `context.public_encryptor(&public)`。输入加密使用配置中的 `messages.input_modulus`；构造 Context 前用 `config.messages = PbsMessageConfig::new(t_in).with_output_modulus(t_out)` 独立设置输入、输出域。高级同钥组合通过家族参数工厂复用已准备的 codec，见[选择输出编码](../primus_tfhe/README.zh_CN.md#选择输出编码)。
+[basic 示例](examples/ntt_basic.rs)展示配置 → context → 配对密钥 → 客户端 → LUT → 复用 evaluator 和缓冲。它先计算 `z=2*x+y`，通过 PBS 得到 `score=min(z,6)`，再直接对该密文执行第二次 PBS，得到 `price=2*score+[score>=4]`。输入/输出均采用 `t=32`。`context.pbs_lookup_table_compiler()?.compile_fn(function)` 编译公开 LUT，公钥客户端用 `context.public_encryptor(&public)`。输入加密使用配置中的 `messages.input_modulus`；构造 Context 前用 `config.messages = PbsMessageConfig::new(t_in).with_output_modulus(t_out)` 独立设置输入、输出域。高级同钥组合通过家族参数工厂复用已准备的 codec，见[选择输出编码](../primus_tfhe/README.zh_CN.md#选择输出编码)。
 
 示例固定 `Word = u64`，使用下表对应的操作配置。尺寸、模数表示、秘密分布、噪声和分解集中在 `experimental`；各个 `main` 只展示准备、公开函数、客户端和求值。CBS 使用完整的 `CbsParameters`，消费端独立选择候选环消息域。 高级显式组合仍支持 u32/u64，见[家族配置](../primus_tfhe_glwe/README.zh_CN.md#实验配套参数)和[数值参数指南](../../guides/development/tfhe-parameters.md)。
 
-注释标明客户端和服务端阶段。Basic 与 sparse 都计算 `x % 4`，默认输入输出消息模数相同；独立 ManyLUT 示例同时计算 `x % 4` 和 `x / 4`，显式设置 `t_in=16`、`t_out=8`，并用输出 codec 解密。每例复用 LUT、evaluator 和输出缓冲处理两次请求。见[双方职责与缓冲分配](../primus_tfhe/README.zh_CN.md#客户端与服务端边界)。
+注释标明客户端和服务端阶段。Basic 与 sparse 用相同的两次 PBS 评分流程处理四组 `0..4` 内的 `(x,y)` 请求。中间值保持在 padded 输入区间 `0..16` 内；反馈还需要本工作负载的噪声预算。ManyLUT 在一次盲旋转中计算 `grade=x/2`、`flag=[x>=5]`，然后用密文算术合成 `code=2*grade+flag`。它使用 `t_in=16`、`t_out=8`，只返回最终 code；输出不能直接回送到编码不同的输入 PBS。密钥、LUT、evaluator 和缓冲均一次准备、重复使用。见[双方职责与缓冲分配](../primus_tfhe/README.zh_CN.md#客户端与服务端边界)。
+
+[Boolean 示例](examples/ntt_boolean.rs)计算 `admin OR (member AND NOT revoked)`，在 `CLASSIC_PBS_U64` 上设置 `config.messages = PbsMessageConfig::new(4)`。客户端加密三个输入，只解密最终决策。运行命令：
+
+```sh
+cargo run -p primus_tfhe_glwe_ntt --release --example ntt_boolean
+```
 
 | 操作 | `experimental` 配置 | 完整示例 |
 | --- | --- | --- |
 | Classic PBS | `CLASSIC_PBS_U64` | [basic](examples/ntt_basic.rs) |
+| Boolean 访问组合电路 | `CLASSIC_PBS_U64`，消息 4→4 | [boolean](examples/ntt_boolean.rs) |
 | Sparse PBS | `SPARSE_PBS_U64` | [sparse](examples/ntt_sparse.rs) |
 | 交错多输出 ManyLUT，独立输出消息模数 | `CLASSIC_MANY_LUT_U64` | [many_lut](examples/ntt_many_lut.rs) |
 | Classic CBS → CMux | `CLASSIC_CBS_U64` | [circuit_bootstrap](examples/ntt_circuit_bootstrap.rs) |

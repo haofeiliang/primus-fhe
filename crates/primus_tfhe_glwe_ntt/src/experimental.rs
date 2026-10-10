@@ -38,7 +38,7 @@ pub const SPARSE_PBS_U64: PbsConfig<u64> = fixed(
 );
 
 /// Classic NTT interleaved ManyLUT, n728/h32/N1024, t_in=16/t_out=8.
-/// Teaching geometry is two lanes, stride two, F=(x mod 4, floor(x/4)).
+/// Teaching geometry is two lanes, stride two, F=(floor(x/2), [x>=5]).
 pub const CLASSIC_MANY_LUT_U64: PbsConfig<u64> = fixed(
     ModulusConfig::Explicit(Q50),
     Q50 as f64,

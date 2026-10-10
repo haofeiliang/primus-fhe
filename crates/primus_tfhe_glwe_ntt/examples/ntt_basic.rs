@@ -1,4 +1,4 @@
-//! Compute x % 4 with one LUT and reuse the PBS evaluator for a second request.
+//! Combine two encrypted inputs and apply two successive LUTs with classic PBS.
 //!
 //! Run: `cargo run --release -p primus_tfhe_glwe_ntt --example ntt_basic`
 //! Arithmetic profiles: guides/development/tfhe-parameters.md (not security presets).
@@ -7,42 +7,58 @@ use primus_ntt::U64NttTable as Table;
 use primus_tfhe_glwe_ntt::{TfheContext, experimental};
 use rand::{SeedableRng, rngs::StdRng};
 
-// The paired experimental entry fixes u64 coefficients and the input/output domains.
 type Word = u64;
 
 fn main() {
-    // Input/output both use t=32; set config.messages.output_modulus before
-    // constructing the context to choose another output domain.
+    // Rounded t=32 for both input and output lets the first PBS feed the next.
     let config = experimental::CLASSIC_PBS_U64;
     let context = TfheContext::<Word, Table>::try_from_pbs_config(config).unwrap();
 
-    // Client: keep client_key secret; send only server_key to the server.
+    // Client: keep client_key secret; give only server_key to the server.
     let mut rng = StdRng::seed_from_u64(42);
     let (client_key, server_key) = context.try_generate_keys(&mut rng).unwrap();
-    // Clients borrow only the external secret; no LUT or codec is needed.
     let external_secret = client_key.external_lwe_secret_key();
     let encryptor = context.encryptor(external_secret).unwrap();
     let decryptor = context.pbs_decryptor(external_secret).unwrap();
-    let mut input = context.allocate_lwe_ciphertext();
+    let mut x_input = context.allocate_lwe_ciphertext();
+    let mut y_input = context.allocate_lwe_ciphertext();
 
-    // Server: prepare public LUT and reusable buffers without the client secret.
+    // Server, offline: compile the public functions and prepare reusable buffers.
     let compiler = context.pbs_lookup_table_compiler().unwrap();
-    let lut = compiler.compile_fn(|x| (x % 4) as Word).unwrap();
+    let score_lut = compiler.compile_fn(|z| z.min(6) as Word).unwrap();
+    let price_lut = compiler
+        .compile_fn(|score| (2 * score + usize::from(score >= 4)) as Word)
+        .unwrap();
     let mut evaluator = context.evaluator(&server_key).unwrap();
-    let mut output = context.allocate_lwe_ciphertext();
+    let mut combined = context.allocate_lwe_ciphertext();
+    let mut score = context.allocate_lwe_ciphertext();
+    let mut price = context.allocate_lwe_ciphertext();
+    // Use the external LWE modulus for ciphertext arithmetic.
+    let modulus = context.parameters().cipher_modulus();
 
-    for message in [7, 2] {
-        // Client -> server: send one encrypted, padded input.
+    println!("score = min(2*x + y, 6); price = 2*score + [score >= 4]");
+    for (x, y) in [(0, 0), (1, 1), (2, 1), (3, 3)] {
+        // Client -> server: padded inputs x,y in 0..4.
         encryptor
-            .encrypt_padded_to(message, input.as_mut_view(), &mut rng)
+            .encrypt_padded_to(x, x_input.as_mut_view(), &mut rng)
+            .unwrap();
+        encryptor
+            .encrypt_padded_to(y, y_input.as_mut_view(), &mut rng)
             .unwrap();
 
-        // Server -> client: return the result, reusing the LUT and buffers.
-        evaluator.apply_lookup_table_to(input.as_view(), &lut, output.as_mut_view());
+        // Server, online: 2*x+y <= 9 and score <= 6 stay in padded 0..16.
+        // Feedback also carries the first PBS's noise; equal domains alone are
+        // insufficient for arbitrary chains. These parameters serve this workload.
+        x_input.mul_scalar_to(2, &mut combined, modulus);
+        combined.add_assign(&y_input, modulus);
+        evaluator.apply_lookup_table_to(combined.as_view(), &score_lut, score.as_mut_view());
+        evaluator.apply_lookup_table_to(score.as_view(), &price_lut, price.as_mut_view());
 
-        // Client: decrypt with the original external LWE secret.
-        let result = decryptor.decrypt(output.as_view()).unwrap();
-        assert_eq!(result, message % 4);
-        println!("f({message}) = {result}");
+        // Client: decode only the final ciphertext returned by the server.
+        let result = decryptor.decrypt(price.as_view()).unwrap();
+        let expected_score = (2 * x + y).min(6);
+        let expected = 2 * expected_score + Word::from(expected_score >= 4);
+        assert_eq!(result, expected);
+        println!("x={x}, y={y}: price={result}");
     }
 }
