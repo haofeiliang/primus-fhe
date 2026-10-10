@@ -22,7 +22,7 @@
 | `PbsConfig` / `CbsConfig` / `HighPrecLutConfig` | 按操作组合共享 `PbsConfig`，分别补 KS/消息、CBS gadget/输入域、one-hot/返回/表布局 | PBS/CBS 用对应参数的 `try_from_config` 构造，高精度使用 `HighPrecLutParameters::try_from_config`；CBS 准备输入 codec，高精度还检查 chunk 布局及 q/Q 编码，公开函数和联合噪声条件仍由程序/绑定边界负责 |
 | `PbsConfig` → `PbsParameters` / `CbsConfig` → `CbsParameters` | 家族特定的 LWE/环配置、BR 与操作所需 KS 各自的 `GadgetEncryptionConfig`、PBS order/输入准备（GLWE） | 同域检查；PBS/CBS 都准备必需 KS，CBS 当前阶段按路径使用输入 KS，后续 LWE 返回复用已有材料；PBS 保留默认消息选择，CBS 准备输入编码；NTT/Fourier 表由共用 context 绑定 |
 | `CbsGadgetConfig` → `CbsGadgetParameters` | output、trace、scheme-switch 各自的 `DecompositionConfig` | 环大小/模数与密钥行噪声继承累加环，共享其采样状态；输出布局由 output basis 派生；interleaved 容量由程序绑定检查 |
-| `HighPrecisionLookupTable::try_new` | PolyLength N、累加模数 Q、输入 Rounded codec 的 q/t、chunk 配置 | 完整枚举、编码/去重/选择计划，无密钥或 TFHE 参数；evaluator 绑定时核对 N/q/Q 和 CBS；`stats()` 与部分工作区估算用于比较分区 |
+| `HighPrecisionLookupTable::try_new` | PolyLength N、累加模数 Q、输入 Rounded codec 的 q/t、chunk 配置 | 完整枚举、编码和连续公开表存储，无密钥或 TFHE 参数；evaluator 绑定时核对 N/q/Q、CBS 与工作区分配长度 |
 | `ChunkFormat` | 统一位宽 tau | 派生 M、t=2M、mask 和最低位 chunk 在前的明文拆分/组合；机器字工具检查容量与 digit，编译器仍从 codec 推导同一格式，不限制输出总位宽为 u64 |
 | `LookupTableConfig` | 输入 chunk 数 c、输出 chunk 数 o、低位系数 chunk 数 d | `M=t/2`、每个多项式的有效系数数 `M^d`、每输出多项式数 `M^(c-d)`，以及完整存储长度 |
 
@@ -67,7 +67,7 @@ GLWE-TFHE 的 NTT/Fourier、classic/sparse 路径遵循相同的噪声来源：
 
 用户入口 `PbsConfig`、`CbsConfig` 和 `HighPrecLutConfig` 分别准备完整操作状态，见[配套类型](tfhe-parameters.md#scope-of-paired-parameter-entries)。`PbsParameters` 直接持有 LWE/环域、算法、必需 KS 与消息选择；`CbsParameters` 组合这一公共 owner、gadget 和输入 codec。四后端 Context 按值接收参数，公共状态由一个 Box 持有，变换表只有一份；`parameters()` 借用公共参数，`parameters()` 始终提供 PBS，`cbs_parameters()` 查询额外 CBS 能力。底层 BR/trace/scheme-switch 沿用环 sampler 的 Arc，不另建公共 BR Arc。默认 keygen/evaluator 使用保存的选择，工作区在绑定实际操作时分配。
 
-高精度状态由 LUT crate 的 `NttHighPrecLutContext` / `FourierHighPrecLutContext` 持有：将准备好的 CBS owner 移入唯一后端环境，旁置检查后的 chunk 几何与 q/Q 编码，不复制 sampler/BR 或增加 Arc。配置中独立指定输入、输出 chunk 数，默认 d 尽量填满 N，也可显式覆盖。整值编译/客户端与更宽的分块接口共存，编译不创建全域值缓存；客户端不接收 LUT。默认 keygen 根据公开计划按需补充 sparse NLEV[1]，与 BR/CBS 共用已接受的秘密变换和逆元；classic 借用 initializer。完整服务端组合只拥有一份 BR/CBS/返回材料和可选独立 lift，显式组件入口继续可用。
+高精度状态由 LUT crate 的 `NttHighPrecLutContext` / `FourierHighPrecLutContext` 持有：将准备好的 CBS owner 移入唯一后端环境，旁置检查后的 chunk 几何与 q/Q 编码，不复制 sampler/BR 或增加 Arc。配置中独立指定输入、输出 chunk 数，默认 d 尽量填满 N，也可显式覆盖。整值编译/客户端与更宽的分块接口共存，编译不创建全域值缓存；客户端不接收 LUT。默认 keygen 只在 c=d 时补充 sparse NLEV[1]，与 BR/CBS 共用已接受的秘密变换和逆元；classic 借用 initializer。完整服务端组合只拥有一份 BR/CBS/返回材料和可选独立 lift，显式组件入口继续可用。
 
 独立组件在构造/绑定边界验证配对；同源路径移动已有状态，不重建 sampler/basis。CBS 组合检查数值/采样域、算法和输入路径。稀疏布局可行性先于秘密采样；matching 只重试公开 map。相同元数据不证明实际秘密或变换身份。完整 PBS/CBS 都准备必需 KS，秘密仍独立采样。GLWE KS→BR 在输入阶段执行 KS，其他 CBS 路径保留 KS 供后续 LWE 返回使用。
 
@@ -129,7 +129,7 @@ PBS trait、四后端、Boolean 门、双输入打包、CBS、one-hot 与 MVB �
 | 四后端 ManyLUT | 单项 LWE 输入视图、输出密文切片；GLWE 逐项借用提取，NTRU 共享输入转换后分 tile 返回 | 有效输出数及全部维数先检查；LUT padding 不产生输出槽 |
 | 四后端 factorized MVB | 输出密文切片与 factor 语义迭代器按序配对；NTRU 按返回容量分块 | 检查程序/context 身份、输出数量和全部维数后再做 BR；最后一个 tile 可以较短 |
 | NTRU `return_prefix_to` / `return_batch_to` | 密文切片提供长度、单项分派和完整 tile；下层 `primus_ntru` 已支持 `[Lwe<B>]` 的 `DataMut` 存储 | prefix 检查提取范围；stream 要求输出数等于本批有效前缀；失败保留前缀供重试，成功失效 |
-| 高精度 LUT | 输入/输出密文切片；分割低/高 chunks、按索引写出、读取先前完成的等价输出；Fourier 按连续求值区间返回 | 求值前检查整个请求，包括被剪枝的输入和复用结果的输出；不由选择图遍历次数推断请求合法 |
+| 高精度 LUT | 输入/输出密文切片；分割低/高 chunks、完整选表树与按索引写出；Fourier 按有界连续块返回 | 求值前检查整个请求；每个输出均执行完整选表、旋转与返回，不根据表项重复跳过计算 |
 | One-hot CBS、gadget 和内部 LWE tile | 已有平坦系数/变换数组与 NLEV、NGSW、LWE 语义迭代器 | owning 入口核对精确元素数；内部迭代器省略尾块的行为不构成布局验证 |
 
 保留切片使预检查、分块和历史输出访问无需引入可重放 iterator 或随机访问 batch trait。仅接受 `&mut [Lwe<&mut [T]>]` 会要求现有拥有型调用方另行拼装描述符；传播存储泛型会扩大长算法的特化范围。当前没有需要这两种代价的消费者，因此不增加第二套批量入口。若今后出现独立的 packed LWE 调用方，再按实际布局补边界，并保留完整请求的检查契约。
@@ -233,7 +233,7 @@ GLWE 复用已有独立 `BlindRotationKey::{Classic,Sparse}` 和底层环 KS own
 
 `ServerKey` 仅拥有 BR/KS，`CircuitBootstrapServerKey` 组合它与必需 CBS 材料；四个后端的 CBS 操作构造器直接要求 circuit key 引用。私有绑定集中可用材料与所选 output parameters；NTRU CBS/one-hot 支持 classic/sparse，始终使用 circuit key 的完整 output basis。GLWE CBS 支持 classic 与 sparse，`try_new` 使用 circuit key 自带参数；`try_with_parameters` 验证显式提供的参数、trace basis 和 scheme-switch layout，可复用兼容的独立 output basis。已有完整服务端材料时，`context.bootstrap_resources_from_server_key` 自动选择 order 所需的 input KS，独立 CBS 不分配普通返回工作区；独立生成材料仍通过 `bootstrap_resources(br, input_ks)` 绑定。构造后保存借用的绑定，在线操作不再取得可选材料。布局及 basis 一致仍不证明秘密或变换表示身份。
 
-入口：NTRU [NTT 控制视图](../../crates/primus_tfhe_ntru_ntt/src/key/classic.rs) / [Fourier 控制视图](../../crates/primus_tfhe_ntru_fourier/src/key/classic.rs)，各后端 `circuit_bootstrap/key.rs` 的私有绑定与 `circuit_bootstrap/evaluator.rs` 的公开构造器。高精度 LUT 按编译计划直接绑定提升 NLEV 与其参数，无 Lift 时不需要；返回密钥与 q 由家族 `LweReturnEvaluator` 绑定，缓冲由消费者独立持有，批次协议位于 `LweReturnBatchWorkspace`，NTT/Fourier evaluator 各自选择返回调度。
+入口：NTRU [NTT 控制视图](../../crates/primus_tfhe_ntru_ntt/src/key/classic.rs) / [Fourier 控制视图](../../crates/primus_tfhe_ntru_fourier/src/key/classic.rs)，各后端 `circuit_bootstrap/key.rs` 的私有绑定与 `circuit_bootstrap/evaluator.rs` 的公开构造器。高精度 LUT 在 c=d 时直接绑定提升 NLEV 与其参数，c>d 的首层选表自行提升；返回密钥与 q 由家族 `LweReturnEvaluator` 绑定，缓冲由消费者独立持有，批次协议位于 `LweReturnBatchWorkspace`，NTT/Fourier evaluator 各自选择返回调度。
 
 ## NTRU 返回资源与批次
 

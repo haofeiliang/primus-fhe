@@ -3,9 +3,10 @@ use primus_fft::{Complex64, FftTable, TorusFftValue};
 use primus_lattice::{
     ngsw::FourierNgswIter,
     nlev::{FourierNlev, FourierNlevIter},
+    ntru::NtruIter,
 };
 use primus_ntru::{FourierNgswCiphertext, NlevParameters, NtruCiphertext};
-use primus_poly::{FourierPolynomialIter, FourierPolynomialIterMut, Polynomial};
+use primus_poly::{FourierPolynomialIter, FourierPolynomialIterMut, Polynomial, PolynomialIter};
 use primus_reduce::RingContext;
 use primus_tfhe::LweCiphertext;
 use primus_tfhe_ntru::{LweReturnBatchWorkspace, LweReturnEvaluator};
@@ -19,11 +20,7 @@ use std::ops::Range;
 
 use crate::{
     HighPrecisionLookupTable, LookupTableError,
-    evaluation::{check_io, copy_completed_output_to, selected_ciphertext},
-    lookup_table::{
-        PolynomialId,
-        selection::{OutputAction, TableNodeId, TableOperation},
-    },
+    evaluation::{SelectorOutput, check_io},
 };
 
 mod context;
@@ -41,14 +38,12 @@ pub type FourierPublicLift<'a, T> = (
 
 /// Native-torus Fourier high-precision lookup bound to one public table and CBS-enabled key.
 ///
-/// Generates the surviving choices' NLEV/NGSW selectors once per evaluation.
-/// Repeated subtrees share encrypted results; equal branches omit the choice.
-/// Public choices lift with NLEV; encrypted choices use nonzero NGSW, including
-/// chunks that require both representations. Low chunks retain aggregated
-/// rotation controls. Shared results and their noise are correlated across
-/// outputs; no independence of output errors is promised.
-/// Sparse BR processes surviving chunks in pairs, retaining one extra input
-/// aggregate/current/exponent state only when at least two chunks need BR.
+/// Generates one batch of selectors per input chunk, shared by all outputs.
+/// Every output executes the complete selection tree: full NLEV at its first
+/// layer, then nonzero NGSW for each later layer. Repeated tables do not skip work.
+/// Low chunks retain aggregated rotation controls; shared selectors and controls
+/// can correlate output errors. Sparse BR prepares input chunks in pairs, with
+/// one extra input state only when at least two chunks need BR.
 /// Public monomial factors and all online workspaces are allocated at binding.
 /// Table products reuse one-hot CBS's external-product workspace between calls.
 /// Outputs are converted/extracted individually, then key-switched in bounded
@@ -66,15 +61,15 @@ where
     one_hot: OneHotCircuitBootstrapEvaluator<'a, T, Table, LM>,
     // One extra input state; transform, product and projection scratch stay shared.
     sparse_pair: Option<primus_tfhe_ntru_fourier::sparse::SparseBlindRotationPairWorkspace<T>>,
-    // Present only when the compiled plan needs `NLEV[1]`, with its own basis.
+    // Present only for c=d (no selection layer), with its own basis.
     public_lift: Option<FourierPublicLift<'a, T>>,
     lwe_return: LweReturnEvaluator<'a, T, LM>,
     batch_return: LweReturnBatchWorkspace<T>,
-    // [NLEV batch][branch][level][Fourier value]: full selectors for public choices.
+    // [branch][level][Fourier value]: full selectors for public choices.
     public_table_selectors: Box<[Complex64]>,
-    // One full NLEV coefficient batch, reused when preparing each public selector batch.
+    // First high chunk's coefficient NLEVs, transformed once per request.
     public_selector_coefficients: Box<[T]>,
-    // [NGSW batch][r-1][level][Fourier value]: nonzero selectors for encrypted choices.
+    // [high chunk after the first][r-1][level][Fourier value]: nonzero selectors for encrypted choices.
     encrypted_table_selectors: Box<[Complex64]>,
     // [low chunk][level][Fourier value]: one NGSW[X^(-m_i*M^i)] per low chunk.
     rotation_controls: Box<[Complex64]>,
@@ -84,7 +79,8 @@ where
     rotation_factors: Box<[Complex64]>,
     // Trivial NGSW[1] at torus scale, with one constant g_l polynomial per row.
     gadget_one: Box<[Complex64]>,
-    // [compiled scratch slot][coefficient], shared nodes survive until their last use.
+    // [encrypted layer][branch][coefficient]: M children, reused after their parent.
+    // Only M*(h-1) NTRUs are retained, not the complete intermediate tree.
     selected_tables: Box<[T]>,
     current: NtruCiphertext<Box<[T]>>,
     product: NtruCiphertext<Box<[T]>>,
@@ -97,9 +93,9 @@ where
     LM: RingContext<T>,
 {
     /// Checks table encoding, one-hot geometry and server resources, then allocates scratch.
-    /// Requires CBS material for either classic or sparse BR. A plan needing a public
-    /// lift borrows the classic initializer. Sparse BR requires explicit material via
-    /// [`Self::try_with_public_lift`] for those plans.
+    /// Requires CBS material for either classic or sparse BR. With c=d, public lifting
+    /// borrows the classic initializer; sparse BR requires explicit material via
+    /// [`Self::try_with_public_lift`].
     ///
     /// # Correctness
     /// The server key must belong to this context's secrets and exact FFT table instance,
@@ -115,7 +111,7 @@ where
 
     /// Binds an explicit `NLEV[1]` with its own generation basis and noise parameters.
     /// This material takes precedence over the classic initializer when needed;
-    /// plans without a public lift ignore it and do not retain it.
+    /// tables with c>d ignore it and do not retain it.
     ///
     /// # Correctness
     /// The server key must satisfy [`Self::try_new`]'s contract and the lift must
@@ -159,7 +155,7 @@ where
     /// `public_lift` pairs a transformed `NLEV[1]` view with its generation parameters.
     /// When [`HighPrecisionLookupTable::needs_public_lift`] is true, an explicit lift
     /// takes precedence; `None` borrows the classic initializer and its BR parameters.
-    /// Sparse BR has no initializer and requires an explicit lift for those plans.
+    /// Sparse BR has no initializer and requires an explicit lift when c=d.
     /// Otherwise lift material is ignored and not retained. Its basis may differ from BR/CBS.
     /// Checks the lift's ring, modulus and exact transformed storage length.
     ///
@@ -220,7 +216,7 @@ where
         let resources = context.bootstrap_resources(blind_rotation_key)?;
         let one_hot =
             OneHotCircuitBootstrapEvaluator::try_new(&resources, circuit_key, &input_codec)?;
-        let sparse_pair = if lookup_table.one_hot_chunk_count() >= 2 {
+        let sparse_pair = if lookup_table.config().input_chunk_count >= 2 {
             one_hot.new_sparse_pair_workspace(&resources)
         } else {
             None
@@ -322,16 +318,15 @@ where
     /// Evaluates all output chunks, overwriting caller-owned ciphertexts without allocation.
     /// Both slices are least-significant-chunk first. Inputs use `encrypt_padded`
     /// encoding; outputs are decoded with the same context's ordinary decryptor.
-    /// Each output keeps its existing coefficient buffer. All chunks are checked,
-    /// including inputs skipped by the compiled plan and outputs copied from an
-    /// earlier result.
+    /// Each output keeps its existing coefficient buffer. All input and output
+    /// shapes are checked before evaluation begins.
     ///
     /// # Correctness
     /// Inherits one-hot CBS's key, canonical-input and quantized-phase guard
     /// requirements. Budget table products, rotations and Q-to-q/key-switch error
     /// in addition to CBS noise, native trace rounding and FFT error; parameter
-    /// checks do not prove a decoding margin. Shared nodes reuse the same error,
-    /// and repeated roots reuse the complete output ciphertext.
+    /// checks do not prove a decoding margin. Selectors and rotation controls
+    /// are shared across outputs; their errors need not be independent.
     ///
     /// # Panics
     /// Rejects wrong chunk counts or any LWE dimension before writing outputs or scratch.
@@ -345,27 +340,16 @@ where
         );
         self.prepare_selectors(input);
         let capacity = self.batch_return.batch_capacity();
-        let plan = &self.lookup_table.selection;
-        let mut first = 0;
-        while first < output.len() {
-            match plan.output_action(first) {
-                OutputAction::CopyFrom(previous) => {
-                    copy_completed_output_to(previous, first, output);
-                    first += 1;
-                }
-                OutputAction::Evaluate => {
-                    let tile = plan.evaluation_tile(first, capacity);
-                    self.batch_return.begin_batch();
-                    self.prepare_output_returns(tile.clone());
-                    first = tile.end;
-                    self.lwe_return
-                        .return_batch_to(&mut output[tile], &mut self.batch_return);
-                }
-            }
+        for (tile, outputs) in output.chunks_mut(capacity).enumerate() {
+            let first = tile * capacity;
+            self.batch_return.begin_batch();
+            self.prepare_output_returns(first..first + outputs.len());
+            self.lwe_return
+                .return_batch_to(outputs, &mut self.batch_return);
         }
     }
 
-    /// Prepares a consecutive tile of newly evaluated outputs. Selection and
+    /// Prepares a bounded tile, including a possibly shorter final tile. Selection and
     /// rotation reuse polynomial scratch but preserve filled return slots.
     fn prepare_output_returns(&mut self, outputs: Range<usize>) {
         for output in outputs {
@@ -376,14 +360,12 @@ where
         }
     }
 
-    /// Refreshes surviving input chunks in order. Sparse pairs share source-key
+    /// Refreshes all input chunks in order. Sparse pairs share source-key
     /// traversal; projection and immediate consumption reuse the selector scratch.
     fn prepare_selectors(&mut self, input: &[LweCiphertext<T>]) {
         let table = self.lookup_table;
         let layout = table.layout;
-        let mut chunks = table
-            .selection
-            .selector_chunks(layout.config.coefficient_chunk_count);
+        let mut chunks = 0..layout.config.input_chunk_count;
         // Borrow only selector outputs so the callback can consume each prepared
         // BR without exposing or replacing the shared one-hot/resource owners.
         let mut selectors = SelectorBuffers {
@@ -401,10 +383,7 @@ where
                 && let Some(second) = chunks.next()
             {
                 self.one_hot.with_sparse_pair(
-                    [
-                        input[first.input_index()].as_view(),
-                        input[second.input_index()].as_view(),
-                    ],
+                    [input[first].as_view(), input[second].as_view()],
                     pair,
                     &mut self.resources,
                     |index, projection| {
@@ -412,7 +391,14 @@ where
                             [first, second][index],
                             layout,
                             parameters,
-                            |nlev, ngsw| projection.project_to(nlev, ngsw),
+                            |output| match output {
+                                SelectorOutput::Nlev(nlev) => {
+                                    projection.project_to(Some(nlev), None)
+                                }
+                                SelectorOutput::Ngsw(ngsw) => {
+                                    projection.project_to(None, Some(ngsw))
+                                }
+                            },
                         );
                     },
                 );
@@ -420,24 +406,17 @@ where
             }
 
             // Classic consumes only `first`; sparse reaches here for an odd tail.
-            let input_chunk = input[first.input_index()].as_view();
-            selectors.project_chunk(first, layout, parameters, |nlev, ngsw| {
-                match (nlev, ngsw) {
-                    (Some(nlev), Some(ngsw)) => self.one_hot.one_hot_nlev_and_nonzero_ngsw_to(
-                        input_chunk,
-                        nlev,
-                        ngsw,
-                        &mut self.resources,
-                    ),
-                    (Some(nlev), None) => {
+            let input_chunk = input[first].as_view();
+            selectors.project_chunk(first, layout, parameters, |output| {
+                match output {
+                    SelectorOutput::Nlev(nlev) => {
                         self.one_hot
                             .one_hot_nlev_to(input_chunk, nlev, &mut self.resources)
                     }
-                    (None, Some(ngsw)) => {
+                    SelectorOutput::Ngsw(ngsw) => {
                         self.one_hot
                             .one_hot_nonzero_ngsw_to(input_chunk, ngsw, &mut self.resources)
                     }
-                    (None, None) => {} // Unused high chunks were omitted by the iterator.
                 };
                 self.resources.external_product_workspaces().0
             });
@@ -466,40 +445,47 @@ where
         }
     }
 
-    /// Executes this output's newly needed nodes, then copies its unrotated root.
-    /// All output chunks must be consumed in order on every evaluation. Shared
-    /// roots stay unmodified in their compiled slots while `current` is rotated.
+    /// Selects one output's polynomial into `current`. Without high chunks the
+    /// sole public polynomial still needs lifting before coefficient rotations.
     fn select_table(&mut self, output_chunk: usize) {
         let table = self.lookup_table;
-        let plan = &table.selection;
-        let n = table.layout.polynomial_length;
-        for node in plan.scheduled_nodes(output_chunk) {
-            match &node.operation {
-                TableOperation::Lift(polynomial_id) => {
-                    self.lift_public_polynomial(&table.polynomial_by_id(*polynomial_id))
-                }
-                TableOperation::SelectPublic {
-                    chunk_index,
-                    polynomial_ids,
-                } => self.select_public_table(*chunk_index, polynomial_ids),
-                TableOperation::SelectEncrypted {
-                    chunk_index,
-                    children,
-                } => self.select_encrypted_table(*chunk_index, children),
-            }
-            // A destination may reuse a child's last-use slot: every operand
-            // has been read into `current` before this write touches the pool.
-            self.selected_tables[node.result_range(n)].copy_from_slice(self.current.as_ref());
+        let height = table.layout.table_chunk_count();
+        let polynomials = table.output_polynomials(output_chunk);
+        if height == 0 {
+            self.lift_public_polynomial(&Polynomial::new(polynomials));
+        } else {
+            self.select_subtree(polynomials, height);
         }
-        self.current
-            .as_mut()
-            .copy_from_slice(&self.selected_tables[plan.root_node(output_chunk).result_range(n)]);
+    }
+
+    /// Visits the complete tree depth first. A subtree spans M^height consecutive
+    /// public polynomials; its most significant remaining chunk selects its root.
+    /// Each encrypted layer owns M child slots. Recursive children use only lower
+    /// layers, so completed siblings stay intact until this layer's CMux reads them.
+    /// The root stays in `current`, ready for the next parent or coefficient rotation.
+    fn select_subtree(&mut self, polynomials: &[T], height: usize) {
+        if height == 1 {
+            self.select_public_table(polynomials);
+            return;
+        }
+        let layout = self.lookup_table.layout;
+        let layer = height - 2;
+        let n = layout.polynomial_length;
+        for (branch, subtree) in polynomials
+            .chunks_exact(polynomials.len() / layout.radix)
+            .enumerate()
+        {
+            self.select_subtree(subtree, height - 1);
+            let first = (layer * layout.radix + branch) * n;
+            self.selected_tables[first..first + n].copy_from_slice(self.current.as_ref());
+        }
+        self.select_encrypted_table(layer);
     }
 
     /// Lifts a public polynomial under f with the bound `NLEV[1]` and its basis.
     /// Selection-tree products instead use the one-hot CBS output basis.
     fn lift_public_polynomial(&mut self, polynomial: &Polynomial<&[T]>) {
-        // Construction requires this material exactly when the plan contains Lift.
+        // Binding requires this material exactly when c=d.
         let (key, parameters) = self.public_lift.as_ref().expect("bound public lift key");
         let (fft, external_product) = self.resources.external_product_workspaces();
         key.external_product_to(
@@ -512,18 +498,15 @@ where
     }
 
     /// Selects M public polynomials with full NLEV, including the default branch.
-    /// Pruning can move this lift to any high chunk; the CBS output basis applies.
-    fn select_public_table(&mut self, chunk_index: usize, polynomial_ids: &[PolynomialId]) {
-        let table = self.lookup_table;
-        let selector_batches = table.selector_batches_for_chunk(chunk_index);
-        let selectors = &self.public_table_selectors
-            [selector_batches.nlev_range(self.one_hot.ngsw_batch_len())];
+    /// This is always the first high chunk (index d); the CBS output basis applies.
+    fn select_public_table(&mut self, polynomials: &[T]) {
+        let selectors = &self.public_table_selectors;
         let basis = self.one_hot.parameters().output_basis();
         let selector_len = self.one_hot.ngsw_selector_len();
         let (fft, external_product) = self.resources.external_product_workspaces();
         FourierNlev::external_product_sum_to(
             FourierNlevIter::new(selectors, selector_len),
-            table.polynomials(polynomial_ids),
+            PolynomialIter::new(polynomials, self.lookup_table.layout.polynomial_length),
             self.current.as_mut_view(),
             basis,
             fft,
@@ -531,25 +514,25 @@ where
         );
     }
 
-    /// Chooses among already encrypted children using the nonzero NGSW branches.
-    /// Children occupy compiled, possibly noncontiguous slots. The kernel keeps
-    /// c_0 intact and performs one inverse transform after summing all products.
-    fn select_encrypted_table(&mut self, chunk_index: usize, children: &[TableNodeId]) {
-        let table = self.lookup_table;
-        let plan = &table.selection;
-        let n = table.layout.polynomial_length;
+    /// Selects from the M completed children of one encrypted layer. Its controls
+    /// correspond to input chunk d+1+layer. The read-only default and candidates
+    /// remain intact while the fused kernel writes its result into `current`.
+    fn select_encrypted_table(&mut self, layer: usize) {
+        let layout = self.lookup_table.layout;
+        let n = layout.polynomial_length;
         let selector_len = self.one_hot.ngsw_selector_len();
-        let nonzero_len = self.one_hot.ngsw_batch_len() - selector_len;
-        let selector_batches = table.selector_batches_for_chunk(chunk_index);
-        let selectors = &self.encrypted_table_selectors[selector_batches.ngsw_range(nonzero_len)];
-        let ciphertext =
-            |node_id| selected_ciphertext(plan.node(node_id), &self.selected_tables, n);
+        let nonzero_len = (layout.radix - 1) * selector_len;
+        let selectors =
+            &self.encrypted_table_selectors[layer * nonzero_len..(layer + 1) * nonzero_len];
+        let children_len = layout.radix * n;
+        let children = &self.selected_tables[layer * children_len..(layer + 1) * children_len];
+        let (default, candidates) = children.split_at(n);
         let basis = self.one_hot.parameters().output_basis();
         let (fft, external_product) = self.resources.external_product_workspaces();
         FourierNgswCiphertext::cmux_k_to(
             FourierNgswIter::new(selectors, selector_len),
-            ciphertext(children[0]),
-            children[1..].iter().map(|&node_id| ciphertext(node_id)),
+            NtruCiphertext::new(default),
+            NtruIter::new(candidates, n),
             self.current.as_mut_view(),
             basis,
             fft,

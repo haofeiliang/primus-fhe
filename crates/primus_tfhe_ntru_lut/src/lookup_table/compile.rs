@@ -1,24 +1,15 @@
-//! Construction-only enumeration, encoding and polynomial interning.
-//! Online lookup never retains the hash map or scratch used here.
-
-use std::{
-    collections::HashMap,
-    hash::{DefaultHasher, Hasher},
-};
+//! Construction-only enumeration and encoding of the complete public table.
 
 use primus_encoding::{PlaintextEmbedding, RoundedCodec};
 use primus_integer::FheUint;
+use primus_poly::PolynomialIterMut;
 use primus_reduce::RingContext;
 
-use super::selection::{SelectionCompiler, TableNodeId, TableOperation};
-
-use super::{
-    HighPrecisionLookupTable, Layout, LookupTableError, PolynomialId, checked_allocation_len,
-};
+use super::{HighPrecisionLookupTable, Layout, LookupTableError, checked_allocation_len};
 
 impl<T: FheUint> HighPrecisionLookupTable<T> {
     /// Compiles a validated geometry without skipping any callback, even when a
-    /// polynomial repeats. Check worst-case sizes before allocating or invoking the callback.
+    /// polynomial repeats. Check the complete storage size before allocating or invoking the callback.
     pub(crate) fn compile<M: RingContext<T>, LM: RingContext<T>>(
         output_codec: &RoundedCodec<T, M>,
         input_codec: &RoundedCodec<T, LM>,
@@ -26,20 +17,11 @@ impl<T: FheUint> HighPrecisionLookupTable<T> {
         mut function: impl FnMut(usize, usize) -> Result<T, LookupTableError>,
     ) -> Result<Self, LookupTableError> {
         let output_count = layout.config.output_chunk_count;
-        checked_allocation_len::<T>(&[
+        let coefficient_count = checked_allocation_len::<T>(&[
             output_count,
             layout.polynomials_per_output,
             layout.polynomial_length,
         ])?;
-        checked_allocation_len::<PolynomialId>(&[output_count, layout.polynomials_per_output])?;
-        // At most P-1 choice nodes plus P lifts per output. Also check the
-        // branch-ID storage bound before callbacks, even though sharing reduces it.
-        checked_allocation_len::<TableOperation>(&[
-            output_count,
-            layout.polynomials_per_output,
-            2,
-        ])?;
-        checked_allocation_len::<TableNodeId>(&[output_count, layout.polynomials_per_output, 2])?;
 
         let codec = output_codec;
         let radix = input_codec.plaintext_modulus() >> 1u32;
@@ -52,29 +34,27 @@ impl<T: FheUint> HighPrecisionLookupTable<T> {
             }
             None => codec.encode_value(chunk_value, PlaintextEmbedding::Unsigned),
         };
-        let mut pool = PolynomialPool::new(layout.polynomial_length);
-        let mut polynomial = vec![T::ZERO; layout.polynomial_length];
-        let mut selection = SelectionCompiler::new(layout);
-        for output_chunk in 0..output_count {
-            let mut polynomial_ids = Vec::with_capacity(layout.polynomials_per_output);
-            for table_prefix in 0..layout.polynomials_per_output {
-                // x = prefix*K + z. Reuse the first K entries; the N-K tail stays zero.
+        // Allocate every logical polynomial, even when coefficients repeat.
+        // Only the first K positions are filled; each N-K tail remains zero.
+        let mut coefficients = vec![T::ZERO; coefficient_count];
+        let output_len = layout.polynomials_per_output * layout.polynomial_length;
+        for (output_chunk, polynomials) in coefficients.chunks_exact_mut(output_len).enumerate() {
+            for (table_prefix, polynomial) in
+                PolynomialIterMut::new(polynomials, layout.polynomial_length).enumerate()
+            {
                 encode_output_chunk_coefficients(
                     table_prefix * layout.entries_per_polynomial,
                     output_chunk,
                     radix,
                     &mut function,
                     &encode_chunk,
-                    &mut polynomial[..layout.entries_per_polynomial],
+                    &mut polynomial.0[..layout.entries_per_polynomial],
                 )?;
-                polynomial_ids.push(pool.get_or_insert_polynomial(&polynomial));
             }
-            selection.add_output(polynomial_ids);
         }
         Ok(Self {
             layout,
-            coefficients: pool.coefficients.into_boxed_slice(),
-            selection: selection.finish(),
+            coefficients: coefficients.into_boxed_slice(),
             plaintext_modulus: input_codec.plaintext_modulus(),
             input_modulus: input_codec.ciphertext_modulus().explicit_value(),
             ring_modulus: output_codec.ciphertext_modulus().explicit_value(),
@@ -126,57 +106,4 @@ fn encode_output_chunk_coefficients<T: FheUint>(
         *coefficient = encode_chunk(chunk_value);
     }
     Ok(())
-}
-
-/// Construction-local hash used only to locate equality-check candidates.
-/// A matching value does not establish polynomial identity.
-#[derive(Clone, Copy, Hash, PartialEq, Eq)]
-#[repr(transparent)]
-struct PolynomialHashValue(u64);
-
-/// Owns the fixed polynomial stride and collision handling during construction.
-/// Hashes only narrow the search; complete coefficient equality establishes identity.
-struct PolynomialPool<T> {
-    polynomial_length: usize,
-    /// Unique polynomials concatenated at the fixed N-coefficient stride.
-    coefficients: Vec<T>,
-    /// Candidate physical IDs per hash; collisions are resolved by full comparison.
-    buckets: HashMap<PolynomialHashValue, Vec<PolynomialId>>,
-}
-
-impl<T: FheUint> PolynomialPool<T> {
-    /// Starts an empty pool with a fixed, positive polynomial length.
-    fn new(polynomial_length: usize) -> Self {
-        debug_assert!(polynomial_length > 0);
-        Self {
-            polynomial_length,
-            coefficients: Vec::new(),
-            buckets: HashMap::new(),
-        }
-    }
-
-    /// Returns a stable physical ID, appending only if no identical polynomial exists.
-    /// The input must contain exactly N coefficients, including its zero-padded tail.
-    fn get_or_insert_polynomial(&mut self, polynomial: &[T]) -> PolynomialId {
-        let n = self.polynomial_length;
-        debug_assert_eq!(polynomial.len(), n);
-        let bucket = self.buckets.entry(polynomial_hash(polynomial)).or_default();
-        for &polynomial_id in bucket.iter() {
-            if self.coefficients[polynomial_id.coefficient_range(n)] == *polynomial {
-                return polynomial_id;
-            }
-        }
-        let polynomial_id = PolynomialId(self.coefficients.len() / n);
-        self.coefficients.extend_from_slice(polynomial);
-        bucket.push(polynomial_id);
-        polynomial_id
-    }
-}
-
-/// Produces a candidate-bucket hash, not a proof of polynomial equality.
-/// FheUint is Pod. The hash is construction-local, so native byte order is fine.
-fn polynomial_hash<T: FheUint>(polynomial: &[T]) -> PolynomialHashValue {
-    let mut hasher = DefaultHasher::new();
-    hasher.write(bytemuck::cast_slice(polynomial));
-    PolynomialHashValue(hasher.finish())
 }

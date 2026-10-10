@@ -101,14 +101,14 @@ intermediate output copy. Samples retain their order and equal scalar returns.
 
 ## Serial reuse in high-precision lookup
 
-The public high-precision LUT owns a boxed pool of unique encoded polynomials,
-one descriptor per output: a single polynomial reference for direct lifting,
-or an owned prefix-index array for table selection.
-Construction hash buckets are temporary. Equal prefixes allow a BR-basis lift
-followed by the usual low-chunk rotations; when all outputs qualify, the evaluator
-omits table selectors and candidates as well as high-chunk CBS. Mixed tables
-keep those shared buffers. One-hot projection scratch is retained. See the
-[table layout](../../crates/primus_tfhe_ntru_lut/IMPLEMENTATION.md#public-table-storage-and-compiled-choices).
+The public high-precision LUT owns all encoded polynomials contiguously in
+`[output][prefix][coefficient]` order. Each output executes the complete M-ary
+selection tree. Depth-first traversal keeps M ciphertexts per encrypted layer,
+reusing those slots after their parent consumes them; h=c-d gives
+`M*max(h-1,0)` intermediate NTRUs. For h=0, the sole public polynomial is lifted
+with NLEV[1] before low-chunk rotations. Selectors and rotation controls are
+shared across outputs, but intermediate tree results are not. See the
+[table layout](../../crates/primus_tfhe_ntru_lut/IMPLEMENTATION.md#public-table-storage-and-complete-choices).
 
 One-hot CBS reuses its BR external-product workspace for BR, trace and scheme switching. Table selection and encrypted rotation now borrow that same workspace between one-hot calls. The NTT entry point is `BootstrapResources::external_product_workspace`; Fourier's `BootstrapResources::external_product_workspaces` returns the FFT engine and external-product buffers together. Borrowers retain polynomial lengths and the FFT table identity. Every subsequent one-hot call overwrites its scratch before reading it.
 

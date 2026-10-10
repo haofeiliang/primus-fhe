@@ -486,10 +486,11 @@ changed by this experiment.
 | NTRU LWE return batches | Extraction/conversion and key switching after BR | Existing return batching does not supply a BR batch scheduler. |
 | High-precision LUT selector preparation | Different input chunks each require one-hot BR | A real potential internal consumer, subject to pruning and buffer/latency choices. |
 
-The implemented LUT window counts surviving one-hot chunks directly from the
-compiled plan, retaining pruning and selector omission, and keeps at most two
-independent BR accumulators. The optional offline `LookupTableStats` reports
-the same chunk count. Output count is not an input batch size. External request queues,
+The measured revision counted surviving one-hot chunks from its compiled plan,
+retained pruning and selector omission, and kept at most two independent BR
+accumulators. Its former `LookupTableStats` reported the same chunk count.
+The current fixed-tree LUT always prepares all c input chunks and no longer
+exposes those pruning statistics; it retains the bounded pair schedule. Output count is not an input batch size. External request queues,
 implicit threads and a general batch API were not introduced or measured.
 
 ## GLWE NTT tile-major source key

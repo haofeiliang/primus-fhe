@@ -158,16 +158,16 @@ where
         self.lookup.decryptor(self.context.parameters(), key)
     }
 
-    /// Generates one BR/CBS/return bundle and only the public lift required by the plan.
+    /// Generates one BR/CBS/return bundle and the public lift required when c=d.
     /// Classic borrows its initializer. Sparse generates independent `NLEV[1]` with
-    /// BR's basis/noise only if the compiled plan contains Lift; otherwise none is stored.
+    /// BR's basis/noise only when c=d; otherwise no separate lift is stored.
     /// All ring material reuses the accepted secret transform and inverse.
     ///
     /// # Correctness
     /// Inherits [`KeyGenerator::try_generate_circuit_bootstrap_keys`] and
     /// [`KeyGenerator::try_generate_public_lift_key`]'s numerical/security contracts.
-    /// A key may serve another compatible table; newly required lift material
-    /// must be supplied explicitly if the original bundle omitted it.
+    /// A key may serve another compatible table with the same geometry and encoding;
+    /// changing function values does not change the required material.
     pub fn try_generate_keys<R: rand::Rng + rand::CryptoRng>(
         &self,
         table: &HighPrecisionLookupTable<T>,

@@ -49,7 +49,7 @@ impl BufferLengths {
         fourier: bool,
     ) -> Result<Self, LookupTableError> {
         let layout = table.layout;
-        let selection = &table.selection;
+        let h = layout.table_chunk_count();
         let n = layout.polynomial_length;
         let row_len = if fourier { n / 2 } else { n };
         let d = layout.config.coefficient_chunk_count;
@@ -57,20 +57,20 @@ impl BufferLengths {
         let nonzero_len = checked_allocation_len::<V>(&[layout.radix - 1, selector_len])?;
         Ok(Self {
             public_table_selectors: checked_allocation_len::<V>(&[
-                selection.nlev_batch_count,
+                usize::from(h > 0),
                 layout.radix,
                 selector_len,
             ])?,
             encrypted_table_selectors: checked_allocation_len::<V>(&[
-                selection.ngsw_batch_count,
+                h.saturating_sub(1),
                 nonzero_len,
             ])?,
             rotation_controls: checked_allocation_len::<V>(&[d, selector_len])?,
             nonzero_selectors: if d > 0 { nonzero_len } else { 0 },
             rotation_factors: checked_allocation_len::<V>(&[d, layout.radix - 1, row_len])?,
-            selected_tables: checked_allocation_len::<T>(&[selection.result_slot_count, n])?,
+            selected_tables: checked_allocation_len::<T>(&[h.saturating_sub(1), layout.radix, n])?,
             #[cfg(feature = "fourier")]
-            public_selector_coefficients: if fourier && selection.nlev_batch_count > 0 {
+            public_selector_coefficients: if fourier && h > 0 {
                 checked_allocation_len::<T>(&[layout.radix, levels.get(), n])?
             } else {
                 0

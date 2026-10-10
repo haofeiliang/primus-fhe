@@ -12,7 +12,7 @@
 //! construction moves that prepared owner without cloning samplers or creating
 //! another BR domain. Compilation, key generation and workspace allocation are
 //! separate explicit operations. Sparse generates independent `NLEV[1]` only
-//! when the compiled plan needs it; classic reuses its existing initializer.
+//! when there are no table-selection chunks (c=d); classic reuses its existing initializer.
 //! Raw public compilation and explicit component evaluators remain available.
 //!
 //! The common chunk radix is M=t/2, where t is the input codec’s plaintext modulus.
@@ -44,13 +44,13 @@
 //!     },
 //!     |x, _| chunks.chunk(x, 0) as u32,
 //! )?;
-//! assert_eq!(table.stats().input_bits, 6);
-//! assert_eq!(table.stats().unique_polynomial_count, 1);
+//! assert_eq!(table.input_value_count(), 64);
+//! assert_eq!(table.polynomials_per_output(), 4);
 //! # Ok::<(), primus_tfhe_ntru_lut::LookupTableError>(())
 //! ```
 //!
-//! [`HighPrecisionLookupTable::stats`] describes pruning and sharing in the
-//! compiled plan. These counts do not estimate memory, latency or noise.
+//! All logical polynomials are stored, and each output uses the complete selection
+//! tree. Equal polynomials or repeated outputs do not change the work performed.
 //! Evaluator binding separately validates N/q/Q and CBS, and checks buffer sizes
 //! before allocating its workspace.
 //!
@@ -103,9 +103,7 @@ pub use fourier::{
     FourierHighPrecLutContext, FourierHighPrecLutServerKey, FourierLookupTableEvaluator,
     FourierPublicLift, FourierPublicLiftKey,
 };
-pub use lookup_table::{
-    HighPrecisionLookupTable, LookupTableConfig, LookupTableError, LookupTableStats,
-};
+pub use lookup_table::{HighPrecisionLookupTable, LookupTableConfig, LookupTableError};
 #[cfg(feature = "ntt")]
 pub use ntt::{
     NttHighPrecLutContext, NttHighPrecLutContextError, NttHighPrecLutServerKey,

@@ -846,3 +846,60 @@ Construction heap and online allocation are measured by that harness; key-genera
 ## Representative-parameter recheck
 
 The [current benchmark report](tfhe-baseline.md#aligned-key-recheck) repeats the key-alignment comparison with N1024, Q30/Q50/native, u32 base2 and u64 base8 at full internal levels. It separates container alignment from changes in decomposition work and complete-lookup geometry. The comparison keeps fixed workspace storage and semantic ciphertext views; it does not turn key alignment into a permanent dimension of every benchmark.
+
+## Fixed complete NTRU lookup tree (2026-10-10)
+
+The [current LUT](../../crates/primus_tfhe_ntru_lut/IMPLEMENTATION.md#stage-and-buffer-layout)
+retains every public polynomial and executes every selection layer for every
+output. This replaces `b1a716ff`'s polynomial interning, pruned graph and shared
+results. The choice establishes function-independent work, rather than keeping
+an optimization for repeated tables. Temporary consumers were removed; this
+comparison does not introduce a permanent benchmark driver or public diagnostic API.
+
+A temporary Criterion 0.8 consumer used the unchanged u64 classic lookup configs:
+n800/h32/N1024, M=4, c8/d5, with independent output count o=2. NTT used Q50 and
+Fourier used RustFFT/native Q; both returned at q=2^24, retaining their respective
+BR/CBS/KS decompositions and noise. The function was the low four bits of SplitMix64's
+output for x: add `0x9e3779b97f4a7c15`, then its xor-shift/multiply finalizer
+(30/27/31 shifts, multipliers `0xbf58476d1ce4e5b9` and `0x94d049bb133111eb`).
+The old compiler confirmed 128 logical and 128 unique polynomials, 42 selection
+nodes, no standalone lifts and all eight one-hot inputs. Thus both versions
+performed the same complete selection work; this was not a pruned-function comparison.
+
+Setup used StdRng seed 4242 and input 43981; decoded output was checked against
+the clear function. `evaluate_to` measured one complete two-output request per
+iteration, with all setup/encryption/allocation outside timing. `compile_and_drop`
+measured compilation plus destruction, including output-major function enumeration.
+Both operands/output were black-boxed at the timed boundary. Separate old/new
+release binaries ran consecutively on CPU 4, then CPU 8, with affinity fixed per
+comparison. Criterion used 30 samples, 1 s warmup, 3 s target time. Host: Ryzen
+9 9955HX3D; rustc 1.98.1 / LLVM 22.1.8; repository `target-cpu=native`, no Cargo
+SIMD, LUT features `ntt,rustfft,tfhe-fft` (only NTT and RustFFT were timed).
+
+Criterion estimates (95% intervals):
+
+| CPU | Backend | Old evaluate, ms | Complete tree, ms | Old compile+drop, µs | Complete tree, µs |
+| ---: | --- | --- | --- | --- | --- |
+| 4 | NTT | 45.769 [45.698,45.844] | 45.063 [44.888,45.245] | 385.33 [385.07,385.57] | 234.82 [234.78,234.86] |
+| 4 | RustFFT | 52.778 [52.490,53.080] | 52.947 [52.732,53.205] | 384.14 [383.94,384.32] | 234.66 [234.54,234.84] |
+| 8 | NTT | 51.200 [51.062,51.362] | 51.365 [51.226,51.537] | 370.15 [369.85,370.53] | 225.83 [225.77,225.91] |
+| 8 | RustFFT | 62.167 [62.018,62.340] | 62.005 [61.818,62.227] | 366.13 [365.96,366.42] | 226.94 [226.90,226.98] |
+
+No evaluate regression was detected in these comparisons. CPU 4 NTT showed a
+small improvement, while the other three comparisons detected no change; this
+does not establish a general online speedup. Eliminating hashing and graph
+construction reduced compile+drop by about 38–39% in the point estimates.
+CPU 4 and CPU 8 are independent comparisons, not interchangeable samples.
+
+Public coefficient storage stayed 1 MiB in this nonrepeating case. Intermediate
+selection storage changed from seven scheduled NTRU slots (56 KiB) to eight
+fixed layer slots (64 KiB). The extra 8 KiB buys simple contiguous M-way child
+groups and removes the graph's liveness/slot metadata; current/product and
+selector buffers are unchanged. Total peak allocation was not measured.
+A separate small-parameter consumer checked that first and subsequent online
+requests allocate nothing in both backends and both FFT engines, classic/sparse.
+
+Repeated functions can now require substantially more public storage and online
+work than the old pruned path. That is intentional and is not covered by the
+nonrepeating performance table above. The results do not establish latency or
+noise margins for M=16/N4096 or new decomposition parameters.

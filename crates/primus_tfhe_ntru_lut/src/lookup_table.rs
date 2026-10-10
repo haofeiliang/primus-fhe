@@ -8,12 +8,8 @@ use primus_tfhe_ntru::OneHotBootstrapError;
 #[cfg(any(feature = "ntt", feature = "fourier"))]
 mod buffer_lengths;
 mod compile;
-mod statistics;
-pub use statistics::LookupTableStats;
-pub(crate) mod selection;
 
 use crate::ChunkFormat;
-use selection::SelectionPlan;
 
 /// Chunk counts and the split between table selection and coefficient selection.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -75,7 +71,7 @@ pub enum LookupTableError {
     /// The table was compiled with another N, Q or external q.
     #[error("lookup table and context have incompatible ring or encoding parameters")]
     IncompatibleParameters,
-    /// The compiled selection plan contains a Lift but no `NLEV[1]` was supplied.
+    /// With no table-selection chunks (c=d), no `NLEV[1]` was supplied to lift the table.
     #[cfg(any(feature = "ntt", feature = "fourier"))]
     #[error("lookup selection requires a public NLEV lift key")]
     MissingPublicLiftKey,
@@ -93,21 +89,7 @@ pub enum LookupTableError {
     Evaluation(#[from] primus_tfhe::TfheEvaluationError),
 }
 
-/// Stable index of one full polynomial in this table's append-only pool.
-/// Logical table prefixes and selection nodes use separate numbering domains.
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
-#[repr(transparent)]
-pub(crate) struct PolynomialId(usize);
-
-impl PolynomialId {
-    #[must_use]
-    fn coefficient_range(self, polynomial_length: usize) -> std::ops::Range<usize> {
-        let first = self.0 * polynomial_length;
-        first..first + polynomial_length
-    }
-}
-
-/// Validated logical geometry, independent of polynomial sharing or selection pruning.
+/// Validated geometry of the complete public table and its fixed selection tree.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Layout {
     /// Input/output chunk counts and the low-chunk/table-chunk partition.
@@ -117,8 +99,22 @@ pub(crate) struct Layout {
     /// Uniform chunk format derived from the input codec's t=2*M.
     pub chunk_format: ChunkFormat,
     /// Validated total unsigned input width tau*c, below usize::BITS.
+    #[cfg_attr(
+        not(any(feature = "ntt", feature = "fourier")),
+        expect(
+            dead_code,
+            reason = "Validated widths are retained for backend client adapters"
+        )
+    )]
     pub input_bits: u32,
     /// Validated total unsigned output width tau*o, which may exceed word capacity.
+    #[cfg_attr(
+        not(any(feature = "ntt", feature = "fourier")),
+        expect(
+            dead_code,
+            reason = "Validated widths are retained for backend client adapters"
+        )
+    )]
     pub output_bits: u32,
     /// Ring degree N, including each polynomial's zero-padded tail.
     pub polynomial_length: usize,
@@ -126,7 +122,7 @@ pub(crate) struct Layout {
     pub input_value_count: usize,
     /// Number K=M^d of meaningful coefficients in each polynomial.
     pub entries_per_polynomial: usize,
-    /// Logical prefix count P=M^(c-d), before any storage sharing.
+    /// Number P=M^(c-d) of stored polynomials per output chunk.
     pub polynomials_per_output: usize,
 }
 
@@ -179,7 +175,8 @@ impl Layout {
         })
     }
 
-    /// Logical high-chunk count c-d, even if all outputs bypass table selection.
+    /// Number h=c-d of selection layers; zero means one public polynomial per output.
+    #[must_use]
     pub fn table_chunk_count(self) -> usize {
         self.config.input_chunk_count - self.config.coefficient_chunk_count
     }
@@ -201,11 +198,10 @@ pub(crate) fn checked_allocation_len<T>(factors: &[usize]) -> Result<usize, Look
 /// holds K=M^d table entries: z=x mod K selects a coefficient and p=x/K
 /// selects a polynomial. Polynomial p stores `E_Q(F(p*K+z,j))` at coefficient
 /// z for output chunk j. Each polynomial has N coefficients; its unused
-/// coefficients K..N are zero. Identical polynomials share physical storage;
-/// logical `(output chunk, table prefix)` indices resolve through [`Self::polynomial`].
-/// Equal branches are collapsed and identical ordered choices share computation.
-/// Chunk identity is part of each choice; shared ciphertext errors are correlated.
-/// All exponents are nonnegative.
+/// coefficients K..N are zero. Storage is contiguous in
+/// `[output chunk][table prefix][coefficient]` order, including repeated polynomials.
+/// Every output uses the complete selection tree, regardless of table contents.
+/// All polynomial exponents are nonnegative.
 /// The evaluator selects polynomial p, rotates by X^(-z), then returns its
 /// constant coefficient at q under the external LWE secret.
 ///
@@ -215,7 +211,6 @@ pub(crate) fn checked_allocation_len<T>(factors: &[usize]) -> Result<usize, Look
 pub struct HighPrecisionLookupTable<T: FheUint> {
     pub(crate) layout: Layout,
     coefficients: Box<[T]>,
-    pub(crate) selection: SelectionPlan,
     plaintext_modulus: T,
     input_modulus: Option<T>,
     ring_modulus: Option<T>,
@@ -325,9 +320,8 @@ impl<T: FheUint> HighPrecisionLookupTable<T> {
         self.layout.input_value_count
     }
 
-    /// Returns the logical polynomial count per output chunk, P=M^(c-d).
-    /// This equals the number of high-chunk value combinations; shared storage
-    /// and pruned choices do not change this count.
+    /// Returns the stored polynomial count per output chunk, P=M^(c-d).
+    /// This equals the number of high-chunk value combinations.
     #[must_use]
     pub fn polynomials_per_output(&self) -> usize {
         self.layout.polynomials_per_output
@@ -341,31 +335,11 @@ impl<T: FheUint> HighPrecisionLookupTable<T> {
         self.layout.entries_per_polynomial
     }
 
-    /// Returns the number of physically stored polynomials, shared across all outputs.
-    #[must_use]
-    pub fn unique_polynomial_count(&self) -> usize {
-        self.coefficients.len() / self.layout.polynomial_length
-    }
-
-    /// Whether the compiled plan needs a separately bound `NLEV[1]` public lift.
-    /// Public choices already lift through their one-hot NLEV selectors. This is
-    /// true for explicit Lift nodes, including fully pruned tables and c=d.
+    /// Whether c=d, so the sole public polynomial needs a bound `NLEV[1]` lift.
+    /// When c>d, the first selection layer lifts through its full one-hot NLEV batch.
     #[must_use]
     pub fn needs_public_lift(&self) -> bool {
-        self.selection.needs_public_lift()
-    }
-
-    /// Counts all low-chunk rotations and only surviving high-chunk selector batches.
-    /// A high chunk needing both NLEV and NGSW still uses a single one-hot pass.
-    #[must_use]
-    pub(crate) fn one_hot_chunk_count(&self) -> usize {
-        self.config().coefficient_chunk_count
-            + self
-                .selection
-                .selectors
-                .iter()
-                .filter(|&&batch| batch != selection::SelectorBatches::Unused)
-                .count()
+        self.layout.table_chunk_count() == 0
     }
 
     /// Returns the encoded polynomial for one logical output chunk and high-chunk prefix.
@@ -382,39 +356,18 @@ impl<T: FheUint> HighPrecisionLookupTable<T> {
             table_prefix < self.polynomials_per_output(),
             "lookup table prefix out of range"
         );
-        let polynomial_id =
-            self.selection
-                .resolve_polynomial_id(self.layout, output_chunk, table_prefix);
-        self.polynomial_by_id(polynomial_id)
+        let n = self.layout.polynomial_length;
+        let first = (output_chunk * self.polynomials_per_output() + table_prefix) * n;
+        Polynomial::new(&self.coefficients[first..first + n])
     }
 
-    /// Borrows all N coefficients for a physical ID produced by the compiler.
-    /// Callers use retained pool IDs, not logical table-prefix indices.
-    pub(crate) fn polynomial_by_id(&self, polynomial_id: PolynomialId) -> Polynomial<&[T]> {
-        Polynomial::new(
-            &self.coefficients[polynomial_id.coefficient_range(self.layout.polynomial_length)],
-        )
-    }
-
-    /// Converts a compiled global input-chunk index to its selector batches.
-    /// Low chunks belong to rotation controls and never appear in table choices.
+    /// Borrows one output's P complete polynomials in ascending prefix order.
+    /// The evaluator supplies a valid output index from the validated request.
     #[cfg(any(feature = "ntt", feature = "fourier"))]
-    pub(crate) fn selector_batches_for_chunk(
-        &self,
-        chunk_index: usize,
-    ) -> selection::SelectorBatches {
-        self.selection.selectors[chunk_index - self.config().coefficient_chunk_count]
-    }
-
-    /// Borrows ordered public branches from compiled physical IDs, without copying.
-    #[cfg(any(feature = "ntt", feature = "fourier"))]
-    pub(crate) fn polynomials<'a>(
-        &'a self,
-        polynomial_ids: &'a [PolynomialId],
-    ) -> impl ExactSizeIterator<Item = Polynomial<&'a [T]>> {
-        polynomial_ids
-            .iter()
-            .map(|&polynomial_id| self.polynomial_by_id(polynomial_id))
+    #[must_use]
+    pub(crate) fn output_polynomials(&self, output_chunk: usize) -> &[T] {
+        let len = self.layout.polynomials_per_output * self.layout.polynomial_length;
+        &self.coefficients[output_chunk * len..(output_chunk + 1) * len]
     }
 
     /// Checks N, q and Q; the compiled program owns its chunk encoding t.

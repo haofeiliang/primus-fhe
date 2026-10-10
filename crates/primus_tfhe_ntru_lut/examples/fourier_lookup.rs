@@ -38,7 +38,7 @@ fn main() {
     let table = context.compile_fn(fee).unwrap();
 
     // Client: generate paired secrets and complete server material once.
-    // The public plan determines whether sparse BR needs an extra NLEV[1] lift.
+    // This c>d geometry lifts during the first full M-way table selection.
     let mut rng = StdRng::seed_from_u64(42);
     let (client_key, server_key) = context.try_generate_keys(&table, &mut rng).unwrap();
     let encryptor = context.encryptor(&client_key).unwrap();
