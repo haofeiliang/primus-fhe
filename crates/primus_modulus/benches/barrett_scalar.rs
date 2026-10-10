@@ -1,21 +1,75 @@
 //! Run with `cargo bench -p primus_modulus --bench barrett_scalar`.
 
-#[path = "support/scalar.rs"]
-mod scalar_support;
-mod support;
-
-use core::hint::black_box;
+use core::{hint::black_box, time::Duration};
 
 use criterion::{
     BatchSize, BenchmarkGroup, Criterion, criterion_group, criterion_main, measurement::Measurement,
 };
 use primus_modulus::BarrettModulus;
 use primus_reduce::prelude::*;
-use scalar_support::{INPUT_COUNT, MODULUS_U64, bench_binary};
-use support::{benchmark_config, inputs};
+use rand::{
+    SeedableRng,
+    distr::{Distribution, Uniform, uniform::SampleUniform},
+    rngs::StdRng,
+};
 
+const RNG_SEED: u64 = 0x6d6f_6475_6c75_735f;
 const MODULUS_U32: u32 = 1_073_692_673;
+const MODULUS_U64: u64 = 1_125_899_906_826_241;
+const INPUT_COUNT: usize = 1_024;
 
+/// Paired canonical operands, sampled once and reused by each implementation.
+struct Inputs<T> {
+    lhs: Vec<T>,
+    rhs: Vec<T>,
+}
+
+/// Keep the corpus determined by modulus and length, with lhs sampled before rhs.
+/// Canonical residues also satisfy the corresponding lazy-operation input bounds.
+fn inputs<T>(modulus: T, len: usize) -> Inputs<T>
+where
+    T: Copy + Default + Into<u64> + SampleUniform,
+{
+    let mut rng = StdRng::seed_from_u64(RNG_SEED ^ modulus.into() ^ len as u64);
+    let distribution = Uniform::new(T::default(), modulus).unwrap();
+    Inputs {
+        lhs: (&distribution).sample_iter(&mut rng).take(len).collect(),
+        rhs: (&distribution).sample_iter(&mut rng).take(len).collect(),
+    }
+}
+
+/// Cycle through prepared operand pairs outside timing; each measured call
+/// performs exactly one scalar operation, with Criterion batching its setup.
+fn bench_binary<T, M>(
+    group: &mut BenchmarkGroup<'_, impl Measurement>,
+    name: &str,
+    lhs: &[T],
+    rhs: &[T],
+    modulus: M,
+    operation: impl Fn(M, T, T) -> T,
+) where
+    T: Copy,
+    M: Copy,
+{
+    assert_eq!(lhs.len(), rhs.len(), "scalar benchmark length mismatch");
+    assert!(!lhs.is_empty(), "scalar benchmark inputs must be non-empty");
+
+    let mut inputs = lhs.iter().copied().zip(rhs.iter().copied()).cycle();
+    group.bench_function(name, |b| {
+        let modulus = black_box(modulus);
+        b.iter_batched(
+            || {
+                inputs
+                    .next()
+                    .expect("scalar benchmark inputs must be non-empty")
+            },
+            |(lhs, rhs)| black_box(operation(modulus, black_box(lhs), black_box(rhs))),
+            BatchSize::SmallInput,
+        )
+    });
+}
+
+/// Select a prepared word or limb array outside timing, then measure one reduction.
 fn bench_unary<T, M, R>(
     group: &mut BenchmarkGroup<'_, impl Measurement>,
     name: &str,
@@ -177,7 +231,9 @@ fn bench_barrett_scalar(c: &mut Criterion) {
 
 criterion_group! {
     name = benches;
-    config = benchmark_config();
+    config = Criterion::default().sample_size(30)
+        .warm_up_time(Duration::from_millis(500))
+        .measurement_time(Duration::from_secs(2));
     targets = bench_barrett_scalar
 }
 criterion_main!(benches);

@@ -3,6 +3,14 @@
 > [!WARNING]
 > Part of the experimental [Primus FHE](../../../README.md) workspace; APIs and numerical contracts may change incompatibly.
 
+Each benchmark file owns its constants, input preparation and timing helpers;
+there is no shared `support` module. The four scalar/slice comparison targets
+below use the same seed rule (`0x6d6f_6475_6c75_735f ^ modulus ^ length`), sampling
+lhs before rhs. Scalar cases select one prepared operand or pair outside timing;
+slice cases reuse preallocated output. Their default Criterion settings are
+30 samples, 500 ms warm-up and 2 seconds of measurement, with local overrides
+for the named PBS/pointwise groups in `barrett_slice`.
+
 - `scalar_moduli`: single-value arithmetic across modulus implementations.
 - `barrett_scalar`: canonical/lazy Barrett multiplication and reduction.
 - `slice_moduli`: existing Compact/Uint add/sub and Native/PowOf2 add, elementwise multiplication, and dot products.
