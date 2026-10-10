@@ -6,7 +6,7 @@
 //! Arithmetic profiles: guides/development/tfhe-parameters.md (not security presets).
 
 use primus_fft::RustFftTable as Table;
-use primus_tfhe_glwe_fourier::{FactorizedEvaluator, TfheContext, experimental};
+use primus_tfhe_glwe_fourier::{TfheContext, experimental};
 use rand::{SeedableRng, rngs::StdRng};
 
 // The paired experimental entry fixes u64 coefficients and the operation domains.
@@ -38,8 +38,7 @@ fn main() {
             Word::from(score >= thresholds[i])
         })
         .unwrap();
-    let mut pbs = context.evaluator(&server_key).unwrap();
-    let mut evaluator = FactorizedEvaluator::new(&pbs);
+    let mut evaluator = context.mvb_evaluator(&server_key).unwrap();
     let mut outputs = vec![context.allocate_lwe_ciphertext(); OUTPUTS];
 
     for score in [12, 45] {
@@ -49,7 +48,7 @@ fn main() {
             .unwrap();
 
         // Server -> client: return one ciphertext per threshold, reusing all buffers.
-        evaluator.apply_lookup_table_to(input.as_view(), &program, &mut outputs, &mut pbs);
+        evaluator.apply_lookup_table_to(input.as_view(), &program, &mut outputs);
 
         // Client: decrypt with the agreed Scaled output codec.
         for (i, output) in outputs.iter().enumerate() {

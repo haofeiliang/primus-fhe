@@ -35,7 +35,7 @@
 //! [`Evaluator`] owns common [`BootstrapResources`] and client-return buffers.
 //! Default [`CbsEvaluator`] / [`OneHotEvaluator`] own common BR resources;
 //! low-level CBS/one-hot state borrows them per call. [`FactorizedEvaluator`]
-//! borrows PBS for each request, retaining only its extra NTT polynomial. Low-level state alternates without ownership conversion.
+//! owns PBS and one extra NTT polynomial, borrowing the same context and keys.
 //! Standalone CBS/one-hot can use resources without allocating return buffers.
 //! [`LweReturnEvaluator`] supports independent coefficient-domain returns.
 //!

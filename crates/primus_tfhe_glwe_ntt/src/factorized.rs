@@ -8,7 +8,7 @@ use primus_poly::{NttPolynomialIter, PolynomialIterMut, PolynomialOwned};
 use primus_reduce::Modulus;
 use primus_tfhe::FactorizedLookupTable;
 
-use crate::{Evaluator, LookupTableError, Lwe, TfheContext};
+use crate::{Evaluator, LookupTableError, Lwe, ServerKey, TfheContext, TfheEvaluationError};
 
 /// A factorized MVB program prepared for one borrowed NTT context.
 ///
@@ -92,13 +92,13 @@ where
 /// External secrets and dimensions are the same as for [`Evaluator`].
 /// Only one extra full GLWE in NTT form is allocated beyond the ordinary
 /// evaluator's workspace, independently of the number of outputs.
-/// The caller retains PBS ownership and lends it only during each request.
+/// Owns the ordinary evaluator, while borrowing its context and key material.
 pub struct FactorizedEvaluator<'a, T, Table>
 where
     T: FheUint,
     Table: MonomialNttTable<ValueT = T>,
 {
-    context: &'a TfheContext<T, Table>,
+    pbs: Evaluator<'a, T, Table>,
     shared_rotation: NttGlweCiphertext<Vec<T>>,
 }
 
@@ -107,14 +107,15 @@ where
     T: FheUint,
     Table: MonomialNttTable<ValueT = T>,
 {
-    /// Allocates one NTT GLWE for the shared rotation. Common input/BR and return
-    /// resources stay in PBS and are borrowed per request. Supports classic/sparse
-    /// keys and both orders; inherits [`Evaluator::try_new`]'s material requirements.
+    /// Takes ownership of a prepared PBS evaluator and allocates one NTT GLWE
+    /// for the shared rotation. Its existing input/BR and return buffers are
+    /// moved without copying key material or preparing them again. Supports
+    /// classic/sparse keys and both orders.
     #[must_use]
-    pub fn new(evaluator: &Evaluator<'a, T, Table>) -> Self {
+    pub fn new(evaluator: Evaluator<'a, T, Table>) -> Self {
         let context = evaluator.resources.context;
         Self {
-            context,
+            pbs: evaluator,
             shared_rotation: NttGlweCiphertext::zero(
                 context.parameters().blind_rotation_params().glwe_len(),
             ),
@@ -130,14 +131,13 @@ where
         &mut self,
         input: Lwe<&[T]>,
         lookup_table: &NttFactorizedLookupTable<'_, T, Table>,
-        evaluator: &mut Evaluator<'a, T, Table>,
     ) -> Vec<LweCiphertext<T>> {
-        let context = self.context;
+        let context = self.pbs.resources.context;
         let dimension = context.parameters().external_lwe_dimension();
         let mut outputs = (0..lookup_table.output_count())
             .map(|_| LweCiphertext::zero(dimension.get()))
             .collect::<Vec<_>>();
-        self.apply_lookup_table_to(input, lookup_table, &mut outputs, evaluator);
+        self.apply_lookup_table_to(input, lookup_table, &mut outputs);
         outputs
     }
 
@@ -160,15 +160,13 @@ where
     /// Panics before any output write unless the program was prepared by the
     /// same context instance, input and all outputs have the external LWE
     /// dimension, and the output slice has exactly the program's output count.
-    /// The borrowed evaluator must use the context selected at construction.
     pub fn apply_lookup_table_to(
         &mut self,
         input: Lwe<&[T]>,
         lookup_table: &NttFactorizedLookupTable<'_, T, Table>,
         outputs: &mut [LweCiphertext<T>],
-        evaluator: &mut Evaluator<'a, T, Table>,
     ) {
-        evaluator.resources.check_context(self.context);
+        let evaluator = &mut self.pbs;
         assert!(
             core::ptr::eq(evaluator.resources.context, lookup_table.context),
             "MVB program was prepared by a different context"
@@ -222,6 +220,18 @@ where
     T: FheUint,
     Table: MonomialNttTable<ValueT = T>,
 {
+    /// Creates an MVB evaluator owning its PBS and factor-product workspaces.
+    ///
+    /// Checks key compatibility once through [`Self::evaluator`]. Context and
+    /// key material remain borrowed; online evaluation reuses every buffer.
+    /// Inherits [`Evaluator::try_new`]'s material requirements.
+    pub fn mvb_evaluator<'a>(
+        &'a self,
+        server_key: &'a ServerKey<T>,
+    ) -> Result<FactorizedEvaluator<'a, T, Table>, TfheEvaluationError> {
+        self.evaluator(server_key).map(FactorizedEvaluator::new)
+    }
+
     /// Compiles a factorized MVB program using the configured message domains.
     ///
     /// Uses Rounded input and Scaled output, including the returned external-q

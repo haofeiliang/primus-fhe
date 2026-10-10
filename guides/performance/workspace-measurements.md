@@ -8,6 +8,60 @@ traffic, live peak, code size and latency are different metrics; a smaller buffe
 or fewer allocations alone do not prove faster evaluation. The original tables,
 regressions and rechecks remain below, with their own parameters and toolchains.
 
+## MVB owning PBS state, 2026-10-10
+
+Compared `aba0b657` with the implementation where `FactorizedEvaluator` owns
+its prepared PBS evaluator. Four crate-local threshold examples use
+`context.mvb_evaluator(&server_key)`; advanced bindings move existing state into
+`FactorizedEvaluator::new(pbs)`. Context and keys remain borrowed. The numerical
+pipeline, factor storage, GLWE PBS orders and NTRU return tiles are unchanged.
+
+Temporary external Criterion consumers used the four backends'
+`experimental::CLASSIC_THRESHOLD_MVB_U64`: u64, n728/h32/N1024, Rounded t_in=128,
+Scaled t_out=2, D64/k17, seed 42. GLWE used KS→BR; NTT used Q50, Fourier RustFFT
+used Native, and NTRU returned to q24. One iteration measured one complete
+17-output MVB at score 63. Context, keys, program, encryption, evaluator and
+outputs were outside timing; decryption checked the results before sampling.
+AMD Ryzen 9 9955HX3D, rustc 1.98.1, release, repository compiler flags,
+default features plus `rustfft`, no Cargo `simd` feature. Criterion used 30
+samples, 1 s warmup and a 3 s measurement target, extended when necessary.
+Adjacent old/new executable runs were pinned to each listed CPU independently.
+
+| Backend | CPU 4 before → after | CPU 8 before → after |
+| --- | --- | --- |
+| GLWE NTT | 12.638 → 12.651 ms | 12.611 → 12.559 ms |
+| GLWE RustFFT | 16.304 → 15.317 ms | 15.828 → 15.019 ms |
+| NTRU NTT | 14.320 → 14.316 ms | 16.094 → 16.043 ms |
+| NTRU RustFFT | 14.422 → 14.346 ms | 16.219 → 16.167 ms |
+
+These are Criterion point estimates. Three backends showed no statistically
+detected change in these paired runs; GLWE RustFFT was lower on both CPUs.
+The decision retains the simpler ownership and observed absence of regression;
+it does not establish a general algorithmic speedup or sparse/BK performance.
+
+Constructor accounting covered retained evaluator buffers only, excluding keys,
+context, program, outputs and allocator overhead. Before measured PBS plus MVB;
+after measured the owning MVB factory. Heap and allocation counts were identical:
+
+| Backend | Allocations | Retained requested heap | Inline state before → after |
+| --- | --- | --- | --- |
+| GLWE NTT | 13 | 138952 bytes | 584 → 576 bytes |
+| GLWE RustFFT | 16 | 163528 bytes | 608 → 600 bytes |
+| NTRU NTT | 12 | 227976 bytes | 368 → 360 bytes |
+| NTRU RustFFT | 15 | 268936 bytes | 432 → 424 bytes |
+
+The redundant context reference is gone; no scratch was duplicated. Temporary
+diagnostics checked zero online allocations from the first request, including
+classic/sparse and both GLWE orders. They were removed after validation.
+
+To repeat, use the named experimental configs and `compile_mvb_fn(64, 17, ...)`
+with thresholds `i*64/18`, i=1..17, then time only `apply_lookup_table_to` with
+preallocated outputs. At `aba0b657`, prepare `pbs`, call
+`FactorizedEvaluator::new(&pbs)` and pass `&mut pbs` per request. With the owning
+API, use the context factory and omit that argument. Compare separate release
+executables on the same CPU; existing mutable state remains outside `b.iter`.
+Backend-local permanent MVB benches will be rebuilt after the API cleanup.
+
 ## RNS key-set preparation, 2026-10-10
 
 Compared with `2fa5863d`, on AMD Ryzen 9 9955HX3D, x86_64 Linux,

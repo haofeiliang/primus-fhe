@@ -208,7 +208,7 @@ NTRU 的 BR、返回和 CBS 材料可分别生成和持有：`KeyGenerator::try_
 | `Evaluator::try_from_parts` | BR + return | BR layout/distribution/basis、返回 N/Q/q/n/basis |
 | CBS / one-hot `try_new` | 公共资源 + CBS | 累加 N/Q、CBS 完整 basis 及输入 codec/容量；无返回约束 |
 | 高精 LUT `try_from_parts` | BR + return + CBS + 按需 public lift | 上述材料、编译表的 N/Q/q/编码及独立提升 NLEV 的 N/Q/长度 |
-| Factorized MVB `new(&pbs)` | 已绑定 classic/sparse PBS | 构造仅分配额外变换缓冲；求值前检查 context 与程序、输入输出形状 |
+| Factorized MVB `new(pbs)` | 移入已绑定 classic/sparse PBS；密钥继续借用 | 构造仅分配额外变换缓冲；求值前检查程序/context 身份和输入输出形状 |
 
 BR 不依赖返回 basis；位控制也不绑定外部 q。外部模数由输入程序和返回材料绑定。独立 BR/CBS 生成不检查 f 在返回 q 下的幅度界，完整 PBS/CBS 及返回密钥生成保留该要求。各入口建立不变量；在线只选择已绑定的返回路径，不扫描秘密或重新验证配置。相同布局/模数不能证明独立材料的实际秘密身份。
 
@@ -227,7 +227,7 @@ GLWE 复用已有独立 `BlindRotationKey::{Classic,Sparse}` 和底层环 KS own
 | `Evaluator::try_from_parts` | BR + 环 KS | BR 输入分布/维数、N/q/basis，以及 KS 输入/输出布局与 basis/q |
 | `BootstrapResources::try_new` | BR + 按顺序选择的 input KS | KS→BR 必需输入 KS；BR→KS 可省略；在分配前检查材料 |
 | CBS `try_new` / `try_with_parameters` | 公共资源 + CBS；后者显式提供替代 output parameters | 参数/key/layout、input codec/ManyLUT 容量 |
-| MVB `new(&pbs)` | 已绑定 PBS | 保留已有 classic/sparse 与两种顺序支持 |
+| MVB `new(pbs)` | 移入已绑定 PBS；密钥继续借用 | 保留已有 classic/sparse 与两种顺序支持 |
 
 所有 GLWE 绑定均支持 classic binary/ternary 和 sparse fixed-weight binary。BR 与环 KS 不兼容分别返回 `IncompatibleBlindRotationKey` 和 `IncompatibleGlweKeySwitchingKey`，不再用笼统的 `IncompatibleServerKey`。NTT KS basis 包含模数；Fourier 固定 Native。材料元数据不证明实际秘密或变换身份。
 
@@ -247,9 +247,11 @@ GLWE 复用已有独立 `BlindRotationKey::{Classic,Sparse}` 和底层环 KS own
 
 四后端各自的公共 `BootstrapResources` 绑定 input 准备、所选 BR key/scratch、系数 accumulator 与 Fourier FFT engine。GLWE KS→BR 保留输入 KS，BR→KS 直接使用外部 input。Context/key/table 的 owner 由调用方保留，common resources 拥有缓冲；Fourier engine 借用该 context 的 FFT table。串行操作短借用同一 common，多个并发请求使用各自的可变资源。普通 `Evaluator` 组合完整返回阶段：GLWE BR→KS 的输出 KS、KS→BR 的直接提取，或 NTRU 返回对象；必需资源不再是可能缺失的 `Option`。
 
-NTRU 两后端将公共 BR/外积资源放入各自的 `BootstrapResources`，Fourier 还在其中绑定同一个 FFT engine。普通 `Evaluator` 拥有公共资源与返回缓冲；底层 CBS/one-hot 只持 LUT/投影状态，MVB 持额外变换域多项式。执行时短借用资源或 PBS，在借用边界检查同一 context；准备状态不缓存 BR 控制，实际秘密配对的 classic/sparse 资源可以互换，检查不证明独立材料的秘密身份。LUT 独立拥有公共资源、one-hot 状态与返回缓冲：NTT 仅 scalar，Fourier 仅 batch。没有 evaluator 嵌套或恢复协议；Fourier 因子保持整数变换，gadget 保持 torus 变换，streamed tile 顺序不变。
+NTRU 两后端将公共 BR/外积资源放入各自的 `BootstrapResources`，Fourier 还在其中绑定同一个 FFT engine。普通 `Evaluator` 拥有公共资源与返回缓冲；底层 CBS/one-hot 只持 LUT/投影状态，执行时短借用公共资源并检查同一 context。该状态不缓存 BR 控制，实际秘密配对的 classic/sparse 资源可以互换，检查不证明独立材料的秘密身份。MVB 拥有 PBS 状态和额外变换域多项式，保留 PBS 已绑定的 context/密钥和已有批量返回。LUT 独立拥有公共资源、one-hot 状态与返回缓冲：NTT 仅 scalar，Fourier 仅 batch。Fourier 因子保持整数变换，gadget 保持 torus 变换，streamed tile 顺序不变。
 
-GLWE 两后端的普通 PBS 拥有公共资源和完整返回阶段，底层 CBS 只保存 LUT/投影，MVB 保存额外变换域 GLWE（Fourier 另有一个多项式乘积缓冲），执行时短借用。GLWE 操作状态不缓存 BR 控制，借用边界只检查同一 context；各公共资源已绑定合法 classic/sparse 材料，实际秘密仍由调用方配对。`try_from_resources(resources, ks)` 只在 BR→KS 分配输出 KS，KS→BR 复用输入 KS；`try_rebind_key_switching_key` 检查后零分配换绑。外积 `with_rebound` 保留 GLWE 几何并临时切换 level 布局，返回或 unwind 后恢复；没有将 NTRU 布局假设套入 GLWE。
+GLWE 两后端的普通 PBS 拥有公共资源和完整返回阶段；底层 CBS 只保存 LUT/投影，执行时短借用公共资源并检查同一 context。MVB 拥有 PBS 状态和额外变换域 GLWE（Fourier 另有一个多项式乘积缓冲），两种顺序的输入 KS/输出返回路径不变。各公共资源已绑定合法 classic/sparse 材料，实际秘密仍由调用方配对。`try_from_resources(resources, ks)` 只在 BR→KS 分配输出 KS，KS→BR 复用输入 KS；`try_rebind_key_switching_key` 检查后零分配换绑。外积 `with_rebound` 保留 GLWE 几何并临时切换 level 布局，返回或 unwind 后恢复；没有将 NTRU 布局假设套入 GLWE。
+
+四后端的推荐 MVB 入口为 `context.mvb_evaluator(&server_key)`，返回已有 `FactorizedEvaluator`。它通过普通 evaluator 工厂检查材料一次，再移入已准备的状态；在线 `apply_lookup_table_to(input, program, outputs)` 不再接收另一个 evaluator。独立材料可先绑定为 `Evaluator`，再传入 `FactorizedEvaluator::new(pbs)`。Context/密钥仍借用，缓冲不复制、不按请求重新分配；程序/context 身份和全部输入输出形状仍在写入前检查。
 
 GLWE Fourier 的公共资源保存唯一 FFT engine，KS、BR、trace、scheme switch、CMux 与 MVB 串行复用。Factor 保持整数变换，gadget/GLWE 保持 torus 变换，native trace halving 的舍入契约不变；没有独立 evaluator 的 FFT plan 复制或隐式创建。普通 PBS 仍通过 context 的便捷工厂创建，调用方不需要知道内部工作区布局。详见[资源组合表](workspaces-and-storage.md#glwe-resource-ownership)。
 

@@ -156,9 +156,9 @@ CMux 要求完整输入域上的 F 为 0 或 1；输入本身可以不是 bit。
 
 Context 保存不可变参数和变换表，ServerKey 保存求值材料；Evaluator 持有可变工作区。 编译后的 LUT/程序可以长期保留，多次调用 `_to` 写入预分配输出。
 
-NTRU 两后端使用短借用组合：普通 PBS 拥有公共 BR/EP（Fourier 含 FFT）和返回缓冲，CBS/one-hot 只准备 LUT/投影状态。构造用 `try_new(pbs.bootstrap_resources(), circuit_key, &input_codec)`，执行时最后一个参数传 `pbs.bootstrap_resources_mut()`。Factorized MVB 用 `FactorizedEvaluator::new(&pbs)` 构造，执行时传 `&mut pbs`。仅需 CBS 时可用 `context.bootstrap_resources(br)` 独立准备公共资源。完整用法见 [NTT 资源复用](../primus_tfhe_ntru_ntt/README.zh_CN.md#复用-evaluator)与 [Fourier 资源复用](../primus_tfhe_ntru_fourier/README.zh_CN.md#复用-evaluator)。
+NTRU 两后端使用短借用组合：普通 PBS 拥有公共 BR/EP（Fourier 含 FFT）和返回缓冲，CBS/one-hot 只准备 LUT/投影状态。构造用 `try_new(pbs.bootstrap_resources(), circuit_key, &input_codec)`，执行时最后一个参数传 `pbs.bootstrap_resources_mut()`。Factorized MVB 用 `context.mvb_evaluator(&server_key)` 构造并拥有 PBS 状态，每次请求只传输入、程序和输出。高级组合将已准备的 PBS evaluator 移入 `FactorizedEvaluator::new(pbs)`。仅需 CBS 时可用 `context.bootstrap_resources(br)` 独立准备公共资源。完整用法见 [NTT 资源复用](../primus_tfhe_ntru_ntt/README.zh_CN.md#复用-evaluator)与 [Fourier 资源复用](../primus_tfhe_ntru_fourier/README.zh_CN.md#复用-evaluator)。
 
-GLWE 两后端同样使用短借用。独立 CBS 可用 `context.bootstrap_resources_from_server_key(&server)` 准备资源，由工厂选择所需输入 KS；替代输出 basis 使用 `CircuitBootstrapEvaluator::try_with_parameters`。MVB 用无错误返回的 `FactorizedEvaluator::new(&pbs)`，支持 classic 和 sparse。公共资源在 KS→BR 时保留输入 KS；独立 BR→KS 不分配输出 KS。Fourier 整个流程复用同一 FFT engine。见 [GLWE NTT 资源复用](../primus_tfhe_glwe_ntt/README.zh_CN.md#复用-evaluator)与 [GLWE Fourier 资源复用](../primus_tfhe_glwe_fourier/README.zh_CN.md#复用-evaluator)。
+GLWE 两后端同样使用短借用。独立 CBS 可用 `context.bootstrap_resources_from_server_key(&server)` 准备资源，由工厂选择所需输入 KS；替代输出 basis 使用 `CircuitBootstrapEvaluator::try_with_parameters`。MVB 用 `context.mvb_evaluator(&server_key)` 构造并拥有 PBS 状态，支持 classic、sparse 和两种 PBS 顺序。公共资源在 KS→BR 时保留输入 KS；独立 BR→KS 不分配输出 KS。Fourier 整个流程复用同一 FFT engine。见 [GLWE NTT 资源复用](../primus_tfhe_glwe_ntt/README.zh_CN.md#复用-evaluator)与 [GLWE Fourier 资源复用](../primus_tfhe_glwe_fourier/README.zh_CN.md#复用-evaluator)。
 
 所有后端均在构造时准备存储，在线 `_to` 操作不隐式分配。Boolean 的 `try_new` 接受 PBS 所有权，`into_bootstrapper` 可回收。
 

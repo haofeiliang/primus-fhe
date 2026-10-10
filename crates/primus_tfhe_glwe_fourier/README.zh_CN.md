@@ -70,7 +70,7 @@ Fourier 环只支持 `NativeModulus`；`PowOf2Modulus` 环不受支持。
 
 ## 复用 evaluator
 
-普通/交错 `Evaluator` 拥有公共 `BootstrapResources` 与返回阶段。默认 `CbsEvaluator` 组合 CBS 程序、投影缓冲和所需输入/BR 资源；独立 `CircuitBootstrapEvaluator` 执行时短借用 `pbs.bootstrap_resources_mut()`。MVB 用 `FactorizedEvaluator::new(&pbs)` 构造，每次执行传入 `&mut pbs`。串行操作可复用同一资源实例。
+普通/交错 `Evaluator` 拥有公共 `BootstrapResources` 与返回阶段。默认 `CbsEvaluator` 组合 CBS 程序、投影缓冲和所需输入/BR 资源；独立 `CircuitBootstrapEvaluator` 执行时短借用 `pbs.bootstrap_resources_mut()`。MVB 用 `context.mvb_evaluator(&server_key)` 构造并拥有 PBS 状态；在线调用只传输入、程序和输出。高级组合可将已准备的 PBS evaluator 移入 `FactorizedEvaluator::new(pbs)`，不复制密钥或缓冲。
 
 `Resources` 将借用的 context/计算材料与拥有的复用缓冲组合起来，不拥有或复制密钥。`Workspace` 表示缓冲及形状元数据，包括底层 BR/外积 scratch。`Evaluator` 使用自己拥有或短借用的资源执行具体流程。借用期间须保留 context/key 的 owner；串行操作可共享一个可变资源实例，并发请求需要独立的可变资源。资源拥有 FFT engine，而 engine 借用 context 的表；更换资源 owner 时仍须保持表身份。
 
@@ -88,11 +88,11 @@ let mut cbs = context.circuit_bootstrap_evaluator(&server)?;
 
 独立生成材料时，使用 `context.bootstrap_resources(br, input_ks)`：BR→KS 可传 `None`，KS→BR 必须传 `Some((ks_parameters, ks))`；独立 CBS 不要求普通返回密钥。`Evaluator::try_from_parts(context, parameters.glwe_key_switching(), br, ks)` 绑定完整 PBS/ManyLUT。两种入口均支持 classic/sparse。布局、basis 和模数检查不证明实际秘密或变换身份。
 
-`Evaluator::try_from_resources(resources, parameters.glwe_key_switching(), ks)` 组合普通 PBS，只有 BR→KS 需要分配缺少的输出阶段。`try_rebind_key_switching_key(ks)` 用兼容材料复用活跃 KS 阶段的缓冲，失败保留旧绑定。CBS/MVB 接受同一 context 创建的任意资源实例，在写入前检查；调用方仍须配对秘密，可变资源借用必须保留所属 PBS 的绑定和 FFT table 实例。
+`Evaluator::try_from_resources(resources, parameters.glwe_key_switching(), ks)` 组合普通 PBS，只有 BR→KS 需要分配缺少的输出阶段。`try_rebind_key_switching_key(ks)` 用兼容材料复用活跃 KS 阶段的缓冲，失败保留旧绑定。CBS 接受同一 context 创建的任意资源实例，在写入前检查；MVB 保留其拥有的 PBS evaluator 的 context 和密钥绑定。调用方仍须配对秘密，可变资源借用必须保留所属 PBS 的绑定和 FFT table 实例。
 
 ## 固定尺度分解式 MVB
 
-用 `context.compile_mvb_fn(domain_len, output_count, function)` 编译并绑定 `FactorizedEvaluator`。输入沿用 `encryptor`，unsigned Scaled 输出用 `context.mvb_decryptor(external_secret)` 解密，两者均读取配置的消息域。同一密钥配合其他输出域时，为编译和 `parameters.decryptor_with_codec` 共同复用 `parameters.factorized_pbs_codecs(messages)`；编译程序不会改变已有解密器。程序仍绑定该 context。LUT 和返回 LWE 使用同一密文模数。高级组合使用家族的 `parameters.compile_factorized_lookup_table_fn(&codecs, ...)` 编译原始程序，再交给本后端的 `FourierFactorizedLookupTable::new(&context, raw)`；同钥消息域覆盖可用 `context.compile_mvb_fn_with_messages`。
+用 `context.compile_mvb_fn(domain_len, output_count, function)` 编译，再通过 `context.mvb_evaluator(&server_key)` 构造求值器。在线调用 `mvb.apply_lookup_table_to(input.as_view(), &program, &mut outputs)` 复用其拥有的工作区。输入沿用 `encryptor`，unsigned Scaled 输出用 `context.mvb_decryptor(external_secret)` 解密，两者均读取配置的消息域。同一密钥配合其他输出域时，为编译和 `parameters.decryptor_with_codec` 共同复用 `parameters.factorized_pbs_codecs(messages)`；编译程序不会改变已有解密器。程序仍绑定该 context。LUT 和返回 LWE 使用同一密文模数。高级组合使用家族的 `parameters.compile_factorized_lookup_table_fn(&codecs, ...)` 编译原始程序，再交给本后端的 `FourierFactorizedLookupTable::new(&context, raw)`；同钥消息域覆盖可用 `context.compile_mvb_fn_with_messages`。
 
 实际尺度 `round(2^BITS/t_out)` 必须为偶数，`t_out=10` 对 u32/u64 均可用。 奇数尺度返回 `LookupTableError::OddFactorizationScale`。因子按有符号整数变换，不作环面缩放； 须预算因子放大和 FFT 误差。
 

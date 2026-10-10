@@ -35,7 +35,7 @@
 //! [`Evaluator`] owns common [`BootstrapResources`] and the ordinary return stage.
 //! Default [`CbsEvaluator`] owns its input/BR resources; low-level
 //! [`CircuitBootstrapEvaluator`] borrows common resources per call.
-//! MVB borrows the complete PBS evaluator.
+//! [`FactorizedEvaluator`] owns a complete PBS evaluator and its factor workspace.
 //! Standalone resources include input KS for KS→BR, but no output KS for BR→KS.
 //! The specialized constructors document their allocation and borrowing contracts.
 //!

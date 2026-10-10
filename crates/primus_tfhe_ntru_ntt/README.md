@@ -79,7 +79,7 @@ NTT tables must implement `MonomialNttTable`; built-in tables support it. Contex
 
 ## Reusing evaluators
 
-Ordinary/interleaved `Evaluator` owns common `BootstrapResources` and scalar/batch return buffers. Default `CbsEvaluator` / `OneHotEvaluator` own their program, projection buffers and common resources without return scratch. Independent `CircuitBootstrapEvaluator` / `OneHotCircuitBootstrapEvaluator` briefly borrow `pbs.bootstrap_resources_mut()` per call. MVB uses `FactorizedEvaluator::new(&pbs)` and borrows `&mut pbs` per request. Online `_to` calls reuse all buffers; independent resources must pair actual secrets and the same transform representation.
+Ordinary/interleaved `Evaluator` owns common `BootstrapResources` and scalar/batch return buffers. Default `CbsEvaluator` / `OneHotEvaluator` own their program, projection buffers and common resources without return scratch. Independent `CircuitBootstrapEvaluator` / `OneHotCircuitBootstrapEvaluator` briefly borrow `pbs.bootstrap_resources_mut()` per call. MVB uses `context.mvb_evaluator(&server_key)` and owns its PBS state; online calls need only the input, program and outputs. Advanced bindings can move a prepared PBS evaluator into `FactorizedEvaluator::new(pbs)` without copying keys or buffers. Online `_to` calls reuse all buffers; independent resources must pair actual secrets and the same transform representation.
 
 `Resources` groups borrowed context/evaluation material with owned reusable buffers; it does not own or copy the keys. `Workspace` denotes buffer storage and shape metadata, including lower-level BR/EP scratch. `Evaluator` executes a specific workflow using owned or briefly borrowed resources. Keep the context/key owners alive; serial operations can share one mutable resource instance, while concurrent requests need separate mutable resources. The context owns the NTT table; key views and products must preserve its representation.
 
@@ -87,7 +87,7 @@ Use `cbs.into_parts()` or `one_hot.into_parts()` to move out operation state and
 
 ## Fixed-scale factorized MVB
 
-Compile with `context.compile_mvb_fn(domain_len, output_count, function)` and bind a `FactorizedEvaluator`. The input uses the same `encryptor`; decode the unsigned Scaled output with `context.mvb_decryptor(external_secret)`. Both use the configured message domains. For another output domain with the same keys, reuse `parameters.factorized_pbs_codecs(messages)` for compilation and `parameters.decryptor_with_codec`; compiling a program does not change an existing decoder. The program remains bound to this context. LUT encoding is at Q, output decoding at q; budget the difference between `(q/Q)*round(Q/t_out)` and `round(q/t_out)`, plus return noise. Advanced composition uses `parameters.compile_factorized_lookup_table_fn(&codecs, ...)` followed by `NttFactorizedLookupTable::new(&context, raw)`; same-key message overrides use `context.compile_mvb_fn_with_messages`.
+Compile with `context.compile_mvb_fn(domain_len, output_count, function)` and create `context.mvb_evaluator(&server_key)`. Call `mvb.apply_lookup_table_to(input.as_view(), &program, &mut outputs)` to reuse the owned workspace. The input uses the same `encryptor`; decode the unsigned Scaled output with `context.mvb_decryptor(external_secret)`. Both use the configured message domains. For another output domain with the same keys, reuse `parameters.factorized_pbs_codecs(messages)` for compilation and `parameters.decryptor_with_codec`; compiling a program does not change an existing decoder. The program remains bound to this context. LUT encoding is at Q, output decoding at q; budget the difference between `(q/Q)*round(Q/t_out)` and `round(q/t_out)`, plus return noise. Advanced composition uses `parameters.compile_factorized_lookup_table_fn(&codecs, ...)` followed by `NttFactorizedLookupTable::new(&context, raw)`; same-key message overrides use `context.compile_mvb_fn_with_messages`.
 
 The coefficient modulus must be odd. Factors stay in NTT form after preparation.
 
@@ -110,7 +110,7 @@ let (client, server) = context.try_generate_keys(&mut rng)?;
 let mut evaluator = context.evaluator(&server)?;
 ```
 
-Ordinary/interleaved PBS use the same evaluator; factorized MVB borrows it per call. `try_generate_circuit_bootstrap_keys` generates CBS/one-hot material while sharing the accumulator transform with BR. For ring-only operations, construct the context from a sparse `CbsConfig` and call `try_generate_circuit_bootstrap_keys`. `server.server_key().blind_rotation_key().sparse_blind_rotation_key()` exposes selectors.
+Ordinary/interleaved PBS use the same evaluator; factorized MVB owns its PBS state, including the existing batched return buffers. `try_generate_circuit_bootstrap_keys` generates CBS/one-hot material while sharing the accumulator transform with BR. For ring-only operations, construct the context from a sparse `CbsConfig` and call `try_generate_circuit_bootstrap_keys`. `server.server_key().blind_rotation_key().sparse_blind_rotation_key()` exposes selectors.
 
 ## Optional circuit bootstrapping
 

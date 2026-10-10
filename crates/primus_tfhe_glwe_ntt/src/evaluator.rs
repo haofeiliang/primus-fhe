@@ -16,7 +16,7 @@ use crate::{
 
 /// Reusable NTT programmable bootstrap with common resources and a complete return stage.
 /// BR→KS owns output KS; KS→BR uses the common input KS and extracts directly.
-/// CBS borrows common resources and MVB borrows this evaluator for each request.
+/// CBS borrows common resources; MVB takes ownership of this evaluator.
 pub struct Evaluator<'a, T, Table>
 where
     T: FheUint,

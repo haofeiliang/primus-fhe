@@ -81,11 +81,12 @@ NTT/Fourier PBS evaluators retain this workspace alongside the small scalar
 return workspace. Interleaved ManyLUT shares the conversion across outputs,
 including sparse PBS; ordinary and single-output interleaved PBS keep the direct
 path. At N1024/n728, the extra requested heap is 60,224 bytes for u32 or 120,448
-bytes for u64, excluding object/allocator overhead. Both NTRU backends lend these resources to CBS/MVB per call. Standalone CBS/one-hot omits ordinary-return buffers and allocates them only when explicitly
+bytes for u64, excluding object/allocator overhead. MVB retains these buffers
+in its owned PBS state; CBS/one-hot borrows only the common BR/EP resources.
+Standalone CBS/one-hot omits ordinary-return buffers and allocates them only when explicitly
 combined with a complete PBS; see the ownership table below.
 The [return benchmark](../../crates/primus_ntru/benches/lwe_return.rs) measures
-conversion, extraction, key switching and tile-copy costs together; the backend
-`mvb` benchmarks measure complete interleaved and factorized requests.
+conversion, extraction, key switching and tile-copy costs together.
 
 Factorized MVB submits each different product through its bound PBS
 evaluator's private `LweReturnEvaluator` binding and `LweReturnBatchWorkspace`.
@@ -134,7 +135,8 @@ to the stream boundary, not coefficient kernels.
 
 Each lookup evaluator explicitly owns common resources, one-hot state and a return binding.
 NTT allocates only scalar scratch; Fourier allocates only batch scratch and keeps
-its bounded streamed schedule. Standalone one-hot has no ordinary-return buffers. Both factorized MVB backends borrow complete PBS per request and use its private
+its bounded streamed schedule. Standalone one-hot has no ordinary-return buffers.
+Both factorized MVB backends own complete PBS state and use its private
 return evaluator. Arithmetic, tile size and scheduling
 are unchanged; no new latency claim is made.
 
@@ -151,17 +153,20 @@ missing essential workspace. GLWE BR→KS no longer allocates an unused input LW
 Both GLWE backends borrow the selected BR key directly. Each active KS stage binds
 its own ring KS key alongside the existing scratch. Independent BR→KS CBS can
 omit the KS owner entirely; KS→BR requires it at construction, with a structured
-error for missing material. CBS/MVB borrow resources per call and do not own a
-nested PBS. See the [GLWE resource table](#glwe-resource-ownership).
+error for missing material. Low-level CBS borrows resources per call; MVB owns
+complete PBS state. See the [GLWE resource table](#glwe-resource-ownership).
 
 Each NTRU backend's ordinary `Evaluator` owns `BootstrapResources` and both return buffers.
 CBS/one-hot retains a compiled LUT, trace scratch and projected NLEV, then borrows
-common resources for each call. `FactorizedEvaluator::new(&pbs)` prepares one
-extra NTT polynomial, or two Fourier polynomials, and borrows `&mut pbs` per request. No evaluator nesting or
-recovery protocol is needed. The short-borrow boundary checks the same context
-before any writes. Prepared state does not retain BR controls: classic/sparse
-resources can share it when both actual secrets match. Context identity does not
-prove the secret identity of independently generated material.
+common resources for each call. MVB uses `context.mvb_evaluator(&server_key)`
+to own its PBS state and one extra NTT polynomial, or two Fourier polynomials.
+Online calls take only input, program and outputs. Advanced material composition
+can move an existing evaluator into `FactorizedEvaluator::new(pbs)`: context and
+keys remain borrowed, and existing buffers move without copying or rebuilding.
+The compiled program must use the same context, checked before any writes.
+Low-level CBS/one-hot state does not retain BR controls: classic/sparse resources
+can share it when both actual secrets match. Context identity does not prove the
+secret identity of independently generated material.
 When borrowing resources from PBS, preserve its context/BR key binding: the retained
 return material and buffers were prepared for it. The mutable accessor does not rebind PBS.
 `Evaluator::try_from_resources(resources, return_key)` adds return buffers to
@@ -211,7 +216,7 @@ adds output KS for BR→KS or rebinds the existing input KS for KS→BR.
 failure preserves its prior binding. PBS resource borrows must preserve the
 context and paired-secret binding needed by the retained return stage.
 
-GLWE CBS/MVB state does not cache BR controls. Its public borrowing boundary
+GLWE low-level CBS state does not cache BR controls. Its public borrowing boundary
 checks the same context, allowing independently prepared classic/sparse resources
 with that context; key generation and callers must still pair actual secrets.
 There is no extra identity token or general backend trait. CBS accepts independent
@@ -243,8 +248,8 @@ resource trait. NTT and Fourier keep distinct numerical representations.
 | Scalar intermediate LWE, N+1 elements | `NtruLweKeySwitchingWorkspace` | Complete PBS and NTT LUT; overwritten for each return |
 | Converted polynomial and extracted/switched LWE tiles | `LweReturnBatchWorkspace` | Complete PBS and Fourier LUT; one conversion for a shared source, independent conversion per streamed source; only the prepared prefix may be submitted |
 
-Complete PBS prepares both return workspaces, which factorized MVB borrows for a
-request. Standalone CBS/one-hot prepares neither. Each LUT owns common resources
+Complete PBS prepares both return workspaces; factorized MVB retains them in its
+owned PBS state. Standalone CBS/one-hot prepares neither. Each LUT owns common resources
 separately from one-hot state and reuses them for table selection and rotation;
 NTT returns scalar outputs, Fourier uses streamed tiles. No generic resource
 trait hides backend differences.

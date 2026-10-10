@@ -83,7 +83,7 @@ Fourier 环只支持 `NativeModulus`；`PowOf2Modulus` 环不受支持。 NTRU �
 
 ## 复用 evaluator
 
-普通/交错 `Evaluator` 拥有公共 `BootstrapResources` 及单项/批量返回缓冲。默认 `CbsEvaluator` / `OneHotEvaluator` 拥有各自的程序、投影缓冲和公共资源，不分配返回 scratch；独立 `CircuitBootstrapEvaluator` / `OneHotCircuitBootstrapEvaluator` 每次短借用 `pbs.bootstrap_resources_mut()`。MVB 用 `FactorizedEvaluator::new(&pbs)` 构造，每次借用 `&mut pbs`。在线 `_to` 调用复用所有缓冲；独立资源须配对实际秘密与同一变换表示。
+普通/交错 `Evaluator` 拥有公共 `BootstrapResources` 及单项/批量返回缓冲。默认 `CbsEvaluator` / `OneHotEvaluator` 拥有各自的程序、投影缓冲和公共资源，不分配返回 scratch；独立 `CircuitBootstrapEvaluator` / `OneHotCircuitBootstrapEvaluator` 每次短借用 `pbs.bootstrap_resources_mut()`。MVB 用 `context.mvb_evaluator(&server_key)` 构造并拥有 PBS 状态；在线调用只传输入、程序和输出。高级组合可将已准备的 PBS evaluator 移入 `FactorizedEvaluator::new(pbs)`，不复制密钥或缓冲。在线 `_to` 调用复用所有缓冲；独立资源须配对实际秘密与同一变换表示。
 
 `Resources` 将借用的 context/计算材料与拥有的复用缓冲组合起来，不拥有或复制密钥。`Workspace` 表示缓冲及形状元数据，包括底层 BR/外积 scratch。`Evaluator` 使用自己拥有或短借用的资源执行具体流程。借用期间须保留 context/key 的 owner；串行操作可共享一个可变资源实例，并发请求需要独立的可变资源。资源拥有 FFT engine，而 engine 借用 context 的表；更换资源 owner 时仍须保持表身份。
 
@@ -91,7 +91,7 @@ Fourier 环只支持 `NativeModulus`；`PowOf2Modulus` 环不受支持。 NTRU �
 
 ## 固定尺度分解式 MVB
 
-用 `context.compile_mvb_fn(domain_len, output_count, function)` 编译并绑定 `FactorizedEvaluator`。输入沿用 `encryptor`，unsigned Scaled 输出用 `context.mvb_decryptor(external_secret)` 解密，两者均读取配置的消息域。同一密钥配合其他输出域时，为编译和 `parameters.decryptor_with_codec` 共同复用 `parameters.factorized_pbs_codecs(messages)`；编译程序不会改变已有解密器。程序仍绑定该 context。LUT 编码在 Q 下，输出解码在 q 下；须预算 `(q/Q)*round(Q/t_out)` 与 `round(q/t_out)` 的差及返回噪声。高级组合使用家族的 `parameters.compile_factorized_lookup_table_fn(&codecs, ...)` 编译原始程序，再交给本后端的 `FourierFactorizedLookupTable::new(&context, raw)`；同钥消息域覆盖可用 `context.compile_mvb_fn_with_messages`。
+用 `context.compile_mvb_fn(domain_len, output_count, function)` 编译，再通过 `context.mvb_evaluator(&server_key)` 构造求值器。在线调用 `mvb.apply_lookup_table_to(input.as_view(), &program, &mut outputs)` 复用其拥有的工作区。输入沿用 `encryptor`，unsigned Scaled 输出用 `context.mvb_decryptor(external_secret)` 解密，两者均读取配置的消息域。同一密钥配合其他输出域时，为编译和 `parameters.decryptor_with_codec` 共同复用 `parameters.factorized_pbs_codecs(messages)`；编译程序不会改变已有解密器。程序仍绑定该 context。LUT 编码在 Q 下，输出解码在 q 下；须预算 `(q/Q)*round(Q/t_out)` 与 `round(q/t_out)` 的差及返回噪声。高级组合使用家族的 `parameters.compile_factorized_lookup_table_fn(&codecs, ...)` 编译原始程序，再交给本后端的 `FourierFactorizedLookupTable::new(&context, raw)`；同钥消息域覆盖可用 `context.compile_mvb_fn_with_messages`。
 
 实际尺度 `round(2^BITS/t_out)` 必须为偶数，`t_out=10` 对 u32/u64 均可用。 奇数尺度返回 `LookupTableError::OddFactorizationScale`。因子按有符号整数变换，不作环面缩放； 须预算因子放大和 FFT 误差。
 
@@ -114,7 +114,7 @@ let (client, server) = context.try_generate_keys(&mut rng)?;
 let mut evaluator = context.evaluator(&server)?;
 ```
 
-普通/交错 PBS 复用原 evaluator，分解式 MVB 每次调用时借用它。`try_generate_circuit_bootstrap_keys` 复用累加秘密变换生成 BR/CBS，并生成必需 KS。仅需环输出时，从 sparse `CbsConfig` 创建 Context，再调用 `try_generate_circuit_bootstrap_keys`。`server.server_key().blind_rotation_key().sparse_blind_rotation_key()` 提供选择密文。
+普通/交错 PBS 复用原 evaluator，分解式 MVB 拥有 PBS 状态，包括既有批量返回缓冲。`try_generate_circuit_bootstrap_keys` 复用累加秘密变换生成 BR/CBS，并生成必需 KS。仅需环输出时，从 sparse `CbsConfig` 创建 Context，再调用 `try_generate_circuit_bootstrap_keys`。`server.server_key().blind_rotation_key().sparse_blind_rotation_key()` 提供选择密文。
 
 外部秘密允许偶数重量。只有环秘密需要可逆且 Fourier 逆稳定；系数恢复和聚合 FFT 另引入数值误差。
 

@@ -11,7 +11,7 @@ use crate::{
 
 /// Allocation-free online evaluator for Fourier NTRU programmable bootstrapping.
 /// Owns common BR/EP and scalar/batch return resources. CBS/one-hot can borrow
-/// the former; factorized MVB borrows the evaluator for a complete request.
+/// the former; factorized MVB takes ownership of this evaluator.
 /// Scalar PBS uses independent return scratch. A new interleaved/MVB request
 /// discards pending batch samples from an unwind.
 pub struct Evaluator<'a, T, Table, LM = primus_modulus::NativeModulus<T>>

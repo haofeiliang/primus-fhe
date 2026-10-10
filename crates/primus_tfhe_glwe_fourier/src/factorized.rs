@@ -7,7 +7,7 @@ use primus_poly::{FourierPolynomial, FourierPolynomialIter, PolynomialIter, Poly
 use primus_reduce::Modulus;
 use primus_tfhe::FactorizedLookupTable;
 
-use crate::{Evaluator, LookupTableError, Lwe, TfheContext};
+use crate::{Evaluator, LookupTableError, Lwe, ServerKey, TfheContext, TfheEvaluationError};
 
 /// Native even-scale MVB program prepared for one borrowed Fourier context.
 ///
@@ -95,24 +95,24 @@ impl<'a, T: TorusFftValue, Table: FftTable> FourierFactorizedLookupTable<'a, T, 
 /// In addition to the ordinary evaluator, this allocates one Fourier GLWE and
 /// one Fourier polynomial: `(d+2)*N/2` complex values, independent of output count.
 /// The product is inverse-transformed one component at a time into the existing
-/// coefficient GLWE. The caller retains PBS ownership and lends it only during
-/// each request, including its single FFT engine and return stage.
+/// coefficient GLWE. Owns the ordinary evaluator, including its single FFT
+/// engine and return stage, while borrowing its context and key material.
 pub struct FactorizedEvaluator<'a, T: TorusFftValue, Table: FftTable> {
-    context: &'a TfheContext<T, Table>,
+    pbs: Evaluator<'a, T, Table>,
     shared_rotation: FourierGlwe<Vec<Complex64>>,
     product: FourierPolynomial<Vec<Complex64>>,
 }
 
 impl<'a, T: TorusFftValue, Table: FftTable> FactorizedEvaluator<'a, T, Table> {
-    /// Allocates the shared Fourier GLWE and one component-sized product.
-    /// Common input/BR/FFT and return resources stay in PBS and are borrowed per
-    /// request. Supports classic/sparse keys and both orders; inherits
-    /// [`Evaluator::try_new`]'s material requirements.
+    /// Takes ownership of a prepared PBS evaluator and allocates the shared
+    /// Fourier GLWE and one component-sized product. Its existing input/BR/FFT
+    /// and return buffers are moved without copying key material or preparing
+    /// them again. Supports classic/sparse keys and both orders.
     #[must_use]
-    pub fn new(evaluator: &Evaluator<'a, T, Table>) -> Self {
+    pub fn new(evaluator: Evaluator<'a, T, Table>) -> Self {
         let context = evaluator.resources.context;
         Self {
-            context,
+            pbs: evaluator,
             shared_rotation: FourierGlwe::zero(
                 context.parameters().blind_rotation_params().glwe_len() / 2,
             ),
@@ -133,12 +133,11 @@ impl<'a, T: TorusFftValue, Table: FftTable> FactorizedEvaluator<'a, T, Table> {
         &mut self,
         input: Lwe<&[T]>,
         lookup_table: &FourierFactorizedLookupTable<'_, T, Table>,
-        evaluator: &mut Evaluator<'a, T, Table>,
     ) -> Vec<LweCiphertext<T>> {
-        let context = self.context;
+        let context = self.pbs.resources.context;
         let dimension = context.parameters().external_lwe_dimension();
         let mut outputs = vec![LweCiphertext::zero(dimension.get()); lookup_table.output_count()];
-        self.apply_lookup_table_to(input, lookup_table, &mut outputs, evaluator);
+        self.apply_lookup_table_to(input, lookup_table, &mut outputs);
         outputs
     }
 
@@ -162,16 +161,14 @@ impl<'a, T: TorusFftValue, Table: FftTable> FactorizedEvaluator<'a, T, Table> {
     ///
     /// Panics before output writes unless the program was prepared by this exact
     /// context, input and every output have the external LWE dimension, and the
-    /// output slice length equals the program's output count. The borrowed
-    /// evaluator must use the context selected at construction.
+    /// output slice length equals the program's output count.
     pub fn apply_lookup_table_to(
         &mut self,
         input: Lwe<&[T]>,
         lookup_table: &FourierFactorizedLookupTable<'_, T, Table>,
         outputs: &mut [LweCiphertext<T>],
-        evaluator: &mut Evaluator<'a, T, Table>,
     ) {
-        evaluator.resources.check_context(self.context);
+        let evaluator = &mut self.pbs;
         assert!(
             core::ptr::eq(evaluator.resources.context, lookup_table.context),
             "MVB program was prepared by a different context"
@@ -225,6 +222,18 @@ where
     T: TorusFftValue,
     Table: FftTable,
 {
+    /// Creates an MVB evaluator owning its PBS and factor-product workspaces.
+    ///
+    /// Checks key compatibility once through [`Self::evaluator`]. Context and
+    /// key material remain borrowed; online evaluation reuses every buffer.
+    /// Inherits [`Evaluator::try_new`]'s material requirements.
+    pub fn mvb_evaluator<'a>(
+        &'a self,
+        server_key: &'a ServerKey<T>,
+    ) -> Result<FactorizedEvaluator<'a, T, Table>, TfheEvaluationError> {
+        self.evaluator(server_key).map(FactorizedEvaluator::new)
+    }
+
     /// Compiles a factorized MVB program using the configured message domains.
     ///
     /// Uses Rounded input and Scaled output, including the returned external-q
