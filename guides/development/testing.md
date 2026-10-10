@@ -154,7 +154,7 @@ cargo +nightly nextest run -p primus_encoding --lib --tests --features simd
 
 ## 密文表示与算术层的聚焦覆盖
 
-`primus_lattice` 的[测试索引](../../crates/primus_lattice/tests/README.md)区分原始密文布局、算术及资源契约。测试构造确定性数值，不在此层重复秘密采样和加解密 fixture。
+`primus_lattice` 的[测试](../../crates/primus_lattice/tests/)覆盖原始密文布局、算术及资源契约。测试构造确定性数值，不在此层重复秘密采样和加解密 fixture。
 
 | 契约 | 维护入口与精简边界 |
 | --- | --- |

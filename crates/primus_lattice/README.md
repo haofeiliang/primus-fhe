@@ -31,46 +31,28 @@ Types are exported through their modules, for example `glwe::Glwe`, `ggsw::NttGg
 
 NLev and NGSW share a storage shape but have different semantics: an NLev of `beta` contains phases `v_i*beta`; an NGSW of `beta` contains phases `v_i*f*beta`. Their valid gadget products differ, so the types are intentionally distinct.
 
-NLev/NGSW scalar external products can write coefficients or keep the result in NTT/Fourier form with `external_product_ntt_to` / `external_product_fourier_to`. Transform outputs accumulate directly into the destination. NTT coefficient outputs also reuse the destination, then inverse-transform in place. Fourier coefficient outputs retain separate complex scratch for torus conversion; Fourier outputs skip that conversion and its rounding. For `NGSW.external_product_nlev_to`, input/output NLev levels match each other but are independent of the control's decomposition basis; their gadget scales are preserved.
-
-NLev `external_product_sum_to` and NGSW `cmux_k_to` accept exact-size iterators of paired inputs. They sum products in the transform domain and inverse-transform once, without allocating a batch of wrapper objects. Empty NLev sums write zero; empty CMux copies its default. Fourier conversion rounds the total, so it need not match the bits from summing separately converted products.
-
-These batch operations check counts and fixed-buffer lengths before writes,
-then validate each pair's complete lengths as it is consumed. A later invalid
-pair may leave partial state: NTT sums use output for the transform accumulator,
-Fourier sums keep it in scratch, and k-CMux uses output for candidate differences.
-After a rejected call, discard the result; a valid call reuses the workspace
-without a reset. Key, basis, modulus and transform compatibility remain caller
-obligations as specified in rustdoc.
-
 ## Storage and layout
 
-Wrappers are generic over storage `S` using [`primus_data`](../primus_data/README.md). Operations require the appropriate read, mutable, or owned-storage capability. Borrowed wrappers operate directly on the caller's slices.
+Wrappers are generic over storage `S` through [`primus_data`](../primus_data/README.md), supporting owned and borrowed data. `as_view()` / `as_mut_view()` borrow complete storage without copying or changing representation; `into_inner()` returns the original storage. Use polynomial and ciphertext iterators to traverse components, levels and rows without repacking.
 
-`as_view()` / `as_mut_view()` and the corresponding `From` conversions borrow the complete storage without copying or changing representation. `into_inner()` returns the original storage. Integer, NTT, and Fourier ciphertext iterators support exact-size, fused, bidirectional iteration; shared iterators can also be cloned.
+`LweIter` / `LweIterMut` use chunk lengths that include the body, as returned by `Lwe::lwe_len()`. Iterators omit incomplete tails, so callers must establish complete lengths first. `MultiMsgLweIter` traverses packed containers; it does not extract individual samples from one shared mask.
 
-For NLev sums and NGSW multi-way CMux, pass `output.as_mut_view()` as output, and `default.as_view()` as the CMux default. Polynomial/candidate items accept borrowed wrappers through `Into` or views yielded by semantic iterators. Gadgets/controls use `Borrow<Self>` to accept objects or references to the same wrapper type. No wrapper array is required for packed storage.
+- Ordinary GLWE uses `(k+1)*N` elements, GLev uses `L*(k+1)*N`, and GGSW uses `(k+1)*L*(k+1)*N`.
+- CRT stores each polynomial as `m` coefficient blocks of length `N`; DCRT uses the same layout with NTT data in each block. Nested gadget order is `[row][level][component][modulus][coefficient/evaluation]`.
+- Fourier polynomials contain `N/2` complex entries in backend-defined order. Ciphertexts use normalized torus transforms; polynomial multipliers must use the scale required by the operation.
+- BigUint storage is coefficient-major within each polynomial, with fixed-width little-endian limbs per coefficient.
 
-`LweIter` / `LweIterMut` and `MultiMsgLweIter` / `MultiMsgLweIterMut` borrow complete chunks, like other ciphertext iterators. Their chunk lengths include the body; `Lwe::lwe_len()` returns this length. An incomplete tail is omitted, so batch operations must validate the complete buffer length before iteration. `MultiMsgLweIter` traverses packed containers, not the samples extracted from one shared mask.
+`LweDimension` and `GlweDimension` represent positive mask counts; `.ciphertext_len()` and `.component_count()` return the body-inclusive `n+1` and `k+1`. They guarantee representable counts, not secure parameters. Raw ciphertext and secret-key slices can still represent dimension zero.
 
-- Ordinary GLWE uses `(k+1)*N` elements; GLev uses `L*(k+1)*N`; GGSW uses `(k+1)*L*(k+1)*N`.
-- CRT stores each polynomial as `m` consecutive coefficient blocks of length `N`. DCRT has the same block structure in NTT form. Nested gadget order is `[row][level][component][modulus][coefficient/evaluation]`.
-- Fourier polynomials contain `N/2` complex entries in the selected backend's evaluation order. Ciphertexts use normalized torus transforms; polynomial multipliers must use the scale required by the multiplication API.
-- BigUint storage is coefficient-major within each polynomial, with one fixed-width little-endian limb sequence per coefficient.
+Allocate storage using the length accessors of `GlweSize`, `GadgetSize`, `RnsGlweSize` and `RnsGadgetSize`. These types check combined-length overflow and RNS modulus counts; `LweDimension::from(glwe_size)` derives the extracted dimension `kN`. They do not validate actual buffers, transform tables, moduli or security.
 
-`LweDimension` and `GlweDimension` represent positive mask counts with a representable body-inclusive count. `LweDimension::ciphertext_len()` gives `n+1`; `GlweDimension::component_count()` gives `k+1`. They impose no parameter-preset or security cap. Raw ciphertext and secret-key slices retain integer lengths and can represent dimension zero.
-
-`GlweSize`, `GadgetSize`, `RnsGlweSize`, and `RnsGadgetSize` compute checked lengths from `GlweDimension`, `PolyLength` and the `primus_decompose::DecompositionLevelCount` for gadgets. They check RNS modulus counts and flattened-length overflow. `GlweSize` stores GLWE geometry and flattened lengths. `LweDimension::from(glwe_size)` explicitly derives the extracted dimension `kN`, including the guarantee that `kN+1` fits. They do not validate backing buffers, transform availability, modulus suitability, or security. Use their length accessors when allocating rather than repeating layout formulas.
-
-[`primus_poly::PolyLength`](../primus_poly/README.md#ring-polynomial-length) centrally checks a power-of-two `N` in `32..=2^17`. `get()`, `log_n()` and `fourier_poly_len()` return `N`, `log2(N)` and `N/2` complex elements; the range also guarantees that `2N` fits in `usize`.
-
-`GlweSize` stores this type, and gadget/RNS layouts inherit its size contract through their GLWE size without repeating the upper-bound check. Layout, workspace and NTT/FFT table constructors take `PolyLength`, and `poly_length()` returns it. Extract integers with `.get()` only at raw storage or numerical kernels. Combined storage lengths and transform numerical conditions remain checked at their owning construction boundaries.
+Layouts and workspaces take [`primus_poly::PolyLength`](../primus_poly/README.md#ring-polynomial-length), a power of two in `32..=2^17`. Its `.get()`, `.log_n()` and `.fourier_poly_len()` return `N`, `log2(N)` and `N/2`.
 
 ## Serialization
 
-Enable `primus_lattice/serde` for `Lwe<S>` and `MultiMsgLwe<S>` serde implementations when `S` supports the corresponding trait. The feature is independent of transforms and `primus_integer/serde`; enable the latter separately if you also serialize `BigUint` values. Neither feature is enabled by default.
+`serde` enables serialization for `Lwe<S>` and `MultiMsgLwe<S>` when their storage supports the corresponding traits. Enable `primus_integer/serde` separately to serialize `BigUint` values.
 
-Only the raw coefficient storage is serialized. Dimensions, the packed mask/body split, modulus, encoding and key identity remain external. Deserialization does not check ciphertext validity or establish an evaluation domain; it is not a versioned key or parameter format. The same storage requirements apply to serialization of borrowed views and owned wrappers.
+Only raw coefficients are serialized. Dimensions, the packed mask/body split, modulus, encoding and key identity remain external; deserialization does not validate them. This is not a versioned key or parameter format.
 
 ## Operations and ownership
 
@@ -84,39 +66,37 @@ Only the raw coefficient storage is serialized. Dimensions, the packed mask/body
 | Extraction | `extract_lwe_at_to`, compact extraction, packed RLWE extraction, `inverse_extract_glwe_to` |
 | External products | Fourier/NTT GGSW and NTRU gadget products; DCRT GLev polynomial products and GGSW products |
 | CMUX | GGSW/NGSW `cmux_to`, `cmux_k_to`, `cmux_monomial_to` |
-| Ternary rotation | NTT/Fourier GGSW and NGSW `cmux_ternary_monomial_to`, using a positive/negative control pair and one external product |
+| Ternary rotation | NTT/Fourier GGSW and NGSW `cmux_ternary_monomial_to` |
 
-Availability depends on the type and representation; this is a family overview, not a promise that every type has every method. RNS scalar/factor inputs use `primus_rns::Residues` and `ResidueFactors` in modulus order.
+Availability depends on the type and representation. RNS scalar/factor inputs use `primus_rns::Residues` and `ResidueFactors` in modulus order.
 
-`*_assign` mutates its receiver; `*_to` writes a separate output. `add_*_assign` accumulates into initialized storage. Consuming arithmetic and conversions can reuse mutable storage, while allocation-returning extraction methods allocate their result; consult the method contract rather than assuming an unsuffixed method is allocation-free.
+`*_assign` mutates its receiver, `*_to` writes a separate output, and `add_*_assign` accumulates into initialized storage. Consuming methods may reuse storage, while methods returning a new extracted sample allocate; consult the specific method contract.
 
-Coefficient-domain `Glwe`, `Glev`, `Ggsw`, `Nlev` and `Ngsw` share `add_mul_monomial_pair_assign` for `self += first * X^ra + second * X^rb`. Pass both input/exponent pairs, the polynomial length and modulus. Matching layouts and canonical initialized storage are required; each contribution is reduced in order. The batch kernel computes rotation offsets once for all components and dispatches each interval outside the polynomial loop for 64-bit words, without allocation.
+External products can return coefficients or retain transformed output through `external_product_ntt_to` / `external_product_fourier_to`. `NGSW.external_product_nlev_to` preserves the input NLev's level count and gadget scales, which may differ from the control's decomposition basis.
 
-Single-modulus NTT ciphertexts provide `mul_monomial_assign`, `mul_monomial_to`, and `add_mul_monomial_assign`, plus `sub_mul_monomial_to` for `self - rhs * X^exponent`. Pass the modulus, monomial NTT table, and a length-`N` scratch slice after the operands. The operations overwrite scratch with one monomial transform shared by all ciphertext polynomials, without allocation or conversion to coefficients.
+NLev `external_product_sum_to` and NGSW `cmux_k_to` accept exact-size iterators with matching counts. Pass borrowed gadgets and polynomial/ciphertext views, `output.as_mut_view()` for output, and `default.as_view()` for the CMux default. Empty sums write zero; empty CMux copies its default. Fourier rounds the aggregate result, which can differ from summing separately converted coefficient products.
 
-`FourierGgsw` and `FourierNgsw` provide `sub_mul_monomial_to` using an FFT engine and scratch slices of `N` torus words and `N/2` complex values. It transforms the monomial at integer scale using the ciphertexts' exact table instance, preserving their torus scale and evaluation order.
-
-Full GLWE extraction flattens all mask polynomials into an LWE mask. Compact extraction requires the omitted secret-key suffix to be zero. Packed `MultiMsgLwe` represents one RLWE mask; conversion from truncated GLWE requires `k == 1`. Inverse extraction embeds the constant-term LWE sample and zero-fills unused storage; it does not reconstruct all coefficients of the original GLWE plaintext.
+Full GLWE extraction flattens all mask polynomials into an LWE mask; compact extraction requires the omitted secret suffix to be zero. `MultiMsgLwe` represents one RLWE mask, so conversion from truncated GLWE requires `k == 1`. Inverse extraction embeds the constant-term LWE sample and zero-fills unused storage; it does not recover every coefficient of the original GLWE plaintext.
 
 ## Correctness and workspace contracts
 
-Raw constructors and mutable access do not establish ciphertext validity. Callers must supply compatible keys, encodings, dimensions, exact buffer lengths, modulus order, decomposition basis, and transform conventions. Unless explicitly documented otherwise, modular inputs must be canonical residues; every word value is canonical for the native modulus.
+Raw constructors and mutable access do not establish ciphertext validity. Callers must ensure compatible keys, encodings, sizes, complete buffer lengths, modulus order, decomposition bases and transform conventions. Fourier data must use the exact FFT table instance and scale required by the operation. Unless documented otherwise, modular inputs must be canonical residues; all word values are canonical under the native modulus.
 
-Checks belong at the highest layer that owns these parameters. This crate deliberately omits many checks: debug assertions are diagnostics, and malformed slices may panic or silently process only a common prefix or complete chunks. A call returning without panic does not establish correctness. Method rustdoc describes specific `Correctness` and `Panics` contracts.
+These low-level operations deliberately omit some checks. Invalid inputs may silently process only common prefixes or complete chunks. See each method's `Correctness` and `Panics` documentation in the [API sources](src/lib.rs) for exact conditions.
 
-| Workspace | What it binds |
+| Workspace | Size requirements |
 | --- | --- |
-| `FourierGlweExternalProductWorkspace` / `NttGlweExternalProductWorkspace` | GLWE layout and decomposition level count through `GadgetSize` |
-| `NttGlweTernaryCmuxWorkspace` / `FourierGlweTernaryCmuxWorkspace` | Fixed `GadgetSize`; combined GGSW, transformed monomial, and external-product scratch |
-| `FourierNtruExternalProductWorkspace` / `NttNtruExternalProductWorkspace` | Polynomial length for scalar NTRU gadget products |
-| `NttNtruCmuxWorkspace` / `FourierNtruCmuxWorkspace` | Fixed polynomial length and level count; combined NLEV/NGSW and reusable external-product scratch for first lifting and ternary CMUX |
-| `DcrtGlevMulWorkspace` | RNS gadget layout and BigUint limb-width requirements |
+| `NttGlweExternalProductWorkspace` / `FourierGlweExternalProductWorkspace` | GLWE layout and decomposition levels in `GadgetSize` |
+| `NttGlweTernaryCmuxWorkspace` / `FourierGlweTernaryCmuxWorkspace` | Fixed `GadgetSize` |
+| `NttNtruExternalProductWorkspace` / `FourierNtruExternalProductWorkspace` | Polynomial length |
+| `NttNtruCmuxWorkspace` / `FourierNtruCmuxWorkspace` | Polynomial length and decomposition levels |
+| `DcrtGlevMulWorkspace` | RNS gadget layout and product-modulus limb width |
 
-Workspaces provide reusable scratch, not a validated basis/table/modulus domain. GLWE external-product workspaces support `rebind` for unchanged GLWE shape and `resize` when buffer sizes change. DCRT compatibility includes the RNS product's limb width. Owning callers must establish compatibility before entering the kernels.
+Workspaces provide reusable scratch, without validating key, basis, table or modulus identity. Overwriting external products initialize their buffers, so valid calls need no reset; accumulating APIs require valid existing output. GLWE external-product workspace `rebind` preserves the GLWE shape; `resize` can change buffer sizes.
 
-Overwriting external products initialize their accumulator, and other scratch is written before use: no manual reset is needed between valid calls. Accumulating APIs preserve the existing output and require it to be initialized. CMUX selection additionally requires bit controls; `cmux_k_to` requires at most one active control. Noise growth and decryptability remain higher-layer obligations.
+Batch external products and k-CMux check counts and fixed-buffer lengths first, then object lengths as each pair is consumed. An invalid later pair or panicking iterator can leave partial output or scratch; discard the result, then reuse the workspace in a valid call. The method documentation specifies the exact write boundaries.
 
-`positive.cmux_ternary_monomial_to(&negative, ...)` uses mutually exclusive encrypted bits `s⁺, s⁻` to rotate by `X^(exponent * (s⁺-s⁻))`. Both controls use the same key, basis, and NTT table or exact FFT table instance. Fourier controls use native-torus scale and a matching native basis. The exponent is already quantized into `0..2N`; zero copies the input exactly. Evaluation reuses its workspace without allocation. This is a lattice primitive; complete GLWE TFHE ternary key generation and evaluation are described in the [family API](../primus_tfhe_glwe/README.md). The NGSW form supports NTT and Fourier; complete NTRU integration is described in the [family API](../primus_tfhe_ntru/README.md).
+CMux selection requires encrypted bit controls; k-CMux requires at most one active control. Ternary `cmux_ternary_monomial_to` uses mutually exclusive bits `s⁺, s⁻`, with ideal rotation `X^(exponent * (s⁺-s⁻))`. The exponent must be in `0..2N`; zero copies the input exactly. Controls must share the key, basis and transform conventions; Fourier controls use native-torus scale and a matching native basis. Noise growth and decryptability belong to higher layers.
 
 ## Example
 
@@ -160,14 +140,4 @@ Each target declares the representations and concrete FFT implementations it nee
 
 ## Tests and benchmarks
 
-Run from the workspace root:
-
-```sh
-cargo test -p primus_lattice --features ntt,rustfft,tfhe-fft
-cargo test -p primus_lattice --features rns,rustfft,tfhe-fft
-cargo clippy -p primus_lattice --all-targets --features rns,rustfft,tfhe-fft -- -D warnings
-cargo +nightly test -p primus_lattice --features rns,simd,rustfft,tfhe-fft
-cargo doc -p primus_lattice --no-deps --features rns,rustfft,tfhe-fft
-```
-
-The [test guide](tests/README.md) maps independent contracts to test files. The [benchmark guide](benches/README.md) describes independently runnable GLWE/NTRU × Fourier/NTT, extraction, and RNS targets. Benchmarks isolate warmed lattice operations; full PBS and key-streaming costs must be measured in the upper layers. Basic modular and factor arithmetic are benchmarked in their owning crates.
+Validation commands are in the workspace [testing guide](../../guides/development/testing.md). The [benchmark guide](benches/README.md) lists independently runnable targets and their endpoints; measure complete PBS and sequential evaluation-key access in the upper layers.

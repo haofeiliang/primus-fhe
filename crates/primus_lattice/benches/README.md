@@ -3,47 +3,25 @@
 > [!WARNING]
 > Part of the experimental [Primus FHE](../../../README.md) workspace; APIs and numerical contracts may change incompatibly.
 
-Run each target independently to locate regressions without measuring every backend. These benchmarks isolate lattice operations; full blind rotation, key switching, and PBS must also be measured in their owning TFHE/scheme crates.
+Choose one target to measure a lattice operation. Parameters and case names are defined in the linked source files.
 
-| Target | Path and operations |
-| --- | --- |
-| `glwe_fourier` | GGSW external product, monomial CMUX, and ternary fused/two-CMUX comparison, both FFT backends |
-| `glwe_ntt` | GGSW coefficient-output/NTT-output external product, monomial CMUX, and ternary fused/two-CMUX comparison |
-| `ntru_fourier` | NGSW coefficient/Fourier-output external product and monomial CMUX, both FFT backends |
-| `ntru_ntt` | NGSW coefficient/NTT-output external product and monomial CMUX |
-| `rns_glev` (`rns`) | CRT/BigUint GLev products and CRT accumulation |
-| `rns_ggsw` (`rns`) | CRT GLWE × DCRT GGSW external product |
-| `extraction` | GLWE/NTRU compact sample extraction and inverse GLWE extraction |
+| Target | Workload | Required features |
+| --- | --- | --- |
+| [glwe_fourier](glwe_fourier.rs) | GGSW external product, monomial CMux, fused/two-CMux ternary rotation; both FFT engines | `rustfft,tfhe-fft` |
+| [glwe_ntt](glwe_ntt.rs) | GGSW coefficient/NTT-output external product, monomial CMux, fused/two-CMux ternary rotation | `ntt` |
+| [ntru_fourier](ntru_fourier.rs) | NGSW coefficient/Fourier-output external product and monomial CMux; both FFT engines | `rustfft,tfhe-fft` |
+| [ntru_ntt](ntru_ntt.rs) | NGSW coefficient/NTT-output external product and monomial CMux | `ntt` |
+| [extraction](extraction.rs) | GLWE/NTRU compact extraction and inverse GLWE extraction | None |
+| [rns_glev](rns_glev.rs) | CRT/BigUint polynomial × DCRT GLev, with DCRT output or accumulation | `rns` |
+| [rns_ggsw](rns_ggsw.rs) | CRT GLWE × DCRT GGSW, with DCRT output | `rns` |
 
-NGSW and NLev use the same scalar gadget kernel. The NGSW product case measures that kernel without duplicating the NLev wrapper. Transform-output GGSW/NGSW cases measure products whose caller retains the transformed result. Their endpoints differ from the coefficient-output cases; these are not equivalent workloads for a speedup comparison. Monomial CMUX is the blind-rotation operation; binary and multi-control CMUX are not additional baseline cases. `ternary_fused` and `ternary_two_cmux` measure the same ideal ternary rotation using the same two controls, input, and nonzero exponent. The latter executes positive then negative CMUX with a preallocated intermediate GLWE. Both return coefficients; noisy/approximately decomposed outputs need not match bit for bit.
+## Measurement boundaries
 
-## Parameters and interpretation
+One iteration runs one labeled workload with preallocated output and scratch; the two-CMux case includes both calls. Data generation, tables and gadget transforms are outside timing; required initialization and output conversion remain inside. Throughput counts logical output coefficients or RNS residues, including the LWE body for extraction.
 
-The four product targets cover `N=1024/2048` and `u32/u64` as representative FHE arithmetic geometries. GLWE uses k=1: NTT `(log B,L)=(5,5)/(23,1)` and Fourier `(8,3)/(23,1)`. NTRU uses log B=9 and full levels: NTT 3/5 and Fourier 3/7. GLWE retains one k=2 case for layout scaling. These are arithmetic workloads, not recommended cryptographic parameters.
+Coefficient-output and transform-output products have different endpoints. The RNS BigUint case starts with a precomposed input, so its timing excludes CRT recomposition. Ternary fused/two-CMux cases share controls and input and return coefficients, but their decomposition and rounding errors need not match.
 
-NTT uses `U32NttTable`/`U64NttTable` and q=132120577/1125899906826241; Fourier uses the native torus with both FFT backends. Each FFT backend receives the same deterministic coefficients in its own evaluation order. Comparisons across families or moduli describe implementation costs, not equal-security PBS performance. All four targets use 20 samples, 1 s warm-up and 5 s measurement time.
-
-Extraction uses the corresponding native `u64` and explicit-modulus `u32` arithmetic. It measures partial and full active dimensions through the compact API, zero/nonzero GLWE indices, and non-aligned inverse-extraction padding. Inputs remain full-sized; a compact key is assumed to have a zero suffix. The output is coefficient-domain, so FFT and NTT tables are unnecessary.
-
-## Timing contract
-
-One Criterion iteration is one complete public operation. Data generation, tables, gadget transforms, and allocations occur outside timing. Required accumulator initialization and output conversion remain inside the operation. Throughput counts logical output elements, including the LWE body for sample extraction. It is not an operation count or an equal-byte comparison.
-
-Product fixtures are dense arithmetic data, not sampled bit encryptions. They meet numerical range and representation requirements; the benchmark measures algebraic evaluation rather than selection correctness or noise. Fixed input, key, and scratch reuse produces a warm-working-set baseline. Full blind rotation must separately measure sequential access to distinct bootstrapping-key gadgets; these microbenchmarks cannot predict key bandwidth or cold-cache PBS latency.
-
-Use primitive-crate benchmarks to isolate decomposition, FFT/NTT and multiply-add costs; use these targets to measure their composition and layout; verify any optimization in the corresponding top-level TFHE path. RNS gadget products have separate targets below; complete RNS key switching remains in `primus_glwe_rns`.
-
-## RNS workloads
-
-The two RNS targets isolate operations used by `primus_glwe_rns`, without introducing a dependency from lattice back to the scheme crate:
-
-- `rns_glev/crt_add_assign` isolates the inner product called by ordinary DCRT key switching and CRT/DCRT automorphism. Repeated accumulation stays canonical; no extra output reset is included in timing.
-- `rns_glev/crt_to` and `big_uint_to` use the same polynomial in two input representations and check matching results before timing. The latter receives a precomposed BigUint input; the timing difference helps assess opportunities to reuse that representation. It does not include producing or storing it.
-- `rns_ggsw/crt_to_dcrt` measures the full matrix product, including per-component CRT recomposition and gadget accumulation. The output remains in DCRT form.
-
-`support/rns.rs` uses the ordered primes from the existing RNS key-switching benchmark. Baseline: `N=1024, k=1, m=2, log B=20`, retaining all decomposition levels. Additional cases separately change `N` to 2048, `k` to 2, `m` to 4, or `log B` to 10. Increasing `m` also changes the BigUint width and required level count; IDs report the actual `L`. The four-modulus case treats Q and P primes as one base, not as a hybrid key-switching algorithm.
-
-Deterministic independent residues exercise full-width CRT recomposition, and gadget data is transformed before timing. These are arithmetic fixtures, not sampled encrypted keys. Throughput counts output residues, `(k+1)*m*N`. Run the existing `primus_glwe_rns` `key_switching` and `automorphism` targets to check whether lattice improvements benefit the complete operation. These new cases do not isolate hybrid mod-down, basis extension, or key streaming.
+Fixtures use deterministic arithmetic data and reused working sets, not sampled encrypted controls or recommended secure parameters. Compare equivalent workloads on the same host, toolchain and features. These timings do not establish equal-security performance or sequential bootstrapping-key bandwidth; confirm gains in complete operations in the scheme/TFHE crates.
 
 ## Commands
 
@@ -55,14 +33,8 @@ cargo bench -p primus_lattice --bench glwe_ntt --features ntt
 cargo bench -p primus_lattice --bench ntru_fourier --features rustfft,tfhe-fft
 cargo bench -p primus_lattice --bench ntru_ntt --features ntt
 cargo bench -p primus_lattice --bench extraction
-cargo bench -p primus_lattice --features rns --bench rns_glev
-cargo bench -p primus_lattice --features rns --bench rns_ggsw
-# Select one parameter group or operation using Criterion's regex filter.
-cargo bench -p primus_lattice --bench glwe_ntt --features ntt -- 'n1024/k1/logb5/l5'
-# Exercise every fixture once without collecting timing statistics.
-cargo bench -p primus_lattice --bench glwe_fourier --bench glwe_ntt --bench ntru_fourier --bench ntru_ntt --bench extraction --features ntt,rustfft,tfhe-fft -- --test
-# Dependency SIMD configuration; replace the target to select another path.
-cargo +nightly bench -p primus_lattice --bench ntru_ntt --features ntt,simd
+cargo bench -p primus_lattice --bench rns_glev --features rns
+cargo bench -p primus_lattice --bench rns_ggsw --features rns
 ```
 
-Use the same host, toolchain, features and build settings for regression comparisons. NTT dispatch is CPU-dependent. Case names and data differ from the former `cmux`, `external_product`, and `gadget_product` targets; collect new baselines. Short smoke measurements validate execution, not performance claims.
+Append `-- '<regex>'` to select cases, or `-- --test` to execute each fixture once without collecting timings. See the workspace [testing guide](../../../guides/development/testing.md) for validation entry points.
