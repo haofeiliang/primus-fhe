@@ -172,6 +172,8 @@ panic。输入与输出共用 `output` 的环几何，`input_size()` 返回保�
 
 求值密钥保存自己的布局和分解基。NTT 求值参数为 `input, output, modulus, ntt, workspace`；Fourier 求值省略 `modulus`。Workspace 是可复用的工作区。必须保持密钥的变换表示，仅长度和模数匹配不能证明表示兼容。
 
+KS、自同构和 trace 密钥生成在采样前检查共享的密钥/参数、变换及 GLev 工作区兼容性；内部嵌套生成复用这些检查。
+
 两种自同构密钥都提供系数域 `apply_to`。`NttGlweAutomorphismKey::apply_ntt_to` 和 `FourierGlweAutomorphismKey::apply_fourier_to` 复用同一密钥处理变换域输入、输出。Fourier 求值要求使用生成密钥时的同一个 FFT table 实例；直接处理 Fourier 输入、输出的舍入结果可能与系数域往返不同。
 
 `NttGlweTraceKey<T>` 和 `FourierGlweTraceKey<T>` 在以下系数域操作间共享自同构密钥。`M` 表示输入明文；所有输出 phase 系数都可能存在求值误差。

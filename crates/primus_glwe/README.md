@@ -174,6 +174,8 @@ Dimension arguments and accessors use `GlweDimension`, re-exported from `primus_
 
 Evaluation keys own their layouts and decomposition bases. NTT evaluation takes `input, output, modulus, ntt, workspace`; Fourier evaluation omits `modulus`. Workspaces are reusable workspaces. Preserve the key's transform representation: matching lengths and moduli alone do not prove compatibility.
 
+KS, automorphism and trace key generation check shared key/parameter, transform and GLev workspace compatibility before sampling; nested generation reuses these checks.
+
 Both automorphism keys provide coefficient-domain `apply_to`. `NttGlweAutomorphismKey::apply_ntt_to` and `FourierGlweAutomorphismKey::apply_fourier_to` reuse the same key for transform-domain input/output. Fourier evaluation requires the exact FFT table instance used at key generation; direct Fourier input/output can round differently from a coefficient roundtrip.
 
 `NttGlweTraceKey<T>` and `FourierGlweTraceKey<T>` share their automorphism material across the following coefficient-domain operations. `M` denotes the input message; every output phase coefficient may contain evaluation error.

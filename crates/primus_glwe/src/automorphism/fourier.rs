@@ -50,7 +50,8 @@ impl<T: TorusFftValue> FourierGlweAutomorphismKey<T> {
     ///
     /// # Panics
     /// Panics if degree is not odd and below `2N`, or key, parameter, FFT
-    /// and gadget workspace layouts differ.
+    /// and gadget workspace layouts differ. Checks precede sampling.
+    #[must_use]
     pub fn generate<Table: FftTable, R: rand::Rng + rand::CryptoRng>(
         degree: usize,
         secret: &GlweSecretKey<T>,
@@ -60,17 +61,29 @@ impl<T: TorusFftValue> FourierGlweAutomorphismKey<T> {
         rng: &mut R,
         workspace: &mut FourierGlweGadgetEncryptWorkspace<T>,
     ) -> Self {
-        let size = secret.glwe_size();
+        fourier_secret.assert_gadget_compatible(params, fft);
+        workspace.assert_glev_compatible(params.size());
         assert_eq!(
-            size,
+            secret.glwe_size(),
             params.glwe_size(),
             "automorphism secret layout mismatch"
         );
-        assert_eq!(
-            fourier_secret.glwe_size(),
-            size,
-            "automorphism output key layout mismatch"
-        );
+
+        Self::generate_kernel(degree, secret, fourier_secret, params, fft, rng, workspace)
+    }
+
+    /// Generates after the caller checks both secret layouts, FFT and GLev
+    /// workspace against `params`. The permutation still validates `degree`.
+    pub(crate) fn generate_kernel<Table: FftTable, R: rand::Rng + rand::CryptoRng>(
+        degree: usize,
+        secret: &GlweSecretKey<T>,
+        fourier_secret: &FourierGlweSecretKey,
+        params: &GlevParameters<T, NativeModulus<T>>,
+        fft: &mut FftEngine<'_, Table>,
+        rng: &mut R,
+        workspace: &mut FourierGlweGadgetEncryptWorkspace<T>,
+    ) -> Self {
+        let size = secret.glwe_size();
         let permutation = CoeffAutomorphismPermutation::new(degree, size.poly_length());
         let mut transformed = vec![T::SignedInteger::ZERO; size.mask_len()];
         for (input, output) in secret
@@ -80,7 +93,7 @@ impl<T: TorusFftValue> FourierGlweAutomorphismKey<T> {
             permutation.apply_signed_to::<T>(input, output);
         }
         let transformed = GlweSecretKey::new(transformed, size, secret.distr());
-        let key_switching = FourierGlweKeySwitchingKey::generate(
+        let key_switching = FourierGlweKeySwitchingKey::generate_kernel(
             &transformed,
             fourier_secret,
             params,

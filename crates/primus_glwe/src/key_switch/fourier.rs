@@ -31,6 +31,7 @@ pub struct FourierGlweKeySwitchingKey<T: TorusFftValue> {
 
 impl<T: TorusFftValue> FourierGlweKeySwitchingKey<T> {
     /// Generates a Fourier GLWE key-switching key.
+    /// Input and output keys share a polynomial length but may have different dimensions.
     ///
     /// # Correctness
     ///
@@ -40,7 +41,8 @@ impl<T: TorusFftValue> FourierGlweKeySwitchingKey<T> {
     ///
     /// Panics if input/output polynomial lengths, the output key layout, FFT,
     /// or gadget workspace do not match `parameters`, or the combined key
-    /// storage length overflows.
+    /// storage length overflows. Compatibility and storage checks precede sampling.
+    #[must_use]
     pub fn generate<Table, R>(
         input_secret_key: &GlweSecretKey<T>,
         output_secret_key: &FourierGlweSecretKey,
@@ -53,10 +55,39 @@ impl<T: TorusFftValue> FourierGlweKeySwitchingKey<T> {
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
     {
+        output_secret_key.assert_gadget_compatible(parameters, fft);
+        workspace.assert_glev_compatible(parameters.size());
+        assert_eq!(
+            input_secret_key.poly_length(),
+            parameters.poly_length(),
+            "input secret polynomial length mismatch"
+        );
+
+        Self::generate_kernel(
+            input_secret_key,
+            output_secret_key,
+            parameters,
+            fft,
+            rng,
+            workspace,
+        )
+    }
+
+    /// Generates after the caller checks input polynomial length, output key,
+    /// FFT and GLev workspace against `parameters`.
+    pub(crate) fn generate_kernel<Table, R>(
+        input_secret_key: &GlweSecretKey<T>,
+        output_secret_key: &FourierGlweSecretKey,
+        parameters: &GlevParameters<T, NativeModulus<T>>,
+        fft: &mut FftEngine<'_, Table>,
+        rng: &mut R,
+        workspace: &mut FourierGlweGadgetEncryptWorkspace<T>,
+    ) -> Self
+    where
+        Table: FftTable,
+        R: rand::Rng + rand::CryptoRng,
+    {
         let output = parameters;
-        assert_eq!(input_secret_key.poly_length(), output.poly_length());
-        assert_eq!(output_secret_key.glwe_size(), output.glwe_size());
-        assert_eq!(fft.poly_length().get(), output.poly_length().get());
 
         let input_size = input_secret_key.glwe_size();
         let output_size = output.size();
@@ -83,9 +114,9 @@ impl<T: TorusFftValue> FourierGlweKeySwitchingKey<T> {
                 .for_each(|(output, &coefficient)| {
                     *output = coefficient.cast_to_unsigned();
                 });
-            output_secret_key.encrypt_glev_to(
-                &Polynomial::new(encoded_secret.as_slice()),
-                &mut FourierGlev::new(entry),
+            output_secret_key.encrypt_glev_kernel_to(
+                Polynomial::new(encoded_secret.as_slice()),
+                FourierGlev::new(entry),
                 output,
                 fft,
                 rng,

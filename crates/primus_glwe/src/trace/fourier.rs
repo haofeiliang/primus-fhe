@@ -36,6 +36,11 @@ pub struct FourierGlweTraceKey<T: TorusFftValue> {
 impl<T: TorusFftValue> FourierGlweTraceKey<T> {
     /// Generates keys for degrees N+1,N/2+1,...,3. Inherits the key consistency,
     /// layout and FFT requirements of [`FourierGlweAutomorphismKey::generate`].
+    ///
+    /// # Panics
+    /// Panics if key, parameter, FFT or gadget workspace layouts differ.
+    /// Shared compatibility checks precede sampling any automorphism key.
+    #[must_use]
     pub fn generate<Table: FftTable, R: rand::Rng + rand::CryptoRng>(
         secret: &GlweSecretKey<T>,
         fourier_secret: &FourierGlweSecretKey,
@@ -44,11 +49,18 @@ impl<T: TorusFftValue> FourierGlweTraceKey<T> {
         rng: &mut R,
         workspace: &mut FourierGlweGadgetEncryptWorkspace<T>,
     ) -> Self {
+        fourier_secret.assert_gadget_compatible(params, fft);
+        workspace.assert_glev_compatible(params.size());
         let glwe_size = secret.glwe_size();
+        assert_eq!(
+            glwe_size,
+            params.glwe_size(),
+            "trace secret layout mismatch"
+        );
         let automorphism_keys = (1..=glwe_size.poly_length().log_n())
             .rev()
             .map(|shift| {
-                FourierGlweAutomorphismKey::generate(
+                FourierGlweAutomorphismKey::generate_kernel(
                     (1 << shift) + 1,
                     secret,
                     fourier_secret,

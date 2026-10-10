@@ -8,11 +8,12 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable};
 use primus_glwe::{
-    FourierGgswCiphertext, FourierGlevCiphertext, FourierGlweCiphertext,
-    FourierGlweEncryptWorkspace, FourierGlweGadgetEncryptWorkspace, FourierGlweSecretKey,
-    GadgetSize, GlevParameters, GlweCiphertext, GlweEncryptionParameters,
-    GlweKeySwitchingParameters, GlweParameters, GlweSize, GlweSizeError, NttGgswCiphertext,
-    NttGlevCiphertext, NttGlweCiphertext, NttGlweGadgetEncryptWorkspace, NttGlweKeySwitchingKey,
+    FourierGgswCiphertext, FourierGlevCiphertext, FourierGlweAutomorphismKey,
+    FourierGlweCiphertext, FourierGlweEncryptWorkspace, FourierGlweGadgetEncryptWorkspace,
+    FourierGlweKeySwitchingKey, FourierGlweSecretKey, FourierGlweTraceKey, GadgetSize,
+    GlevParameters, GlweCiphertext, GlweEncryptionParameters, GlweKeySwitchingParameters,
+    GlweParameters, GlweSecretKey, GlweSize, GlweSizeError, NttGgswCiphertext, NttGlevCiphertext,
+    NttGlweCiphertext, NttGlweGadgetEncryptWorkspace, NttGlweKeySwitchingKey,
     NttGlweKeySwitchingWorkspace, NttGlwePublicEncryptWorkspace, NttGlwePublicKey,
     NttGlweSecretKey, SecretKeyDistr,
 };
@@ -240,6 +241,96 @@ fn secret_generation_rejects_incompatible_tables_before_sampling() {
         .is_err()
     );
     assert_eq!(rng.next_u64(), expected_rng.next_u64());
+}
+
+// KS may change dimension; automorphism and trace must return to the same layout.
+// Every public constructor must reject its own incompatible resources before RNG use.
+fn check_fourier_evaluation_key_generation_boundaries<Table: FftTable>() {
+    let poly_length = PolyLength::new(32);
+    let size = GlweSize::new(GlweDimension::new(2), poly_length);
+    let small_size = GlweSize::new(GlweDimension::new(1), poly_length);
+    let long_size = GlweSize::new(GlweDimension::new(2), PolyLength::new(64));
+    let distr = SecretKeyDistr::UniformTernary;
+    let params = GlevParameters::try_new(
+        size,
+        NativeModulus::<u32>::new(),
+        distr,
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(8),
+            level_count: Some(DecompositionLevelCount::new(3)),
+        },
+        0.7,
+    )
+    .unwrap();
+    let long_gadget = GadgetSize::new(long_size, params.basis().decompose_length());
+    let secret = |size: GlweSize| GlweSecretKey::new(vec![1; size.mask_len()], size, distr);
+    let small_secret = secret(small_size);
+    let long_secret = secret(long_size);
+    let secret = secret(size);
+    let table = Table::new(poly_length);
+    let long_table = Table::new(long_size.poly_length());
+    let mut fft = FftEngine::new(&table);
+    let fourier_secret = FourierGlweSecretKey::from_coeff_secret_key(&secret, &mut fft);
+    let small_fourier = FourierGlweSecretKey::from_coeff_secret_key(&small_secret, &mut fft);
+
+    for (input, output, table, workspace_size, first_operation) in [
+        (&long_secret, &fourier_secret, &table, params.size(), 0),
+        (&secret, &small_fourier, &table, params.size(), 0),
+        (&secret, &fourier_secret, &long_table, params.size(), 0),
+        (&secret, &fourier_secret, &table, long_gadget, 0),
+        (&small_secret, &fourier_secret, &table, params.size(), 1),
+    ] {
+        for operation in first_operation..3 {
+            let mut fft = FftEngine::new(table);
+            let mut workspace = FourierGlweGadgetEncryptWorkspace::new(workspace_size);
+            let mut rng = StdRng::seed_from_u64(42);
+            let mut expected_rng = StdRng::seed_from_u64(42);
+            assert!(
+                catch_unwind(AssertUnwindSafe(|| match operation {
+                    0 => {
+                        let _ = FourierGlweKeySwitchingKey::generate(
+                            input,
+                            output,
+                            &params,
+                            &mut fft,
+                            &mut rng,
+                            &mut workspace,
+                        );
+                    }
+                    1 => {
+                        let _ = FourierGlweAutomorphismKey::generate(
+                            3,
+                            input,
+                            output,
+                            &params,
+                            &mut fft,
+                            &mut rng,
+                            &mut workspace,
+                        );
+                    }
+                    _ => {
+                        let _ = FourierGlweTraceKey::generate(
+                            input,
+                            output,
+                            &params,
+                            &mut fft,
+                            &mut rng,
+                            &mut workspace,
+                        );
+                    }
+                }))
+                .is_err()
+            );
+            assert_eq!(rng.next_u64(), expected_rng.next_u64());
+        }
+    }
+}
+
+#[test]
+fn fourier_evaluation_key_generation_rejects_before_sampling() {
+    check_fourier_evaluation_key_generation_boundaries::<RustFftTable>();
+    #[cfg(feature = "tfhe-fft")]
+    check_fourier_evaluation_key_generation_boundaries::<primus_fft::TfheFftTable>();
 }
 
 #[test]
