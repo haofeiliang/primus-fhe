@@ -30,6 +30,9 @@ required-features = ["ntt"]
 name = "fourier_lookup"
 required-features = ["rustfft"]
 
+[dev-dependencies]
+primus_modulus = { path = "../primus_modulus" }
+
 [features]
 default = ["ntt", "fourier"]
 ntt = [

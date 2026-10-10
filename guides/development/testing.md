@@ -2,7 +2,7 @@
 
 本指南区分普通测试、编译检查、示例执行和性能测量。包和 target 由 [workspace](../../Cargo.toml) 与 Cargo metadata 决定；实际用例由 nextest 清单决定。库接口与工作区入口见[开发导航](README.zh_CN.md)。
 
-所有 `primus_tfhe*` 的原有普通测试和基准已经移除，后续依据示例与接口重新设计；底层库测试仍保留。TFHE 当前的编译、Clippy、doctest 和示例运行各自只验证其实际范围，不能算作已恢复端到端回归覆盖。
+原有 `primus_tfhe*` 普通测试和基准已移除。目前已恢复共享数学、家族参数配对和高精度表的少量回归；真实后端端到端测试与 crate 内基准仍待重建。底层库测试保留。编译、Clippy、doctest 和示例运行各自只验证其实际范围。
 
 ## 验证入口
 
@@ -94,7 +94,7 @@ cargo nextest run -p primus_fft --lib --tests --features rustfft,tfhe-fft
 
 ## 契约与主要 setup 归属
 
-基础类型、算术、表示及密码原语的测试留在拥有其契约的 crate，详细入口如下。TFHE 原有普通测试已删除；未来分别恢复共享几何/参数边界和真实后端消费，不重复整套底层测试或为测试新增生产接口。
+基础类型、算术、表示及密码原语的测试留在拥有其契约的 crate，详细入口如下。TFHE 已恢复共享几何/参数边界；真实后端消费另行恢复，不重复整套底层测试或为测试新增生产接口。
 
 ## 基础库的聚焦覆盖
 
@@ -209,9 +209,22 @@ Release 验证公开拒绝和擦除失效不依赖 debug assertions；doctest �
 
 ## TFHE 流程与共享辅助代码的聚焦覆盖
 
-当前保留四后端及 LUT 的 26 个示例、公开 rustdoc 和底层密码原语测试。原有 TFHE 单元/集成测试、集中 benchmark 包、参数诊断 CLI 和报告脚本均已移除。测试待示例驱动的接口收敛后重新设计；编译成功和示例结果不补足这段时间的回归覆盖。
+四后端及 LUT 的示例继续展示完整用户流程。以下测试保护共享数学和构造边界，不使用旧 test-support、集中 fixture、公开诊断 hook 或大参数矩阵：
 
-恢复时按独立契约选择少量小参数测试：共享 LUT/旋转 oracle、家族配置边界、PBS/ManyLUT/MVB 输出编码、CBS/one-hot 实际消费、q/Q 返回及高精度 chunk 组合。NTT/Fourier、u32/u64、classic/sparse 等差异在真正拥有差异的层验证，不复制大型参数矩阵。
+| 归属 | 当前回归 |
+| --- | --- |
+| `primus_tfhe` | [旋转](../../crates/primus_tfhe/tests/rotation.rs)：u128 整数 oracle、小奇模数/PowOf2 穷举、u32/u64 native 舍入边界、批量错误先于写入；[LUT](../../crates/primus_tfhe/tests/lookup_table.rs)：普通/ManyLUT 最近中心、padding、奇数完整域的负循环符号和配对拒绝 |
+| `primus_tfhe_glwe` | [参数](../../crates/primus_tfhe_glwe/tests/parameters.rs)：n≤kN、补零 KS 维数、两种 PBS order、BSK/KS 独立噪声、CBS 的输入编码与输入 KS 配对 |
+| `primus_tfhe_ntru` | [参数与 one-hot](../../crates/primus_tfhe_ntru/tests/parameters.rs)：q/Q 和返回 basis、输入/输出消息空间独立、独立 CBS 材料的环/模数配对、trace 模数限制、负旋转下所有 selector 的左闭保护区与 gadget padding |
+| `primus_tfhe_ntru_lut` | [公开编译](../../crates/primus_tfhe_ntru_lut/tests/compilation.rs)：完整连续存储、重复表不去重、枚举/错误顺序、编码/补零、真实分配上界、整值 chunk 顺序；compiler-only 也运行 |
+
+```sh
+cargo nextest run -p 'primus_tfhe*' --lib --tests --features ntt,fourier,rustfft,tfhe-fft
+cargo nextest run -p primus_tfhe_ntru_lut --lib --tests --no-default-features
+cargo +nightly nextest run -p 'primus_tfhe*' --lib --tests --all-features
+```
+
+这些用例不证明完整 PBS/ManyLUT/MVB/CBS/one-hot/高精度求值链路，也不估计噪声失败率。后续恢复真实后端消费时，按实际差异覆盖 NTT/Fourier、两 FFT、u32/u64、classic/sparse、模数/order，不复制上述 oracle 或全维度矩阵。`just tfhe` / `just tfhe-simd` 目前仍只运行 Clippy；普通回归已由 workspace 的 nextest 入口收集，专用 TFHE 组合入口将在后端回归恢复时更新。
 
 未来 TFHE 基准放回所属后端或 LUT crate 的 `benches/`，单个文件就地组织 helper。基准使用推荐公开工作流，不为阶段拆时新建公开资源入口、共享 support crate 或自动分析框架。完整请求是主要测量对象；LUT 创建和在线求值分别计时，setup 不混入在线延迟。历史结果见[性能记录](../performance/README.zh_CN.md)，旧命令须在报告对应版本运行。
 
