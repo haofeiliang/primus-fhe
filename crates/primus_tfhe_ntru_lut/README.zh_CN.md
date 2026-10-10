@@ -99,8 +99,6 @@ cargo run --release -p primus_tfhe_ntru_lut --example fourier_lookup --features 
 
 编译各个候选 d 后，`table.stats()` 给出输入/输出位数、逻辑/唯一多项式数、需要 one-hot 的 chunk 数、NLEV/NGSW selector 数、选择节点数、公开提升数和同时存活的结果 slot 数。这些数量反映剪枝及跨输出共享，不预测延迟或噪声；`public_lift_count > 0` 等价于 `needs_public_lift()`。
 
-`table.estimate_workspace(output_levels)?` 接收拟用 CBS 输出的 `DecompositionLevelCount`，返回 `ntt_bytes` 与 `fourier_bytes`，与 evaluator 构造共用缓冲长度计算。它是**部分估算**，只统计 LUT 直接持有的 selectors、旋转 controls/factors、结果 slots、current/product 及 Fourier 转换/gadget-one 缓冲。它不含 BR/CBS/one-hot 工作区（包括 sparse 的额外输入状态）、LWE 返回工作区、变换引擎、密钥、公开表/计划、调用方输入输出、分配器开销及构造临时空间；比较 d 时仍需实测总内存与时间。
-
 ## 求值与工作区
 
 `context.try_generate_keys(&table, rng)` 生成一份 BR/CBS/返回组合，只补充执行计划实际需要的 lift。Classic 借用已有 initializer；sparse 仅在 `table.needs_public_lift()` 为真时，按 BR 的 basis/noise 生成独立 `NLEV[1]`。BR、CBS 和 lift 共用已接受的环秘密变换/逆元，不生成第二份 BR 或变换表。普通 sparse PBS/CBS/one-hot 不受影响。
@@ -146,7 +144,7 @@ Evaluator 借用 context、server key 和 table，并在构造时分配全部缓
 
 ## Features
 
-使用 `--no-default-features` 时，提供 `ChunkFormat`、`HighPrecisionLookupTable`、`LookupTableConfig`、相关错误及公开多项式访问，无需变换或 evaluator。`try_new` 接收 `PolyLength`、累加 Q、输入 codec 和 chunk 配置；普通依赖不包含 LWE/GLWE/NTRU/TFHE 材料或变换 crate。统计与两种工作区估算均无需启用后端。编译保留完整的不可变选择计划，回调顺序、系数编码和表布局不随 feature 改变。
+使用 `--no-default-features` 时，提供 `ChunkFormat`、`HighPrecisionLookupTable`、`LookupTableConfig`、相关错误及公开多项式访问，无需变换或 evaluator。`try_new` 接收 `PolyLength`、累加 Q、输入 codec 和 chunk 配置；普通依赖不包含 LWE/GLWE/NTRU/TFHE 材料或变换 crate。离线计划统计无需启用后端。编译保留完整的不可变选择计划，回调顺序、系数编码和表布局不随 feature 改变。
 
 | Feature | 启用内容 |
 | --- | --- |

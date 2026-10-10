@@ -49,10 +49,10 @@
 //! # Ok::<(), primus_tfhe_ntru_lut::LookupTableError>(())
 //! ```
 //!
-//! [`HighPrecisionLookupTable::stats`] describes the pruned selection plan;
-//! [`HighPrecisionLookupTable::estimate_workspace`] estimates direct LUT buffers
-//! for a chosen CBS output level count. See [`LookupWorkspaceEstimate`] for
-//! the excluded resources. Evaluator binding separately validates N/q/Q and CBS.
+//! [`HighPrecisionLookupTable::stats`] describes pruning and sharing in the
+//! compiled plan. These counts do not estimate memory, latency or noise.
+//! Evaluator binding separately validates N/q/Q and CBS, and checks buffer sizes
+//! before allocating its workspace.
 //!
 //! # Features
 //! NTT and generic Fourier are enabled by default, without choosing an FFT engine.
@@ -105,7 +105,6 @@ pub use fourier::{
 };
 pub use lookup_table::{
     HighPrecisionLookupTable, LookupTableConfig, LookupTableError, LookupTableStats,
-    LookupWorkspaceEstimate,
 };
 #[cfg(feature = "ntt")]
 pub use ntt::{

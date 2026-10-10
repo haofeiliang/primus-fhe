@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 bytemuck = { workspace = true }
-primus_decompose = { path = "../primus_decompose" }
+primus_decompose = { path = "../primus_decompose", optional = true }
 primus_encoding = { path = "../primus_encoding" }
 primus_fft = { path = "../primus_fft", optional = true }
 primus_integer = { path = "../primus_integer" }
@@ -34,6 +34,7 @@ required-features = ["rustfft"]
 [features]
 default = ["ntt", "fourier"]
 ntt = [
+    "dep:primus_decompose",
     "dep:rand",
     "dep:primus_modulus",
     "dep:primus_tfhe",
@@ -44,6 +45,7 @@ ntt = [
     "primus_ntru/ntt",
 ]
 fourier = [
+    "dep:primus_decompose",
     "dep:rand",
     "dep:primus_modulus",
     "dep:primus_tfhe",
@@ -56,7 +58,7 @@ fourier = [
 rustfft = ["fourier", "primus_fft/rustfft"]
 tfhe-fft = ["fourier", "primus_fft/tfhe-fft"]
 simd = [
-    "primus_decompose/simd",
+    "primus_decompose?/simd",
     "primus_encoding/simd",
     "primus_poly/simd",
     "primus_tfhe_ntru?/simd",

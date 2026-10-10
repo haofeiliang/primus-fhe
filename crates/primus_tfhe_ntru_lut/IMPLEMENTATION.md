@@ -4,7 +4,7 @@ User-facing encoding and evaluation contracts are in the [README](README.md). Th
 
 ## Compilation and evaluator features
 
-The default build retains public compilation and polynomial inspection, including
+The compiler-only build (`--no-default-features`) retains public compilation and polynomial inspection, including
 the complete backend-neutral selection plan. Compilation accepts `PolyLength`, accumulator Q, a Rounded input codec at q
 and chunk geometry; its normal dependency tree contains no encryption/key or
 TFHE crate and no NTT/FFT implementation. `ntt` / `fourier` enable the corresponding evaluator module,
@@ -18,14 +18,19 @@ selected. The three internal metadata structs explicitly permit unread fields in
 that configuration; execution-only accessors are gated with their consumers.
 
 The [`statistics` module](src/lookup_table/statistics.rs) reads the immutable
-plan for operation counts. It also owns the direct buffer-length calculations
-shared by both evaluator constructors and `estimate_workspace`. NTT counts T
-entries; Fourier counts N/2 complex pairs per transformed polynomial plus its
-coefficient conversion and gadget-one buffers. This describes storage only and
-does not merge numerical kernels. Bootstrap/CBS/one-hot resources (including
-the extra sparse input state), return buffers, transform engines, keys, public compilation storage, caller buffers, allocator
-overhead and construction temporaries are excluded. This partial estimate must
-not be treated as complete retained heap or peak memory.
+plan for optional offline operation counts. Evaluator construction uses the
+internal `one_hot_chunk_count` query for sparse pair selection; it counts all
+low-chunk rotations and only surviving high-chunk selector batches, with a
+combined NLEV/NGSW batch counted once.
+
+The backend-only [`buffer_lengths` module](src/lookup_table/buffer_lengths.rs)
+checks each direct LUT allocation in its actual element type. NTT counts N ring
+elements per transformed polynomial; Fourier counts N/2 complex pairs and adds
+coefficient conversion and gadget-one buffers. These checks remain part of
+evaluator construction; the module is absent in compiler-only builds. Buffer
+lengths are not a complete retained-heap or peak-memory estimate. BR/CBS/one-hot
+resources, return buffers, transform engines, keys and caller buffers have their
+own storage contracts.
 
 ## Public table storage and compiled choices
 

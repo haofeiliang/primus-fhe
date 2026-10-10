@@ -220,7 +220,7 @@ where
         let resources = context.bootstrap_resources(blind_rotation_key)?;
         let one_hot =
             OneHotCircuitBootstrapEvaluator::try_new(&resources, circuit_key, &input_codec)?;
-        let sparse_pair = if lookup_table.stats().one_hot_chunk_count >= 2 {
+        let sparse_pair = if lookup_table.one_hot_chunk_count() >= 2 {
             one_hot.new_sparse_pair_workspace(&resources)
         } else {
             None

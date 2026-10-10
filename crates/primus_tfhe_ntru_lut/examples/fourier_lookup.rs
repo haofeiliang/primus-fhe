@@ -45,12 +45,11 @@ fn main() {
     let decryptor = context.decryptor(&client_key).unwrap();
     let mut input = encryptor.allocate_input();
 
-    // Server, offline: bind public context/table and evaluation keys; reuse buffers.
+    // Server, offline: prepare the reusable evaluator.
     let mut evaluator = context.evaluator(&server_key, &table).unwrap();
     let mut output = evaluator.allocate_output();
 
-    // Independent expected values cover both sides of each breakpoint and the
-    // full 16-bit domain's endpoints, without reusing the LUT callback as oracle.
+    // Check breakpoints, endpoints and an interior value against explicit results.
     for (x, expected) in [
         (0u64, 0u64),
         (16_383, 4_095),
@@ -66,7 +65,7 @@ fn main() {
         // Server, online: select/rotate at Q and return the result chunks at q.
         evaluator.evaluate_to(&input, &mut output);
 
-        // Client: decode and join the final chunks; print ordinary integer values.
+        // Client: decode and join the returned chunks.
         let result: Word = decryptor.decrypt(&output).unwrap();
         assert_eq!(result, expected);
         println!("fee({x}) = {result}");

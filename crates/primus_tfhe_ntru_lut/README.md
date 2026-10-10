@@ -99,8 +99,6 @@ For fixed N, M and c, start with `d=min(c, floor(log2(N)/tau))`, making M^d as c
 
 After compiling each candidate d, `table.stats()` reports input/output bits, logical/unique polynomials, required one-hot chunks, NLEV/NGSW selector counts, selection nodes, public lifts and live result slots. Counts reflect pruning and sharing across outputs; they do not predict latency or noise. `public_lift_count > 0` is equivalent to `needs_public_lift()`.
 
-`table.estimate_workspace(output_levels)?` takes the proposed CBS output `DecompositionLevelCount` and returns `ntt_bytes` and `fourier_bytes`, using the same buffer lengths as evaluator construction. This **partial** estimate counts only direct LUT buffers: selectors, rotation controls/factors, result slots, current/product and Fourier conversion/gadget-one buffers. It excludes BR/CBS/one-hot workspaces (including the extra sparse input state), LWE-return workspaces, transform engines, keys, the public table/plan, caller inputs/outputs, allocator overhead and temporary construction storage. Comparing d therefore still requires measured total memory and time.
-
 ## Evaluation and workspace
 
 `context.try_generate_keys(&table, rng)` generates one BR/CBS/return bundle and only the lift required by the compiled plan. Classic borrows its existing initializer. Sparse generates independent `NLEV[1]` with BR's configured basis/noise only when `table.needs_public_lift()` is true. Its accepted ring transform/inverse are shared across BR, CBS and lift generation; there is no second BR or table. Ordinary sparse PBS/CBS/one-hot remains unaffected.
@@ -146,7 +144,7 @@ The [parameter guide](../../guides/development/tfhe-parameters.md) records examp
 
 ## Features
 
-With `--no-default-features`: `ChunkFormat`, public table compilation and inspection, `LookupTableConfig` and their errors need no transform or evaluator. `HighPrecisionLookupTable::try_new` takes `PolyLength`, accumulator Q, an input codec and chunk configuration; its normal dependencies include no LWE/GLWE/NTRU/TFHE material or transform crate. Statistics and both workspace estimates are available without a backend. Compilation retains the complete immutable selection plan. Features do not change callback order, coefficient encoding or table layout.
+With `--no-default-features`: `ChunkFormat`, public table compilation and inspection, `LookupTableConfig` and their errors need no transform or evaluator. `HighPrecisionLookupTable::try_new` takes `PolyLength`, accumulator Q, an input codec and chunk configuration; its normal dependencies include no LWE/GLWE/NTRU/TFHE material or transform crate. Offline plan statistics are available without a backend. Compilation retains the complete immutable selection plan. Features do not change callback order, coefficient encoding or table layout.
 
 | Feature | Enables |
 | --- | --- |

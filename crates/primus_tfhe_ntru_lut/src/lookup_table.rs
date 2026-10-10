@@ -5,9 +5,11 @@ use primus_reduce::RingContext;
 #[cfg(any(feature = "ntt", feature = "fourier"))]
 use primus_tfhe_ntru::OneHotBootstrapError;
 
+#[cfg(any(feature = "ntt", feature = "fourier"))]
+mod buffer_lengths;
 mod compile;
 mod statistics;
-pub use statistics::{LookupTableStats, LookupWorkspaceEstimate};
+pub use statistics::LookupTableStats;
 pub(crate) mod selection;
 
 use crate::ChunkFormat;
@@ -351,6 +353,19 @@ impl<T: FheUint> HighPrecisionLookupTable<T> {
     #[must_use]
     pub fn needs_public_lift(&self) -> bool {
         self.selection.needs_public_lift()
+    }
+
+    /// Counts all low-chunk rotations and only surviving high-chunk selector batches.
+    /// A high chunk needing both NLEV and NGSW still uses a single one-hot pass.
+    #[must_use]
+    pub(crate) fn one_hot_chunk_count(&self) -> usize {
+        self.config().coefficient_chunk_count
+            + self
+                .selection
+                .selectors
+                .iter()
+                .filter(|&&batch| batch != selection::SelectorBatches::Unused)
+                .count()
     }
 
     /// Returns the encoded polynomial for one logical output chunk and high-chunk prefix.

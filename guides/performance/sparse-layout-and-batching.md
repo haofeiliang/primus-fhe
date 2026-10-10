@@ -486,9 +486,10 @@ changed by this experiment.
 | NTRU LWE return batches | Extraction/conversion and key switching after BR | Existing return batching does not supply a BR batch scheduler. |
 | High-precision LUT selector preparation | Different input chunks each require one-hot BR | A real potential internal consumer, subject to pruning and buffer/latency choices. |
 
-The implemented LUT window follows `LookupTableStats::one_hot_chunk_count`,
-retains pruning and selector omission, and keeps at most two independent BR
-accumulators. Output count is not an input batch size. External request queues,
+The implemented LUT window counts surviving one-hot chunks directly from the
+compiled plan, retaining pruning and selector omission, and keeps at most two
+independent BR accumulators. The optional offline `LookupTableStats` reports
+the same chunk count. Output count is not an input batch size. External request queues,
 implicit threads and a general batch API were not introduced or measured.
 
 ## GLWE NTT tile-major source key
@@ -832,8 +833,7 @@ For c1/d1/o8, retained/peak bytes are identical on both sides: NTT u32
 542080/550272. No pair state is allocated. Every measured evaluation reports
 zero online allocations. Sparse key construction, coefficient count and logical
 layout are unchanged; this experiment measures evaluator-construction peak,
-not key-generation peak. `estimate_workspace` remains a partial direct-LUT
-estimate and explicitly excludes this BR state.
+not key-generation peak. The reported memory includes the additional BR state.
 
 All **238 setup captures across 30 request IDs**, including the initial NTT
 prototype and inlining checks, agree within each ID: logical source-key
