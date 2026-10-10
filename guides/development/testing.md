@@ -2,7 +2,7 @@
 
 本指南区分普通测试、编译检查、示例执行和性能测量。包和 target 由 [workspace](../../Cargo.toml) 与 Cargo metadata 决定；实际用例由 nextest 清单决定。库接口与工作区入口见[开发导航](README.zh_CN.md)。
 
-原有 `primus_tfhe*` 普通测试和基准已移除。目前已恢复共享数学、家族参数配对和高精度表的少量回归；真实后端端到端测试与 crate 内基准仍待重建。底层库测试保留。编译、Clippy、doctest 和示例运行各自只验证其实际范围。
+`primus_tfhe*` 的普通测试覆盖共享数学、家族参数配对及推荐公开接口的完整后端消费；crate 内基准待恢复。底层库测试保留。编译、Clippy、doctest 和示例运行各自只验证其实际范围。
 
 ## 验证入口
 
@@ -16,7 +16,7 @@
 | `just check [package] [features]` / `just lint [package] [features]` | all-targets 编译 / Clippy；可选逗号分隔 features |
 | `just test [package] [features]` / `just test-doc [package]` | 普通测试 / doctest；nextest 不执行 doctest |
 | `just simd [package]` | nightly 全 features 的 Clippy 和现有普通测试 |
-| `just tfhe` / `just tfhe-simd` | TFHE 库和示例的 Clippy，分别使用稳定 feature 组合和 nightly/all-features；当前不运行普通 TFHE 测试 |
+| `just tfhe` / `just tfhe-simd` | TFHE all-targets Clippy 与普通数值测试，分别使用当前工具链的 NTT/双 FFT 组合和 nightly/all-features |
 | `just bench <package> <target> [Cargo options…]` | 运行所属 crate 的一个 Criterion target |
 | `just bench-smoke <package> <target> [Cargo options…]` | 用 `--test` 执行一个 Criterion target，不做统计采样 |
 
@@ -77,13 +77,13 @@ cargo nextest list --binaries-metadata /tmp/primus-test-binaries.json \
 - `primus_modulus/derive` 与 `primus_distr/high_precision` 有独立可选覆盖。
 - integer/lattice 的 `serde` 默认关闭，可显式运行两包的 serde 测试；nightly all-features 已覆盖。
 - lattice/encoding 的 `rns` 和 data 的 `aligned-vec` 可能由 workspace 消费者合并启用，独立包运行不能依赖这种合并。
-- 底层保留 u32/u64 及必要的小字宽、多 limb 测试；TFHE 示例固定 u64，当前不提供普通 TFHE 双字宽回归保证。
+- 底层保留 u32/u64 及必要的小字宽、多 limb 测试；TFHE 示例固定 u64，普通后端测试分层覆盖 u32/u64，不展开字宽、算法、order 和 FFT 的全组合。
 
 ### 变换后端、FFT 引擎与 target 覆盖
 
 lattice、GLWE/NTRU 的 `ntt` / `fourier` 控制表示、转换、运算和工作区；`rns` 启用 DCRT 所需 NTT。两个 TFHE family 无具体后端，四个后端 crate 固定选择对应表示。FFT 默认仅公共接口和 torus 转换，`rustfft` / `tfhe-fft` 显式选择实现。
 
-现有底层混合对照测试与示例用 `required-features` 声明要求，缺少时 Cargo 会跳过；TFHE 的 `just tfhe` 编译 NTT 和双 FFT 能力以及现有示例，不等于实际执行全部引擎。FFT 底层可按需分开复查：
+现有底层混合对照测试与示例用 `required-features` 声明要求，缺少时 Cargo 会跳过；TFHE 集成测试按对应 feature 编译，`just tfhe` 会实际执行 NTT、RustFFT、TFHE-FFT 的小参数工作流。FFT 底层可按需分开复查：
 
 ```sh
 cargo nextest run -p primus_fft --lib --tests
@@ -94,7 +94,7 @@ cargo nextest run -p primus_fft --lib --tests --features rustfft,tfhe-fft
 
 ## 契约与主要 setup 归属
 
-基础类型、算术、表示及密码原语的测试留在拥有其契约的 crate，详细入口如下。TFHE 已恢复共享几何/参数边界；真实后端消费另行恢复，不重复整套底层测试或为测试新增生产接口。
+基础类型、算术、表示及密码原语的测试留在拥有其契约的 crate，详细入口如下。TFHE 测试在这些独立契约之上验证端到端组合，不重复整套底层测试或为测试新增生产接口。
 
 ## 基础库的聚焦覆盖
 
@@ -209,7 +209,7 @@ Release 验证公开拒绝和擦除失效不依赖 debug assertions；doctest �
 
 ## TFHE 流程与共享辅助代码的聚焦覆盖
 
-四后端及 LUT 的示例继续展示完整用户流程。以下测试保护共享数学和构造边界，不使用旧 test-support、集中 fixture、公开诊断 hook 或大参数矩阵：
+四后端及 LUT 的示例继续展示完整用户流程。共享层测试保护数学和构造边界，后端测试消费推荐公开工作流；不使用 test-support、集中 fixture、公开诊断 hook 或大参数矩阵：
 
 | 归属 | 当前回归 |
 | --- | --- |
@@ -224,7 +224,17 @@ cargo nextest run -p primus_tfhe_ntru_lut --lib --tests --no-default-features
 cargo +nightly nextest run -p 'primus_tfhe*' --lib --tests --all-features
 ```
 
-这些用例不证明完整 PBS/ManyLUT/MVB/CBS/one-hot/高精度求值链路，也不估计噪声失败率。后续恢复真实后端消费时，按实际差异覆盖 NTT/Fourier、两 FFT、u32/u64、classic/sparse、模数/order，不复制上述 oracle 或全维度矩阵。`just tfhe` / `just tfhe-simd` 目前仍只运行 Clippy；普通回归已由 workspace 的 nextest 入口收集，专用 TFHE 组合入口将在后端回归恢复时更新。
+实际后端覆盖如下；每个测试文件就地组织参数和工作流 helper，没有共享支持库或测试专用生产接口。
+
+| 入口 | 必要差异与实际消费 |
+| --- | --- |
+| GLWE [NTT](../../crates/primus_tfhe_glwe_ntt/tests/workflows.rs)、[Fourier](../../crates/primus_tfhe_glwe_fourier/tests/workflows.rs) | n=8、k=2、N=128；u32/u64，NTT 显式素数 / Fourier Native；classic binary/ternary 和 sparse binary；BR→KS 与 KS→BR。连续两次 PBS、t_in=8→t_out=4 的三路 ManyLUT、九路 Scaled MVB、自定义 CBS 谓词控制真实 CMux 并核对全部系数 |
+| NTRU [NTT](../../crates/primus_tfhe_ntru_ntt/tests/workflows.rs)、[Fourier](../../crates/primus_tfhe_ntru_fourier/tests/workflows.rs) | n=8、N=128、独立 q=2^24；上述 PBS/ManyLUT/MVB/CBS 工作流，再用同一 CBS 密钥生成 one-hot，消费非零 selectors 做四路 CMux，含默认第零分支。外部固定重量为偶数；Q→q 和独立 LWE KS 由解密最终输出验证，九路 MVB 跨返回 tile 及尾部 |
+| LUT [NTT](../../crates/primus_tfhe_ntru_lut/tests/ntt.rs)、[Fourier](../../crates/primus_tfhe_ntru_lut/tests/fourier.rs) | n=8、N=128、M=4，c2/3、d0/1/2、独立输出数1/2/3/9；真实生成密钥并调用整值 encrypt→evaluate→decrypt。随机完整函数、常量和重复输出均保持完整存储/选表；覆盖首层提升、后续选择、负幂旋转、h=0 的 classic initializer / sparse 独立 lift、sparse 成对处理和奇数尾块、Fourier 九输出返回尾部 |
+
+NTT 工作流以 u32 覆盖 classic 连续 PBS 和 sparse 消费，以 u64 覆盖 ternary 与 CBS；Fourier 工作流以 RustFFT/u32 覆盖 classic，以 TFHE-FFT/u64 覆盖 sparse。LUT 另交叉 RustFFT/u64 sparse 和 TFHE-FFT/u32 classic。两 FFT 用各自生成的表和密钥，预期值来自明文函数或原始候选消息，不读取内部 workspace，也不要求两引擎密文逐位一致。
+
+这些固定 seed、小参数用例验证数值组合与复用，不估计安全性或解密失败率；大参数示例、性能和其他 CPU 分派仍需相应验证。`just tfhe` / `just tfhe-simd` 和 workspace nextest 均运行这些回归，doctest 仍单独执行。
 
 未来 TFHE 基准放回所属后端或 LUT crate 的 `benches/`，单个文件就地组织 helper。基准使用推荐公开工作流，不为阶段拆时新建公开资源入口、共享 support crate 或自动分析框架。完整请求是主要测量对象；LUT 创建和在线求值分别计时，setup 不混入在线延迟。历史结果见[性能记录](../performance/README.zh_CN.md)，旧命令须在报告对应版本运行。
 

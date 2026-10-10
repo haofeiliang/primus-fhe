@@ -42,11 +42,10 @@ simd package="*":
   cargo +nightly clippy -p '{{package}}' --all-targets --all-features -- -D warnings
   cargo +nightly nextest run -p '{{package}}' --lib --tests --all-features
 
-# TFHE examples and libraries; numerical tests will follow the revised APIs.
-tfhe: (lint "primus_tfhe*" "ntt,fourier,rustfft,tfhe-fft")
+# TFHE examples, libraries and small numerical regressions, including both FFT engines.
+tfhe: (lint "primus_tfhe*" "ntt,fourier,rustfft,tfhe-fft") (test "primus_tfhe*" "ntt,fourier,rustfft,tfhe-fft")
 
-tfhe-simd:
-  cargo +nightly clippy -p 'primus_tfhe*' --all-targets --all-features -- -D warnings
+tfhe-simd: (simd "primus_tfhe*")
 
 # Explicit crate-local workload.
 bench package target *cargo-args:
