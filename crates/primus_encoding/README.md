@@ -9,15 +9,13 @@ Plaintext coefficient encoding and decoding for Primus FHE.
 
 ## APIs
 
-`RoundedCodec::try_new` and `ScaledCodec::try_new` return `CodecError` for invalid domains or a failed fixed-scale recovery bound. Their `new` forms panic on the same errors. Construction checks do not establish a noise budget.
-
 | Codec | Encoding | Current use |
 | --- | --- | --- |
 | `RoundedCodec<T,M>` | `round(lift(m)*q/t) mod q` | LWE and TFHE lookup tables |
 | `ScaledCodec<T,M>` | `lift(m)*round(q/t) mod q` | Single-modulus GLWE/NTRU |
 | `BfvRnsCodec<T,M>` | `lift(m)*floor(Q/t) mod Q` | RNS coefficient scaling (`rns` feature) |
 
-Single-modulus constructors use `new(plaintext_modulus, ciphertext_modulus)`, for example `RoundedCodec::new(256u64, NativeModulus::new())` or `RoundedCodec::new(7u64, BarrettModulus::new(131))`. Construction requires `PrepareModulusSwitch` and `ReduceAdd`; `RingContext` already includes these capabilities, and `UintModulus` / `CompactModulus` also work. Construct once and reuse the codec. When t divides q, both encodings use exact scale q/t; otherwise Rounded rounds each message while Scaled uses one integer scale.
+Single-modulus constructors use `new(plaintext_modulus, ciphertext_modulus)`, for example `RoundedCodec::new(256u64, NativeModulus::new())` or `RoundedCodec::new(7u64, BarrettModulus::new(131))`. Construct once and reuse the codec. When `t` divides `q`, both encodings use the exact scale `q/t`; otherwise Rounded rounds each message while Scaled uses one integer scale.
 
 The output `RoundedCodec` for ordinary TFHE LUTs uses the accumulator modulus and may choose a different plaintext modulus from the input. Decode with the same output plaintext modulus at the returned ciphertext modulus, especially for NTRU Q→q. See the [output encoding guide](../primus_tfhe/README.md#choosing-the-output-encoding).
 
@@ -25,30 +23,33 @@ These are coefficient codecs. BFV/BGV integer slot packing, BGV's unscaled plain
 
 ## Encoding contracts
 
-Messages must be canonical residues in `[0,t)`. Unsigned embedding lifts them to `[0,t)`; centered embedding lifts them to `[-floor(t/2),ceil(t/2))`, including `1 -> -1` when `t=2`. Rounded encoding rounds the magnitude with ties upward, then applies its sign; decoding rounds the canonical phase times `t/q`, with ties upward, modulo `t`. Accumulators and decoding inputs must be canonical ciphertext residues in the codec's modulus or ordered RNS basis. These ciphertext input ranges are caller preconditions, not validated by the codecs.
+Messages and decoded outputs use the coefficient type `T`, with canonical values in `[0,t)`. Unsigned embedding lifts messages to `[0,t)`; centered embedding lifts them to `[-floor(t/2),ceil(t/2))`, including `1 -> -1` when `t=2`. Accumulators and decoding inputs must be canonical ciphertext residues under the codec's modulus. These ciphertext input ranges are caller preconditions, not validated by the codecs.
 
-`RoundedCodec` requires `t >= 2` and `q > t`. `ScaledCodec` additionally checks `abs(t*round(q/t)-q)*(t-1) < q/2`, a sufficient condition for noiseless recovery under either embedding. For a chosen integer lift `m` and noise `e`, its recovery condition is `abs((t*delta-q)*m + t*e) < q/2`. Encoding parameters and conventions must agree between producers and consumers.
+Rounded encoding rounds ties away from zero on the integer lift. Both single-modulus codecs decode by rounding the canonical phase times `t/q`, with ties upward, modulo `t`. Only when `t` divides `q` can this be written as `round(c/delta) mod t` with `delta=q/t`; a power-of-two rounded scale alone is insufficient.
 
-`MessageDecoder::from(&codec)` copies the prepared q→t state from either single-modulus codec without allocation or preparing another switch. It offers `decode_value`, `decode_slice_to` and `decode_slice_assign`, with the same canonical-input contract. This common decoding rule does not make Rounded and Scaled encoding interchangeable or establish a noise budget.
+`RoundedCodec` requires `t >= 2` and `q > t`. `ScaledCodec` additionally checks `abs(t*delta-q)*(t-1) < q/2`, where `delta=round(q/t)` with ties upward. This is sufficient for noiseless recovery under either embedding and guarantees `(t-1)*delta < q`. For an integer lift `m` and phase noise `e`, a sufficient Scaled recovery condition is `abs((t*delta-q)*m + t*e) < q/2`.
 
-`BfvRnsCodec` uses the product `Q` of its ordered ciphertext moduli. Its constructor checks conservative sufficient recovery bounds `Q > 4*(Q % t)*(t-1)` and `gamma > 4*k`, where `k` is the number of moduli, as well as the modulus and coprimality conditions documented in rustdoc. For phase `delta*m+e`, a sufficient decode bound is `abs(t*e-(Q % t)*m)/Q + k/gamma < 1/2`. Base conversion inherits `BaseConverter::fast_convert`'s cross-modulus dot-product contract. The runtime or derived Barrett contexts used here already establish the required operand bounds; source residues may exceed `t` or `gamma` without extra reduction. Custom contexts must provide the same numerical guarantees.
+`RoundedCodec::try_new` and `ScaledCodec::try_new` return `CodecError` on invalid domains or a failed fixed-scale recovery bound; `new` panics on the same errors. These checks do not establish an encryption or evaluation noise budget. Producers and consumers must agree on the codec, embedding and moduli.
 
-`BfvRnsCodec::try_new` returns `BfvRnsCodecError<T>` for invalid modulus or recovery conditions; `new` delegates and panics on failure. The supplied `RNSBase` already validates the nonempty, pairwise-coprime ciphertext basis. These checks prepare the codec once; they do not establish an encryption noise or security budget.
+Use `MessageDecoder::from(&codec)` when only decoding is needed. Single-modulus slice methods use `_to` for separate output and `_assign` for in-place updates. Batch encoding validates message ranges and exact lengths before writing; methods that add encoded messages retain the existing accumulator contents.
 
-The codec and its decoder converter share the supplied base's immutable CRT tables and numeric modulus cache. Codec clones also share those base tables; BFV scaling factors and conversion matrices remain independently owned. Gadget parameters can share the same `RNSBase` without acquiring BFV encoding data.
+## BFV RNS
 
-For a complete phase-noise magnitude bound `E`, call `validate_noise_bound(E, embedding)` once when preparing parameters. It checks `(t*E + (Q % t)*A)/Q + k/gamma < 1/2`, with `A=t-1` for unsigned lifting and `A=floor(t/2)` for centered lifting, using exact multi-limb integer arithmetic. Failure returns `InsufficientNoiseRecovery`; this sufficient bound can reject cases that would still decode. The caller must include all encryption/evaluation contributions in `E`.
+With the `rns` feature, `BfvRnsCodec::try_new(plaintext_modulus, base_q, gamma_modulus)` prepares coefficient scaling under the product `Q` of an ordered ciphertext basis. It returns `BfvRnsCodecError<T>` on invalid modulus or recovery conditions; `new` panics on the same errors. The constructor checks the [modulus ranges and coprimality conditions](src/bfv_rns/mod.rs), as well as `Q > 4*(Q % t)*(t-1)` and `gamma > 4*k`, where `k` is the number of ciphertext moduli. These conservative bounds ensure noiseless recovery, not an encryption noise or security budget.
 
-RNS encoding produces coefficient-domain `CrtPolynomial` data; callers perform NTT conversions separately. `decode_coeffs_to` overwrites its coefficient-domain input and needs exactly `decode_scratch_len(output.len())` scratch elements. This is zero for a single-modulus basis and one RNS polynomial for other bases. The codec is a BFV building block, not a complete BFV scheme.
+For phase `delta*m+e`, with `delta=floor(Q/t)`, a sufficient decode condition is `abs(t*e-(Q % t)*m)/Q + k/gamma < 1/2`.
 
-Single-modulus slice methods use `_to` for separate output and `_assign` for in-place updates. RNS uses `encode_coeffs_to`, `add_encode_coeffs_assign`, and `decode_coeffs_to`; polynomial length is inferred from the plaintext slice. Batch encoding validates message ranges and exact lengths before writing. Encoding inputs and decoding outputs use the coefficient type `T`, with canonical values in `[0,t)`. Scalar inputs are `T` and slices are `[T]`; applications handle integer or semantic type conversions at their boundaries.
+For a complete phase-noise magnitude bound `E`, call `validate_noise_bound(E, embedding)` when preparing parameters. It checks `(t*E + (Q % t)*A)/Q + k/gamma < 1/2`, with `A=t-1` for unsigned lifting and `A=floor(t/2)` for centered lifting. Failure returns `InsufficientNoiseRecovery`; this sufficient bound can reject cases that would still decode. Include all encryption and evaluation contributions in `E`.
+
+`encode_coeffs_to` produces coefficient-domain `CrtPolynomial` data in the basis order; `add_encode_coeffs_assign` adds to an existing canonical accumulator. Polynomial length comes from the plaintext slice. `decode_coeffs_to` overwrites its coefficient-domain input and needs exactly `decode_scratch_len(output.len())` scratch elements: zero for a single-modulus basis, one RNS polynomial otherwise. Perform inverse NTT before decoding transformed data.
+
+Each input residue must be canonical under its basis modulus. Custom modulus contexts must also satisfy the [cross-modulus base-conversion contract](../primus_rns/README.md#base-conversion) inherited by the codec; the supplied Barrett contexts meet it. This codec is a BFV building block, not a complete BFV scheme.
 
 ## Phase error diagnostics
 
 `phase_error_magnitude(phase, expected_phase, modulus)` returns the exact
 nonnegative circular distance in the coefficient type, in `[0, floor(q/2)]`.
-It needs only modular subtraction, handles Native without materializing
-`2^BITS`, and performs no allocation or floating-point conversion.
+It handles Native's `2^BITS` modulus without floating-point conversion.
 `phase_error_magnitude_slice_to` writes these distances into a supplied slice;
 all three lengths must match, including for empty inputs. Length mismatches
 panic before any output is written. Canonical residues are caller preconditions.
@@ -76,10 +77,10 @@ Per-limb RNS distances do not measure the error under the product modulus.
 
 ## Further reading
 
-[Implementation notes](IMPLEMENTATION.md) record arithmetic kernels and benchmark boundaries. The [public API sources](src/lib.rs) document method contracts; the [testing guide](../../guides/development/testing.md) records validation scope.
+The [public API sources](src/lib.rs) document method contracts. Commands and measured workloads are recorded in the [single-modulus benchmark](benches/plaintext_codec.rs) and [RNS benchmark](benches/bfv_rns.rs); see the [testing guide](../../guides/development/testing.md) for validation entry points.
 
 ## Features
 
 - Default: single-modulus codecs and phase error diagnostics.
-- `rns`: enables `primus_data`, `primus_poly`, and `primus_rns` dependencies.
+- `rns`: enables BFV RNS coefficient encoding and decoding.
 - `simd`: enables nightly SIMD arithmetic; does not enable `rns` by itself.
