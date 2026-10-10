@@ -1,27 +1,32 @@
-# primus_ntru validation and benchmarks
+# primus_ntru benchmarks
 
 English | [简体中文](README.zh_CN.md)
 
 > [!WARNING]
 > [Primus FHE](../../../README.md) is experimental; its APIs and numerical contracts are unstable and may change incompatibly at any time.
 
-## Tests and benchmarks
+## Workloads
+
+| Target | Timed work |
+| --- | --- |
+| [encryption](encryption.rs) | Ordinary message encryption and undecoded phase extraction |
+| [primitives](primitives.rs) | Key switching, coefficient/transformed automorphism, trace/reverse trace, projection, partial expansion and scheme switching |
+| [constant_gadget](constant_gadget.rs) | Constant NLev generation and batches of 8 signed NGSW controls |
+| [lwe_return](lwe_return.rs) | Q→q conversion, extraction and LWE key switching; individual returns versus shared-input batch returns |
+| [ternary_cmux](ternary_cmux.rs) | One fused ternary rotation versus two binary CMUXes, using encrypted controls |
+
+Key/table setup and buffer allocation stay outside timing. Encryption includes sampling, encoding and required transforms. Parameters and fixed seeds are in each file; these workloads do not establish matched security across backends.
+
+Phase extraction does not include decoding. Trace and reverse trace have different output scales. `lwe_return` excludes blind rotation; its inputs are canonical coefficient polynomials. `ternary_cmux` compares the complete rotation in each path; Fourier results can have different rounding errors.
+
+## Run
 
 ```sh
-cargo test -p primus_ntru --features ntt,rustfft,tfhe-fft
-cargo clippy -p primus_ntru --all-targets --features ntt,rustfft,tfhe-fft -- -D warnings
-cargo +nightly test -p primus_ntru --features ntt,simd,rustfft,tfhe-fft
 cargo bench -p primus_ntru --bench encryption --features ntt,rustfft,tfhe-fft
-cargo bench -p primus_ntru --bench lwe_return
-cargo bench -p primus_ntru --bench primitives --features ntt,rustfft,tfhe-fft -- 'ntt/n4096/logb3'
+cargo bench -p primus_ntru --bench primitives --features ntt,rustfft,tfhe-fft
 cargo bench -p primus_ntru --bench constant_gadget --features ntt,rustfft
+cargo bench -p primus_ntru --bench lwe_return
 cargo bench -p primus_ntru --bench ternary_cmux --features ntt,rustfft,tfhe-fft
 ```
 
-`encryption` measures ordinary encryption and undecoded phase extraction. `primitives` measures key switching, automorphism, trace/reverse trace, three coefficient projections, expansion of an eight-coefficient prefix and scheme switching (output B=2^8, L=3) at `N = 1024/4096/8192`, with `B = 2^3/2^10` and the maximum supported level count. Both use `u64`, sparse ternary secrets and sigma 3.2; NTT uses `q = 1_125_899_906_826_241`, and Fourier covers both FFT backends. `constant_gadget` retains constant NLev and eight-control NGSW generation. Setup, tables, key generation and allocations stay outside timed closures. Add `-- --test` for fixture smoke checks; those checks do not measure performance or establish decryptability.
-
-`lwe_return` isolates Q→q, extraction and LWE key switching for several coefficients of one NTRU polynomial, comparing individual returns with shared conversion and tiled returns. It uses N1024/n728, q=2^24 and logB=3, covering u32/u64 with explicit NTT and native source moduli; k=1, 3 and 17 cover a singleton, a typical ManyLUT batch and tile tails. Inputs are seeded canonical coefficients. Keys and workspace are prepared only for selected IDs, outside timing.
-
-`ternary_cmux` compares one fused rotation against two binary CMUXes, with real encrypted controls, u32/u64 and reusable scratch at `N=1024`, for NTT and both FFT backends. Fourier setup reports phase error against independent coefficient convolution outside timing.
-
-NTT scalar products use the existing CPU dispatch and optional dependency SIMD support. No ISA choice is added to the public NTRU API. Compare timings only within matched workloads; these backends do not share equal-security parameters.
+Append `-- '<regex>'` to select cases, or `-- --test` to run a smoke check without timing samples. These feature lists include each target's required FFT engines. Validation commands are in the workspace [testing guide](../../../guides/development/testing.md).

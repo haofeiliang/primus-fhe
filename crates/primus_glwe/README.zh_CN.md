@@ -1,6 +1,6 @@
 # primus_glwe
 
-[English](README.md) | [简体中文](README.zh_CN.md)
+[English](README.md) | 简体中文
 
 > [!WARNING]
 > 本 crate 属于实验性的 [Primus FHE](../../README.zh_CN.md) workspace。其 API 和数值契约尚不稳定，可能随时发生不兼容修改。
@@ -64,156 +64,112 @@ codec.decode_slice_to(phase.as_ref(), &mut decoded);
 assert_eq!(decoded, message.as_ref());
 ```
 
-普通调用用 `encrypt_message_to` 复用密文，不必先分配 encoded 多项式。需要直接操作编码时使用 `encrypt_encoded_to`；其输入和 `decrypt_phase_to` 的输出都是系数域，密文是 NTT 域。重复请求保留参数、表、密钥和输出；Fourier 路径还需复用对应 FFT engine 与工作区，见下文。
+用 `encrypt_message_to` 复用密文存储，无需单独的 encoded 多项式。重复请求保留参数、表、密钥和输出；Fourier 运算还需复用 FFT engine 与工作区。
 
-## 密钥与表示
+## 参数与密钥
 
-`GlweParameters::new` / `try_new` 接收 `primus_poly::PolyLength`。用 `PolyLength::try_new(n)?`（已知常量可用 `new`）构造一次，供参数、尺寸与变换表复用。无效整数由 `PolyLengthError` 报告；参数构造仍负责组合布局、模数及采样器检查。
-
-`GlweParameters::try_new` 对布局、固定尺度编码和采样错误返回 `GlweParameterError`，包括固定重量超过完整 kN 密钥长度。`GlweEncryptionParameters::try_new` 不持有布局，只检查模数/采样。对应 `new` 构造器在非法参数下 panic；变换可用性及噪声/安全预算仍需另外验证。 `GlweParameterError::SecretKey` 以 `SecretKeySamplerError` 保留采样配置、重量或模数适配的具体原因；`Noise` 保留 `GaussianError`。
-
-| 类型 | 存储与职责 |
+| 参数 | 用途 |
 | --- | --- |
-| `GlweSecretKey<T>` | 有符号系数多项式；采样，以及密钥转换、生成的输入 |
+| `GlweParameters` | 带 `ScaledCodec` 的普通加解密 |
+| `GlweEncryptionParameters` | 密钥生成、encoded/零加密所需的模数和采样器；无 codec 或布局 |
+| `GlevParameters` / 其别名 `GgswParameters` | GLWE 布局、加密参数及 gadget 分解；无明文 codec |
+
+普通消息使用 `GlweParameters::try_new`；仅需 gadget 时使用 `GgswParameters::try_new(size, modulus, secret_distr, decomposition, sigma)`。其中 `size` 为 `GlweSize`，`decomposition` 为 `DecompositionConfig`，`sigma` 以系数为单位。已有普通参数时，可用 `GlevParameters::try_with_glwe_params` 派生同一环上的 gadget 参数。
+
+[PolyLength](../primus_poly/README.zh_CN.md#环多项式长度) 构造一次，供参数、表和工作区复用。GLWE 维数使用 `GlweDimension`；固定秘密重量作用于全部 `k*N` 个系数，不是逐多项式分别应用。可失败构造器报告布局、编码或采样配置错误，不证明变换可用性及噪声/安全预算。
+
+| 密钥 | 表示与用途 |
+| --- | --- |
+| `GlweSecretKey<T>` | 有符号系数；采样及求值密钥生成 |
 | `NttGlweSecretKey<T>` | 模 `q` 的规范 NTT 剩余类；NTT 加解密 |
-| `FourierGlweSecretKey` | 按整数尺度变换的 Fourier 私钥多项式；原生环面 Fourier 加解密 |
-| `NttGlwePublicKey<S>` | 一个 NTT 零加密密文；公钥加密 |
+| `FourierGlweSecretKey` | 按整数尺度变换的 Fourier 私钥；原生环面加解密 |
+| `NttGlwePublicKey<S>` | NTT 零加密；公钥加密 |
 
-根据所用的 NTT 或 Fourier 后端，通过 `generate_pair` 生成私钥。它接收已检查的 `GlweSize` 和借用的 `GlweEncryptionParameters`，只采样一次，返回有符号系数私钥及其对应的变换形式，无需明文 codec：
+所选后端的 `generate_pair` 同时返回系数私钥和变换私钥。传入普通参数的 `size()` 或 gadget 参数的 `glwe_size()`，以及 `encryption_parameters()`。转换已有私钥用 `from_coeff_secret_key`。
 
-```rust,ignore
-let (coeff_sk, ntt_sk) = NttGlweSecretKey::generate_pair(size, &ntt_encryption, &ntt_table, &mut rng);
-let (coeff_sk, fourier_sk) =
-    FourierGlweSecretKey::generate_pair(size, &fourier_encryption, &mut fft, &mut rng);
-```
-
-普通参数提供 `size()` 和 `encryption_parameters()`；gadget 参数提供 `glwe_size()` 和 `encryption_parameters()`。固定秘密重量在采样前对传入的完整布局进行检查。
-
-只需要有符号系数私钥时使用 `GlweSecretKey::generate`。转换已有系数私钥时使用 `from_coeff_secret_key`。固定重量分布作用于全部 `k*N` 个系数，而非逐多项式分别采样。私钥缓冲区在析构时擦除，也覆盖生成或系数/NTT/Fourier 导入检查失败时的栈展开路径。
-
-`NttGlweSecretKey` 在转换/生成时记录显式 `q`。导入变换值使用 `NttGlweSecretKey::new(values, size, distribution, modulus)`；`modulus` 实现 `ExplicitModulus`，`cipher_modulus()` 返回记录的数值。导入只检查布局，不扫描系数规范性、分布或验证变换来源。
-
-普通、系数域、截断和 gadget 操作在公开边界核对 key/参数/table 的模数，在采样或写入前拒绝不匹配；gadget/密钥生成循环复用该检查。密钥不保存 table，相同 `q` 和布局不能证明 NTT roots、求值顺序或秘密身份，调用方仍须保持变换表示。显式 `zeroize()` 清空秘密缓冲、保留公开元数据，擦除后应丢弃密钥。公钥原始字节采用本机字节序，不包含参数元数据。
+后续操作须保持构造时的表示：相同模数和长度不能证明 NTT 根、求值顺序或秘密身份相同。`NttGlweSecretKey::new` 检查导入布局，规范剩余类、分布和变换来源由调用方保证。公钥原始字节使用本机字节序，不包含参数元数据。私钥缓冲区析构时擦除；显式清零后应丢弃私钥。
 
 ## 加密与解密
 
-NTT 私钥、Fourier 私钥和 NTT 公钥共享以下普通加密接口：
+对秘密多项式 `s_i`，GLWE 相位为 `b - sum_i a_i*s_i = Encode(m) + e`。
 
-| 方法 | 输入 | 输出存储 |
-| --- | --- | --- |
-| `encrypt_message` / `encrypt_message_to` | `[0, t)` 中的消息，显式选择 `PlaintextEmbedding` | 分配 / 覆盖 |
-| `encrypt_encoded_to` | 已编码的密文环系数 | 覆盖；不做明文缩放 |
-| `encrypt_zeros` / `encrypt_zeros_to` | 零多项式 | 分配 / 覆盖 |
+| 方法 | 输入或结果 |
+| --- | --- |
+| `encrypt_message` / `encrypt_message_to` | `[0, t)` 中的消息和显式 `PlaintextEmbedding`；分配 / 覆盖密文 |
+| `encrypt_encoded_to` | 已编码系数多项式；不进行明文缩放 |
+| `encrypt_zeros` / `encrypt_zeros_to` | 零多项式；分配 / 覆盖密文 |
+| `decrypt_phase_to` | 系数域相位，不解码 |
+| `decrypt_message` / `decrypt_message_to` | 解码后的系数多项式；分配 / 覆盖输出 |
 
-`encrypt_encoded_to`、`encrypt_zeros` / `encrypt_zeros_to` 和 `NttGlwePublicKey::generate` 直接接收 `&GlweEncryptionParameters`。普通消息方法接收同时提供 codec 的 `&GlweParameters`，并显式选择 `primus_encoding::PlaintextEmbedding::{Unsigned, Centered}`。两种嵌入都接受 `[0, t)` 中的规范剩余类，居中嵌入的 `t - 1` 表示 `-1`。私钥使用自身布局；raw 公钥由 NTT 表确定 N、完整 mask/body 存储确定 k，输出须与公钥长度一致。长度一致不能证明变换来源兼容。
+消息方法使用 `GlweParameters`；encoded/零加密和公钥生成使用 `GlweEncryptionParameters`。`Unsigned` 与 `Centered` 均接收 `[0, t)` 中的规范剩余类，centered 的 `t-1` 表示 `-1`；两者使用相同解码器。解码结果保留系数类型 `T`。
 
-私钥提供 `decrypt_message`、`decrypt_message_to` 和 `decrypt_phase_to`。Phase 提取返回带噪声的系数域值，不做解码；两种明文嵌入使用同一解码器。解密多项式使用密文系数类型 `T`，输出类型转换由应用处理。
+NTT 私钥运算不需要工作区。Fourier 加解密使用 `FourierGlweEncryptWorkspace<T>` / `FourierGlweDecryptWorkspace`；NTT 公钥加密使用 `NttGlwePublicEncryptWorkspace<T>`。用多项式长度构造并复用；它们析构时擦除自身的秘密中间量，调用方持有的明文和相位输出另行管理生命周期。
 
-```text
-ntt_sk.encrypt_message_to(input, output, params, embedding, ntt_table, rng)
-ntt_pk.encrypt_message_to(input, output, params, embedding, ntt_table, rng, workspace)
-fourier_sk.encrypt_message_to(input, output, params, embedding, fft, rng, workspace)
-ntt_sk.decrypt_phase_to(input, output, modulus, ntt_table)
-fourier_sk.decrypt_phase_to(input, output, fft, workspace)
-```
+NTT 还提供 `encrypt_message_coeff_to`、`decrypt_phase_coeff_to` 和 `decrypt_message_coeff_to`，用于系数密文。最后一个参数是无需预先清零的 N 元素 scratch 切片。加密后其中保留秘密相关乘积，宜使用 `zeroize::Zeroizing<Vec<T>>` 等可擦除的拥有者。
 
-NTT 域私钥运算无需 workspace。Fourier 运算使用 `FourierGlweEncryptWorkspace<T>` / `FourierGlweDecryptWorkspace`；NTT 公钥加密使用 `NttGlwePublicEncryptWorkspace<T>`。这些 workspace 按 `N` 构造，并在相同长度下复用。Workspace 保存工作区而非参数，析构时擦除私密中间值。
+已编码 NTT 输入必须是 `[0, q)` 中的规范系数。密钥、参数、表和输出布局须匹配；Fourier 值须使用密钥生成时的同一 FFT 表实例。非法明文可能在部分写入或消耗随机数后失败。精确缓冲区及失败契约见[私钥](src/secret_key)和[公钥](src/public_key)方法。
 
-对于系数域密文，`NttGlweSecretKey` 提供 `encrypt_message_coeff_to`、`decrypt_phase_coeff_to` 和 `decrypt_message_coeff_to`，最后一个参数是长度为 N 的 scratch 切片。 它们复用所有缓冲，省去 body 的正 NTT。加密显式选择相同 embedding；相同 RNG 状态下，结果与 `encrypt_message_to` 后逆 NTT 精确一致。Scratch 无需初始化，加密后保留依赖私钥的乘积， 应由 `zeroize::Zeroizing<Vec<T>>` 等负责擦除的类型持有。
-
-`_to` 路径复用输出和工作区。布局和变换长度检查失败会在写输出前报错；长度相同并不代表变换表示兼容。无效明文值可能在部分写入或消耗随机数后触发 panic。NTT 加密的已编码输入是系数多项式，系数必须是 `[0, q)` 中的规范剩余类，该范围由调用方保证。
-
-诊断时先用 `decrypt_phase_to` 提取相位，再用实际 codec 和 embedding 编码**预期消息**，最后通过 [`primus_encoding::phase_error_magnitude_slice_to`](../primus_encoding/README.zh_CN.md#相位误差诊断) 比较两组系数。解码后重新编码不能作为独立参考：错误消息相对自身编码的残差也可能为零。
-
-消息适配放在私钥/公钥的 `message.rs`；raw 加密与 phase 提取不依赖 codec。输出为变换域密文时，编码直接加到已采样的 body 噪声或已有 Fourier 系数 scratch，随后对 body 变换一次。GLev/GGSW 生成继续使用 raw/zero 核心，保留各自的 gadget 缩放及注入顺序。
+做[相位误差诊断](../primus_encoding/README.zh_CN.md#相位误差诊断)时，用实际 codec 和 embedding 编码**预期消息**，再与相位比较。先解码再重新编码不能提供独立参考。
 
 ## Gadget 与截断密文
 
-`encrypt_glev_to` 和 `encrypt_ggsw_to` 对系数域环多项式应用 gadget 基，不做明文缩放。因此 GGSW 控制位使用常数多项式 `0` 或 `1`。两者使用由 `GadgetSize` 构造的 gadget workspace：GLev 要求多项式长度匹配；GGSW 还要求 level 数量匹配。
+`encrypt_glev_to` 和 `encrypt_ggsw_to` 对系数域环多项式应用 gadget 缩放，不做普通明文编码。GGSW 控制位是常数多项式 `0` 或 `1`。从 `GadgetSize` 构造 gadget 工作区：GLev 需要匹配多项式长度，GGSW 还需匹配层数。
 
-`GgswParameters` 是 `GlevParameters` 的别名。使用 `GgswParameters::try_new(size, modulus, secret_distr, decomposition, sigma)`，可从经过验证的 `GlweSize` 和 `DecompositionConfig` 直接准备 gadget 参数。它在同一模数域创建采样状态和 basis，检查固定秘密重量是否适合完整 `kN` 长度，并派生 gadget 布局。`sigma` 使用系数单位，错误通过 `GlevParameterError` 返回。无需明文模数或 codec。
+`encrypt_ggsw_constant_batch_to` 写入连续的变换域 GGSW：NTT 为 `input.len() * params.ggsw_len()` 个剩余类，Fourier 为 `input.len() * params.fourier_ggsw_len()` 个复数。NTT 常数须是模 q 的规范剩余类，Fourier 常数使用原生环值。两后端也提供 `encrypt_ggsw_constant_batch_coeff_to` 写入系数输出，其 scratch 要求见方法文档。
 
-已有预计算组件时，使用 `GlevParameters::try_from_parts(size, encryption, basis)`：`encryption` 是 `Arc<GlweEncryptionParameters<T, M>>`，`basis` 是 `ApproxSignedBasis<T>`。构造器检查 basis 模数、固定秘密重量是否适合 `kN`，以及 gadget 布局；接收所有权时不复制采样表或重建 basis。
-
-`GlweParameters::try_from_glev(&gadget, codec)` 为已有 gadget 域绑定普通 `ScaledCodec`，共享预计算采样状态并检查 codec 模数，不保留或复制 gadget basis。
-
-```rust,ignore
-// 准备环采样状态和 gadget basis，无需普通消息编码。
-let encryption = std::sync::Arc::new(GlweEncryptionParameters::try_new(modulus, secret_distr, sigma)?);
-let basis = ApproxSignedBasis::try_new(encryption.cipher_modulus_value(), log_basis, levels)?;
-let gadget = GlevParameters::try_from_parts(size, encryption.clone(), basis)?;
-
-// 同时需要普通消息加密时，再绑定 codec。
-let codec = primus_encoding::ScaledCodec::try_new(plain_modulus, modulus)?;
-let ordinary = GlweParameters::try_from_parts(size, encryption, codec)?;
-```
-
-普通参数组合入口检查 codec 与密文模数的一致性及固定秘密重量；布局、采样和固定尺度恢复条件由传入部件的构造器验证。`GlweParameters::try_new` 保留为直接构造普通加密参数的便捷入口。Mask/noise 采样器用于普通密文和求值密钥行的加密，secret sampler 用于秘密生成；不同噪声分布使用各自的预计算状态；相同的采样参数可跨密钥角色共享。
-
-已有普通参数时，`GlevParameters::try_with_basis(&glwe_params, basis)` 共享其预计算状态，检查独立传入的 basis 模数及新 gadget 布局；`try_with_glwe_params` 在同一模数域构造 basis。这些派生路径继承已验证的秘密重量/布局配对，不读取普通 codec。`gadget.try_with_new_basis(basis)` 同样保持该配对，检查新 basis 和布局，不复制旧 basis 或转换密文。参数 clone 共享不可变的模数/采样预计算。`encryption_parameters()` 返回借用的 `GlweEncryptionParameters`；布局、明文编码和 gadget basis 继续分别拥有。
-
-`encrypt_ggsw_constant_batch_to` 将环常数切片加密为连续的 GGSW，仅做一次批量检查，不分配临时缓冲区。NTT 接收规范剩余类，直接填充各层常数，输出长度为 `input.len() * params.ggsw_len()`；Fourier 接收原生环值，输出包含 `input.len() * params.fourier_ggsw_len()` 个复数。Fourier 保留逐 level 原生环缩放后再 FFT 的数值路径；批内相邻相同常数复用这些变换，因此准备耗时依赖输入序列。空批次仍检查共享资源，但不消耗随机数。
-
-`NttGlweSecretKey::encrypt_ggsw_constant_batch_coeff_to` 直接输出系数域 GGSW，密文和 RNG 消费与 NTT 加密后逆变换完全一致，同时省去每个采样 body 的正向 NTT。Gadget workspace 只需多项式长度匹配，不使用其 level 数量。输出长度为 `input.len() * params.ggsw_len()`。
-
-`FourierGlweSecretKey::encrypt_ggsw_constant_batch_coeff_to` 通过相同加密后逆 FFT，输出系数域 GGSW。它额外接收长度为 `params.fourier_ggsw_len()` 的 scratch 切片，只复用一份变换域 GGSW，保持原 Fourier 路径的舍入与 RNG 消费。
-
-NTT 的 `encrypt_zeros_truncated` 同样接收 `&GlweEncryptionParameters`。它和 `decrypt_phase_truncated`、`decrypt_message_truncated` 操作系数域密文，其 mask 完整，body 最多包含 `N` 个系数。Phase 提取和解密只返回保留的系数，内部工作区仍保存完整多项式。
+NTT 截断加密保留完整 mask 和至多 N 个 body 系数。`encrypt_zeros_truncated` 使用 `GlweEncryptionParameters`；`decrypt_phase_truncated` 和 `decrypt_message_truncated` 只返回保留的系数。
 
 ## 求值原语
 
-`GlweKeySwitchingParameters::try_new(GlweDimension::new(input_dimension), output)` 在构造时检查并保存
-完整的输入 GLWE 布局，输入布局或组合密钥存储长度溢出时返回 `GlweSizeError`；`new` 在相同错误下
-panic。输入与输出共用 `output` 的环几何，`input_size()` 返回保存的布局。
-普通与 gadget 参数通过 `GlweSize` 保存经过检查的
-[PolyLength](../primus_poly/README.zh_CN.md#环多项式长度)，`poly_length()` 访问器返回经过检查的值，直接传给
-工作区和 NTT/FFT 表构造器，在 raw 存储或数值内核处再用 `.get()` 提取整数。FHE 共用的 `32..=2^17` 二次幂范围由 `PolyLength` 集中检查。
-维数入参与访问器使用从 `primus_lattice` 重新导出的 `GlweDimension`，`.get()` 返回 `k`。`primus_lattice::LweDimension::from(glwe_size)` 从 GLWE size 显式派生经过验证的提取 LWE 维数 `kN`。Gadget 构造器接收 `primus_decompose` 的 `DecompositionBaseLog` 和 `Option<DecompositionLevelCount>`。
+| 求值密钥 | 运算 |
+| --- | --- |
+| `NttGlweKeySwitchingKey` / `FourierGlweKeySwitchingKey` | 更换 GLWE 秘密，可改变维数，保持环长度及模数 |
+| `NttGlweAutomorphismKey` / `FourierGlweAutomorphismKey` | 对 `[1, 2N)` 中奇数 `d` 应用 `X -> X^d`，返回到原秘密下 |
+| `NttGlweSchemeSwitchKey` / `FourierGlweSchemeSwitchKey` | 同一秘密下，将系数 GLev 转为变换域 GGSW |
 
-求值密钥保存自己的布局和分解基。NTT 求值参数为 `input, output, modulus, ntt, workspace`；Fourier 求值省略 `modulus`。Workspace 是可复用的工作区。必须保持密钥的变换表示，仅长度和模数匹配不能证明表示兼容。
+求值密钥持有布局及分解基，匹配的工作区构造一次即可复用。自同构提供系数域 `apply_to` 和变换域 `apply_ntt_to` / `apply_fourier_to`；直接 Fourier 输出的舍入可能不同于系数往返路径。
 
-KS、自同构和 trace 密钥生成在采样前检查共享的密钥/参数、变换及 GLev 工作区兼容性；内部嵌套生成复用这些检查。
+[Scheme switching](src/scheme_switch) 生成时需要相互匹配的系数及变换私钥。输出 gadget 缩放继承输入 GLev；`key_basis()` 控制分解，可以不同于输出基。传入的外积工作区须匹配 `key.key_size()`。
 
-两种自同构密钥都提供系数域 `apply_to`。`NttGlweAutomorphismKey::apply_ntt_to` 和 `FourierGlweAutomorphismKey::apply_fourier_to` 复用同一密钥处理变换域输入、输出。Fourier 求值要求使用生成密钥时的同一个 FFT table 实例；直接处理 Fourier 输入、输出的舍入结果可能与系数域往返不同。
+## Trace、投影与展开
 
-`NttGlweTraceKey<T>` 和 `FourierGlweTraceKey<T>` 在以下系数域操作间共享自同构密钥。`M` 表示输入明文；所有输出 phase 系数都可能存在求值误差。
+`NttGlweTraceKey` 和 `FourierGlweTraceKey` 操作系数密文。下表中 `M` 是输入消息，目标消息省略求值噪声。
 
-| Trace key 方法 | 目标明文 |
+| 方法 | 目标消息 |
 | --- | --- |
 | `apply_to` / `apply_reverse_to` | 常数 `N*M[0]` / `M[0]` |
 | `apply_partial_to(input, r, ...)` | `d * sum_j M[j*d] X^(j*d)`，其中 `d=N/r` |
 | `apply_reverse_partial_to(input, r, ...)` | `sum_j M[j*d] X^(j*d)` |
 | `project_coefficient_to` / `project_coefficients_to` | 常数 `M[index]` / 按选择顺序排列的常数 |
-| `project_prefix_coefficients_to(input, count, ...)` | 常数 `M[0]` 到 `M[count-1]`，无需明文零尾 |
-| `expand_coefficients_to` | 按系数顺序排列的 `N` 个常数 GLWE |
-| `expand_partial_coefficients_to(input, count, ...)` | 明文高位全零时，展开前 `count` 项为常数 |
-| `pack_lwe_to` / `pack_lwes_to` | LWE 消息对应的常数 / `p` 个 LWE 的 `sum_i m[i] X^(i*N/p)` |
+| `project_prefix_coefficients_to(input, count, ...)` | 前 `count` 个系数各自作为常数；无需零尾部 |
+| `expand_coefficients_to` | 全部 N 个系数各自作为常数 |
+| `expand_partial_coefficients_to(input, count, ...)` | 前 `count` 个常数，要求消息尾部为零 |
 
-Partial trace 的 `retained_coefficient_count`（`r`）是 `1..=N` 内的 2 的幂。它在一个 GLWE 中保留等间隔位置：`N=8, r=2` 保留索引 0 和 4。`r=N` 复制输入，`r=1` 为 full trace。反向 trace 每级先缩放，再自同构和相加：NTT 乘 `2^-1 mod q`，Fourier 对无符号系数取 `floor(x/2)`。NTT 域运算不直接继承 torus RevHomTrace 的噪声界。
+部分 trace 接收 `1..=N` 内的二次幂 `r`，在一个 GLWE 中保留等间距位置。`r=N` 复制输入，`r=1` 为完整 trace。Reverse trace 在每次自同构及相加前归一化：NTT 乘 `2^-1 mod q`，Fourier 对无符号系数做 `floor(x/2)`。NTT 域运算不能直接继承环面 RevHomTrace 的噪声界。
 
-投影支持任意索引、重复索引和空选择，每个索引执行一次反向 trace，写入 `indices.len() * size.glwe_len()` 个值。前缀投影接受 `0..=N` 内任意 `count`，复用相同计算且无需索引数组；即使 `count=1` 也执行完整反向 trace。部分展开在 `count` 个输出 GLWE 块中构建共享树，先按 `count` 归一化一次，再执行 `count-1` 次自同构。`count` 必须是 `1..=N` 内的 2 的幂；`count=1` 复制输入，`count=N` 为完整展开。NTT 归一化使用域上的逆元，Fourier 使用无符号向下除法。两条路径具有不同的误差行为。
+投影接受任意索引，包括重复索引和空选择；前缀投影接受 `0..=N` 中任意数量。每个选中系数都需要一次完整 reverse trace，数量为一也如此。部分展开则接收 `1..=N` 中的二次幂数量：一时复制输入，N 时为完整展开。它只归一化一次，误差行为与投影不同。
 
-部分展开产生常数的前提是明文 `count..N` 项全零。这个未检查前提针对明文，不针对密文 mask 或 body。否则第 `i` 个输出的目标为 `sum_j M[i+j*count] X^(j*count)`。所有输出保持环次数 `N`，使用普通 trace workspace。
+部分展开要产生常数，**消息**的 `count..N` 系数必须为零；否则输出 i 的目标是 `sum_j M[i+j*count] X^(j*count)`。密文和噪声尾部无需为零，所有输出仍保持环长度 N。完整归一化及工作区契约见 [trace 方法](src/trace)。
 
-Trace key 的 packing 使用 [RevHomTrace 算法](https://github.com/Stirling75/RevHomTrace/blob/main/src/glwe_conv_rev.rs)。每个 LWE 的维数必须为 `k*N`，私钥等于 GLWE 私钥的系数展平，模数和编码相同。批量输入为 `p` 个完整 LWE 组成的平坦切片，`p` 是 `1..=N` 内的 2 的幂；仅 `p=N` 时槽位相邻。为固定数量构造 `NttGlwePackingWorkspace::new(size, p)` 或 `FourierGlwePackingWorkspace::new(size, p)`。单条 LWE packing 使用 trace workspace。求值复用输出和工作区，在写入前检查形状、索引及后端兼容性。
+## LWE packing
 
-`NttLwePackingKeySwitchingKey<T>` 和 `FourierLwePackingKeySwitchingKey<T>` 支持从独立的 LWE 私钥转换到目标 GLWE 私钥。`generate` 接受 `primus_lwe::LweSecretKeyRef`、目标私钥和 GLev 参数。输入维数可以不同于 `k*N`；输入和输出必须使用相同密文模数与消息编码。
+根据输入秘密及所需系数位置选择 packing。两种路径均要求输入输出模数和消息编码相同；目标消息为零的位置仍可含噪声。
 
-| Packing key 方法 | 目标明文 |
-| --- | --- |
-| `key_switch_to` | 单条 LWE 的消息作为常数 GLWE |
-| `pack_lwes_to` | 任意 `1 <= p <= N` 条 LWE 的 `sum_i m[i] X^i` |
+| 路径 | 输入秘密及数量 | 目标消息 |
+| --- | --- | --- |
+| Trace key 的 `pack_lwe_to` / `pack_lwes_to` | 维数 `k*N` 的展平 GLWE 秘密；数量 p 为 `1..=N` 内二次幂 | `sum_i m[i] X^(i*N/p)`；仅 p=N 时槽位相邻 |
+| `NttLwePackingKeySwitchingKey` / `FourierLwePackingKeySwitchingKey` | 独立 LWE 秘密；数量 p 可为 `1..=N` 内任意值 | `key_switch_to`：单个常数；`pack_lwes_to`：`sum_i m[i] X^i` |
 
-批量输入为完整 LWE 组成的平坦切片。输出消息系数连续，数量无需为 2 的幂，也不依赖 trace key。使用已有的 `NttGlweKeySwitchingWorkspace::new(output_size.glwe_size())` 或 Fourier 对应类型；同一工作区支持变化的批量数量。批量求值将分解数字组成多项式，顺序读取变换域密钥；单条 LWE 使用标量数字，无需数字变换。两条路径最后都仅对每个输出分量做一次逆变换。目标明文的零尾部仍可能包含噪声。解码余量需要覆盖输入噪声、由输入私钥加权的分解误差和累计密钥噪声；Fourier 还包含浮点误差。NTT 密钥存储 `input_dimension * output_size.glev_len()` 个剩余类，Fourier 存储 `input_dimension * output_size.fourier_glev_len()` 个复数。
+Trace packing 使用 [RevHomTrace](https://github.com/Stirling75/RevHomTrace/blob/main/src/glwe_conv_rev.rs)。批量用 `NttGlwePackingWorkspace::new(size, p)` 或 Fourier 对应类型，p 在工作区构造时固定；单 LWE 使用 trace 工作区。
 
-`NttGlweSchemeSwitchKey<T>` 和 `FourierGlweSchemeSwitchKey<T>` 通过 `apply_to` 将系数域 GLev 转换为密钥对应变换域的 GGSW。传入 `generate` 的两种私钥表示必须对应同一个私钥。使用 `key.key_size()` 构造 `primus_lattice::workspace::{NttGlweExternalProductWorkspace, FourierGlweExternalProductWorkspace}`。工作区可与其他外积共享：GLWE 布局不变时，`rebind` 无分配切换分解层数；scheme switch 前恢复为 `key.key_size()`。输出继承输入 GLev 的 gadget 缩放；`key.key_basis()` 只控制 external product 分解，可以不同于输出基。每个 mask row 使用私钥多项式取负后的加密，body row 直接变换输入。Fourier 乘积直接累加到输出，无需逆 FFT 再正向 FFT。
+独立密钥 packing 允许输入维数不同于 `k*N`。从输入 `LweSecretKeyRef`、输出 GLWE 私钥和 GLev 参数生成密钥，再复用匹配输出布局的 GLWE key-switching 工作区，批量数量可以变化。噪声预算须覆盖输入噪声、秘密加权的分解误差及密钥噪声，Fourier 还包含浮点误差。完整布局及缓冲区契约见 [packing key switching](src/packing_key_switch)。
 
 ## Features
 
-默认 features 为空，参数、系数密文和有符号秘密无需变换后端。`ntt` / `fourier` 分别启用对应的密钥、转换、加解密、求值与工作区，并向 lattice 传递能力。`fourier` 不选择具体 FFT 引擎；`rustfft` / `tfhe-fft` 同时启用 `fourier` 和对应实现，所有后端 feature 可以叠加。`simd` 仅向已启用的算术依赖传播，不激活变换或 FFT 引擎。
+默认 features 为空。`ntt` 启用 NTT 运算；`fourier` 启用 Fourier API，但不选择 FFT engine。使用 `rustfft` 或 `tfhe-fft` 同时启用 Fourier 及具体 engine，两者可共存。`simd` 只转发给已启用的算术依赖，不启用变换后端。
 
-使用具体表示或引擎的测试、示例和基准声明 `required-features`；混合 NTT/Fourier target 需同时启用 `ntt` 和其指定的引擎。完整普通验证使用 `--features ntt,rustfft,tfhe-fft`；不满足要求时 Cargo 跳过整个 target。
+测试、示例和基准声明 `required-features`；缺少时 Cargo 会跳过整个 target。按相应运行命令选择 features。
 
-## 进一步阅读
+## 更多资料
 
-公开契约见 [rustdoc 对应源码](src)；[测试与基准指南](benches/README.zh_CN.md)保存覆盖范围、工作负载和复现命令。Workspace 验证入口见[测试指南](../../guides/development/testing.md)。
+逐方法契约见 [API 源码](src)，负载与运行命令见[基准指南](benches/README.zh_CN.md)，验证命令见 workspace [测试指南](../../guides/development/testing.md)。

@@ -1,6 +1,6 @@
 # primus_glwe
 
-[English](README.md) | [简体中文](README.zh_CN.md)
+English | [简体中文](README.zh_CN.md)
 
 > [!WARNING]
 > This crate is part of the experimental [Primus FHE](../../README.md) workspace. Its API and numerical contracts are unstable and may change incompatibly at any time.
@@ -64,158 +64,112 @@ codec.decode_slice_to(phase.as_ref(), &mut decoded);
 assert_eq!(decoded, message.as_ref());
 ```
 
-For ordinary requests, `encrypt_message_to` reuses ciphertext storage without allocating a separate encoded polynomial. Use `encrypt_encoded_to` when controlling the encoding directly: its input and the `decrypt_phase_to` output are coefficients, while the ciphertext is in NTT form. Keep parameters, table, keys and output across requests; Fourier also reuses an FFT engine and workspaces, as described below.
+Use `encrypt_message_to` to reuse ciphertext storage without a separate encoded polynomial. Keep parameters, tables, keys and output across requests; Fourier operations also reuse an FFT engine and workspaces.
 
-## Keys and representation
+## Parameters and keys
 
-`GlweParameters::new` / `try_new` takes `primus_poly::PolyLength`. Construct it once with `PolyLength::try_new(n)?` (or `new` for known constants) and reuse it for parameters, sizes and transform tables. Invalid integers are reported by `PolyLengthError`; parameter construction retains its combined-layout, modulus and sampler checks.
-
-`GlweParameters::try_new` returns `GlweParameterError` for layout, fixed-scale encoding and sampler errors, including fixed weights exceeding the complete kN secret length. `GlweEncryptionParameters::try_new` checks only modulus/samplers because it has no layout. The corresponding `new` constructors panic on invalid parameters; transform availability and noise/security budgets remain separate. `GlweParameterError::SecretKey` preserves the sampling/weight/modulus cause as `SecretKeySamplerError`; `Noise` preserves `GaussianError`.
-
-| Type | Storage and role |
+| Parameters | Purpose |
 | --- | --- |
-| `GlweSecretKey<T>` | Signed coefficient polynomials; sampling and input to key conversion/generation |
-| `NttGlweSecretKey<T>` | Canonical NTT residues modulo `q`; NTT encryption and decryption |
-| `FourierGlweSecretKey` | Integer-scaled Fourier secret polynomials; native-torus Fourier encryption and decryption |
-| `NttGlwePublicKey<S>` | One NTT encryption of zero; public-key encryption |
+| `GlweParameters` | Ordinary encryption/decryption with a `ScaledCodec` |
+| `GlweEncryptionParameters` | Modulus and samplers for key generation and encoded/zero encryption; no codec or layout |
+| `GlevParameters` / its alias `GgswParameters` | GLWE layout, encryption parameters and gadget decomposition; no plaintext codec |
 
-Generate a secret with `generate_pair` for the chosen NTT or Fourier backend. It takes a checked `GlweSize` and borrowed `GlweEncryptionParameters`, samples once, and returns the signed coefficient key and its matching transform. No plaintext codec is needed:
+Use `GlweParameters::try_new` for ordinary messages, or `GgswParameters::try_new(size, modulus, secret_distr, decomposition, sigma)` for gadget-only work. Here `size` is a `GlweSize`, `decomposition` a `DecompositionConfig`, and `sigma` is in coefficient units. With ordinary parameters already prepared, `GlevParameters::try_with_glwe_params` derives gadget parameters in the same ring.
 
-```rust,ignore
-let (coeff_sk, ntt_sk) = NttGlweSecretKey::generate_pair(size, &ntt_encryption, &ntt_table, &mut rng);
-let (coeff_sk, fourier_sk) =
-    FourierGlweSecretKey::generate_pair(size, &fourier_encryption, &mut fft, &mut rng);
-```
+Construct [PolyLength](../primus_poly/README.md#ring-polynomial-length) once and reuse it for parameters, tables and workspaces. GLWE dimensions use `GlweDimension`; fixed secret weights apply to all `k*N` coefficients, not separately to each polynomial. Fallible constructors report invalid layouts, encoding or sampling configurations; they do not establish transform availability or a noise/security budget.
 
-Ordinary parameters supply `size()` and `encryption_parameters()`; gadget parameters supply `glwe_size()` and `encryption_parameters()`. Fixed secret weights are checked against the supplied layout before sampling.
+| Key | Representation and role |
+| --- | --- |
+| `GlweSecretKey<T>` | Signed coefficients; sampling and evaluation-key generation |
+| `NttGlweSecretKey<T>` | Canonical NTT residues modulo `q`; NTT encryption/decryption |
+| `FourierGlweSecretKey` | Integer-scaled Fourier secret; native-torus encryption/decryption |
+| `NttGlwePublicKey<S>` | NTT encryption of zero; public-key encryption |
 
-Use `GlweSecretKey::generate` when only the signed coefficient key is needed. Use `from_coeff_secret_key` to transform an existing coefficient key. Fixed-weight distributions apply to all `k*N` coefficients, not separately to each polynomial. Secret buffers are erased on drop, including unwinding during generation or rejected coefficient/NTT/Fourier imports.
+The chosen backend's `generate_pair` returns both coefficient and transformed secrets. Pass `size()` from ordinary parameters or `glwe_size()` from gadget parameters, together with `encryption_parameters()`. Use `from_coeff_secret_key` to transform an existing secret.
 
-`NttGlweSecretKey` records explicit `q` at conversion/generation. Import transformed values with `NttGlweSecretKey::new(values, size, distribution, modulus)`; `modulus` implements `ExplicitModulus`, and `cipher_modulus()` returns its recorded value. Import checks the layout, not coefficient canonicality, distribution or transform provenance.
-
-Ordinary, coefficient, truncated and gadget operations check key/parameter/table moduli at their public boundary, before sampling or writes; gadget/key-generation loops reuse this check. The key retains no table. Matching `q` and layout cannot prove NTT roots, evaluation order or secret identity, so callers must preserve the transform representation. Explicit `zeroize()` clears secret storage but retains public metadata; discard the erased key. Raw public-key bytes use native endianness and contain no parameter metadata.
+Keep the construction representation: matching modulus and length does not prove NTT roots, evaluation order or secret identity. `NttGlweSecretKey::new` checks imported layout, while canonicality, distribution and transform provenance remain caller obligations. Raw public-key bytes use native endianness and contain no parameter metadata. Secret buffers are erased on drop; discard a key after explicit zeroization.
 
 ## Encryption and decryption
 
-NTT secret, Fourier secret and NTT public keys share these ordinary encryption methods:
+For secret polynomials `s_i`, the GLWE phase is `b - sum_i a_i*s_i = Encode(m) + e`.
 
-| Method | Input | Output storage |
-| --- | --- | --- |
-| `encrypt_message` / `encrypt_message_to` | Message in `[0, t)`, explicit `PlaintextEmbedding` | Allocate / overwrite |
-| `encrypt_encoded_to` | Already encoded ciphertext-ring coefficients | Overwrite; no plaintext scaling |
-| `encrypt_zeros` / `encrypt_zeros_to` | Zero polynomial | Allocate / overwrite |
+| Method | Input or result |
+| --- | --- |
+| `encrypt_message` / `encrypt_message_to` | Message in `[0, t)` and explicit `PlaintextEmbedding`; allocate / overwrite ciphertext |
+| `encrypt_encoded_to` | Already encoded coefficient polynomial; no plaintext scaling |
+| `encrypt_zeros` / `encrypt_zeros_to` | Zero polynomial; allocate / overwrite ciphertext |
+| `decrypt_phase_to` | Coefficient-domain phase, without decoding |
+| `decrypt_message` / `decrypt_message_to` | Decoded coefficient polynomial; allocate / overwrite output |
 
-`encrypt_encoded_to`, `encrypt_zeros` / `encrypt_zeros_to`, and `NttGlwePublicKey::generate` take `&GlweEncryptionParameters` directly. Ordinary message methods take `&GlweParameters`, which also supplies the codec, and `primus_encoding::PlaintextEmbedding::{Unsigned, Centered}`. Both embeddings take canonical residues in `[0, t)`; centered `t - 1` represents `-1`. Secret keys supply their own layout. Raw public keys derive N from the NTT table and k from complete mask/body storage; output must have the same length as the key. Matching lengths do not establish transform provenance.
+Message methods take `GlweParameters`; encoded/zero encryption and public-key generation take `GlweEncryptionParameters`. Both `Unsigned` and `Centered` embeddings accept canonical residues in `[0, t)`; centered `t-1` represents `-1`. Both use the same decoder. Decoded values retain coefficient type `T`.
 
-Secret keys provide `decrypt_message`, `decrypt_message_to` and `decrypt_phase_to`. Phase extraction returns noisy coefficient-domain values without decoding; both plaintext embeddings use the same decoder. Decrypted polynomials use the ciphertext coefficient type `T`; applications handle output type conversion.
+NTT secret-key operations need no workspace. Fourier encryption/decryption use `FourierGlweEncryptWorkspace<T>` / `FourierGlweDecryptWorkspace`; NTT public encryption uses `NttGlwePublicEncryptWorkspace<T>`. Construct these with the polynomial length and reuse them. They erase owned secret intermediates on drop; caller-owned plaintext and phase outputs retain their own lifetimes.
 
-```text
-ntt_sk.encrypt_message_to(input, output, params, embedding, ntt_table, rng)
-ntt_pk.encrypt_message_to(input, output, params, embedding, ntt_table, rng, workspace)
-fourier_sk.encrypt_message_to(input, output, params, embedding, fft, rng, workspace)
-ntt_sk.decrypt_phase_to(input, output, modulus, ntt_table)
-fourier_sk.decrypt_phase_to(input, output, fft, workspace)
-```
+NTT also provides `encrypt_message_coeff_to`, `decrypt_phase_coeff_to` and `decrypt_message_coeff_to` for coefficient ciphertexts. Their last argument is an N-element scratch slice that need not be cleared before the call. Encryption leaves secret-dependent products there; use an erasing owner such as `zeroize::Zeroizing<Vec<T>>`.
 
-NTT-domain secret-key operations need no workspace. Fourier operations use `FourierGlweEncryptWorkspace<T>` / `FourierGlweDecryptWorkspace`; NTT public encryption uses `NttGlwePublicEncryptWorkspace<T>`. Construct these with `N` and reuse them at that length. Workspaces hold scratch, not parameters, and erase secret intermediates on drop.
+Encoded NTT inputs must be canonical coefficients in `[0, q)`. Match key, parameter, table and output layouts; Fourier values must use the exact FFT table instance from key generation. Invalid plaintext values can fail after partial writes or randomness consumption. See the [secret-key](src/secret_key) and [public-key](src/public_key) methods for precise buffer and failure contracts.
 
-For coefficient ciphertexts, `NttGlweSecretKey` provides `encrypt_message_coeff_to`, `decrypt_phase_coeff_to` and `decrypt_message_coeff_to`. They take an additional N-element scratch slice as the last argument, reuse all buffers, and save the body's forward NTT. Encryption selects the same explicit embedding and matches `encrypt_message_to` followed by inverse NTT exactly for the same RNG state. Scratch needs no initialization and retains secret-dependent products after encryption; use an erasing owner such as `zeroize::Zeroizing<Vec<T>>`.
-
-`_to` paths reuse output and scratch. Checked layout and transform-length mismatches fail before output writes; matching lengths do not establish transform representation compatibility. Invalid plaintext values may panic after partial writes or randomness consumption. Encoded inputs to NTT encryption are coefficient polynomials with canonical residues in `[0, q)`; callers guarantee this range.
-
-For diagnostics, extract the phase with `decrypt_phase_to`, encode the **expected message** using the actual codec and embedding, and compare the two coefficient slices with [`primus_encoding::phase_error_magnitude_slice_to`](../primus_encoding/README.md#phase-error-diagnostics). Decoding and re-encoding is not an independent reference: a wrong message may have zero residual against its own encoding.
-
-Message adapters live in the secret/public key's `message.rs`; raw encryption and phase extraction need no codec. For transform-domain output, encoding adds directly to the sampled body noise (or the existing Fourier coefficient scratch), before a single body transform. GLev/GGSW generation uses the raw/zero cores and retains its own gadget scaling and injection order.
+For [phase-error diagnostics](../primus_encoding/README.md#phase-error-diagnostics), compare the phase with the **expected message** encoded using the actual codec and embedding. Decoding and re-encoding is not an independent reference.
 
 ## Gadget and truncated ciphertexts
 
-`encrypt_glev_to` and `encrypt_ggsw_to` apply the gadget basis to a coefficient-domain ring polynomial without plaintext scaling. A GGSW control bit is therefore the constant polynomial `0` or `1`. Both use a gadget workspace constructed from `GadgetSize`: GLev requires a matching polynomial length; GGSW also requires a matching level count.
+`encrypt_glev_to` and `encrypt_ggsw_to` apply gadget scaling to coefficient-domain ring polynomials without ordinary plaintext encoding. A GGSW control bit is the constant polynomial `0` or `1`. Construct the gadget workspace from `GadgetSize`: GLev needs its polynomial length; GGSW also needs its level count.
 
-`GgswParameters` is an alias of `GlevParameters`. Use `GgswParameters::try_new(size, modulus, secret_distr, decomposition, sigma)` to prepare gadget-only parameters from a checked `GlweSize` and a `DecompositionConfig`. It creates the sampler state and basis in one modulus domain, checks fixed secret weight against the complete `kN` length and derives the gadget layout. `sigma` is in coefficient units; errors are returned as `GlevParameterError`. No plaintext modulus or codec is required.
+`encrypt_ggsw_constant_batch_to` writes consecutive transformed GGSWs: `input.len() * params.ggsw_len()` residues for NTT, or `input.len() * params.fourier_ggsw_len()` complex values for Fourier. NTT constants must be canonical at q; Fourier constants use native-ring values. Both backends also provide `encrypt_ggsw_constant_batch_coeff_to` for coefficient output; its scratch requirements are documented on the method.
 
-Use `GlevParameters::try_from_parts(size, encryption, basis)` when those components are already prepared: `encryption` is an `Arc<GlweEncryptionParameters<T, M>>`, and `basis` is an `ApproxSignedBasis<T>`. The constructor checks the basis modulus, fixed secret weight against `kN` and gadget layout, taking ownership without copying sampler tables or rebuilding the basis.
-
-`GlweParameters::try_from_glev(&gadget, codec)` binds an ordinary `ScaledCodec` to an existing gadget domain. It shares the prepared sampling state and checks the codec modulus, without retaining or copying the gadget basis.
-
-```rust,ignore
-// Prepare the ring sampling state and gadget basis, without ordinary encoding.
-let encryption = std::sync::Arc::new(GlweEncryptionParameters::try_new(modulus, secret_distr, sigma)?);
-let basis = ApproxSignedBasis::try_new(encryption.cipher_modulus_value(), log_basis, levels)?;
-let gadget = GlevParameters::try_from_parts(size, encryption.clone(), basis)?;
-
-// Bind a codec only when ordinary message encryption is also needed.
-let codec = primus_encoding::ScaledCodec::try_new(plain_modulus, modulus)?;
-let ordinary = GlweParameters::try_from_parts(size, encryption, codec)?;
-```
-
-The ordinary constructor checks codec/ciphertext modulus agreement and the secret weight; the supplied parts already validate layout, sampling and fixed-scale recovery. `GlweParameters::try_new` remains the direct ordinary-encryption convenience constructor. Mask/noise samplers serve both ordinary ciphertext and evaluation-key row encryption; the secret sampler serves key generation. Different noise distributions need separate prepared states; identical sampler parameters can be shared across key roles.
-
-When ordinary parameters already exist, `GlevParameters::try_with_basis(&glwe_params, basis)` shares their prepared state and checks the independent basis modulus and new gadget layout. `try_with_glwe_params` builds the basis in that same modulus domain. These derivations inherit the validated secret weight/layout pairing and do not inspect the ordinary codec. `gadget.try_with_new_basis(basis)` also preserves that pairing while checking the new basis and layout, without copying the old basis or converting ciphertexts. Parameter clones share immutable modulus/sampling precomputation. `encryption_parameters()` returns a borrowed `GlweEncryptionParameters`; layouts, plaintext encoding and gadget bases retain their separate ownership.
-
-`encrypt_ggsw_constant_batch_to` encrypts a slice of ring constants into consecutive GGSWs, with one batch validation and no temporary allocation. NTT takes canonical residues, prepares each constant level by direct broadcast, and writes `input.len() * params.ggsw_len()` values; Fourier takes native-ring values and writes `input.len() * params.fourier_ggsw_len()` complex values. Fourier preserves native-ring scaling followed by the FFT for each level; adjacent equal constants reuse those transforms within the batch. Preparation time therefore depends on the input sequence. Empty batches still validate shared resources and consume no randomness.
-
-`NttGlweSecretKey::encrypt_ggsw_constant_batch_coeff_to` writes coefficient GGSWs directly. It preserves the exact ciphertext and RNG consumption of NTT encryption followed by inverse transforms, while avoiding a forward NTT of each sampled body. Only the gadget workspace's polynomial length must match; its level count is unused. Output has `input.len() * params.ggsw_len()` values.
-
-`FourierGlweSecretKey::encrypt_ggsw_constant_batch_coeff_to` writes coefficient GGSWs using the same encryption followed by inverse FFT. It takes an additional `params.fourier_ggsw_len()` scratch slice, reuses one transformed GGSW, and preserves the Fourier path's rounding and RNG consumption.
-
-NTT `encrypt_zeros_truncated` also takes `&GlweEncryptionParameters`. Together with `decrypt_phase_truncated` and `decrypt_message_truncated`, it operates on coefficient ciphertexts with a full mask and at most `N` body coefficients. Phase extraction and decryption return only the retained coefficients, while their internal scratch still holds full polynomials.
+NTT truncated encryption keeps the full mask and at most N body coefficients. `encrypt_zeros_truncated` takes `GlweEncryptionParameters`; `decrypt_phase_truncated` and `decrypt_message_truncated` return only the retained coefficients.
 
 ## Evaluation primitives
 
-`GlweKeySwitchingParameters::try_new(GlweDimension::new(input_dimension), output)` checks and retains
-the complete input GLWE layout at construction, returning `GlweSizeError` on
-input-layout or combined key-storage overflow. `new` panics on the same errors. Input and
-output share the ring geometry from `output`; `input_size()` returns the stored
-layout. Ordinary and gadget parameters retain the checked
-[PolyLength](../primus_poly/README.md#ring-polynomial-length) through `GlweSize`;
-their `poly_length()` accessors return this checked value. Pass it directly to
-workspace and NTT/FFT table constructors, and use `.get()` at raw storage or scalar kernels. The shared FHE power-of-two range `32..=2^17` is checked centrally by `PolyLength`.
-Dimension arguments and accessors use `GlweDimension`, re-exported from `primus_lattice`; `.get()` returns `k`. `primus_lattice::LweDimension::from(glwe_size)` explicitly derives the checked extracted LWE dimension `kN` from a GLWE size. Gadget constructors use `DecompositionBaseLog` and `Option<DecompositionLevelCount>` from `primus_decompose`.
+| Evaluation key | Operation |
+| --- | --- |
+| `NttGlweKeySwitchingKey` / `FourierGlweKeySwitchingKey` | Change GLWE secret and optionally dimension, keeping the ring length and modulus |
+| `NttGlweAutomorphismKey` / `FourierGlweAutomorphismKey` | Apply `X -> X^d` for odd `d` in `[1, 2N)`, returning under the original secret |
+| `NttGlweSchemeSwitchKey` / `FourierGlweSchemeSwitchKey` | Convert coefficient GLev to transformed GGSW under the same secret |
 
-Evaluation keys own their layouts and decomposition bases. NTT evaluation takes `input, output, modulus, ntt, workspace`; Fourier evaluation omits `modulus`. Workspaces are reusable workspaces. Preserve the key's transform representation: matching lengths and moduli alone do not prove compatibility.
+Evaluation keys retain their layouts and decomposition bases. Construct the matching workspace once and reuse it. Automorphism provides coefficient `apply_to` and transformed `apply_ntt_to` / `apply_fourier_to`; direct Fourier output can round differently from a coefficient roundtrip.
 
-KS, automorphism and trace key generation check shared key/parameter, transform and GLev workspace compatibility before sampling; nested generation reuses these checks.
+[Scheme switching](src/scheme_switch) requires matching coefficient and transformed secret representations at generation. Output gadget scaling is inherited from the input GLev; `key_basis()` controls decomposition and may differ from the output basis. Supply an external-product workspace matching `key.key_size()`.
 
-Both automorphism keys provide coefficient-domain `apply_to`. `NttGlweAutomorphismKey::apply_ntt_to` and `FourierGlweAutomorphismKey::apply_fourier_to` reuse the same key for transform-domain input/output. Fourier evaluation requires the exact FFT table instance used at key generation; direct Fourier input/output can round differently from a coefficient roundtrip.
+## Trace, projection and expansion
 
-`NttGlweTraceKey<T>` and `FourierGlweTraceKey<T>` share their automorphism material across the following coefficient-domain operations. `M` denotes the input message; every output phase coefficient may contain evaluation error.
+`NttGlweTraceKey` and `FourierGlweTraceKey` operate on coefficient ciphertexts. Let `M` be the input message; target messages below omit evaluation noise.
 
-| Trace-key method | Target message |
+| Method | Target message |
 | --- | --- |
 | `apply_to` / `apply_reverse_to` | Constant `N*M[0]` / `M[0]` |
 | `apply_partial_to(input, r, ...)` | `d * sum_j M[j*d] X^(j*d)`, where `d=N/r` |
 | `apply_reverse_partial_to(input, r, ...)` | `sum_j M[j*d] X^(j*d)` |
 | `project_coefficient_to` / `project_coefficients_to` | Constant `M[index]` / constants in selection order |
-| `project_prefix_coefficients_to(input, count, ...)` | Constants `M[0]` through `M[count-1]`, with no zero-tail assumption |
-| `expand_coefficients_to` | `N` constant GLWEs in coefficient order |
+| `project_prefix_coefficients_to(input, count, ...)` | First `count` coefficients as constants; no zero-tail assumption |
+| `expand_coefficients_to` | All N coefficients as constants |
 | `expand_partial_coefficients_to(input, count, ...)` | First `count` constants, assuming a zero message tail |
-| `pack_lwe_to` / `pack_lwes_to` | Constant LWE message / `sum_i m[i] X^(i*N/p)` for `p` LWEs |
 
-Partial trace's `retained_coefficient_count` (`r`) is a power of two in `1..=N`. It retains equally spaced positions in one GLWE: `N=8, r=2` retains indices 0 and 4. `r=N` copies the input; `r=1` is full trace. Reverse trace scales before each automorphism/addition: NTT multiplies by `2^-1 mod q`; Fourier uses unsigned coefficient `floor(x/2)`. The NTT field operation does not inherit the torus RevHomTrace noise bound.
+Partial trace accepts a power-of-two `r` in `1..=N`, retaining equally spaced positions in one GLWE. `r=N` copies the input; `r=1` is full trace. Reverse trace normalizes before each automorphism/addition: NTT multiplies by `2^-1 mod q`, while Fourier uses unsigned coefficient `floor(x/2)`. The NTT field operation does not inherit the torus RevHomTrace noise bound.
 
-Projection accepts arbitrary indices, including duplicates and an empty selection. It uses one reverse trace per index and writes `indices.len() * size.glwe_len()` values. Prefix projection accepts any `count` in `0..=N`, uses the same arithmetic, and needs no index array; even `count=1` performs a full reverse trace. Partial expansion instead builds a shared tree in `count` output GLWE blocks, using `count-1` automorphisms after normalizing once by `count`. `count` must be a power of two in `1..=N`; `count=1` copies the input and `count=N` is full expansion. NTT normalization uses the field inverse; Fourier uses unsigned floor division. These paths have different error behavior.
+Projection accepts arbitrary indices, including duplicates and an empty selection; prefix projection accepts any count in `0..=N`. Each selected coefficient needs a full reverse trace, even for count one. Partial expansion instead accepts a power-of-two count in `1..=N`: count one copies the input and count N gives full expansion. It normalizes once, so its error behavior differs from projection.
 
-For partial expansion to produce constants, message coefficients `count..N` must be zero. This unchecked premise concerns the message, not ciphertext masks or bodies. Otherwise output `i` targets `sum_j M[i+j*count] X^(j*count)`. All outputs retain ring degree `N` and use the ordinary trace workspace.
+For partial expansion to produce constants, **message** coefficients `count..N` must be zero. Otherwise output i targets `sum_j M[i+j*count] X^(j*count)`. Ciphertext/noise tails need not vanish. All outputs retain ring length N; detailed normalization and workspace contracts are on the [trace methods](src/trace).
 
-Trace-key packing uses the [RevHomTrace algorithm](https://github.com/Stirling75/RevHomTrace/blob/main/src/glwe_conv_rev.rs). Each LWE must have dimension `k*N`, the flattened GLWE secret, and the same modulus and encoding. A batch is a flat slice of `p` complete LWEs, where `p` is a power of two in `1..=N`; slots are adjacent only at `p=N`. Construct `NttGlwePackingWorkspace::new(size, p)` or `FourierGlwePackingWorkspace::new(size, p)` for that fixed count. Single-LWE packing uses a trace workspace. Evaluation reuses output and scratch, checking shapes, indices and backend compatibility before writes.
+## LWE packing
 
-`NttLwePackingKeySwitchingKey<T>` and `FourierLwePackingKeySwitchingKey<T>` instead convert from an independent LWE secret to the output GLWE secret. `generate` accepts `primus_lwe::LweSecretKeyRef`, the output secret, and GLev parameters. Input dimension can differ from `k*N`; input and output must use the same ciphertext modulus and message encoding.
+Choose packing by the input secret and required coefficient positions. Both paths require the same input/output modulus and message encoding; zero target-message positions may still contain noise.
 
-| Packing-key method | Target message |
-| --- | --- |
-| `key_switch_to` | One LWE message as a constant GLWE |
-| `pack_lwes_to` | `sum_i m[i] X^i`, for any `1 <= p <= N` |
+| Path | Input secret and count | Target message |
+| --- | --- | --- |
+| Trace key `pack_lwe_to` / `pack_lwes_to` | Flattened GLWE secret of dimension `k*N`; power-of-two count p in `1..=N` | `sum_i m[i] X^(i*N/p)`; adjacent slots only at p=N |
+| `NttLwePackingKeySwitchingKey` / `FourierLwePackingKeySwitchingKey` | Independent LWE secret; any count p in `1..=N` | `key_switch_to`: one constant; `pack_lwes_to`: `sum_i m[i] X^i` |
 
-The batch input is a flat slice of complete LWEs. These keys write consecutive message coefficients and require neither a power-of-two count nor trace keys. Construct the existing `NttGlweKeySwitchingWorkspace::new(output_size.glwe_size())` or Fourier counterpart once; it supports changing batch counts. Batch evaluation groups decomposition digits into polynomials and streams the transformed key; a single LWE uses scalar digits without digit transforms. Both paths perform one final inverse transform per output component. The zero target-message tail can still contain noise. Decoding margin must cover input noise, secret-weighted decomposition error and accumulated key noise; Fourier also incurs floating-point error. Storage is `input_dimension * output_size.glev_len()` residues for NTT, or `input_dimension * output_size.fourier_glev_len()` complex values for Fourier.
+Trace packing follows [RevHomTrace](https://github.com/Stirling75/RevHomTrace/blob/main/src/glwe_conv_rev.rs). A batch uses `NttGlwePackingWorkspace::new(size, p)` or the Fourier counterpart for a fixed p; single-LWE packing uses a trace workspace.
 
-`NttGlweSchemeSwitchKey<T>` and `FourierGlweSchemeSwitchKey<T>` convert a coefficient-domain GLev into a GGSW in the key's transform domain using `apply_to`. Both secret representations passed to `generate` must represent the same secret. Construct `primus_lattice::workspace::{NttGlweExternalProductWorkspace, FourierGlweExternalProductWorkspace}` with `key.key_size()`. These buffers can be shared with other external products: `rebind` changes decomposition levels without allocation when the GLWE layout is unchanged; restore `key.key_size()` before scheme switching. The output inherits the input GLev's gadget scaling; `key.key_basis()` only controls external-product decomposition and can differ from the output basis. Each mask row uses an encryption of the negated secret polynomial; the body row is transformed directly from the input. Fourier products accumulate directly into output without an inverse/forward FFT roundtrip.
+Independent-key packing accepts an input dimension different from `k*N`. Generate its key from the input `LweSecretKeyRef`, output GLWE secret and GLev parameters, then reuse a GLWE key-switching workspace for the output layout. Batch counts can vary. Budget input noise, secret-weighted decomposition error and key noise, plus Fourier error. See [packing key switching](src/packing_key_switch) for complete layout and buffer contracts.
 
 ## Features
 
-Default features are empty: parameters, coefficient ciphertexts and signed secrets need no transform backend. `ntt` / `fourier` enable their keys, conversions, encryption/decryption, evaluation and workspaces, forwarding the capability to lattice. `fourier` does not select a concrete FFT engine; `rustfft` / `tfhe-fft` also enable `fourier` and the corresponding implementation. All backend features can be combined. `simd` propagates only to active arithmetic dependencies without activating a transform or FFT engine.
+Default features are empty. `ntt` enables NTT operations; `fourier` enables Fourier APIs but does not select an FFT engine. Use `rustfft` or `tfhe-fft` to enable Fourier with a concrete engine; both can coexist. `simd` forwards to active arithmetic dependencies without enabling a transform backend.
 
-Tests, examples and benchmarks declare their representations and engines in `required-features`. Mixed NTT/Fourier targets require `ntt` and their specified engines. Use `--features ntt,rustfft,tfhe-fft` for complete ordinary validation; Cargo skips entire targets whose requirements are missing.
+Tests, examples and benchmarks declare `required-features`; Cargo skips an entire target when these are missing. Select the features shown by its run command.
 
 ## Further reading
 
-Public contracts are documented in the [API sources](src). The [test and benchmark guide](benches/README.md) records coverage, workloads and reproduction commands; workspace validation entry points are in the [testing guide](../../guides/development/testing.md).
+See [API sources](src) for method contracts, [benchmarks](benches/README.md) for workloads and run commands, and the workspace [testing guide](../../guides/development/testing.md) for validation commands.

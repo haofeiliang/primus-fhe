@@ -53,11 +53,11 @@ codec.decode_slice_to(phase.as_ref(), &mut decoded);
 assert_eq!(decoded, message.as_ref());
 ```
 
-For ordinary requests, `encrypt_message_to` reuses ciphertext storage without allocating a separate encoded polynomial. Use `encrypt_encoded_to` when controlling the encoding directly: its input and the `decrypt_phase_to` output are coefficients, while the ciphertext is in NTT form. Keep parameters, table, keys and output across requests; Fourier also reuses an FFT engine and workspaces, as described below.
+Use `encrypt_message_to` to reuse ciphertext storage without a separate encoded polynomial. Keep parameters, tables, keys and output across requests; Fourier operations also reuse an FFT engine and workspaces.
 
 ## Ciphertext semantics
 
-Let `f` be the invertible secret, `mu` an encoded message and `g_l` a gadget scalar. The following phases omit any application-specific plaintext codec:
+Let `f` be the invertible secret, `mu` an encoded message and `g_l` a gadget scalar. These phases omit application-specific plaintext encoding:
 
 | Type | Phase of coefficient row `c_l` |
 | --- | --- |
@@ -65,79 +65,73 @@ Let `f` be the invertible secret, `mu` an encoded message and `g_l` a gadget sca
 | NLev of `m` | `f*c_l = g_l*m + e_l` |
 | NGSW of `m` | `f*c_l = g_l*f*m + e_l` |
 
-NLev and NGSW have the same number of stored rows but different mathematical roles. `NLev[1]` can lift a coefficient polynomial to encrypted NTRU through an external product. `NGSW[1]` preserves an already encrypted NTRU message. There is no general trivial NTRU encryption formed by copying a message to `c`.
+NLev and NGSW store the same number of rows but have different roles. `NLev[1]` can lift a public coefficient polynomial to encrypted NTRU through an external product; `NGSW[1]` preserves an already encrypted message. Copying a message to `c` is not a general trivial NTRU encryption.
 
-## Keys and recommended workflow
+## Parameters and keys
 
-Ordinary `NtruParameters::new` / `try_new` construction takes the checked [primus_poly::PolyLength](../primus_poly/README.md#ring-polynomial-length); `params.poly_length()` returns the checked value for workspace and NTT/FFT table constructors. Extract `.get()` at raw storage or scalar kernels. `PolyLength` centrally checks the shared FHE power-of-two range `32..=2^17`; NTRU parameters do not repeat the upper-bound check.
+| Parameters | Purpose |
+| --- | --- |
+| `NtruParameters` | Ordinary encryption/decryption with a `ScaledCodec` |
+| `NtruEncryptionParameters` | Ring and samplers for key generation and encoded/zero encryption; no codec |
+| `NlevParameters` | Encryption parameters and gadget decomposition; no plaintext codec |
 
-`NtruParameters::try_new` returns `NtruParameterError` for fixed-scale encoding, secret support/weight and noise-sampler errors; fixed weights must fit N. `new` panics on the same errors. These checks do not establish invertibility of a sampled secret, transform availability or a noise/security budget. `NtruParameterError::SecretKey` preserves the sampling/weight/modulus cause as `SecretKeySamplerError`; `Noise` preserves `GaussianError`.
+Use `NtruParameters::try_new` for ordinary messages. Given ordinary parameters, `NlevParameters::try_with_ntru_params` derives gadget parameters in the same ring; `try_with_basis` accepts an already prepared basis. Gadget-only construction is documented on [NlevParameters](src/parameter/gadget.rs).
 
-`NtruEncryptionParameters::try_new(poly_length, modulus, secret_distribution, noise)` prepares the ring and samplers without a plaintext domain. For gadget-only work, wrap it in `Arc` and call `NlevParameters::try_from_parts(shared_encryption, basis)`. Only ordinary encryption needs `NtruParameters::try_from_parts(shared_encryption, codec)`. These parts constructors check the independently supplied basis or codec modulus. Direct construction and `NlevParameters::with_ntru_params` reuse the common modulus established when creating their components; a new gadget layout is still checked. `try_with_basis` also shares the ordinary parameters' encryption state and checks the supplied basis, without retaining the codec. `gadget.try_with_new_basis(basis)` derives another gadget parameter set in the same ring, sharing sampler state without copying the old basis or converting ciphertexts.
+Construct [PolyLength](../primus_poly/README.md#ring-polynomial-length) once and reuse it for parameters, tables and workspaces. Fixed secret weights must fit N. Parameter checks cover encoding and sampling, not secret invertibility, transform availability or a noise/security budget.
 
-Both parameter types expose `encryption_parameters()` for key generation and raw/zero encryption. Message encryption and decryption take `NtruParameters`; `encrypt_message` / `encrypt_message_to` explicitly select `PlaintextEmbedding`. Cloning ordinary or gadget parameters shares immutable sampler tables; the gadget basis remains owned. Use separate encryption states for different noise distributions; identical sampler parameters can be shared across key roles. Shared state contains distribution precomputation, not secret coefficients or mutable RNG state.
+Pass `encryption_parameters()` to `NttNtruSecretKey::generate_pair` or `FourierNtruSecretKey::generate_pair`. The returned signed coefficient secret generates evaluation keys; the transformed secret supports encryption and phase extraction. `try_from_coeff_secret_key` converts an existing secret and can reject it. NTT import requires signed coefficient magnitudes below q. Keep the construction representation: matching q/N does not prove NTT roots, evaluation order or secret identity.
 
-Pass `params.encryption_parameters()` to `NttNtruSecretKey::generate_pair` or `FourierNtruSecretKey::generate_pair` to retain both the signed coefficient secret and its transform representation. The coefficient secret generates evaluation keys; the transformed key and its cached inverse support encryption and phase extraction.
+NTT generation rejects zero evaluations. Fourier checks native-ring invertibility (odd coefficient sum) and complex-inverse stability. Bounded rejection sampling can fail; attempt counts and inversion routines are not promised constant time. `generate_padded_pair` samples an active prefix with a zero suffix, and fixed weights must fit that prefix. Native fixed binary/ternary distributions with even nonzero count return `NonInvertibleSecretKey`; an unsuccessful candidate search returns `KeyGenerationExhausted`. Accepted secrets follow the proposal distribution **conditioned on backend acceptance**; `distr()` records the proposal.
 
-`NttNtruSecretKey` records the explicit q shared by `NTT(f)` and its inverse; `cipher_modulus()` returns it. Conversion and generation establish both under one modulus/table. Ordinary, phase and gadget entry points check the owning key’s q against the supplied arithmetic parameters and table before sampling or output writes. Key-switch, automorphism, trace, scheme-switch and TFHE key generation inherit the gadget checks. Matching q/N does not prove NTT roots, evaluation order or secret identity; retain the construction representation. Import through `try_from_coeff_secret_key` requires signed coefficient magnitudes below q and rejects noninvertible secrets; failed conversion buffers are erased. No raw NTT-pair import is provided.
+General NTRU supports nonbinary ring secrets. NTRU TFHE uses an independent external LWE secret for binary/ternary blind-rotation controls, without requiring a zero-padded binary ring secret.
 
-NTT generation rejects keys with a zero evaluation. Fourier generation checks native-ring invertibility (odd coefficient sum) and the stability of the complex inverse. These conditions differ. Bounded rejection sampling can fail, and its attempt count and inversion routines are not promised constant time.
+Secret keys and private encryption/generation/decryption workspaces erase owned buffers on drop. Discard an explicitly zeroized secret key. Built-in FFT backends erase scratch on drop; long-lived engines provide `FftEngine::zeroize_workspace()`. Caller-owned plaintext and phase outputs retain their own lifetimes.
 
-`generate_padded_pair(params.encryption_parameters(), active_length, ...)` samples only the active prefix and leaves the suffix zero; fixed weights apply to that prefix. It uses the same samplers as full-length generation, including ternary. Generation tries at most 1024 candidates. Native fixed binary/ternary distributions with even nonzero count return `NonInvertibleSecretKey` before sampling; otherwise an unsuccessful search returns `KeyGenerationExhausted`. A returned key follows the proposal distribution **conditioned on backend acceptance**; `distr()` records the proposal.
-
-General NTRU supports nonbinary ring secrets. The NTRU TFHE layer uses an independent external LWE secret for binary/ternary blind-rotation controls; it does not impose a zero-padded binary ring secret.
-
-Secret keys and private encryption/generation/decryption workspaces erase owned buffers on drop. Explicit workspace zeroization preserves reusable storage; explicit secret-key zeroization destroys the key. For NTT keys, public distribution and q metadata remain, but the erased key must be discarded. The built-in FFT backends also erase scratch on drop, and `FftEngine::zeroize_workspace()` supports a phase boundary for long-lived engines. Caller-owned plaintext and phase outputs retain their own lifetimes.
-
-The [automorphism example](examples/automorphism.rs) uses u64 coefficients with an explicit NTT prime. It shows paired key generation, evaluation-key setup and reusable NTT evaluation under the original secret:
+The [automorphism example](examples/automorphism.rs) shows key generation and reusable NTT evaluation under the original secret:
 
 ```sh
 cargo run -p primus_ntru --example automorphism --features ntt
 ```
 
-## Operations and representations
+## Encryption and decryption
 
-| Operation | Inputs and outputs |
+| Method | Input or result |
 | --- | --- |
-| `encrypt_message`, `encrypt_message_to` | Message coefficients to transformed NTRU, with codec scaling and explicit embedding |
-| `encrypt_encoded_to`, `encrypt_zeros_to` | Encoded ring coefficients or zero to transformed NTRU |
-| `decrypt_phase_to`, `decrypt_message`, `decrypt_message_to` | Transformed NTRU to coefficient phase or decoded message |
-| `encrypt_nlev_to`, `encrypt_ngsw_to` | Encoded polynomial to transformed gadget rows, without plaintext codec scaling |
-| `encrypt_nlev_constant_to` | Constant ring element to transformed NLev |
-| `encrypt_ngsw_signed_constant_batch_to` | Signed constants to contiguous transformed NGSWs |
-| NTT/Fourier NGSW `cmux_ternary_monomial_to` | Positive/negative bit controls rotate coefficient NTRU with one external product |
-| `NttNtruKeySwitchingKey`, `FourierNtruKeySwitchingKey` | Coefficient NTRU under an input secret to coefficient NTRU under the output secret |
-| `NttNtruAutomorphismKey::apply_to`, `FourierNtruAutomorphismKey::apply_to` | Coefficient NTRU to coefficient NTRU under the same secret |
-| `apply_ntt_to`, `apply_fourier_to` | Transformed NTRU to the corresponding transformed output under the same secret |
+| `encrypt_message` / `encrypt_message_to` | Message in `[0, t)` and explicit `PlaintextEmbedding`; allocate / overwrite transformed ciphertext |
+| `encrypt_encoded_to` / `encrypt_zeros_to` | Encoded coefficients / zero polynomial to transformed ciphertext, without plaintext scaling |
+| `decrypt_phase_to` | Coefficient-domain `f*c`, without decoding |
+| `decrypt_message` / `decrypt_message_to` | Decoded coefficient polynomial; allocate / overwrite output |
 
-`NttNlev::lift_monomial_to` / `FourierNlev::lift_monomial_to` fuse public-polynomial lifting with the first binary/ternary rotation. Supply NLEV[1], a positive NLEV bit and an optional negative NLEV bit; only the public polynomial is decomposed, and a zero exponent still performs the lift. Their `NttNtruCmuxWorkspace` / `FourierNtruCmuxWorkspace` shares one combined-control buffer with subsequent ternary CMUXes.
+Message methods take `NtruParameters`; encoded/zero encryption takes `NtruEncryptionParameters`. Both `Unsigned` and `Centered` embeddings accept canonical residues in `[0, t)`; centered `t-1` represents `-1`. Both use the same decoder. Decoded values retain coefficient type `T`.
 
-For ternary rotation, take `poly_length = params.poly_length()` and `levels = params.decompose_length()` (`DecompositionLevelCount`) and allocate `NttNtruCmuxWorkspace::new(poly_length, levels)` or `FourierNtruCmuxWorkspace::new(poly_length, levels)` once, and reuse it with mutually exclusive positive/negative NGSW controls. Fourier uses a native basis and both controls must use the engine's exact FFT table instance and torus scale. The exponent is already quantized into `0..2N`; its negative is derived internally. The NTRU TFHE backends use this primitive for classic ternary blind rotation.
+NTT secret-key operations need no workspace. Fourier encryption/decryption reuse an FFT engine and `FourierNtruEncryptWorkspace<T>` / `FourierNtruDecryptWorkspace`. Encoded NTT inputs must be canonical coefficients at q. Match key, parameters, table and output; invalid plaintext values can fail after partial writes or randomness consumption. See the [secret-key methods](src/secret_key) for exact buffer and failure contracts.
 
-`encrypt_message(input, params, embedding, table, rng)` allocates NTT output; `encrypt_message_to(input, output, params, embedding, table, rng)` reuses it. Fourier uses `(input, [output,] params, embedding, fft, rng, workspace)`. Both embeddings accept canonical message residues in `[0,t)`; centered `t-1` represents `-1`. `decrypt_message` / `decrypt_message_to` return canonical residues with the same decoder and need no embedding argument.
+For [phase-error diagnostics](../primus_encoding/README.md#phase-error-diagnostics), compare the phase with the **expected message** encoded using the actual codec and embedding. Decoding and re-encoding is not an independent reference. Fourier phase error also includes transform rounding.
 
-Message adapters live in each secret-key backend's `message.rs`. Encryption samples noise into the output or existing Fourier coefficient scratch, adds the encoding in place, then transforms once and multiplies by the inverse secret. Raw encoded and zero encryption need no codec or intermediate message allocation. NLev retains its scaled message **before** inverse-key multiplication; NGSW injects it **after** zero encryption.
+## Gadget and evaluation primitives
 
-`decrypt_phase_to` computes coefficient-domain `f*c` without decoding: NTT takes `(input, output, modulus, table)`; Fourier takes `(input, output, fft, workspace)`. For diagnostics, encode the **expected message** with the actual codec and embedding, then compare it with this phase using [`phase_error_magnitude_slice_to`](../primus_encoding/README.md#phase-error-diagnostics). Decoding and re-encoding is not an independent reference; Fourier phase errors also include transform rounding.
+| Operation | Input and output |
+| --- | --- |
+| `encrypt_nlev_to` / `encrypt_ngsw_to` | Ring polynomial to transformed gadget rows, without plaintext codec scaling |
+| `encrypt_nlev_constant_to` | Ring constant to transformed NLev |
+| `encrypt_ngsw_signed_constant_batch_to` | Signed constants to consecutive transformed NGSWs |
+| `NttNtruKeySwitchingKey` / `FourierNtruKeySwitchingKey` | Coefficient NTRU under an input secret to coefficient NTRU under an output secret |
+| Automorphism `apply_to` | Coefficient NTRU under the original secret after `X -> X^d` |
+| Automorphism `apply_ntt_to` / `apply_fourier_to` | Corresponding transformed input and output |
 
-Decryption returns coefficient polynomials with the ciphertext coefficient type `T`; applications handle any output type conversion.
+Evaluation keys retain their decomposition bases; construct matching workspaces once and reuse them. Automorphism requires odd `d` in `[1, 2N)`. NLev rows can each use scalar automorphism, but applying it row-wise to NGSW does **not** preserve the NGSW message/key relation.
 
-Evaluation keys own their decomposition basis. Reusable evaluation workspaces contain only work buffers. Owning public operations validate all supplied sizes, moduli and transform/workspace lengths before output writes; the corresponding low-level lattice kernels rely on those contracts. Actual secret-key identity, canonical input residues and sufficient noise budgets remain caller obligations.
+`NttNlev::lift_monomial_to` / `FourierNlev::lift_monomial_to` fuse public-polynomial lifting with the first binary/ternary rotation. Supply NLev[1], a positive NLev bit and an optional negative NLev bit; a zero exponent still performs the lift. Subsequent ternary `cmux_ternary_monomial_to` uses positive/negative NGSW bits, which must be mutually exclusive. Exponents are already quantized into `0..2N`. Reuse `NttNtruCmuxWorkspace::new(poly_length, levels)` or its Fourier counterpart.
 
-Automorphism uses odd `d` in `[1, 2N)`. It stores `NLev_f[f(X^d)]` to switch the permuted secret back to `f`. No inverse of `f(X^d)` is generated. Signed secrets are encoded before modular permutation. Transformed inputs still need coefficient recovery for decomposition; transformed outputs avoid the final inverse transform. NLev rows can each use scalar automorphism, but applying it row-wise to NGSW does **not** preserve the NGSW message/key relation.
+Fourier controls use the native decomposition basis and torus scale. Values, evaluation keys and maps must use the exact FFT table instance from generation. Direct Fourier output can round differently from a coefficient roundtrip. Actual secret identity, canonical inputs and sufficient encryption/decomposition/FFT error budgets remain caller obligations.
 
-Fourier values, evaluation keys and maps are bound to the exact FFT table instance used during generation, including its backend-specific order. Use that table for every subsequent operation. Fourier output paths omit an output torus rounding step, so they need not be bit-identical to a coefficient roundtrip. The caller must budget floating-point, decomposition and encryption errors. Examples and benchmarks are functional workloads, not security estimates.
-
-Sample extraction, NLev/NGSW external products and CMUX live in [`primus_lattice`](../primus_lattice/README.md). PBS, ManyLUT and optional CBS live in [`primus_tfhe_ntru_ntt`](../primus_tfhe_ntru_ntt) and [`primus_tfhe_ntru_fourier`](../primus_tfhe_ntru_fourier); their message/carry examples demonstrate sharing a blind rotation across multiple outputs.
+Sample extraction, external products, lift and CMUX are documented in [`primus_lattice`](../primus_lattice/README.md). For PBS, ManyLUT and CBS workflows, see [`primus_tfhe_ntru_ntt`](../primus_tfhe_ntru_ntt) and [`primus_tfhe_ntru_fourier`](../primus_tfhe_ntru_fourier).
 
 ## Independent LWE return
 
-`NtruLweKeySwitchingKey::generate(f, Q, s, lwe_parameters.encryption_parameters(), basis, rng)` prepares conversion from the signed NTRU secret f to an independently generated `primus_lwe::LweSecretKey` s. The key takes codec-free `LweEncryptionParameters` and a basis at target modulus q; s may have a different dimension and need not extend to an invertible NTRU secret. Each signed coefficient of f must have magnitude below an explicit q; generation checks this before sampling. Return-key and batch-workspace dimensions use `LweDimension`; `LweDimension::from(params.poly_length())` gives the extracted dimension N. Composed key and batch storage lengths remain checked at construction.
+`NtruLweKeySwitchingKey::generate(f, Q, s, lwe_parameters.encryption_parameters(), basis, rng)` prepares return from NTRU secret f at Q to an independent `LweSecretKey` s at q. It takes codec-free LWE encryption parameters and a basis at q. The output dimension may differ from N; s need not extend to an invertible NTRU secret. Each signed coefficient of f must have magnitude below an explicit q.
 
-Inputs are coefficient-domain NTRU ciphertexts; recover NTT/Fourier outputs to coefficients first. Create the workspace once and reuse it. All return paths overwrite their outputs without online allocation and validate caller-supplied shapes and target modulus before writes.
-
-Use the checked `poly_length = params.poly_length()` from the input NTRU parameters
-when constructing these workspaces.
+Inputs are coefficient-domain NTRU ciphertexts; recover transformed outputs to coefficients first. Allocate the workspace once with `poly_length = params.poly_length()` and reuse it. All paths overwrite outputs without online allocation.
 
 | Requested results | Key methods | Workspace |
 | --- | --- | --- |
@@ -145,49 +139,47 @@ when constructing these workspaces.
 | Several coefficients of one NTRU | `key_switch_many_at_to` | `NtruLweKeySwitchingBatchWorkspace::new(poly_length, output_dimension)` |
 | Coefficients of successive NTRUs | `modulus_switch_extract_at_to`, then `key_switch_extracted_batch_to` | The same batch workspace type |
 
-The scalar path fuses conversion and extraction into one N+1-element intermediate LWE. For several coefficients of one input, pass `0..outputs.len()` or `indices.iter().copied()` to `key_switch_many_at_to`. It preserves order and repeated indices, validating the exact-size, clonable iterator before writes. Multiple outputs share one Q→q conversion and fixed tiles for LWE key switching; empty batches do nothing and a singleton uses the scalar path. Results equal individual calls, including rounding ties. The [return benchmark](benches/lwe_return.rs) compares both paths separately from blind rotation.
+Shared-input returns accept an exact-size, clonable index iterator, preserve order and repeats, and share Q→q conversion. Results match individual calls, including rounding ties; an empty batch does nothing. For streaming returns, fill every consumed workspace slot for the current request before key switching. Slots track neither initialization nor key/modulus identity; finish a pending batch before reusing the workspace for shared-input returns. Complete prefix, overwrite and buffer contracts are on the [batch methods](src/key_switch/lwe/batch.rs).
 
-For a stream of different source polynomials:
+The operation first computes `c' = round(q*c/Q) mod q` coefficient-wise (nearest, ties upward), then extracts under f and key-switches at q. The extracted phase is `b-<a,f> = (f*c')[index]`. **Rounding precedes extraction negation**; reversing them changes half-tie results. See [NtruLweKeySwitchingKey](src/key_switch/lwe.rs) for the mask layout.
 
-1. Choose a tile with k outputs, where `k <= workspace.batch_capacity()`.
-2. Fill each slot `0..k` with `modulus_switch_extract_at_to(input.as_view(), index, workspace.extracted_slot_mut(slot), q)`. The slot number is the output position within the tile; `index` selects the source coefficient. Each source is converted independently and can be overwritten immediately after extraction.
-3. Call `key_switch_extracted_batch_to` with exactly those k outputs. It reads only the filled prefix, writes output i from slot i, and leaves the extracted samples intact. A final partial tile needs no clearing of later slots.
-4. Refill the consumed slots for the next tile. Finish a pending tile before using the workspace for shared-input returns, which may overwrite those slots.
-
-The workspace tracks neither filled-slot count nor sample key/modulus identity. Zero-initialized storage is not evidence that a slot was prepared for the current request.
-
-The operation rounds each coefficient as `c' = round(q*c/Q) mod q` (nearest, ties upward), extracts `b=0`, `a[i]=-c'[index-i]` for `i<=index` and `a[i]=c'[N+index-i]` otherwise, then key-switches at q. Extraction uses the signed coefficient vector of f with LWE phase `b-<a,f>=(f*c')[index]`. Rounding must precede extraction negation: negating first can change half-tie results. The single-output path fuses modulus switching and extraction into one scratch write, reusing `primus_reduce::ModulusSwitch` and `primus_lwe::LweKeySwitchingKey`.
-
-Both moduli may be native or explicit, including equal moduli. The implementation and tests cover u32→u32 and u64→u64, including full-width native sources, explicit near-word-limit sources and rounded endpoint wrap. There is no cross-width narrowing: a smaller q with u64 input still produces u64 coefficients. Inputs must be canonical at Q. Budget f-weighted coefficient rounding, secret-weighted decomposition error and LWE key noise, plus previous NTRU/FFT error; scaling an encoded message from Q to q is not generally identical to freshly encoding it at q. The NTRU TFHE backends use this primitive for their external LWE return path.
+Q and q may be native or explicit, including equal moduli. Returns keep the coefficient type (u32→u32 or u64→u64); reducing q does not narrow the word. Inputs must be canonical at Q. Budget f-weighted rounding, secret-weighted decomposition error and LWE key noise, plus previous NTRU/FFT error. Scaling an encoded message from Q to q is not generally identical to freshly encoding at q.
 
 ## Trace, projection and expansion
 
-Trace key generation checks shared resources once, encodes the secret once and
-reuses two local coefficient buffers across degrees. Both buffers are erased on
-return or unwind. Each degree owns its evaluation key and permutation; no
-generation buffer is retained in the online workspace.
+`NttNtruTraceKey` and `FourierNtruTraceKey` operate on coefficient ciphertexts under the original secret. Let `M` be the input message; target messages below omit evaluation noise.
 
-`NttNtruTraceKey` and `FourierNtruTraceKey` bind `log2(N)` automorphism keys. All endpoints use coefficient ciphertexts under the original secret; the ring length stays N. Ordinary partial trace with r retained coefficients targets `(N/r) * sum_j M[j*N/r] X^(j*N/r)`. Reverse trace preserves that message scale. NTT normalizes with inverse powers of two modulo q. Fourier instead divides unsigned coefficient representatives, rounding down before each reverse step; the resulting phase rounding error is multiplied by f. These numerical paths have different error distributions and are not interchangeable.
+| Method | Target message |
+| --- | --- |
+| `apply_to` / `apply_reverse_to` | Constant `N*M[0]` / `M[0]` |
+| `apply_partial_to(input, r, ...)` | `d * sum_j M[j*d] X^(j*d)`, where `d=N/r` |
+| `apply_reverse_partial_to(input, r, ...)` | `sum_j M[j*d] X^(j*d)` |
+| `project_coefficient_to` / `project_coefficients_to` | Constant `M[index]` / constants in selection order |
+| `project_prefix_coefficients_to(input, count, ...)` | First `count` coefficients as constants; no zero-tail assumption |
+| `expand_coefficients_to` | All N coefficients as constants |
+| `expand_partial_coefficients_to(input, count, ...)` | First `count` constants, assuming a zero message tail |
 
-Reverse steps visit degrees `2r+1, 4r+1, ..., N+1`. The remaining steps project each newly introduced automorphism error onto equally spaced coefficient positions; late errors can survive outside the target positions. Native halving also contributes projected `f * parity` terms, while its half-modulus lift terms cancel. Its floor rule is nearest division by two with downward ties, not a promise of unbiased rounding.
+Partial trace accepts a power-of-two r in `1..=N`; r=N copies input and r=1 is full trace. Reverse trace normalizes before each automorphism/addition. NTT uses `2^-1 mod q`; Fourier uses unsigned coefficient `floor(x/2)`. Fourier phase rounding is weighted by f, so GLWE noise bounds cannot be reused unchanged. Late evaluation errors may survive outside target positions, and native floor rounding need not be unbiased. The paths have distinct numerical contracts; the [trace methods](src/trace) document their error terms.
 
-`project_coefficient(s)_to` moves each requested coefficient to the constant position, then applies reverse trace. Indices may repeat or arrive out of order. `project_prefix_coefficients_to(input, count, ...)` accepts any count in `0..=N` and uses the same reverse traces for `0..count`, without an index array or a zero-tail message requirement. A count of one still performs full reverse trace. `expand_coefficients_to` expands the whole message in natural order using a tree. `expand_partial_coefficients_to(input, count, ...)` requires a power-of-two count <= N and a target message supported on the first count positions. It uses count-1 automorphisms and caller output as tree storage. A general input instead produces residue-class polynomials, not constant messages. Ciphertext/noise tails need not vanish, and non-target output positions can still contain noise.
+Projection accepts arbitrary indices, including duplicates and an empty selection; prefix projection accepts any count in `0..=N`. Each selected coefficient needs a full reverse trace, even for count one. Partial expansion instead requires a power-of-two count in `1..=N`; count one copies the input and count N gives full expansion. It normalizes once and has different error behavior from projection.
+
+Partial expansion produces constants only when **message** coefficients `count..N` are zero. Otherwise output i targets `sum_j M[i+j*count] X^(j*count)`. Ciphertext/noise tails need not vanish; all outputs retain ring length N.
 
 ## Same-secret scheme switching
 
-`NttNtruSchemeSwitchKey` / `FourierNtruSchemeSwitchKey` convert coefficient `NLev_f[m]` to transformed `NGSW_f[m]`. Their `key_basis` decomposes each input polynomial; their independent `output_basis` specifies the input/output scalars and level count. Reuse the existing external-product workspace. Inputs must already use that output basis; matching lengths alone cannot establish it.
+`NttNtruSchemeSwitchKey` / `FourierNtruSchemeSwitchKey` convert coefficient `NLev_f[m]` to transformed `NGSW_f[m]`. `key_basis` controls decomposition; the independent `output_basis` specifies input/output gadget scalars and level count. Inputs must already use that output basis; matching lengths alone cannot establish this. Reuse a matching external-product workspace.
 
-The stored evaluation key is `NGSW_f[f]`. It is generated by encrypting f, without explicitly forming a signed polynomial square. Input errors are multiplied by f, decomposition errors by f², and evaluation-key/FFT errors also contribute. Publishing this secret-dependent key needs a justified key-dependent-message/circular-security assumption and suitable parameters. The algebra and functional tests provide neither a security proof nor a CBS parameter recommendation. The output can control CMUX when m is a bit.
+The evaluation material is `NGSW_f[f]`. Input errors are multiplied by f, decomposition errors by f², and key/FFT errors also contribute. Publishing this secret-dependent material requires a justified key-dependent-message/circular-security assumption and suitable parameters; functional correctness provides neither a security proof nor a CBS parameter recommendation. A bit-valued m can control CMUX. See [scheme switching](src/scheme_switch) for the full phase contract.
 
 ## Features
 
-Default features are empty: parameters, coefficient ciphertexts and signed secrets, as well as the NTRU-to-LWE return path need no transform backend. `ntt` / `fourier` enable their keys, conversions, encryption/decryption, evaluation and workspaces, forwarding the capability to lattice. `fourier` does not select a concrete FFT engine; `rustfft` / `tfhe-fft` also enable `fourier` and the corresponding implementation. All backend features can be combined. `simd` propagates only to active arithmetic dependencies without activating a transform or FFT engine.
+Default features are empty; the NTRU-to-LWE return path needs no transform backend. `ntt` enables NTT operations; `fourier` enables Fourier APIs but does not select an FFT engine. Use `rustfft` or `tfhe-fft` to enable Fourier with a concrete engine; both can coexist. `simd` forwards to active arithmetic dependencies without enabling a transform backend.
 
-Tests, examples and benchmarks declare their representations and engines in `required-features`. Mixed NTT/Fourier targets require `ntt` and their specified engines. Use `--features ntt,rustfft,tfhe-fft` for complete ordinary validation; Cargo skips entire targets whose requirements are missing.
+Tests, examples and benchmarks declare `required-features`; Cargo skips an entire target when these are missing. Select the features shown by its run command.
 
 ## Further reading
 
-Public contracts are documented in the [API sources](src). The [test and benchmark guide](benches/README.md) records coverage, workloads and reproduction commands; workspace validation entry points are in the [testing guide](../../guides/development/testing.md).
+See [API sources](src) for method contracts, [benchmarks](benches/README.md) for workloads and run commands, and the workspace [testing guide](../../guides/development/testing.md) for validation commands.
 
 ## License
 
