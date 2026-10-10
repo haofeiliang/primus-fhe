@@ -19,7 +19,7 @@ English | [简体中文](README.zh_CN.md)
 | `DcrtTable<Ntt>` | One same-length NTT table per CRT modulus |
 | `U32DcrtTable`, `U64DcrtTable`, `UintDcrtTable<T>` | Common DCRT aliases |
 
-The specialized tables own their root powers and precomputed backend layouts. `U64NttTable` retains only the selected backend's preconditioners and packed root layout. Transforms dispatch to a valid scalar or instruction-set-specific kernel, run in place, and require no per-call scratch allocation.
+Transforms run in place without per-call scratch allocation. Construct and reuse a table for each ring and modulus.
 
 ## Example
 
@@ -40,15 +40,15 @@ table.inverse_transform_slice(&mut values);
 assert_eq!(values, expected);
 ```
 
-Construct and reuse a table outside repeated transform paths. The table is immutable and implements `Send + Sync`, so it may be shared across threads.
+Tables are immutable and implement `Send + Sync`, so they can be shared across threads operating on separate buffers. Cloning `U32NttTable` or `U64NttTable` copies precomputed storage; prefer sharing the table in repeated paths.
 
-`NttAutomorphismPermutation::new(degree, poly_length)` takes the table's checked `PolyLength` and caches `X -> X^degree` in bit-reversed order. It requires odd `degree` in `[1, 2N)`, where `N = poly_length.get()`. `apply_to` only permutes evaluations, preserving their residue range; homomorphic use still requires a scheme-specific key switch. Identity copies the input without allocating an index table; other degrees retain one `u32` source index per evaluation. The same map applies independently to each DCRT modulus component.
+`NttAutomorphismPermutation::new(degree, poly_length)` prepares `X -> X^degree` in bit-reversed order for odd `degree` in `[1, 2N)`. `apply_to` takes exactly `N` input and output evaluations and preserves their residue range. The map also applies independently to each DCRT component; homomorphic use still requires a scheme-specific key switch. See the [automorphism API](src/automorphism.rs).
 
 ## Representation and ranges
 
 For `N = 2^log_n`, the forward transform consumes coefficients in ascending-power order and produces evaluations in bit-reversed order. The inverse transform consumes that bit-reversed representation and restores ascending-power coefficient order.
 
-Every single-modulus input or output slice must contain exactly `table.poly_length().get()` values. `NttTable` implementations enforce this before entering their unchecked kernels.
+Every single-modulus input or output slice must contain exactly `table.poly_length().get()` values; a mismatched length panics. Values from different tables are interchangeable only when their roots, ordering and normalization agree, not merely their lengths and moduli.
 
 | Operation | Input range | Output range |
 | --- | --- | --- |
@@ -63,14 +63,12 @@ The consuming `transform_inplace` and `inverse_transform_inplace` methods use th
 
 ## Construction constraints
 
-`PolyLengthError` reports invalid ring geometry; `NttError` reports combined-length overflow, modulus headroom and root errors. `DegreeNotRepresentable` and `NoPrimitiveRoot` refer to the root order `2N`; `DegreeTooLarge` refers to the polynomial length `N`.
+- Constructors take [`primus_poly::PolyLength`](../primus_poly/README.md#ring-polynomial-length), a power of two in `32..=2^17`; `poly_length()` returns the same type.
+- The modulus must be prime and admit a primitive `2N`-th root, requiring `2N` to divide `q - 1`. Primality is a caller precondition; neither construction nor `FieldContext` proves it.
+- `UintNttTable<T>` requires `1 < q < 2^(T::BITS - 2)`; `U32NttTable` requires `q < 2^30`, and `U64NttTable` requires `q < 2^62`. The two spare bits make lazy values below `4q` representable.
+- The generic table also requires the root order `2N` to fit `T` and `N < q`.
 
-- Constructors take `primus_poly::PolyLength`, which centrally checks the shared FHE power-of-two range `32..=2^17`; `poly_length()` returns the same type.
-- The modulus must be prime and admit a primitive `2N`-th root of unity, requiring `2N` to divide `q - 1`. Primality is a caller precondition, not a runtime check.
-- `UintNttTable<T>` requires `1 < q < 2^(T::BITS - 2)`, including `q < 2^14` for `u16`. `U32NttTable` requires `q < 2^30`; `U64NttTable` requires `q < 2^62`. The two spare high bits make every lazy value below `4q` representable.
-- Before root search or table allocation, all built-in tables check modulus headroom. The generic table then checks that `2N` fits its coefficient type and that `N < q`. For example, `N = 32768` with `UintNttTable<u16>` returns `DegreeNotRepresentable { degree: 65536, .. }` instead of entering root search with an unrepresentable degree.
-
-`NttTable::new` searches for a primitive root and precomputes its powers, preconditioners, and selected backend layout. A modulus context satisfying `FieldContext` supplies arithmetic operations but does not itself prove that the modulus is prime or that the required root exists.
+`NttTable::new` searches for a primitive root and prepares a reusable table. Construction errors and exact conditions are documented in the [NTT API](src/ntt/mod.rs).
 
 ## Monomial transforms
 
@@ -80,7 +78,7 @@ The consuming `transform_inplace` and `inverse_transform_inplace` methods use th
 
 ## DCRT layout
 
-`DcrtTable` stores one NTT table for each modulus, all with the same checked `PolyLength`. Construction rejects an empty modulus list with `NttError::EmptyModuli` and checks that `moduli_count * N` fits in `usize` before building component tables. `poly_length()` returns the ring length; `rns_poly_len()` returns the complete RNS polynomial's element count. Coefficient and transform slices are modulus-major and have length `moduli_count * N`:
+`DcrtTable` requires a nonempty modulus list and one common `PolyLength`. `poly_length()` returns the ring length; `rns_poly_len()` returns the total `moduli_count * N` elements, which must fit `usize`. Coefficient and transform slices use the table's modulus order in modulus-major layout:
 
 ```text
 [a_0 mod q_0, ..., a_(N-1) mod q_0,
@@ -88,22 +86,21 @@ The consuming `transform_inplace` and `inverse_transform_inplace` methods use th
  ...]
 ```
 
-This matches the `CrtPolynomial` and `DcrtPolynomial` layout from [`primus_poly`](../primus_poly/README.md); their `len()` counts all stored residues. DCRT transforms assume the caller maintains the exact total length and modulus-major order; length checks are debug diagnostics only. Coefficient ranges and transform identity are also caller contracts.
+This matches `CrtPolynomial` and `DcrtPolynomial` in [`primus_poly`](../primus_poly/README.md). DCRT callers must maintain the exact total length, modulus order, coefficient ranges and component transform conventions; total-length checks are debug diagnostics only. See the [DCRT API](src/dcrt/mod.rs).
 
 For `DcrtTable::transform_monomial`, the single supplied `coeff` must be canonical for every component modulus. The method does not reduce it separately for each limb.
 
 ## SIMD backends and build target
 
-On `x86_64`, the specialized tables detect CPU features at runtime and select among scalar, AVX2, AVX-512 DQ, and AVX-512 IFMA kernels as applicable. Other architectures use scalar implementations. These x86 kernels do not require the crate's optional `simd` feature; that feature enables the matching portable-SIMD support in dependencies and currently requires nightly Rust.
+Default features are empty. Specialized x86-64 tables select available scalar or SIMD kernels at runtime; these kernels do not require the optional `simd` feature. Other architectures use scalar implementations. The `simd` feature enables portable-SIMD support in dependencies and requires nightly Rust.
 
-The repository-level [`.cargo/config.toml`](../../.cargo/config.toml) sets `target-cpu=native`. This is separate from runtime dispatch: the compiler may use host-specific instructions in ordinary Rust code as well as in a selected backend. Override the build rustflags when producing portable binaries or performing controlled ISA benchmarks.
+The repository [build configuration](../../.cargo/config.toml) uses `target-cpu=native`. Override its rustflags when producing portable binaries; runtime dispatch alone does not make a host-targeted build portable.
 
 ## Testing and benchmarks
 
 ```text
 cargo test -p primus_ntt
 cargo bench -p primus_ntt --bench bench_ntt
-cargo +nightly test -p primus_ntt --features simd
 ```
 
 ## License

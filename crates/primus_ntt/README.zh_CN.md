@@ -19,7 +19,7 @@
 | `DcrtTable<Ntt>` | 为每个 CRT 模数保存一个相同长度的 NTT table |
 | `U32DcrtTable`、`U64DcrtTable`、`UintDcrtTable<T>` | 常用 DCRT 别名 |
 
-专用 table 拥有 root power 和预计算 backend 布局。`U64NttTable` 只保留所选后端的预条件数和展开根表。变换会调度到有效的 scalar 或指令集专用 kernel，原地执行，并且每次调用不需要 scratch 分配。
+变换原地执行，每次调用不分配 scratch；应为各环和模数构造并复用 table。
 
 ## 示例
 
@@ -40,15 +40,15 @@ table.inverse_transform_slice(&mut values);
 assert_eq!(values, expected);
 ```
 
-Table 的构造应放在重复变换路径之外，并复用构造结果。Table 不可变并实现 `Send + Sync`，因此可以在线程间共享。
+Table 不可变并实现 `Send + Sync`，可在线程间共享，各线程使用独立缓冲区。克隆 `U32NttTable` 或 `U64NttTable` 会复制预计算存储，重复计算时应优先共享 table。
 
-`NttAutomorphismPermutation::new(degree, poly_length)` 接收 table 已检查的 `PolyLength`，缓存 bit-reversed 顺序下的 `X -> X^degree` 映射。它要求 `degree` 为 `[1, 2N)` 内的奇数，其中 `N = poly_length.get()`。`apply_to` 只置换点值并保留其 residue 范围；同态使用仍需方案层的 key switching。Identity 直接复制，不分配索引表；其他 degree 每个点值保存一个 `u32` 源索引。DCRT 的每个模数分量独立应用同一映射。
+`NttAutomorphismPermutation::new(degree, poly_length)` 为 `[1, 2N)` 内的奇数 `degree` 准备 bit-reversed 顺序下的 `X -> X^degree` 映射。`apply_to` 接收各含 `N` 个点值的输入和输出，保持 residue 范围。DCRT 各分量可独立应用同一映射；同态使用仍需方案层的 key switching。完整契约见[自同构 API](src/automorphism.rs)。
 
 ## 表示与取值范围
 
 对于 `N = 2^log_n`，正向变换读取按幂次升序排列的系数，生成 bit-reversed 顺序的 求值；逆向变换读取这种 bit-reversed 表示，并恢复按幂次升序排列的系数。
 
-每个单模数输入或输出 slice 都必须恰好包含 `table.poly_length().get()` 个值。 `NttTable` 实现在进入 unchecked kernel 前强制执行这项检查。
+每个单模数输入或输出 slice 都必须恰好包含 `table.poly_length().get()` 个值，长度不匹配会 panic。不同 table 的点值只有在根、顺序和归一化一致时才能互换，不能仅凭长度和模数相同判断兼容。
 
 | 操作 | 输入范围 | 输出范围 |
 | --- | --- | --- |
@@ -63,14 +63,12 @@ Lazy 值表示模 `q` 的剩余类，但其更宽的整数范围属于调用契�
 
 ## 构造约束
 
-`PolyLengthError` 表示非法环尺寸；`NttError` 区分组合长度溢出、模数余量和单位根错误。`DegreeNotRepresentable` 和 `NoPrimitiveRoot` 中的 degree 指根的阶 `2N`；`DegreeTooLarge` 中则指多项式长度 `N`。
+- 构造器接收 [`primus_poly::PolyLength`](../primus_poly/README.zh_CN.md#环多项式长度)，即 `32..=2^17` 内的二次幂；`poly_length()` 返回同一类型。
+- 模数必须为素数且存在本原 `2N` 次单位根，要求 `2N` 整除 `q - 1`。素性由调用方保证，构造器和 `FieldContext` 均不证明素性。
+- `UintNttTable<T>` 要求 `1 < q < 2^(T::BITS - 2)`；`U32NttTable` 要求 `q < 2^30`，`U64NttTable` 要求 `q < 2^62`。预留的两个高位保证小于 `4q` 的 lazy 值可表示。
+- 通用 table 还要求根的阶 `2N` 能由 `T` 表示，且 `N < q`。
 
-- 构造器接收 `primus_poly::PolyLength`，它集中检查 FHE 共用的 `32..=2^17` 二次幂范围；`poly_length()` 返回同一类型。
-- 模数必须是素数且存在本原 `2N` 次单位根，即要求 `2N` 整除 `q - 1`。素性是调用方前提，不进行运行时检查。
-- `UintNttTable<T>` 要求 `1 < q < 2^(T::BITS - 2)`，其中 `u16` 要求 `q < 2^14`。`U32NttTable` 要求 `q < 2^30`；`U64NttTable` 要求 `q < 2^62`。预留的两个高位保证所有小于 `4q` 的 lazy 值均可表示。
-- 搜根或分配 table 前，所有内置 table 先检查模数余量；通用 table 再检查 `2N` 能否由系数类型表示，以及 `N < q`。例如，`N = 32768` 配合 `UintNttTable<u16>` 会返回 `DegreeNotRepresentable { degree: 65536, .. }`，避免以不可表示的 degree 进入搜根。
-
-`NttTable::new` 会搜索本原根，并预计算 root power、预处理因子和所选 backend 布局。满足 `FieldContext` 的模数 context 提供算术操作，但其本身不能证明模数为素数，也不能保证所需的 root 存在。
+`NttTable::new` 搜索本原根并准备可复用 table。构造错误与精确条件见 [NTT API](src/ntt/mod.rs)。
 
 ## Monomial 变换
 
@@ -80,7 +78,7 @@ Lazy 值表示模 `q` 的剩余类，但其更宽的整数范围属于调用契�
 
 ## DCRT 布局
 
-`DcrtTable` 为每个模数保存一个 NTT table，并让它们共享同一个 `PolyLength`；构造时以 `NttError::EmptyModuli` 拒绝空模数列表，并在建立单模数表前检查 `moduli_count * N` 是否能由 `usize` 表示。`poly_length()` 返回环长度，`rns_poly_len()` 返回一个完整 RNS 多项式的元素数。系数和变换 slice 都采用 modulus-major 布局，总长度为 `moduli_count * N`：
+`DcrtTable` 要求模数列表非空，所有分量使用同一个 `PolyLength`。`poly_length()` 返回环长度，`rns_poly_len()` 返回总元素数 `moduli_count * N`，后者须能由 `usize` 表示。系数和变换 slice 按 table 的模数顺序采用 modulus-major 布局：
 
 ```text
 [a_0 mod q_0, ..., a_(N-1) mod q_0,
@@ -88,22 +86,21 @@ Lazy 值表示模 `q` 的剩余类，但其更宽的整数范围属于调用契�
  ...]
 ```
 
-这与 [`primus_poly`](../primus_poly/README.zh_CN.md) 中 `CrtPolynomial` 和 `DcrtPolynomial` 的布局一致；它们的 `len()` 统计全部 residue。DCRT 变换假设调用方维持精确总长度与 modulus-major 顺序，长度检查仅作 debug 诊断。系数范围与变换身份同样属于调用方契约。
+这与 [`primus_poly`](../primus_poly/README.zh_CN.md) 中 `CrtPolynomial` 和 `DcrtPolynomial` 的布局一致。DCRT 调用方须维持精确总长度、模数顺序、系数范围与各分量的变换约定，总长度检查仅作 debug 诊断。完整契约见 [DCRT API](src/dcrt/mod.rs)。
 
 对于 `DcrtTable::transform_monomial`，传入的单个 `coeff` 必须对每个分量模数都是 canonical 的；该方法不会针对每个 limb 分别约简系数。
 
 ## SIMD backend 与编译目标
 
-在 `x86_64` 上，专用 table 会在运行时检测 CPU 能力，并按适用条件从 scalar、 AVX2、AVX-512 DQ 和 AVX-512 IFMA kernel 中选择。其他架构使用 scalar 实现。 这些 x86 kernel 不需要启用 crate 的可选 `simd` feature；该 feature 用于启用依赖 crate 中配套的 portable-SIMD 支持，目前需要 nightly Rust。
+默认 feature 集为空。专用 x86-64 table 在运行时选择可用的 scalar 或 SIMD 内核，无需启用可选的 `simd` feature；其他架构使用 scalar 实现。`simd` feature 启用依赖中的 portable-SIMD 支持，需要 nightly Rust。
 
-仓库级 [`.cargo/config.toml`](../../.cargo/config.toml) 设置了 `target-cpu=native`。这与 runtime dispatch 是两件不同的事：编译器不仅可以在所选 backend 中使用本机指令，也可能在普通 Rust 代码中使用本机专用指令。构建可移植 二进制或执行受控 ISA benchmark 时，应覆盖这项 rustflags 配置。
+仓库[编译配置](../../.cargo/config.toml) 使用 `target-cpu=native`。构建可移植二进制时须覆盖其 rustflags；仅有运行时分派不能使面向本机编译的产物可移植。
 
 ## 测试与 benchmark
 
 ```text
 cargo test -p primus_ntt
 cargo bench -p primus_ntt --bench bench_ntt
-cargo +nightly test -p primus_ntt --features simd
 ```
 
 ## 许可证

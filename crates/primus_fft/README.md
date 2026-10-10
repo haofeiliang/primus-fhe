@@ -17,14 +17,14 @@ English | [简体中文](README.zh_CN.md)
 | `FftEngine<'a, Table>` | A reference to one immutable table plus one reusable mutable workspace |
 | `TorusFftValue` | Conversion between unsigned `u16`, `u32`, or `u64` torus bit patterns and `f64` |
 
-For `N = 2^log_n`, each table transforms `N` coefficients into `N / 2` complex values. The table owns the backend plan and twist factors; the engine owns the temporary memory used by each transform.
+For `N = 2^log_n`, a transform maps `N` coefficients to `N / 2` complex values. Construct a table once and reuse an engine for repeated transforms.
 
 ## Features
 
 No FFT engine is enabled by default. `FftTable`, `FftEngine`, `Complex64`, and `TorusFftValue` are always available.
 
-- `rustfft` exports `RustFftTable` / `RustFftWorkspace` and selects only RustFFT.
-- `tfhe-fft` exports `TfheFftTable` / `TfheFftWorkspace` and selects only TFHE-FFT and its dynamic stack dependency.
+- `rustfft` exports `RustFftTable` / `RustFftWorkspace`.
+- `tfhe-fft` exports `TfheFftTable` / `TfheFftWorkspace`.
 
 Both may be enabled together. Select explicitly in your dependency, for example `primus_fft = { path = "../primus_fft", features = ["rustfft"] }`. Without either engine, you can still implement your own `FftTable`. The example below uses `rustfft`.
 
@@ -57,33 +57,26 @@ A negacyclic convolution uses `forward_as_torus` for a torus polynomial, `forwar
 
 ## Table and workspace contract
 
-Construct one table in the context that owns a Fourier representation and reuse it. Fourier values and scratch memory are bound to that exact table instance. Do not mix values or scratch from independently constructed tables, even when the backend and polynomial length are the same: backend ordering, planning, and workspace compatibility are private properties of the table and are not part of a cross-table compatibility guarantee.
+Fourier values and workspace must come from the **same table instance**. Independently constructed tables are not interchangeable, even with the same backend and length. Length or capacity checks do not validate this identity; callers must preserve it.
 
-Tables are immutable and implement `Send + Sync`, so a table may be shared across threads. Each concurrent worker must create its own `FftEngine` (or its own scratch through `new_workspace`); mutable workspace is never shared between transform calls.
+Tables are immutable and implement `Send + Sync`. Share the table across threads, with a separate `FftEngine` or `new_workspace()` result for each concurrent worker. Inputs and outputs accept ordinary slices, including subslices, without extra alignment requirements.
 
-The built-in tables use cache-line-aligned storage for their twist factors and transform workspace. Caller-owned inputs and outputs still accept ordinary slices, including subslices; no additional alignment is required.
-
-The built-in scratch types securely erase their full buffers on drop. After processing secret data, `fft.zeroize_workspace()` erases the workspace while keeping it reusable. Ordinary transforms do not erase scratch on every call. Caller-owned inputs and outputs have their own lifetimes; this heap-buffer guarantee does not cover registers or compiler-created stack copies. Custom backends define their own scratch erasure behavior.
-
-Input and output lengths are exact:
+Input and output lengths must match exactly; otherwise transforms panic:
 
 - coefficient slices contain `poly_length().get()` values;
-- Fourier slices contain `fourier_length() == poly_length().fourier_poly_len()` values;
-- scratch passed directly to `FftTable` methods must have been allocated by that table instance.
+- Fourier slices contain `fourier_length() == poly_length().fourier_poly_len()` values.
 
-Incorrect input/output lengths cause a panic. Backend workspace-capacity checks may also panic, but do not establish table identity. The requirement to use workspace and Fourier values from the same table remains the caller's responsibility.
+Use `FftEngine::new(table)` for the recommended workflow. When reusing an allocation through `from_workspace`, preserve the table/workspace pair returned by `into_parts`; workspace provenance is not checked. Complete method contracts are in the [table and engine API](src/table.rs).
 
-`FftEngine::from_workspace(table, workspace)` reuses an existing allocation without checking its provenance. `into_parts()` returns the originating table reference and workspace so they can be rebound together without allocation; keep that pair together. Use `FftEngine::new(table)` when no workspace needs to be recovered.
+Built-in workspaces erase their buffers on drop; `fft.zeroize_workspace()` erases them without releasing the allocation. Transforms do not erase scratch after each call. Caller-owned inputs/outputs, registers and stack copies are outside this buffer guarantee; custom backends define their own erasure behavior.
 
-`FftTable::automorphism_map(degree)` allocates the Fourier map for `X -> X^degree`, where `degree` is odd and in `[1, 2N)`. Entry `j` gives `(source, conjugate)` for output `j`.
-
-Build and cache the map during evaluation-key construction, and reuse the originating table instance. Custom `FftTable` implementations must provide the map for their own storage order. Applying the map alone does not perform cryptographic key switching.
+`FftTable::automorphism_map(degree)` allocates a reusable `X -> X^degree` map for odd `degree` in `[1, 2N)`. Entry `j` gives `(source, conjugate)` for output `j`. Keep the map bound to its originating table's Fourier order; applying it alone does not perform cryptographic key switching.
 
 ## Length and precision
 
-`FftTable::new(poly_length)` takes `primus_poly::PolyLength`, which checks the shared FHE range `32..=2^17`; construction directly returns the table without an additional size check. Table and engine `poly_length()` accessors return the same type; `fourier_length()` returns the complex element count. Table construction performs backend planning and allocation; it should stay outside repeated transform paths.
+`FftTable::new` takes [`primus_poly::PolyLength`](../primus_poly/README.md#ring-polynomial-length), a power of two in `32..=2^17`. Table and engine `poly_length()` accessors return that type; `fourier_length()` returns the complex element count. Table construction performs planning and allocation, so keep it outside repeated transform paths.
 
-The transform uses `f64` and is approximate. Whether a Fourier computation can be rounded back to the intended torus value depends on the accumulated floating-point error and the magnitude of the integer operands; higher-level algorithms are responsible for maintaining a suitable precision budget.
+Transforms use `f64` and are approximate; a word-wide torus input is not guaranteed to round-trip bit-for-bit. Correct rounding depends on accumulated floating-point error and integer operand magnitudes, so the surrounding algorithm must maintain a suitable precision budget. Conversion and rounding rules are in the [torus API](src/torus.rs).
 
 ## Testing and benchmarks
 

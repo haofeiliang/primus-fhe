@@ -24,9 +24,9 @@ English | [简体中文](README.zh_CN.md)
 
 ## Example
 
-`Residues<S>` stores one value as canonical residues in an ordered RNS basis, with owned or borrowed storage. It does not store or validate the basis. Single-value decomposition, composition, and fast conversion use this type; batched layouts and scratch buffers remain slices.
+`Residues<S>` stores one value as canonical residues in basis order, using owned or borrowed storage. It does not retain or validate the basis; batch APIs use slices.
 
-`ResidueFactors<S>` stores one precomputed factor per modulus in basis order. `decompose_factors` returns this type, and scaled-decomposition APIs accept it. Each factor must be prepared for its corresponding modulus; the wrapper does not validate precomputations. Polynomial factor tables and CRT reconstruction weights remain separate representations.
+`ResidueFactors<S>` stores one precomputed multiplication factor per modulus in basis order. Each factor must match its corresponding modulus; the wrapper does not validate precomputations. Use `decompose_factors` to prepare factors for scaled-decomposition operations.
 
 ```rust
 use primus_modulus::BarrettModulus;
@@ -54,37 +54,28 @@ Batched residues are always modulus-major. For `k` values and moduli `q_0, ..., 
 
 Batched big integers use the opposite grouping: each value occupies one contiguous, fixed-width, little-endian limb chunk. The chunk width is `RNSBase::big_uint_value_len()`.
 
-[`CrtPolynomial`](../primus_poly/README.md) uses the same modulus-major coefficient layout, so the polynomial wrappers forward directly to the slice operations without rearranging data.
+[`CrtPolynomial`](../primus_poly/README.md) uses the same modulus-major coefficient layout; no rearrangement is needed.
 
 ## RNS bases
 
-Base construction/extension and hybrid partitioning return `RnsError`. Non-coprime moduli are reported as `NonCoprimeModuli`; partition errors retain the requested and supported counts.
+`RNSBase::new` constructs a base from a nonempty slice of pairwise-coprime moduli; `from_owned_moduli` takes ownership of their vector. Construction and extension return `RnsError` for invalid bases.
 
-`RNSBase::new` clones a non-empty slice of pairwise-coprime moduli; `from_owned_moduli` avoids that clone. The base precomputes `Q`, every punctured product `Q / q_i`, and `(Q / q_i)^-1 mod q_i`.
+Cloning an `RNSBase` shares immutable precomputations without copying buffers. `extend` / `extend_with` create a new base and leave the original unchanged. Reuse a prepared base rather than independently constructing the same basis.
 
-`RNSBase::clone` shares immutable precomputations through an internal `Arc`, without copying buffers. `moduli_values()` borrows the shared numeric modulus slice in basis order. Codecs, gadget parameters and converters can retain cloned base handles; independently calling `new` still creates independent tables. `extend` / `extend_with` create a new base and leave the original and its clones unchanged. Online operations borrow these tables without changing reference counts.
-
-The main operation families are:
-
-- `compose*` and `decompose*` for scalar, batched, and polynomial CRT conversion;
-- `wrapping_decompose*` for centered lifting from a smaller modulus;
-- fused `add_*_decompose_*_scaled_assign` operations for polynomial hot paths;
-- `extend` and `extend_with` for appending one modulus or another basis while reusing existing CRT precomputations.
-
-Centered small-value decomposition interprets values below `ceil(t / 2)` as nonnegative and the remaining values as negative representatives modulo `t`. Modulus `t = 2` is intentionally special: `0` and `1` are preserved directly, so `1` is not lifted as `-1`.
+Use `compose*` and `decompose*` for CRT conversion. `wrapping_decompose*` performs centered lifting from a smaller modulus `t`: values below `ceil(t / 2)` are nonnegative and the rest are negative representatives. For `t = 2`, both `0` and `1` are preserved, so `1` is not lifted as `-1`. Complete operation contracts are in the [base API](src/base).
 
 ## Base conversion
 
-`BaseConverter` owns its input and output base handles. `new` shares existing base tables; `from_owned_bases` moves the handles without incrementing their reference counts. Conversion-specific matrices are prepared for each converter and remain independently owned; cloning a converter still copies its matrix.
+`BaseConverter::new` shares the prepared input and output bases; `from_owned_bases` takes ownership of their handles. Cloning a multi-modulus converter copies its conversion matrix, so reuse the converter in repeated paths.
 
-Conversion uses runtime or derived Barrett contexts. Adjusted residues satisfy `u_i < q_i`, but may exceed a destination modulus `p_j`. Barrett's existing dot product accepts both operands below `2^(T::BITS - 2)`; its modulus construction already establishes this bound for the source residues and destination matrix entries. Conversion needs no repeated range checks or per-coefficient reductions. Custom contexts must meet the same numerical requirements; `FieldContext` alone does not guarantee them.
+Conversion is intended for runtime or derived Barrett contexts. Multi-modulus conversion requires cross-modulus dot products accepting source residues even when they exceed the destination modulus; Barrett accepts operands below `2^(T::BITS - 2)`. Custom contexts must satisfy the [converter arithmetic contract](src/converter/fast.rs); `FieldContext` alone does not establish these ranges.
 
 The two conversion families have different mathematical contracts:
 
 - `fast_convert` and `fast_convert_array` compute a SEAL-style approximate CRT lift. With a multi-modulus input basis, the result represents `x + kQ` for some integer `k`; it is not generally the canonical `x mod p_j`. This is suitable only when the surrounding algorithm cancels or accepts the multiple-of-`Q` term. A single-modulus input uses exact direct reduction.
-- `exact_convert_array` applies a quotient correction, interprets the input through its centered representative in `[-Q/2, Q/2)`, and requires exactly one output modulus. The name "exact" follows SEAL terminology. The correction uses `f64`, so values close to the `-Q/2`/`Q/2` boundary may still be off by one multiple of `Q` modulo the output modulus.
+- `exact_convert_array` applies a quotient correction, interprets the input through its centered representative in `[-Q/2, Q/2)`, and requires exactly one output modulus. The name "exact" follows SEAL terminology. For multi-modulus inputs, correction uses `f64`, so values near the centered boundary may differ by one multiple of `Q` modulo the output modulus; applications requiring exactness there need a higher-precision method. See the [corrected-conversion API](src/converter/exact.rs).
 
-Create an `ExactConversionWorkspace` with `exact_conversion_workspace` and reuse it with the same converter and polynomial length. Fast conversion instead accepts a raw scratch slice sized by `fast_convert_scratch_len` or `fast_convert_array_scratch_len`.
+Create an `ExactConversionWorkspace` through `exact_conversion_workspace` and reuse it with the same converter and length. Fast conversion accepts a scratch slice sized by `fast_convert_scratch_len` or `fast_convert_array_scratch_len`. Each concurrent operation needs separate mutable workspace.
 
 ## Hybrid RNS
 
@@ -98,7 +89,7 @@ The fixed size must produce exactly `dnum` non-empty partitions. For example, fi
 
 Use `HybridRNS::from_partitioning` at shorter, ordered-prefix levels of the same modulus chain so key-compatible partition boundaries remain fixed. The constructor validates the active modulus count; the owner of the modulus chain must preserve the prefix relationship.
 
-Each partition supports approximate ModUp into the complete `Q || P` basis. The streaming variant emits only converted complement limbs so higher-level key switching can reuse partition limbs in another representation. ModDown converts the `P` correction into `Q`, subtracts it, and multiplies by `P^-1 mod q_i`.
+Each partition supports approximate ModUp into `Q || P`; streaming ModUp emits only converted complement limbs, leaving the caller to supply unchanged partition limbs. ModDown converts the `P` correction into `Q`, subtracts it, and multiplies by `P^-1 mod q_i`. See the [hybrid APIs](src/hybrid).
 
 ## Caller contracts and workspace
 
@@ -106,15 +97,11 @@ Each partition supports approximate ModUp into the complete `Q || P` basis. The 
 - Moduli combined in one basis, including `Q || P`, must be pairwise coprime.
 - Slice lengths and modulus-major ordering must match the selected base and polynomial length exactly.
 - Reuse converter workspaces and scratch buffers outside hot loops. The batched APIs perform no internal allocation once their output and workspace are provided.
-- Some low-level repeated paths use `debug_assert*!` for shape diagnostics. Release callers must establish those invariants at the owning public or scheme boundary.
+- Not every low-level operation validates these conditions in release builds; uphold its documented contract.
 
 ## SIMD feature
 
 The optional `simd` feature enables portable-SIMD small-value and modular arithmetic paths. It is disabled by default and requires a nightly Rust toolchain.
-
-```text
-cargo +nightly test -p primus_rns --features simd
-```
 
 ## Testing and benchmarks
 
