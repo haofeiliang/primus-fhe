@@ -25,8 +25,16 @@ use rand::{SeedableRng, rngs::StdRng};
 let context = NttHighPrecLutContext::<u64, U64NttTable, _>::try_from_config(
     experimental::NTT_CLASSIC_LOOKUP_U64,
 )?;
-let function = |x: u64| (x*x + 3*x + 7) & 0xffff;
-let table = context.compile_fn(function)?; // 公开、离线；不使用秘密。
+let fee = |x: u64| {
+    if x < 16_384 {
+        x / 4
+    } else if x < 49_152 {
+        4_096 + (x - 16_384) / 2
+    } else {
+        20_480 + (x - 49_152)
+    }
+};
+let table = context.compile_fn(fee)?; // 公开、离线；不使用秘密。
 
 // Client：只有配套生成需要两类秘密；在线客户端仅借用外部秘密 s。
 let mut rng = StdRng::seed_from_u64(42);
@@ -38,16 +46,16 @@ let mut input = encryptor.allocate_input();
 // Server：接收公开 context/table、计算密钥和加密 chunks。
 let mut evaluator = context.evaluator(&server, &table)?;
 let mut output = evaluator.allocate_output();
-for value in [43981u64, 0] {
+for (value, expected) in [(16_383u64, 4_095u64), (49_152, 20_480)] {
     encryptor.encrypt_to(value, &mut input, &mut rng)?;
     evaluator.evaluate_to(&input, &mut output);
     let result: u64 = decryptor.decrypt(&output)?;
-    assert_eq!(result, function(value));
+    assert_eq!(result, expected);
 }
 # Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
-Fourier 使用 `FourierHighPrecLutContext<u64, RustFftTable, _>` 与对应实验常量。完整示例为 [ntt_lookup.rs](examples/ntt_lookup.rs) 和 [fourier_lookup.rs](examples/fourier_lookup.rs)，输入输出均为 16 位，复用同一 evaluator 与密文存储执行两次请求。五个低 chunk 填满 N=1024 个系数，三个高 chunk 在 64 个多项式间选表。示例固定 u64 系数，库也支持 u32。
+Fourier 使用 `FourierHighPrecLutContext<u64, RustFftTable, _>` 与对应实验常量。完整示例为 [ntt_lookup.rs](examples/ntt_lookup.rs) 和 [fourier_lookup.rs](examples/fourier_lookup.rs)，对 16-bit 输入计算上述分段费用，返回 16-bit 结果，检查分段点前后、域端点和一个内部值共七次请求。最大费用为 36863。密钥、表、evaluator 与密文缓冲重复使用；示例先打印函数和位数，再打印普通整数结果。五个低 chunk 填满 N=1024 个系数，三个高 chunk 寻址每个输出的 64 个逻辑多项式；实际存储会经过共享与剪枝。示例固定 u64 系数，库也支持 u32。
 
 `compile_fn(|x: W| -> W)` 将明文整数 W 与密文系数 T 分开。完整输入输出位宽必须能被 W 容纳，超出输出域的结果直接报错，不截断。编译仍为 output-major：同一纯函数会为每个输出 chunk 再计算一次，不保留全域明文缓存。昂贵函数可以显式预先准备值。`compile_chunks_fn(|x, output| digit)` 保留 digit 回调，支持超过一个整数容量的输出。客户端同样提供 `encrypt_chunks_to` / `decrypt_chunks_to`，使用调用方已有 digit 切片。
 
@@ -97,15 +105,17 @@ cargo run --release -p primus_tfhe_ntru_lut --example fourier_lookup --features 
 
 `context.try_generate_keys(&table, rng)` 生成一份 BR/CBS/返回组合，只补充执行计划实际需要的 lift。Classic 借用已有 initializer；sparse 仅在 `table.needs_public_lift()` 为真时，按 BR 的 basis/noise 生成独立 `NLEV[1]`。BR、CBS 和 lift 共用已接受的环秘密变换/逆元，不生成第二份 BR 或变换表。普通 sparse PBS/CBS/one-hot 不受影响。
 
+两个配套查表配置已经采用 h32 固定重量 binary 秘密，因此 sparse 查表只需修改算法。保留相同的费用函数和客户端/求值流程；密钥生成会补齐编译计划需要的公开提升材料。
+
 使用 sparse 查表时，在创建高精度 Context 前修改 one-hot PBS 的算法：
 
 ```rust,ignore
+use primus_tfhe::BlindRotationMethod;
+
+let mut config = experimental::NTT_CLASSIC_LOOKUP_U64;
 config.one_hot.pbs.algorithm =
     BlindRotationMethod::Sparse { copy_count: 3, bucket_count: 64 };
-let context = NttHighPrecLutContext::<u64, Table, _>::try_from_config(config)?;
-let table = context.compile_fn(function)?;
-let (client, server) = context.try_generate_keys(&table, rng)?;
-let mut evaluator = context.evaluator(&server, &table)?;
+let context = NttHighPrecLutContext::<u64, U64NttTable, _>::try_from_config(config)?;
 ```
 
 服务端组合可复用于布局、编码和材料需求兼容的其他公开表。最初未生成 lift 的 sparse 组合，绑定后来需要 lift 的表时会报错，不在线生成材料；含 lift 的组合也可绑定不需要它的表。实际秘密与变换身份仍须一致，元数据不能证明这些条件。

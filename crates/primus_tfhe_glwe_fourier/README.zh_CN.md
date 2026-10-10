@@ -48,8 +48,8 @@ cargo run -p primus_tfhe_glwe_fourier --release --example fourier_boolean --feat
 | Boolean 访问组合电路 | `CLASSIC_PBS_U64`，消息 4→4 | [boolean](examples/fourier_boolean.rs) |
 | Sparse PBS | `SPARSE_PBS_U64` | [sparse](examples/fourier_sparse.rs) |
 | 交错多输出 ManyLUT，独立输出消息模数 | `CLASSIC_MANY_LUT_U64` | [many_lut](examples/fourier_many_lut.rs) |
-| Classic CBS → CMux | `CLASSIC_CBS_U64` | [circuit_bootstrap](examples/fourier_circuit_bootstrap.rs) |
-| Sparse CBS → CMux | `SPARSE_CBS_U64` | [sparse_circuit_bootstrap](examples/fourier_sparse_circuit_bootstrap.rs) |
+| Classic CBS → CMux → 环加法 | `CLASSIC_CBS_U64` | [circuit_bootstrap](examples/fourier_circuit_bootstrap.rs) |
+| Sparse CBS → CMux → 环加法 | `SPARSE_CBS_U64` | [sparse_circuit_bootstrap](examples/fourier_sparse_circuit_bootstrap.rs) |
 | 分解式 MVB | `CLASSIC_THRESHOLD_MVB_U64` | [thresholds](examples/fourier_mvb_thresholds.rs) |
 
 ManyLUT 通过交错共享一次盲旋转；分解式 MVB 通过公共因子生成多输出，是不同的求值接口。
@@ -121,7 +121,9 @@ Context 保存 Rounded 输入编码与 CBS gadget。使用 `context.encryptor(ex
 
 用 `context.compile_cbs_fn(|m| u64::from(m >= 2))?` 编译整数函数，或将完整前半区结果切片传给 `compile_cbs_slice`；`compile_cbs_identity()` 提供恒等函数。`context.circuit_bootstrap_evaluator_with_lookup_table(&server, program)?` 移入程序并组合复用资源，`context.circuit_bootstrap_evaluator(&server)?` 则准备恒等 CBS。工厂核对输入消息区间、q/Q、basis 和密钥布局；相同输入数量不能证明编码相同。输出层为 `g_j * F(m) mod Q`；CMux 要求整个输入域上 F 都为 bit，其他环整数遵循外积噪声契约。
 
-`context.try_generate_circuit_bootstrap_keys(&mut rng)` 生成完整 `CircuitBootstrapServerKey`。默认 `CbsEvaluator` 的 `circuit_bootstrap_to(input.as_view(), control.as_mut_view())` 与 `cmux_to(control.as_view(), lhs.as_view(), rhs.as_view(), selected.as_mut_view())` 不需要另传 resources。[CBS → CMUX 示例](examples/fourier_circuit_bootstrap.rs)展示两次请求；普通 PBS 可借用 `server.server_key()`。
+`context.try_generate_circuit_bootstrap_keys(&mut rng)` 生成完整 `CircuitBootstrapServerKey`。默认 `CbsEvaluator` 的 `circuit_bootstrap_to(input.as_view(), control.as_mut_view())` 与 `cmux_to(control.as_view(), lhs.as_view(), rhs.as_view(), selected.as_mut_view())` 不需要另传 resources。普通 PBS 可借用 `server.server_key()`。
+
+[CBS → CMux → 加法示例](examples/fourier_circuit_bootstrap.rs)计算 `[m>=2]`，选择加密费用方案 A 或 B，再加上加密附加费用。客户端将 `A=[1,0,2,1]`、`B=[3,1,0,2]`、`extra=[0,1,1,0]` 重复铺入全部 N 个系数，采用 Scaled `t_ring=8`。这些是系数域消息，不表示独立 SIMD 槽。四次请求覆盖 m=0、1、2、3；客户端检查每个系数，只打印短前缀。
 
 逐调用借用公共资源、其他输入编码或 GLWE 替代 output basis 使用底层 `CircuitBootstrapEvaluator`。实际秘密/变换身份、候选共同编码和噪声余量仍为调用方契约。见[共享 CBS 契约](../primus_tfhe/README.zh_CN.md#cbs-输出与消费)。
 

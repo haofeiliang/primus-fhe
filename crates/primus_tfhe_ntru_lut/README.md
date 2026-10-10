@@ -25,8 +25,16 @@ use rand::{SeedableRng, rngs::StdRng};
 let context = NttHighPrecLutContext::<u64, U64NttTable, _>::try_from_config(
     experimental::NTT_CLASSIC_LOOKUP_U64,
 )?;
-let function = |x: u64| (x*x + 3*x + 7) & 0xffff;
-let table = context.compile_fn(function)?; // Public, offline; no secrets.
+let fee = |x: u64| {
+    if x < 16_384 {
+        x / 4
+    } else if x < 49_152 {
+        4_096 + (x - 16_384) / 2
+    } else {
+        20_480 + (x - 49_152)
+    }
+};
+let table = context.compile_fn(fee)?; // Public, offline; no secrets.
 
 // Client: only paired setup needs both secrets; online clients borrow external s.
 let mut rng = StdRng::seed_from_u64(42);
@@ -38,16 +46,16 @@ let mut input = encryptor.allocate_input();
 // Server: receives public context/table, evaluation material and encrypted chunks.
 let mut evaluator = context.evaluator(&server, &table)?;
 let mut output = evaluator.allocate_output();
-for value in [43981u64, 0] {
+for (value, expected) in [(16_383u64, 4_095u64), (49_152, 20_480)] {
     encryptor.encrypt_to(value, &mut input, &mut rng)?;
     evaluator.evaluate_to(&input, &mut output);
     let result: u64 = decryptor.decrypt(&output)?;
-    assert_eq!(result, function(value));
+    assert_eq!(result, expected);
 }
 # Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
-For Fourier, select `FourierHighPrecLutContext<u64, RustFftTable, _>` and the matching experimental constant. Complete runnable workflows are [ntt_lookup.rs](examples/ntt_lookup.rs) and [fourier_lookup.rs](examples/fourier_lookup.rs), using 16-bit input/output and reusing the same evaluator and ciphertexts for two requests. Five low chunks fill N=1024 coefficients; three high chunks select among 64 polynomials. Examples fix u64 coefficients; the library also supports u32.
+For Fourier, select `FourierHighPrecLutContext<u64, RustFftTable, _>` and the matching experimental constant. Complete runnable workflows are [ntt_lookup.rs](examples/ntt_lookup.rs) and [fourier_lookup.rs](examples/fourier_lookup.rs). They evaluate the piecewise fee above on 16-bit input, return a 16-bit result, and check seven requests at the breakpoints, endpoints and an interior value. The maximum fee is 36863. Keys, table, evaluator and ciphertext buffers are reused; the examples print the function and bit counts before ordinary integer results. Five low chunks fill N=1024 coefficients; three high chunks address 64 logical polynomials per output, before sharing and pruning. Examples fix u64 coefficients; the library also supports u32.
 
 `compile_fn(|x: W| -> W)` separates the cleartext integer type W from coefficient type T. Both complete widths must fit W; results outside the output domain are rejected, without truncation. Compilation remains output-major: the pure function is evaluated again for each output chunk. It does not retain a full-domain cleartext cache. Expensive functions can explicitly prepare their values. `compile_chunks_fn(|x, output| digit)` retains the digit callback and supports outputs wider than one integer. Clients similarly provide `encrypt_chunks_to` and `decrypt_chunks_to` for caller-owned digit slices.
 
@@ -97,15 +105,17 @@ After compiling each candidate d, `table.stats()` reports input/output bits, log
 
 `context.try_generate_keys(&table, rng)` generates one BR/CBS/return bundle and only the lift required by the compiled plan. Classic borrows its existing initializer. Sparse generates independent `NLEV[1]` with BR's configured basis/noise only when `table.needs_public_lift()` is true. Its accepted ring transform/inverse are shared across BR, CBS and lift generation; there is no second BR or table. Ordinary sparse PBS/CBS/one-hot remains unaffected.
 
+Both paired lookup configs already use an h32 fixed-weight binary secret, so sparse lookup changes only the algorithm. Keep the same fee function and client/evaluator workflow; key generation supplies any public lift required by the compiled plan.
+
 To choose sparse lookup, modify the one-hot PBS algorithm before constructing the lookup Context:
 
 ```rust,ignore
+use primus_tfhe::BlindRotationMethod;
+
+let mut config = experimental::NTT_CLASSIC_LOOKUP_U64;
 config.one_hot.pbs.algorithm =
     BlindRotationMethod::Sparse { copy_count: 3, bucket_count: 64 };
-let context = NttHighPrecLutContext::<u64, Table, _>::try_from_config(config)?;
-let table = context.compile_fn(function)?;
-let (client, server) = context.try_generate_keys(&table, rng)?;
-let mut evaluator = context.evaluator(&server, &table)?;
+let context = NttHighPrecLutContext::<u64, U64NttTable, _>::try_from_config(config)?;
 ```
 
 The server bundle may serve another table with the same operation layout/encoding and compatible material. A sparse bundle generated without lift rejects a later table needing it; it does not generate material online. A bundle containing lift can also bind plans needing none. Actual secrets and transform identity must still match; metadata does not establish them.

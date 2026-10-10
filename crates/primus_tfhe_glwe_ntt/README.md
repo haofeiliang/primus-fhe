@@ -48,8 +48,8 @@ cargo run -p primus_tfhe_glwe_ntt --release --example ntt_boolean
 | Boolean access circuit | `CLASSIC_PBS_U64` with messages 4→4 | [boolean](examples/ntt_boolean.rs) |
 | Sparse PBS | `SPARSE_PBS_U64` | [sparse](examples/ntt_sparse.rs) |
 | Interleaved ManyLUT with a separate output message modulus | `CLASSIC_MANY_LUT_U64` | [many_lut](examples/ntt_many_lut.rs) |
-| Classic CBS → CMux | `CLASSIC_CBS_U64` | [circuit_bootstrap](examples/ntt_circuit_bootstrap.rs) |
-| Sparse CBS → CMux | `SPARSE_CBS_U64` | [sparse_circuit_bootstrap](examples/ntt_sparse_circuit_bootstrap.rs) |
+| Classic CBS → CMux → ring addition | `CLASSIC_CBS_U64` | [circuit_bootstrap](examples/ntt_circuit_bootstrap.rs) |
+| Sparse CBS → CMux → ring addition | `SPARSE_CBS_U64` | [sparse_circuit_bootstrap](examples/ntt_sparse_circuit_bootstrap.rs) |
 | Factorized MVB | `CLASSIC_THRESHOLD_MVB_U64` | [thresholds](examples/mvb_thresholds.rs) |
 
 ManyLUT interleaves outputs within one blind rotation; factorized MVB uses public factors and a different evaluation interface.
@@ -123,7 +123,9 @@ The Context retains Rounded input encoding and CBS gadgets. Encrypt with `contex
 
 Compile an integer function with `context.compile_cbs_fn(|m| u64::from(m >= 2))?`, or pass the complete front-half result slice to `compile_cbs_slice`; `compile_cbs_identity()` supplies identity. `context.circuit_bootstrap_evaluator_with_lookup_table(&server, program)?` moves in the program and combines reusable resources; `context.circuit_bootstrap_evaluator(&server)?` prepares identity CBS. Binding checks input message intervals, q/Q, basis and key layouts; equal input counts do not establish equal encodings. Output lanes contain `g_j * F(m) mod Q`; CMux requires bit-valued F throughout the domain, while other ring integers require the external-product noise contract.
 
-`context.try_generate_circuit_bootstrap_keys(&mut rng)` generates a complete `CircuitBootstrapServerKey`. Default `CbsEvaluator` calls `circuit_bootstrap_to(input.as_view(), control.as_mut_view())` and `cmux_to(control.as_view(), lhs.as_view(), rhs.as_view(), selected.as_mut_view())` need no separate resources argument. The [CBS → CMUX example](examples/ntt_circuit_bootstrap.rs) shows two requests; ordinary PBS borrows `server.server_key()`.
+`context.try_generate_circuit_bootstrap_keys(&mut rng)` generates a complete `CircuitBootstrapServerKey`. Default `CbsEvaluator` calls `circuit_bootstrap_to(input.as_view(), control.as_mut_view())` and `cmux_to(control.as_view(), lhs.as_view(), rhs.as_view(), selected.as_mut_view())` need no separate resources argument. Ordinary PBS borrows `server.server_key()`.
+
+The [CBS → CMux → addition example](examples/ntt_circuit_bootstrap.rs) computes `[m>=2]` and selects encrypted fee plan A or B, then adds encrypted extra fees. The client repeats `A=[1,0,2,1]`, `B=[3,1,0,2]` and `extra=[0,1,1,0]` across all N coefficients, using Scaled `t_ring=8`. These are coefficient messages, not independent SIMD slots. Four requests cover m=0,1,2,3; the client checks every coefficient and prints only a short prefix.
 
 Use low-level `CircuitBootstrapEvaluator` for per-call resource borrowing, other input encodings or GLWE output-basis overrides. Actual secret/transform identity, candidates' common encoding and noise margins remain caller contracts. See the [shared CBS contract](../primus_tfhe/README.md#cbs-output-and-consumption).
 

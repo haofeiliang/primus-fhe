@@ -1,7 +1,7 @@
 //! Experimental u64 lookup configs, without security or failure-probability estimates.
 //!
-//! The 2026-10-08 teaching workload uses n800/h32/N1024, alpha*q24 input noise,
-//! two-bit chunks and c8/d5/o8. Its public function is `(x*x+3*x+7) mod 65536`.
+//! The teaching workload uses n800/h32/N1024, alpha*q24 input noise,
+//! two-bit chunks and c8/d5/o8 for a 16-bit piecewise fee function.
 //! These constants share the matching one-hot CBS description, including its
 //! required return-KS material, and add public table layout. Candidate CMux codecs, tables and keys are not constructed.
 
