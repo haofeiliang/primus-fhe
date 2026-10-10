@@ -32,12 +32,12 @@
 //! - [`sparse`]: fixed-weight binary bucket material; choose [`BlindRotationMethod::Sparse`]
 //!   in the operation config, then use [`KeyGenerator::try_generate_server_key`].
 //!
-//! [`Evaluator`] owns common [`BootstrapResources`] and client-return buffers.
+//! [`Evaluator`] owns common [`bootstrap::BootstrapResources`] and client-return buffers.
 //! Default [`CbsEvaluator`] / [`OneHotEvaluator`] own common BR resources;
 //! low-level CBS/one-hot state borrows them per call. [`FactorizedEvaluator`]
 //! owns PBS and one extra NTT polynomial, borrowing the same context and keys.
 //! Standalone CBS/one-hot can use resources without allocating return buffers.
-//! [`LweReturnEvaluator`] supports independent coefficient-domain returns.
+//! [`primus_tfhe_ntru::LweReturnEvaluator`] supports independent coefficient-domain returns.
 //!
 //! [`TfheContext::try_generate_circuit_bootstrap_keys`] generates a complete CBS
 //! bundle, including the BR/KS [`ServerKey`] for downstream LWE returns.
@@ -56,9 +56,9 @@
 //!
 //! [`key`] contains evaluation material and component generation. Common workflow types
 //! are re-exported at this root; lower-level material is documented in its own module.
-//! [`BlindRotationKey`], [`primus_ntru::NtruLweKeySwitchingKey`] and
-//! [`CircuitBootstrapKey`] can be independently generated and borrowed through
-//! [`Evaluator::try_from_parts`] or [`BootstrapResources::try_new`] plus CBS/one-hot
+//! [`key::BlindRotationKey`], [`primus_ntru::NtruLweKeySwitchingKey`] and
+//! [`circuit_bootstrap::CircuitBootstrapKey`] can be independently generated and borrowed through
+//! [`Evaluator::try_from_parts`] or [`bootstrap::BootstrapResources::try_new`] plus CBS/one-hot
 //! `try_new`. [`ServerKey::into_parts`] moves out the bundle's components.
 //! [`CircuitBootstrapServerKey`] combines one [`ServerKey`] with required CBS material.
 //! CBS/one-hot evaluation borrows BR/CBS; downstream LWE returns reuse its KS key.
@@ -81,8 +81,7 @@ use primus_modulus::BarrettModulus;
 mod accumulator;
 mod blind_rotation;
 pub mod boolean;
-mod bootstrap;
-pub use bootstrap::BootstrapResources;
+pub mod bootstrap;
 pub mod circuit_bootstrap;
 mod client;
 mod context;
@@ -108,30 +107,19 @@ pub use evaluator::Evaluator;
 #[doc(inline)]
 pub use factorized::{FactorizedEvaluator, NttFactorizedLookupTable};
 #[doc(inline)]
-pub use key::{
-    BlindRotationKey, CircuitBootstrapServerKey, ClassicControls, KeyGenerator, ServerKey,
-};
-#[doc(no_inline)]
-pub use primus_tfhe_ntru::SparseNtruBootstrappingKey;
+pub use key::{CircuitBootstrapServerKey, KeyGenerator, ServerKey};
 
 pub use primus_tfhe::{
-    BivariateLookupTable, BlindRotationMethod, CbsGadgetConfig, CircuitBootstrapCodecs,
-    CircuitBootstrapLookupTable, ClientError, DecompositionConfig, FactorizedLookupTable,
-    FactorizedPbsCodecs, GadgetEncryptionConfig, InterleavedLookupTable, LookupTable,
-    LookupTableCompiler, Lwe, LweCiphertext, LweSecretKeyRef, PbsCodecs, PbsMessageConfig,
-    RoundedPbsCodecs,
+    BivariateLookupTable, BlindRotationMethod, CbsGadgetConfig, CircuitBootstrapLookupTable,
+    ClientError, DecompositionConfig, FactorizedLookupTable, GadgetEncryptionConfig,
+    InterleavedLookupTable, LookupTable, LookupTableCompiler, Lwe, LweCiphertext, LweSecretKeyRef,
+    PbsMessageConfig,
 };
-pub use primus_tfhe_ntru::{
-    ClientKey, EncryptionKey, LwePublicKey, LweReturnBatchWorkspace, LweReturnEvaluator,
-};
+pub use primus_tfhe_ntru::{ClientKey, EncryptionKey, LwePublicKey};
 
-#[doc(no_inline)]
-pub use circuit_bootstrap::CircuitBootstrapKey;
 #[doc(inline)]
 pub use circuit_bootstrap::{
-    CbsEvaluator, CbsGadgetParameters, CircuitBootstrapEvaluator, NlevSelectors, NttNgswSelectors,
-    OneHotBootstrapError, OneHotCircuitBootstrapEvaluator, OneHotEvaluator, OneHotLookupTable,
-    OneHotProjection,
+    CbsEvaluator, NlevSelectors, NttNgswSelectors, OneHotBootstrapError, OneHotEvaluator,
 };
 
 /// Secret-key or LWE public-key encryptor for the exact NTT NTRU backend.

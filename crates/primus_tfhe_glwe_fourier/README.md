@@ -84,11 +84,17 @@ The default CBS workflow takes the complete server key and prepares its resource
 let mut cbs = context.circuit_bootstrap_evaluator(&server)?;
 ```
 
-The factory selects input KS for KS→BR; BR→KS allocates no return scratch. `cbs.into_parts()` moves out operation state and common resources for subsequent PBS reuse. With an existing PBS evaluator, use `context.circuit_bootstrap_evaluator_with_resources(pbs.bootstrap_resources(), circuit_key)?` and borrow its resources per call. Low-level `try_new` permits explicit input encodings.
+The factory selects input KS for KS→BR; BR→KS allocates no return scratch. `cbs.into_parts()` moves out operation state and common resources for subsequent PBS reuse. With an existing PBS evaluator, use the low-level constructor below and borrow its resources per call. `operation` is the configured `context.cbs_parameters().unwrap()`; `try_new` instead uses the circuit key's output parameters and accepts an explicit input encoding.
+
+```rust,ignore
+let mut cbs = circuit_bootstrap::CircuitBootstrapEvaluator::try_with_parameters(
+    pbs.bootstrap_resources(), operation.gadget(), circuit_key, operation.input_codec(),
+)?;
+```
 
 For independently generated material, use `context.bootstrap_resources(br, input_ks)`: BR→KS accepts `None`, while KS→BR requires `Some((ks_parameters, ks))`. Standalone CBS does not require an ordinary return key. `Evaluator::try_from_parts(context, parameters.glwe_key_switching(), br, ks)` binds complete PBS/ManyLUT. Both entries support classic/sparse. Layout, basis and modulus checks do not establish actual secret or transform identity.
 
-`Evaluator::try_from_resources(resources, parameters.glwe_key_switching(), ks)` assembles ordinary PBS: only BR→KS allocates a missing output stage. `try_rebind_key_switching_key(ks)` reuses the active KS stage's buffers with compatible material; failure leaves its binding intact. CBS accepts any resource instance from the same context, checked before writes. MVB retains the context and key binding of its owned PBS evaluator. Callers must retain paired secrets, and mutable resource borrows must preserve the owning PBS binding and FFT table instance.
+`Evaluator::try_from_resources(resources, parameters.glwe_key_switching(), ks)` assembles ordinary PBS: only BR→KS allocates a missing output stage. CBS accepts any resource instance from the same context, checked before writes. MVB retains the context and key binding of its owned PBS evaluator. Callers must retain paired secrets, and mutable resource borrows must preserve the owning PBS binding and FFT table instance.
 
 ## Fixed-scale factorized MVB
 
@@ -102,7 +108,7 @@ Run the [17-threshold example](examples/fourier_mvb_thresholds.rs) with `--examp
 
 ## Experimental sparse PBS
 
-Ordinary PBS uses `context.try_generate_keys(rng)` and `context.evaluator(&server)`; an existing client uses `context.try_generate_server_key(&client, rng)`. CBS uses `try_generate_circuit_bootstrap_keys` / `try_generate_circuit_bootstrap_server_key`, returning `CircuitBootstrapServerKey`. `try_with_circuit_bootstrap(gadget)` adds CBS capability to the context; ordinary factories still return a BR/KS `ServerKey`. Explicit advanced factories take KS and algorithm choices, plus the required gadgets for CBS factories.
+Ordinary PBS uses `context.try_generate_keys(rng)` and `context.evaluator(&server)`; an existing client uses `context.try_generate_server_key(&client, rng)`. CBS uses `try_generate_circuit_bootstrap_keys` / `try_generate_circuit_bootstrap_server_key`, returning `CircuitBootstrapServerKey`. `try_with_circuit_bootstrap(gadget)` adds CBS capability to the context; ordinary factories still return a BR/KS `ServerKey`. Complete factories use the retained config; independent BR/KS/CBS components are generated through `KeyGenerator`.
 
 Select a fixed-weight binary small-LWE distribution and choose sparse generation explicitly; the distribution alone does not select the algorithm. Require `0<h<n`, `copy_count>=1` and `bucket_count>=max(copy_count,h)`.
 
@@ -129,9 +135,9 @@ Use low-level `CircuitBootstrapEvaluator` for per-call resource borrowing, other
 
 ## Lower-level composition
 
-The [shared coefficient key](../primus_tfhe_glwe/README.md#sparse-coefficient-keys) is re-exported as `SparseGlweBootstrappingKey<T, NativeModulus<T>>`. Raw sparse BR uses `workspace.blind_rotate_lookup_table_to(&key, input, lut, output, &mut fft)`; the workspace owns scratch and borrows the key only for the call.
+Recommended workflow types remain root imports. Import advanced types by role: common resources through `bootstrap::BootstrapResources`, independent BR material through `key::BlindRotationKey`, CBS keys/gadget parameters and per-call borrowing evaluators through `circuit_bootstrap`, and sparse material/workspaces through `sparse`. Explicit codec bundles come from `primus_tfhe`. Raw classic BSKs and BR workspaces live in `bootstrapping_key` and `blind_rotation`.
 
-Rustdoc groups server material in `key`, CBS in `circuit_bootstrap`, MVB programs/execution in `factorized`, and sparse key generation/rotation in `sparse`. Common workflow types remain root imports. Raw GLWE controls and BR workspace are documented in `bootstrapping_key` and `blind_rotation`.
+The [shared coefficient key](../primus_tfhe_glwe/README.md#sparse-coefficient-keys) is re-exported as `sparse::SparseGlweBootstrappingKey<T, NativeModulus<T>>`. Raw sparse BR uses `workspace.blind_rotate_lookup_table_to(&key, input, lut, output, &mut fft)`; the workspace owns scratch and borrows the key only for the call.
 
 ## Further reading
 

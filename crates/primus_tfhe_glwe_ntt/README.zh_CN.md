@@ -82,11 +82,17 @@ CBS 主线接收完整服务端密钥，自动组合所需资源：
 let mut cbs = context.circuit_bootstrap_evaluator(&server)?;
 ```
 
-工厂为 KS→BR 选择输入 KS；BR→KS 不分配返回 scratch。通过 `cbs.into_parts()` 可移动取出操作状态和公共资源，以复用到后续 PBS。已有 PBS evaluator 时，用 `context.circuit_bootstrap_evaluator_with_resources(pbs.bootstrap_resources(), circuit_key)?`，每次执行短借用其资源；底层 `try_new` 允许显式输入编码。
+工厂为 KS→BR 选择输入 KS；BR→KS 不分配返回 scratch。通过 `cbs.into_parts()` 可移动取出操作状态和公共资源，以复用到后续 PBS。已有 PBS evaluator 时，用下面的底层构造器，每次执行短借用其资源。`operation` 为配置中保存的 `context.cbs_parameters().unwrap()`；`try_new` 则使用 circuit key 的输出参数并接收显式输入编码。
+
+```rust,ignore
+let mut cbs = circuit_bootstrap::CircuitBootstrapEvaluator::try_with_parameters(
+    pbs.bootstrap_resources(), operation.gadget(), circuit_key, operation.input_codec(),
+)?;
+```
 
 独立生成材料时，使用 `context.bootstrap_resources(br, input_ks)`：BR→KS 可传 `None`，KS→BR 必须传 `Some((ks_parameters, ks))`；独立 CBS 不要求普通返回密钥。`Evaluator::try_from_parts(context, parameters.glwe_key_switching(), br, ks)` 绑定完整 PBS/ManyLUT。两种入口均支持 classic/sparse。布局、basis 和模数检查不证明实际秘密或变换身份。
 
-`Evaluator::try_from_resources(resources, parameters.glwe_key_switching(), ks)` 组合普通 PBS，只有 BR→KS 需要分配缺少的输出阶段。`try_rebind_key_switching_key(ks)` 用兼容材料复用活跃 KS 阶段的缓冲，失败保留旧绑定。CBS 接受同一 context 创建的任意资源实例，在写入前检查；MVB 保留其拥有的 PBS evaluator 的 context 和密钥绑定。调用方仍须配对秘密，可变资源借用必须保留所属 PBS 的绑定。
+`Evaluator::try_from_resources(resources, parameters.glwe_key_switching(), ks)` 组合普通 PBS，只有 BR→KS 需要分配缺少的输出阶段。CBS 接受同一 context 创建的任意资源实例，在写入前检查；MVB 保留其拥有的 PBS evaluator 的 context 和密钥绑定。调用方仍须配对秘密，可变资源借用必须保留所属 PBS 的绑定。
 
 ## 固定尺度分解式 MVB
 
@@ -100,7 +106,7 @@ let mut cbs = context.circuit_bootstrap_evaluator(&server)?;
 
 ## 实验性稀疏 PBS
 
-普通 PBS 使用 `context.try_generate_keys(rng)` 和 `context.evaluator(&server)`；已有 client 使用 `context.try_generate_server_key(&client, rng)`。CBS 使用 `try_generate_circuit_bootstrap_keys` / `try_generate_circuit_bootstrap_server_key`，返回 `CircuitBootstrapServerKey`。`try_with_circuit_bootstrap(gadget)` 为 Context 添加 CBS 能力；普通工厂仍返回 BR/KS `ServerKey`。高级显式工厂分别接收 KS、算法，以及 CBS 工厂所需的 gadget。
+普通 PBS 使用 `context.try_generate_keys(rng)` 和 `context.evaluator(&server)`；已有 client 使用 `context.try_generate_server_key(&client, rng)`。CBS 使用 `try_generate_circuit_bootstrap_keys` / `try_generate_circuit_bootstrap_server_key`，返回 `CircuitBootstrapServerKey`。`try_with_circuit_bootstrap(gadget)` 为 Context 添加 CBS 能力；普通工厂仍返回 BR/KS `ServerKey`。完整工厂使用已保存的配置；独立 BR/KS/CBS 组件通过 `KeyGenerator` 生成。
 
 为 small-LWE 选择固定重量 binary 分布，并显式选择 sparse；秘密分布本身不决定算法。要求 `0<h<n`、`copy_count>=1`、`bucket_count>=max(copy_count,h)`。
 
@@ -131,9 +137,9 @@ Context 保存 Rounded 输入编码与 CBS gadget。使用 `context.encryptor(ex
 
 ## 底层组合
 
-本后端重导出[共享系数密钥](../primus_tfhe_glwe/README.zh_CN.md#sparse-系数密钥)，使用 `SparseGlweBootstrappingKey<T, BarrettModulus<T>>`。Raw sparse BR 使用 `workspace.blind_rotate_lookup_table_to(&key, input, lut, output, ntt)`；工作区持有 scratch，仅在调用时借用密钥。
+推荐工作流类型保留根入口。高级类型按职责导入：公共资源使用 `bootstrap::BootstrapResources`；独立 BR 材料使用 `key::BlindRotationKey`；CBS 密钥、gadget 参数和逐调用借用 evaluator 使用 `circuit_bootstrap`；稀疏材料/工作区使用 `sparse`。显式 codec 组合从 `primus_tfhe` 导入。原始 classic BSK 和 BR 工作区分别位于 `bootstrapping_key` 与 `blind_rotation`。
 
-Rustdoc 按职责组织 `key`（服务端材料）、`circuit_bootstrap`（CBS）、 `factorized`（MVB 程序和执行）与 `sparse`（稀疏生成与旋转）；常用工作流类型仍从 crate 根导入。 原始 GLWE 控制材料和 BR 工作区见 `bootstrapping_key` 与 `blind_rotation`。
+本后端重导出[共享系数密钥](../primus_tfhe_glwe/README.zh_CN.md#sparse-系数密钥)，使用 `sparse::SparseGlweBootstrappingKey<T, BarrettModulus<T>>`。Raw sparse BR 使用 `workspace.blind_rotate_lookup_table_to(&key, input, lut, output, ntt)`；工作区持有 scratch，仅在调用时借用密钥。
 
 ## 进一步阅读
 

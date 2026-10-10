@@ -4,9 +4,10 @@ use primus_fft::{Complex64, FftTable, TorusFftValue};
 use primus_ntru::{FourierNgswCiphertext, NtruCiphertext};
 
 use crate::{
-    BootstrapResources, CbsGadgetParameters, CircuitBootstrapServerKey, FourierNgswSelectors, Lwe,
-    NlevSelectors, OneHotBootstrapError, OneHotCircuitBootstrapEvaluator, OneHotLookupTable,
+    CircuitBootstrapServerKey, FourierNgswSelectors, Lwe, NlevSelectors, OneHotBootstrapError,
     TfheContext,
+    bootstrap::BootstrapResources,
+    circuit_bootstrap::{CbsGadgetParameters, OneHotCircuitBootstrapEvaluator, OneHotLookupTable},
 };
 
 /// One-hot CBS state paired with its reusable input/BR/projection resources.

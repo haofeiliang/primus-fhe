@@ -11,10 +11,10 @@ use primus_ntt::MonomialNttTable;
 use primus_tfhe::CircuitBootstrapLookupTable;
 
 use super::key::CircuitBootstrapBinding;
-
 use crate::{
-    BootstrapResources, CbsGadgetParameters, CircuitBootstrapKey, Lwe, TfheContext,
-    TfheEvaluationError,
+    Lwe, TfheContext, TfheEvaluationError,
+    bootstrap::BootstrapResources,
+    circuit_bootstrap::{CbsGadgetParameters, CircuitBootstrapKey},
 };
 
 /// Classic binary/ternary or sparse binary CBS producing NTT GGSW controls.
@@ -381,37 +381,5 @@ where
                 scratch,
             );
         });
-    }
-}
-
-impl<T, Table> TfheContext<T, Table>
-where
-    T: FheUint,
-    Table: MonomialNttTable<ValueT = T>,
-{
-    /// Prepares the configured gadget identity CBS using shared resources and an independent key.
-    /// Uses this context's input encoding and gadgets; no return scratch is allocated.
-    /// Resources must belong to this exact context. Advanced constructors on
-    /// [`CircuitBootstrapEvaluator`] permit explicit programs and encoding overrides.
-    ///
-    /// # Correctness
-    /// Inherits [`CircuitBootstrapEvaluator::try_new`]'s secret, representation and noise contracts.
-    pub fn circuit_bootstrap_evaluator_with_resources<'a>(
-        &'a self,
-        resources: &BootstrapResources<'a, T, Table>,
-        circuit_key: &'a CircuitBootstrapKey<T>,
-    ) -> Result<CircuitBootstrapEvaluator<'a, T, Table>, TfheEvaluationError> {
-        let parameters = self
-            .cbs_parameters()
-            .ok_or(TfheEvaluationError::MissingCircuitBootstrapParameters)?;
-        if !core::ptr::eq(self, resources.context()) {
-            return Err(TfheEvaluationError::IncompatibleCircuitBootstrapParameters);
-        }
-        CircuitBootstrapEvaluator::try_with_parameters(
-            resources,
-            parameters.gadget(),
-            circuit_key,
-            parameters.input_codec(),
-        )
     }
 }

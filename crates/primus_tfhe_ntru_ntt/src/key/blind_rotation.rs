@@ -1,11 +1,12 @@
 //! Independent ownership and compatibility of classic or sparse BR controls.
 
-use super::ClassicControls;
-use crate::{PbsParameters, SparseNtruBootstrappingKey};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_integer::FheUint;
 use primus_lattice::nlev::NttNlev;
 use primus_ntru::SecretKeyDistr;
+
+use super::ClassicControls;
+use crate::{PbsParameters, sparse::SparseNtruBootstrappingKey};
 
 /// Owning exact-NTT blind-rotation material, independent of LWE return and CBS keys.
 /// The classic initializer and controls share the stored blind-rotation basis.

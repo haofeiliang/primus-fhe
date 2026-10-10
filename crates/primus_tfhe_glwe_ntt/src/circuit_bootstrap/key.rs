@@ -4,15 +4,15 @@ use primus_glwe::{GlweSecretKey, NttGlweSchemeSwitchKey, NttGlweSecretKey, NttGl
 use primus_integer::FheUint;
 use primus_ntt::MonomialNttTable;
 
-use crate::{CbsGadgetParameters, KeyGenerationError, KeyGenerator, TfheContext};
+use crate::{KeyGenerationError, KeyGenerator, circuit_bootstrap::CbsGadgetParameters};
 
 /// Trace-projection and scheme-switching keys used after PBSManyLUT.
 ///
-/// BR is owned separately by [`crate::BlindRotationKey`]. This object contains
+/// BR is owned separately by [`crate::key::BlindRotationKey`]. This object contains
 /// only the trace and scheme-switch material, combined with BR in
 /// [`crate::CircuitBootstrapServerKey`] alongside the BR/KS [`crate::ServerKey`].
 /// Both keys must use the same accumulator secret and the evaluator's
-/// NTT representation; see [`crate::CircuitBootstrapEvaluator::try_new`].
+/// NTT representation; see [`crate::circuit_bootstrap::CircuitBootstrapEvaluator::try_new`].
 pub struct CircuitBootstrapKey<T: FheUint> {
     parameters: CbsGadgetParameters<T>,
     trace: NttGlweTraceKey<T>,
@@ -92,7 +92,7 @@ where
     /// representation for generation and evaluation. The returned key uses
     /// `accumulator_secret`. Parameter/layout checks cannot
     /// establish that another server key uses that secret; see
-    /// [`crate::CircuitBootstrapEvaluator::try_new`].
+    /// [`crate::circuit_bootstrap::CircuitBootstrapEvaluator::try_new`].
     /// Imported accumulator coefficients must also satisfy
     /// [`NttGlweSecretKey::from_coeff_secret_key`]'s unsigned-magnitude bound.
     pub fn try_generate_circuit_bootstrap_key<R>(
@@ -158,34 +158,5 @@ where
             trace,
             scheme_switch,
         }
-    }
-}
-
-impl<T, Table> TfheContext<T, Table>
-where
-    T: FheUint,
-    Table: MonomialNttTable<ValueT = T>,
-{
-    /// Generates the optional trace-projection and scheme-switching key material.
-    ///
-    /// # Correctness
-    ///
-    /// Inherits [`KeyGenerator::try_generate_circuit_bootstrap_key`]'s paired
-    /// client-secret and NTT representation requirements. Compatibility checks
-    /// do not establish that the ordinary server key uses the same secrets.
-    pub fn try_generate_circuit_bootstrap_key<R>(
-        &self,
-        accumulator_secret: &GlweSecretKey<T>,
-        parameters: CbsGadgetParameters<T>,
-        rng: &mut R,
-    ) -> Result<CircuitBootstrapKey<T>, KeyGenerationError>
-    where
-        R: rand::Rng + rand::CryptoRng,
-    {
-        KeyGenerator::new(self).try_generate_circuit_bootstrap_key(
-            accumulator_secret,
-            parameters,
-            rng,
-        )
     }
 }

@@ -142,7 +142,7 @@ are unchanged; no new latency claim is made.
 
 ## Input, blind rotation and return ownership
 
-Each of the four backends exposes its own `BootstrapResources`, binding the context, key,
+Each backend exposes `bootstrap::BootstrapResources`, binding the context, key,
 selected BR scratch and coefficient accumulator; Fourier also owns its FFT
 engine there. GLWE input preparation is direct for BR→KS, or owns the required
 input KS and compact small LWE for KS→BR. The latter cannot be omitted by CBS.
@@ -169,10 +169,9 @@ can share it when both actual secrets match. Context identity does not prove the
 secret identity of independently generated material.
 When borrowing resources from PBS, preserve its context/BR key binding: the retained
 return material and buffers were prepared for it. The mutable accessor does not rebind PBS.
-`Evaluator::try_from_resources(resources, return_key)` adds return buffers to
-standalone resources. `try_rebind_return_key` reuses them with compatible material;
-success discards pending samples, failure leaves the binding intact. A valid new
-interleaved/MVB request also supersedes partial samples from an interrupted
+`Evaluator::try_from_resources(resources, key_switching, return_key)` binds checked
+return material and adds return buffers to standalone resources. A valid new
+interleaved/MVB request supersedes partial samples from an interrupted
 request; scalar PBS uses its independent scratch and does not touch batch state.
 
 Fourier's common resource owner additionally retains its FFT engine; the shared
@@ -191,8 +190,8 @@ Partial reverse trace with r>1 retains r equally spaced coefficients; CBS needs 
 CBS retains its programmed LUT, trace scratch and projected GLev; MVB retains
 one extra transform-domain GLWE for the shared rotation. Fourier MVB also keeps
 one component-sized Fourier product, then inverse-transforms into the common
-coefficient accumulator. They borrow common resources or
-complete PBS per call, without a nested evaluator or recovery protocol.
+coefficient accumulator. Low-level CBS borrows common resources per call; the owning MVB evaluator
+retains complete PBS state without a recovery protocol.
 
 | Resource | BR→KS | KS→BR | Serial reuse |
 | --- | --- | --- | --- |
@@ -210,10 +209,9 @@ complete PBS per call, without a nested evaluator or recovery protocol.
 `context.bootstrap_resources_from_server_key(&server)` selects the required
 input KS from a complete bundle without preparing ordinary return scratch.
 Independent material uses `context.bootstrap_resources(br, input_ks)`;
-only KS→BR requires `Some(ks)`. Both check material before allocation. `Evaluator::try_from_resources(resources, ks)`
-adds output KS for BR→KS or rebinds the existing input KS for KS→BR.
-`try_rebind_key_switching_key` validates and reuses either active stage's buffers;
-failure preserves its prior binding. PBS resource borrows must preserve the
+only KS→BR requires `Some(ks)`. Both check material before allocation. `Evaluator::try_from_resources(resources, key_switching, ks)`
+checks independent return material, then adds output KS for BR→KS or binds the
+existing input KS for KS→BR. PBS resource borrows must preserve the
 context and paired-secret binding needed by the retained return stage.
 
 GLWE low-level CBS state does not cache BR controls. Its public borrowing boundary

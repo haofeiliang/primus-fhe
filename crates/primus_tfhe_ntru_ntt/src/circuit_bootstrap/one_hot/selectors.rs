@@ -6,8 +6,8 @@ use std::ops::Range;
 
 /// A borrowed NTT NGSW one-hot selector batch.
 ///
-/// Construct with [`crate::OneHotCircuitBootstrapEvaluator::ngsw_selectors`] or
-/// [`crate::OneHotCircuitBootstrapEvaluator::nonzero_ngsw_selectors`].
+/// Construct with [`crate::circuit_bootstrap::OneHotCircuitBootstrapEvaluator::ngsw_selectors`] or
+/// [`crate::circuit_bootstrap::OneHotCircuitBootstrapEvaluator::nonzero_ngsw_selectors`].
 /// Storage is `[slot][level][row element]`,
 /// without gadget padding; rows contain N NTT ring elements.
 /// The full batch starts at r=0, the nonzero batch at r=1. Access and iteration

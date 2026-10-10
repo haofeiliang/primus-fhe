@@ -32,9 +32,9 @@
 //! - [`sparse`]: fixed-weight binary bucket material; choose [`BlindRotationMethod::Sparse`]
 //!   in the operation config, then use [`KeyGenerator::try_generate_server_key`].
 //!
-//! [`Evaluator`] owns common [`BootstrapResources`] and the ordinary return stage.
+//! [`Evaluator`] owns common [`bootstrap::BootstrapResources`] and the ordinary return stage.
 //! Default [`CbsEvaluator`] owns its input/BR resources; low-level
-//! [`CircuitBootstrapEvaluator`] borrows common resources per call.
+//! [`circuit_bootstrap::CircuitBootstrapEvaluator`] borrows common resources per call.
 //! [`FactorizedEvaluator`] owns a complete PBS evaluator and its factor workspace.
 //! Standalone resources include input KS for KS→BR, but no output KS for BR→KS.
 //! The specialized constructors document their allocation and borrowing contracts.
@@ -75,7 +75,7 @@ use primus_modulus::BarrettModulus;
 
 mod accumulator;
 pub mod blind_rotation;
-mod bootstrap;
+pub mod bootstrap;
 pub mod bootstrapping_key;
 pub mod circuit_bootstrap;
 mod client;
@@ -96,36 +96,22 @@ pub use error::{
 };
 
 pub use accumulator::AccumulatorClient;
-#[doc(no_inline)]
-pub use blind_rotation::NttGlweBlindRotationWorkspace;
 #[doc(inline)]
-pub use bootstrap::BootstrapResources;
-#[doc(no_inline)]
-pub use bootstrapping_key::NttGlweBootstrappingKey;
-#[doc(no_inline)]
-pub use circuit_bootstrap::CircuitBootstrapKey;
-#[doc(inline)]
-pub use circuit_bootstrap::{CbsEvaluator, CbsGadgetParameters, CircuitBootstrapEvaluator};
+pub use circuit_bootstrap::CbsEvaluator;
 pub use context::TfheContext;
 #[doc(inline)]
 pub use evaluator::Evaluator;
 #[doc(inline)]
 pub use factorized::{FactorizedEvaluator, NttFactorizedLookupTable};
-#[doc(no_inline)]
-pub use key::BlindRotationKey;
 #[doc(inline)]
 pub use key::{CircuitBootstrapServerKey, KeyGenerator, ServerKey};
 pub use primus_tfhe::{
-    BivariateLookupTable, BlindRotationMethod, CbsGadgetConfig, CircuitBootstrapCodecs,
-    CircuitBootstrapLookupTable, ClientError, DecompositionConfig, FactorizedLookupTable,
-    FactorizedPbsCodecs, GadgetEncryptionConfig, InterleavedLookupTable, LookupTable,
-    LookupTableCompiler, Lwe, LweCiphertext, LweSecretKeyRef, PbsCodecs, PbsMessageConfig,
-    RoundedPbsCodecs,
+    BivariateLookupTable, BlindRotationMethod, CbsGadgetConfig, CircuitBootstrapLookupTable,
+    ClientError, DecompositionConfig, FactorizedLookupTable, GadgetEncryptionConfig,
+    InterleavedLookupTable, LookupTable, LookupTableCompiler, Lwe, LweCiphertext, LweSecretKeyRef,
+    PbsMessageConfig,
 };
-pub use primus_tfhe_glwe::SparseGlweBootstrappingKey;
 pub use primus_tfhe_glwe::{ClientKey, EncryptionKey, ExternalLweSecretKey, PbsOrder};
-#[doc(no_inline)]
-pub use sparse::SparseGlweBlindRotationWorkspace;
 
 pub use boolean::{
     BooleanDecryptor, BooleanEncryptor, BooleanError, BooleanEvaluator, BooleanGate,

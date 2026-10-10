@@ -5,9 +5,10 @@ use primus_ntru::{NtruCiphertext, NttNgswCiphertext};
 use primus_ntt::MonomialNttTable;
 
 use crate::{
-    BootstrapResources, CbsGadgetParameters, CircuitBootstrapServerKey, Lwe, NlevSelectors,
-    NttNgswSelectors, OneHotBootstrapError, OneHotCircuitBootstrapEvaluator, OneHotLookupTable,
+    CircuitBootstrapServerKey, Lwe, NlevSelectors, NttNgswSelectors, OneHotBootstrapError,
     TfheContext,
+    bootstrap::BootstrapResources,
+    circuit_bootstrap::{CbsGadgetParameters, OneHotCircuitBootstrapEvaluator, OneHotLookupTable},
 };
 
 /// One-hot CBS state paired with its reusable input/BR/projection resources.

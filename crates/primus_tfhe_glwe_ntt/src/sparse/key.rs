@@ -1,15 +1,14 @@
-use std::alloc::Layout;
-
 use primus_glwe::{NttGlweSecretKey, SecretKeyDistr};
 use primus_integer::FheUint;
 use primus_modulus::BarrettModulus;
 use primus_ntt::MonomialNttTable;
 use primus_tfhe::sparse::BucketMap;
+use std::alloc::Layout;
 use zeroize::Zeroizing;
 
 use crate::{
     ClientKey, KeyGenerationError, KeyGenerator, SparseBootstrappingKeyError,
-    SparseGlweBootstrappingKey,
+    sparse::SparseGlweBootstrappingKey,
 };
 
 /// Validated bucket geometry and ciphertext allocation size, before secret sampling.

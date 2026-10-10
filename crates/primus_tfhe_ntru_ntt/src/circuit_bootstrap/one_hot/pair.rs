@@ -1,10 +1,11 @@
 //! Fixed two-input sparse BR with a scoped projection capability.
 
-use super::OneHotCircuitBootstrapEvaluator;
-use crate::{BootstrapResources, Lwe, blind_rotation::RotationState};
 use primus_integer::FheUint;
 use primus_ntt::MonomialNttTable;
 use primus_reduce::RingContext;
+
+use super::OneHotCircuitBootstrapEvaluator;
+use crate::{Lwe, blind_rotation::RotationState, bootstrap::BootstrapResources};
 
 /// One prepared input from [`OneHotCircuitBootstrapEvaluator::with_sparse_pair`].
 /// This scoped view only permits projection; it cannot replace the current BR or

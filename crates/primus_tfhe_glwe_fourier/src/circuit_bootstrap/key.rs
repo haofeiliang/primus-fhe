@@ -3,16 +3,16 @@ use primus_glwe::{
     FourierGlweSchemeSwitchKey, FourierGlweSecretKey, FourierGlweTraceKey, GlweSecretKey,
 };
 
-use crate::{CbsGadgetParameters, KeyGenerationError, KeyGenerator, TfheContext};
+use crate::{KeyGenerationError, KeyGenerator, circuit_bootstrap::CbsGadgetParameters};
 
 /// Optional trace-projection and GLev-to-Fourier-GGSW scheme-switch keys.
 ///
 /// Both keys use the client's accumulator GLWE secret and the generating
-/// context's FFT table. BR is owned separately by [`crate::BlindRotationKey`];
+/// context's FFT table. BR is owned separately by [`crate::key::BlindRotationKey`];
 /// [`crate::CircuitBootstrapServerKey`] groups it with this CBS material.
 /// Layout and basis equality do not establish secret or FFT representation
 /// identity; consumers must use the same secret and FFT table instance as
-/// generation; see [`crate::CircuitBootstrapEvaluator::try_new`].
+/// generation; see [`crate::circuit_bootstrap::CircuitBootstrapEvaluator::try_new`].
 pub struct CircuitBootstrapKey<T: TorusFftValue> {
     parameters: CbsGadgetParameters<T>,
     trace: FourierGlweTraceKey<T>,
@@ -155,32 +155,5 @@ where
             trace,
             scheme_switch,
         }
-    }
-}
-
-impl<T, Table> TfheContext<T, Table>
-where
-    T: TorusFftValue,
-    Table: FftTable,
-{
-    /// Generates CBS trace-projection and scheme-switch keys.
-    ///
-    /// Inherits [`KeyGenerator::try_generate_circuit_bootstrap_key`]'s secret
-    /// and FFT table requirements. Reuse a [`KeyGenerator`] when generating
-    /// multiple standalone CBS keys. For paired generation, use [`Self::try_generate_keys`].
-    pub fn try_generate_circuit_bootstrap_key<R>(
-        &self,
-        accumulator_secret: &GlweSecretKey<T>,
-        parameters: CbsGadgetParameters<T>,
-        rng: &mut R,
-    ) -> Result<CircuitBootstrapKey<T>, KeyGenerationError>
-    where
-        R: rand::Rng + rand::CryptoRng,
-    {
-        KeyGenerator::new(self).try_generate_circuit_bootstrap_key(
-            accumulator_secret,
-            parameters,
-            rng,
-        )
     }
 }

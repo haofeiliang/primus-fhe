@@ -1,15 +1,14 @@
-use std::alloc::Layout;
-
 use primus_fft::{Complex64, FftTable, TorusFftValue};
 use primus_glwe::{FourierGlweSecretKey, SecretKeyDistr};
 use primus_lattice::ggsw::FourierGgsw;
 use primus_modulus::NativeModulus;
 use primus_tfhe::sparse::BucketMap;
+use std::alloc::Layout;
 use zeroize::Zeroizing;
 
 use crate::{
     ClientKey, KeyGenerationError, KeyGenerator, SparseBootstrappingKeyError,
-    SparseGlweBootstrappingKey,
+    sparse::SparseGlweBootstrappingKey,
 };
 
 // Checked public map and private assignment, retained only until selector encryption.

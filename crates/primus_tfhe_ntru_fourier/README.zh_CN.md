@@ -87,7 +87,7 @@ Fourier 环只支持 `NativeModulus`；`PowOf2Modulus` 环不受支持。 NTRU �
 
 `Resources` 将借用的 context/计算材料与拥有的复用缓冲组合起来，不拥有或复制密钥。`Workspace` 表示缓冲及形状元数据，包括底层 BR/外积 scratch。`Evaluator` 使用自己拥有或短借用的资源执行具体流程。借用期间须保留 context/key 的 owner；串行操作可共享一个可变资源实例，并发请求需要独立的可变资源。资源拥有 FFT engine，而 engine 借用 context 的表；更换资源 owner 时仍须保持表身份。
 
-通过 `cbs.into_parts()` 或 `one_hot.into_parts()` 移动取出操作状态与公共资源，不复制或重新分配缓冲。后续 `Evaluator::try_from_resources(resources, parameters.key_switching(), return_key)` 只补充普通 PBS 的返回工作区；已准备的 CBS 状态可继续短借用它。`try_rebind_return_key` 复用返回缓冲更换兼容材料；成功会丢弃待返回样本，失败保留原绑定。
+通过 `cbs.into_parts()` 或 `one_hot.into_parts()` 移动取出操作状态与公共资源，不复制或重新分配缓冲。后续 `Evaluator::try_from_resources(resources, parameters.key_switching(), return_key)` 只补充普通 PBS 的返回工作区；已准备的 CBS 状态可继续短借用它。
 
 ## 固定尺度分解式 MVB
 
@@ -101,9 +101,9 @@ Fourier 环只支持 `NativeModulus`；`PowOf2Modulus` 环不受支持。 NTRU �
 
 ## 实验性稀疏 PBS
 
-本后端重导出家族的[共享系数密钥](../primus_tfhe_ntru/README.zh_CN.md#sparse-系数密钥) `SparseNtruBootstrappingKey<T>`；生成、变换及桶聚合仍由各后端负责。
+本后端的 `sparse` 模块重导出家族的[共享系数密钥](../primus_tfhe_ntru/README.zh_CN.md#sparse-系数密钥) `sparse::SparseNtruBootstrappingKey<T>`；生成、变换及桶聚合仍由各后端负责。
 
-普通 PBS 使用 `context.try_generate_keys(rng)` 和 `context.evaluator(&server)`；已有 client 使用 `context.try_generate_server_key(&client, rng)`。CBS 使用 `try_generate_circuit_bootstrap_keys` / `try_generate_circuit_bootstrap_server_key`，返回 `CircuitBootstrapServerKey`。`try_with_circuit_bootstrap(gadget)` 为 Context 添加 CBS 能力；普通工厂仍返回 BR/KS `ServerKey`。高级显式工厂分别接收 KS、算法，以及 CBS 工厂所需的 gadget。
+普通 PBS 使用 `context.try_generate_keys(rng)` 和 `context.evaluator(&server)`；已有 client 使用 `context.try_generate_server_key(&client, rng)`。CBS 使用 `try_generate_circuit_bootstrap_keys` / `try_generate_circuit_bootstrap_server_key`，返回 `CircuitBootstrapServerKey`。`try_with_circuit_bootstrap(gadget)` 为 Context 添加 CBS 能力；普通工厂仍返回 BR/KS `ServerKey`。完整工厂使用已保存的配置；独立 BR/KS/CBS 组件通过 `KeyGenerator` 生成。
 
 为 external-LWE 选择固定重量 binary 分布，并显式选择 sparse；秘密分布本身不决定算法。要求 `0<h<n`、`copy_count>=1`、`bucket_count>=max(copy_count,h)`。
 
@@ -181,14 +181,14 @@ one_hot.cmux_k_to(
 
 完整 chunk 加密与查表工作流见 [fourier_lookup.rs](../primus_tfhe_ntru_lut/examples/fourier_lookup.rs)。
 
-自定义返回先绑定 `LweReturnEvaluator::new(server.key_switching_key().unwrap(),
+自定义返回先绑定 `primus_tfhe_ntru::LweReturnEvaluator::new(server.key_switching_key(),
 context.parameters().external_lwe().cipher_modulus())`，再按需准备 scalar/batch 工作区，
 显式传给 `return_at_to`、`return_prefix_to` 或流式操作。one-hot 与变换工作区可独立复用。
 详见[家族返回契约](../primus_tfhe_ntru/README.zh_CN.md#ntrulwe-返回)。
 
 ## 底层组合
 
-Rustdoc 按职责组织 `key`（服务端材料）、`circuit_bootstrap`（CBS）、 `factorized`（MVB 程序和执行）与 `sparse`（桶材料）；常用工作流类型仍从 crate 根导入。
+推荐工作流类型保留根入口。高级类型按职责导入：公共资源使用 `bootstrap::BootstrapResources`；独立 BR 材料使用 `key::BlindRotationKey`；CBS 密钥、gadget 参数和逐调用借用 evaluator 使用 `circuit_bootstrap`；稀疏材料/工作区使用 `sparse`。显式 codec 组合从 `primus_tfhe` 导入。独立返回使用家族 `primus_tfhe_ntru::{LweReturnEvaluator, LweReturnBatchWorkspace}`。
 
 ## 进一步阅读
 

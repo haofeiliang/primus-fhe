@@ -4,7 +4,7 @@ use primus_fft::{Complex64, FftTable, TorusFftValue};
 use primus_ntru::{FourierNgswCiphertext, NtruCiphertext};
 use primus_reduce::RingContext;
 
-use crate::{BootstrapResources, CbsGadgetParameters};
+use crate::{bootstrap::BootstrapResources, circuit_bootstrap::CbsGadgetParameters};
 
 /// Consumes a bit control after the public evaluator has checked the resource
 /// context. CBS binding established the basis and accumulator domain; raw

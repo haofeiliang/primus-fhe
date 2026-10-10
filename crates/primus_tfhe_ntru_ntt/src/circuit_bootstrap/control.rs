@@ -5,7 +5,7 @@ use primus_ntru::{NtruCiphertext, NttNgswCiphertext};
 use primus_ntt::MonomialNttTable;
 use primus_reduce::RingContext;
 
-use crate::{BootstrapResources, CbsGadgetParameters};
+use crate::{bootstrap::BootstrapResources, circuit_bootstrap::CbsGadgetParameters};
 
 /// Consumes a bit control after the public evaluator has checked the resource
 /// context. CBS binding established the basis and accumulator domain; raw

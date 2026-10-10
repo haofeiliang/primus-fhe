@@ -1,7 +1,5 @@
 //! Bucket aggregation and reusable sparse blind-rotation workspace.
 
-use super::SparseNtruBootstrappingKey;
-use crate::PbsParameters;
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_integer::FheUint;
 use primus_lattice::{
@@ -13,6 +11,9 @@ use primus_ntru::NttNtruExternalProductWorkspace;
 use primus_ntt::MonomialNttTable;
 use primus_poly::Polynomial;
 use primus_reduce::ReduceOnceSlice;
+
+use super::SparseNtruBootstrappingKey;
+use crate::PbsParameters;
 
 pub(crate) struct SparseWorkspace<T: FheUint> {
     pub(crate) exponents: Vec<usize>,
@@ -33,7 +34,7 @@ impl<T: FheUint> SparseWorkspace<T> {
 }
 
 /// Additional state for a second sparse blind-rotation input.
-/// Allocate through [`crate::OneHotCircuitBootstrapEvaluator::new_sparse_pair_workspace`].
+/// Allocate through [`crate::circuit_bootstrap::OneHotCircuitBootstrapEvaluator::new_sparse_pair_workspace`].
 /// Retains only exponents, an L*N coefficient aggregate and one N-coefficient
 /// accumulator; the original resources provide shared transform/product scratch.
 pub struct SparseBlindRotationPairWorkspace<T: FheUint> {

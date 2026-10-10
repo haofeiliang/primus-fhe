@@ -1,6 +1,4 @@
 use primus_encoding::RoundedCodec;
-use std::ops::Range;
-
 use primus_fft::{Complex64, FftTable, TorusFftValue};
 use primus_lattice::{
     ngsw::FourierNgswIter,
@@ -12,9 +10,12 @@ use primus_reduce::RingContext;
 use primus_tfhe::LweCiphertext;
 use primus_tfhe_ntru::{LweReturnBatchWorkspace, LweReturnEvaluator};
 use primus_tfhe_ntru_fourier::{
-    BlindRotationKey, CircuitBootstrapKey, CircuitBootstrapServerKey,
-    OneHotCircuitBootstrapEvaluator, TfheContext,
+    CircuitBootstrapServerKey, TfheContext,
+    circuit_bootstrap::{CircuitBootstrapKey, OneHotCircuitBootstrapEvaluator},
+    key::BlindRotationKey,
 };
+use selectors::SelectorBuffers;
+use std::ops::Range;
 
 use crate::{
     HighPrecisionLookupTable, LookupTableError,
@@ -28,7 +29,6 @@ use crate::{
 mod context;
 mod selectors;
 pub use context::{FourierHighPrecLutContext, FourierHighPrecLutServerKey, FourierPublicLiftKey};
-use selectors::SelectorBuffers;
 
 /// Borrowed `NLEV[1]` view and its generation parameters for public polynomial lifting.
 /// This tuple owns no buffers and performs no validation; binding through
@@ -62,7 +62,7 @@ where
 {
     context: &'a TfheContext<T, Table, LM>,
     lookup_table: &'a HighPrecisionLookupTable<T>,
-    resources: primus_tfhe_ntru_fourier::BootstrapResources<'a, T, Table, LM>,
+    resources: primus_tfhe_ntru_fourier::bootstrap::BootstrapResources<'a, T, Table, LM>,
     one_hot: OneHotCircuitBootstrapEvaluator<'a, T, Table, LM>,
     // One extra input state; transform, product and projection scratch stay shared.
     sparse_pair: Option<primus_tfhe_ntru_fourier::sparse::SparseBlindRotationPairWorkspace<T>>,

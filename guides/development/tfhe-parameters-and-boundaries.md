@@ -187,7 +187,7 @@ PBS trait、四后端、Boolean 门、双输入打包、CBS、one-hot 与 MVB �
 
 ## Sparse 系数材料与后端运算
 
-两个家族分别持有 `SparseNtruBootstrappingKey<T>` 与 `SparseGlweBootstrappingKey<T, M>`，具体后端重导出家族类型。共同层仅处理系数、公开 map 和布局；GLWE 的 M 保留 Barrett/Native 差异，NTRU 的 basis 与模数仍由后端 `BlindRotationKey` 持有。移入系数不转换表示、不复制密文，也不验证实际秘密、加密选择或噪声预算。
+两个家族分别持有 `SparseNtruBootstrappingKey<T>` 与 `SparseGlweBootstrappingKey<T, M>`，具体后端在 `sparse` 模块重导出家族类型。共同层仅处理系数、公开 map 和布局；GLWE 的 M 保留 Barrett/Native 差异，NTRU 的 basis 与模数仍由后端 `BlindRotationKey` 持有。移入系数不转换表示、不复制密文，也不验证实际秘密、加密选择或噪声预算。
 
 `try_new(data, map, hamming_weight, &gadget_parameters)` 复用 gadget 的已验证布局与 map 的有效索引，检查组合后的重量、桶容量和总系数长度；GLWE 还验证预备 rotation switch 所需的 2N 表示范围。Map 保存 copy_count，原始维数由总 entry 数整除恢复，密钥只在构造时缓存该维数；不扫描所有桶或系数重新建立已经检查的 map 不变量。生成器保留采样前的存储溢出检查，公开装配器独立承担导入缓冲区的完整长度检查。
 
@@ -212,7 +212,7 @@ NTRU 的 BR、返回和 CBS 材料可分别生成和持有：`KeyGenerator::try_
 
 BR 不依赖返回 basis；位控制也不绑定外部 q。外部模数由输入程序和返回材料绑定。独立 BR/CBS 生成不检查 f 在返回 q 下的幅度界，完整 PBS/CBS 及返回密钥生成保留该要求。各入口建立不变量；在线只选择已绑定的返回路径，不扫描秘密或重新验证配置。相同布局/模数不能证明独立材料的实际秘密身份。
 
-默认 PBS 工厂 `try_generate_server_key(client, rng)` / `try_generate(rng)` 使用 Context 已保存的 KS 与算法，返回 BR/KS `ServerKey`。CBS 对应工厂为 `try_generate_circuit_bootstrap_server_key` / `try_generate_circuit_bootstrap_keys`，返回含必需 CBS key 的组合。高级 `*_with_parameters` 入口接受独立 KS、算法，CBS 工厂另接收必需 gadget；组件生成接口按实际需要生成 BR、KS、CBS 或 lift。
+默认 PBS 工厂 `try_generate_server_key(client, rng)` / `try_generate(rng)` 使用 Context 已保存的 KS 与算法，返回 BR/KS `ServerKey`。CBS 对应工厂为 `try_generate_circuit_bootstrap_server_key` / `try_generate_circuit_bootstrap_keys`，返回含必需 CBS key 的组合。完整工厂不再额外接收 KS/算法/gadget 覆盖参数；这些选择在配置或 prepared 参数中确定。独立材料由 `KeyGenerator` 按实际需要生成 BR、KS、CBS 或 lift。
 
 成对生成复用已接受的秘密变换；NTRU 还复用逆元。新鲜路径依赖 sampler 保证，导入密钥在生成边界检查。NTRU 完整 PBS/CBS 组合的返回 q 幅度界由 sampler 上界保证，否则检查实际接受的 f；单独 BR/CBS 组件不承担未执行的返回条件。独立参数、sparse 几何和存储界在采样前检查，matching 只重试公开 map；不回退 classic 或重采样客户端秘密，在线 kernel 不重复检查配置。
 
@@ -243,13 +243,15 @@ GLWE 复用已有独立 `BlindRotationKey::{Classic,Sparse}` 和底层环 KS own
 
 ## 输入、盲旋转与返回组合
 
+四后端公共资源从 `bootstrap::BootstrapResources` 导入，独立 BR 材料位于 `key`，底层 CBS/one-hot evaluator 与 gadget/key 位于 `circuit_bootstrap`；默认拥有型 evaluator 保留根入口。NTRU 独立返回由家族 `primus_tfhe_ntru::LweReturnEvaluator` 提供。
+
 `Workspace` 是缓冲与形状不变量；`Resources` 是借用的材料/环境加拥有的匹配缓冲；`Evaluator` / `Engine` 是具体流程；`Context` 是已验证参数与变换环境。资源组合不复制密钥/表，不因局部 helper 存在就改变类型职责。GLWE 内部 `KeySwitchingResources` 持有环 KS key 引用、底层纯 workspace 及 switched 输出，`BlindRotationResources` 为所选 BR key 配对 scratch；NTRU 内部 `BlindRotationResources` 保存 classic controls 或 sparse key 的绑定、current/scratch 及外积空间。这些组合直接使用已有类型，不另设公开包装层。
 
 四后端各自的公共 `BootstrapResources` 绑定 input 准备、所选 BR key/scratch、系数 accumulator 与 Fourier FFT engine。GLWE KS→BR 保留输入 KS，BR→KS 直接使用外部 input。Context/key/table 的 owner 由调用方保留，common resources 拥有缓冲；Fourier engine 借用该 context 的 FFT table。串行操作短借用同一 common，多个并发请求使用各自的可变资源。普通 `Evaluator` 组合完整返回阶段：GLWE BR→KS 的输出 KS、KS→BR 的直接提取，或 NTRU 返回对象；必需资源不再是可能缺失的 `Option`。
 
 NTRU 两后端将公共 BR/外积资源放入各自的 `BootstrapResources`，Fourier 还在其中绑定同一个 FFT engine。普通 `Evaluator` 拥有公共资源与返回缓冲；底层 CBS/one-hot 只持 LUT/投影状态，执行时短借用公共资源并检查同一 context。该状态不缓存 BR 控制，实际秘密配对的 classic/sparse 资源可以互换，检查不证明独立材料的秘密身份。MVB 拥有 PBS 状态和额外变换域多项式，保留 PBS 已绑定的 context/密钥和已有批量返回。LUT 独立拥有公共资源、one-hot 状态与返回缓冲：NTT 仅 scalar，Fourier 仅 batch。Fourier 因子保持整数变换，gadget 保持 torus 变换，streamed tile 顺序不变。
 
-GLWE 两后端的普通 PBS 拥有公共资源和完整返回阶段；底层 CBS 只保存 LUT/投影，执行时短借用公共资源并检查同一 context。MVB 拥有 PBS 状态和额外变换域 GLWE（Fourier 另有一个多项式乘积缓冲），两种顺序的输入 KS/输出返回路径不变。各公共资源已绑定合法 classic/sparse 材料，实际秘密仍由调用方配对。`try_from_resources(resources, ks)` 只在 BR→KS 分配输出 KS，KS→BR 复用输入 KS；`try_rebind_key_switching_key` 检查后零分配换绑。外积 `with_rebound` 保留 GLWE 几何并临时切换 level 布局，返回或 unwind 后恢复；没有将 NTRU 布局假设套入 GLWE。
+GLWE 两后端的普通 PBS 拥有公共资源和完整返回阶段；底层 CBS 只保存 LUT/投影，执行时短借用公共资源并检查同一 context。MVB 拥有 PBS 状态和额外变换域 GLWE（Fourier 另有一个多项式乘积缓冲），两种顺序的输入 KS/输出返回路径不变。各公共资源已绑定合法 classic/sparse 材料，实际秘密仍由调用方配对。`try_from_resources(resources, key_switching, ks)` 在绑定时检查独立材料，只在 BR→KS 分配输出 KS，KS→BR 复用输入 KS。外积 `with_rebound` 保留 GLWE 几何并临时切换 level 布局，返回或 unwind 后恢复；没有将 NTRU 布局假设套入 GLWE。
 
 四后端的推荐 MVB 入口为 `context.mvb_evaluator(&server_key)`，返回已有 `FactorizedEvaluator`。它通过普通 evaluator 工厂检查材料一次，再移入已准备的状态；在线 `apply_lookup_table_to(input, program, outputs)` 不再接收另一个 evaluator。独立材料可先绑定为 `Evaluator`，再传入 `FactorizedEvaluator::new(pbs)`。Context/密钥仍借用，缓冲不复制、不按请求重新分配；程序/context 身份和全部输入输出形状仍在写入前检查。
 

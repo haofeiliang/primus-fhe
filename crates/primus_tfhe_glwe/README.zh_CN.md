@@ -50,7 +50,7 @@ PBS 和 CBS 的 `key_switching` 都是必需的 `GadgetEncryptionConfig`，分�
 
 ## Sparse 系数密钥
 
-`SparseGlweBootstrappingKey<T, M>` 统一持有系数 GGSW、公开 bucket map、布局、模数与 basis。NTT 后端使用 `M = BarrettModulus<T>`，Fourier 使用 `NativeModulus<T>`，均重导出家族类型。`bucket(i)` 借用递增的输入索引与 GGSW，每桶末尾额外包含一个 dummy。
+`SparseGlweBootstrappingKey<T, M>` 统一持有系数 GGSW、公开 bucket map、布局、模数与 basis。NTT 后端使用 `M = BarrettModulus<T>`，Fourier 使用 `NativeModulus<T>`，均在 `sparse` 模块重导出家族类型。`bucket(i)` 借用递增的输入索引与 GGSW，每桶末尾额外包含一个 dummy。
 
 通常通过后端 `KeyGenerator` 加密生成。`try_new(data, map, hamming_weight, &ggsw_parameters)` 导入已有系数控制密文并检查组合布局，不转换或复制密文；加密选择、实际秘密与噪声预算仍由生成方保证。Raw sparse BR 使用后端的 `SparseGlweBlindRotationWorkspace::blind_rotate_lookup_table_to(&key, input, lut, output, table_or_fft)`；普通 PBS/CBS 继续使用已有 evaluator。
 
@@ -80,7 +80,7 @@ PBS 和 CBS 的 `key_switching` 都是必需的 `GadgetEncryptionConfig`，分�
 
 构造后端 Context 前设置 `config.messages = PbsMessageConfig::new(4)`，即可用 `boolean_encryptor`、`boolean_public_encryptor`、`boolean_decryptor` 和 `boolean_evaluator`，无需传 codec。输入、输出均需 t=4 才能串联门操作；密钥沿用普通 PBS 材料。高级数值组合保留共享 Boolean 构造器，调用与串联契约见[公共 Boolean 契约](../primus_tfhe/README.zh_CN.md#boolean-门)。
 
-输入编码与 ManyLUT 容量在 CBS 程序绑定时检查：两后端均使用 `CircuitBootstrapEvaluator::try_new(&resources, key, &input_codec)`。默认构造使用密钥自带参数，`try_with_parameters` 显式选择兼容的替代输出 basis。同一套密钥可服务多个明文模数，前提是各程序满足容量与噪声余量。`accumulator_client(client.glwe_secret_key(), t_ring)` 独立绑定普通环消息，其 `ScaledCodec` 不必采用输入 LWE 的明文模数。
+输入编码与 ManyLUT 容量在 CBS 程序绑定时检查：两后端均使用 `circuit_bootstrap::CircuitBootstrapEvaluator::try_new(&resources, key, &input_codec)`。默认构造使用密钥自带参数，`try_with_parameters` 显式选择兼容的替代输出 basis。同一套密钥可服务多个明文模数，前提是各程序满足容量与噪声余量。`accumulator_client(client.glwe_secret_key(), t_ring)` 独立绑定普通环消息，其 `ScaledCodec` 不必采用输入 LWE 的明文模数。
 
 CBS 是两个后端的可选能力，提供独立的 output basis、trace/scheme-switch 参数及密钥， 两种 PBS order 均支持经典 binary/ternary 和 sparse binary。CBS 输出留在 accumulator secret 下，使用 gadget 尺度。`CbsGadgetParameters<T, M>` 由公共层定义，后端提供具体模数别名； 同层数的不同输出 basis 可复用 scheme-switch key。噪声与变换要求见对应后端契约。
 

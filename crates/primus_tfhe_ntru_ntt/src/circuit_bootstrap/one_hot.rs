@@ -5,6 +5,12 @@ use primus_encoding::RoundedCodec;
 use primus_integer::FheUint;
 use primus_ntru::{NlevCiphertext, NtruCiphertext, NttNgswCiphertext};
 use primus_ntt::MonomialNttTable;
+
+use crate::{
+    Lwe, TfheContext,
+    bootstrap::BootstrapResources,
+    circuit_bootstrap::{CbsGadgetParameters, CircuitBootstrapKey},
+};
 pub use primus_tfhe_ntru::{NlevSelectors, OneHotBootstrapError, OneHotLookupTable};
 
 mod pair;
@@ -12,8 +18,6 @@ pub use pair::OneHotProjection;
 
 mod selectors;
 pub use selectors::NttNgswSelectors;
-
-use crate::{BootstrapResources, CbsGadgetParameters, CircuitBootstrapKey, Lwe, TfheContext};
 
 /// One-hot extension of CBS for classic binary/ternary and sparse binary BR.
 ///
@@ -27,7 +31,7 @@ use crate::{BootstrapResources, CbsGadgetParameters, CircuitBootstrapKey, Lwe, T
 /// Online calls overwrite outputs, reuse BR external-product scratch, and allocate nothing.
 /// Owns only the packed LUT and projection buffers; common BR/EP resources are
 /// borrowed per operation and no return buffers are owned.
-/// Ordinary CBS remains available through [`crate::CircuitBootstrapEvaluator`].
+/// Ordinary CBS remains available through [`crate::circuit_bootstrap::CircuitBootstrapEvaluator`].
 pub struct OneHotCircuitBootstrapEvaluator<'a, T, Table, LM = primus_modulus::BarrettModulus<T>>
 where
     T: FheUint,
@@ -391,7 +395,7 @@ where
     /// # Correctness
     /// `control` must use this evaluator's output basis, accumulator secret and
     /// transform representation. Inherits the candidate encoding, residue and
-    /// noise requirements of [`crate::CircuitBootstrapEvaluator::cmux_to`].
+    /// noise requirements of [`crate::circuit_bootstrap::CircuitBootstrapEvaluator::cmux_to`].
     ///
     /// # Panics
     /// Panics before output writes on a different context binding or a wrong
@@ -425,7 +429,7 @@ where
     ///
     /// # Correctness
     /// Inherits [`Self::cmux_to`]'s basis, secret and representation requirements
-    /// and [`crate::CircuitBootstrapEvaluator::external_product_to`]'s encoding,
+    /// and [`crate::circuit_bootstrap::CircuitBootstrapEvaluator::external_product_to`]'s encoding,
     /// residue and multiplication-noise requirements.
     ///
     /// # Panics
@@ -465,7 +469,7 @@ where
     ///
     /// # Correctness
     /// Inherits [`OneHotCircuitBootstrapEvaluator::try_new`]'s secret and representation contracts.
-    pub fn one_hot_evaluator_with_resources<'a>(
+    pub(crate) fn one_hot_evaluator_with_resources<'a>(
         &'a self,
         resources: &BootstrapResources<'a, T, Table, LM>,
         circuit_key: &'a CircuitBootstrapKey<T>,

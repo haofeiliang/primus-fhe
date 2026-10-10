@@ -12,14 +12,9 @@ use primus_reduce::{ReduceSub, RingContext};
 use primus_tfhe::LweCiphertext;
 use primus_tfhe_ntru::{CbsGadgetParameters, LweReturnEvaluator};
 use primus_tfhe_ntru_ntt::{
-    BlindRotationKey, CircuitBootstrapKey, CircuitBootstrapServerKey,
-    OneHotCircuitBootstrapEvaluator, TfheContext,
-};
-
-mod context;
-mod selectors;
-pub use context::{
-    NttHighPrecLutContext, NttHighPrecLutContextError, NttHighPrecLutServerKey, NttPublicLiftKey,
+    CircuitBootstrapServerKey, TfheContext,
+    circuit_bootstrap::{CircuitBootstrapKey, OneHotCircuitBootstrapEvaluator},
+    key::BlindRotationKey,
 };
 use selectors::SelectorBuffers;
 
@@ -30,6 +25,12 @@ use crate::{
         PolynomialId,
         selection::{OutputAction, TableNodeId, TableOperation},
     },
+};
+
+mod context;
+mod selectors;
+pub use context::{
+    NttHighPrecLutContext, NttHighPrecLutContextError, NttHighPrecLutServerKey, NttPublicLiftKey,
 };
 
 /// Borrowed `NLEV[1]` view and its generation parameters for public polynomial lifting.
@@ -58,7 +59,7 @@ where
 {
     context: &'a TfheContext<T, Table, LM>,
     lookup_table: &'a HighPrecisionLookupTable<T>,
-    resources: primus_tfhe_ntru_ntt::BootstrapResources<'a, T, Table, LM>,
+    resources: primus_tfhe_ntru_ntt::bootstrap::BootstrapResources<'a, T, Table, LM>,
     one_hot: OneHotCircuitBootstrapEvaluator<'a, T, Table, LM>,
     // One extra input state; transform, product and projection scratch stay shared.
     sparse_pair: Option<primus_tfhe_ntru_ntt::sparse::SparseBlindRotationPairWorkspace<T>>,

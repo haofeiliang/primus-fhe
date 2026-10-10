@@ -1,11 +1,12 @@
 //! Independent ownership and compatibility of classic or sparse BR controls.
 
-use super::ClassicControls;
-use crate::{PbsParameters, SparseNtruBootstrappingKey};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{Complex64, TorusFftValue};
 use primus_lattice::nlev::FourierNlev;
 use primus_ntru::SecretKeyDistr;
+
+use super::ClassicControls;
+use crate::{PbsParameters, sparse::SparseNtruBootstrappingKey};
 
 /// Owning Fourier blind-rotation material, independent of LWE return and CBS keys.
 /// The classic initializer and controls share the stored blind-rotation basis.

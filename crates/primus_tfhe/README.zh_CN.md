@@ -55,7 +55,7 @@ let (client, server) = context.try_generate_keys(rng)?;
 let mut pbs = context.evaluator(&server)?;
 ```
 
-`Classic` 支持 binary/ternary，包括固定重量分布。`Sparse` 要求 fixed-weight binary 且 `0<h<n`，只重试公开桶映射，匹配失败返回错误；不会修改客户端秘密或回退到 classic。`KeyGenerator::try_generate(rng)` 复用生成工作区；已有客户端使用 `context.try_generate_server_key(&client, rng)`。只有算法比较或独立组件配线才使用具名的 `try_generate_with_parameters` / `try_generate_server_key_with_parameters`，显式传 KS、算法；CBS 专用工厂另接收必需 gadget。
+`Classic` 支持 binary/ternary，包括固定重量分布。`Sparse` 要求 fixed-weight binary 且 `0<h<n`，只重试公开桶映射，匹配失败返回错误；不会修改客户端秘密或回退到 classic。`KeyGenerator::try_generate(rng)` 复用生成工作区；已有客户端使用 `context.try_generate_server_key(&client, rng)`。完整工厂使用 PbsConfig/CbsConfig 已保存的选择。独立组件通过 `KeyGenerator` 按需生成 BR、KS、CBS 或公开 lift 材料。
 
 Context 绑定独立 CBS 参数时检查域、算法及共用输入 KS 配对；sparse 配置检查在秘密采样前执行。新生成密钥依赖采样器保证，已有客户端在生成边界验证。NTRU 若无法通过采样器上界保证返回 q 条件，则检查实际接受的环秘密；完整 CBS 组合同样承担该返回界；独立 BR/CBS 组件只检查实际运算所需的数值条件。
 
@@ -148,7 +148,7 @@ CMux 要求完整输入域上的 F 为 0 或 1；输入本身可以不是 bit。
 
 `AccumulatorClient` 拥有准备好的累加秘密和转换缓冲，并借用 Context。它加解密 N 个 Scaled 环消息系数；该消息域独立于外部 LWE。准备 t_ring 编码、密钥检查或 NTRU 秘密转换失败会返回 `TfheClientError`。形状错误在写入/消耗 RNG 前 panic；非法明文可能已消耗随机数。创建一次后复用 `_to` 和输出缓冲。
 
-显式输入编码、逐调用资源借用和 GLWE 替代 output basis 使用底层 `CircuitBootstrapEvaluator` / `OneHotCircuitBootstrapEvaluator`；候选原始 Scaled 配对可用 `AccumulatorClient::try_new`。它们服务独立数值组合和已有 PBS 资源复用。
+显式输入编码、逐调用资源借用和 GLWE 替代 output basis 使用底层 `CircuitBootstrapEvaluator` / `OneHotCircuitBootstrapEvaluator`；候选原始 Scaled 配对可用 `AccumulatorClient::try_new`。它们服务独立数值组合和已有 PBS 资源复用。后端底层 evaluator、gadget 和 key 位于 `circuit_bootstrap`，公共资源位于 `bootstrap`；推荐拥有型 evaluator 保留根入口。
 
 ## 复用 evaluator
 

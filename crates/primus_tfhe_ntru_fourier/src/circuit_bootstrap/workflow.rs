@@ -5,8 +5,8 @@ use primus_ntru::{FourierNgswCiphertext, NtruCiphertext};
 use primus_tfhe::CircuitBootstrapLookupTable;
 
 use crate::{
-    BootstrapResources, CircuitBootstrapEvaluator, CircuitBootstrapServerKey, Lwe, TfheContext,
-    TfheEvaluationError,
+    CircuitBootstrapServerKey, Lwe, TfheContext, TfheEvaluationError,
+    bootstrap::BootstrapResources, circuit_bootstrap::CircuitBootstrapEvaluator,
 };
 
 /// A configured CBS program and its reusable input/BR/projection resources.

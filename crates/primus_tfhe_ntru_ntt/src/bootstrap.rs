@@ -1,11 +1,15 @@
+//! Shared input/BR bindings and reusable storage for serial PBS/CBS composition.
+//! Standalone resources omit the ordinary PBS output-return stage.
+
 use primus_integer::FheUint;
 use primus_ntt::MonomialNttTable;
 use primus_poly::Polynomial;
 use primus_tfhe::TfheEvaluationError;
 
 use crate::{
-    BlindRotationKey, Lwe, TfheContext,
+    Lwe, TfheContext,
     blind_rotation::{BlindRotationResources, blind_rotate_lookup_table_to},
+    key::BlindRotationKey,
 };
 
 /// Shared NTT blind-rotation, coefficient and external-product resources.

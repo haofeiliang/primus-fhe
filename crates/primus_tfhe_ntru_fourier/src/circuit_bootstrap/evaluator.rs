@@ -3,11 +3,13 @@
 use primus_data::{Data, DataMut};
 use primus_encoding::RoundedCodec;
 use primus_fft::{Complex64, FftTable, TorusFftValue};
-use primus_ntru::NtruCiphertext;
-use primus_ntru::{FourierNgswCiphertext, NlevCiphertext};
+use primus_ntru::{FourierNgswCiphertext, NlevCiphertext, NtruCiphertext};
 use primus_tfhe::{CircuitBootstrapLookupTable, LookupTableError};
 
-use crate::{BootstrapResources, CircuitBootstrapKey, Lwe, TfheContext, TfheEvaluationError};
+use crate::{
+    Lwe, TfheContext, TfheEvaluationError, bootstrap::BootstrapResources,
+    circuit_bootstrap::CircuitBootstrapKey,
+};
 
 /// Prepared NTRU circuit-bootstrapping LUT and projection buffers.
 /// Common BR/FFT/EP resources are borrowed per operation; no return buffers are owned.
@@ -129,7 +131,7 @@ where
     /// noise margin for the coarser ManyLUT windows are required. Trace and
     /// scheme-switch errors must fit the independent CBS budget, including f/f²
     /// amplification, native halving and FFT rounding; see
-    /// [`crate::CbsGadgetParameters`]. CMux requires `F(m)` in `{0, 1}`
+    /// [`crate::circuit_bootstrap::CbsGadgetParameters`]. CMux requires `F(m)` in `{0, 1}`
     /// throughout the programmed domain.
     /// The default identity program uses `F(m)=m`. The output uses gadget scales,
     /// not ordinary plaintext or Boolean encoding.
@@ -257,28 +259,5 @@ where
             output.as_mut_view(),
             resources,
         );
-    }
-}
-
-impl<T, Table, LM> TfheContext<T, Table, LM>
-where
-    T: TorusFftValue,
-    Table: FftTable,
-    LM: primus_reduce::RingContext<T>,
-{
-    /// Prepares the configured gadget identity CBS using shared resources and an independent key.
-    /// Uses this context's input encoding and gadgets; no return scratch is allocated.
-    /// Resources must belong to this exact context. Advanced constructors on
-    /// [`CircuitBootstrapEvaluator`] permit explicit programs and encoding overrides.
-    ///
-    /// # Correctness
-    /// Inherits [`CircuitBootstrapEvaluator::try_new`]'s secret, representation and noise contracts.
-    pub fn circuit_bootstrap_evaluator_with_resources<'a>(
-        &'a self,
-        resources: &BootstrapResources<'a, T, Table, LM>,
-        circuit_key: &'a CircuitBootstrapKey<T>,
-    ) -> Result<CircuitBootstrapEvaluator<'a, T, Table, LM>, TfheEvaluationError> {
-        let parameters = self.check_circuit_bootstrap_binding(resources, circuit_key)?;
-        CircuitBootstrapEvaluator::try_new(resources, circuit_key, parameters.input_codec())
     }
 }

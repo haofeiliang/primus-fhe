@@ -1,3 +1,6 @@
+//! Shared input/BR bindings and reusable storage for serial PBS/CBS composition.
+//! Standalone resources omit the ordinary PBS output-return stage.
+
 use primus_glwe::{GlweCiphertext, NttGlweKeySwitchingKey, NttGlweKeySwitchingWorkspace};
 use primus_integer::FheUint;
 use primus_lwe::LweCiphertext;
@@ -8,8 +11,11 @@ use primus_tfhe::TfheEvaluationError;
 use primus_tfhe_glwe::PbsOrder;
 
 use crate::{
-    BlindRotationKey, Lwe, NttGlweBlindRotationWorkspace, NttGlweBootstrappingKey, ServerKey,
-    SparseGlweBlindRotationWorkspace, SparseGlweBootstrappingKey, TfheContext,
+    Lwe, ServerKey, TfheContext,
+    blind_rotation::NttGlweBlindRotationWorkspace,
+    bootstrapping_key::NttGlweBootstrappingKey,
+    key::BlindRotationKey,
+    sparse::{SparseGlweBlindRotationWorkspace, SparseGlweBootstrappingKey},
 };
 
 /// Borrowed ring key-switch key with owned scratch and switched output.

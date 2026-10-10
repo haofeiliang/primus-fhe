@@ -4,9 +4,11 @@ use primus_integer::FheUint;
 use primus_ntru::{NttNtruSchemeSwitchKey, NttNtruSecretKey, NttNtruTraceKey};
 use primus_ntt::MonomialNttTable;
 
-use crate::{CbsGadgetParameters, KeyGenerationError, KeyGenerator, TfheContext};
+use crate::{
+    KeyGenerationError, KeyGenerator, TfheContext, circuit_bootstrap::CbsGadgetParameters,
+};
 
-/// Additional keys for NTRU CBS; ordinary BR material is owned by [`crate::BlindRotationKey`].
+/// Additional keys for NTRU CBS; ordinary BR material is owned by [`crate::key::BlindRotationKey`].
 /// Both keys use the accumulator secret, not the post-PBS client secret.
 /// Publishing the scheme-switch material requires the secret-dependent-message
 /// security assumption documented on [`NttNtruSchemeSwitchKey`].
@@ -140,7 +142,7 @@ where
     /// before compiling a default CBS/one-hot LUT or allocating projection storage.
     pub(crate) fn check_circuit_bootstrap_binding(
         &self,
-        resources: &crate::BootstrapResources<'_, T, Table, LM>,
+        resources: &crate::bootstrap::BootstrapResources<'_, T, Table, LM>,
         circuit_key: &CircuitBootstrapKey<T>,
     ) -> Result<&crate::CbsParameters<T, LM>, crate::TfheEvaluationError> {
         let parameters = self
@@ -153,16 +155,5 @@ where
             return Err(crate::TfheEvaluationError::IncompatibleCircuitBootstrapKey);
         }
         Ok(parameters)
-    }
-
-    /// Generates standalone CBS material under this client's accumulator secret.
-    /// Inherits [`KeyGenerator::try_generate_circuit_bootstrap_key`]'s contracts.
-    pub fn try_generate_circuit_bootstrap_key<R: rand::Rng + rand::CryptoRng>(
-        &self,
-        secret: &primus_ntru::NtruSecretKey<T>,
-        parameters: crate::CbsGadgetParameters<T>,
-        rng: &mut R,
-    ) -> Result<crate::CircuitBootstrapKey<T>, crate::KeyGenerationError> {
-        KeyGenerator::new(self).try_generate_circuit_bootstrap_key(secret, parameters, rng)
     }
 }

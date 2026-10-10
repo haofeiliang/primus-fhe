@@ -10,7 +10,7 @@ use zeroize::Zeroizing;
 
 use crate::{
     ClientKey, KeyGenerationError, KeyGenerator, SparseBootstrappingKeyError,
-    SparseNtruBootstrappingKey,
+    sparse::SparseNtruBootstrappingKey,
 };
 
 /// Validated bucket geometry and ciphertext allocation size, before secret sampling.
@@ -95,7 +95,7 @@ where
         copy_count: usize,
         bucket_count: usize,
         rng: &mut R,
-    ) -> Result<crate::BlindRotationKey<T>, KeyGenerationError>
+    ) -> Result<crate::key::BlindRotationKey<T>, KeyGenerationError>
     where
         R: rand::Rng + rand::CryptoRng,
     {
@@ -116,7 +116,7 @@ where
         accumulator_fourier: &FourierNtruSecretKey,
         layout: SparseKeyLayout,
         rng: &mut R,
-    ) -> Result<crate::BlindRotationKey<T>, KeyGenerationError> {
+    ) -> Result<crate::key::BlindRotationKey<T>, KeyGenerationError> {
         use SparseBootstrappingKeyError as Error;
         let parameters = self.context.parameters();
         let SparseKeyLayout {
@@ -196,7 +196,7 @@ where
             hamming_weight,
             parameters.blind_rotation(),
         )?;
-        let blind_rotation = crate::BlindRotationKey::from_sparse(parameters, controls);
+        let blind_rotation = crate::key::BlindRotationKey::from_sparse(parameters, controls);
         Ok(blind_rotation)
     }
 }

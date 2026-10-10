@@ -1,12 +1,13 @@
-use crate::key::BootstrappingControls;
-
 use primus_fft::{FftEngine, FftTable, TorusFftValue};
 use primus_lattice::{lwe::Lwe, ntru::Ntru};
 use primus_modulus::NativeModulus;
 use primus_poly::Polynomial;
 use primus_tfhe::rotation::RotationModulusSwitch;
 
-use crate::{BlindRotationKey, ClassicControls, PbsParameters};
+use crate::{
+    PbsParameters,
+    key::{BlindRotationKey, BootstrappingControls, ClassicControls},
+};
 
 /// Borrowed classic controls or sparse key with owned BR buffers and product scratch.
 /// The outer bootstrap resources provide the context/FFT binding; this set
@@ -54,7 +55,7 @@ impl<'a, T: TorusFftValue> BlindRotationResources<'a, T> {
 /// The variant keeps sparse keys or classic control views paired with their buffers.
 pub(crate) enum RotationState<'a, T: TorusFftValue> {
     Sparse {
-        key: &'a crate::SparseNtruBootstrappingKey<T>,
+        key: &'a crate::sparse::SparseNtruBootstrappingKey<T>,
         scratch: crate::sparse::SparseWorkspace<T>,
     },
     Binary {

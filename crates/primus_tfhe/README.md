@@ -55,7 +55,7 @@ let (client, server) = context.try_generate_keys(rng)?;
 let mut pbs = context.evaluator(&server)?;
 ```
 
-`Classic` supports binary and ternary distributions, including fixed-weight ones. `Sparse` requires fixed-weight binary with `0<h<n`; it retries only the public bucket map and returns an error on matching failure, without changing the client secret or falling back to classic. `KeyGenerator::try_generate(rng)` reuses setup scratch; existing clients use `context.try_generate_server_key(&client, rng)`. Named `try_generate_with_parameters` / `try_generate_server_key_with_parameters` accept explicit KS, algorithm choices; CBS-specific factories also require gadget parameters for algorithm comparisons or independent components.
+`Classic` supports binary and ternary distributions, including fixed-weight ones. `Sparse` requires fixed-weight binary with `0<h<n`; it retries only the public bucket map and returns an error on matching failure, without changing the client secret or falling back to classic. `KeyGenerator::try_generate(rng)` reuses setup scratch; existing clients use `context.try_generate_server_key(&client, rng)`. Complete factories use the retained PbsConfig/CbsConfig choices. For independent components, use `KeyGenerator` to generate only the required BR, KS, CBS or public-lift material.
 
 Context setup checks independently supplied CBS domain, algorithm and shared input-KS pairing. Sparse configuration checks precede secret sampling. Fresh keys rely on sampler guarantees; imported clients are validated at generation. NTRU additionally checks the accepted ring secret against return q when the sampler bound cannot establish that condition. Complete CBS bundles share this return bound; standalone BR/CBS component APIs check only their actual numerical requirements.
 
@@ -148,7 +148,7 @@ CMux requires F to be 0 or 1 throughout the input domain; the input itself need 
 
 `AccumulatorClient` owns the prepared accumulator secret and conversion buffers while borrowing the Context. It encrypts/decrypts N Scaled ring-message coefficients, independently of external LWE messages. Invalid t_ring encoding, keys or NTRU secret conversion return `TfheClientError` at preparation. Shape errors panic before writes or RNG consumption; invalid plaintexts may consume randomness. Construct once and reuse `_to` calls and output buffers.
 
-Use low-level `CircuitBootstrapEvaluator` / `OneHotCircuitBootstrapEvaluator` for explicit input encodings, per-call resource borrowing and GLWE output-basis overrides; `AccumulatorClient::try_new` binds an explicit Scaled candidate codec. These interfaces serve independent numerical combinations and existing PBS resource reuse.
+Use low-level `CircuitBootstrapEvaluator` / `OneHotCircuitBootstrapEvaluator` for explicit input encodings, per-call resource borrowing and GLWE output-basis overrides; `AccumulatorClient::try_new` binds an explicit Scaled candidate codec. These interfaces serve independent numerical combinations and existing PBS resource reuse. Backend low-level evaluators, gadgets and keys live in `circuit_bootstrap`; common resources live in `bootstrap`. Recommended owning evaluators remain root imports.
 
 ## Reusing evaluators
 

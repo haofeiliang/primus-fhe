@@ -13,7 +13,7 @@ use primus_poly::Polynomial;
 use primus_reduce::{Modulus, PrepareModulusSwitch};
 use primus_tfhe::rotation::RotationModulusSwitch;
 
-use crate::FourierGlweBootstrappingKey;
+use crate::bootstrapping_key::FourierGlweBootstrappingKey;
 
 impl<T, LM> FourierGlweBootstrappingKey<T, LM>
 where

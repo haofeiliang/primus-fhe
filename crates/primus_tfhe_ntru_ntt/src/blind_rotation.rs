@@ -1,5 +1,3 @@
-use crate::key::BootstrappingControls;
-
 use primus_integer::FheUint;
 use primus_lattice::{lwe::Lwe, ntru::Ntru};
 use primus_ntru::{NttNtruCmuxWorkspace, NttNtruExternalProductWorkspace};
@@ -8,8 +6,9 @@ use primus_poly::Polynomial;
 use primus_tfhe::rotation::RotationModulusSwitch;
 
 use crate::{
-    BlindRotationKey, ClassicControls, PbsParameters, SparseNtruBootstrappingKey,
-    sparse::{SparseWorkspace, rotate_buckets},
+    PbsParameters,
+    key::{BlindRotationKey, BootstrappingControls, ClassicControls},
+    sparse::{SparseNtruBootstrappingKey, SparseWorkspace, rotate_buckets},
 };
 
 /// Borrowed classic controls or sparse key with owned BR buffers and product scratch.

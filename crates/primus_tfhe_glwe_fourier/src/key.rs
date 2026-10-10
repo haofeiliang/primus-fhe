@@ -12,8 +12,9 @@ use primus_modulus::NativeModulus;
 use primus_tfhe_glwe::ClientKey;
 
 use crate::{
-    BlindRotationMethod, FourierGlweBootstrappingKey, GlweKeySwitchingParameters,
-    KeyGenerationError, PbsParameters, SparseGlweBootstrappingKey, TfheContext,
+    BlindRotationMethod, GlweKeySwitchingParameters, KeyGenerationError, PbsParameters,
+    TfheContext, bootstrapping_key::FourierGlweBootstrappingKey,
+    sparse::SparseGlweBootstrappingKey,
 };
 
 /// Blind-rotation key selected when generating a server key.
@@ -242,37 +243,12 @@ where
         Ok(self.generate_glwe_key_switching_key(key_switching, client_key, rng))
     }
 
-    /// Generates BR and required ring KS material for an existing client.
-    /// `blind_rotation` selects the algorithm independently of the client's distribution.
-    /// Checks imported secrets and the independently supplied KS domain before sampling.
-    /// Sparse generation retries only the public map (at most eight attempts), never
-    /// resamples the client secret or falls back to classic, and returns no partial key.
-    ///
-    /// # Correctness
-    /// Inherits [`Self::try_generate_classic_blind_rotation_key`] and
-    /// [`Self::try_generate_sparse_blind_rotation_key`]'s secret and transform
-    /// requirements for the selected algorithm. Budget sparse aggregation noise and the coarser rotations of interleaved LUTs.
-    pub fn try_generate_server_key_with_parameters<R>(
-        &mut self,
-        key_switching: &GlweKeySwitchingParameters<T>,
-        client_key: &ClientKey<T>,
-        blind_rotation: BlindRotationMethod,
-        rng: &mut R,
-    ) -> Result<ServerKey<T>, KeyGenerationError>
-    where
-        R: rand::Rng + rand::CryptoRng,
-    {
-        self.context
-            .parameters()
-            .check_key_switching_parameters(key_switching)?;
-        self.generate_for_client(key_switching, client_key, blind_rotation, rng)
-    }
-
     /// Generates configured BR and KS material for an existing client.
     /// Checks the imported secrets before conversion or sampling; retains its input distribution.
     ///
     /// # Correctness
-    /// Inherits [`Self::try_generate_server_key_with_parameters`]'s noise and transform contracts.
+    /// Inherits [`Self::try_generate_blind_rotation_key`]'s secret and transform contracts.
+    /// BR and KS errors must fit the complete PBS noise budget.
     pub fn try_generate_server_key<R>(
         &mut self,
         client_key: &ClientKey<T>,
@@ -414,32 +390,11 @@ where
         )
     }
 
-    /// Generates a fresh classic or sparse pair with BR and required ring KS.
-    /// Checks the independently supplied KS domain and sparse choices before sampling.
-    /// Sparse matching retries only the public map and returns no partial pair.
-    ///
-    /// # Correctness
-    /// Inherits [`Self::try_generate_server_key_with_parameters`]'s numerical contracts.
-    pub fn try_generate_with_parameters<R>(
-        &mut self,
-        key_switching: &GlweKeySwitchingParameters<T>,
-        blind_rotation: BlindRotationMethod,
-        rng: &mut R,
-    ) -> Result<(ClientKey<T>, ServerKey<T>), KeyGenerationError>
-    where
-        R: rand::Rng + rand::CryptoRng,
-    {
-        self.context
-            .parameters()
-            .check_key_switching_parameters(key_switching)?;
-        self.generate_pair(key_switching, blind_rotation, rng)
-    }
-
     /// Generates the configured BR and KS pair.
     /// Reuses the prepared KS state and retries only sparse public maps.
     ///
     /// # Correctness
-    /// Inherits [`Self::try_generate_with_parameters`]'s noise and representation contracts.
+    /// Inherits [`Self::try_generate_server_key`]'s noise and representation contracts.
     pub fn try_generate<R>(
         &mut self,
         rng: &mut R,
@@ -517,19 +472,5 @@ where
         rng: &mut R,
     ) -> Result<ServerKey<T>, KeyGenerationError> {
         KeyGenerator::new(self).try_generate_server_key(client_key, rng)
-    }
-
-    /// Generates a fresh BR/KS pair with independently supplied KS and BR choices.
-    /// Inherits [`KeyGenerator::try_generate_with_parameters`]'s contracts.
-    pub fn try_generate_keys_with_parameters<R>(
-        &self,
-        key_switching: &GlweKeySwitchingParameters<T>,
-        blind_rotation: BlindRotationMethod,
-        rng: &mut R,
-    ) -> Result<(ClientKey<T>, ServerKey<T>), KeyGenerationError>
-    where
-        R: rand::Rng + rand::CryptoRng,
-    {
-        KeyGenerator::new(self).try_generate_with_parameters(key_switching, blind_rotation, rng)
     }
 }

@@ -83,7 +83,7 @@ Ordinary/interleaved `Evaluator` owns common `BootstrapResources` and scalar/bat
 
 `Resources` groups borrowed context/evaluation material with owned reusable buffers; it does not own or copy the keys. `Workspace` denotes buffer storage and shape metadata, including lower-level BR/EP scratch. `Evaluator` executes a specific workflow using owned or briefly borrowed resources. Keep the context/key owners alive; serial operations can share one mutable resource instance, while concurrent requests need separate mutable resources. The context owns the NTT table; key views and products must preserve its representation.
 
-Use `cbs.into_parts()` or `one_hot.into_parts()` to move out operation state and common resources without copying or reallocating buffers. Subsequent `Evaluator::try_from_resources(resources, parameters.key_switching(), return_key)` adds only ordinary PBS return scratch; prepared CBS state can still borrow it. `try_rebind_return_key` reuses return buffers with compatible material; success discards pending samples and failure preserves the old binding.
+Use `cbs.into_parts()` or `one_hot.into_parts()` to move out operation state and common resources without copying or reallocating buffers. Subsequent `Evaluator::try_from_resources(resources, parameters.key_switching(), return_key)` adds only ordinary PBS return scratch; prepared CBS state can still borrow it.
 
 ## Fixed-scale factorized MVB
 
@@ -97,9 +97,9 @@ Run the [17-threshold example](examples/ntru_ntt_mvb_thresholds.rs) with `--exam
 
 ## Experimental sparse PBS
 
-This backend re-exports the family's [shared coefficient key](../primus_tfhe_ntru/README.md#sparse-coefficient-keys), `SparseNtruBootstrappingKey<T>`. Generation, transforms and bucket aggregation remain backend-specific.
+The backend's `sparse` module re-exports the family's [shared coefficient key](../primus_tfhe_ntru/README.md#sparse-coefficient-keys), `sparse::SparseNtruBootstrappingKey<T>`. Generation, transforms and bucket aggregation remain backend-specific.
 
-Ordinary PBS uses `context.try_generate_keys(rng)` and `context.evaluator(&server)`; an existing client uses `context.try_generate_server_key(&client, rng)`. CBS uses `try_generate_circuit_bootstrap_keys` / `try_generate_circuit_bootstrap_server_key`, returning `CircuitBootstrapServerKey`. `try_with_circuit_bootstrap(gadget)` adds CBS capability to the context; ordinary factories still return a BR/KS `ServerKey`. Explicit advanced factories take KS and algorithm choices, plus the required gadgets for CBS factories.
+Ordinary PBS uses `context.try_generate_keys(rng)` and `context.evaluator(&server)`; an existing client uses `context.try_generate_server_key(&client, rng)`. CBS uses `try_generate_circuit_bootstrap_keys` / `try_generate_circuit_bootstrap_server_key`, returning `CircuitBootstrapServerKey`. `try_with_circuit_bootstrap(gadget)` adds CBS capability to the context; ordinary factories still return a BR/KS `ServerKey`. Complete factories use the retained config; independent BR/KS/CBS components are generated through `KeyGenerator`.
 
 Select a fixed-weight binary external-LWE distribution and choose sparse generation explicitly; the distribution alone does not select the algorithm. Require `0<h<n`, `copy_count>=1` and `bucket_count>=max(copy_count,h)`.
 
@@ -175,7 +175,7 @@ For a consumer that immediately processes each result, use `one_hot.into_parts()
 
 A complete chunk-encryption and lookup workflow is in [ntt_lookup.rs](../primus_tfhe_ntru_lut/examples/ntt_lookup.rs).
 
-For custom returns, bind `LweReturnEvaluator::new(server.key_switching_key().unwrap(),
+For custom returns, bind `primus_tfhe_ntru::LweReturnEvaluator::new(server.key_switching_key(),
 context.parameters().external_lwe().cipher_modulus())`, then prepare only the
 needed scalar/batch workspace. Pass it explicitly to `return_at_to`,
 `return_prefix_to`, or the stream operations; one-hot and transform scratch remain
@@ -183,7 +183,7 @@ independently usable. See the [family return contract](../primus_tfhe_ntru/READM
 
 ## Lower-level composition
 
-Rustdoc groups server material in `key`, CBS in `circuit_bootstrap`, MVB programs/execution in `factorized`, and bucket material in `sparse`. Common workflow types remain root imports.
+Recommended workflow types remain root imports. Import advanced types by role: common resources through `bootstrap::BootstrapResources`, independent BR material through `key::BlindRotationKey`, CBS keys/gadget parameters and per-call borrowing evaluators through `circuit_bootstrap`, and sparse material/workspaces through `sparse`. Explicit codec bundles come from `primus_tfhe`. Independent returns use the family's `primus_tfhe_ntru::{LweReturnEvaluator, LweReturnBatchWorkspace}`.
 
 ## Further reading
 

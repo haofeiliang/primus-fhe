@@ -5,8 +5,9 @@ use primus_ntru::NttNtruSecretKey;
 use primus_ntt::MonomialNttTable;
 
 use crate::{
-    BootstrapResources, CbsGadgetParameters, CircuitBootstrapKey, ClientKey, KeyGenerationError,
-    KeyGenerator, ServerKey, TfheContext, TfheEvaluationError,
+    ClientKey, KeyGenerationError, KeyGenerator, ServerKey, TfheContext, TfheEvaluationError,
+    bootstrap::BootstrapResources,
+    circuit_bootstrap::{CbsGadgetParameters, CircuitBootstrapKey},
 };
 
 /// Complete CBS material with one BR key, one KS key and trace/scheme-switch keys.
@@ -141,23 +142,6 @@ where
         Ok((client, server, lift))
     }
 
-    /// Generates a CBS pair from independently prepared KS/CBS parameters.
-    /// Checks their common domain before sampling any secrets or key rows.
-    /// Inherits [`Self::try_generate_circuit_bootstrap_keys`]'s numerical contracts.
-    pub fn try_generate_circuit_bootstrap_keys_with_parameters<R: rand::Rng + rand::CryptoRng>(
-        &mut self,
-        key_switching: &crate::LweReturnParameters<T, LM>,
-        blind_rotation: crate::BlindRotationMethod,
-        circuit: &CbsGadgetParameters<T>,
-        rng: &mut R,
-    ) -> Result<(ClientKey<T>, CircuitBootstrapServerKey<T>), KeyGenerationError> {
-        self.context
-            .parameters()
-            .check_lwe_return_parameters(key_switching)?;
-        self.check_circuit_bootstrap_parameters(circuit)?;
-        self.generate_circuit_pair(key_switching, blind_rotation, circuit, rng)
-    }
-
     /// Samples secrets only after the owning boundary paired KS/CBS parameters.
     fn generate_circuit_pair<R: rand::Rng + rand::CryptoRng>(
         &mut self,
@@ -198,27 +182,6 @@ where
             operation.gadget(),
             rng,
         )
-    }
-
-    /// Generates CBS material with independently prepared KS/CBS parameters.
-    /// Checks their common domain before secret conversion or key-row sampling.
-    /// Inherits [`Self::try_generate_circuit_bootstrap_keys`]'s numerical contracts;
-    /// the supplied decomposition/noise choices need their own joint noise budget.
-    pub fn try_generate_circuit_bootstrap_server_key_with_parameters<
-        R: rand::Rng + rand::CryptoRng,
-    >(
-        &mut self,
-        key_switching: &crate::LweReturnParameters<T, LM>,
-        client: &ClientKey<T>,
-        blind_rotation: crate::BlindRotationMethod,
-        circuit: &CbsGadgetParameters<T>,
-        rng: &mut R,
-    ) -> Result<CircuitBootstrapServerKey<T>, KeyGenerationError> {
-        self.context
-            .parameters()
-            .check_lwe_return_parameters(key_switching)?;
-        self.check_circuit_bootstrap_parameters(circuit)?;
-        self.generate_circuit_for_client(key_switching, client, blind_rotation, circuit, rng)
     }
 
     /// Validates imported secrets, then shares their ring representation across BR/CBS.
@@ -285,17 +248,6 @@ where
             circuit_bootstrap,
         ))
     }
-
-    /// Checks independently prepared CBS state before any secret or key sampling.
-    fn check_circuit_bootstrap_parameters(
-        &self,
-        circuit_bootstrap: &CbsGadgetParameters<T>,
-    ) -> Result<(), KeyGenerationError> {
-        if !circuit_bootstrap.is_compatible(self.context.parameters()) {
-            return Err(KeyGenerationError::IncompatibleCircuitBootstrapParameters);
-        }
-        Ok(())
-    }
 }
 
 impl<T, Table, LM> TfheContext<T, Table, LM>
@@ -321,22 +273,5 @@ where
         rng: &mut R,
     ) -> Result<CircuitBootstrapServerKey<T>, KeyGenerationError> {
         KeyGenerator::new(self).try_generate_circuit_bootstrap_server_key(client, rng)
-    }
-
-    /// Generates a CBS pair using independently prepared material parameters.
-    /// Inherits [`KeyGenerator::try_generate_circuit_bootstrap_keys_with_parameters`]'s contracts.
-    pub fn try_generate_circuit_bootstrap_keys_with_parameters<R: rand::Rng + rand::CryptoRng>(
-        &self,
-        key_switching: &crate::LweReturnParameters<T, LM>,
-        blind_rotation: crate::BlindRotationMethod,
-        circuit: &CbsGadgetParameters<T>,
-        rng: &mut R,
-    ) -> Result<(ClientKey<T>, CircuitBootstrapServerKey<T>), KeyGenerationError> {
-        KeyGenerator::new(self).try_generate_circuit_bootstrap_keys_with_parameters(
-            key_switching,
-            blind_rotation,
-            circuit,
-            rng,
-        )
     }
 }

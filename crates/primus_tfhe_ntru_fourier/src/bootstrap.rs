@@ -1,10 +1,14 @@
+//! Shared input/BR bindings and reusable storage for serial PBS/CBS composition.
+//! Standalone resources omit the ordinary PBS output-return stage.
+
 use primus_fft::{FftEngine, FftTable, TorusFftValue};
 use primus_poly::Polynomial;
 use primus_tfhe::TfheEvaluationError;
 
 use crate::{
-    BlindRotationKey, Lwe, TfheContext,
+    Lwe, TfheContext,
     blind_rotation::{BlindRotationResources, blind_rotate_lookup_table_to},
+    key::BlindRotationKey,
 };
 
 /// Shared Fourier blind-rotation, coefficient, FFT and external-product resources.

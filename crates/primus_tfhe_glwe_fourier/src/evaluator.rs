@@ -8,9 +8,10 @@ use primus_tfhe::{
 use primus_tfhe_glwe::PbsOrder;
 
 use crate::{
-    BlindRotationKey, GlweKeySwitchingParameters, Lwe, ServerKey, TfheContext,
+    GlweKeySwitchingParameters, Lwe, ServerKey, TfheContext,
     bootstrap::{BootstrapResources, KeySwitchingResources},
     error::TfheEvaluationError,
+    key::BlindRotationKey,
 };
 
 /// Reusable Fourier programmable bootstrap with common resources and a complete return stage.
@@ -22,7 +23,6 @@ where
     Table: FftTable,
 {
     pub(crate) resources: BootstrapResources<'a, T, Table>,
-    key_switching: &'a GlweKeySwitchingParameters<T>,
     lwe_return: LweReturn<'a, T>,
 }
 
@@ -99,7 +99,7 @@ where
     /// Inherits [`Self::try_new`]'s transform requirements.
     pub fn try_from_parts(
         context: &'a TfheContext<T, Table>,
-        key_switching: &'a GlweKeySwitchingParameters<T>,
+        key_switching: &GlweKeySwitchingParameters<T>,
         blind_rotation_key: &'a BlindRotationKey<T>,
         key_switching_key: &'a FourierGlweKeySwitchingKey<T>,
     ) -> Result<Self, TfheEvaluationError> {
@@ -120,7 +120,7 @@ where
     #[must_use]
     fn from_resources(
         mut resources: BootstrapResources<'a, T, Table>,
-        key_switching: &'a GlweKeySwitchingParameters<T>,
+        key_switching: &GlweKeySwitchingParameters<T>,
         key: &'a FourierGlweKeySwitchingKey<T>,
     ) -> Self {
         resources.rebind_input_key_switching_key(key);
@@ -132,7 +132,6 @@ where
         };
         Self {
             resources,
-            key_switching,
             lwe_return,
         }
     }
@@ -161,7 +160,7 @@ where
     /// The KS key must use the resources' paired secrets and FFT table instance.
     pub fn try_from_resources(
         resources: BootstrapResources<'a, T, Table>,
-        key_switching: &'a GlweKeySwitchingParameters<T>,
+        key_switching: &GlweKeySwitchingParameters<T>,
         key: &'a FourierGlweKeySwitchingKey<T>,
     ) -> Result<Self, TfheEvaluationError> {
         crate::key::check_glwe_key_switching_key(
@@ -170,23 +169,6 @@ where
             key,
         )?;
         Ok(Self::from_resources(resources, key_switching, key))
-    }
-
-    /// Rebinds compatible KS material without reallocating either order's active stage.
-    /// Failure leaves the previous binding intact.
-    ///
-    /// # Correctness
-    /// The replacement must use the original paired secrets and FFT table instance.
-    pub fn try_rebind_key_switching_key(
-        &mut self,
-        key: &'a FourierGlweKeySwitchingKey<T>,
-    ) -> Result<(), TfheEvaluationError> {
-        crate::key::check_bound_glwe_key_switching_key(self.key_switching, key)?;
-        self.resources.rebind_input_key_switching_key(key);
-        if let LweReturn::Keyswitch(resources) = &mut self.lwe_return {
-            resources.key = key;
-        }
-        Ok(())
     }
 
     /// Applies a compiled lookup table and returns a refreshed ciphertext in

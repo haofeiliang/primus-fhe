@@ -13,7 +13,7 @@ use primus_poly::Polynomial;
 use primus_reduce::{FieldContext, Modulus, PrepareModulusSwitch};
 use primus_tfhe::rotation::RotationModulusSwitch;
 
-use crate::NttGlweBootstrappingKey;
+use crate::bootstrapping_key::NttGlweBootstrappingKey;
 
 impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T, LM> {
     /// Blind-rotates an explicit-modulus GLWE accumulator using this key.
