@@ -18,7 +18,7 @@ English | [简体中文](README.zh_CN.md)
 | `OnceSignedDecomposer`, `OnceBigUintSignedDecomposer` | Extract one retained level; obtained from the corresponding basis's `decomposer_iter()` |
 | `ApproxSignedBasisError` | Invalid construction parameters, returned by `try_new` and `TryFrom` |
 
-`T: FheUint` is the unsigned coefficient type for the primitive basis and the limb type for the BigUint basis. `BigUint` comes from [`primus_integer`](../primus_integer/README.md), not a dynamically sized integer library. Construct a basis once and reuse its weights and extraction windows.
+`T: FheUint` is the unsigned coefficient type for the primitive basis and the limb type for the BigUint basis. `BigUint` comes from [`primus_integer`](../primus_integer/README.md), not a dynamically sized integer library. Construct a basis once and reuse it.
 
 ## Mathematical contract
 
@@ -31,8 +31,6 @@ reconstructed = sum(digit_i * weight_i) mod modulus
 ```
 
 Both `decomposer_iter()` and `scalar_iter()` visit levels from the lowest retained level to the highest. The circular distance between the input and its reconstruction is at most `approximate_error_bound()`: zero when `d == 0`, otherwise `2^(d - 1)`.
-
-Primitive `scalar_iter()` returns `Copied<slice::Iter<T>>`; the BigUint counterpart returns `ChunksExact<T>` of full-width weights. Both retain double-ended, exact-size and fused iteration without allocation.
 
 Initialization selects the internal representative and initial rounding carry. Discarded bits are rounded to nearest, with half-way cases rounded up in that representative. In particular, native inputs recompose to `round_half_up(input / 2^d) * 2^d` modulo `2^T::BITS`. For other moduli, do not replace initialization with rounding the canonical input: the representative adjustment is part of correctness.
 
@@ -52,7 +50,7 @@ Despite its name, `unsigned_decompose*` still represents a **signed** digit. For
 
 Both bases additionally require `log_basis < T::BITS`, a modulus at least `B`, and a retained count that fits the decomposition width. A multi-limb basis can have more levels than one limb has bits. Basis `new` panics on these contextual errors; `try_new` returns `ApproxSignedBasisError`.
 
-`DecompositionConfig { log_basis, level_count }` keeps these choices independent of the modulus. `ApproxSignedBasis::<u32>::try_from((config, None))` prepares a native basis, while `ApproxSignedBasis::try_from((config, Some(q)))` uses an explicit modulus. Validation and errors come from `primitive::ApproxSignedBasis::try_new`; the config itself has no precomputed storage.
+`DecompositionConfig { log_basis, level_count }` keeps these choices independent of the modulus. `ApproxSignedBasis::<u32>::try_from((config, None))` prepares a native basis, while `ApproxSignedBasis::try_from((config, Some(q)))` uses an explicit modulus. The config contains choices, not precomputed storage.
 
 The decomposition width `m` differs between representations:
 
@@ -66,8 +64,6 @@ The decomposition width `m` differs between representations:
 The full level count is `floor(m / log_basis)`. The constructor argument `level_count` is an optional **retained level count**: `Some(L)` requires `1 <= L <= full_level_count`, while `None` uses all full levels. In both cases, `drop_bits = m - L * log_basis`, so even `None` can discard low bits when `m` is not divisible by `log_basis`.
 
 A BigUint modulus must have a nonempty little-endian limb slice with a nonzero most-significant limb. The basis owns a copy. Inputs use exactly that same limb count, including leading zero limbs when the input value is small.
-
-BigUint basis construction checks that the effective modulus width fits `u32` and the packed scalar element count fits `usize`, returning `ModulusBitWidthTooLarge` or `ScalarStorageLengthOverflow` otherwise. These bounds ensure that every retained bit window fits the modulus storage; decomposition reuses the precomputed offsets without repeating the range checks.
 
 ## Primitive workflow
 
@@ -96,33 +92,7 @@ assert_eq!(basis.drop_bits(), 1);
 assert_eq!(reconstructed, [42, 0]); // Circular errors modulo 97: 0 and 1.
 ```
 
-Power-of-two inputs need no adjusted-value buffer. Use `init_carry_slice` and pass the original input to each operator; this is the native Fourier path:
-
-```rust
-use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount, primitive::ApproxSignedBasis};
-
-let basis = ApproxSignedBasis::<u32>::new(
-    None,
-    DecompositionBaseLog::new(8),
-    Some(DecompositionLevelCount::new(3)),
-);
-let values = [0x1234_5678_u32, u32::MAX];
-let mut carries = [false; 2];
-let mut digits = [0_u32; 2];
-let mut reconstructed = [0_u32; 2];
-
-basis.init_carry_slice(&values, &mut carries);
-for (decomposer, weight) in basis.decomposer_iter().zip(basis.scalar_iter()) {
-    decomposer.decompose_slice_to(&values, &mut digits, &mut carries);
-    for (sum, &digit) in reconstructed.iter_mut().zip(&digits) {
-        *sum = sum.wrapping_add(digit.wrapping_mul(weight));
-    }
-}
-
-assert_eq!(reconstructed, [0x1234_5600, 0]);
-```
-
-`init_carry_slice` also accepts explicit power-of-two moduli, but panics for non-power-of-two moduli. Scalar processing uses `init_value_carry` followed by `decompose` or `decompose_to`, forwarding the carry in the same way.
+Power-of-two primitive inputs need no adjusted-value buffer: use `init_carry_slice` and pass the original inputs through every level. It panics for non-power-of-two moduli; use `init_value_carry_slice_to` for those. Scalar processing uses `init_value_carry` followed by `decompose` or `decompose_to` with the same carry protocol. See the [primitive basis API](src/primitive/basis.rs).
 
 ## BigUint workflow and layout
 
@@ -134,44 +104,16 @@ For `N` values and `W = big_uint_value_len()` limbs per value, full-width buffer
 
 Carry buffers contain `N` booleans. Full-width digit outputs contain `N * W` limbs; compact `unsigned_decompose_slice_to` outputs contain only `N` limbs. BigUint initialization is required even when `Q` is a power of two.
 
-```rust
-use primus_decompose::{DecompositionBaseLog, big_integer::BigUintApproxSignedBasis};
-use primus_integer::BigUint;
+Use `init_value_carry_slice_to` and `decomposer_iter()` with the same ascending-level carry protocol. Exact buffer contracts are in the [BigUint basis API](src/big_integer/basis.rs) and [digit-output API](src/big_integer/common.rs).
 
-let modulus = [1_u32, 1]; // Q = 2^32 + 1, little-endian limbs.
-let basis = BigUintApproxSignedBasis::new(BigUint(&modulus[..]), DecompositionBaseLog::new(8), None);
-let values = [42_u32, 0, u32::MAX, 0]; // Two values: 42 and Q - 2.
-let mut adjusted = [0_u32; 4];
-let mut carries = [false; 2];
-let mut digits = [0_u32; 2];
-let mut reconstructed = [0_i64; 2];
-
-basis.init_value_carry_slice_to(&values, &mut adjusted, &mut carries);
-for (decomposer, weight) in basis.decomposer_iter().zip(basis.scalar_iter()) {
-    decomposer.unsigned_decompose_slice_to(&adjusted, &mut digits, &mut carries);
-    // Convert the full-width weight and compact digits for this small example.
-    let weight = i64::from(weight[0]) + (i64::from(weight[1]) << 32);
-    for (sum, &digit) in reconstructed.iter_mut().zip(&digits) {
-        let signed = if digit < 128 {
-            i64::from(digit)
-        } else {
-            i64::from(digit) - 256
-        };
-        *sum += signed * weight;
-    }
-}
-
-assert_eq!(reconstructed, [42, -2]); // -2 represents Q - 2 modulo Q.
-```
-
-This crate does not depend on `primus_rns`. RNS/CRT conversion belongs to [`primus_rns`](../primus_rns/README.md); its residue batches are modulus-major, not the value-major layout above. `CrtGlevParameters` in `primus_glwe_rns` precomputes reconstruction weights modulo each RNS modulus and exposes them through `scalar_residue_iter()`. They are separate from this basis's full-width integer weights.
+RNS/CRT residues use modulus-major storage, not this value-major limb layout. Convert them with [`primus_rns`](../primus_rns/README.md) before integer decomposition.
 
 ## Caller contracts and allocation
 
 - Original inputs must be canonical: `[0, q)` or `[0, Q)`. Every bit pattern is valid for the primitive native modulus. These methods do not reduce inputs.
 - Adjusted inputs are internal bit representations, not necessarily canonical residues. Keep them unchanged throughout decomposition; do not reduce them.
 - Apply every operator in ascending level order, without skipping levels or resetting carry. A zero digit can still produce a carry. Start each new input batch with initialization, not with the previous batch's final carries.
-- Primitive value, output and carry slices must have equal lengths. BigUint buffers must follow the exact shapes above. Shape checks in these repeated paths are debug diagnostics, not release-mode input validation.
+- Primitive value, output and carry slices must have equal lengths. BigUint buffers must follow the exact shapes above. The slice methods do not validate these layouts in release builds.
 - Slice methods overwrite outputs and update carries; they do not accumulate digits. `init_value_carry_slice_assign` also overwrites the original values.
 - Constructors allocate precomputation storage. Slice and caller-output methods do not allocate internally. BigUint `init_value_carry`, `decompose`, and `approximate_error_bound` return newly allocated vectors or big integers; prefer reusable buffers and the `_to`/slice methods in repeated paths.
 
@@ -179,7 +121,7 @@ This crate does not depend on `primus_rns`. RNS/CRT conversion belongs to [`prim
 
 The default feature set is empty. The optional `simd` feature forwards to `primus_integer/simd` and requires nightly Rust. It does not select a separate decomposition backend; the loops can also benefit from compiler auto-vectorization.
 
-Public contracts are documented in the [API sources](src). The [test and benchmark guide](benches/README.md) records coverage, workloads and reproduction commands; workspace validation entry points are in the [testing guide](../../guides/development/testing.md).
+Public contracts are documented in the [API sources](src). See the [benchmark guide](benches/README.md) for workloads and commands, and the workspace [testing guide](../../guides/development/testing.md) for validation entry points.
 
 ## License
 

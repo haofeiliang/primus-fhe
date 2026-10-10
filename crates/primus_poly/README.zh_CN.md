@@ -47,7 +47,7 @@ assert_eq!(lhs.as_slice(), &[84, 13, 21, 4]);
 
 `PolyLength` 表示经过检查的系数数量 `N`：必须是 `MIN_POLY_LENGTH..=MAX_POLY_LENGTH`（目前为 `32..=2^17`）内的二次幂。这是 FHE 布局和变换库共用的支持范围，只在此类型构造时检查一次。使用 `PolyLength::try_new(N)` 或 `PolyLength::new(N)` 构造；`PolyLengthError` 保留被拒绝的长度。
 
-`get()`、`log_n()`、`fourier_poly_len()` 分别返回 `N`、`log2(N)` 和 `N/2` 个复数元素。GLWE/NTRU 布局、NTT/FFT 表和工作区直接传递这个类型，不再重复检查上界。该范围保证 `2N` 可由 `usize` 表示；组合存储长度和变换的数值条件仍在各自边界检查。原始多项式 wrapper 和批量存储不另存环长度，其实际元素数量仍为 `usize`。
+`get()`、`log_n()`、`fourier_poly_len()` 分别返回 `N`、`log2(N)` 和 `N/2` 个复数元素。FHE 布局和变换表使用此类型；长度合法并不保证变换与模数参数兼容。Raw wrapper 不另存环长度，其元素数量仍为 `usize`。
 
 Raw wrapper 使用 `len()` / `is_empty()` 查看完整存储：
 
@@ -58,7 +58,7 @@ Raw wrapper 使用 `len()` / `is_empty()` 查看完整存储：
 | `FourierPolynomial` | 复数值 | `N/2` |
 | `CrtPolynomial`、`DcrtPolynomial` | 全部模数下的 residue | `moduli_count * N` |
 
-这些访问器不验证几何或布局。空、任意长度和 packed 存储仍可表示；具体运算的契约决定其接受哪些布局。Checked table 和 size 的 `poly_length()` 返回环的 `PolyLength`，而 `DcrtTable::rns_poly_len()` 返回一个完整 RNS 多项式的存储元素数。
+这些访问器不验证布局。Raw wrapper 可表示空、任意长度或 packed 存储；具体运算的契约决定其接受哪些布局。
 
 ## 存储与所有权
 
@@ -86,23 +86,23 @@ Raw wrapper 使用 `len()` / `is_empty()` 查看完整存储：
 - 单项式指数位于对应文档规定的 `[0, 2N)` 范围内，需要二次幂 `N` 的方法收到满足条件的长度；
 - NTT 和 Fourier 操作数由相互兼容的变换 context 产生。
 
-重复算术路径中的许多形状检查只是 `debug_assert*!` 诊断。release 调用方必须维持文档契约；iterator 的 `zip` 和 `chunks_exact` 不能替代边界验证。
+Raw wrapper 不验证这些条件，调用方必须维持所选运算的契约。
 
-`Polynomial::add_mul_monomial_pair_assign` 在一次输出遍历中累加两个旋转输入，不分配临时空间。自由函数 `add_mul_monomial_pair_assign` 还可处理包含完整多项式的连续批量存储，每批只计算一次旋转偏移，64 位整数的每个分段符号分派位于多项式循环外。两个贡献按顺序分别约简；两种接口都要求多项式长度为相同的 2 次幂、输入与累加器为规范余数，指数在 `[0, 2N)` 内。
+`add_mul_monomial_pair_assign` 累加 `first * X^r + second * X^s`，其自由函数版本接受完整多项式组成的平坦批次。源系数和累加器须为规范 residue，多项式须等长且长度为二次幂，指数位于 `[0, 2N)`。
 
-在 Barrett 域重复累加时，`lazy_add_mul_monomial_pair_assign` 每对只修正一次，将累加器保持在 `[0, 2q)`；`lazy_add_mul_monomial_assign` 在相同范围内处理单项。两个自由函数都接收完整多项式组成的连续批次，要求源系数为规范余数。`BarrettModulus` 保证的两个高位余量使中间值保持在 `4q` 以下。将累加器交给普通 NTT 等要求规范输入的操作前，须用 `ReduceOnceSlice::reduce_once_slice_assign` 统一归一化。
+Barrett 域的 `lazy_add_mul_monomial_pair_assign` 和 `lazy_add_mul_monomial_assign` 则允许累加器位于 `[0, 2q)`，并保持此范围；源系数仍须规范化。将结果传给普通 NTT 等要求规范输入的运算前，用 `ReduceOnceSlice::reduce_once_slice_assign` 归一化。精确批量与范围契约见[单项式 API](src/monomial.rs)和 [lazy API](src/monomial/lazy.rs)。
 
-`CoeffAutomorphismPermutation` 缓存模 `X^N + 1` 的系数代换 `X -> X^d`。为 2 次幂 `N >= 32` 和 `[1, 2N)` 内的奇数 `d` 构造后，使用 `apply_to` 处理规范 residue。`apply_signed_to` 用于所需取负均可表示的小有符号系数。置换本身不执行密码学 key switching；对应的 NTT 置换位于 `primus_ntt`。Identity 直接复制，`d=N+1` 仅对奇数位置取负；这两种情况不分配置换表。一般 degree 用一个 `u32` 同时存储源索引和符号，单模与 RNS 消费者共用此实现。
+`CoeffAutomorphismPermutation::new(d, poly_length)` 为 `[1, 2N)` 内的奇数 `d` 准备模 `X^N + 1` 的代换 `X -> X^d`。复用 `apply_to` 处理规范 residue，或用 `apply_signed_to` 处理所需取负均可表示的 signed 系数；两个缓冲区均须恰好包含 `N` 个系数。此置换不执行密码学 key switching，对应 NTT 置换位于 `primus_ntt`。完整契约见[自同构 API](src/automorphism.rs)。
 
 ## 随机采样
 
 直接在 NTT 和 DCRT 表示中进行的采样仅支持 uniform 分布。若要采样非 uniform 的系数分布，应先构造系数域的 `Polynomial` 或 `CrtPolynomial`，再执行变换。CRT uniform-binary、sparse-ternary 和 Gaussian 采样会生成一个逻辑系数，并在每个分量模数下编码同一个值；其中 sparse ternary 分布满足 `P(0) = 1/2`、`P(1) = P(-1) = 1/4`。随机 API 要求 RNG 同时实现 `rand::Rng` 和 `rand::CryptoRng`。
 
-`Polynomial::random_gaussian` 直接将样本收集到所选的 `FromIterator` 存储。`random_gaussian_assign` 通过 `DiscreteGaussian::sample_to` 覆盖已有存储，每批只选择一次 CDT/Ziggurat 后端。`add_random_gaussian_assign` 保留原系数，并在给定模数下为每个系数累加一个样本；采样器必须使用同一模数编码 residue。两个原地方法均不分配临时空间。三个入口都按系数顺序取样，RNG 消耗与逐项标量采样一致；空多项式不消耗随机数。
+`Polynomial::random_gaussian` 创建采样存储；`random_gaussian_assign` 覆盖已有系数，`add_random_gaussian_assign` 则按给定模数累加噪声。采样器须使用同一模数编码 residue。原地方法不分配 scratch，样本按系数顺序消费，空 Gaussian 多项式不消耗随机数。完整契约见[采样 API](src/poly/random.rs)。
 
 ## 单项式算术基准
 
-[monomial.rs](benches/monomial.rs) 对比 `acc += first * X^r + second * X^s` 在模 `X^N + 1` 下的两次单项累加与一次配对累加。所有配置统一使用 `N=1024/2048`、每批 `1/8` 个多项式和相同指数。u32/u64 Barrett 组共用 `q=132120577`，native 组按各自字宽 wrapping。输入使用固定 seed，缓冲区复用，分配和初始化不计时。不同字宽的系数数量相同，但字节数不同。这些结果衡量算术操作，不代表 PBS/CBS 耗时。
+[monomial.rs](benches/monomial.rs) 对比模 `X^N + 1` 下 `acc += first * X^r + second * X^s` 的两次单项累加与一次配对累加。参数以基准源码为准；这些测量不代表 PBS/CBS 耗时。
 
 ```text
 cargo bench -p primus_poly --bench monomial
@@ -111,10 +111,6 @@ cargo bench -p primus_poly --bench monomial
 ## SIMD feature
 
 可选的 `simd` feature 启用 portable-SIMD DCRT butterfly 路径以及算术依赖中相应的 SIMD 支持。该 feature 默认关闭，并且需要 nightly Rust 工具链。
-
-```text
-cargo +nightly test -p primus_poly --features simd
-```
 
 ## 许可证
 

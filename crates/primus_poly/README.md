@@ -48,7 +48,7 @@ assert_eq!(lhs.as_slice(), &[84, 13, 21, 4]);
 
 `PolyLength` is a checked coefficient count `N`: a power of two in `MIN_POLY_LENGTH..=MAX_POLY_LENGTH` (currently `32..=2^17`). FHE layouts and transform libraries share this supported range, checked once by the type's constructor. Use `PolyLength::try_new(N)` or `PolyLength::new(N)`; `PolyLengthError` retains the rejected length.
 
-`get()`, `log_n()` and `fourier_poly_len()` return `N`, `log2(N)` and `N/2` complex elements. GLWE/NTRU layouts, NTT/FFT tables and workspaces pass this type directly without repeating the upper-bound check. The range guarantees that `2N` fits in `usize`; combined storage lengths and transform numerical conditions remain checked at their owning boundaries. Raw polynomial wrappers and batch storage do not carry a separate ring length; their actual element counts remain `usize`.
+`get()`, `log_n()` and `fourier_poly_len()` return `N`, `log2(N)` and `N/2` complex elements. Use this type with FHE layouts and transform tables; the length alone does not guarantee compatible transform or modulus parameters. Raw wrappers store no separate ring length, so their element counts remain `usize`.
 
 The raw wrappers use `len()` / `is_empty()` to inspect their complete storage:
 
@@ -59,7 +59,7 @@ The raw wrappers use `len()` / `is_empty()` to inspect their complete storage:
 | `FourierPolynomial` | Complex values | `N/2` |
 | `CrtPolynomial`, `DcrtPolynomial` | Residues across all moduli | `moduli_count * N` |
 
-These accessors do not validate geometry or layout. Empty, arbitrary-length and packed storage remain representable; an operation's contract determines which layouts it accepts. Checked table and size `poly_length()` accessors return the ring's `PolyLength`, while `DcrtTable::rns_poly_len()` returns the complete RNS polynomial's storage count.
+These accessors do not validate layout. Raw wrappers can represent empty, arbitrary-length or packed storage; an operation's contract determines which it accepts.
 
 ## Storage and ownership
 
@@ -87,23 +87,23 @@ The wrappers deliberately do not store polynomial length, modulus values, transf
 - monomial exponents belong to the documented `[0, 2N)` range, and methods requiring a power-of-two `N` receive one;
 - NTT and Fourier operands were produced for compatible transform contexts.
 
-Many shape checks in repeated arithmetic paths are `debug_assert*!` diagnostics. Release callers must uphold the documented contracts; iterator `zip` and `chunks_exact` operations are not substitutes for boundary validation.
+Raw wrappers do not validate these conditions; callers must uphold the selected operation's contract.
 
-`Polynomial::add_mul_monomial_pair_assign` accumulates two rotated inputs in one output traversal without allocation. `add_mul_monomial_pair_assign` also accepts a flat batch of complete polynomials, computing rotation offsets once and dispatching each interval outside the polynomial loop for 64-bit words. Each contribution is reduced in order; both APIs require equally sized power-of-two polynomials, canonical residues, and exponents in `[0, 2N)`.
+`add_mul_monomial_pair_assign` accumulates `first * X^r + second * X^s`; its free-function form accepts a flat batch of complete polynomials. Sources and accumulator must be canonical, with equally sized power-of-two polynomials and exponents in `[0, 2N)`.
 
-For repeated Barrett-domain accumulation, `lazy_add_mul_monomial_pair_assign` keeps the accumulator in `[0, 2q)` with one correction per pair; `lazy_add_mul_monomial_assign` handles a single term in the same range. Both free functions accept flat batches of complete polynomials and require canonical sources. The two spare bits guaranteed by `BarrettModulus` bound intermediates below `4q`. Normalize once with `ReduceOnceSlice::reduce_once_slice_assign` before passing the accumulator to an operation that requires canonical input, including ordinary NTT.
+The Barrett-domain `lazy_add_mul_monomial_pair_assign` and `lazy_add_mul_monomial_assign` instead accept an accumulator in `[0, 2q)` and retain that range; sources remain canonical. Normalize with `ReduceOnceSlice::reduce_once_slice_assign` before passing the result to ordinary NTT or another operation requiring canonical input. Exact batch and range contracts are in the [monomial APIs](src/monomial.rs) and [lazy APIs](src/monomial/lazy.rs).
 
-`CoeffAutomorphismPermutation` caches the coefficient substitution `X -> X^d` modulo `X^N + 1`. Construct it for a power-of-two `N >= 32` and odd `d` in `[1, 2N)`, then reuse `apply_to` on canonical residues. `apply_signed_to` is for small signed coefficients whose required negations are representable. The map does not perform cryptographic key switching. Its NTT counterpart lives in `primus_ntt`. Identity copies the coefficients; `d=N+1` negates only odd positions. These two cases allocate no index table. General degrees store a packed source index and sign in one `u32` per coefficient, shared by single-modulus and RNS consumers.
+`CoeffAutomorphismPermutation::new(d, poly_length)` prepares `X -> X^d` modulo `X^N + 1` for odd `d` in `[1, 2N)`. Reuse `apply_to` on canonical residues or `apply_signed_to` on signed coefficients whose required negations are representable. Both buffers contain exactly `N` coefficients. This permutation does not perform cryptographic key switching; the NTT counterpart lives in `primus_ntt`. See the [automorphism API](src/automorphism.rs).
 
 ## Random sampling
 
 Direct NTT and DCRT sampling is uniform. To sample a non-uniform coefficient distribution, construct a coefficient-domain `Polynomial` or `CrtPolynomial` and then transform it. CRT uniform-binary, sparse-ternary, and Gaussian sampling draw one logical coefficient and encode that same value under every component modulus. The sparse ternary distribution has `P(0) = 1/2` and `P(1) = P(-1) = 1/4`. Random APIs require an RNG implementing both `rand::Rng` and `rand::CryptoRng`.
 
-`Polynomial::random_gaussian` collects samples directly into the chosen `FromIterator` storage. `random_gaussian_assign` overwrites existing storage through `DiscreteGaussian::sample_to`, selecting the CDT/Ziggurat backend once per batch. `add_random_gaussian_assign` preserves the existing coefficients and adds one sample per coefficient under the supplied modulus; the sampler must encode residues for that same modulus. Both in-place methods allocate no scratch. All three consume samples in coefficient order, with the same RNG consumption as scalar sampling; an empty polynomial consumes none.
+`Polynomial::random_gaussian` creates sampled storage; `random_gaussian_assign` overwrites existing coefficients, while `add_random_gaussian_assign` adds noise under the supplied modulus. The sampler must encode residues for that same modulus. The in-place methods allocate no scratch. Samples are consumed in coefficient order, and empty Gaussian polynomials consume no randomness. See the [sampling API](src/poly/random.rs).
 
 ## Monomial arithmetic benchmark
 
-[monomial.rs](benches/monomial.rs) compares two single-term accumulations with one paired accumulation for `acc += first * X^r + second * X^s` modulo `X^N + 1`. All cases use `N=1024/2048`, batches of `1/8` polynomials and the same exponents. The u32/u64 Barrett cases share `q=132120577`; native cases wrap at their respective word widths. Inputs are seeded, buffers are reused, and timing excludes allocation and initialization. Equal coefficient counts do not imply equal byte counts across word widths. These are arithmetic measurements, not PBS/CBS timings.
+[monomial.rs](benches/monomial.rs) compares two single-term accumulations with one paired accumulation for `acc += first * X^r + second * X^s` modulo `X^N + 1`. Parameters are in the bench source. These are arithmetic measurements, not PBS/CBS timings.
 
 ```text
 cargo bench -p primus_poly --bench monomial
@@ -112,10 +112,6 @@ cargo bench -p primus_poly --bench monomial
 ## SIMD feature
 
 The optional `simd` feature enables the portable-SIMD DCRT butterfly path and the matching SIMD support in arithmetic dependencies. It is disabled by default and requires a nightly Rust toolchain.
-
-```text
-cargo +nightly test -p primus_poly --features simd
-```
 
 ## License
 

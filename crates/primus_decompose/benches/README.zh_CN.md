@@ -1,20 +1,24 @@
-# primus_decompose 验证与基准
+# primus_decompose 基准
 
 [English](README.md) | 简体中文
 
 > [!WARNING]
-> [Primus FHE](../../../README.zh_CN.md) 是实验性项目；其 API 和数值契约尚不稳定，可能随时发生不兼容修改。
+> [Primus FHE](../../../README.zh_CN.md) 是实验性项目；其 API 和数值契约可能发生不兼容修改。
 
-## 测量范围
+## 工作负载与命令
+
+[`decompose`](decompose.rs) target 将 basis 构造与在线分解分开测量：
+
+| 分组 | 每次迭代测量的工作 |
+| --- | --- |
+| `decompose/primitive/setup`、`decompose/big/setup` | 构造并释放一份 basis |
+| `decompose/primitive/online`、`decompose/big/online` | 初始化一个值或一批输入，并提取所有保留层 |
+| `decompose/pbs/` | 按 GLWE/NTRU 外积配置分解一个多项式：`init` 测初始化，`levels` 提取所有保留层，`full` 测两者合计 |
 
 ```text
-cargo test -p primus_decompose
 cargo bench -p primus_decompose --bench decompose
-cargo +nightly test -p primus_decompose --features simd
+cargo bench -p primus_decompose --bench decompose -- --test
+cargo +nightly bench -p primus_decompose --bench decompose --features simd
 ```
 
-基准分别测量 basis 构造和在线分解。通用 primitive 与 BigUint 批量案例每次处理 4096 个系数，包含初始化与所有保留层。Primitive 覆盖 scalar 以及零复制/adjusted 批量路径；BigUint 覆盖紧凑输出的固定步长与通用 fallback，并保留一组相同参数的全宽输出对照。
-
-`decompose/pbs/` 组保留代表性的 external-product 分解配置，覆盖 GLWE/NTRU × NTT/Fourier、u32/u64、N=1024/2048。`init` 测初始化，`levels` 在计时外克隆初始 carry 后测所有保留层，`full` 测两者合计。每次迭代分解一个多项式，不是整个 external product 或 PBS。固定输入在计时前与标量初始化、每层标量 digit/carry 核对。分阶段耗时用于诊断，其和不等同于实测 `full`。
-
-Criterion 使用 20 个样本、预热 1 秒、测量 5 秒。SIMD 基准命令放在 bench 源文件中。Workspace 已通过 [`.cargo/config.toml`](../../../.cargo/config.toml) 设置 `target-cpu=native`。
+参数与缓冲区准备以基准源码为准。在线案例复用存储，`levels` 在计时外恢复初始 carry。这些测量只覆盖分解，不代表完整外积或 PBS；分阶段耗时相加不能代替实测 `full`。

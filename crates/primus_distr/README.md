@@ -22,13 +22,7 @@ The scalar sampler types above implement `rand::distr::Distribution`. Batch help
 
 ## Secret-key distribution parameters
 
-`SecretKeySampler::try_new` returns `SecretKeySamplerError` for invalid probabilities or Gaussian preparation. Gaussian constructors share `GaussianError`; a secret sampler preserves it as `SecretKeySamplerError::Gaussian`. `validate_length(length)` checks fixed weights, and `validate_modulus(modulus_minus_one)` checks whether the output modulus can encode the support. These checks do not sample. `new` retains the panicking convenience form; LWE/GLWE/NTRU parameter constructors perform both checks before key generation.
-
-`SecretKeyDistr` describes binary, ternary, fixed-weight, and Gaussian secret coefficient distributions; it is a parameter enum, not a sampler. Its constructors check probabilities and weights for the complete logical key. Gaussian parameters are checked by the selected Gaussian sampler constructor. Each cryptosystem determines which variants it supports.
-
-Use `SecretKeyDistr::binary(one_probability)` or `SecretKeyDistr::ternary(negative_one_probability, one_probability)` for custom probabilities; construction checks that each is finite and in `[0, 1]` and that ternary probabilities sum to at most one. `SecretKeyDistr::gaussian(standard_deviation)` constructs `Gaussian { standard_deviation }`, with validation deferred to the Gaussian sampler. Parameterless variants are used directly. Whole-key sampler construction also checks probabilities when variants are constructed directly.
-
-Fixed-weight constructors distinguish total weight from a fixed composition:
+`SecretKeyDistr` describes a complete binary, ternary, fixed-weight or Gaussian key; it is not a scalar sampler. Use `binary(one_probability)` or `ternary(negative_one_probability, one_probability)` for custom probabilities. Each probability must be finite and in `[0, 1]`, and the ternary sum must not exceed one. Cryptosystems choose which variants they support.
 
 | Constructor | Distribution |
 | --- | --- |
@@ -36,15 +30,13 @@ Fixed-weight constructors distinguish total weight from a fixed composition:
 | `fixed_hamming_weight_ternary(length, weight)` | Exactly `weight` nonzero positions with independent uniform signs |
 | `fixed_composition_ternary(length, negative_weight, positive_weight)` | Exact separate counts of negative and positive ones |
 
-These constructors reject excessive weights and sum overflow immediately. The length is not retained, and raw enum construction remains possible, so sampling boundaries still validate the actual output length.
+Weights apply to the complete logical key. Constructors reject excessive weights and sum overflow, but do not retain the length; sampling checks the actual output length before writing or drawing randomness.
 
-`SecretKeySampler<T>::new(distribution)` prepares one set of Gaussian tables and binary/ternary probability thresholds for both output representations. `T` is the unsigned type; signed output uses `T::SignedInteger`. Use `sample_signed(length, rng)` / `sample_signed_to(output, rng)` for signed keys, or `sample_encoded(length, modulus_minus_one, rng)` / `sample_encoded_to(output, modulus_minus_one, rng)` for canonical residues. The `_to` methods overwrite caller storage without allocating. Fixed weights apply to the complete output; invalid lengths are rejected before writing or sampling. Whole-key samplers do not implement scalar `Distribution` because fixed weights correlate coefficients.
+Prepare `SecretKeySampler<T>` with `try_new(distribution)` (fallible) or `new(distribution)` (panicking). Use `sample_signed` / `sample_signed_to` for `T::SignedInteger` output, or `sample_encoded` / `sample_encoded_to` for canonical residues. The `_to` methods overwrite caller storage without allocating.
 
-`maximum_magnitude()` returns an inclusive unsigned sample bound. Gaussian support must fit the signed companion type at construction; binary and ternary sampling conservatively return one. Encoded sampling requires `modulus_minus_one >= maximum_magnitude()`, with `T::MAX` denoting the native modulus. This is a caller contract, checked once by LWE, GLWE, RNS GLWE and NTRU parameter constructors, rather than on every batch. Parameters retain the sampler for reuse.
+`maximum_magnitude()` gives an inclusive sample bound; Gaussian support must fit the signed companion type, while binary and ternary return one. Before encoded sampling, require `modulus_minus_one >= maximum_magnitude()`; `T::MAX` denotes the native modulus. `validate_modulus` checks this condition without sampling. The sampler does not store a modulus. Full contracts and errors are in the [sampler API](src/secret_key_sampler.rs).
 
-The underlying `SignedDiscreteGaussian::maximum_magnitude()` also respects custom backend tail cuts. Neither the shared secret-key sampler nor the signed Gaussian sampler stores a ciphertext modulus.
-
-Custom-probability and fixed-weight binary/ternary vector helpers also have `_to` variants. Encoded samplers emit residues directly; they do not first allocate a signed vector. Sampling algorithms may change RNG consumption and seeded output across versions; empty sampling is not generally guaranteed to consume no randomness. Custom ternary sampling rounds each probability down to a multiple of `2^-64`, caps the total nonzero mass at one for floating-point boundary rounding.
+Custom ternary probabilities are rounded down to multiples of `2^-64`, with total nonzero mass capped at one for floating-point boundary rounding. RNG consumption and seeded outputs may change across versions; empty whole-key sampling is not guaranteed to consume no randomness.
 
 ## Example
 
@@ -79,11 +71,9 @@ The facades select the portable CDT backend when the truncated support fits its 
 
 ## Batch sampling
 
-`DiscreteGaussian` and `SignedDiscreteGaussian` provide `sample_vec(length, rng)` and `sample_to(output, rng)`. Both select the backend once per batch. The former initializes a new vector directly from samples; the latter overwrites caller storage without allocating. Both preserve the output and RNG consumption of repeated scalar `Distribution::sample` calls, including no RNG consumption for empty batches. The existing `sample_gaussian_values*` helpers delegate to these methods. Scalar `sample(rng)` remains available through `Distribution`.
+`DiscreteGaussian` and `SignedDiscreteGaussian` provide allocating `sample_vec(length, rng)` and non-allocating `sample_to(output, rng)`. Their outputs and RNG consumption match repeated scalar `Distribution::sample` calls; empty Gaussian batches consume no randomness. Vector helpers likewise offer allocating and `_to` forms for binary, ternary, fixed-weight, uniform and Gaussian distributions.
 
-The crate provides allocating functions and matching `_to` functions that fill caller-owned slices. Besides uniform binary and sparse or uniform ternary sampling, helpers support explicit probabilities, fixed Hamming weights, uniform integer distributions, and discrete Gaussian batches.
-
-CRT batches use modulus-major layout. For polynomial length `N` and component moduli `q_0, ..., q_(k-1)`, a slice of length `k * N` is arranged as:
+CRT batches use **modulus-major** layout: for `N` coefficients and `k` moduli, the output contains `k * N` elements:
 
 ```text
 [a_0 mod q_0, ..., a_(N-1) mod q_0,
@@ -91,17 +81,11 @@ CRT batches use modulus-major layout. For polynomial length `N` and component mo
  ...]
 ```
 
-`sample_crt_uniform_binary_values*`, `sample_crt_sparse_ternary_values*`, and `sample_crt_gaussian_values*` draw one logical coefficient and encode that same coefficient in every component. `sample_crt_uniform_values*` instead uses one independent `rand::distr::Uniform` distribution per component. Use `sample_crt_uniform_values_to(output, poly_length, distributions, rng)` to fill contiguous modulus-major storage.
+`sample_crt_uniform_binary_values*`, `sample_crt_sparse_ternary_values*` and `sample_crt_gaussian_values*` encode the same logical coefficient in every component. `sample_crt_uniform_values*` instead samples independently under each component's uniform distribution.
 
-Callers must provide a nonzero polynomial length for nonempty CRT batches and an output whose length exactly matches the polynomial length times the component count. Repeated low-level paths use debug-only shape diagnostics; release callers must establish the layout at the owning parameter or scheme boundary.
+Provide complete blocks with the exact component count and a nonzero length for nonempty batches. CRT uniform-binary sampling specifically requires at least one nonempty block; incomplete blocks are not filled. Other helpers' empty-input and length conditions are documented in the [CRT sampling API](src/common/crt.rs).
 
-The CRT uniform-binary helpers specifically require at least one nonempty block,
-so empty output is unsupported. The `_to` variant panics when `length == 0` or
-the output is shorter than one block; it leaves any incomplete trailing block
-untouched. Its allocating counterpart requires nonzero length/component count
-and a product representable in `usize`.
-
-The CRT Gaussian helpers accept a signed distribution and raw modulus values. They do not validate that every modulus can encode the distribution's complete truncated support. For a sampler constructed with standard deviation `sigma` and tail cut `tau`, each modulus must exceed `max(1, floor(sigma * tau))`; the facade uses `tau = 12`.
+CRT Gaussian helpers do not check whether each modulus can encode the complete truncated support. For standard deviation `sigma` and tail cut `tau`, each modulus must exceed `max(1, floor(sigma * tau))`; the facade uses `tau = 12`.
 
 ## Statistical diagnostics
 
@@ -115,10 +99,6 @@ These functions are intended for tests and validation tools rather than sampling
 ## High-precision feature
 
 The optional `high_precision` feature exposes `PreciseCDTSampler` and `SignedPreciseCDTSampler`, which use 256-bit CDT thresholds and support larger tables than the portable CDT backend. The facade types do not select these backends automatically.
-
-```text
-cargo test -p primus_distr --features high_precision
-```
 
 ## Testing and benchmarks
 
