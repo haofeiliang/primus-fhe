@@ -5,14 +5,14 @@ use primus_integer::UnsignedInteger;
 use primus_modulus::NativeModulus;
 use primus_ntru::{FourierNlevCiphertext, NlevParameters};
 use primus_reduce::RingContext;
-use primus_tfhe_ntru::ClientKey;
+use primus_tfhe_ntru::{ClientKey, KeyGenerationError};
 use primus_tfhe_ntru_fourier::{CircuitBootstrapServerKey, KeyGenerator, TfheContext};
 
 use crate::{
     ChunkFormat, FourierLookupTableEvaluator, FourierPublicLift, HighPrecLutClientError,
-    HighPrecLutConfig, HighPrecLutDecryptor, HighPrecLutEncryptor, HighPrecLutKeyGenerationError,
-    HighPrecLutParameterError, HighPrecLutParameters, HighPrecisionLookupTable, LookupTableConfig,
-    LookupTableError, config::LookupDomain,
+    HighPrecLutConfig, HighPrecLutDecryptor, HighPrecLutEncryptor, HighPrecLutParameterError,
+    HighPrecLutParameters, HighPrecisionLookupTable, LookupTableConfig, LookupTableError,
+    config::LookupDomain,
 };
 
 /// High-precision operation with one backend CBS owner and one transform table.
@@ -124,7 +124,7 @@ where
         self.lookup.decryptor(self.context.parameters(), key)
     }
 
-    /// Generates one BR/CBS/return bundle and the public lift required when c=d.
+    /// Generates one BR/CBS/return bundle from the configured geometry, without a LUT.
     /// Classic borrows its initializer. Sparse generates independent `NLEV[1]` with
     /// BR's basis/noise only when c=d; otherwise no separate lift is stored.
     /// All ring material reuses the accepted secret transform and inverse.
@@ -136,15 +136,13 @@ where
     /// changing function values does not change the required material.
     pub fn try_generate_keys<R: rand::Rng + rand::CryptoRng>(
         &self,
-        table: &HighPrecisionLookupTable<T>,
         rng: &mut R,
-    ) -> Result<(ClientKey<T>, FourierHighPrecLutServerKey<T>), HighPrecLutKeyGenerationError> {
-        self.lookup.check_table(table)?;
+    ) -> Result<(ClientKey<T>, FourierHighPrecLutServerKey<T>), KeyGenerationError> {
         let domain = self.context.parameters();
         let needs_lift = matches!(
             domain.algorithm(),
             primus_tfhe::BlindRotationMethod::Sparse { .. }
-        ) && table.needs_public_lift();
+        ) && self.lookup.layout.table_chunk_count() == 0;
         let lift_parameters = needs_lift.then(|| domain.blind_rotation());
         let (client, circuit, lift) = KeyGenerator::new(&self.context)
             .try_generate_circuit_bootstrap_keys_with_public_lift(lift_parameters, rng)?;

@@ -94,10 +94,7 @@ pub use chunk::{ChunkFormat, ChunkFormatError};
 #[cfg(any(feature = "ntt", feature = "fourier"))]
 pub use client::{HighPrecLutClientError, HighPrecLutDecryptor, HighPrecLutEncryptor};
 #[cfg(any(feature = "ntt", feature = "fourier"))]
-pub use config::{
-    HighPrecLutConfig, HighPrecLutKeyGenerationError, HighPrecLutParameterError,
-    HighPrecLutParameters,
-};
+pub use config::{HighPrecLutConfig, HighPrecLutParameterError, HighPrecLutParameters};
 #[cfg(feature = "fourier")]
 pub use fourier::{
     FourierHighPrecLutContext, FourierHighPrecLutServerKey, FourierLookupTableEvaluator,

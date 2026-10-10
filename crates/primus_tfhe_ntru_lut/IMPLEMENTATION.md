@@ -47,6 +47,16 @@ once, and its own basis is used. With h>0, the first public selection lifts via
 one-hot NLEV, so no separate LUT lift is retained. This rule is independent of
 the function and does not alter blind rotation's own initialization.
 
+The complete context's `try_generate_keys(rng)` uses that geometry directly;
+no compiled function is passed to key generation. It returns the family
+`KeyGenerationError`. Table layout/encoding compatibility is checked when
+binding an evaluator. An explicitly imported lift takes precedence over the
+classic initializer for h=0, even if its metadata is invalid; invalid material
+is rejected, not silently replaced. With h>0 surplus lift material is ignored,
+including its metadata. These checks establish N/Q/storage compatibility,
+not actual secret, encoded-one, basis or transform identity. The caller retains
+those numerical contracts for independently assembled keys.
+
 ## Stage and buffer layout
 
 ```text

@@ -232,23 +232,6 @@ impl<T: FheUint, M: RingContext<T>, LM: RingContext<T>> LookupDomain<T, M, LM> {
         )
     }
 
-    /// Checks the complete public domain before key sampling. Evaluator binding
-    /// uses check_table_layout because its lower boundary already checks N/q/Q.
-    pub(crate) fn check_table(
-        &self,
-        table: &HighPrecisionLookupTable<T>,
-    ) -> Result<(), LookupTableError> {
-        self.check_table_layout(table)?;
-        if !table.is_compatible(
-            primus_poly::PolyLength::new(self.layout.polynomial_length),
-            self.codecs.lut_output_codec().ciphertext_modulus(),
-            self.codecs.input_codec().ciphertext_modulus(),
-        ) {
-            return Err(LookupTableError::IncompatibleParameters);
-        }
-        Ok(())
-    }
-
     /// Checks the operation's additional chunk contract before raw evaluator binding.
     pub(crate) fn check_table_layout(
         &self,
@@ -261,15 +244,4 @@ impl<T: FheUint, M: RingContext<T>, LM: RingContext<T>> LookupDomain<T, M, LM> {
         }
         Ok(())
     }
-}
-
-/// Failure to pair a public lookup plan or generate its required server material.
-#[derive(Debug, thiserror::Error)]
-pub enum HighPrecLutKeyGenerationError {
-    /// The public table has another chunk layout or encoding domain.
-    #[error(transparent)]
-    Lookup(#[from] LookupTableError),
-    /// Secret sampling, sparse matching or evaluation-key generation failed.
-    #[error(transparent)]
-    KeyGeneration(#[from] primus_tfhe_ntru::KeyGenerationError),
 }

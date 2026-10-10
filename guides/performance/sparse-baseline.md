@@ -450,8 +450,10 @@ The u64 polynomial classic maxima were 1160/1190/1190 for NTT/RustFFT/TFHE-FFT.
 These are complete returned-LWE residuals, including CBS, products, rotations,
 modulus switch and KS; they do not isolate FFT error or certify a failure rate.
 NTT exact arithmetic and Fourier rounding retain their separate contracts.
-Small-parameter tests additionally cover all pruning/lift layouts, independent
-lift bases, binding errors and alternating inputs without allocation. No large
+Small-parameter tests at the measured revision additionally covered its
+pruning/lift layouts, independent lift bases, binding errors and alternating
+inputs without allocation. The current LUT executes a fixed complete tree;
+these historical pruning cases are not evidence for that implementation. No large
 parameter or statistical tests were added to ordinary CI.
 
 Reproduce the selected baseline after building, with no concurrent test/build:

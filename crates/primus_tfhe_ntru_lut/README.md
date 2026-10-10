@@ -38,7 +38,7 @@ let table = context.compile_fn(fee)?; // Public, offline; no secrets.
 
 // Client: only paired setup needs both secrets; online clients borrow external s.
 let mut rng = StdRng::seed_from_u64(42);
-let (client, server) = context.try_generate_keys(&table, &mut rng)?;
+let (client, server) = context.try_generate_keys(&mut rng)?;
 let encryptor = context.encryptor(&client)?;
 let decryptor = context.decryptor(&client)?;
 let mut input = encryptor.allocate_input();
@@ -100,7 +100,7 @@ For h=c-d>0, each output performs `P+P/M-1` selection external products, then d 
 
 ## Evaluation and workspace
 
-`context.try_generate_keys(&table, rng)` generates one BR/CBS/return bundle and a separate public lift only when c=d. Classic borrows its existing initializer. Sparse generates independent `NLEV[1]` with BR's configured basis/noise only when `table.needs_public_lift()` is true (c=d). Its accepted ring transform/inverse are shared across BR, CBS and lift generation; there is no second BR or table. Ordinary sparse PBS/CBS/one-hot remains unaffected.
+`context.try_generate_keys(rng)` generates one BR/CBS/return bundle from the configured chunk geometry, without receiving a compiled function. Classic borrows its existing initializer. Sparse generates independent `NLEV[1]` with BR's configured basis/noise only when c=d. Its accepted ring transform/inverse are shared across BR, CBS and lift generation; there is no second BR or table. Ordinary sparse PBS/CBS/one-hot remains unaffected.
 
 Both paired lookup configs already use an h32 fixed-weight binary secret, so sparse lookup changes only the algorithm. Keep the same fee function and client/evaluator workflow; key generation supplies a separate public lift only for c=d. The recommended configurations keep classic BR; a fixed-weight secret does not select the sparse algorithm.
 

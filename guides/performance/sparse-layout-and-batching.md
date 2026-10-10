@@ -484,7 +484,7 @@ changed by this experiment.
 | Interleaved ManyLUT and factorized MVB | One input BR supplies several outputs | Output count is not the number of independent BR requests. |
 | NTRU one-hot CBS | One input BR supplies several selectors | Selector count is not an input batch size. |
 | NTRU LWE return batches | Extraction/conversion and key switching after BR | Existing return batching does not supply a BR batch scheduler. |
-| High-precision LUT selector preparation | Different input chunks each require one-hot BR | A real potential internal consumer, subject to pruning and buffer/latency choices. |
+| High-precision LUT selector preparation | Different input chunks each require one-hot BR | A real internal consumer; the current fixed tree prepares all c chunks using bounded pairs for sparse BR. |
 
 The measured revision counted surviving one-hot chunks from its compiled plan,
 retained pruning and selector omission, and kept at most two independent BR
@@ -680,8 +680,10 @@ register loads. Logical key reads and operation counts are not halved. The
 measurements are consistent with better source-key locality, but no cache/TLB,
 DRAM or instruction counters were available to isolate the hardware cause.
 
-The bounded workspace is created only when at least two surviving chunks need
-BR. Scoped `OneHotProjection` callbacks consume the first then second result,
+The bounded workspace was created only when at least two surviving chunks needed
+BR in the measured revision. The current fixed tree prepares every chunk, so it
+allocates this workspace exactly when sparse BR is selected and c>=2. Scoped
+`OneHotProjection` callbacks consume the first then second result,
 reusing the existing nonzero-selector and coefficient-conversion batches. The
 callback cannot replace BR state; its input/output and unwind contracts are in
 rustdoc. Classic and unpaired tails retain single-input execution. No threads,
@@ -820,7 +822,8 @@ have the same requested-workspace counts in this fixture.
 
 Polynomial and dense workloads have identical workspace sizes. The following
 values are **serial → pair**, bytes; shared-middle-chunk values are smaller
-because pruning and output sharing are still active.
+because pruning and output sharing were active in that measured revision; these
+shared-case reductions do not apply to the current fixed tree.
 
 | Backend / word | Polynomial/dense retained | Polynomial/dense peak | Shared retained | Shared peak |
 | --- | ---: | ---: | ---: | ---: |
@@ -839,18 +842,18 @@ not key-generation peak. The reported memory includes the additional BR state.
 All **238 setup captures across 30 request IDs**, including the initial NTT
 prototype and inlining checks, agree within each ID: logical source-key
 fingerprint/bytes, full public bucket maps and complete input/output LWE arrays.
-Decrypted outputs and phase errors match. Existing small-ring tests now compare
-both aggregation inputs against an independent u128 scatter sum, and compare
+Decrypted outputs and phase errors match. The then-existing small-ring tests compared
+both aggregation inputs against an independent u128 scatter sum, and compared
 paired NLEV/NGSW with each input's serial result (including both FFT engines).
-They cover group/pair tails, empty buckets, zero exponents, guard endpoints,
+They covered group/pair tails, empty buckets, zero exponents, guard endpoints,
 callback order, wrong second-input shape, projection failure/recovery and
-allocation-free reuse. Existing LUT cases exercise pruning, mixed selector
+allocation-free reuse. The then-existing LUT cases exercised pruning, mixed selector
 roles, no-BR/single/odd paths, independent lift and return-tile boundaries.
-No new test function or benchmark target is added.
+No new test function or benchmark target was added in that experiment.
 
-The final three-crate suite passes **39 ordinary and 39 nightly SIMD tests**.
+The final three-crate suite at that revision passed **39 ordinary and 39 nightly SIMD tests**.
 All-targets check, ordinary/SIMD strict clippy, warning-free rustdoc, compiler-only
-LUT check, formatting and the restored public pipeline's bench compilation pass.
+LUT check, formatting and the then-restored public pipeline's bench compilation passed.
 SIMD latency, other CPUs/architectures, alternate bases/r/B/N and external request
 batching are not measured. No new parameter/security recommendation follows.
 Temporary probes, snapshots, scripts, binaries and raw timing files are removed;

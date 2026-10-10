@@ -5,14 +5,14 @@ use primus_modulus::BarrettModulus;
 use primus_ntru::{NlevParameters, NttNlevCiphertext};
 use primus_ntt::MonomialNttTable;
 use primus_reduce::RingContext;
-use primus_tfhe_ntru::ClientKey;
+use primus_tfhe_ntru::{ClientKey, KeyGenerationError};
 use primus_tfhe_ntru_ntt::{CircuitBootstrapServerKey, KeyGenerator, TfheContext};
 
 use crate::{
     ChunkFormat, HighPrecLutClientError, HighPrecLutConfig, HighPrecLutDecryptor,
-    HighPrecLutEncryptor, HighPrecLutKeyGenerationError, HighPrecLutParameterError,
-    HighPrecLutParameters, HighPrecisionLookupTable, LookupTableConfig, LookupTableError,
-    NttLookupTableEvaluator, NttPublicLift, config::LookupDomain,
+    HighPrecLutEncryptor, HighPrecLutParameterError, HighPrecLutParameters,
+    HighPrecisionLookupTable, LookupTableConfig, LookupTableError, NttLookupTableEvaluator,
+    NttPublicLift, config::LookupDomain,
 };
 
 /// Failure to prepare lookup parameters or construct the selected NTT table.
@@ -40,7 +40,7 @@ pub enum NttHighPrecLutContextError<T: FheUint> {
 /// let function = |x: u64| (x*x + 3*x + 7) & 0xffff;
 /// let table = context.compile_fn(function)?;
 /// let mut rng = StdRng::seed_from_u64(42);
-/// let (client, server) = context.try_generate_keys(&table, &mut rng)?;
+/// let (client, server) = context.try_generate_keys(&mut rng)?;
 /// let encryptor = context.encryptor(&client)?;
 /// let decryptor = context.decryptor(&client)?;
 /// let mut input = encryptor.allocate_input();
@@ -158,7 +158,7 @@ where
         self.lookup.decryptor(self.context.parameters(), key)
     }
 
-    /// Generates one BR/CBS/return bundle and the public lift required when c=d.
+    /// Generates one BR/CBS/return bundle from the configured geometry, without a LUT.
     /// Classic borrows its initializer. Sparse generates independent `NLEV[1]` with
     /// BR's basis/noise only when c=d; otherwise no separate lift is stored.
     /// All ring material reuses the accepted secret transform and inverse.
@@ -170,15 +170,13 @@ where
     /// changing function values does not change the required material.
     pub fn try_generate_keys<R: rand::Rng + rand::CryptoRng>(
         &self,
-        table: &HighPrecisionLookupTable<T>,
         rng: &mut R,
-    ) -> Result<(ClientKey<T>, NttHighPrecLutServerKey<T>), HighPrecLutKeyGenerationError> {
-        self.lookup.check_table(table)?;
+    ) -> Result<(ClientKey<T>, NttHighPrecLutServerKey<T>), KeyGenerationError> {
         let domain = self.context.parameters();
         let needs_lift = matches!(
             domain.algorithm(),
             primus_tfhe::BlindRotationMethod::Sparse { .. }
-        ) && table.needs_public_lift();
+        ) && self.lookup.layout.table_chunk_count() == 0;
         let lift_parameters = needs_lift.then(|| domain.blind_rotation());
         let (client, circuit, lift) = KeyGenerator::new(&self.context)
             .try_generate_circuit_bootstrap_keys_with_public_lift(lift_parameters, rng)?;

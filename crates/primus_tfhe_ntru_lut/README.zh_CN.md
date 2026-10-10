@@ -38,7 +38,7 @@ let table = context.compile_fn(fee)?; // 公开、离线；不使用秘密。
 
 // Client：只有配套生成需要两类秘密；在线客户端仅借用外部秘密 s。
 let mut rng = StdRng::seed_from_u64(42);
-let (client, server) = context.try_generate_keys(&table, &mut rng)?;
+let (client, server) = context.try_generate_keys(&mut rng)?;
 let encryptor = context.encryptor(&client)?;
 let decryptor = context.decryptor(&client)?;
 let mut input = encryptor.allocate_input();
@@ -100,7 +100,7 @@ h=c-d>0 时，每个输出执行 `P+P/M-1` 次选表外积，再执行 d 次旋�
 
 ## 求值与工作区
 
-`context.try_generate_keys(&table, rng)` 生成一份 BR/CBS/返回组合，只在 c=d 时补充独立公开 lift。Classic 借用已有 initializer；sparse 仅在 `table.needs_public_lift()` 为真（c=d）时，按 BR 的 basis/noise 生成独立 `NLEV[1]`。BR、CBS 和 lift 共用已接受的环秘密变换/逆元，不生成第二份 BR 或变换表。普通 sparse PBS/CBS/one-hot 不受影响。
+`context.try_generate_keys(rng)` 根据已配置的 chunk 几何生成一份 BR/CBS/返回组合，不接收编译后的函数。Classic 借用已有 initializer；sparse 仅在 c=d 时，按 BR 的 basis/noise 生成独立 `NLEV[1]`。BR、CBS 和 lift 共用已接受的环秘密变换/逆元，不生成第二份 BR 或变换表。普通 sparse PBS/CBS/one-hot 不受影响。
 
 两个配套查表配置已经采用 h32 固定重量 binary 秘密，因此 sparse 查表只需修改算法。保留相同的费用函数和客户端/求值流程；密钥生成只在 c=d 时补充独立公开提升材料。推荐配置保持 classic BR；固定重量秘密本身不会选择 sparse 算法。
 

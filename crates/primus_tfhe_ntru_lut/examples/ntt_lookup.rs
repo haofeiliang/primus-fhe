@@ -35,10 +35,10 @@ fn main() {
     // high three select a polynomial. Output chunks are configured independently.
     let table = context.compile_fn(fee).unwrap();
 
-    // Client: generate paired secrets and complete server material once.
+    // Client: generate paired secrets and complete server material once, without the LUT.
     // This c>d geometry lifts during the first full M-way table selection.
     let mut rng = StdRng::seed_from_u64(42);
-    let (client_key, server_key) = context.try_generate_keys(&table, &mut rng).unwrap();
+    let (client_key, server_key) = context.try_generate_keys(&mut rng).unwrap();
     let encryptor = context.encryptor(&client_key).unwrap();
     let decryptor = context.decryptor(&client_key).unwrap();
     let mut input = encryptor.allocate_input();

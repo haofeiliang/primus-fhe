@@ -96,7 +96,7 @@ where
     }
 
     /// Generates configured CBS/return keys and optional independent `NLEV[1]`.
-    /// The lookup layer requests the extra lift only for sparse plans that need it;
+    /// Sparse lookup requests this lift when all input chunks select coefficients;
     /// classic reuses its initializer. Lift metadata is checked before sampling.
     /// Reuses the accepted ring transform and inverse across all generated material.
     ///

@@ -240,7 +240,7 @@ resource trait. NTT and Fourier keep distinct numerical representations.
 | FFT plan borrow and backend workspace | Fourier `BootstrapResources::fft` | One engine for BR, projection, scheme switch and LUT products; NTT uses the context table directly |
 | Reverse-trace scratch and projected NLEV | CBS/one-hot evaluator | One projected selector at a time; buffers are overwritten before the next selector |
 | Common rotation in transform representation | `FactorizedEvaluator` | Survives across every factor output; NTT reuses the common coefficient accumulator for each product, while Fourier owns a separate transformed product |
-| Public/encrypted selectors, aggregate rotation controls, compiled selection slots | LUT evaluator | Needed selectors survive one request; selection slots follow the compiled graph's last uses |
+| Public/encrypted selectors, aggregate rotation controls, per-layer selection slots | LUT evaluator | Prepare all c chunks once per request; each encrypted layer retains M children until its parent consumes them, then reuses the slots |
 | Rotation factors and current/product polynomials | LUT evaluator | Factors are prepared once; current/product ping-pong during encrypted rotation |
 | Return key and target q | `LweReturnEvaluator` | Read-only, allocation-free binding; no scratch or transform dependency |
 | Scalar intermediate LWE, N+1 elements | `NtruLweKeySwitchingWorkspace` | Complete PBS and NTT LUT; overwritten for each return |
