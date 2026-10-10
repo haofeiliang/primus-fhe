@@ -187,7 +187,7 @@ Context 客户端工厂读取配置中的消息模数：输入使用 `encryptor`
 
 NTRU 将外部 LWE 的秘密/模数/维数与累加 NTRU 环的秘密/模数/长度分开；GLWE 的 PBS order 有自身输入输出域契约。缓冲区尺寸相同不代表密钥可以互换。保留后端参数检查，并明确调用方仍需保证的秘密和表身份。
 
-对加密 chunk 计算高精度函数，使用 [primus_tfhe_ntru_lut](../../crates/primus_tfhe_ntru_lut/README.zh_CN.md)。NTT/Fourier 高精度 Context 提供完整参数、整值编译、按需材料的成对密钥生成、整值/分块客户端与 evaluator 工厂；客户端不接收 LUT，输入输出 chunk 数独立，默认系数分区尽量填满环，也可覆盖。默认启用 `ntt,fourier`，不选择具体 FFT 引擎；关闭默认 feature 后仅提供公开编译，`ntt` / `fourier` 选择 Context 和 evaluator，`rustfft` / `tfhe-fft` 同时启用 Fourier 与具体引擎。纯编译仅接收 PolyLength、累加 Q、输入 codec 和 chunk 配置，无需加密参数、密钥或变换依赖；`polynomial(j,p)` 可按输出和前缀查看完整公开表，重复项同样保留。One-hot CBS 位于 NTRU 后端，表分区、选择和旋转位于查表库。其 evaluator 借用 context、server key 和编译后的 LUT，拥有可复用缓冲。输出只分配一次并复用 `evaluate_to`，在线循环内不重新构造密钥或表。
+对加密 chunk 计算高精度函数，使用 [primus_tfhe_ntru_lut](../../crates/primus_tfhe_ntru_lut/README.zh_CN.md)。NTT/Fourier 高精度 Context 提供完整参数、整值编译、按需材料的成对密钥生成、整值/分块客户端与 evaluator 工厂；客户端不接收 LUT，输入输出 chunk 数独立，默认系数分区尽量填满环，也可覆盖。默认启用 `ntt,rustfft`，提供 NTT 和使用 RustFFT 的 Fourier 后端；关闭默认 feature 后仅提供公开编译，`ntt` / `fourier` 选择 Context 和 evaluator，`rustfft` / `tfhe-fft` 同时启用 Fourier 与具体引擎。纯编译仅接收 PolyLength、累加 Q、输入 codec 和 chunk 配置，无需加密参数、密钥或变换依赖；`polynomial(j,p)` 可按输出和前缀查看完整公开表，重复项同样保留。One-hot CBS 位于 NTRU 后端，表分区、选择和旋转位于查表库。其 evaluator 借用 context、server key 和编译后的 LUT，拥有可复用缓冲。输出只分配一次并复用 `evaluate_to`，在线循环内不重新构造密钥或表。
 
 RNS GLWE 的普通秘密/公钥使用 `try_bind(parameters, table)`，gadget 加密使用 `try_bind_gadget(domain)`；这些 context 借用已检查的资源。密钥切换、自同构、trace 和展开 evaluator 借用密钥/domain，拥有 workspace，在在线调用前一次性检查有序基及分解/分区兼容性。并行展开拥有预分配池，求值时独占借用 evaluator。见 [RNS GLWE 流程](../../crates/primus_glwe_rns/README.zh_CN.md#求值资源)。
 

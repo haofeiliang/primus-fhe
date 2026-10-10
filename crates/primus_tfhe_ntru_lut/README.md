@@ -63,7 +63,7 @@ Encryptor/decryptor factories do not receive the table or function. They derive 
 
 ```sh
 cargo run --release -p primus_tfhe_ntru_lut --example ntt_lookup --features ntt
-cargo run --release -p primus_tfhe_ntru_lut --example fourier_lookup --features rustfft
+cargo run --release -p primus_tfhe_ntru_lut --example fourier_lookup
 ```
 
 ## Encoding and table partition
@@ -152,6 +152,6 @@ With `--no-default-features`: `ChunkFormat`, public table compilation and inspec
 | `rustfft` / `tfhe-fft` | `fourier` and the selected FFT implementation |
 | `simd` | Nightly SIMD in active arithmetic dependencies, without activating an evaluator or FFT engine |
 
-The defaults are `ntt,fourier`; no concrete FFT engine is selected. All features are additive. `LookupTableError::OneHot` / `Evaluation` are available only with `ntt` or `fourier`.
+The defaults are `ntt,rustfft`, enabling NTT and Fourier with RustFFT. Use `--no-default-features --features ntt` for NTT alone, `--no-default-features --features tfhe-fft` for TFHE-FFT alone, or `--features tfhe-fft` to add TFHE-FFT alongside the defaults. All features are additive. `LookupTableError::OneHot` / `Evaluation` are available only with `ntt` or `fourier`.
 
-The NTT example requires `ntt`; the Fourier example requires its selected FFT engine. Enable `rustfft` or `tfhe-fft` to choose a concrete Fourier implementation.
+Both examples run with the default features. The Fourier example uses `RustFftTable`; to use TFHE-FFT alone, switch its `Table` import and target’s `required-features`, then run with `--no-default-features --features tfhe-fft`.

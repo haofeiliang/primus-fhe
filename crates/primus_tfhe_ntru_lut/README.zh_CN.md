@@ -63,7 +63,7 @@ Encryptor/decryptor 工厂不接收 LUT 或函数，根据完整操作准备编�
 
 ```sh
 cargo run --release -p primus_tfhe_ntru_lut --example ntt_lookup --features ntt
-cargo run --release -p primus_tfhe_ntru_lut --example fourier_lookup --features rustfft
+cargo run --release -p primus_tfhe_ntru_lut --example fourier_lookup
 ```
 
 ## 编码与表分区
@@ -152,6 +152,6 @@ Evaluator 借用 context、server key 和 table，并在构造时分配全部缓
 | `rustfft` / `tfhe-fft` | `fourier` 与选定的 FFT 实现 |
 | `simd` | 已启用算术依赖中的 nightly SIMD，不会激活 evaluator 或 FFT 引擎 |
 
-默认 feature 为 `ntt,fourier`，不选择具体 FFT 引擎。所有 feature 可以叠加。`LookupTableError::OneHot` / `Evaluation` 只在启用 `ntt` 或 `fourier` 时可用。
+默认 feature 为 `ntt,rustfft`，提供 NTT 和使用 RustFFT 的 Fourier 后端。使用 `--no-default-features --features ntt` 单独选择 NTT，`--no-default-features --features tfhe-fft` 单独选择 TFHE-FFT，或用 `--features tfhe-fft` 在默认后端之外增加 TFHE-FFT。所有 feature 可以叠加。`LookupTableError::OneHot` / `Evaluation` 只在启用 `ntt` 或 `fourier` 时可用。
 
-NTT 示例要求 `ntt`；Fourier 示例要求其选定的 FFT 引擎。启用 `rustfft` 或 `tfhe-fft` 选择具体的 Fourier 实现。
+两个示例均可用默认 feature 运行。Fourier 示例使用 `RustFftTable`；单独使用 TFHE-FFT 时，切换 `Table` 导入和 target 的 `required-features`，再用 `--no-default-features --features tfhe-fft` 运行。

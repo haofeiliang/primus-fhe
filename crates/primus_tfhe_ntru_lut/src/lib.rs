@@ -55,7 +55,9 @@
 //! before allocating its workspace.
 //!
 //! # Features
-//! NTT and generic Fourier are enabled by default, without choosing an FFT engine.
+//! NTT and RustFFT are enabled by default. Use
+//! `--no-default-features --features tfhe-fft` for TFHE-FFT alone, or
+//! `--features tfhe-fft` to add TFHE-FFT alongside the defaults.
 //! With `--no-default-features`, public table compilation and inspection need no
 //! transform or evaluator. `ntt` / `fourier` enable the corresponding Context and evaluator;
 //! `fourier` is generic over an FFT table without choosing its implementation.

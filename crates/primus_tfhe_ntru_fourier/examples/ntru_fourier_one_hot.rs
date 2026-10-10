@@ -1,8 +1,8 @@
 //! Select one of four encrypted records using a two-bit input and one-hot CBS.
 //!
-//! Run: `cargo run --release -p primus_tfhe_ntru_fourier --example ntru_fourier_one_hot --features rustfft`
-//! To use TfheFftTable, switch the Table import, this target's
-//! required-features and the command above to tfhe-fft.
+//! Run: `cargo run --release -p primus_tfhe_ntru_fourier --example ntru_fourier_one_hot`
+//! To use TfheFftTable alone, switch the Table import and this target's
+//! required-features to tfhe-fft, then add `--no-default-features --features tfhe-fft`.
 //! Arithmetic profiles: guides/development/tfhe-parameters.md (not security presets).
 
 use primus_fft::RustFftTable as Table;

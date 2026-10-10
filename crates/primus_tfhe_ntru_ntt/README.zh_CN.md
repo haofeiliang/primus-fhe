@@ -186,6 +186,16 @@ context.parameters().external_lwe().cipher_modulus())`，再按需准备 scalar/
 
 推荐工作流类型保留根入口。高级类型按职责导入：公共资源使用 `bootstrap::BootstrapResources`；独立 BR 材料使用 `key::BlindRotationKey`；CBS 密钥、gadget 参数和逐调用借用 evaluator 使用 `circuit_bootstrap`；稀疏材料/工作区使用 `sparse`。显式 codec 组合从 `primus_tfhe` 导入。独立返回使用家族 `primus_tfhe_ntru::{LweReturnEvaluator, LweReturnBatchWorkspace}`。
 
+## 基准
+
+```sh
+cargo bench -p primus_tfhe_ntru_ntt --bench pbs
+```
+
+基准按操作放在本库的 `benches/`：`pbs`、`many_lut`、`mvb`、`cbs`、`one_hot`。
+
+每次迭代测量一个完整服务端请求；准备和解密校验在计时之外。PBS 保留 u32/u64，其余操作使用 u64。参数、计时范围和四后端运行命令见[测试与基准指南](../../guides/development/testing.md#tfhe-benchmarks)。
+
 ## 进一步阅读
 
 本 crate 在普通依赖上固定启用 `ntt`；无需额外后端开关，单独使用不引入 Fourier/FFT。默认 features 为空；可选 `simd` 启用依赖中的 nightly SIMD 算术。

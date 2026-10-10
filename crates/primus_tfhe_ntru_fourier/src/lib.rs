@@ -1,5 +1,8 @@
 //! Native-torus Fourier backend for NTRU-based TFHE.
 //!
+//! RustFFT is enabled by default. Use `--no-default-features --features tfhe-fft`
+//! for TFHE-FFT alone, or `--features tfhe-fft` to enable both engines.
+//!
 //! # Start here
 //!
 //! 1. Select [`experimental::CLASSIC_PBS_U64`], a numerical [`PbsConfig`].

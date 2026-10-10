@@ -4,12 +4,11 @@ This guide records the experimental teaching parameters, their mathematical doma
 
 Inventory reviewed on 2026-10-08 against source revision `9a80c506`. The numerical choices below are local arithmetic fixtures, versioned by their source revision. Historical measurements retain their own dates; this inventory review did not rerun the numerical matrix. Construction validity, sampled functional correctness, security estimates and decryption-failure bounds are separate evidence.
 
-The centralized benchmark package, its parameter diagnostic and all `primus_tfhe*`
-unit/integration tests have been removed for an example-driven API redesign.
-The 30 teaching examples and backend `experimental` configs remain available.
-Historical profiles and results below describe the recorded revision; they are
-not current test coverage or runnable validation instructions. New focused tests
-and per-backend benchmarks will be designed after the recommended workflows.
+The centralized benchmark package and its parameter diagnostic have been removed.
+Focused public-workflow tests and crate-local backend benchmarks now accompany
+the 30 teaching examples and backend `experimental` configs; current coverage and
+commands are in the [testing guide](testing.md#tfhe-benchmarks). Historical profiles
+and results below describe their recorded revision, not current coverage.
 The historical [paper comparison](../performance/sparse-paper-comparison.md)
 records separate Table-3-shaped profiles; its timings do not replace the teaching
 profiles or establish a joint noise/security budget.
@@ -73,7 +72,7 @@ Notation is `(log2 radix, level count; discarded bits)`. With explicit non-power
 | u32 Fourier | (8,3;8) | (2,13;6) |
 | u64 Fourier | (23,1;41) | (3,5;49) |
 
-These numerical profiles were recorded from the former GLWE PBS benchmarks. The current u64 teaching configs retain their numerical choices; the u32 rows are historical reference profiles.
+These numerical profiles were recorded from the former GLWE PBS benchmarks. The current u64 teaching configs retain their numerical choices; the u32 rows are also defined locally by the current backend `pbs.rs` benchmarks. This does not extend their validation to other operations.
 
 ### GLWE circuit, ternary and fixed-weight diagnostics
 
@@ -407,9 +406,9 @@ not form a mandatory CI matrix.
 ```sh
 cargo check -p 'primus_tfhe*' -p primus_lwe -p primus_ntru --examples --features ntt,rustfft
 cargo run --release -p primus_tfhe_glwe_ntt --example ntt_basic
-cargo run --release -p primus_tfhe_glwe_fourier --example fourier_circuit_bootstrap --features rustfft
+cargo run --release -p primus_tfhe_glwe_fourier --example fourier_circuit_bootstrap
 cargo run --release -p primus_tfhe_ntru_ntt --example ntru_ntt_one_hot
-cargo run --release -p primus_tfhe_ntru_fourier --example ntru_fourier_mvb_thresholds --features rustfft
+cargo run --release -p primus_tfhe_ntru_fourier --example ntru_fourier_mvb_thresholds
 cargo run --release -p primus_tfhe_ntru_lut --example ntt_lookup --features ntt
 ```
 

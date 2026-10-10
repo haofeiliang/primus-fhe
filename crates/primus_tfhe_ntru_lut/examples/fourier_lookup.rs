@@ -1,8 +1,8 @@
 //! Evaluate a piecewise fee on 16-bit encrypted input and return a 16-bit result.
 //!
-//! Run: `cargo run --release -p primus_tfhe_ntru_lut --example fourier_lookup --features rustfft`
-//! To use TfheFftTable, switch the Table import, this target's
-//! required-features and the command above to tfhe-fft.
+//! Run: `cargo run --release -p primus_tfhe_ntru_lut --example fourier_lookup`
+//! To use TfheFftTable alone, switch the Table import and this target's
+//! required-features to tfhe-fft, then add `--no-default-features --features tfhe-fft`.
 //! Experimental arithmetic configuration; see guides/development/tfhe-parameters.md.
 
 use primus_fft::RustFftTable as Table;

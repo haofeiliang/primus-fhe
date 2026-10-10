@@ -27,19 +27,19 @@ These u64 constants are arithmetic examples, with unassessed security and failur
 The examples take input/output plaintext moduli from `config.messages`: `PbsMessageConfig::new(t)` defaults to equal moduli, and `with_output_modulus(t_out)` changes only the output. Use `context.encryptor(external_secret)` for Rounded input, `pbs_decryptor` for ordinary PBS/ManyLUT, and `mvb_decryptor` for Scaled MVB output. Clients need no LUT or explicit codec. See [choosing the output encoding](../primus_tfhe/README.md#choosing-the-output-encoding).
 
 ```sh
-cargo run -p primus_tfhe_glwe_fourier --release --example fourier_basic --features rustfft
+cargo run -p primus_tfhe_glwe_fourier --release --example fourier_basic
 ```
 
 The [basic example](examples/fourier_basic.rs) shows config → context → paired keys → clients → LUT → reused evaluator and buffers. It forms `z=2*x+y`, computes `score=min(z,6)`, then feeds that ciphertext into a second PBS for `price=2*score+[score>=4]`. Input and output both use `t=32`. `context.pbs_lookup_table_compiler()?.compile_fn(function)` prepares the public LUT; public-key clients use `context.public_encryptor(&public)`. Input encryption uses the configured `messages.input_modulus`. Set `config.messages = PbsMessageConfig::new(t_in).with_output_modulus(t_out)` before context creation for distinct input and output domains. Advanced same-key programs reuse prepared codecs through the family parameter factories; see [choosing the output encoding](../primus_tfhe/README.md#choosing-the-output-encoding).
 
-Examples use `Word = u64` and the operation config listed below. Dimensions, modulus representation, secret distributions, noise and decompositions live in `experimental`; each `main` shows only preparation, the public function, clients and evaluation. CBS uses the prepared `CbsParameters` and independently chooses the candidate ring-message domain. The Fourier examples select RustFFT; switch the `Table` import and the example target’s `required-features` to use TFHE-FFT with `--features tfhe-fft`. Explicit u32/u64 parameter composition remains available; see the [family configs](../primus_tfhe_glwe/README.md#experimental-paired-parameters) and [parameter guide](../../guides/development/tfhe-parameters.md).
+Examples use `Word = u64` and the operation config listed below. Dimensions, modulus representation, secret distributions, noise and decompositions live in `experimental`; each `main` shows only preparation, the public function, clients and evaluation. CBS uses the prepared `CbsParameters` and independently chooses the candidate ring-message domain. The Fourier examples select RustFFT; switch the `Table` import and the example target’s `required-features` to use TFHE-FFT with `--no-default-features --features tfhe-fft`. Explicit u32/u64 parameter composition remains available; see the [family configs](../primus_tfhe_glwe/README.md#experimental-paired-parameters) and [parameter guide](../../guides/development/tfhe-parameters.md).
 
 Comments identify client and server stages. Basic and sparse run the same two-PBS scoring pipeline for four `(x,y)` requests in `0..4`. Intermediate values stay in the padded `0..16` input range; feedback also needs a noise budget for this workload. ManyLUT computes `grade=x/2` and `flag=[x>=5]` in one blind rotation, then combines their ciphertexts as `code=2*grade+flag`. It uses `t_in=16`, `t_out=8` and returns only the final code; those outputs cannot be fed directly into the differently encoded input PBS. Keys, LUTs, evaluators and buffers are prepared once and reused. See [client/server roles and buffer allocation](../primus_tfhe/README.md#client-and-server-roles).
 
 The [Boolean example](examples/fourier_boolean.rs) evaluates `admin OR (member AND NOT revoked)`, using `CLASSIC_PBS_U64` with `config.messages = PbsMessageConfig::new(4)`. It encrypts three client inputs and decrypts only the final decision. Run it with:
 
 ```sh
-cargo run -p primus_tfhe_glwe_fourier --release --example fourier_boolean --features rustfft
+cargo run -p primus_tfhe_glwe_fourier --release --example fourier_boolean
 ```
 
 | Operation | Config in `experimental` | Complete example |
@@ -139,8 +139,18 @@ Recommended workflow types remain root imports. Import advanced types by role: c
 
 The [shared coefficient key](../primus_tfhe_glwe/README.md#sparse-coefficient-keys) is re-exported as `sparse::SparseGlweBootstrappingKey<T, NativeModulus<T>>`. Raw sparse BR uses `workspace.blind_rotate_lookup_table_to(&key, input, lut, output, &mut fft)`; the workspace owns scratch and borrows the key only for the call.
 
+## Benchmarks
+
+```sh
+cargo bench -p primus_tfhe_glwe_fourier --bench pbs
+```
+
+Crate-local `benches/` provides `pbs`, `many_lut`, `mvb`, and `cbs`.
+
+Each iteration measures one complete server request; setup and decryption checks are untimed. PBS covers u32/u64; other operations use u64. See the [benchmark guide](../../guides/development/testing.md#tfhe-benchmarks) for parameters, timing boundaries and a four-backend command. Fourier defaults to RustFFT; use `--no-default-features --features tfhe-fft` for TFHE-FFT alone, or `--features tfhe-fft` to measure both engines separately.
+
 ## Further reading
 
-This crate enables `fourier` on its normal dependencies; no extra backend flag is needed, and standalone use does not pull in NTT. Default features are empty. Select an FFT engine explicitly with `rustfft` or `tfhe-fft`, or enable both; generic APIs do not force an engine. Examples use `rustfft`. Optional `simd` enables only nightly SIMD arithmetic in dependencies, without selecting an FFT engine.
+This crate enables `fourier` on its normal dependencies; no extra backend flag is needed, and standalone use does not pull in NTT. RustFFT is enabled by default, so examples and benchmarks run without extra feature flags. Use `--no-default-features --features tfhe-fft` for TFHE-FFT alone, or `--features tfhe-fft` to enable both engines. `--no-default-features` retains the generic API without a concrete engine. Optional `simd` enables nightly SIMD arithmetic in dependencies and does not change the engine selection.
 
 [Boolean gates](../primus_tfhe/README.md#boolean-gates) · [Error boundaries](../primus_tfhe/README.md#error-boundaries) · [Implementation notes](../primus_tfhe/IMPLEMENTATION.md) · [Performance notes](../../guides/performance/README.md)

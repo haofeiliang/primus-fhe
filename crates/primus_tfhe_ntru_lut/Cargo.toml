@@ -17,7 +17,7 @@ primus_reduce = { path = "../primus_reduce" }
 primus_tfhe = { path = "../primus_tfhe", optional = true }
 primus_tfhe_ntru = { path = "../primus_tfhe_ntru", optional = true }
 primus_tfhe_ntru_ntt = { path = "../primus_tfhe_ntru_ntt", optional = true }
-primus_tfhe_ntru_fourier = { path = "../primus_tfhe_ntru_fourier", optional = true }
+primus_tfhe_ntru_fourier = { path = "../primus_tfhe_ntru_fourier", optional = true, default-features = false }
 rand = { workspace = true, optional = true }
 thiserror = { workspace = true }
 
@@ -34,7 +34,7 @@ required-features = ["rustfft"]
 primus_modulus = { path = "../primus_modulus" }
 
 [features]
-default = ["ntt", "fourier"]
+default = ["ntt", "rustfft"]
 ntt = [
     "dep:primus_decompose",
     "dep:rand",

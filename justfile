@@ -7,8 +7,8 @@ default: fmt-check (lint "*" "ntt,fourier,rustfft,tfhe-fft") (test "*" "ntt,four
 ci: default test-doc
   cargo check -p primus_data --lib --no-default-features
   cargo check -p primus_fft -p primus_lwe -p primus_tfhe_glwe -p primus_tfhe_ntru -p primus_tfhe_ntru_lut --lib --no-default-features
-  cargo check -p 'primus_tfhe*_ntt' -p primus_glwe_rns -p primus_tfhe_ntru_lut --lib --features primus_tfhe_ntru_lut/ntt
-  cargo check -p 'primus_tfhe*_fourier' -p primus_tfhe_ntru_lut --lib --features rustfft
+  cargo check -p 'primus_tfhe*_ntt' -p primus_glwe_rns -p primus_tfhe_ntru_lut --lib --no-default-features --features primus_tfhe_ntru_lut/ntt
+  cargo check -p 'primus_tfhe*_fourier' -p primus_tfhe_ntru_lut --lib --no-default-features --features rustfft
   cargo check -p primus_encoding --lib --no-default-features
   cargo check -p primus_modulus -p primus_distr --lib --features primus_modulus/derive,primus_distr/high_precision
 

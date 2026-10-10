@@ -185,6 +185,16 @@ independently usable. See the [family return contract](../primus_tfhe_ntru/READM
 
 Recommended workflow types remain root imports. Import advanced types by role: common resources through `bootstrap::BootstrapResources`, independent BR material through `key::BlindRotationKey`, CBS keys/gadget parameters and per-call borrowing evaluators through `circuit_bootstrap`, and sparse material/workspaces through `sparse`. Explicit codec bundles come from `primus_tfhe`. Independent returns use the family's `primus_tfhe_ntru::{LweReturnEvaluator, LweReturnBatchWorkspace}`.
 
+## Benchmarks
+
+```sh
+cargo bench -p primus_tfhe_ntru_ntt --bench pbs
+```
+
+Crate-local `benches/` provides `pbs`, `many_lut`, `mvb`, and `cbs` plus `one_hot`.
+
+Each iteration measures one complete server request; setup and decryption checks are untimed. PBS covers u32/u64; other operations use u64. See the [benchmark guide](../../guides/development/testing.md#tfhe-benchmarks) for parameters, timing boundaries and a four-backend command.
+
 ## Further reading
 
 This crate enables `ntt` on its normal dependencies; no extra backend flag is needed, and standalone use does not pull in Fourier/FFT. Default features are empty; optional `simd` enables nightly SIMD arithmetic in dependencies.

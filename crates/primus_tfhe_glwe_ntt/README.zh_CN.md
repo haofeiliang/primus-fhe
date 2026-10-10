@@ -141,6 +141,16 @@ Context 保存 Rounded 输入编码与 CBS gadget。使用 `context.encryptor(ex
 
 本后端重导出[共享系数密钥](../primus_tfhe_glwe/README.zh_CN.md#sparse-系数密钥)，使用 `sparse::SparseGlweBootstrappingKey<T, BarrettModulus<T>>`。Raw sparse BR 使用 `workspace.blind_rotate_lookup_table_to(&key, input, lut, output, ntt)`；工作区持有 scratch，仅在调用时借用密钥。
 
+## 基准
+
+```sh
+cargo bench -p primus_tfhe_glwe_ntt --bench pbs
+```
+
+基准按操作放在本库的 `benches/`：`pbs`、`many_lut`、`mvb`、`cbs`。
+
+每次迭代测量一个完整服务端请求；准备和解密校验在计时之外。PBS 保留 u32/u64，其余操作使用 u64。参数、计时范围和四后端运行命令见[测试与基准指南](../../guides/development/testing.md#tfhe-benchmarks)。
+
 ## 进一步阅读
 
 本 crate 在普通依赖上固定启用 `ntt`；无需额外后端开关，单独使用不引入 Fourier/FFT。默认 features 为空；可选 `simd` 启用依赖中的 nightly SIMD 算术。

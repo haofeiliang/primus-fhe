@@ -52,8 +52,31 @@ required-features = ["rustfft"]
 name = "ntru_fourier_sparse"
 required-features = ["rustfft"]
 
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "pbs"
+harness = false
+
+[[bench]]
+name = "many_lut"
+harness = false
+
+[[bench]]
+name = "mvb"
+harness = false
+
+[[bench]]
+name = "cbs"
+harness = false
+
+[[bench]]
+name = "one_hot"
+harness = false
+
 [features]
-default = []
+default = ["rustfft"]
 rustfft = ["primus_fft/rustfft"]
 tfhe-fft = ["primus_fft/tfhe-fft"]
 simd = [

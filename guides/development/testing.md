@@ -2,7 +2,7 @@
 
 本指南区分普通测试、编译检查、示例执行和性能测量。包和 target 由 [workspace](../../Cargo.toml) 与 Cargo metadata 决定；实际用例由 nextest 清单决定。库接口与工作区入口见[开发导航](README.zh_CN.md)。
 
-`primus_tfhe*` 的普通测试覆盖共享数学、家族参数配对及推荐公开接口的完整后端消费；crate 内基准待恢复。底层库测试保留。编译、Clippy、doctest 和示例运行各自只验证其实际范围。
+`primus_tfhe*` 的普通测试覆盖共享数学、家族参数配对及推荐公开接口的完整后端消费；四后端已有按操作组织的 crate 内基准，高精度 LUT 基准待恢复。底层库测试保留。编译、Clippy、doctest 和示例运行各自只验证其实际范围。
 
 ## 验证入口
 
@@ -81,7 +81,7 @@ cargo nextest list --binaries-metadata /tmp/primus-test-binaries.json \
 
 ### 变换后端、FFT 引擎与 target 覆盖
 
-lattice、GLWE/NTRU 的 `ntt` / `fourier` 控制表示、转换、运算和工作区；`rns` 启用 DCRT 所需 NTT。两个 TFHE family 无具体后端，四个后端 crate 固定选择对应表示。FFT 默认仅公共接口和 torus 转换，`rustfft` / `tfhe-fft` 显式选择实现。
+lattice、GLWE/NTRU 的 `ntt` / `fourier` 控制表示、转换、运算和工作区；`rns` 启用 DCRT 所需 NTT。两个 TFHE family 无具体后端，四个后端 crate 固定选择对应表示。底层 `primus_fft` 默认仅公共接口和 torus 转换，`rustfft` / `tfhe-fft` 显式选择实现。两个 TFHE Fourier 后端默认启用 RustFFT；高精度 LUT 默认启用 NTT 和 RustFFT。使用 `--no-default-features --features tfhe-fft` 单独选择 TFHE-FFT，`--features tfhe-fft` 则在默认引擎之外增加 TFHE-FFT。
 
 现有底层混合对照测试与示例用 `required-features` 声明要求，缺少时 Cargo 会跳过；TFHE 集成测试按对应 feature 编译，`just tfhe` 会实际执行 NTT、RustFFT、TFHE-FFT 的小参数工作流。FFT 底层可按需分开复查：
 
@@ -236,7 +236,50 @@ NTT 工作流以 u32 覆盖 classic 连续 PBS 和 sparse 消费，以 u64 覆�
 
 这些固定 seed、小参数用例验证数值组合与复用，不估计安全性或解密失败率；大参数示例、性能和其他 CPU 分派仍需相应验证。`just tfhe` / `just tfhe-simd` 和 workspace nextest 均运行这些回归，doctest 仍单独执行。
 
-未来 TFHE 基准放回所属后端或 LUT crate 的 `benches/`，单个文件就地组织 helper。基准使用推荐公开工作流，不为阶段拆时新建公开资源入口、共享 support crate 或自动分析框架。完整请求是主要测量对象；LUT 创建和在线求值分别计时，setup 不混入在线延迟。历史结果见[性能记录](../performance/README.zh_CN.md)，旧命令须在报告对应版本运行。
+## TFHE benchmarks
+
+四后端的 `benches/` 按操作组织，每个文件就地准备自己需要的数据；高精度 LUT 的创建/求值基准另行恢复。选一个包和操作即可运行：
+
+```sh
+cargo bench -p primus_tfhe_glwe_ntt --bench pbs
+cargo bench -p primus_tfhe_ntru_fourier --bench one_hot
+```
+
+一次运行四后端的普通 u64 PBS（Fourier 使用 RustFFT）：
+
+```sh
+cargo bench -p 'primus_tfhe_*_ntt' -p 'primus_tfhe_*_fourier' --bench pbs -- 'classic_dense/u64$'
+```
+
+Fourier 默认使用 RustFFT；用 `--no-default-features --features tfhe-fft` 单独测量 TFHE-FFT，或用 `--features tfhe-fft` 分别测量两个引擎。关闭默认 feature 且不选引擎时，直接运行 Fourier bench 会报错，不产生空的成功报告。计时过滤器由 Criterion 处理；因 setup 在 `bench_function` 之外，过滤掉的 PBS case 仍会准备材料和校验，不承诺过滤可省掉 setup。
+
+| target | 一次迭代的明确负载 | 当前用例 |
+| --- | --- | --- |
+| `pbs` | 一次完整 LWE→LWE PBS，F(x)=(3x+1) mod 16，t_in=t_out=32 | classic dense u32/u64；同参数 classic fixed / sparse fixed u64 |
+| `many_lut` | 一次盲旋转及两项 LWE 返回，F=(floor(x/2), [x>=5]) | classic u64，Rounded 16→8 |
+| `mvb` | 一次完整 factorized MVB，返回17个阈值标志 | classic u64，D64，Rounded 128→Scaled 2；GLWE KS→BR |
+| `cbs` | 自定义 F=[m>=2] 的 CBS，再用输出控制实际 CMux，返回环密文 | classic u64，t_in=8、独立 Scaled t_ring=8 |
+| `one_hot`（仅 NTRU） | 生成三个非零 NGSW selectors，再执行四路 CMux | classic u64，M4、t_in=8、t_ring=8 |
+
+名字含操作、GLWE/NTRU、NTT/FFT 引擎、用例和字宽，避免多个包的 Criterion 结果覆盖。Throughput 固定为每迭代一个**请求**，MVB 的17个输出不算17次 PBS。密钥生成、公开程序编译、加密、工作区/输出分配、解密校验均在计时之外；`b.iter` 不手工重复请求。计时前用两个输入检查结果，计时后再核对复用的输出。使用固定 seed，不在热循环生成新输入；这些是热缓存、预分配工作区的延迟，不包含传输或冷启动。
+
+### 当前参数与比较边界
+
+u64 使用所属后端的 `experimental` 配置；仅 PBS 固定重量 classic 从 `SPARSE_PBS_U64` 复制配置并把算法改成 classic。同一后端内两项重置相同 key/input seed；n728/h32/N1024、秘密分布、噪声、basis、消息、PBS order、返回路径均一致。dense n866/N2048 与它们属于不同参数组，不能把两组时间差解释成算法加速。
+
+| 用例 | n / N；外部或 small 秘密 | 环秘密；基准配置入口 |
+| --- | --- | --- |
+| dense PBS | 866 / 2048，uniform binary | GLWE uniform binary、NTRU sparse ternary；u64 `CLASSIC_PBS_U64`，u32 参数就地定义于 `pbs.rs` |
+| fixed PBS 对照 | 728 / 1024，fixed-weight binary h32 | sparse ternary；`SPARSE_PBS_U64`，sparse 为3 copies/64 buckets |
+| ManyLUT / MVB | 728 / 1024，fixed-weight binary h32 | sparse ternary；`CLASSIC_MANY_LUT_U64` / `CLASSIC_THRESHOLD_MVB_U64` |
+| CBS | 800 / 1024，uniform binary | GLWE uniform ternary、NTRU sparse ternary；`CLASSIC_CBS_U64` |
+| one-hot | 800 / 1024，fixed-weight binary h32 | NTRU sparse ternary；`CLASSIC_ONE_HOT_U64` |
+
+GLWE 的 k=1，PBS/ManyLUT/CBS 用 BR→KS 的 small-LWE 输入域；MVB 用 KS→BR 的 N 维外部输入域。NTRU 始终用独立外部 q24，返回执行 Q→q24、提取、LWE KS；CBS/one-hot 基准止于环密文，不把未执行的返回 KS 算入负载。NTT 用 Barrett Q27（u32 PBS）/Q50（u64），Fourier 用 Native32/64，q24 必须用 PowOf2Modulus。
+
+各角色噪声和所有 basis 的确切数值见[参数指南](tfhe-parameters.md#noise-by-key-role)及[分解表](tfhe-parameters.md#decomposition-by-operation)：GLWE 与 NTRU 的 BR/KS 噪声、分解和返回方法不同；u32/u64 也不是单纯换存储字宽。共享 N 不等于同安全性或同误差预算。当前基准只做有限样本解密校验，不提供参数安全性或失败概率结论。u32 差异集中在 PBS；其余操作保持单个 u64 工作负载，双字宽算法回归由前面的普通测试负责。
+
+用 `just bench-smoke <package> <target> [--features ...]` 只校验构造、请求和解密，不进行性能采样。单项默认20样本、1秒预热、目标测量时间3秒；Criterion 可因请求耗时较长而自动延长，可通过其参数调整。正式比较应固定 CPU、工具链、features 和参数；不同核型/缓存组各自比较，不把跨 CPU 的差异当成实现回退。没有恢复共享 support、集中 benchmark 包或报告脚本；报告使用 Criterion 自身输出。历史结果见[性能记录](../performance/README.zh_CN.md)，旧命令须在对应版本运行。
 
 ## 成本记录方法
 

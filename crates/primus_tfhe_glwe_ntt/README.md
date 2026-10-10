@@ -141,6 +141,16 @@ Recommended workflow types remain root imports. Import advanced types by role: c
 
 The [shared coefficient key](../primus_tfhe_glwe/README.md#sparse-coefficient-keys) is re-exported as `sparse::SparseGlweBootstrappingKey<T, BarrettModulus<T>>`. Raw sparse BR uses `workspace.blind_rotate_lookup_table_to(&key, input, lut, output, ntt)`; the workspace owns scratch and borrows the key only for the call.
 
+## Benchmarks
+
+```sh
+cargo bench -p primus_tfhe_glwe_ntt --bench pbs
+```
+
+Crate-local `benches/` provides `pbs`, `many_lut`, `mvb`, and `cbs`.
+
+Each iteration measures one complete server request; setup and decryption checks are untimed. PBS covers u32/u64; other operations use u64. See the [benchmark guide](../../guides/development/testing.md#tfhe-benchmarks) for parameters, timing boundaries and a four-backend command.
+
 ## Further reading
 
 This crate enables `ntt` on its normal dependencies; no extra backend flag is needed, and standalone use does not pull in Fourier/FFT. Default features are empty; optional `simd` enables nightly SIMD arithmetic in dependencies.

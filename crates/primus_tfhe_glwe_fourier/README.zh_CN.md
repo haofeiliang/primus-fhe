@@ -27,19 +27,19 @@ let context = TfheContext::<u64, Table>::try_from_pbs_config(config)?;
 示例从 `config.messages` 读取输入/输出消息模数：`PbsMessageConfig::new(t)` 默认两者相同，`with_output_modulus(t_out)` 只修改输出。`context.encryptor(external_secret)` 选择 Rounded 输入；普通 PBS/ManyLUT 用 `pbs_decryptor`，MVB 的 Scaled 输出用 `mvb_decryptor`。客户端不接收 LUT，也不要求手工创建 codec。见[选择输出编码](../primus_tfhe/README.zh_CN.md#选择输出编码)。
 
 ```sh
-cargo run -p primus_tfhe_glwe_fourier --release --example fourier_basic --features rustfft
+cargo run -p primus_tfhe_glwe_fourier --release --example fourier_basic
 ```
 
 [basic 示例](examples/fourier_basic.rs)展示配置 → context → 配对密钥 → 客户端 → LUT → 复用 evaluator 和缓冲。它先计算 `z=2*x+y`，通过 PBS 得到 `score=min(z,6)`，再直接对该密文执行第二次 PBS，得到 `price=2*score+[score>=4]`。输入/输出均采用 `t=32`。`context.pbs_lookup_table_compiler()?.compile_fn(function)` 编译公开 LUT，公钥客户端用 `context.public_encryptor(&public)`。输入加密使用配置中的 `messages.input_modulus`；构造 Context 前用 `config.messages = PbsMessageConfig::new(t_in).with_output_modulus(t_out)` 独立设置输入、输出域。高级同钥组合通过家族参数工厂复用已准备的 codec，见[选择输出编码](../primus_tfhe/README.zh_CN.md#选择输出编码)。
 
-示例固定 `Word = u64`，使用下表对应的操作配置。尺寸、模数表示、秘密分布、噪声和分解集中在 `experimental`；各个 `main` 只展示准备、公开函数、客户端和求值。CBS 使用完整的 `CbsParameters`，消费端独立选择候选环消息域。 Fourier 示例选择 RustFFT；需要 TFHE-FFT 时，同时切换 `Table` 导入、示例 target 的 `required-features` 和 `--features tfhe-fft`。 高级显式组合仍支持 u32/u64，见[家族配置](../primus_tfhe_glwe/README.zh_CN.md#实验配套参数)和[数值参数指南](../../guides/development/tfhe-parameters.md)。
+示例固定 `Word = u64`，使用下表对应的操作配置。尺寸、模数表示、秘密分布、噪声和分解集中在 `experimental`；各个 `main` 只展示准备、公开函数、客户端和求值。CBS 使用完整的 `CbsParameters`，消费端独立选择候选环消息域。 Fourier 示例选择 RustFFT；需要 TFHE-FFT 时，同时切换 `Table` 导入、示例 target 的 `required-features` 和 `--no-default-features --features tfhe-fft`。 高级显式组合仍支持 u32/u64，见[家族配置](../primus_tfhe_glwe/README.zh_CN.md#实验配套参数)和[数值参数指南](../../guides/development/tfhe-parameters.md)。
 
 注释标明客户端和服务端阶段。Basic 与 sparse 用相同的两次 PBS 评分流程处理四组 `0..4` 内的 `(x,y)` 请求。中间值保持在 padded 输入区间 `0..16` 内；反馈还需要本工作负载的噪声预算。ManyLUT 在一次盲旋转中计算 `grade=x/2`、`flag=[x>=5]`，然后用密文算术合成 `code=2*grade+flag`。它使用 `t_in=16`、`t_out=8`，只返回最终 code；输出不能直接回送到编码不同的输入 PBS。密钥、LUT、evaluator 和缓冲均一次准备、重复使用。见[双方职责与缓冲分配](../primus_tfhe/README.zh_CN.md#客户端与服务端边界)。
 
 [Boolean 示例](examples/fourier_boolean.rs)计算 `admin OR (member AND NOT revoked)`，在 `CLASSIC_PBS_U64` 上设置 `config.messages = PbsMessageConfig::new(4)`。客户端加密三个输入，只解密最终决策。运行命令：
 
 ```sh
-cargo run -p primus_tfhe_glwe_fourier --release --example fourier_boolean --features rustfft
+cargo run -p primus_tfhe_glwe_fourier --release --example fourier_boolean
 ```
 
 | 操作 | `experimental` 配置 | 完整示例 |
@@ -139,8 +139,18 @@ Context 保存 Rounded 输入编码与 CBS gadget。使用 `context.encryptor(ex
 
 本后端重导出[共享系数密钥](../primus_tfhe_glwe/README.zh_CN.md#sparse-系数密钥)，使用 `sparse::SparseGlweBootstrappingKey<T, NativeModulus<T>>`。Raw sparse BR 使用 `workspace.blind_rotate_lookup_table_to(&key, input, lut, output, &mut fft)`；工作区持有 scratch，仅在调用时借用密钥。
 
+## 基准
+
+```sh
+cargo bench -p primus_tfhe_glwe_fourier --bench pbs
+```
+
+基准按操作放在本库的 `benches/`：`pbs`、`many_lut`、`mvb`、`cbs`。
+
+每次迭代测量一个完整服务端请求；准备和解密校验在计时之外。PBS 保留 u32/u64，其余操作使用 u64。参数、计时范围和四后端运行命令见[测试与基准指南](../../guides/development/testing.md#tfhe-benchmarks)。 Fourier 默认使用 RustFFT；用 `--no-default-features --features tfhe-fft` 单独测量 TFHE-FFT，或用 `--features tfhe-fft` 分别测量两个引擎。
+
 ## 进一步阅读
 
-本 crate 在普通依赖上固定启用 `fourier`；无需额外后端开关，单独使用不引入 NTT。默认 features 为空；`rustfft` / `tfhe-fft` 显式选择 FFT 引擎，可同时启用。泛型 API 不强制具体引擎。示例使用 `rustfft`。可选 `simd` 只启用依赖中的 nightly SIMD 算术，不选择 FFT 引擎。
+本 crate 在普通依赖上固定启用 `fourier`；无需额外后端开关，单独使用不引入 NTT。默认启用 RustFFT，示例和基准无需额外 feature 参数。使用 `--no-default-features --features tfhe-fft` 单独选择 TFHE-FFT，或用 `--features tfhe-fft` 同时启用两个引擎。仅使用 `--no-default-features` 时保留无具体引擎的泛型 API。可选 `simd` 启用依赖中的 nightly SIMD 算术，不改变引擎选择。
 
 [Boolean 门](../primus_tfhe/README.zh_CN.md#boolean-门) · [错误边界](../primus_tfhe/README.zh_CN.md#错误边界) · [实现说明](../primus_tfhe/IMPLEMENTATION.md) · [性能说明](../../guides/performance/README.zh_CN.md)
