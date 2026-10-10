@@ -2,13 +2,7 @@
 
 English | [简体中文](README.zh_CN.md)
 
-Use the [development guide](../development/README.md) for current APIs and contracts.
-This directory records performance choices, their costs and reproducible evidence.
-Each report identifies its revision, parameters and measured scope; historical
-results are not current validation or security guarantees. Historical backend
-benchmark commands predate the move to `primus_tfhe_benchmarks`; the current
-[target map](../../benchmarks/tfhe/README.md#targets) translates package/target
-names without changing those reports' measured revisions.
+Current APIs and contracts are in the [development guide](../development/README.md). This directory preserves performance decisions, costs and historical evidence. Each report records its revision, parameters and measured scope; historical results are not current validation or security guarantees. The TFHE benchmark suite and report tools have been removed. Run historical commands only at the corresponding source revision; the last complete suite is available at `8d7c4b1a`. Future benchmarks belong to the backend or LUT crate.
 
 ## Retained choices and limits
 

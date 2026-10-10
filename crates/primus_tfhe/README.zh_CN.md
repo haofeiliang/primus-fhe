@@ -293,4 +293,4 @@ assert_eq!(message, 7);
 
 ## 进一步阅读
 
-[实现说明](IMPLEMENTATION.md) · [常用 PBS 基准参数](../../benchmarks/tfhe/BENCHMARKS.md) · [性能取舍](IMPLEMENTATION.md#performance-decisions-and-reproducibility)
+[实现说明](IMPLEMENTATION.md) · [性能取舍](IMPLEMENTATION.md#performance-decisions-and-reproducibility)

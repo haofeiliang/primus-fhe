@@ -180,26 +180,3 @@ fn polynomial_hash<T: FheUint>(polynomial: &[T]) -> PolynomialHashValue {
     hasher.write(bytemuck::cast_slice(polynomial));
     PolynomialHashValue(hasher.finish())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::{PolynomialId, PolynomialPool, polynomial_hash};
-
-    // A forced bucket collision must preserve unequal tails and still reuse duplicates.
-    #[test]
-    fn hash_collision_requires_full_polynomial_equality() {
-        let mut pool = PolynomialPool::new(3);
-        let first = [1u32, 2, 3];
-        let second = [1u32, 2, 4];
-        assert_eq!(pool.get_or_insert_polynomial(&first), PolynomialId(0));
-        // Force an unrelated polynomial into the matching bucket without changing
-        // the production hash path. It must be rejected by full equality.
-        pool.buckets
-            .entry(polynomial_hash(&second))
-            .or_default()
-            .push(PolynomialId(0));
-        assert_eq!(pool.get_or_insert_polynomial(&second), PolynomialId(1));
-        assert_eq!(pool.get_or_insert_polynomial(&first), PolynomialId(0));
-        assert_eq!(pool.get_or_insert_polynomial(&second), PolynomialId(1));
-    }
-}

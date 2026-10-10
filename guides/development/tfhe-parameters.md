@@ -1,15 +1,18 @@
 # TFHE arithmetic parameter matrix
 
-These profiles are reproducible functional and performance fixtures. They have no security or failure-probability assessment. Two fixed seeds establish observations, not a probabilistic guarantee. Shared geometry does not make NTT, Fourier, GLWE and NTRU equally secure or their costs directly comparable.
+This guide records the experimental teaching parameters, their mathematical domains and historical numerical observations. The parameters have no security or failure-probability assessment. Two fixed seeds establish observations, not a probabilistic guarantee. Shared geometry does not make NTT, Fourier, GLWE and NTRU equally secure or their costs directly comparable.
 
 Inventory reviewed on 2026-10-08 against source revision `9a80c506`. The numerical choices below are local arithmetic fixtures, versioned by their source revision. Historical measurements retain their own dates; this inventory review did not rerun the numerical matrix. Construction validity, sampled functional correctness, security estimates and decryption-failure bounds are separate evidence.
 
-Validation and benchmark constructors live in [benchmark parameters](../../benchmarks/tfhe/src/parameters/mod.rs), split into [GLWE](../../benchmarks/tfhe/src/parameters/glwe.rs) and [NTRU](../../benchmarks/tfhe/src/parameters/ntru.rs). They use the existing family parameter types; no backend abstraction or production preset registry is added. Ordinary integration tests keep small parameters. The [validation executable](../../benchmarks/tfhe/src/bin/validate_parameters.rs) is an explicitly invoked numerical diagnostic.
-
-The opt-in GLWE NTT [paper comparison](../performance/sparse-paper-comparison.md) defines its
-Table-3-shaped profiles beside that benchmark. It supplies real small-q inputs
-through a benchmark-only adapter and does not replace these shared profiles,
-the parameter-validation matrix, or ordinary test parameters.
+The centralized benchmark package, its parameter diagnostic and all `primus_tfhe*`
+unit/integration tests have been removed for an example-driven API redesign.
+The 26 teaching examples and backend `experimental` configs remain available.
+Historical profiles and results below describe the recorded revision; they are
+not current test coverage or runnable validation instructions. New focused tests
+and per-backend benchmarks will be designed after the recommended workflows.
+The historical [paper comparison](../performance/sparse-paper-comparison.md)
+records separate Table-3-shaped profiles; its timings do not replace the teaching
+profiles or establish a joint noise/security budget.
 
 ## Moduli, geometry and secret domains
 
@@ -23,9 +26,9 @@ the parameter-validation matrix, or ordinary test parameters.
 
 All three NTT primes satisfy Q mod 4096 = 1 and the existing NTT table constructors accept N=1024/2048. Each fits the Barrett bound Q<2^(BITS−2). `NativeModulus` never constructs an unrepresentable `1 << BITS`. Explicit powers of two use `PowOf2Modulus`; all NTRU examples use independent external q=2^24.
 
-Key geometry and message configuration are separate. The [teaching workloads](#teaching-examples) and [benchmark inventory](#benchmark-inventory) below identify their actual message domains. Family factories prepare workload codecs when binding clients and compiling programs; this establishes encoding and layout conditions, not a noise budget.
+Key geometry and message configuration are separate. The [teaching workloads](#teaching-examples) below identify their actual message domains; the historical observations identify their own workloads separately. Family factories prepare workload codecs when binding clients and compiling programs; this establishes encoding and layout conditions, not a noise budget.
 
-All geometries below run with u32 and u64. Fourier validation includes both RustFFT and TFHE-FFT. GLWE always has k=1 and validates both `BootstrapKeyswitch` and `KeyswitchBootstrap`. Here n is the small LWE dimension: in `KeyswitchBootstrap`, the external client domain has kN coefficients, not n. GLWE uses q=Q. NTRU has independent external LWE and ring secrets and returns Q→q24→LWE KS.
+The historical matrix used the geometries below with u32 and u64, both RustFFT and TFHE-FFT, and both GLWE orders `BootstrapKeyswitch` and `KeyswitchBootstrap`. GLWE has k=1 in these profiles. Here n is the small LWE dimension: in `KeyswitchBootstrap`, the external client domain has kN coefficients, not n. GLWE uses q=Q. NTRU has independent external LWE and ring secrets and returns Q→q24→LWE KS.
 
 | Key profile | n / N | External/small secret | Ring secret |
 | --- | --- | --- | --- |
@@ -35,7 +38,7 @@ All geometries below run with u32 and u64. Fourier validation includes both Rust
 | NTRU dense Boolean / 2+2 bit PBS | 800 / 1024; 866 / 2048 | uniform binary or uniform ternary | sparse ternary |
 | NTRU fixed-weight / sparse / MVB | 728 / 1024 | fixed-weight binary, h=32 | sparse ternary |
 | NTRU circuit / one-hot / lookup diagnostic | 800 / 1024 | uniform binary or uniform ternary | sparse ternary |
-| NTRU teaching one-hot / teaching and benchmark lookup | 800 / 1024 | fixed-weight binary, h=32 | sparse ternary |
+| NTRU teaching one-hot / teaching lookup | 800 / 1024 | fixed-weight binary, h=32 | sparse ternary |
 
 `SparseTernary` is the existing distribution with probabilities (−1,0,+1)=(1/4,1/2,1/4), not an exact-weight ring key. NTRU samples f directly from this signed distribution, then screens it for the backend's invertibility requirements; do not reinterpret it as an unimplemented `1+2F` secret distribution. Its external LWE secret is independent. The 728/h32 geometry exercises fixed-weight/sparse algorithms and narrow MVB input cells. Sparse keys use copy_count=3 and bucket_count=64. Their map-generation retry does not replace the client secret or search for successful numerical seeds.
 
@@ -53,7 +56,7 @@ All constructor arguments are **coefficient-domain standard deviations under the
 
 Both GLWE orders use the same kind of GLWE KS material; order changes where it is applied. BR and KS have independent configuration fields. These fixtures happen to give them equal σ; this is not an API requirement. The small-LWE σ is the fresh input-encryption noise for PBS→KS. KS→PBS external inputs use the extracted ring-secret domain and BR/accumulator-derived LWE noise, not the KS key's noise. See the [domain and return-path guide](tfhe-parameters-and-boundaries.md).
 
-`CbsGadgetConfig` supplies three decompositions. Its trace and scheme-switch parameters inherit the accumulator encryption parameters, including σ; advanced direct CBS construction can instead supply compatible parameters with independent noise. The generated keys are independently sampled. NTRU keeps ring/CBS σ=0.7 separate from external LWE and return KS noise. Its n800/h32 teaching lookup uses αq24, whereas n728/h32 diagnostics use σ=3276.8: equal Hamming weight does not make those profiles interchangeable. CBS and NGSW products amplify errors through f and f²; changing dimensions, distributions or noise needs a joint budget.
+`CbsGadgetConfig` supplies three decompositions. Its trace and scheme-switch parameters inherit the accumulator encryption parameters, including σ; advanced direct CBS construction can instead supply compatible parameters with independent noise. The generated keys are independently sampled. NTRU keeps ring/CBS σ=0.7 separate from external LWE and return KS noise. Its n800/h32 teaching lookup uses αq24, whereas the historical n728/h32 diagnostics used σ=3276.8: equal Hamming weight does not make those profiles interchangeable. CBS and NGSW products amplify errors through f and f²; changing dimensions, distributions or noise needs a joint budget.
 
 The [default noise sampler](../../crates/primus_distr/src/discrete_gaussian/mod.rs) is a centered, truncated discrete Gaussian, represented as canonical residues. Its inclusive magnitude bound is `max(1, floor(12σ))`; it selects a 64-bit CDT for maximum magnitude ≤255 and a discrete Ziggurat otherwise. Here σ is the sampler parameter, not a measured standard deviation of evaluated ciphertexts. The optional precise CDT is a separate sampler, not an automatic consequence of enabling `high_precision`. Security or tail analyses must account for this sampling model, its approximation and NTRU's accepted-key conditioning. A normalized constant copied from another implementation does not transfer that implementation's claims to these secrets, moduli, samplers and algorithms.
 
@@ -70,7 +73,7 @@ Notation is `(log2 radix, level count; discarded bits)`. With explicit non-power
 | u32 Fourier | (8,3;8) | (2,13;6) |
 | u64 Fourier | (23,1;41) | (3,5;49) |
 
-These are the unchanged numerical profiles extracted from the two existing GLWE PBS benchmarks. Both benchmarks now call these constructors directly. Other workload migrations use the explicit profiles below.
+These numerical profiles were recorded from the former GLWE PBS benchmarks. The current u64 teaching configs retain their numerical choices; the u32 rows are historical reference profiles.
 
 ### GLWE circuit, ternary and fixed-weight diagnostics
 
@@ -84,7 +87,7 @@ BR and KS use full-length base 2^2 for u32 and base 2^8 for u64. Trace and schem
 | u64 Q50 | (8,6;2) | (8,2;34) | 2^34 |
 | u64 native | (8,8;0) | (8,2;48) | 2^48 |
 
-CBS output widths are padded to W=4 for u32 and W=2 for u64. Large-parameter validation checks every GGSW row and level, not just a decoded CMux result.
+CBS output widths are padded to W=4 for u32 and W=2 for u64. The historical large-parameter diagnostic checked every GGSW row and level, not just a decoded CMux result.
 
 ### NTRU PBS, CBS and lookup
 
@@ -98,15 +101,15 @@ BR, trace and scheme-switch use full-length base 2^2 for u32 and base 2^8 for u6
 | u64 Q50 | (8,6;2) | (8,3;26) | 2^26 |
 | u64 native | (8,8;0) | (8,3;40) | 2^40 |
 
-The lookup pipeline benchmark also pairs classic/sparse at n800/h32 with this circuit profile, c8/d5/o8 and independently seeded input. A sparse table with public lifts uses independent NLEV[1], selecting BR's basis and sigma 0.7 in that fixture; tables without lifts generate none. Complete-request timings, retained material and returned phase residuals are in the [sparse report](../performance/sparse-baseline.md#ntru-high-precision-lookup).
+The former lookup benchmark paired classic/sparse at n800/h32 with this circuit profile, c8/d5/o8 and independently seeded input. A sparse table with public lifts used independent NLEV[1], selecting BR's basis and sigma 0.7 in that fixture; tables without lifts generated none. Historical complete-request timings, retained material and returned phase residuals are recorded in the [sparse report](../performance/sparse-baseline.md#ntru-high-precision-lookup); those observations are specific to that workload.
 
-The standalone parameter diagnostic uses M=4, c=7 input chunks, d=5 coefficient chunks, o=3 output chunks. Thus M^d=N=1024 and the 14-bit input selects among 16 public polynomials per output. This exercises public lifting, a further encrypted CMux layer, five aggregate rotations, and Q→q24 return. Output width is independent of input width. The evaluator has no new algorithmic restrictions; these are the dimensions that were numerically validated.
+The former standalone parameter diagnostic used M=4, c=7 input chunks, d=5 coefficient chunks, o=3 output chunks. Thus M^d=N=1024 and the 14-bit input selects among 16 public polynomials per output. This exercises public lifting, a further encrypted CMux layer, five aggregate rotations, and Q→q24 return. Output width is independent of input width. These are dimensions of that historical observation, not an additional evaluator restriction.
 
-For one-hot, L=4 (u32) or 3 (u64), so W=4 and A=N/(2MW)=32. With R_W the prepared rotation modulus switch, validation computes
+For one-hot, L=4 (u32) or 3 (u64), so W=4 and A=N/(2MW)=32. With R_W the prepared rotation modulus switch, the historical diagnostic computed
 
 `e = centered(R_W(b) − Σ R_W(a_i)s_i − m·N/M) / W`
 
-and checks the actual left-closed guard `−A ≤ e < A`. This includes rounding of every mask coefficient; it is not a modulus switch of the already decrypted phase. Fourier uses the existing coefficient-halving reverse trace and includes its rounding/FFT error in the observed output residuals.
+and checked the actual left-closed guard `−A ≤ e < A`. This includes rounding of every mask coefficient; it is not a modulus switch of the already decrypted phase. Fourier uses the existing coefficient-halving reverse trace and includes its rounding/FFT error in the observed output residuals.
 
 The 27-bit u32 candidate did not provide a sufficient joint CBS/product budget at n=800. Q30 alone with a coarse three-level output also failed. Small internal digits and four output levels balance selector error against product decomposition error. The selected profiles retain the existing NTRU secret distribution, dimensions and ring noise, without seed selection or relaxed acceptance thresholds. Intermediate trials with larger ring noise are not supported presets.
 
@@ -151,19 +154,20 @@ The [one-hot contract](../../crates/primus_tfhe_ntru/src/one_hot.rs) uses `S=N/M
 
 The [lookup layout](../../crates/primus_tfhe_ntru_lut/src/lookup_table.rs) uses low d chunks to select coefficients (`K=M^d`) and high c−d chunks to select among `P=M^(c−d)` polynomials per output. Aggregate controls encrypt `X^(−m_i*M^i)`; they rotate the selected data polynomial without ordinary PBS plateau repetition. Noise tolerance comes first from one-hot CBS and then from the product chain, not from that absence of repetition. Table sharing/pruning depends on the function and changes actual selection work. Storage and plan statistics are not a noise analysis.
 
-Classic and sparse are alternative BR implementations available to all four backends' ordinary PBS, ManyLUT, MVB and CBS. NTRU also supports either BR for one-hot and high-precision evaluation. Sparse requires its fixed-weight binary secret and matching material; it cannot be substituted for a dense binary/ternary key. Sparse lookup needs an independent NLEV[1] public-lift key only when the compiled plan contains a reachable Lift; classic can use its initializer. The [material guide](../../crates/primus_tfhe_ntru_lut/README.md#evaluation-and-workspace) describes binding. API availability does not establish numerical evidence for every combination; the large parameter diagnostic does not exercise NTRU sparse CBS.
+Classic and sparse are alternative BR implementations available to all four backends' ordinary PBS, ManyLUT, MVB and CBS. NTRU also supports either BR for one-hot and high-precision evaluation. Sparse requires its fixed-weight binary secret and matching material; it cannot be substituted for a dense binary/ternary key. Sparse lookup needs an independent NLEV[1] public-lift key only when the compiled plan contains a reachable Lift; classic can use its initializer. The [material guide](../../crates/primus_tfhe_ntru_lut/README.md#evaluation-and-workspace) describes binding. API availability does not establish numerical evidence for every combination; the former large-parameter diagnostic did not exercise NTRU sparse CBS.
 
 ## Scope of paired parameter entries
 
-The following small catalogue describes **experimental u64** pairings available from each backend's `experimental` module. It pairs existing key profiles with the actual teaching domains and explicit algorithm/order. It is not a list of production security presets or a promise that other functions have the same error budget. u32, ternary and alternate engines/orders remain available through explicit parameters, benchmarks and focused tests; silently converting bases between word widths is inappropriate.
+The following small catalogue describes **experimental u64** pairings available from each backend's `experimental` module. It pairs existing key profiles with the actual teaching domains and explicit algorithm/order. It is not a list of production security presets or a promise that other functions have the same error budget. u32, ternary and alternate engines/orders remain expressible through explicit parameters; this guide does not claim current test coverage for them. Silently converting bases between word widths is inappropriate.
 
 All 26 teaching examples start from the corresponding operation config. Prepare
 it once, then generate keys with its explicit algorithm and compile the public
 function. The examples retain separate client/server stages and reuse buffers
 for two requests. Numerical construction lives in the backend's `experimental`
 module; the examples keep operation choices such as lanes, thresholds, CBS
-predicates and lookup functions visible. Benchmark and diagnostic profiles
-remain separate, with their existing numerical choices and measurement boundaries.
+predicates and lookup functions visible. Historical benchmark and diagnostic
+profiles were separate workloads; their evidence does not transfer automatically
+to these teaching functions.
 
 | Paired workflow | Key profile / algorithm | Message and operation configuration |
 | --- | --- | --- |
@@ -290,35 +294,29 @@ Changing t, lane count, output domain, CBS function, candidate values or lookup 
 
 | Evidence | What is available | What it does not establish |
 | --- | --- | --- |
-| Parameter provenance | Local numerical constructors at the reviewed revision, now centralized in backend operation configs; dense GLWE α/β are recorded as reference constants in [benchmark source](../../benchmarks/tfhe/src/benchmark.rs) | Imported security/DFR claims after changing geometry, noise floors, modulus, sampler, order or algorithm |
+| Parameter provenance | Backend operation configs for current examples; dense GLWE α/β and historical numerical choices recorded above | Imported security/DFR claims after changing geometry, noise floors, modulus, sampler, order or algorithm |
 | Construction and representation | Existing parameter/table, codec and operation-binding checks; capacities and exact q/Q/basis/layout pairing | Rotation guards, accumulated noise, secret identity or a security level |
-| Functional observations | Small contract tests; example known-result checks; explicit fixed-seed diagnostics and dated observations below | Worst-case noise, tail probabilities or a target failure rate; paths absent from a diagnostic remain absent |
+| Functional observations | Current example known-result checks and historical fixed-seed observations below; the former TFHE tests and diagnostic have been removed | Worst-case noise, tail probabilities or a target failure rate; paths absent from a diagnostic remain absent |
 | Security estimate | **Unassessed for every listed entry** | LWE/GLWE/NTRU hardness under the actual distributions, fixed weight, accepted NTRU keys and exposed evaluation material |
 | Complete failure bound | **Unassessed for every listed entry** | Joint per-mask switching, decomposition, sparse bucket accumulation, FFT/trace, gadget-consumer and return errors, including correlation |
 
 Any future supported security/DFR claim must specify its estimator/model and version, exact secret/sampler assumptions, applicable operation/function bounds and error accounting for the complete request. NTRU invertibility/numerical screening and sparse public-map construction need their actual conditioning assumptions. Private-key fixture observations also do not validate a public-key encryption noise distribution. Until such evidence exists, paired entries must remain explicitly experimental arithmetic examples. Setup can reject encoding/layout violations using the existing owning boundary; no unproved probability threshold should be presented as a validator or added to online kernels.
 
-## Validation and observations
+## Historical numerical observations
 
-Run the full matrix explicitly:
+The removed diagnostic used fixed seeds 42 and 4242. Its recorded scope was:
 
-```sh
-cargo run --release -p primus_tfhe_benchmarks --bin validate_parameters --features validation,ntt,fourier,rustfft,tfhe-fft -- --all
-cargo +nightly run --release -p primus_tfhe_benchmarks --bin validate_parameters --features validation,ntt,fourier,simd,rustfft,tfhe-fft -- --all
-```
-
-A substring selects before any keys are generated, for example `-- ntru/ntt/u32`, `-- glwe/rustfft/u64`, or `-- lut/compile`. Unknown filters fail. This entry is not a Criterion timing target and is not run by ordinary `nextest --lib --tests`.
-
-The fixed seeds are 42 and 4242. Validation covers:
-
-- PBS/ManyLUT at zero, interior and final messages, then zero again to reuse workspace; Boolean truth tables and an output-reconsumption chain reuse the existing shared oracle.
+- PBS/ManyLUT at zero, interior and final messages, then zero again to reuse workspace; Boolean truth tables and an output-reconsumption chain.
 - Uniform binary/ternary and fixed-weight classic/sparse keys, both GLWE orders, both word widths and both FFT engines.
 - Ordinary CBS at t=4, every gadget coefficient/level/row, and nonconstant CMux candidates; NTRU one-hot at t=8 for every selector, including the default zero selector.
-- MVB thresholds with 64 inputs and 17 outputs, including a threshold transition and the endpoint. The returned flags use Scaled encoding under the external modulus.
-- Complete lookup at 0, 1, 1023, 1024, 0x1234, 16383, 0; every chunk also passes the quantized-phase guard. The public function is nonlinear and checks all three output chunks.
-- Public LUT constructor geometry at N=1024/2048, u32/u64, native/q24/Barrett, including odd t=255 and non-power-of-two output counts. Existing small tests retain the polynomial-content oracles.
+- MVB thresholds with 64 inputs and 17 outputs, including a threshold transition and the endpoint; returned flags used Scaled encoding under the external modulus.
+- Complete lookup at 0, 1, 1023, 1024, 0x1234, 16383, 0, including quantized-phase guards and all three output chunks of a nonlinear function.
+- Public LUT geometry at N=1024/2048, u32/u64 and native/q24/Barrett moduli, including odd t=255 and non-power-of-two output counts.
 
-The acceptance thresholds were fixed before parameter experiments. Decoded outputs require circular phase error < q/(4t), half the decoding radius; raw gadget coefficients require error < scalar/8; lookup outputs require error < q24/32=524288. Reports show the largest fraction of the corresponding budget, not a noise standard deviation or a failure-rate estimate. CMux coefficients are checked individually. Samples with errors are rejected rather than counted as successful because another seed works.
+This list records historical coverage only. It is neither an executable suite nor
+a claim that the current source has passed these checks.
+
+The acceptance thresholds were fixed before parameter experiments. Decoded outputs required circular phase error < q/(4t), half the decoding radius; raw gadget coefficients required error < scalar/8; lookup outputs required error < q24/32=524288. The recorded fractions describe the corresponding budgets, not a noise standard deviation or a failure-rate estimate. CMux coefficients were checked individually. Samples with errors were rejected rather than counted as successful because another seed worked.
 
 Historical observation from 2026-09-28: AMD Ryzen 9 9955HX3D, x86_64 Linux, repository `target-cpu=native`; stable rustc 1.98.0 (88d9e12ae), and nightly 1.100.0 (bff8e12ff) with SIMD. Both configurations passed the matrix registered at that time. After restoring the fixed-weight NTRU profile's original normalized input noise, all NTRU profiles were rerun in both configurations. The table is the maximum over both seeds, applicable secrets/orders and the two configurations. It is not a new validation of the source revision reviewed above or of all teaching functions/domains.
 
@@ -337,45 +335,31 @@ Historical observation from 2026-09-28: AMD Ryzen 9 9955HX3D, x86_64 Linux, repo
 | NTRU TFHE-FFT u32 | 0.016991 | 0.177925 | 128544 |
 | NTRU TFHE-FFT u64 | 0.014793 | 0.000290 | 1595 |
 
-These are maxima of finite observations under explicitly selected bounds. They do not establish worst-case noise, a target decryption-failure probability, or security. Ordinary CI keeps small contract tests; this diagnostic is opt-in. Current test commands and coverage belong to the [testing guide](testing.md), rather than a historical test count here. No latency or memory improvement is inferred from this inventory review.
+These are maxima of finite observations under explicitly selected bounds. They do not establish worst-case noise, a target decryption-failure probability, or security. Current validation commands and retained workspace coverage belong to the [testing guide](testing.md). The deleted TFHE suite and diagnostic are not part of current CI. No latency or memory improvement is inferred from this inventory review.
 
-## Benchmark inventory
+## Workload and measurement boundaries
 
-The four backends and high-precision LUT share **seven** Cargo targets
-in [`primus_tfhe_benchmarks`](../../benchmarks/tfhe/README.md#targets):
+Future benchmarks belong to each concrete backend or the high-precision LUT
+crate. Each bench file will own its required helpers and measure a named workload
+through the recommended public API. Public LUT creation, key generation and
+homomorphic evaluation are distinct timing boundaries; setup that is not the
+measurement target stays outside the timed iteration. There is no current
+centralized TFHE benchmark or parameter-diagnostic entry point.
 
-| Target | Actual message/workload scope |
-| --- | --- |
-| `pbs` | Dense Boolean 4→4 and shortint 32→32; representative binary/ternary, word, FFT and GLWE-order cases |
-| `sparse_pbs` | Fixed n728/h32, Rounded 8→8 in all four backends; paired classic/sparse |
-| `cbs` | Fixed n728/h32, identity selector t=4 with ring candidates t=4; NTRU also full/nonzero one-hot at t=8, candidates t=8, classic/sparse |
-| `mvb` | Fixed n728/h32; input 16/output 2, D8/k3 compares three paths with classic/sparse; input 128/output 2, D64/k17 keeps classic independent/factorized paths |
-| `setup` | u64 evaluation-key generation, complete GLWE public-key generation in both PBS orders, and GLWE stage diagnostics; separate from online request timings |
-| `high_precision_lut` | n800/h32, tau2/c8/d5/o8, classic/sparse; separate public LUT creation and homomorphic evaluation; polynomial, dense and shared-function workloads |
-| `sparse_paper` | Opt-in GLWE NTT paper/candidate profiles and benchmark-only small-q adapter, kept outside the shared fixture catalogue |
-
-The reduced suite retains representative comparisons instead of crossing every
-axis for every operation. Public low-level compilation also has a separate
-`primus_tfhe/lookup_table` target in its own crate.
-The [benchmark guide](../../benchmarks/tfhe/BENCHMARKS.md) maps targets to
-operations, geometry and timing boundaries. The [measurement record](../performance/tfhe-baseline.md)
-tracks the current baseline and the effect of removing eager fixture setup.
-
-Benchmarks, numerical diagnostics and examples are different workloads. In
-particular, fixed-weight PBS diagnostics use t=8 for GLWE and t=16 for NTRU;
-their teaching sparse examples use t=32. CBS teaching predicates use t_in=8 and
-t_ring=8, whereas the identity diagnostic/benchmark uses 4/4. The one-hot
-benchmark uses n728/h32 with the diagnostic noise, not the teaching n800/h32
-profile. The standalone lookup diagnostic uses c7/d5/o3 and classic uniform
-binary/ternary input secrets; the teaching/benchmark lookup uses c8/d5/o8 and
-fixed-weight secrets. These finite observations and timings cannot be assigned
-to one undifferentiated profile.
+The historical observations used different domains from the teaching examples.
+Fixed-weight PBS diagnostics used t=8 for GLWE and t=16 for NTRU; teaching sparse
+examples use t=32. CBS teaching predicates use t_in=8 and t_ring=8, whereas the
+identity diagnostic used 4/4. The one-hot benchmark used n728/h32 with the
+diagnostic noise, not the teaching n800/h32 profile. The standalone lookup
+diagnostic used c7/d5/o3 and classic uniform binary/ternary input secrets;
+teaching lookup uses c8/d5/o8 and fixed-weight secrets. Finite observations and
+timings cannot be assigned to one undifferentiated profile.
 
 ## Teaching examples
 
-TFHE examples fix `Word = u64`, with `U64NttTable` for NTT and `RustFftTable` for Fourier. They retain the existing u64 profiles: Barrett Q50 for TFHE NTT, Native64 for Fourier, and independent PowOf2 q24 for NTRU returns. All 26 TFHE/LUT examples select their matching `experimental` config. Backend examples prepare a complete context directly with `try_from_pbs_config` / `try_from_cbs_config`; high-precision examples construct `NttHighPrecLutContext` / `FourierHighPrecLutContext` directly, without separate backend or resource wiring. Ordinary PBS/ManyLUT clients and compilers derive Rounded codecs from `config.messages`; MVB uses the same message config with Scaled output factories. No codec is supplied in these examples. Family `PbsParameters` own default client preparation and backend contexts delegate to them. Advanced same-key compositions reuse prepared codecs through the family `*_with_codec` factories without changing defaults. CBS/one-hot use `config.pbs.messages.input_modulus` and `config.gadget`; high-precision lookup derives its chunk format from `config.one_hot.pbs.messages.input_modulus` and takes independent counts and optional coefficient partition from `HighPrecLutConfig`. Ordinary CBS examples use t_in=8 and compute the predicate m >= 2 inside the same BR; CBS benchmarks and parameter diagnostics retain their identity t_in=4 workload. CBS/one-hot examples use the same `context.encryptor` and pass only independent t_ring to `context.accumulator_client`; CBS compilation and default evaluators use retained input/gadgets, without codec or resource wiring. This does not establish a noise budget. GLWE basic/CBS/ManyLUT examples fix BR→KS, and factorized MVB fixes KS→BR. Word-width comparisons remain in tests, benchmarks and parameter diagnostics. The LWE basic and NTRU automorphism examples also use u64; the latter retains its small Q27 prime and `log_basis=3` decomposition. Application bytes, indexes and floating-point values keep their own types.
+TFHE examples fix `Word = u64`, with `U64NttTable` for NTT and `RustFftTable` for Fourier. They retain the existing u64 profiles: Barrett Q50 for TFHE NTT, Native64 for Fourier, and independent PowOf2 q24 for NTRU returns. All 26 TFHE/LUT examples select their matching `experimental` config. Backend examples prepare a complete context directly with `try_from_pbs_config` / `try_from_cbs_config`; high-precision examples construct `NttHighPrecLutContext` / `FourierHighPrecLutContext` directly, without separate backend or resource wiring. Ordinary PBS/ManyLUT clients and compilers derive Rounded codecs from `config.messages`; MVB uses the same message config with Scaled output factories. No codec is supplied in these examples. Family `PbsParameters` own default client preparation and backend contexts delegate to them. Advanced same-key compositions reuse prepared codecs through the family `*_with_codec` factories without changing defaults. CBS/one-hot use `config.pbs.messages.input_modulus` and `config.gadget`; high-precision lookup derives its chunk format from `config.one_hot.pbs.messages.input_modulus` and takes independent counts and optional coefficient partition from `HighPrecLutConfig`. Ordinary CBS examples use t_in=8 and compute the predicate m >= 2 inside the same BR; the former CBS benchmark and parameter diagnostic used an identity t_in=4 workload. CBS/one-hot examples use the same `context.encryptor` and pass only independent t_ring to `context.accumulator_client`; CBS compilation and default evaluators use retained input/gadgets, without codec or resource wiring. This does not establish a noise budget. GLWE basic/CBS/ManyLUT examples fix BR→KS, and factorized MVB fixes KS→BR. The teaching files do not provide a word-width comparison matrix. The LWE basic and NTRU automorphism examples also use u64; the latter retains its small Q27 prime and `log_basis=3` decomposition. Application bytes, indexes and floating-point values keep their own types.
 
-Examples do not import benchmark parameter factories. Typed constants centralize the basic fixtures; the remaining local configuration functions keep their numerical choices explicit. The workflow appears in `main` before any parameter helpers. Client and server stages appear directly in `main`, identified by comments. Server setup uses public context, encoding and evaluation keys; CBS/one-hot candidates are encrypted by the client. High-precision lookup compiles the public function separately from key generation and evaluation. Each workload makes two requests with reused buffers. No example imports code from `benches/` or `tests/`.
+Examples start from typed constants in their backend's `experimental` module and keep workload choices explicit. The workflow appears in `main` before any parameter helpers. Client and server stages appear directly in `main`, identified by comments. Server setup uses public context, encoding and evaluation keys; CBS/one-hot candidates are encrypted by the client. High-precision lookup compiles the public function separately from key generation and evaluation. Each workload makes two requests with reused buffers. No example imports code from `benches/` or `tests/`.
 
 | Workflow | Geometry and encoding | Complete examples |
 | --- | --- | --- |
@@ -392,11 +376,11 @@ All examples are arithmetic demonstrations, not assessed security presets. NTRU 
 
 All four backends have separate classic PBS, sparse PBS, interleaved ManyLUT, ordinary CBS and factorized MVB entries. Each example fixes one algorithm: basic, ManyLUT, CBS, one-hot, MVB and high-precision use classic BR; the dedicated sparse files use sparse BR. GLWE sparse CBS retains its separate entry. NTRU sparse CBS/one-hot remain available through the backend key-generation API; the [LUT material guide](../../crates/primus_tfhe_ntru_lut/README.md#evaluation-and-workspace) shows the complete sparse workflow and explicit public-lift composition. Algorithm choices no longer turn each teaching file into another comparison matrix. One-hot and the full high-precision pipeline are NTRU extensions. ManyLUT and factorized MVB are distinct multi-output algorithms.
 
-Boolean gates, bivariate LUTs and odd full-domain LUTs are derived encoding/composition APIs, not additional blind-rotation algorithms. They retain their [user guide](../../crates/primus_tfhe/README.md#choosing-an-operation) and test coverage; this list does not claim a standalone example for every public wrapper or secret distribution. Classic binary/ternary validation remains in the numerical diagnostic above.
+Boolean gates, bivariate LUTs and odd full-domain LUTs are derived encoding/composition APIs, not additional blind-rotation algorithms. They retain their [user guide](../../crates/primus_tfhe/README.md#choosing-an-operation); this list does not claim a standalone example or current automated coverage for every public wrapper or secret distribution.
 
 ### Choosing the lookup example width
 
-The two teaching examples use eight two-bit input chunks and eight output chunks (16 bits each), with d=5 and N=1024. Their polynomial function `(x*x+3*x+7) mod 65536` depends on high input chunks as well as low ones. The cleartext intermediate uses u64 to avoid overflowing u32. These examples are separate from the c7/d5/o3 parameter-diagnostic fixture above.
+The two teaching examples use eight two-bit input chunks and eight output chunks (16 bits each), with d=5 and N=1024. Their polynomial function `(x*x+3*x+7) mod 65536` depends on high input chunks as well as low ones. The cleartext intermediate uses u64 to avoid overflowing u32. These examples are separate from the historical c7/d5/o3 parameter-diagnostic fixture above.
 
 With output count equal to input count and K=N, the worst-case complete data table costs `c * 4^c * sizeof(Word)` bytes before polynomial sharing and selection pruning. This is public coefficient storage only, excluding plan metadata, keys, evaluators and outputs; the example function can use less:
 
@@ -408,7 +392,7 @@ With output count equal to input count and K=N, the worst-case complete data tab
 
 Eight chunks demonstrate a 16-bit lookup and multiple encrypted table-selection layers at a modest table size. Ten chunks work in the sampled trials but raise table storage by 20 times over eight; use them for an explicitly larger workload. Counts remain independent in the API. This is an example-size choice, not an algorithmic precision limit.
 
-The 6/8/10 comparison used NTT and RustFFT, u32/u64, seeds 42 and 4242, and inputs `4^c-1`, `floor(2*4^c/3)`, `floor(4^c/3)`, 1 and 0, with output reduced modulo `4^c`; all 120 evaluations decoded correctly. The selected eight-chunk profile was additionally checked with both FFT engines, both words, default and nightly SIMD: two seeds, inputs 0b10_10_10_11_11_00_11_01, 0, 1, 1023, 1024, 65535, 0, and each returned chunk's circular phase error below q24/32. These finite checks do not establish a failure probability.
+The historical 6/8/10 comparison used NTT and RustFFT, u32/u64, seeds 42 and 4242, and inputs `4^c-1`, `floor(2*4^c/3)`, `floor(4^c/3)`, 1 and 0, with output reduced modulo `4^c`; all 120 evaluations decoded correctly. The selected eight-chunk profile was additionally checked with both FFT engines, both words, default and nightly SIMD: two seeds, inputs 0b10_10_10_11_11_00_11_01, 0, 1, 1023, 1024, 65535, 0, and each returned chunk's circular phase error below q24/32. These historical finite checks do not establish a failure probability or current test coverage.
 
 ### Example smoke checklist
 
@@ -425,12 +409,12 @@ cargo run --release -p primus_tfhe_ntru_fourier --example ntru_fourier_mvb_thres
 cargo run --release -p primus_tfhe_ntru_lut --example ntt_lookup --features ntt
 ```
 
-The source's known-result checks validate both requests and reused buffers. Use
-small integration tests and `validate_parameters` for other words, engines,
-orders or algorithm comparisons; do not add a matrix dispatcher to teaching
-examples or mechanically rerun every combination after a local edit. When a
-change specifically concerns the other FFT engine, change the example's table
-import and `required-features` together, then restore the documented defaults.
-Nightly SIMD and large parameter diagnostics remain explicit validation choices.
+The source's known-result checks cover both requests and reused buffers when an
+example is run. These examples do not replace the removed test suite, nor do they
+cover every word, engine, order or algorithm. New tests should cover independent
+contracts with small parameters after the recommended workflows are settled;
+examples should not become matrix dispatchers. When a change specifically
+concerns the other FFT engine, change the example's table import and
+`required-features` together, then restore the documented defaults.
 
 The public examples retain distinct GLWE/NTRU parameter, key and return contracts and distinct NTT/Fourier table types. Within a crate there is one entry per task. Configuration is intentionally local to each file so that users can read and change it directly; there is no example support layer hiding parameters or the workflow.

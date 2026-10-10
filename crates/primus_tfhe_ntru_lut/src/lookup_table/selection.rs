@@ -182,7 +182,7 @@ impl SelectionPlan {
             .any(|node| matches!(node.operation, TableOperation::Lift(_)))
     }
 
-    #[cfg(any(test, feature = "ntt", feature = "fourier"))]
+    #[cfg(any(feature = "ntt", feature = "fourier"))]
     pub fn output_action(&self, index: usize) -> OutputAction {
         self.outputs[index].action
     }
@@ -190,7 +190,7 @@ impl SelectionPlan {
     /// Consecutive outputs that need evaluation, bounded by return capacity.
     /// Stops before copying a repeated output: its source LWE must be completed
     /// by the preceding tile. The caller starts on Evaluate with nonzero capacity.
-    #[cfg(any(test, feature = "fourier"))]
+    #[cfg(feature = "fourier")]
     pub fn evaluation_tile(&self, first: usize, capacity: usize) -> Range<usize> {
         debug_assert!(capacity > 0);
         debug_assert_eq!(self.output_action(first), OutputAction::Evaluate);

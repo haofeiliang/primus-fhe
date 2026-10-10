@@ -106,9 +106,9 @@ let mut evaluator = context.evaluator(&server)?;
 
 两种 order 均支持普通/交错 PBS、MVB 和 CBS。`try_generate_circuit_bootstrap_keys` 生成 CBS 材料并共享一份 BR/KS；`ServerKey::blind_rotation_key()` 可查看 classic/sparse 变体。
 
-独立的 `sparse_paper` 基准提供 `paper_2026_1730` NAND 和带 padding 函数对比组；普通 `sparse_pbs` 只保留固定重量对照。`complete_ring_return` 包含本后端的 ring KS 返回，`blind_rotation` 不包含返回。具体参数、测量与论文的差异见[对比记录](../../guides/performance/sparse-paper-comparison.md)；这些是实验性基准参数，不是安全参数预设。
+历史参数、测量与论文的差异见[对比记录](../../guides/performance/sparse-paper-comparison.md)。这些测量使用实验性配置，并非安全参数预设。
 
-独立的 `sparse_candidate_r2` ID 为已验证的 STD128 和三位函数配置选择两个副本、`2*h` 个桶及更少的 BR 层数。[消费者测量](../../guides/performance/sparse-consumer-measurements.md)覆盖 PBS、ManyLUT、MVB 和反馈调用。CBS 需要独立选择输出基：PBS 配置能正确工作，不代表其 gadget 控制和后续 CMux 也满足误差要求。
+历史 `sparse_candidate_r2` 测量为 STD128 和三位函数配置选择两个副本、`2*h` 个桶及更少的 BR 层数。[消费者测量](../../guides/performance/sparse-consumer-measurements.md)覆盖 PBS、ManyLUT、MVB 和反馈调用。CBS 需要独立选择输出基：PBS 配置能正确工作，不代表其 gadget 控制和后续 CMux 也满足误差要求。
 
 ## 电路自举
 
@@ -126,10 +126,8 @@ Context 保存 Rounded 输入编码与 CBS gadget。使用 `context.encryptor(ex
 
 Rustdoc 按职责组织 `key`（服务端材料）、`circuit_bootstrap`（CBS）、 `factorized`（MVB 程序和执行）与 `sparse`（稀疏生成与旋转）；常用工作流类型仍从 crate 根导入。 原始 GLWE 控制材料和 BR 工作区见 `bootstrapping_key` 与 `blind_rotation`。
 
-基准集中在 [`primus_tfhe_benchmarks`](../../benchmarks/tfhe/README.zh_CN.md#targets)。按运算选择 `pbs`、`sparse_pbs`、`mvb`、`cbs` 或显式诊断 `setup` target。选择 `--features glwe-ntt`。
-
 ## 进一步阅读
 
 本 crate 在普通依赖上固定启用 `ntt`；无需额外后端开关，单独使用不引入 Fourier/FFT。默认 features 为空；可选 `simd` 启用依赖中的 nightly SIMD 算术。
 
-[Boolean 门](../primus_tfhe/README.zh_CN.md#boolean-门) · [错误边界](../primus_tfhe/README.zh_CN.md#错误边界) · [实现说明](../primus_tfhe/IMPLEMENTATION.md) · [基准指南](../../benchmarks/tfhe/BENCHMARKS.md)
+[Boolean 门](../primus_tfhe/README.zh_CN.md#boolean-门) · [错误边界](../primus_tfhe/README.zh_CN.md#错误边界) · [实现说明](../primus_tfhe/IMPLEMENTATION.md) · [性能说明](../../guides/performance/README.zh_CN.md)

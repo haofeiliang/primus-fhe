@@ -1,6 +1,6 @@
-# NTRU lookup stages, storage and benchmarks
+# NTRU lookup stages and storage
 
-User-facing encoding and evaluation contracts are in the [README](README.md). This document records the internal storage and measurement boundaries shared by the [NTT evaluator](src/ntt.rs) and [Fourier evaluator](src/fourier.rs).
+User-facing encoding and evaluation contracts are in the [README](README.md). This document records the internal storage and evaluation stages shared by the [NTT evaluator](src/ntt.rs) and [Fourier evaluator](src/fourier.rs).
 
 ## Compilation and evaluator features
 
@@ -16,9 +16,6 @@ slot scheduling, callback order or stored coefficients.
 Scheduling fields remain part of the compiled artifact even when no evaluator is
 selected. The three internal metadata structs explicitly permit unread fields in
 that configuration; execution-only accessors are gated with their consumers.
-Compiler tests still exercise shared-node identity and slot lifetimes without a
-transform implementation. Evaluation tests select individual available backends;
-the comparative `high_precision_lut` benchmark selects NTT and/or one Fourier engine explicitly in `primus_tfhe_benchmarks`.
 
 The [`statistics` module](src/lookup_table/statistics.rs) reads the immutable
 plan for operation counts. It also owns the direct buffer-length calculations
@@ -27,9 +24,8 @@ entries; Fourier counts N/2 complex pairs per transformed polynomial plus its
 coefficient conversion and gadget-one buffers. This describes storage only and
 does not merge numerical kernels. Bootstrap/CBS/one-hot resources (including
 the extra sparse input state), return buffers, transform engines, keys, public compilation storage, caller buffers, allocator
-overhead and construction temporaries are excluded. The benchmark's retained-heap
-measurement includes resources beyond this partial estimate; the two numbers
-must not be treated as the same metric.
+overhead and construction temporaries are excluded. This partial estimate must
+not be treated as complete retained heap or peak memory.
 
 ## Public table storage and compiled choices
 
@@ -241,110 +237,20 @@ adds no selector scratch and no online allocation.
 Measured complete-evaluation results and requested retained/peak memory are in
 the [sparse pair report](../../guides/performance/sparse-layout-and-batching.md#ntru-lut-paired-blind-rotation).
 
-## Benchmark fixture
+## Historical measurements
 
-The [pipeline benchmark](../../benchmarks/tfhe/benches/high_precision_lut.rs) calls the public evaluators.
-[Support](../../benchmarks/tfhe/benches/high_precision_lut/mod.rs) holds only the public layout, cleartext function,
-creation timing and opt-in diagnostic reporting; its NTT/Fourier modules keep concrete
-backend types. It neither includes production source files nor exposes scratch.
-The 18 IDs comprise six public-table creation/drop cases and twelve complete
-evaluations: three table structures, NTT/primary Fourier and classic/sparse.
-RustFFT is the primary engine when enabled; engine comparisons live in the
-NTRU `pbs` target. The [suite matrix](../../benchmarks/tfhe/BENCHMARKS.md#reduced-suite-specification)
-records the representative word/order/engine comparisons across all targets.
+The [complete lookup workflow report](../../guides/performance/tfhe-baseline.md#complete-high-precision-lookup-workflow-2026-10-09)
+compares manually assembled and context-bound evaluation. The
+[sparse lookup report](../../guides/performance/sparse-baseline.md#ntru-high-precision-lookup)
+records fixed-weight classic/sparse measurements, and the
+[sparse pair report](../../guides/performance/sparse-layout-and-batching.md#ntru-lut-paired-blind-rotation)
+records the locality tradeoff and additional retained workspace of paired input preparation.
+These reports describe their measured revisions and parameters; they are not
+current benchmark commands or performance guarantees.
 
-| Parameter | Value |
-| --- | --- |
-| Word / N / external n | u64 / 1024 / 800 |
-| External q / plaintext t | PowOf2 2^24 / 8; M=4 |
-| Ring Q | NTT Q50=1125899906826241; Fourier Native64 |
-| Secrets | Fixed-weight binary external LWE (h32) and independent SparseTernary ring secret |
-| BR algorithms | Paired classic/sparse; sparse r3/B64 |
-| Bases / noise | Shared [NTRU circuit profile](../../guides/development/tfhe-parameters.md#ntru-pbs-cbs-and-lookup), including independent q-domain return KS |
-| Layout | c8/d5/o8: 65536 inputs, 64 polynomials per output, K=N=1024 |
-| Public function / input / seeds | `(x*x+3*x+7) mod 65536` / 43981 / client 42, input 43 |
-| Public lift | Sparse generates independent NLEV[1] only when needed, using BR basis and sigma 0.7; classic borrows its initializer |
-
-IDs include `/classic/` or `/sparse/` and `n800_h32_N1024` to separate them from
-the former uniform-binary classic fixture. IDs without a workload suffix retain
-this polynomial function. IDs containing
-`/dense_seed42/` use the low 16 bits of a fixed SplitMix64 output mixer applied
-to `x + 42 + 0x9e3779b97f4a7c15` with wrapping u64 arithmetic; the exact mapping
-is in `Workload::digit` in the benchmark support module. It is independent of
-the key-generation RNG and identical across backends. All workloads retain the same geometry, keys, input and measurement boundaries.
-Within each classic/sparse pair the client coefficients and encrypted input are
-identical; server-key generation consumes different randomness.
-The polynomial's distinct public-polynomial counts per output are
-`1,1,1,1,1,4,16,64`; the dense mapping has 64 distinct polynomials in each output.
-The polynomial fixture stores 89 unique polynomials instead of 512, reducing
-retained coefficient storage by about 83%; compiled plan metadata adds a small overhead. The dense fixture
-still stores 512 polynomials plus compiled node/branch metadata.
-Hashing and deduplication add construction work; creation (including plan compilation) and online evaluation
-are measured separately, and fewer products do not imply proportional speedup.
-The polynomial fixture bypasses selection for its first five outputs. Its
-remaining outputs require 1, 5 and 21 choices instead of 21 each: 27 choice nodes
-instead of 63, and 102 selector products instead of 237. Five initializer lifts
-remain. The dense fixture requires 168 choices and 632 selector products. Both
-fixtures still need all three high-chunk CBS calls and all low rotations.
-Depth-first scheduling requires ten result slots instead of the old sixteen
-candidates in these fixtures. This pair distinguishes
-gains from repeated subtables from general evaluation costs. Creation includes
-computing the selected public function, hashing, deduplication and selection-plan compilation.
-
-The `/shared_middle_chunk/` diagnostic mapping returns `(m_0+m_6) mod 4` in every
-output. Four polynomials, one public choice on chunk 6 and one result slot suffice;
-chunks 5 and 7 require no CBS. All eight outputs share the complete result, so
-only one set of low rotations and one return remain. This deliberately repetitive
-function isolates cross-output sharing and a moved public layer. Its oracle and
-result checks run outside timing like those of the other fixtures. Online allocation
-checks are enabled by the explicit diagnostic mode.
-
-For these mixed/dense fixtures, one `evaluate` iteration generates selectors for eight input chunks, selects or lifts,
-rotates and returns all eight output ciphertexts. Keys, public LUT compilation,
-encryption, correctness checks and reusable workspace allocation are outside timing.
-The shape checks inside `evaluate_to` remain timed.
-Throughput counts eight output ciphertexts, not eight independent requests.
-The separate `create_lut_and_drop` IDs include allocation, filling and destruction
-of one deduplicated public high-precision LUT; only classic IDs register creation,
-and Fourier registers it once for Native64 because neither BR choice nor the
-FFT engine affects coefficient compilation.
-
-With `PRIMUS_LUT_DIAGNOSTICS=1`, the selected evaluation fixture reports maximum
-circular q-domain phase error over the output chunks (q=2^24, t=8, decoding
-half-gap 2^20). Use this mode with `--test` for a one-shot report. The ordinary
-untimed probe checks every decoded output digit; extra phase decryption runs
-only in diagnostic mode, outside latency sampling. Both modes use the same
-key-generation and evaluation fixture. Broader intermediate-phase and
-input-margin checks remain in `validate_parameters`. These are finite functional
-observations, not a failure-probability estimate.
-
-Ordinary CBS and full/nonzero one-hot costs now belong to their NTRU backend's
-`circuit_bootstrap` benchmark. Private selection/rotation states, fused lift,
-and reverse trace are no longer duplicated in this target. Their mathematical
-contracts remain covered by library tests and lower-level primitive benchmarks.
-
-## Reproducing measurements
-
-```sh
-cargo bench -p primus_tfhe_benchmarks --bench high_precision_lut --features lut,ntru-ntt,ntru-fourier,rustfft -- --list
-cargo bench -p primus_tfhe_benchmarks --bench high_precision_lut --features lut,ntru-fourier,tfhe-fft -- --list
-PRIMUS_LUT_DIAGNOSTICS=1 cargo bench -p primus_tfhe_benchmarks --bench high_precision_lut --features lut,ntru-ntt -- \
-  'sparse/.*/shared_middle_chunk/evaluate/lookup/ntt/u64$' --test
-taskset -c 0 cargo bench -p primus_tfhe_benchmarks --bench high_precision_lut --features lut,ntru-ntt,ntru-fourier,rustfft -- \
-  '/create_lut_and_drop/' --sample-size 20 --warm-up-time 0.5 --measurement-time 2 --noplot
-taskset -c 0 cargo bench -p primus_tfhe_benchmarks --bench high_precision_lut --features lut,ntru-ntt,ntru-fourier,rustfft -- \
-  '/evaluate/' --sample-size 20 --warm-up-time 0.5 --measurement-time 2 --noplot
-# SIMD configuration; use the same nightly compiler for both sides of a feature comparison.
-taskset -c 0 cargo +nightly bench -p primus_tfhe_benchmarks --bench high_precision_lut --features lut,ntru-ntt,ntru-fourier,simd,rustfft -- \
-  '/evaluate/' --sample-size 20 --warm-up-time 0.5 --measurement-time 2 --noplot
-```
-
-Criterion defaults apply unless the command overrides them. `--list` performs
-no key generation; filters initialize only matching fixtures. Build before
-measurement, fix affinity and avoid concurrent benchmark/compiler work.
-Record exact IDs and compiler/features. The [earlier measurements](../../guides/performance/tfhe-baseline.md) use the
-same public polynomial but uniform-binary classic keys and a different input RNG.
-The fixed-weight classic/sparse measurements are in the
-[sparse report](../../guides/performance/sparse-baseline.md#ntru-high-precision-lookup).
-Historical c7/d5/o3, n64, all-sigma0.7 results in Git also have different table
-sizes and key work and are not latency comparison baselines.
+Public table compilation and online evaluation are separate costs. Polynomial
+sharing and choice pruning reduce storage and arithmetic according to the function;
+dense and repetitive functions can have very different costs at the same chunk
+geometry. Fewer selector products alone do not imply a proportional speedup.
+Compare complete evaluations with the same function, parameters, backend and
+input geometry, accounting for retained workspace as well as latency.

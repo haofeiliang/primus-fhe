@@ -18,10 +18,6 @@ num-traits = { workspace = true }
 rand = { workspace = true }
 thiserror = { workspace = true }
 
-[dev-dependencies]
-primus_distr = { path = "../primus_distr" }
-primus_modulus = { path = "../primus_modulus" }
-
 [features]
 default = []
 simd = [

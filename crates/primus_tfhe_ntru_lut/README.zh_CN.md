@@ -47,7 +47,7 @@ for value in [43981u64, 0] {
 # Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
-Fourier 使用 `FourierHighPrecLutContext<u64, RustFftTable, _>` 与对应实验常量。完整示例为 [ntt_lookup.rs](examples/ntt_lookup.rs) 和 [fourier_lookup.rs](examples/fourier_lookup.rs)，输入输出均为 16 位，复用同一 evaluator 与密文存储执行两次请求。五个低 chunk 填满 N=1024 个系数，三个高 chunk 在 64 个多项式间选表。示例固定 u64 系数，库与测试继续支持 u32。
+Fourier 使用 `FourierHighPrecLutContext<u64, RustFftTable, _>` 与对应实验常量。完整示例为 [ntt_lookup.rs](examples/ntt_lookup.rs) 和 [fourier_lookup.rs](examples/fourier_lookup.rs)，输入输出均为 16 位，复用同一 evaluator 与密文存储执行两次请求。五个低 chunk 填满 N=1024 个系数，三个高 chunk 在 64 个多项式间选表。示例固定 u64 系数，库也支持 u32。
 
 `compile_fn(|x: W| -> W)` 将明文整数 W 与密文系数 T 分开。完整输入输出位宽必须能被 W 容纳，超出输出域的结果直接报错，不截断。编译仍为 output-major：同一纯函数会为每个输出 chunk 再计算一次，不保留全域明文缓存。昂贵函数可以显式预先准备值。`compile_chunks_fn(|x, output| digit)` 保留 digit 回调，支持超过一个整数容量的输出。客户端同样提供 `encrypt_chunks_to` / `decrypt_chunks_to`，使用调用方已有 digit 切片。
 
@@ -130,9 +130,9 @@ Evaluator 借用 context、server key 和 table，并在构造时分配全部缓
 
 ## 数值限制与进一步阅读
 
-输入须满足 [one-hot 保护区](../primus_tfhe_ntru/README.zh_CN.md#one-hot-cbs)，包含加密、编码与逐坐标量化误差。CBS 和每次选择/旋转外积继续引入误差，Fourier 还包含原生 trace 减半及 FFT 舍入；公开提升分解必须能解析 LUT 尺度。形状校验和功能测试不能认证安全性、生产参数或失败概率。
+输入须满足 [one-hot 保护区](../primus_tfhe_ntru/README.zh_CN.md#one-hot-cbs)，包含加密、编码与逐坐标量化误差。CBS 和每次选择/旋转外积继续引入误差，Fourier 还包含原生 trace 减半及 FFT 舍入；公开提升分解必须能解析 LUT 尺度。形状校验和示例成功运行不能认证安全性、生产参数或失败概率。
 
-[参数指南](../../guides/development/tfhe-parameters.md)记录示例选择与验证范围，[测试指南](../../guides/development/testing.md)说明独立契约的覆盖，[实现说明](IMPLEMENTATION.md)记录算法和内部缓冲布局。
+[参数指南](../../guides/development/tfhe-parameters.md)记录示例选择及数值限制，[实现说明](IMPLEMENTATION.md)记录算法和内部缓冲布局。
 
 ## Features
 
@@ -147,26 +147,4 @@ Evaluator 借用 context、server key 和 table，并在构造时分配全部缓
 
 默认 feature 为 `ntt,fourier`，不选择具体 FFT 引擎。所有 feature 可以叠加。`LookupTableError::OneHot` / `Evaluation` 只在启用 `ntt` 或 `fourier` 时可用。
 
-NTT 示例要求 `ntt`；Fourier 示例要求其选定引擎。求值测试按实际启用的 NTT/FFT 实现运行，两个字宽的既有用例保持不变；`high_precision_lut` 比较 u64 NTT 与主 Fourier 引擎（启用 RustFFT 时优先选它）。`ntt`、`rustfft`、`tfhe-fft` 可独立启用；NTT 加一个 FFT 引擎注册全部 18 项。未选择可用后端时，target 提示所需 feature，不注册任何 ID。完整验证使用 `just tfhe`，纯编译或单后端可分别运行：
-
-```sh
-cargo test -p primus_tfhe_ntru_lut
-cargo test -p primus_tfhe_ntru_lut --no-default-features --features ntt
-cargo test -p primus_tfhe_ntru_lut --no-default-features --features rustfft
-cargo test -p primus_tfhe_ntru_lut --no-default-features --features tfhe-fft
-```
-
-## 基准
-
-```sh
-# 创建并释放一个公开的高精度 LUT。
-cargo bench -p primus_tfhe_benchmarks --bench high_precision_lut --features lut,ntru-ntt,ntru-fourier,rustfft -- '/create_lut_and_drop/'
-# 使用已准备的 LUT 和工作区，同态求值全部输出 chunk。
-cargo bench -p primus_tfhe_benchmarks --bench high_precision_lut --features lut,ntru-ntt,ntru-fourier,rustfft -- '/evaluate/'
-```
-
-18 项工作负载保留 polynomial、dense、shared 三种表、classic/sparse 成对求值，以及 Q50/Native64 各自的创建。创建计时包含分配、系数填充和释放；求值计时不包含密钥生成、公开 LUT 创建、输入加密和工作区分配。设置 `PRIMUS_LUT_DIAGNOSTICS=1` 并使用 `--test`，可从同一 fixture 显式获取相位误差报告；普通计时只保留结果校验。详见[基准说明](IMPLEMENTATION.md#benchmark-fixture)。
-
-原有 ID 使用多项式示例；包含 `/dense_seed42/` 的 ID 使用相同参数下的固定稠密映射。用 `dense_seed42` 过滤可只运行该负载，用 `c8_d5_o8/evaluate/` 可只测多项式示例的同态求值。
-
-`/shared_middle_chunk/` 诊断映射把每个输出 digit 都设为 `(m_0+m_6) mod 4`，用于隔离越过 chunk 5 的公开选择、省略 chunks 5 和 7 的高位 CBS，以及相同最终输出的复用。它是专门的共享负载，与完整位宽的算术函数不同。
+NTT 示例要求 `ntt`；Fourier 示例要求其选定的 FFT 引擎。启用 `rustfft` 或 `tfhe-fft` 选择具体的 Fourier 实现。

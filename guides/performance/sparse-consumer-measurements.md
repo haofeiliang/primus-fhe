@@ -1,5 +1,7 @@
 # Sparse parameter candidates in complete consumers
 
+> Archive note (2026-10-10): the TFHE benchmark suite and report tools were removed. Commands and source paths below refer to historical revisions; the last complete suite is available at `8d7c4b1a`. Measurements remain evidence for their recorded versions, not current validation.
+
 [Performance decisions and measurement method](README.md)
 
 Measured on 2026-10-05 with numerical source `55de85cb`, following the
@@ -346,7 +348,7 @@ Use the geometry/bases above with the public APIs in the GLWE NTT
 [sparse](../../crates/primus_tfhe_glwe_ntt/examples/ntt_sparse.rs),
 [MVB](../../crates/primus_tfhe_glwe_ntt/examples/mvb_thresholds.rs) and
 [CBS](../../crates/primus_tfhe_glwe_ntt/examples/ntt_sparse_circuit_bootstrap.rs)
-examples, and the existing [q/Q request adapter](../../benchmarks/tfhe/benches/sparse_paper/request.rs).
+examples, and the existing q/Q request adapter (`../../benchmarks/tfhe/benches/sparse_paper/request.rs`, historical source).
 Those examples retain their original geometries; do not change only a BR base
 and assume the remaining parameters match this study.
 

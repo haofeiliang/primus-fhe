@@ -33,6 +33,8 @@
 
 公开 `try_from_parts` 构造器验证独立传入组件的配对。内部构造与派生复用同一来源 owner 建立的配对，不重复检查未变状态；新 basis、组合长度及 codec/噪声恢复条件仍需检查。`ServerKey` 不证明它与另行传入的 context 相容，资源绑定仍须验证这个组合。
 
+求值密钥生成的[检查拥有者与局部缓冲复用](tfhe-parameters-and-boundaries.md#密钥生成中的检查与复用)分别列出各路径。独立构造器检查自身资源，私有循环复用已建立的配对，秘密 scratch 只用于 setup。
+
 Raw 多项式/密文构造器不建立模数、秘密身份、表示或完整布局。`Polynomial<S>` 不另存环长度：包装 `batch_count*N` 个元素，不会自动把单多项式运算变成批量运算。只有接口契约明确接受批次时才直接传入；否则先迭代出完整对象。
 
 Raw 系数、NTT、Fourier 和 CRT/DCRT 多项式的 `len()` / `is_empty()` 统计其存储元素。这些计数与 checked table/size 的 `poly_length()`（`N`）、Fourier 表的 `fourier_length()`（`N/2`）以及 DCRT 表的 `rns_poly_len()`（`moduli_count*N`）不同。DCRT 表在构造时拒绝空模数列表。变换调用方须按表的模数顺序提供完整布局；原有 debug 诊断不构成 release 拒绝保证。Raw wrapper 仍允许空和 packed 存储。

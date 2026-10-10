@@ -145,10 +145,10 @@ PBS trait、四后端、Boolean 门、双输入打包、CBS、one-hot 与 MVB �
 | small LWE 的 n、q、秘密分布、fresh noise；累加环 k、N、q 和采样状态 | codec-free 参数构造；检查 n≤kN、binary/ternary 控制秘密和模数配对 |
 | BR/环 KS basis 与密钥噪声 | TFHE 密钥参数；BR 使用 accumulator noise，环 KS 使用独立 key-switching noise |
 | CBS output/trace/SS basis、布局与继承的 accumulator noise | `CbsGadgetParameters`；不依赖输入明文模数 |
-| Rounded 消息编码及 external fresh noise | client 工厂接收 `&RoundedCodec`，检查 codec 的 q；BR→KS 使用 small noise，KS→BR 使用 accumulator noise |
+| Rounded 消息编码及 external fresh noise | 默认 client 工厂从消息配置准备 codec，高级 `*_with_codec` 绑定独立编码；BR→KS 使用 small noise，KS→BR 使用 accumulator noise，绑定时检查 codec/noise 的 q |
 | 普通环消息 Scaled 编码 | `context.accumulator_client(accumulator_secret, t_ring)` 按累加 Q 一次准备；复用 gadget 共享采样状态，不复制 Gaussian 预计算 |
 | CBS 输入与候选环消息编码准备 | `CbsParameters` 保留配置的 Rounded 输入；Context 共用输入 encryptor，候选工厂独立接收 t_ring，共用 q=Q；不表示 gadget 输出 |
-| 输入 t、编程域、单表/ManyLUT 的中心、输出编码和容量 | 普通 LUT compiler / factorized compiler；CBS 由 `compile_lookup_table(&input_codec)` 在 evaluator 构造时检查 |
+| 输入 t、编程域、单表/ManyLUT 的中心、输出编码和容量 | 普通 LUT compiler / factorized compiler；完整 CBS 参数使用保存的输入 codec 编译，evaluator 检查程序与资源配对 |
 | online ciphertext 与所选程序的消息编码一致、实际噪声余量 | 调用方契约；raw 密文没有编码/噪声元数据，不能据布局判定 |
 
 因此更换输入 t 不需要重新生成 GLWE 密钥；重新绑定 client codec 并编译适配该编码的 LUT/CBS 程序即可。输入 q 不同由 client/compiler 绑定拒绝，N/q/basis 等资源不兼容仍由原边界拒绝。两个后端共用 CBS gadget identity 编译，在线 BR、返回和 trace 算法不变，不逐系数增加检查。两个家族的 `PbsParameters` 从保存的消息选择准备客户端编码，四后端 Context 委托它们。默认 `encryptor` 与 `pbs_decryptor` 使用 Rounded，MVB 共用输入工厂并通过 `mvb_decryptor` 选择 Scaled 输出；两种解密工厂共用 `decryptor_with_codec` 绑定状态。配置中的输入、输出消息模数独立，LUT 编译读取同一选择。高级同钥消息域通过 family 的 `encryptor_with_codec`、`public_encryptor_with_codec`、`decryptor_with_codec` 复用已准备状态，不改变默认值或已有客户端。Boolean Context 工厂从配置准备 Rounded 输入/输出，门 evaluator 要求两者均为 t=4，不接收 codec；高级数值组合使用家族客户端与共享 Boolean 原语。Context 的显式 codec 客户端和 MVB 编译转发已删除，普通/ManyLUT 和 MVB 仍保留数值消息覆盖工厂。
@@ -162,8 +162,8 @@ PBS trait、四后端、Boolean 门、双输入打包、CBS、one-hot 与 MVB �
 | 外部 n、q、s 分布及 fresh noise；累加 N、Q、f 分布及 BR noise | 密钥参数构造；保持 binary/ternary 控制域、2N 可表示性，n 与 N、q 与 Q 相互独立；PBS/CBS 完整组合均保留返回 KS；独立环输出 CBS 组件不使用普通返回 |
 | f→s 返回 key 的 basis 与 noise | 密钥参数与返回 key 构造，均在 q 下；目标 LWE 参数不再构造无用 codec |
 | CBS output/trace/SS basis、布局与继承的 accumulator noise | `CbsGadgetParameters`；scheme-switch key 继续绑定完整 output basis |
-| Rounded 输入 t/q、默认或独立输出 t/Q | client/compiler 绑定；输入 q 不符拒绝；默认输出 codec 在 Q 无法构造时返回 `OutputEncoding` |
-| CBS 输入域和 ManyLUT 容量 | CBS LUT 编译/绑定；独立 CBS 参数只拥有 Q，输入 q 由后端绑定检查 |
+| Rounded 输入 t/q、LUT 输出 t/Q 与返回解码 t/q | 默认 client/compiler 从消息配置准备；高级 codec 组合仍检查 q/Q，返回与环输出使用同一 t_out；有效 codec 不证明 Q→q 的噪声余量 |
+| CBS 输入域和 ManyLUT 容量 | 完整 `CbsParameters` 保存输入 codec；独立 `CbsGadgetParameters` 只拥有 Q，程序编译和后端绑定检查输入域与容量 |
 | CBS/one-hot 输入与候选环消息编码准备 | `CbsParameters` 保留 Rounded(t_in,q)；候选工厂接收独立 t_ring 并准备 Scaled(t_ring,Q)，不准备无用的返回编码；绑定检查实际资源组合 |
 | one-hot 的 t=2M、W、stride、非空 guard 与存储长度 | `OneHotLookupTable::try_new(tfhe, cbs, &input_codec)`；后端支持 classic binary/ternary 与 sparse fixed-weight binary |
 | 高精度 chunk 位宽、数量、`M^d≤N`、表枚举和存储长度 | `HighPrecisionLookupTable::try_new(poly_length, ring_modulus, &input_codec, config, function)`；表保存 t/q/Q，evaluator 按表中 t 绑定 one-hot 并验证容量 |
@@ -301,7 +301,7 @@ NTT 与 native Fourier 的 reverse trace 归一化契约不同：前者使用模
 | 两家族 client / `lookup_table_compiler(&codecs)` / CBS evaluator | 输入 codec 与密钥 q 一致；独立 NTRU CBS 编译器只拥有 Q，绑定时核对 q | `ClientError::CodecModulusMismatch` / `LookupTableError::InputModulusMismatch` |
 | `LookupTableCompiler::try_new` / `try_with_output_codec` | 输出 codec 的密文模数等于累加模数；保存独立编码状态 | `LookupTableError::OutputModulusMismatch` |
 | `LookupTableCompiler::compile_*` | 程序容量、切片长度、旋转中心与输出范围；复用原始 LUT 编译内核 | `LookupTableError` |
-| `CbsGadgetParameters::try_from_config` / `try_new` | output/trace/SS basis、环布局和组合长度；trace/SS 噪声。两家族消息容量均由 CBS LUT 编译检查 | `CircuitBootstrapParameterError`，`EncryptionParameters` 标明 key role 和原错误 |
+| `CbsGadgetParameters::try_from_config` / `try_new` | output/trace/SS basis、环布局和组合长度；配置派生继承 BR 的采样状态，独立部件仍检查配对。两家族消息容量均由 CBS LUT 编译检查 | `CircuitBootstrapParameterError`，`GadgetParameters` 标明 trace/scheme-switch 角色和原错误 |
 | Context / key generation / evaluator | 表、秘密实际可用性、选定能力及密钥布局绑定 | 各层已有的 context/key/evaluation errors |
 
 底层 `new` 是在相同校验错误下主动 panic 的便捷形式，适合已知有效的常量配置；其实现复用 `try_new`，没有第二套校验。`GlweEncryptionParameters` 不持有布局，固定重量检查由普通/gadget 参数与布局的组合入口或实际采样入口完成。公开 sampler 接受不同输出长度时仍需检查实际长度。
@@ -313,6 +313,18 @@ RNS GLWE 提供 `CrtGlweParameters::try_new`，其 `new` 是调用同一校验�
 参数角色与底层失败原因分开表达。例如 accumulator 噪声错误沿 `TfheParameterError::AccumulatorParameters` → `NtruParameterError::Noise` → `GaussianError` 传播。CBS 配置复用已验证的采样状态，仅返回带 trace/scheme-switch 角色的分解与布局错误；`KeyGenerationError` 透明转发 CBS 错误。带上下文的 `Display` 只描述当前层，通过标准 `Error::source()` 逐层取得原因；透明包装同时委托显示及 source，不增加重复的报告层。只打印最外层 `Display` 会省略底层细节，报告器应遍历原因链；LWE/GLWE/NTRU 加密参数的 panicking 构造器通过 `expect` 保留嵌套采样错误的 Debug 信息。
 
 包含浮点输入的 sampler 错误不能实现 `Eq`；持有这些错误的 `TfheParameterError` 因而保留 `PartialEq`。配置/形状检查成功不意味着支持的参数具有足够噪声余量；table 构造也不替代模数素性和秘密身份等调用方前提。
+
+## 密钥生成中的检查与复用
+
+| 生成边界 | 建立的配对 | 内部复用的依据 |
+| --- | --- | --- |
+| 原始 PBS 配置与 CBS 派生 | LWE/环采样域、BR/KS basis、派生布局；CBS 新 basis 和输入 codec | `CbsParameters::try_with_config` 移动已验证的 PBS 域，gadget 派生共享未变采样状态；独立部件组合仍检查配对 |
+| LWE 公钥生成 | raw secret 的维数、noise 的 q、完整 n(n+1) 存储长度 | 使用传入的 uniform/noise；逐行执行同一零消息加密，不重建采样器。拥有型秘密的 q 在取得 raw view 前由调用方检查 |
+| GLWE KS、自同构、trace 公开入口 | 输入/输出 key 布局、参数、NTT q/N 或 FFT N、GLev workspace N | 私有生成内核消费已验证资源，生成的行长度来自 checked gadget size；KS 可改变 dimension，自同构/trace 保持相同布局，GLev 不使用 workspace 的 GGSW level 缓存 |
+| NTRU trace 批量入口 | 原系数秘密长度、输出 gadget 域与变换/工作区；NTT 另检查归一化条件 | 只编码一次原秘密，两块局部 `Zeroizing` 缓冲按原 degree 顺序复用；独立 auto/KS 入口自行检查 |
+| CRT/DCRT key-set 内部拥有者 | DCRT key/domain 的有序模数和布局；CRT 另检查系数秘密布局 | 绑定一次既有 `DcrtGlevEncryptor`；CRT 的 signed/CRT 缓冲和 DCRT 的 NTT 缓冲分别复用，不混合两种表示 |
+
+组合存储溢出由实际布局/分配边界承担。批量 NTRU/RNS 生成的秘密临时缓冲在返回或栈展开时擦除，未移入在线 workspace；每个 degree 仍拥有独立排列与计算密钥。省略的是内部重复配对检查，不是公开边界检查。实际秘密身份、signed 幅度、NTT roots/order、同一 FFT table 实例及噪声余量仍遵循各操作的未检查前提。
 
 ## 保留的分层与接口
 
@@ -326,7 +338,7 @@ RNS GLWE 提供 `CrtGlweParameters::try_new`，其 `new` 是调用同一校验�
 
 ## 验证入口
 
-参数拒绝由 [codec](../../crates/primus_encoding/tests/plaintext_codec.rs)、[sampler](../../crates/primus_distr/tests/secret_key_sampler.rs)、[LWE](../../crates/primus_lwe/tests/parameters.rs)、[GLWE](../../crates/primus_glwe/tests/boundaries.rs)、[NTRU](../../crates/primus_ntru/tests/secret_key.rs) 和两家族 [GLWE 参数](../../crates/primus_tfhe_glwe/tests/parameters.rs) / [NTRU 参数](../../crates/primus_tfhe_ntru/tests/parameters.rs) 在拥有契约的层保护。配置回归使用小参数，不生成大密钥。
+参数拒绝由 [codec](../../crates/primus_encoding/tests/plaintext_codec.rs)、[sampler](../../crates/primus_distr/tests/secret_key_sampler.rs)、[LWE](../../crates/primus_lwe/tests/parameters.rs)、[GLWE](../../crates/primus_glwe/tests/boundaries.rs)、[NTRU](../../crates/primus_ntru/tests/secret_key.rs) 在拥有契约的底层保护。两家族和后端的原有 TFHE 测试已移除，待示例驱动的接口收敛后重新设计；不能把上述底层测试视为 TFHE 参数组合的完整覆盖。
 
 后端 PBS、CBS/CMux、MVB、one-hot 和高精度 LUT 的现有独立数值/资源回归继续验证合法输入链路；默认和 nightly 全 features 分开运行，命令及覆盖归属见[测试指南](testing.md)。参数构造整理不提供 kernel 提速结论，也不扩大数值支持范围。
 

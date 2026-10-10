@@ -1,5 +1,7 @@
 # TFHE benchmark schema 2: initial process baseline
 
+> Archive note (2026-10-10): the TFHE benchmark suite and report tools were removed. Commands and source paths below refer to historical revisions; the last complete suite is available at `8d7c4b1a`. Measurements remain evidence for their recorded versions, not current validation.
+
 2026-10-07. This is a small validation of the centralized benchmark/report workflow,
 not evidence of a production algorithm change. The implementation uses the same
 numerical kernels and profiles. New grouping, executable layout and uniform flat
@@ -73,7 +75,7 @@ arbitrary-function performance guarantee; dense/shared alternatives remain regis
 ## Reproduction and verification
 
 Current commands, exact ID discovery and paired-report options live in the
-[benchmark README](../../benchmarks/tfhe/README.md#measurement-and-reports).
+benchmark README (`../../benchmarks/tfhe/README.md`, historical source).
 Select the six rows above and use `--rounds 3 --samples 20 --warmup 0.5 --measurement 2`.
 Local raw evidence is under `target/benchmark-results/20261007T062206Z-77cca503/`;
 artifact metadata and source patch/archive are in `round2-final-artifacts/`, and

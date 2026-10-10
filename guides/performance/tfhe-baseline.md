@@ -1,10 +1,12 @@
 # TFHE benchmark baseline and storage check
 
+> Archive note (2026-10-10): the TFHE benchmark suite and report tools were removed. Commands and source paths below refer to historical revisions; the last complete suite is available at `8d7c4b1a`. Measurements remain evidence for their recorded versions, not current validation.
+
 [Performance decisions and measurement method](README.md)
 
-The [workload guide](../../benchmarks/tfhe/BENCHMARKS.md) owns target purposes
+The historical workload guide (`benchmarks/tfhe/BENCHMARKS.md` at `8d7c4b1a`) recorded target purposes
 and timing boundaries; the [parameter matrix](../development/tfhe-parameters.md) owns the
-numerical profiles. This report records the current measurements, not production
+numerical profiles. This report records historical measurements, not production
 security recommendations or a performance comparison between equal-security systems.
 
 For the newer matched classic/sparse PBS and CBS comparison, see the
@@ -192,10 +194,11 @@ the measured boxed-owner design. CPU 4, stable rustc 1.98.1, repository native C
 flags, features `ntt,fourier,rustfft`, identical numerical fixtures and timing
 boundaries. Point estimates in milliseconds; 15 samples, 1 s warm-up, 3 s target
 measurement. All listed ordinary workloads still use KS and independent secrets.
-A subsequent API cleanup renamed BSK geometry and the BR-selection enum,
+A following intermediate cleanup renamed BSK geometry and the BR-selection enum,
 centralized numerical constructors, and removed the ordinary shared-secret
-no-KS path. Optional KS now serves ring-output CBS; ordinary PBS still uses KS.
-The table records the earlier revision, not a new measurement of that cleanup.
+no-KS path; optional KS then served ring-output CBS. The current API subsequently
+made KS required for both operations, as described above. The table records the
+earlier revision, not a measurement of the current required-KS configuration.
 No speedup is claimed for the cleanup; PBS/return kernel schedules are unchanged.
 
 | Complete workload, u64 | Before consolidation | Final owner |
@@ -333,7 +336,7 @@ The lookup pipeline subsequently added ten `dense_seed42` and ten
 `shared_middle_chunk` IDs, bringing that target to 30 IDs. The historical
 382-case smoke does not cover those additions or later algorithm changes.
 Their mapping and timing boundaries are documented in the
-[lookup fixture](../../crates/primus_tfhe_ntru_lut/IMPLEMENTATION.md#benchmark-fixture).
+[lookup fixture](../../crates/primus_tfhe_ntru_lut/IMPLEMENTATION.md#historical-measurements).
 
 There are 20 → 18 targets and 463 → 382 IDs. The previous executables spent
 36.83 s collectively running `--list`, including unconditional key generation,

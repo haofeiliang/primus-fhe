@@ -47,7 +47,7 @@ for value in [43981u64, 0] {
 # Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
-For Fourier, select `FourierHighPrecLutContext<u64, RustFftTable, _>` and the matching experimental constant. Complete runnable workflows are [ntt_lookup.rs](examples/ntt_lookup.rs) and [fourier_lookup.rs](examples/fourier_lookup.rs), using 16-bit input/output and reusing the same evaluator and ciphertexts for two requests. Five low chunks fill N=1024 coefficients; three high chunks select among 64 polynomials. Examples fix u64 coefficients; the library and tests retain u32.
+For Fourier, select `FourierHighPrecLutContext<u64, RustFftTable, _>` and the matching experimental constant. Complete runnable workflows are [ntt_lookup.rs](examples/ntt_lookup.rs) and [fourier_lookup.rs](examples/fourier_lookup.rs), using 16-bit input/output and reusing the same evaluator and ciphertexts for two requests. Five low chunks fill N=1024 coefficients; three high chunks select among 64 polynomials. Examples fix u64 coefficients; the library also supports u32.
 
 `compile_fn(|x: W| -> W)` separates the cleartext integer type W from coefficient type T. Both complete widths must fit W; results outside the output domain are rejected, without truncation. Compilation remains output-major: the pure function is evaluated again for each output chunk. It does not retain a full-domain cleartext cache. Expensive functions can explicitly prepare their values. `compile_chunks_fn(|x, output| digit)` retains the digit callback and supports outputs wider than one integer. Clients similarly provide `encrypt_chunks_to` and `decrypt_chunks_to` for caller-owned digit slices.
 
@@ -130,9 +130,9 @@ The return path performs coefficient-wise Q→q and phase extraction independent
 
 ## Numerical limits and further reading
 
-Inputs must satisfy the [one-hot guard](../primus_tfhe_ntru/README.md#one-hot-cbs), including encryption, encoding and per-coordinate quantization error. CBS and every selection/rotation external product add error; Fourier also includes native trace halving and FFT rounding. Public-lift decomposition must resolve the LUT scale. Shape checks and functional tests do not certify security, production parameters or failure probability.
+Inputs must satisfy the [one-hot guard](../primus_tfhe_ntru/README.md#one-hot-cbs), including encryption, encoding and per-coordinate quantization error. CBS and every selection/rotation external product add error; Fourier also includes native trace halving and FFT rounding. Public-lift decomposition must resolve the LUT scale. Shape checks and successful example runs do not certify security, production parameters or failure probability.
 
-The [parameter guide](../../guides/development/tfhe-parameters.md) records example choices and validation scope, the [testing guide](../../guides/development/testing.md) maps independent contracts, and the [implementation notes](IMPLEMENTATION.md) describe the algorithm and internal buffers.
+The [parameter guide](../../guides/development/tfhe-parameters.md) records example choices and their numerical limits, and the [implementation notes](IMPLEMENTATION.md) describe the algorithm and internal buffers.
 
 ## Features
 
@@ -147,26 +147,4 @@ With `--no-default-features`: `ChunkFormat`, public table compilation and inspec
 
 The defaults are `ntt,fourier`; no concrete FFT engine is selected. All features are additive. `LookupTableError::OneHot` / `Evaluation` are available only with `ntt` or `fourier`.
 
-The NTT example requires `ntt`; the Fourier example requires its chosen engine. Evaluation tests run for each selected NTT/FFT implementation, retaining the existing cases at both word widths. `high_precision_lut` compares u64 NTT and the primary Fourier engine (RustFFT when enabled). Enable any of `ntt`, `rustfft` or `tfhe-fft` independently; combining NTT and one FFT engine registers all 18 workloads. With no applicable backend, the target prints a feature hint and registers no IDs. Use `just tfhe` for complete validation, or run compiler-only and individual backends separately:
-
-```sh
-cargo test -p primus_tfhe_ntru_lut
-cargo test -p primus_tfhe_ntru_lut --no-default-features --features ntt
-cargo test -p primus_tfhe_ntru_lut --no-default-features --features rustfft
-cargo test -p primus_tfhe_ntru_lut --no-default-features --features tfhe-fft
-```
-
-## Benchmarks
-
-```sh
-# Create and drop one public high-precision LUT.
-cargo bench -p primus_tfhe_benchmarks --bench high_precision_lut --features lut,ntru-ntt,ntru-fourier,rustfft -- '/create_lut_and_drop/'
-# Homomorphically evaluate all output chunks using a prepared LUT and workspace.
-cargo bench -p primus_tfhe_benchmarks --bench high_precision_lut --features lut,ntru-ntt,ntru-fourier,rustfft -- '/evaluate/'
-```
-
-The 18 workloads retain polynomial, dense and shared tables, paired classic/sparse evaluation, and separate creation for Q50/Native64. Creation includes allocation, coefficient filling and destruction. Evaluation excludes key generation, public LUT creation, input encryption and workspace allocation. Set `PRIMUS_LUT_DIAGNOSTICS=1` and use `--test` for an explicit phase-error report from the same fixture; ordinary timing keeps only result checks. See the [benchmark fixture](IMPLEMENTATION.md#benchmark-fixture) for details.
-
-Original IDs use the polynomial example; IDs containing `/dense_seed42/` use a fixed dense mapping with the same parameters. Filter by `dense_seed42` to run only that workload, or by `c8_d5_o8/evaluate/` to evaluate only the polynomial example.
-
-The `/shared_middle_chunk/` diagnostic mapping sets every output digit to `(m_0+m_6) mod 4`. It isolates a public choice moved past chunk 5, omission of high-chunk CBS for chunks 5 and 7, and reuse of the identical final outputs. It deliberately differs from a full-width arithmetic function.
+The NTT example requires `ntt`; the Fourier example requires its selected FFT engine. Enable `rustfft` or `tfhe-fft` to choose a concrete Fourier implementation.

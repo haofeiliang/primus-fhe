@@ -2,8 +2,7 @@
 
 [English](README.md) | 简体中文
 
-当前 API 和契约见[开发指南](../development/README.zh_CN.md)。本目录保存性能选择、成本及可复现证据。
-每份报告注明版本、参数和实测范围；历史结果不代表当前验证，也不是安全保证。历史后端基准命令早于迁入 `primus_tfhe_benchmarks`；当前 [target 映射](../../benchmarks/tfhe/README.zh_CN.md#targets)说明 package/target 的替换方式，不改变报告当时的受测版本。
+当前 API 和契约见[开发指南](../development/README.zh_CN.md)。本目录保存性能选择、成本及历史证据。每份报告注明版本、参数和实测范围；历史结果不代表当前验证，也不是安全保证。TFHE 基准套件与报告工具已删除；旧命令只适用于对应源码版本，最后一份完整套件可从 `8d7c4b1a` 恢复。未来基准放在所属后端或 LUT crate。
 
 ## 保留的选择与限制
 

@@ -33,6 +33,8 @@ Each public boundary checks the contract it owns: parameters and tables establis
 
 Public `try_from_parts` constructors validate the pairing of independently supplied components. Internal construction and derivation reuse pairings established by the same source owner, without rechecking unchanged state; new bases, composed lengths and codec/noise recovery conditions remain checked. A `ServerKey` does not prove compatibility with a separately supplied context: resource binding must still validate that combination.
 
+For evaluation-key generation, see the [check owners and local buffer reuse](tfhe-parameters-and-boundaries.md#密钥生成中的检查与复用). Standalone constructors validate their resources; private loops reuse established pairings and keep secret scratch local to setup.
+
 Raw polynomial/ciphertext constructors do not establish modulus, key identity, representation or full layout. `Polynomial<S>` does not carry an independent ring length: wrapping `batch_count*N` elements does not automatically turn single-polynomial operations into batch operations. Only pass such storage to an API whose contract explicitly accepts a batch; otherwise iterate over complete objects.
 
 Raw coefficient, NTT, Fourier and CRT/DCRT polynomials expose `len()` / `is_empty()` for their storage elements. Those counts are distinct from a checked table or size's `poly_length()` (`N`), Fourier table `fourier_length()` (`N/2`), and DCRT table `rns_poly_len()` (`moduli_count*N`). DCRT table construction rejects empty modulus lists. Transform callers must supply the complete layout in the table's modulus order; existing debug diagnostics do not establish a release rejection guarantee. Raw wrappers still allow empty and packed storage.

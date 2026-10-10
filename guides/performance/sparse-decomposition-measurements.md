@@ -1,5 +1,7 @@
 # Sparse decomposition choices at fixed copies, buckets and noise
 
+> Archive note (2026-10-10): the TFHE benchmark suite and report tools were removed. Commands and source paths below refer to historical revisions; the last complete suite is available at `8d7c4b1a`. Measurements remain evidence for their recorded versions, not current validation.
+
 [Performance decisions and measurement method](README.md)
 
 Measured on 2026-10-05, using numerical source `55de85cb`. This follows the
@@ -452,8 +454,8 @@ output, LUT and diagnostic buffers are excluded. BR coefficient bytes are exactl
 ## Reproduction and retained decision
 
 Start at `55de85cb` and reuse the exact numerical operations in
-[`paper/parameters.rs`](../../benchmarks/tfhe/benches/sparse_paper/parameters.rs)
-and [`paper/request.rs`](../../benchmarks/tfhe/benches/sparse_paper/request.rs).
+`paper/parameters.rs` (`../../benchmarks/tfhe/benches/sparse_paper/parameters.rs`, historical source)
+and `paper/request.rs` (`../../benchmarks/tfhe/benches/sparse_paper/request.rs`, historical source).
 Set both `DecompositionConfig` fields explicitly with the b/L pairs in the tables;
 keep them independent even when their base logs are equal. Do not let `None`
 silently choose a different level count. Request setup, warmup and validation

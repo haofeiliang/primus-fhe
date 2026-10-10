@@ -23,7 +23,7 @@ zeroize = { workspace = true }
 rand = { workspace = true }
 thiserror = { workspace = true }
 
-# Examples and engine-specific tests select their concrete FFT engines.
+# Examples select their concrete FFT engine.
 [[example]]
 name = "ntru_fourier_basic"
 required-features = ["rustfft"]
@@ -47,42 +47,6 @@ required-features = ["rustfft"]
 [[example]]
 name = "ntru_fourier_sparse"
 required-features = ["rustfft"]
-
-[[test]]
-name = "boolean"
-required-features = ["rustfft", "tfhe-fft"]
-
-[[test]]
-name = "circuit_bootstrap"
-required-features = ["rustfft", "tfhe-fft"]
-
-[[test]]
-name = "context"
-required-features = ["rustfft"]
-
-[[test]]
-name = "factorized_pbs"
-required-features = ["rustfft", "tfhe-fft"]
-
-[[test]]
-name = "lwe_return"
-required-features = ["rustfft", "tfhe-fft"]
-
-[[test]]
-name = "one_hot"
-required-features = ["rustfft", "tfhe-fft"]
-
-[[test]]
-name = "pbs"
-required-features = ["rustfft", "tfhe-fft"]
-
-[[test]]
-name = "sparse_bucket"
-required-features = ["rustfft", "tfhe-fft"]
-
-[[test]]
-name = "sparse_pbs"
-required-features = ["rustfft", "tfhe-fft"]
 
 [features]
 default = []

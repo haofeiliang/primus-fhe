@@ -1,5 +1,7 @@
 # Sparse copy and bucket selection at fixed decomposition
 
+> Archive note (2026-10-10): the TFHE benchmark suite and report tools were removed. Commands and source paths below refer to historical revisions; the last complete suite is available at `8d7c4b1a`. Measurements remain evidence for their recorded versions, not current validation.
+
 [Performance decisions and measurement method](README.md)
 
 Measured on 2026-10-05. This experiment starts at `55de85cb` and changes only
@@ -300,9 +302,9 @@ retry tails rather than reporting only the first successful graph.
 ## Reproduction and retained scope
 
 Use source `55de85cb`, the exact cases in
-[`paper/parameters.rs`](../../benchmarks/tfhe/benches/sparse_paper/parameters.rs)
+`paper/parameters.rs` (`../../benchmarks/tfhe/benches/sparse_paper/parameters.rs`, historical source)
 and the q-to-Q-to-q adapter in
-[`paper/request.rs`](../../benchmarks/tfhe/benches/sparse_paper/request.rs).
+`paper/request.rs` (`../../benchmarks/tfhe/benches/sparse_paper/request.rs`, historical source).
 The temporary consumer uses their unchanged numerical operations and the
 existing public generator:
 

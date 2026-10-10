@@ -1,5 +1,7 @@
 # Sparse PBS, CBS and lookup baseline
 
+> Archive note (2026-10-10): the TFHE benchmark suite and report tools were removed. Commands and source paths below refer to historical revisions; the last complete suite is available at `8d7c4b1a`. Measurements remain evidence for their recorded versions, not current validation.
+
 [Performance decisions and measurement method](README.md) · [Arithmetic](sparse-arithmetic.md) · [Layout and batching](sparse-layout-and-batching.md)
 
 This baseline records the 2026-10-04 matched workloads, stage/resource diagnostics
@@ -28,7 +30,7 @@ used n800/N1024/t4 and seed 42 in the measurements below. Current NTRU CBS/one-h
 benchmarks instead pair classic/sparse at n728/h32/N1024, with separate input RNG;
 those new IDs have passed numerical smoke checks but have no timing results in this report.
 
-Parameters come from the [shared profiles](../../benchmarks/tfhe/src/parameters/mod.rs):
+Parameters come from the shared profiles (`../../benchmarks/tfhe/src/parameters/mod.rs`, historical source):
 NTT Q=132120577 for u32 PBS, Q=998244353 for u32 CBS, Q=1125899906826241 for u64;
 Fourier uses Native32/64. NTRU external/return q is `PowOf2(2^24)`.
 Full BR bases use logB=2 (u32) or 8 (u64). GLWE KS uses the same full basis;
@@ -382,7 +384,7 @@ existing table selection, low-chunk rotations and Q→q/extraction/KS return.
 An independent NLEV[1] is generated only for explicit public lifts; its basis
 and row noise are caller-selected. No online numerical kernel changed.
 
-The [pipeline fixture](../../crates/primus_tfhe_ntru_lut/IMPLEMENTATION.md#benchmark-fixture)
+The [pipeline fixture](../../crates/primus_tfhe_ntru_lut/IMPLEMENTATION.md#historical-measurements)
 pairs classic/sparse at **n800/h32/N1024**, q24/t8, c8/d5/o8, the public function
 `(x*x+3*x+7) mod 65536`, and input 43981. Client seed 42 and input seed 43 produce
 the same client coefficients and encrypted input in each pair; server material

@@ -1,5 +1,7 @@
 # Sparse coefficient arithmetic
 
+> Archive note (2026-10-10): the TFHE benchmark suite and report tools were removed. Commands and source paths below refer to historical revisions; the last complete suite is available at `8d7c4b1a`. Measurements remain evidence for their recorded versions, not current validation.
+
 [Performance decisions and measurement method](README.md) · [Baseline and parameters](sparse-baseline.md) · [Layout and batching](sparse-layout-and-batching.md)
 
 Retained exact-arithmetic choices are NTRU pairs, bounded NTT pairs, GLWE u64
@@ -879,7 +881,7 @@ cargo bench -p primus_tfhe_glwe_ntt --bench sparse_paper -- \
 For a pinned comparison, build `52589af6` and the new kernel separately, use
 `taskset -c 4` / `taskset -c 8` on their executables, and keep distinct
 `CRITERION_HOME` directories. Numerical validation uses the same public APIs as
-[the paper request adapter](../../benchmarks/tfhe/benches/sparse_paper/request.rs).
+the paper request adapter (`../../benchmarks/tfhe/benches/sparse_paper/request.rs`, historical source).
 The temporary replay, instrumentation, alternate kernels and generated timing
 assets are removed after recording this report. The production change stays in
 [the existing aggregation module](../../crates/primus_tfhe_glwe_ntt/src/sparse/aggregation.rs).

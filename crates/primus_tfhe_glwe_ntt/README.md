@@ -106,9 +106,9 @@ let mut evaluator = context.evaluator(&server)?;
 
 Both orders support ordinary/interleaved PBS, MVB and CBS. `try_generate_circuit_bootstrap_keys` generates CBS material alongside one shared BR/KS bundle; `ServerKey::blind_rotation_key()` exposes the classic/sparse variant.
 
-The separate `sparse_paper` benchmark provides the `paper_2026_1730` NAND and padded-function comparisons; ordinary `sparse_pbs` retains the fixed-weight comparison only. `complete_ring_return` includes this backend's ring KS return; `blind_rotation` excludes it. Parameters, measurements and differences from the paper are recorded in the [comparison guide](../../guides/performance/sparse-paper-comparison.md); these are experimental benchmark profiles, not security presets.
+Historical parameters, measurements and differences from the paper are recorded in the [comparison guide](../../guides/performance/sparse-paper-comparison.md). Those measurements used experimental configurations, not security presets.
 
-The separate `sparse_candidate_r2` IDs use two copies, `2*h` buckets and fewer BR levels for the validated STD128 and three-bit function profiles. The [consumer measurements](../../guides/performance/sparse-consumer-measurements.md) cover PBS, ManyLUT, MVB and feedback. CBS needs its own output basis: a working PBS configuration alone does not ensure usable gadget controls or CMux results.
+The historical `sparse_candidate_r2` measurements used two copies, `2*h` buckets and fewer BR levels for the STD128 and three-bit function configurations. The [consumer measurements](../../guides/performance/sparse-consumer-measurements.md) cover PBS, ManyLUT, MVB and feedback. CBS needs its own output basis: a working PBS configuration alone does not ensure usable gadget controls or CMux results.
 
 ## Circuit bootstrapping
 
@@ -126,10 +126,8 @@ The [shared coefficient key](../primus_tfhe_glwe/README.md#sparse-coefficient-ke
 
 Rustdoc groups server material in `key`, CBS in `circuit_bootstrap`, MVB programs/execution in `factorized`, and sparse key generation/rotation in `sparse`. Common workflow types remain root imports. Raw GLWE controls and BR workspace are documented in `bootstrapping_key` and `blind_rotation`.
 
-Benchmarks live in [`primus_tfhe_benchmarks`](../../benchmarks/tfhe/README.md#targets). Select the operation target `pbs`, `sparse_pbs`, `mvb`, `cbs` or the explicit `setup` diagnostics. Select `--features glwe-ntt`.
-
 ## Further reading
 
 This crate enables `ntt` on its normal dependencies; no extra backend flag is needed, and standalone use does not pull in Fourier/FFT. Default features are empty; optional `simd` enables nightly SIMD arithmetic in dependencies.
 
-[Boolean gates](../primus_tfhe/README.md#boolean-gates) · [Error boundaries](../primus_tfhe/README.md#error-boundaries) · [Implementation notes](../primus_tfhe/IMPLEMENTATION.md) · [Benchmark guide](../../benchmarks/tfhe/BENCHMARKS.md)
+[Boolean gates](../primus_tfhe/README.md#boolean-gates) · [Error boundaries](../primus_tfhe/README.md#error-boundaries) · [Implementation notes](../primus_tfhe/IMPLEMENTATION.md) · [Performance notes](../../guides/performance/README.md)

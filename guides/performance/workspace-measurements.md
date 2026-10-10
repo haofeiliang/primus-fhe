@@ -694,7 +694,7 @@ Temporary variants of the existing lattice NTRU benches compared ordinary Vec-ba
 
 Ordinary versus aligned key differences were small (roughly 0–2% in the initial runs) and did not establish a consistent benefit across configurations. The ordinary allocator may itself return aligned addresses; this was a container comparison, not a controlled misalignment study. Workspace-container changes also produced small improvements and regressions. These results support neither a general key migration nor a speedup claim for boxed storage. Temporary benchmark variants were removed.
 
-The historical lookup fixture in `e55ec2e` measured retained requested heap and zero online allocation. Its u64/N=1024/n=64/M=4/c=7/d=5/o=3 parameters and key generation were held fixed for the following comparison. The [current fixture](../../crates/primus_tfhe_ntru_lut/IMPLEMENTATION.md#benchmark-fixture) uses n800/c8/d5/o8; its latency cannot be compared directly with this table.
+The historical lookup fixture in `e55ec2e` measured retained requested heap and zero online allocation. Its u64/N=1024/n=64/M=4/c=7/d=5/o=3 parameters and key generation were held fixed for the following comparison. The [current fixture](../../crates/primus_tfhe_ntru_lut/IMPLEMENTATION.md#historical-measurements) uses n800/c8/d5/o8; its latency cannot be compared directly with this table.
 
 | Backend | Lookup workspace before → after | Retained reduction | Pinned complete lookup before → after |
 | --- | --- | --- | --- |
