@@ -45,22 +45,20 @@ pub struct CiphertextModulus;
 - 对应类型的 `value` 必须满足 `1 < value < 2^(BITS - 2)`。
 - 无效的结构、类型、字面量和模数范围会产生编译期错误。
 
-## 生成实现
+## 生成 API
 
-对于每个模数，该宏在展开期间计算双 limb 倒数 `floor(B² / modulus)`，其中 `B = 2^BITS`。生成的 unit struct 不保存运行时 context。
-
-展开结果提供：
+生成的 unit struct 无需分配运行时 context，提供：
 
 - 关联函数 `value()` 和 `ratio()`；
 - `primus_reduce` 的标量、切片、惰性约简、逆元、幂运算、融合运算和点积实现。点积与运行时 Barrett 使用相同的输入界：每个操作数小于 `2^(BITS - 2)`，允许大于目标模数；
-- `EncodeSigned`，使用与 `UintModulus` 相同的有界系数转换，并传入编译期常量模数；
+- 通过 `EncodeSigned` 转换有界 signed 系数；
 - `Copy`、`Clone`、`PartialEq`、`Eq`、`Debug` 和 `Hash` 实现。
 
 不要在同一个 struct 上再次 derive 这些标准 trait，否则会与宏生成的实现冲突。
 
 ## SIMD
 
-`simd` feature 在宏展开时选择 scalar 或 portable-SIMD slice 转发路径。生成的 context 还会在运行时自动使用受支持的原生内核；同时启用 `primus_modulus` 的 `derive` 和 `simd` features，可使用需要 nightly 的 portable-SIMD 路径。具体硬件资格和常量模数回退见[实现说明](../primus_modulus/IMPLEMENTATION.md)。
+同时启用 `primus_modulus` 的 `derive` 和 `simd` features，可使用需要 nightly 的 portable-SIMD 支持。稳定版也可使用受支持的原生内核，见[模数 features](../primus_modulus/README.zh_CN.md#feature)。
 
 标量与 SIMD 展开遵循同样的 `BarrettModulus` 契约：调用方保证切片尺寸，惰性结果位于 `[0, 2*modulus)`，逆元操作要求输入可逆；编译期常量模数不保证素性。
 

@@ -38,16 +38,7 @@ assert_eq!((inverse as u128 * 17) % 29, 1);
 - `gcdinv_pow_of_2(value, mask)` 要求 `mask` 非零且形如 `2^k - 1`；只有奇数可逆。
 - 按照本 crate 的约定，`gcd(0, 0) = 0`。
 
-完整的 panic 和结果契约请参阅公开 API 文档。
-
-## 实现说明
-
-实现使用定宽算术且不进行堆分配。普通 GCD 使用 Stein 二进制算法；一般扩展 GCD 例程基于 FLINT 的无符号整数算法；二的幂模逆使用 Newton/Hensel 提升。
-
-参考资料：
-
-- [FLINT `n_xgcd`](https://flintlib.org/doc/ulong_extras.html#c.n_xgcd)
-- [FLINT `n_gcdinv`](https://flintlib.org/doc/ulong_extras.html#c.n_gcdinv)
+完整的 panic 和结果契约见[公开 API](src/lib.rs)。一般扩展 GCD 例程基于 FLINT 的 [`n_xgcd`](https://flintlib.org/doc/ulong_extras.html#c.n_xgcd) 和 [`n_gcdinv`](https://flintlib.org/doc/ulong_extras.html#c.n_gcdinv)。
 
 ## 许可证
 

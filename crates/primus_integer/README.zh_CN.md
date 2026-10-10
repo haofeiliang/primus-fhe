@@ -39,16 +39,16 @@ assert_eq!(value.bit_width(), 65);
 
 limb 按小端顺序存储。limb 数量和前导零 limb 都属于表示和相等性的一部分：例如， `BigUint([1u64])` 和 `BigUint([1u64, 0])` 是不同的表示。
 
-有效位宽使用 `u32`，limb 数和存储长度使用 `usize`。`checked_bit_width()` 忽略前导零 limb，对空值或零值返回 `Some(0)`，位宽超出 `u32::MAX` 时返回 `None`。`bit_width()` 返回相同位宽，但溢出时 panic。参数构造器可使用受检结果，一次性建立位索引范围。
+有效位宽使用 `u32`，limb 数和存储长度使用 `usize`。`checked_bit_width()` 忽略前导零 limb，对空值或零值返回 `Some(0)`，位宽超出 `u32::MAX` 时返回 `None`。`bit_width()` 返回相同位宽，但溢出时 panic。
 
-顶层参数构造器和公开操作边界负责一次性检查维度和缓冲区布局。底层算术内核刻意避免 在 release 构建中重复这些检查。调用方必须维持以下契约：
+调用方必须维持以下契约：
 
 - 参与同一运算的所有输入、输出、累加器和模数具有相同的 limb 数量；
 - 需要访问最低 limb 的运算接收非空存储；
 - `left_shift_assign` 和 `right_shift_assign` 的 `bits` 参数小于 `T::BITS`； 这些方法执行单个 limb 宽度内的移位，而不是任意位数的整型移位；
 - 传给模运算的操作数已经约简到 `[0, modulus)`。
 
-违反这些契约属于调用方错误，不保证能在 release 构建中被检测。在等长契约成立时， 基于迭代器的内核会处理所有 limb，不会因为某个缓冲区较短而截断操作数。
+这些前提不保证在 release 构建中被检查。各方法的完整契约见[公开 API](src/lib.rs)。
 
 算术仍然是定宽的：各方法会按照文档返回 carry、borrow 或高位 limb，移位操作也会 按照各自契约返回或丢弃移出的位；这些方法不会扩展表示的长度。
 
@@ -60,19 +60,9 @@ limb 按小端顺序存储。limb 数量和前导零 limb 都属于表示和相�
 
 序列化保留完整 limb 序列，包括高位的零 limb。反序列化恢复原始存储，不验证 limb 数、模数或算术域；它不是带版本的密钥或参数格式。
 
-可运行以下命令验证可选的表示往返测试：
-
-```sh
-cargo nextest run -p primus_integer --lib --tests --features serde
-```
-
 ## SIMD feature
 
-`simd` feature 启用 `SimdInteger`、`SimdArray` 及相关 trait。它使用 Rust 尚未稳定的 `portable_simd` API，因此需要 nightly：
-
-```text
-cargo +nightly test -p primus_integer --features simd
-```
+`simd` feature 启用 `SimdInteger`、`SimdArray` 及相关 trait。它使用 Rust 尚未稳定的 `portable_simd` API，因此需要 nightly。
 
 默认向量类型根据目标 CPU feature 选择。`VECTOR_BITS` 使用 `u32`，数组长度 `LANE_COUNT` 使用 `usize`。泛型代码应使用关联类型 `SimdT`、`MaskT` 和 `Array`，而不应直接指定 lane 数量。
 

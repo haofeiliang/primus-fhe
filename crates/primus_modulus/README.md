@@ -41,9 +41,7 @@ assert_eq!(output, [11, 6, 50]);
 - Use `BarrettModulus::new(value)` when multiplication and repeated reduction are required for a modulus in the supported Barrett range.
 - Use `CompactModulus::new(value)` or `UintModulus::new(value)` for their smaller basic-operation sets.
 
-Checked constructors validate their documented range. `CompactModulus(value)` and `UintModulus(value)` remain available when an already-validated caller intentionally avoids a repeated check. Likewise, `BarrettModulus::new_unchecked`, `BarrettModulus::from_parts`, and `SimdBarrettModulus::from_parts` require the caller to uphold their documented reciprocal and range invariants.
-
-`CompactModulus` and `UintModulus` also expose their stored value as `.0`. Direct construction and field updates must preserve the ranges above; arithmetic methods do not generally revalidate them.
+Checked constructors validate their documented range. Direct construction or `.0` updates of `CompactModulus` and `UintModulus` must preserve that range; arithmetic methods do not generally revalidate it. Raw Barrett constructors additionally require the correct reciprocal; see [`BarrettModulus` and `from_parts`](src/barrett/mod.rs) for its little-endian representation and exact bounds.
 
 ## Features
 
@@ -52,24 +50,22 @@ Checked constructors validate their documented range. `CompactModulus(value)` an
 
 Both features are disabled by default. The `simd` feature requires a nightly Rust toolchain.
 
-Stable builds can also select supported x86_64 kernels; disabling `simd` does not imply scalar-only machine code. See [implementation notes](IMPLEMENTATION.md) for dispatch and constant-modulus tradeoffs. Caller arithmetic contracts remain the same.
+Stable builds can also select supported x86_64 kernels; disabling `simd` does not imply scalar-only machine code. Scalar and accelerated paths have the same arithmetic contracts. Performance depends on the CPU and workload; see the [benchmark guide](benches/README.md).
 
 ## Arithmetic contracts
 
 The operation traits, input ranges, output ranges, and slice-length requirements come from `primus_reduce`.
 
-- Canonical operations generally require canonical residues unless their trait or concrete implementation documents a wider input domain. Barrett dot products accept each operand below `2^(T::BITS - 2)`, including residues from another Barrett modulus larger than the destination. Scalar blocks and each SIMD lane accumulate at most 16 products in two words before reduction; both slice and iterator forms return canonical residues.
+- Canonical operations generally require canonical residues unless their trait or concrete implementation documents a wider input domain. Barrett dot products accept each operand below `2^(T::BITS - 2)`, including residues from another Barrett modulus larger than the destination; both slice and iterator forms return canonical residues.
 - Lazy operations return representatives in `[0, 2 * modulus)` and require a final once-reduction before canonical use.
 - Low-level slice kernels may use `debug_assert*!` for shape diagnostics; release callers must uphold the documented length contracts.
 - `FieldContext` is a capability marker. It does not prove primality or guarantee that every nonzero value is invertible.
-- `EncodeSigned` converts coefficients with unsigned magnitude less than the explicit modulus; Native accepts every signed value. Native preserves the bit pattern, PowOf2 applies its mask, and Uint/Compact/Barrett share the explicit-modulus conversion. The default slice method checks equal lengths once and uses the concrete scalar implementation.
-- `ReduceDotProductSigned` fuses bounded signed encoding with dot products for Native, PowOf2, Barrett and derived Barrett. It checks equal lengths once and returns zero for empty slices. Barrett encodes before wide accumulation, preserving the 16-product bound; SIMD handles full chunks and a scalar tail.
+- `EncodeSigned` converts coefficients with unsigned magnitude less than the explicit modulus; Native accepts every signed value. Slice conversion checks equal input/output lengths. This conversion applies no plaintext scaling.
+- `ReduceDotProductSigned` combines bounded signed coefficients and canonical residues for Native, PowOf2, Barrett and derived Barrett. It checks equal slice lengths and returns zero for empty inputs.
 
 ## Prepared modulus switching
 
-All five modulus types and derived Barrett contexts implement `primus_reduce::PrepareModulusSwitch`. `source.prepare_switch_to(target)` returns `primus_reduce::ModulusSwitch<T>`, reusing the stored reciprocal for Barrett sources. Direct `ModulusSwitch::new(source, target)` construction computes a reciprocal only when needed. Both routes select the same kernels from the fixed ratio; see the [rounding and batch contracts](../primus_reduce/README.md#prepared-modulus-switching).
-
-The `modulus_switch` benchmark measures prepared scalar and batch execution.
+All five modulus types and derived Barrett contexts implement `primus_reduce::PrepareModulusSwitch`. Construct `source.prepare_switch_to(target)` once and reuse its `switch` or `switch_map` methods. `ModulusSwitch::new(source, target)` is also available; both forms follow the same [rounding and batch contracts](../primus_reduce/README.md#prepared-modulus-switching).
 
 ```rust
 use primus_modulus::{BarrettModulus, NativeModulus};

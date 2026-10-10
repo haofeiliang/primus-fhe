@@ -38,16 +38,7 @@ assert_eq!((inverse as u128 * 17) % 29, 1);
 - `gcdinv_pow_of_2(value, mask)` requires a nonzero mask of the form `2^k - 1`; only odd values are invertible.
 - By convention, this crate defines `gcd(0, 0) = 0`.
 
-See the public API documentation for complete panic and result contracts.
-
-## Implementation notes
-
-The implementation uses fixed-width arithmetic without heap allocation. Ordinary GCD uses Stein's binary algorithm, the general extended-GCD routines are based on FLINT's unsigned-integer algorithms, and power-of-two inversion uses Newton/Hensel lifting.
-
-References:
-
-- [FLINT `n_xgcd`](https://flintlib.org/doc/ulong_extras.html#c.n_xgcd)
-- [FLINT `n_gcdinv`](https://flintlib.org/doc/ulong_extras.html#c.n_gcdinv)
+See the [public API](src/lib.rs) for complete panic and result contracts. General extended-GCD routines follow FLINT's [`n_xgcd`](https://flintlib.org/doc/ulong_extras.html#c.n_xgcd) and [`n_gcdinv`](https://flintlib.org/doc/ulong_extras.html#c.n_gcdinv).
 
 ## License
 

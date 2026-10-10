@@ -36,13 +36,7 @@ factor.factor_mul_slice_assign(&mut values, modulus);
 assert_eq!(values, [11, 23, 35]);
 ```
 
-各运算 trait 相互独立，使泛型代码可以只要求实际需要的能力：
-
-- `FactorBase` 构造 factor；
-- `LazyFactorMul` 和 `FactorMul` 提供标量运算；
-- `LazyFactorSliceOps` 和 `FactorSliceOps` 提供切片与融合运算；
-- `Factor` 是完整运算集合的 marker；
-- 启用 `simd` 后，`SimdFactorMul` 提供显式 SIMD factor 构造。
+标量运算使用 `FactorMul` / `LazyFactorMul`，切片使用 `FactorSliceOps` / `LazyFactorSliceOps`。`FactorBase` 提供构造，`Factor` 组合完整运算集合。
 
 ## 调用方契约
 
@@ -58,15 +52,9 @@ Factor 有意不保存模数。调用方必须在后续每次运算中传入构�
 
 ## SIMD feature
 
-稳定版在支持 AVX-512F 和 AVX-512DQ 的 x86-64 CPU 上加速足够长的 `u64` Shoup 切片。覆盖 `factor_mul_slice_assign`、`factor_mul_slice_to` 和 `add_factor_mul_slice_assign`，沿用现有 factor 表示和标量尾部，不引入分配。其他类型、短切片及不支持这些指令的平台保留原实现。
+可选的 `simd` feature 需要 nightly，默认关闭。它启用 portable-SIMD 支持，并提供 `SimdShoupFactor` 和 `SimdFactorMul`，用于显式广播 factor 或逐 lane 打包。
 
-可选的 `simd` feature 启用 nightly portable-SIMD 支持，与稳定版共用上述原生内核，并保留已有回退路径。需要显式广播单个 factor 或为每个 lane 打包不同 factor 时，可以使用 `SimdShoupFactor` 和 `SimdFactorMul`。
-
-```text
-cargo +nightly test -p primus_factor --features simd
-```
-
-该 feature 默认关闭。
+稳定版也可在 x86-64 CPU 上加速受支持的 `u64` 切片，未启用 `simd` 不代表只执行标量代码，算术契约保持相同。标量与预计算 factor 的负载比较见[基准指南](benches/README.md)。
 
 ## 许可证
 

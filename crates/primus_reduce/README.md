@@ -47,7 +47,6 @@ assert_eq!(values, [13, 13]);
 
 This crate defines interfaces, not validation boundaries. Each public method documents its input range, representation, output state, and length requirements.
 
-- Higher-level constructors and batch APIs should validate dimensions and layouts once.
 - Low-level numerical kernels may diagnose shape mismatches only with `debug_assert*!`; release callers must uphold the documented contracts.
 - Dot products explicitly check equal slice lengths in every build profile. Canonical operands are always supported; wider input ranges are implementation-specific. Runtime and derived Barrett also accept operands below `2^(T::BITS - 2)`, independently of the destination modulus.
 - Lazy results require a final once-reduction before they are treated as canonical residues.
@@ -57,9 +56,9 @@ This crate defines interfaces, not validation boundaries. Each public method doc
 
 ## Signed coefficients
 
-`EncodeSigned<T>` converts bounded signed coefficients to canonical residues, without plaintext scaling or general modular reduction. It is implemented for the concrete modulus types in `primus_modulus` and exported from both the crate root and `prelude`. It does not require `Reduce` or `ReduceNeg`. Custom modulus types implement `encode_signed`; the default slice method checks equal lengths once and statically calls that scalar implementation.
+`EncodeSigned<T>` converts bounded signed coefficients to canonical residues, without plaintext scaling or general modular reduction. It is exported from the crate root and `prelude`; custom modulus types can implement it without `Reduce` or `ReduceNeg`. Slice conversion requires equal input and output lengths.
 
-`ReduceDotProductSigned<T>` computes the dot product of canonical residues and bounded signed coefficients, returning a canonical residue without an encoded copy. It checks equal slice lengths; empty inputs return zero. Its signed input bounds match `EncodeSigned`. Native, PowOf2, Barrett and derived Barrett moduli implement this trait, including backend-specific SIMD dispatch.
+`ReduceDotProductSigned<T>` computes the dot product of canonical residues and bounded signed coefficients without an encoded copy. It checks equal slice lengths and returns a canonical residue, or zero for empty inputs. Its signed input bounds match `EncodeSigned`; see the [modulus types](../primus_modulus/README.md#arithmetic-contracts) for support.
 
 `RingContext<T>` includes both signed operation traits; `FieldContext<T>` inherits them through `RingContext<T>`. Both contexts require `T: FheUint`. Code needing only one operation can use its individual trait without the full context.
 
@@ -74,9 +73,7 @@ UintModulus::new(97).encode_signed_slice_to(&[-1, 0, 1], &mut output);
 assert_eq!(output, [96, 0, 1]);
 ```
 
-For an explicit modulus `q`, every coefficient must satisfy `value.unsigned_abs() < q`. This is a correctness precondition, not a release validation pass. Every signed value is representable under the native modulus. Both methods handle the signed minimum without signed negation. See [`primus_modulus`](../primus_modulus/README.md#arithmetic-contracts) for the concrete encoding strategies.
-
-LWE, GLWE and NTRU use this bounded conversion. NTRU parameters validate the sampler's support against their modulus; callers importing keys or converting them to a different modulus must ensure the coefficients fit that target. When an already validated raw modulus is all that is available, `UintModulus(q)` provides the operation without building a reduction context.
+For an explicit modulus `q`, every coefficient must satisfy `value.unsigned_abs() < q`; this precondition is not checked in release builds. Every signed value, including the signed minimum, is representable under the native modulus. Imported coefficients must fit the destination modulus, even if they were valid under another modulus.
 
 ## Prepared modulus switching
 
@@ -84,9 +81,9 @@ LWE, GLWE and NTRU use this bounded conversion. NTRU parameters validate the sam
 
 Canonical source residues map to `round(value * target / source) mod target`, with ties upward and endpoint wrapping to zero. Either modulus may be native; explicit moduli must be at least two. This is integer ratio rounding, independent of modular division.
 
-`RingContext` includes preparation, and `FieldContext` inherits it. Higher-level callers using these bounds need no extra preparation bound; callers needing fewer capabilities can use `PrepareModulusSwitch` alone. Concrete modulus implementations belong to [`primus_modulus`](../primus_modulus/README.md#prepared-modulus-switching). Barrett sources use `with_source_reciprocal` to supply their existing two-word reciprocal; its mathematical preconditions are documented in rustdoc.
+`RingContext` includes preparation, and `FieldContext` inherits it. Callers needing fewer capabilities can use `PrepareModulusSwitch` alone. Concrete implementations and a minimal example are in [`primus_modulus`](../primus_modulus/README.md#prepared-modulus-switching); raw reciprocal construction has additional [correctness preconditions](src/modulus_switch.rs).
 
-`switch_map` selects the arithmetic kernel before the loop and carries a payload beside each coefficient, allowing fused sign handling, output conversion and accumulation without an intermediate buffer. If the iterator or callback panics, earlier effects remain.
+`switch_map` carries a payload beside each coefficient for output conversion or accumulation without an intermediate buffer. If the iterator or callback panics, earlier effects remain.
 
 ## License
 

@@ -30,7 +30,7 @@ This lets arithmetic and cryptographic kernels accept borrowed slices, arrays, o
 | `Arc<[T]>` | yes | no | no |
 | `AVec<T, A>` and `ABox<[T], A>` | yes | yes | no |
 
-References to a supported backend forward its capabilities: `&S` supports reading, and `&mut S` supports mutation when `S` does. Iterator construction and consumption use separate `FromIterator` / `IntoIterator` bounds only where needed.
+References to a supported backend forward its capabilities: `&S` supports reading, and `&mut S` supports mutation when `S` does.
 
 The aligned backends require the optional `aligned-vec` feature. Their alignment is chosen explicitly during allocation; they do not implement `DataOwned`.
 

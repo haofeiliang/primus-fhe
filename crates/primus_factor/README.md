@@ -36,13 +36,7 @@ factor.factor_mul_slice_assign(&mut values, modulus);
 assert_eq!(values, [11, 23, 35]);
 ```
 
-The operation traits are separate so generic code can request only the capability it needs:
-
-- `FactorBase` constructs a factor;
-- `LazyFactorMul` and `FactorMul` provide scalar operations;
-- `LazyFactorSliceOps` and `FactorSliceOps` provide slice and fused operations;
-- `Factor` is the marker for the complete operation set;
-- `SimdFactorMul` exposes explicit SIMD factor construction when `simd` is enabled.
+Use `FactorMul` / `LazyFactorMul` for scalar operations and `FactorSliceOps` / `LazyFactorSliceOps` for slices. `FactorBase` provides construction; `Factor` combines the complete operation set.
 
 ## Caller contracts
 
@@ -58,15 +52,9 @@ Some low-level contracts are diagnosed only by `debug_assert*!`. Release callers
 
 ## SIMD feature
 
-Stable builds accelerate sufficiently long `u64` Shoup slices on x86-64 CPUs with AVX-512F and AVX-512DQ. This covers `factor_mul_slice_assign`, `factor_mul_slice_to`, and `add_factor_mul_slice_assign`, using the existing factor representation and scalar tails without allocation. Other types, short slices, and unsupported CPUs retain their existing implementation.
+The optional `simd` feature requires nightly and is disabled by default. It enables portable-SIMD support, including `SimdShoupFactor` and `SimdFactorMul` for explicit factor broadcasting or per-lane packing.
 
-The optional `simd` feature enables nightly portable-SIMD support. It shares the native kernels above and retains the existing fallback paths. `SimdShoupFactor` and `SimdFactorMul` are available for code that needs to broadcast one factor or pack one factor per lane explicitly.
-
-```text
-cargo +nightly test -p primus_factor --features simd
-```
-
-The feature is disabled by default.
+Stable builds can also accelerate supported `u64` slices on x86-64 CPUs; disabling `simd` does not imply scalar-only execution. Arithmetic contracts are unchanged. See the [benchmark guide](benches/README.md) to compare scalar and precomputed-factor workloads.
 
 ## License
 

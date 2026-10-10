@@ -41,9 +41,7 @@ assert_eq!(output, [11, 6, 50]);
 - 当受支持 Barrett 范围内的模数需要乘法和重复约简时，使用 `BarrettModulus::new(value)`。
 - 对各自较小的基本运算集合使用 `CompactModulus::new(value)` 或 `UintModulus::new(value)`。
 
-带检查的构造器会验证文档规定的范围。当调用方已经完成验证，并且有意避免重复检查时，仍可使用 `CompactModulus(value)` 和 `UintModulus(value)`。同样，调用 `BarrettModulus::new_unchecked`、`BarrettModulus::from_parts` 和 `SimdBarrettModulus::from_parts` 时，调用方必须维持其文档规定的倒数与范围不变量。
-
-`CompactModulus` 和 `UintModulus` 还通过 `.0` 暴露存储值。直接构造和字段更新都必须保持上述范围；算术方法通常不重新验证模数。
+带检查的构造器会验证文档规定的范围。直接构造或更新 `CompactModulus`、`UintModulus` 的 `.0` 字段时，必须保持该范围，算术方法通常不重新验证。Raw Barrett 构造器还要求正确的倒数；小端表示和精确范围见 [`BarrettModulus` 及 `from_parts`](src/barrett/mod.rs)。
 
 ## Feature
 
@@ -52,24 +50,22 @@ assert_eq!(output, [11, 6, 50]);
 
 两个 feature 默认都不启用。`simd` feature 需要 nightly Rust 工具链。
 
-稳定版也可自动使用受支持的 x86_64 内核，未启用 `simd` 不代表只执行标量代码。硬件分派与常量模数的取舍见[实现说明](IMPLEMENTATION.md)；调用方仍遵循相同的算术契约。
+稳定版也可自动使用受支持的 x86_64 内核，未启用 `simd` 不代表只执行标量代码。标量与加速路径遵循相同的算术契约，性能取决于 CPU 和工作负载，运行入口见[基准指南](benches/README.md)。
 
 ## 算术契约
 
 运算 trait、输入范围、输出范围和切片长度要求均来自 `primus_reduce`。
 
-- 规范运算通常要求规范剩余类输入，除非对应 trait 或具体实现明确允许更宽范围。Barrett 点积接受小于 `2^(T::BITS - 2)` 的操作数，包括来自其他 Barrett 模数、可能大于目标模数的 residue。标量分块和每条 SIMD lane 最多用两个字累加 16 项乘积再约简；切片与迭代器形式都返回规范剩余类。
+- 规范运算通常要求规范剩余类输入，除非对应 trait 或具体实现明确允许更宽范围。Barrett 点积接受小于 `2^(T::BITS - 2)` 的操作数，包括来自其他 Barrett 模数、可能大于目标模数的 residue；切片与迭代器形式都返回规范剩余类。
 - 惰性运算返回 `[0, 2 * modulus)` 中的代表元，在作为规范剩余类使用前需要再执行一次单次约简。
 - 底层切片内核可能只用 `debug_assert*!` 诊断形状问题；release 调用方必须维持文档中的长度契约。
 - `FieldContext` 是能力 marker；它不证明模数为素数，也不保证每个非零值都可逆。
-- `EncodeSigned` 转换无符号幅度小于显式模数的系数；Native 接受所有 signed 值。Native 保留位模式，PowOf2 使用掩码，Uint/Compact/Barrett 共享显式模数转换。默认切片方法统一检查一次等长，再使用具体类型的标量实现。
-- `ReduceDotProductSigned` 为 Native、PowOf2、Barrett 及派生 Barrett 融合有界 signed 编码与点积。入口统一检查等长，空切片返回零。Barrett 在宽累加前完成编码，保持 16 项乘积的累加界；SIMD 处理完整块，尾部走标量内核。
+- `EncodeSigned` 转换无符号幅度小于显式模数的系数；Native 接受所有 signed 值。切片转换检查输入与输出等长，不进行明文缩放。
+- `ReduceDotProductSigned` 为 Native、PowOf2、Barrett 及派生 Barrett 组合有界 signed 系数与规范剩余类，检查两个切片等长，空输入返回零。
 
 ## 预备模切
 
-五种模数及派生 Barrett 均实现 `primus_reduce::PrepareModulusSwitch`。`source.prepare_switch_to(target)` 返回 `primus_reduce::ModulusSwitch<T>`，Barrett 源模数复用已有倒数。直接使用 `ModulusSwitch::new(source, target)` 时，仅在需要时计算倒数。两种入口按固定比例选择相同内核；[舍入和批量转换契约](../primus_reduce/README.zh_CN.md#预备模切)见 reduce 文档。
-
-`modulus_switch` 基准测量预备后的标量和批量执行。
+五种模数及派生 Barrett 均实现 `primus_reduce::PrepareModulusSwitch`。一次构造 `source.prepare_switch_to(target)` 后复用其 `switch` 或 `switch_map` 方法，也可直接使用 `ModulusSwitch::new(source, target)`；两种方式遵循相同的[舍入和批量转换契约](../primus_reduce/README.zh_CN.md#预备模切)。
 
 ```rust
 use primus_modulus::{BarrettModulus, NativeModulus};

@@ -48,22 +48,19 @@ pub struct CiphertextModulus;
 - `value` must satisfy `1 < value < 2^(BITS - 2)` for that type.
 - Invalid structures, types, literals, and modulus ranges produce compile-time errors.
 
-## Generated implementation
+## Generated API
 
-For each modulus, the macro computes the two-limb reciprocal `floor(B² / modulus)` during macro expansion, where `B = 2^BITS`. The resulting unit struct stores no runtime context.
-
-The expansion provides:
-
+The resulting unit struct needs no runtime context allocation and provides:
 - associated `value()` and `ratio()` functions;
 - `primus_reduce` scalar, slice, lazy-reduction, inverse, exponentiation, fused-operation, and dot-product implementations. Dot products share runtime Barrett's input bound: each operand is below `2^(BITS - 2)`, even when larger than the destination modulus;
-- `EncodeSigned`, using the same bounded coefficient conversion as `UintModulus` with a compile-time modulus;
+- bounded signed coefficient conversion through `EncodeSigned`;
 - `Copy`, `Clone`, `PartialEq`, `Eq`, `Debug`, and `Hash` implementations.
 
 Do not derive those standard traits separately on the same struct, because the generated implementations would conflict.
 
 ## SIMD
 
-The `simd` feature chooses scalar or portable-SIMD slice forwarding during macro expansion. Generated contexts also automatically select supported native kernels at runtime. Enable both `derive` and `simd` on `primus_modulus` for portable-SIMD paths, which require nightly. Hardware eligibility and constant-modulus fallbacks are described in the [implementation notes](../primus_modulus/IMPLEMENTATION.md).
+Enable both `derive` and `simd` on `primus_modulus` for portable-SIMD support, which requires nightly. Stable builds can also use supported native kernels; see [modulus features](../primus_modulus/README.md#features).
 
 Scalar and SIMD expansions share `BarrettModulus` contracts: callers preserve slice dimensions, lazy results lie in `[0, 2*modulus)`, and inversion requires an invertible input. A compile-time constant modulus is not necessarily prime.
 

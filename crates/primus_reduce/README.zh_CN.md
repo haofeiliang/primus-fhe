@@ -47,7 +47,6 @@ assert_eq!(values, [13, 13]);
 
 本 crate 定义接口，而不是输入校验边界。每个公开方法分别记录其输入范围、表示、输出状态和长度要求。
 
-- 顶层构造器和批处理 API 应一次性检查维度与布局。
 - 底层数值内核可能只通过 `debug_assert*!` 诊断形状不匹配；release 调用方必须维持文档中的契约。
 - 点积在所有构建模式下都会显式检查两个切片等长。规范输入总是受支持；更宽的输入范围由具体实现规定。运行时和派生 Barrett 还接受小于 `2^(T::BITS - 2)` 的操作数，不要求它们小于目标模数。
 - 惰性约简结果在被视为规范剩余类之前，需要再执行一次单次约简。
@@ -57,9 +56,9 @@ assert_eq!(values, [13, 13]);
 
 ## 有符号系数
 
-`EncodeSigned<T>` 将有界 signed 系数转换为规范剩余类，不进行明文缩放或通用模约简。 `primus_modulus` 中的具体模数类型分别实现此 trait，可从 crate 根或 `prelude` 导入。 它不要求模数实现 `Reduce` 或 `ReduceNeg`。自定义模数类型需实现 `encode_signed`； 默认切片方法统一检查一次等长，再静态调用对应的标量实现。
+`EncodeSigned<T>` 将有界 signed 系数转换为规范剩余类，不进行明文缩放或通用模约简。可从 crate 根或 `prelude` 导入；自定义模数类型可以独立实现，不要求 `Reduce` 或 `ReduceNeg`。切片转换要求输入与输出等长。
 
-`ReduceDotProductSigned<T>` 计算规范剩余类与有界 signed 系数的点积，返回规范剩余类， 不分配 Encoded 副本。它检查两个切片等长，空输入返回零；signed 输入范围与 `EncodeSigned` 相同。Native、PowOf2、Barrett 及派生 Barrett 模数分别实现此 trait， 包括各后端的 SIMD 调度。
+`ReduceDotProductSigned<T>` 计算规范剩余类与有界 signed 系数的点积，不分配编码副本。它检查两个切片等长，返回规范剩余类，空输入返回零；signed 输入范围与 `EncodeSigned` 相同。支持情况见[模数类型](../primus_modulus/README.zh_CN.md#算术契约)。
 
 `RingContext<T>` 包含这两个 signed 运算 trait，`FieldContext<T>` 通过 `RingContext<T>` 继承它们。两个 context 均要求 `T: FheUint`；只需要某个运算时可单独约束对应 trait。
 
@@ -74,9 +73,7 @@ UintModulus::new(97).encode_signed_slice_to(&[-1, 0, 1], &mut output);
 assert_eq!(output, [96, 0, 1]);
 ```
 
-显式模数 `q` 下，每个系数必须满足 `value.unsigned_abs() < q`。 这是正确性前提，不会在 release 模式额外扫描检查；Native 模数接受所有 signed 值。 两个方法均支持 signed 最小值，不对 signed 值直接取负。具体编码策略见 [`primus_modulus`](../primus_modulus/README.zh_CN.md#算术契约)。
-
-LWE、GLWE 和 NTRU 均使用此有界转换。NTRU 参数会验证采样支持不超过模数允许的幅度； 调用方导入私钥或转换到另一模数时，必须保证系数符合目标模数的范围。 只有已验证的原始模数值时，可使用 `UintModulus(q)`，无需构建约简预计算。
+显式模数 `q` 下，每个系数必须满足 `value.unsigned_abs() < q`，该前提不在 release 构建中检查。Native 模数接受所有 signed 值，包括 signed 最小值。导入的系数必须符合目标模数的范围，即使它们在另一个模数下有效。
 
 ## 预备模切
 
@@ -84,9 +81,9 @@ LWE、GLWE 和 NTRU 均使用此有界转换。NTRU 参数会验证采样支持�
 
 规范源剩余类映射为 `round(value * target / source) mod target`，中点向上舍入，目标端点回绕到零。两端都支持 Native 模数，显式模数必须至少为二。这是整数比例舍入，与模除法独立。
 
-`RingContext` 包含准备能力，`FieldContext` 自然继承；使用这两个约束的上层调用方无需再补准备约束。只需要部分能力的调用方仍可单独使用 `PrepareModulusSwitch`。具体模数的实现位于 [`primus_modulus`](../primus_modulus/README.zh_CN.md#预备模切)。Barrett 通过 `with_source_reciprocal` 传入已有两字倒数，其数学前提见 rustdoc。
+`RingContext` 包含准备能力，`FieldContext` 自然继承。只需要部分能力时可单独使用 `PrepareModulusSwitch`。具体实现及最小示例见 [`primus_modulus`](../primus_modulus/README.zh_CN.md#预备模切)；raw 倒数构造还须满足额外[正确性前提](src/modulus_switch.rs)。
 
-`switch_map` 在循环前选择算术内核，为每个系数携带附属数据，可融合符号处理、输出转换和累加，无需中间缓冲区。迭代器或回调 panic 时，先前的效果不会回滚。
+`switch_map` 为每个系数携带附属数据，可完成输出转换或累加，无需中间缓冲区。迭代器或回调 panic 时，先前的效果不会回滚。
 
 ## 许可证
 
