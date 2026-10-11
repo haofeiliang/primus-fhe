@@ -98,7 +98,7 @@ fn bench_base_slice_operations(c: &mut Criterion) {
                         black_box(&small_values),
                         black_box(&mut wrapping_acc),
                         black_box(small_modulus),
-                        black_box(&factors),
+                        black_box(factors.view()),
                     );
                 });
             },
@@ -112,7 +112,7 @@ fn bench_base_slice_operations(c: &mut Criterion) {
                     base.add_decompose_small_values_scaled_assign(
                         black_box(&small_values),
                         black_box(&mut unsigned_acc),
-                        black_box(&factors),
+                        black_box(factors.view()),
                     );
                 });
             },

@@ -130,7 +130,7 @@ where
             .scalar_iter()
             .zip(scalar_residues.chunks_exact_mut(base_q.moduli_count()))
         {
-            base_q.decompose_to(BigUint(scalar), &mut Residues(residues));
+            base_q.decompose_to(BigUint(scalar), Residues(residues));
         }
         Ok(Self {
             encryption_parameters,

@@ -166,6 +166,8 @@ where
             .iter_punctured_product()
             .zip(&mut qp_punctured_product_chunks)
         {
+            // Q/q_i becomes P*(Q/q_i); the final QP width already accommodates
+            // every intermediate product, so no limb is discarded here.
             qp_div_qi[..q_big_uint_len].copy_from_slice(q_div_qi.digits());
             let mut qp_div_qi = BigUint(qp_div_qi);
             for &pi in p_moduli_values {
@@ -187,6 +189,8 @@ where
             }
         }
 
+        // Existing inverses are updated by P^-1 modulo q_i. Only the newly
+        // appended moduli require inverses of their full punctured products.
         let mut inv_qp_punctured_product_mod_modulus: Vec<ShoupFactor<T>> = self
             .inv_punctured_product_mod_modulus()
             .iter()

@@ -35,7 +35,7 @@ use primus_rns::{RNSBase, Residues};
 let moduli = [3_u64, 5, 7].map(BarrettModulus::new);
 let base = RNSBase::new(&moduli).unwrap();
 
-let value = base.compose(&Residues([2, 4, 6]));
+let value = base.compose(Residues(&[2, 4, 6]));
 assert_eq!(value.digits(), &[104]);
 assert_eq!(base.decompose(value.view()).as_ref(), [2, 4, 6]);
 ```
@@ -62,7 +62,11 @@ Batched big integers use the opposite grouping: each value occupies one contiguo
 
 Cloning an `RNSBase` shares immutable precomputations without copying buffers. `extend` / `extend_with` create a new base and leave the original unchanged. Reuse a prepared base rather than independently constructing the same basis.
 
-Use `compose*` and `decompose*` for CRT conversion. `wrapping_decompose*` performs centered lifting from a smaller modulus `t`: values below `ceil(t / 2)` are nonnegative and the rest are negative representatives. For `t = 2`, both `0` and `1` are preserved, so `1` is not lifted as `-1`. Complete operation contracts are in the [base API](src/base).
+Use `compose*` and `decompose*` for CRT conversion. Single-value operations accept borrowed `Residues` / `BigUint` views; obtain these through `view()` or `view_mut()` on owned storage. Single-value decomposition does not impose Q's limb width; the modulus implementation's limb-slice contract still applies. Batched big integers use the fixed width described above. Empty batches perform no writes, with the documented output, factor and scratch lengths still required.
+
+`wrapping_decompose*` performs centered lifting from a smaller modulus `t`: values below `ceil(t / 2)` are nonnegative and the rest are negative representatives. For `t = 2`, both `0` and `1` are preserved, so `1` is not lifted as `-1`.
+
+The two `add_*decompose_small_values_scaled_assign` operations add weighted residues to an existing canonical accumulator without clearing or allocating temporary storage. Factors must belong to the matching moduli. Complete operation contracts are in the [base API](src/base).
 
 ## Base conversion
 

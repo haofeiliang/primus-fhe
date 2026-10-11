@@ -1,4 +1,3 @@
-use primus_data::DataMut;
 use primus_factor::FactorBase;
 use primus_integer::{BigUint, FheUint};
 use primus_reduce::FieldContext;
@@ -15,6 +14,13 @@ where
     ///
     /// The input `value` is a little-endian limb slice. The returned vector has
     /// `moduli_count()` elements; element `i` is `value mod moduli()[i]`.
+    /// Its limb count need not equal [`big_uint_value_len`](Self::big_uint_value_len).
+    ///
+    /// # Correctness
+    ///
+    /// Input length and empty-slice behavior follow the modulus implementation's
+    /// [`Reduce::reduce`](primus_reduce::Reduce::reduce) contract.
+    #[must_use]
     #[inline]
     pub fn decompose(&self, BigUint(value): BigUint<&[T]>) -> Residues<Vec<T>> {
         Residues(
@@ -30,6 +36,8 @@ where
     /// The input `value` is a little-endian limb slice. The returned vector has
     /// `moduli_count()` factors. Factor `i` is created from `value mod q_i`
     /// and must be used only with the matching modulus `q_i == moduli()[i]`.
+    /// Input requirements are the same as for [`decompose`](Self::decompose).
+    #[must_use]
     #[inline]
     pub fn decompose_factors<F>(&self, BigUint(value): BigUint<&[T]>) -> ResidueFactors<Vec<F>>
     where
@@ -48,13 +56,21 @@ where
     /// The input `value` is a little-endian limb slice. `residues` must contain
     /// exactly `moduli_count()` elements; element `i` receives
     /// `value mod moduli()[i]`.
+    /// Its input limb count need not equal [`big_uint_value_len`](Self::big_uint_value_len).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the output residue count does not match this basis.
+    ///
+    /// # Correctness
+    ///
+    /// Input requirements are the same as for [`decompose`](Self::decompose).
     #[inline]
     pub fn decompose_to(
         &self,
         BigUint(value): BigUint<&[T]>,
-        residues: &mut Residues<impl DataMut<Elem = T>>,
+        Residues(residues): Residues<&mut [T]>,
     ) {
-        let residues = residues.as_mut();
         assert_eq!(self.moduli_count(), residues.len());
 
         for (&modulus, residue) in self.moduli().iter().zip(residues) {
@@ -72,6 +88,11 @@ where
     /// `multi_residues.len()` must equal `moduli_count() * value_count` and is
     /// written in modulus-major layout: chunk `i` of length `value_count`
     /// receives all values reduced modulo `moduli()[i]`.
+    /// For `value_count == 0`, both slices must be empty and nothing is written.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a slice length does not match the stated layout.
     pub fn decompose_big_uint_values_to(
         &self,
         big_uint_values: &[T],
@@ -83,6 +104,10 @@ where
             big_uint_values.len(),
             self.big_uint_value_len() * value_count
         );
+
+        if value_count == 0 {
+            return;
+        }
 
         let value_len = self.big_uint_value_len();
         for (residues, &modulus) in multi_residues

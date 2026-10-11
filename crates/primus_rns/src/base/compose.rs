@@ -1,5 +1,4 @@
 use itertools::izip;
-use primus_data::Data;
 use primus_factor::FactorMul;
 use primus_integer::{BigUint, BigUintIterMut, FheUint};
 use primus_reduce::FieldContext;
@@ -19,8 +18,16 @@ where
     ///
     /// The returned value has [`big_uint_value_len`](Self::big_uint_value_len)
     /// little-endian limbs and is reduced modulo the product of the basis moduli.
-    pub fn compose(&self, residues: &Residues<impl Data<Elem = T>>) -> BigUint<Vec<T>> {
-        let residues = residues.as_ref();
+    ///
+    /// # Panics
+    ///
+    /// Panics if the residue count does not match this basis.
+    ///
+    /// # Correctness
+    ///
+    /// Input residues must be canonical for the corresponding moduli.
+    #[must_use]
+    pub fn compose(&self, Residues(residues): Residues<&[T]>) -> BigUint<Vec<T>> {
         assert_eq!(self.moduli_count(), residues.len());
 
         let value_len = self.big_uint_value_len();
@@ -62,15 +69,18 @@ where
     ///
     /// `value.len()` must equal [`big_uint_value_len`](Self::big_uint_value_len).
     /// The previous contents of the buffer are fully overwritten.
-    pub fn compose_to(
-        &self,
-        residues: &Residues<impl Data<Elem = T>>,
-        value: &mut BigUint<&mut [T]>,
-    ) {
-        let residues = residues.as_ref();
+    ///
+    /// # Panics
+    ///
+    /// Panics if either storage length does not match this basis.
+    ///
+    /// # Correctness
+    ///
+    /// Input residues must be canonical for the corresponding moduli.
+    pub fn compose_to(&self, Residues(residues): Residues<&[T]>, value: BigUint<&mut [T]>) {
         assert_eq!(self.moduli_count(), residues.len());
         assert_eq!(self.big_uint_value_len(), value.len());
-        self.compose_to_kernel(residues, value.view_mut());
+        self.compose_to_kernel(residues, value);
     }
 
     /// Reconstructs many values from a flattened multi-residue layout.
@@ -86,6 +96,16 @@ where
     ///
     /// `scratch.len()` must equal `moduli_count()`. It is scratch storage for
     /// one coefficient's residue vector and is overwritten for each value.
+    /// For `value_count == 0`, both data slices must be empty; scratch still
+    /// has the stated length and is left unchanged.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a data or scratch length does not match the stated layout.
+    ///
+    /// # Correctness
+    ///
+    /// Input residues must be canonical for their corresponding moduli.
     pub fn compose_big_uint_values_to(
         &self,
         multi_residues: &[T],
