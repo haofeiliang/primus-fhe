@@ -2,77 +2,60 @@
 
 English | [简体中文](README.zh_CN.md)
 
-Current APIs and contracts are in the [development guide](../development/README.md). This directory preserves performance decisions, costs and historical evidence. Each report records its revision, parameters and measured scope; historical results are not current validation or security guarantees. The TFHE benchmark suite and report tools have been removed. Run historical commands only at the corresponding source revision; the last complete suite is available at `8d7c4b1a`. Future benchmarks belong to the backend or LUT crate.
+This directory records performance choices, costs and historical evidence.
+Current APIs and contracts are in the [development guide](../development/README.md).
+Each report states its revision, workload and limits; historical measurements
+are not current validation or security guarantees.
 
-## Retained choices and limits
+## Topic reports
 
-| Topic | Decision and evidence |
+| Report | Decision and scope |
 | --- | --- |
-| Coefficient arithmetic | Retain NTRU pairs, bounded NTT pairs, GLWE u64 grouped accumulation and compact bucket reduction, and NTRU Fourier u64 four-way accumulation within their documented bounds. See [arithmetic](sparse-arithmetic.md), especially the recorded [grouped/reduction](sparse-arithmetic.md#grouped-ntt-reassessment) and [Fourier](sparse-arithmetic.md#fourier-four-way-reassessment) reassessments. Do not add gains measured against different baselines. |
-| Fourier first-product write | Keep clear-then-accumulate. F1 improves binary PBS and classic CBS in measured profiles, but sparse CBS and process variability prevent global acceptance. The [final comparison](fourier-first-write.md) summarizes the corrected 108-process comparison and retains all 54 paired results. |
-| Layout and batching | Retain the internal paired NTRU LUT blind rotation. Aggregation tiles, first-bucket specialization, streaming products and GLWE tile-major keys did not justify adoption in the tested workloads. See [layout and batching](sparse-layout-and-batching.md). |
-| Parameters | Historical GLWE NTT replica/bucket and decomposition candidates are scoped to their tested consumers. PBS success alone does not validate CBS output scales. See [parameters and consumer budgets](sparse-parameters.md). |
-| Shared projection | The first-level prototype was withdrawn: the small complete-request gain did not justify storage, API and error-contract costs. The [layout report](sparse-layout-and-batching.md#shared-projection-withdrawn) retains the cost decision; current trace conditions belong in the [numerical guide](../development/bootstrapping-contracts.md#normalized-reverse-trace). |
-| Workspace storage | Reuse across requests and sharing addresses across stages are separate choices. Keep role-specific buffers where warranted; neither less memory nor equal buffer shapes proves faster execution. See [workspace measurements](workspace-measurements.md) and the [sparse scratch comparison](workspace-measurements.md#aggregate-scratch-addresses). |
-| Paper comparison | Algorithm 2, OpenFHE and HEXL measurements have explicit adaptation boundaries. Absolute timings do not establish equivalence to the authors' unavailable sparse implementation. See [paper comparison](sparse-paper-comparison.md). |
+| [Sparse arithmetic](sparse-arithmetic.md) | Retain the documented pair/group/four-way and compact-reduction choices within their numerical and workload bounds. Reassessments preserve adverse results; gains from different baselines cannot be added. |
+| [Sparse layout and batching](sparse-layout-and-batching.md) | Retain paired NTRU LUT blind rotation. Tiles, first-bucket specialization, streaming, tile-major keys and shared projection did not justify their costs in the tested workloads. |
+| [Sparse parameters and consumers](sparse-parameters.md) | Replica/bucket and decomposition candidates change matching, storage and error budgets. PBS success does not validate CBS output scales or establish security/DFR estimates. |
+| [Preparation and workspace measurements](workspace-measurements.md) | Preparation, alignment and scratch sharing have separate costs. Less memory or equal buffer shapes does not prove faster complete requests. |
+| [Paper comparison](sparse-paper-comparison.md) | Distinguish paper tables, earlier Primus/OpenFHE studies and the later supplied author fork/HEXL experiment. Parameters, sampling, return paths and builds differ; the later raw records are not retained. |
+| [Fourier first-product write](fourier-first-write.md) | Retain clear-then-accumulate. First-product overwrite helps measured binary PBS/classic CBS profiles, but sparse CBS and process variability do not justify a global replacement. All 54 build-valid pairs remain, including one FFT-plan mismatch. |
 
-## Evidence index
+## Current benchmarks
 
-| Report | What it answers |
-| --- | --- |
-| [Benchmark schema 2](tfhe-benchmark-schema2.md) | Centralized runner/report validation: six workloads, three serial processes each, CPU 4 only |
-| [Fourier first-product write](fourier-first-write.md) | Final F0/F1 full-request comparison, resource costs, build validation and the decision to retain F0 |
-| [Preparation and workspace measurements](workspace-measurements.md) | Preparation costs, scratch addresses, aligned/fixed containers, ownership and complete-consumer tradeoffs |
-| [Sparse arithmetic](sparse-arithmetic.md) | Pair/four-way accumulation, lazy ranges and compact reduction |
-| [Sparse layout and batching](sparse-layout-and-batching.md) | Tiles, first buckets, streaming, source layout and paired LUT rotations |
-| [Paper comparison](sparse-paper-comparison.md) | Parameter/operation alignment, OpenFHE, expanded storage and HEXL |
-| [Sparse parameters and consumers](sparse-parameters.md) | Matching and conditioning, decomposition/error tradeoffs, PBS/ManyLUT/MVB feedback and CBS→CMux scale limits |
+Benchmarks live in their backend or LUT crate. Use the [TFHE benchmark commands](../development/testing.md#tfhe-benchmarks)
+and [high-precision LUT commands](../development/testing.md#high-precision-lut-benchmarks);
+features and timing boundaries are described there and in each crate's bench file.
+The [parameter directory](../development/tfhe-parameters.md#current-backend-benchmarks)
+explains current fixtures. Historical workload IDs are evidence labels, not
+current targets. The removed centralized runner and report tools are not required.
 
 ## Measurement method
 
-1. Fix the comparison boundary: source revision, machine/CPU, toolchain, features,
-   parameters and complete operation. Arithmetic/layout experiments preserve the
-   logical keys, public bucket graph, input and LUT. Parameter studies separately
-   explain matching, error and material differences.
-2. Build and save both versions before sampling. Time one named workload per
-   iteration into prepared buffers; keep unrelated setup, allocation, validation
-   and diagnostic probes outside timing. Report construction cost separately
-   when the candidate changes it.
-3. Alternate versions in independent processes on fixed CPUs. Record sample,
-   warmup and measurement settings plus benchmark IDs. Retain controls, adverse
-   observations and confirmation runs; a Criterion interval from one process
-   does not cover process-to-process variation.
-4. Verify mathematical equivalence with independent oracles or exact captures
-   where applicable. Decryption alone is insufficient when gadget consumers
-   require every output scale. Record tested and untested paths explicitly.
-5. Decide using reproducible **complete-request** gains together with numerical
-   bounds, retained/peak storage, code size, API and maintenance costs. A stage
-   speedup or smaller allocation count alone is insufficient. There is no blanket
-   percentage threshold; state why the concrete tradeoff is worthwhile.
+1. Fix the revision, binary, CPU, toolchain, features, parameters and complete
+   operation. Verify that each binary contains the intended implementation;
+   parameter changes must be distinguished from arithmetic/layout changes.
+2. Time one request per iteration with unrelated preparation and checks outside
+   timing. Record construction costs separately. Validate the relevant numerical
+   contract, including gadget output scales when decryption alone is insufficient.
+3. Compare independent processes with controlled run order. Keep adverse results,
+   unchanged-path controls and confirmation runs; one process's confidence
+   interval does not measure variation between processes.
+4. Decide from repeatable complete-request gains together with numerical bounds,
+   storage, code size and maintenance costs. Stage acceleration or fewer
+   allocations alone is insufficient.
 
-The historical CPU 4/8 runs use two cache groups on the **same** Ryzen 9 9955HX3D
-machine (96 MiB and 32 MiB L3 respectively), not two independent platforms.
-Small gains on one group and losses on the other are mixed evidence, not proof
-of a universal regression or a cache-writeback cause. Preserve unchanged-path
-controls and confirmation runs; do not attribute their movement to a kernel
-they do not execute. A decision not to adopt a prototype can reflect insufficient
-repeatable benefit relative to storage and maintenance costs, even when some
-means improve. The retained arithmetic decisions keep the narrower workload
-and numerical bounds in their linked reassessments.
+Historical CPU 4/8 measurements use the 96/32 MiB L3 groups of **one** Ryzen 9
+9955HX3D, not independent platforms. Mixed results do not establish a universal
+regression or a cache-writeback cause. Allocation traffic is not retained heap,
+peak or RSS; elapsed time alone does not diagnose memory traffic. Each report
+keeps its measurement settings and untested paths alongside the results.
 
-Counters measure their stated scope: allocation traffic is not retained heap or
-peak, requested heap is not RSS, and wall time alone does not identify cache
-writeback or bandwidth. Keep stage probes separate from acceptance timings.
-Report-specific commands, seeds, parameters and limits remain beside the results.
-Validation commands and ordinary CI belong in the [testing guide](../development/testing.md).
+## Evidence limits
 
-## Data and tools
+Six CSVs in [data/](data/) belong to the arithmetic, workspace and Fourier reports,
+which explain their columns and provenance. Temporary candidates, raw binaries
+and some source adaptations are no longer retained; a historical summary does
+not promise full reproduction. Old LUT measurements with content-dependent
+selection cannot be treated as measurements of the current fixed complete tree.
 
-Retained measurement tables live in [data/](data/); each report explains its
-CSV columns, historical revision and comparison limits. Keep evidence assets
-with their report, without retaining temporary candidate implementations or
-adding experiments to ordinary CI.
-
-Extend the relevant topic report when revisiting a decision; keep stage progress
-and local implementation plans out of this directory. Public contracts remain in
-rustdoc/README, and local algorithm reasons remain beside the implementation.
+Revisit a choice in its topic report, preserving its comparison boundary.
+Keep ordinary validation in the [testing guide](../development/testing.md),
+public contracts in rustdoc/README and local algorithm reasons beside the code.

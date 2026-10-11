@@ -1,5 +1,7 @@
 # Fourier first-product write
 
+[Performance guide](README.md) · [Current benchmark commands](../development/testing.md#tfhe-benchmarks)
+
 2026-10-07. **Retain clear-then-accumulate (F0).** First-product overwrite (F1)
 improves measured binary PBS and classic CBS profiles, but mixed sparse CBS
 results and process variability do not justify replacing the shared kernel.
@@ -36,21 +38,17 @@ The candidate implementation and temporary benchmark were removed.
 | u64 classic factorized MVB, TfheFFT | n728/h32/N1024; full log8 BR/KS; domain 8, 3 thresholds |
 
 These historical arithmetic cost profiles are not security or failure-rate
-certifications. The experiment runner is not a maintained workspace benchmark.
+certifications. CSV case IDs name these workloads, not current Cargo targets;
+the experiment runner is not a maintained workspace benchmark.
 
-The first build accidentally reused F0 for both variants: copying sources with
-old mtimes into a shared Cargo target directory left F1 artifacts marked fresh.
-That entire first batch was discarded as candidate evidence. The reported rerun
-uses fresh, separate target directories and verifies recompilation, source hashes
-and distinct executable hashes before timing. Identical-binary variation in the
-invalid batch also cautions against attributing every timing difference to F1;
-it is not a calibrated noise bound to subtract from the valid results.
+The retained comparison used fresh, separate target directories and verified
+recompilation, source hashes and distinct executable hashes before timing.
 
 ## Results and decision
 
 The [paired results](data/fourier-first-write-pairs.csv) retain all 54 valid
-comparisons, including adverse results. `case`, `cpu` and `round` identify a
-pair; `same_plans` marks FFT-plan agreement. F0/F1 means and medians are in
+build comparisons, including adverse results and the plan-mismatched pair.
+`case`, `cpu` and `round` identify a pair; `same_plans` marks FFT-plan agreement. F0/F1 means and medians are in
 milliseconds; each change column is `100 × (F1/F0 - 1)`, so negative is faster.
 Do not pool cores or rounds to conceal exceptions. Within-process confidence
 intervals cannot establish repeatability across independent processes.
@@ -77,16 +75,10 @@ Both versions allocate zero times during preflight evaluation. The complete
 benchmark's `.text` shrinks by 928 B (0.020%); that does not establish a stack or
 cache benefit. RSS/setup/drop observations are not exact heap measurements.
 
-At measurement time, both snapshots passed 49 lattice/GLWE-Fourier release tests
-and all nine large-workload preflights. Every timed request was checked before
-and after sampling. The restored F0 workspace also passed release and nightly
-SIMD tests and strict Clippy. These are historical checks, not current coverage
-or a decryption-failure-probability claim.
-
-After cleanup, only the extension of the existing external-product test remains:
-it covers overwriting a dirty Fourier destination, a distinct output-backed
-accumulator path. The additional candidate CMux test was removed; existing
-selection tests remain. No production arithmetic change is retained.
+Both versions passed the nine workload preflights, with outputs checked before
+and after sampling. Historical arithmetic tests also passed; those checks are
+not current validation or a decryption-failure-probability estimate. No production
+arithmetic change was retained.
 
 Not measured: all parameter/engine/operation combinations, rotating input pools,
 concurrent requests, NTRU/high-precision LUT, Primus SIMD performance, exact peak

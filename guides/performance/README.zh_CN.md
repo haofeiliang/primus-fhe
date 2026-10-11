@@ -2,46 +2,34 @@
 
 [English](README.md) | 简体中文
 
-当前 API 和契约见[开发指南](../development/README.zh_CN.md)。本目录保存性能选择、成本及历史证据。每份报告注明版本、参数和实测范围；历史结果不代表当前验证，也不是安全保证。TFHE 基准套件与报告工具已删除；旧命令只适用于对应源码版本，最后一份完整套件可从 `8d7c4b1a` 恢复。未来基准放在所属后端或 LUT crate。
+本目录记录性能选择、成本和历史证据。当前 API 与契约见[开发指南](../development/README.zh_CN.md)。每份报告注明版本、负载和限制；历史测量不代表当前验证或安全保证。
 
-## 保留的选择与限制
+## 主题报告
 
-| 主题 | 决策与依据 |
+| 报告 | 决策与范围 |
 | --- | --- |
-| 系数算术 | 在各自约束内保留 NTRU pair、有界 NTT pair、GLWE u64 分组累加与紧凑桶末约简，以及 NTRU Fourier u64 四路累加。见[算术报告](sparse-arithmetic.md)，尤其是已记录的[分组与约简联合复评](sparse-arithmetic.md#grouped-ntt-reassessment)和 [Fourier 复评](sparse-arithmetic.md#fourier-four-way-reassessment)。不同基线的收益不能相加。 |
-| Fourier 首项覆盖 | 保留清零后累加。F1 在已测 binary PBS 和 classic CBS 中有收益，但 sparse CBS 与进程间波动阻止全局采纳。[最终对照](fourier-first-write.md)汇总修正后的 108 进程比较，并保留全部 54 组配对结果。 |
-| 布局与批处理 | 保留 NTRU LUT 内部双输入盲旋转。聚合 tiles、首桶特化、流式外积及 GLWE tile-major 密钥在受测负载中不足以采纳。见[布局与批处理](sparse-layout-and-batching.md)。 |
-| 参数 | 历史 GLWE NTT 副本/桶数与分解候选限于当时测试的消费者。PBS 通过不能证明 CBS 输出尺度有效。见[参数与消费者预算](sparse-parameters.md)。 |
-| 共享投影 | 一级原型已撤回：完整请求的小幅收益不足以抵偿存储、接口和误差契约成本。[布局报告](sparse-layout-and-batching.md#shared-projection-withdrawn)保留成本取舍，现行 trace 条件见[数值指南](../development/bootstrapping-contracts.md#normalized-reverse-trace)。 |
-| 工作区存储 | 跨请求复用与跨阶段共用地址分别决策。按角色保留必要缓冲；更少内存或相同形状不能证明更快。见[工作区测量](workspace-measurements.md)及 [sparse scratch 对照](workspace-measurements.md#aggregate-scratch-addresses)。 |
-| 论文对照 | Algorithm 2、OpenFHE 和 HEXL 测量有明确的适配边界。绝对延迟不能证明与尚未取得的作者 sparse 实现等价。见[论文对照](sparse-paper-comparison.md)。 |
+| [Sparse 算术](sparse-arithmetic.md) | 在各自数值和负载边界内保留 pair/group/四路累加及紧凑约简。复评保留不利结果，不同基线的收益不能相加。 |
+| [Sparse 布局与批处理](sparse-layout-and-batching.md) | 保留 NTRU LUT 双输入盲旋转。Tiles、首桶特化、流式处理、tile-major 密钥和共享投影在受测负载下不足以抵偿成本。 |
+| [Sparse 参数与消费者](sparse-parameters.md) | 副本/桶数与分解候选改变匹配、存储和误差预算。PBS 通过不能证明 CBS 输出尺度有效，也不构成安全性或 DFR 估计。 |
+| [准备与工作区测量](workspace-measurements.md) | 准备状态、对齐与 scratch 共享分别评估。更少内存或相同缓冲形状不能证明完整请求更快。 |
+| [论文对照](sparse-paper-comparison.md) | 区分论文表格、较早 Primus/OpenFHE 研究和后来取得的作者 fork/HEXL 实验。参数、采样、返回路径和构建存在差异；后者原始记录已不保留。 |
+| [Fourier 首项覆盖](fourier-first-write.md) | 保留清零后累加。首项覆盖对已测 binary PBS/classic CBS 有益，但 sparse CBS 和进程间波动不足以支持全局替换。保留全部 54 组有效构建配对，包括一组 FFT plan 不一致的结果。 |
 
-## 证据索引
+## 当前基准
 
-| 报告 | 回答的问题 |
-| --- | --- |
-| [Benchmark 测量版本 2](tfhe-benchmark-schema2.md) | 集中执行/报告流程验证：六种负载、每种三个串行进程，仅 CPU 4 |
-| [Fourier 首项覆盖](fourier-first-write.md) | 最终 F0/F1 完整请求比较、资源成本、构建核验及保留 F0 的决定 |
-| [准备与工作区测量](workspace-measurements.md) | 准备成本、scratch 地址、对齐/固定容器、所有权及完整消费者取舍 |
-| [Sparse 算术](sparse-arithmetic.md) | Pair/四路累加、惰性范围与紧凑约简 |
-| [Sparse 布局与批处理](sparse-layout-and-batching.md) | Tiles、首桶、流式处理、源布局和 LUT 双输入旋转 |
-| [论文对照](sparse-paper-comparison.md) | 参数/操作对齐、OpenFHE、扩展存储与 HEXL |
-| [Sparse 参数与消费者](sparse-parameters.md) | 匹配与条件分布、分解/误差取舍、PBS/ManyLUT/MVB 反馈及 CBS→CMux 尺度限制 |
+基准位于所属后端或 LUT crate。使用 [TFHE 基准命令](../development/testing.md#tfhe-benchmarks)和[高精度 LUT 命令](../development/testing.md#high-precision-lut-benchmarks)；feature 与计时边界见该指南及各 crate 的 bench 文件。[参数目录](../development/tfhe-parameters.md#current-backend-benchmarks)说明现行配置。历史负载 ID 是证据标签，不是当前 target；无需恢复已删除的集中 runner 和报告工具。
 
 ## 测量方法
 
-1. 固定比较边界：源码版本、机器/CPU、工具链、feature、参数和完整操作。算术/布局实验保留同一逻辑密钥、公开 bucket 图、输入和 LUT；参数研究另行说明匹配、误差与材料差异。
-2. 采样前编译并保存两版程序。每次迭代在已准备的缓冲上测一个具名工作负载，无关 setup、分配、验证和诊断探针放在计时外。候选改变构造时，单独报告构造成本。
-3. 在固定 CPU 上用独立进程交替运行两版，记录样本数、预热、测量设置及 benchmark ID。保留控制组、不利观察和复测；单进程的 Criterion 区间不能覆盖进程间波动。
-4. 使用独立 oracle 或适用的精确捕获验证数学等价性。Gadget 消费者需要每层尺度正确时，仅检查解密不足。明确已测与未测路径。
-5. 以可重复的**完整请求**收益，结合数值范围、保留/峰值存储、代码体积、接口和维护成本决策。仅阶段加速或分配次数减少不足以采纳。不设统一百分比门槛，说明具体取舍为何值得。
+1. 固定版本、二进制、CPU、工具链、feature、参数和完整操作，确认产物包含预期实现；区分参数变化与算术/布局变化。
+2. 每次迭代测一个请求，无关准备和检查放在计时外，构造成本单独记录。验证实际数值契约；仅解密不足时，还须检查 gadget 输出尺度。
+3. 控制运行顺序并比较独立进程。保留不利结果、未修改路径的控制组和复测；单进程置信区间不能衡量进程间波动。
+4. 根据可重复的完整请求收益，结合数值范围、存储、代码体积和维护成本决策；仅阶段加速或分配减少不足以采纳。
 
-历史 CPU 4/8 测量来自**同一台** Ryzen 9 9955HX3D 的两个缓存组（L3 分别为 96 MiB、32 MiB），不是两个独立平台。一组小幅加速、另一组小幅变慢属于混合证据，不能证明普遍回退或 cache 写回原因。保留未修改路径的控制组及复测，不能把控制组的变化归功于它并未执行的 kernel。不采纳原型也可能是可重复收益不足以抵偿存储和维护成本，并不要求每项均值都变慢。已保留算术优化的结论仍限于对应复评中的负载和数值范围。
+历史 CPU 4/8 测量来自**同一台** Ryzen 9 9955HX3D 的两个 L3 组（96/32 MiB），不是独立平台。混合结果不能证明普遍回退或 cache 写回原因。分配流量不是保留 heap、峰值或 RSS；耗时本身不能诊断内存流量。各报告将测量设置、未测路径与结果放在一起。
 
-计数器只代表其声明的范围：分配流量不是保留 heap 或峰值，请求 heap 不是 RSS，墙钟时间不能单独确定 cache 写回或带宽原因。阶段探针与验收计时分开。各报告的命令、seed、参数及限制保留在结果旁；验证命令和普通 CI 见[测试指南](../development/testing.md)。
+## 证据限制
 
-## 数据与工具
+[data/](data/) 中六份 CSV 分属算术、工作区和 Fourier 报告，由对应报告解释字段与来源。临时候选、原始二进制和部分适配源码已不保留；历史摘要不承诺完整复现。按 LUT 内容裁剪选择的旧测量，不能当作当前固定完整树的测量。
 
-保留的测量表放在 [data/](data/)，对应报告解释 CSV 列、历史版本和比较限制。证据资产随报告维护，不保留临时候选实现，也不把实验加入普通 CI。
-
-复评时扩展对应主题报告；阶段进度与本地实施计划不放在此目录。公开契约仍在 rustdoc/README，局部算法理由仍在实现旁。
+复评在对应主题报告中进行，保留比较边界。普通验证归[测试指南](../development/testing.md)，公开契约归 rustdoc/README，局部算法理由放在代码旁。
