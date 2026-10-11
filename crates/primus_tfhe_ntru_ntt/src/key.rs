@@ -116,9 +116,8 @@ where
     ) -> Result<(ClientKey<T>, NttNtruSecretKey<T>), KeyGenerationError> {
         let parameters = self.context.parameters();
         let client = primus_lwe::LweSecretKey::generate(parameters.external_lwe(), rng);
-        let (accumulator, transformed) = NttNtruSecretKey::generate_padded_pair(
+        let (accumulator, transformed) = NttNtruSecretKey::generate_pair(
             parameters.accumulator_ntru(),
-            parameters.poly_length().get(),
             self.context.table(),
             rng,
         )?;

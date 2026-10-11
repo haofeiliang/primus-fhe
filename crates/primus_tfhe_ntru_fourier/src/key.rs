@@ -119,12 +119,8 @@ where
     ) -> Result<(ClientKey<T>, FourierNtruSecretKey), KeyGenerationError> {
         let parameters = self.context.parameters();
         let client = primus_lwe::LweSecretKey::generate(parameters.external_lwe(), rng);
-        let (accumulator, transformed) = FourierNtruSecretKey::generate_padded_pair(
-            parameters.accumulator_ntru(),
-            parameters.poly_length().get(),
-            &mut self.fft,
-            rng,
-        )?;
+        let (accumulator, transformed) =
+            FourierNtruSecretKey::generate_pair(parameters.accumulator_ntru(), &mut self.fft, rng)?;
         let client_key = ClientKey::new(client, accumulator);
         // Sampling proves the usual q bound. For unusually small q, check the
         // accepted sample rather than rejecting every key from this distribution.

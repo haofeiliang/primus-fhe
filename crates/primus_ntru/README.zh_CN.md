@@ -81,7 +81,7 @@ NLev 和 NGSW 存储的行数相同，角色却不同。`NLev[1]` 可通过外�
 
 将 `encryption_parameters()` 传给 `NttNtruSecretKey::generate_pair` 或 `FourierNtruSecretKey::generate_pair`。返回的有符号系数私钥用于生成求值密钥，变换私钥用于加密和相位提取。`try_from_coeff_secret_key` 转换已有私钥，也可能拒绝它；NTT 导入要求有符号系数幅度小于 q。后续操作须保持构造时的表示，相同 q/N 不能证明 NTT 根、求值顺序或秘密身份相同。
 
-NTT 生成拒绝零点值；Fourier 检查原生环可逆性（系数和为奇数）和复数逆元稳定性。有界拒绝采样可能失败，重试次数及求逆例程不承诺常数时间。`generate_padded_pair` 只采样有效前缀，尾部为零，固定重量须不超过该前缀长度。Native 固定 binary/ternary 分布的非零总数为偶数时返回 `NonInvertibleSecretKey`，候选搜索失败返回 `KeyGenerationExhausted`。返回秘密服从候选分布**在后端接受条件下的条件分布**，`distr()` 记录候选分布。
+NTT 生成拒绝零点值；Fourier 检查原生环可逆性（系数和为奇数）和复数逆元稳定性。有界拒绝采样可能失败，重试次数及求逆例程不承诺常数时间。Native 固定 binary/ternary 分布的非零总数为偶数时返回 `NonInvertibleSecretKey`，候选搜索失败返回 `KeyGenerationExhausted`。返回秘密服从候选分布**在后端接受条件下的条件分布**，`distr()` 记录候选分布。
 
 一般 NTRU 支持非 binary 环秘密。NTRU TFHE 使用独立外部 LWE 秘密作为 binary/ternary 盲旋转控制，不要求环秘密为补零 binary。
 

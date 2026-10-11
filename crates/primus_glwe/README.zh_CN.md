@@ -111,13 +111,11 @@ NTT 还提供 `encrypt_message_coeff_to`、`decrypt_phase_coeff_to` 和 `decrypt
 
 做[相位误差诊断](../primus_encoding/README.zh_CN.md#相位误差诊断)时，用实际 codec 和 embedding 编码**预期消息**，再与相位比较。先解码再重新编码不能提供独立参考。
 
-## Gadget 与截断密文
+## Gadget 密文
 
 `encrypt_glev_to` 和 `encrypt_ggsw_to` 对系数域环多项式应用 gadget 缩放，不做普通明文编码。GGSW 控制位是常数多项式 `0` 或 `1`。从 `GadgetSize` 构造 gadget 工作区：GLev 需要匹配多项式长度，GGSW 还需匹配层数。
 
 `encrypt_ggsw_constant_batch_to` 写入连续的变换域 GGSW：NTT 为 `input.len() * params.ggsw_len()` 个剩余类，Fourier 为 `input.len() * params.fourier_ggsw_len()` 个复数。NTT 常数须是模 q 的规范剩余类，Fourier 常数使用原生环值。两后端也提供 `encrypt_ggsw_constant_batch_coeff_to` 写入系数输出，其 scratch 要求见方法文档。
-
-NTT 截断加密保留完整 mask 和至多 N 个 body 系数。`encrypt_zeros_truncated` 使用 `GlweEncryptionParameters`；`decrypt_phase_truncated` 和 `decrypt_message_truncated` 只返回保留的系数。
 
 ## 求值原语
 

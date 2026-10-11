@@ -1,9 +1,7 @@
 //! Message adapters encode into the final body or existing coefficient scratch.
 
 use super::NttGlweSecretKey;
-use crate::{
-    GlweCiphertext, GlweParameters, NttGlweCiphertext, PlaintextEmbedding, TruncatedGlweCiphertext,
-};
+use crate::{GlweCiphertext, GlweParameters, NttGlweCiphertext, PlaintextEmbedding};
 use primus_data::{Data, DataMut};
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
@@ -292,33 +290,5 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         params
             .plaintext_codec()
             .decode_slice_assign(output.as_mut());
-    }
-
-    /// Decrypts all retained messages in a truncated GLWE ciphertext.
-    ///
-    /// Returns coefficients in the key's integer type, as with [`Self::decrypt_message`].
-    /// Inherits [`Self::decrypt_phase_truncated`]'s representation and scratch requirements.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the parameter layout differs from this key or the inputs
-    /// violate [`Self::decrypt_phase_truncated`]'s compatibility checks.
-    #[must_use]
-    pub fn decrypt_message_truncated<M, Table, A>(
-        &self,
-        input: &TruncatedGlweCiphertext<A>,
-        params: &GlweParameters<T, M>,
-        ntt_table: &Table,
-    ) -> Vec<T>
-    where
-        M: FieldContext<T>,
-        Table: NttTable<ValueT = T>,
-        A: Data<Elem = T>,
-    {
-        assert_eq!(self.size, params.size(), "GLWE parameter layout mismatch");
-        let mut messages = self.decrypt_phase_truncated(input, params.cipher_modulus(), ntt_table);
-        params.plaintext_codec().decode_slice_assign(&mut messages);
-
-        messages
     }
 }

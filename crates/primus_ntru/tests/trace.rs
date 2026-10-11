@@ -111,7 +111,7 @@ fn check_operations(
             assert_phase(cipher, &expected, secret, q);
         }
     }
-    // The new prefix interface preserves the general path's exact ciphertext,
+    // Both prefix interfaces preserve the general path's exact ciphertext,
     // even for a nonzero message tail and a non-power-of-two output count.
     for count in [0, 1, 3, N] {
         let indices: Vec<_> = (0..count).collect();

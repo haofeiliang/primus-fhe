@@ -3,7 +3,7 @@
 
 use primus_distr::sample_gaussian_values_to;
 use primus_encoding::{PlaintextEmbedding, phase_error_magnitude_slice_to};
-use primus_fft::{FftEngine, FftTable, RustFftTable, TorusFftValue};
+use primus_fft::{FftEngine, FftTable, RustFftTable, TfheFftTable, TorusFftValue};
 use primus_integer::FheUint;
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{
@@ -220,38 +220,125 @@ fn transform_backends_reject_the_zero_key() {
     ));
 }
 
-#[test]
-fn key_generation_supports_small_coefficient_distributions() {
-    let mut rng = StdRng::seed_from_u64(42);
-    let modulus = BarrettModulus::new(132_120_577u32);
-    let ntt = UintNttTable::new(PolyLength::new(POLY_LENGTH), modulus).unwrap();
-    let fft_table = RustFftTable::new(PolyLength::new(POLY_LENGTH));
-    let mut fft = FftEngine::new(&fft_table);
-
+fn assert_generated_fourier_pairs<Table: FftTable>(table: &Table) {
+    let mut fft = FftEngine::new(table);
+    let mut rng = StdRng::seed_from_u64(0xB701);
+    let message = Polynomial::new((0..POLY_LENGTH as u64).map(|i| i % 16).collect::<Vec<_>>());
+    let mut encrypt = FourierNtruEncryptWorkspace::new(PolyLength::new(POLY_LENGTH));
+    let mut decrypt = FourierNtruDecryptWorkspace::new(PolyLength::new(POLY_LENGTH));
     for distribution in [
         SecretKeyDistr::UniformBinary,
+        SecretKeyDistr::UniformTernary,
         SecretKeyDistr::SparseTernary,
         SecretKeyDistr::gaussian(3.2),
+        SecretKeyDistr::Ternary {
+            negative_one_probability: 0.125,
+            one_probability: 0.375,
+        },
+        SecretKeyDistr::FixedHammingWeightTernary { hamming_weight: 7 },
+        SecretKeyDistr::FixedCompositionTernary {
+            negative_one_weight: 3,
+            one_weight: 4,
+        },
     ] {
-        let ntt_params = NtruParameters::new(
+        let params = NtruParameters::new(
             PolyLength::new(POLY_LENGTH),
-            PLAIN_MODULUS as u32,
-            modulus,
-            distribution,
-            0.7,
-        );
-        NttNtruSecretKey::generate(ntt_params.encryption_parameters(), &ntt, &mut rng).unwrap();
-
-        let fourier_params = NtruParameters::new(
-            PolyLength::new(POLY_LENGTH),
-            PLAIN_MODULUS as u32,
+            16,
             NativeModulus::new(),
             distribution,
             0.7,
         );
-        FourierNtruSecretKey::generate(fourier_params.encryption_parameters(), &mut fft, &mut rng)
-            .unwrap();
+        let (coeff, key) =
+            FourierNtruSecretKey::generate_pair(params.encryption_parameters(), &mut fft, &mut rng)
+                .unwrap();
+        assert_eq!(coeff.distr(), distribution);
+        assert_eq!(coeff.as_slice().iter().sum::<i64>().rem_euclid(2), 1);
+        // Reimport the returned signed key to check the pair's identity, rather
+        // than decrypting with the same opaque key that encrypted the message.
+        let check_key = FourierNtruSecretKey::try_from_coeff_secret_key(&coeff, &mut fft).unwrap();
+        let cipher = key.encrypt_message(
+            &message,
+            &params,
+            PlaintextEmbedding::Unsigned,
+            &mut fft,
+            &mut rng,
+            &mut encrypt,
+        );
+        assert_eq!(
+            check_key
+                .decrypt_message(&cipher, &params, &mut fft, &mut decrypt)
+                .as_ref(),
+            message.as_ref(),
+        );
     }
+}
+
+#[test]
+fn generated_fourier_pairs_preserve_key_identity() {
+    assert_generated_fourier_pairs(&RustFftTable::new(PolyLength::new(POLY_LENGTH)));
+    assert_generated_fourier_pairs(&TfheFftTable::new(PolyLength::new(POLY_LENGTH)));
+}
+
+#[test]
+fn native_fixed_even_weights_fail_without_sampling() {
+    let table = RustFftTable::new(PolyLength::new(POLY_LENGTH));
+    let mut fft = FftEngine::new(&table);
+    for distribution in [
+        SecretKeyDistr::FixedHammingWeightBinary { hamming_weight: 2 },
+        SecretKeyDistr::FixedHammingWeightTernary { hamming_weight: 2 },
+        SecretKeyDistr::FixedCompositionTernary {
+            negative_one_weight: 1,
+            one_weight: 1,
+        },
+        SecretKeyDistr::FixedCompositionTernary {
+            negative_one_weight: 0,
+            one_weight: 0,
+        },
+    ] {
+        let params = NtruParameters::new(
+            PolyLength::new(POLY_LENGTH),
+            16u64,
+            NativeModulus::new(),
+            distribution,
+            0.7,
+        );
+        let mut rng = StdRng::seed_from_u64(0xB701);
+        let mut untouched = StdRng::seed_from_u64(0xB701);
+        let result =
+            FourierNtruSecretKey::generate_pair(params.encryption_parameters(), &mut fft, &mut rng);
+        assert!(matches!(result, Err(NtruError::NonInvertibleSecretKey)));
+        assert_eq!(rng.next_u64(), untouched.next_u64());
+    }
+}
+
+fn assert_unstable_inverse<Table: FftTable>(table: &Table, coeff: &NtruSecretKey<u64>) {
+    assert!(matches!(
+        FourierNtruSecretKey::try_from_coeff_secret_key(coeff, &mut FftEngine::new(table)),
+        Err(NtruError::UnstableFourierInverse),
+    ));
+}
+
+#[test]
+fn native_invertibility_does_not_imply_fourier_stability() {
+    const N: usize = 32;
+    // f = (1-X+X^2)^8 has f(1)=1, hence is a native-ring unit. At the
+    // negacyclic root exp(11*pi*i/32), |f| is about 1e-10. This imported
+    // integer key isolates the numerical gate; it is not a ternary sample.
+    let mut coefficients = vec![0i64; N];
+    coefficients[0] = 1;
+    for _ in 0..8 {
+        let mut product = vec![0; N];
+        for i in 0..N - 2 {
+            product[i] += coefficients[i];
+            product[i + 1] -= coefficients[i];
+            product[i + 2] += coefficients[i];
+        }
+        coefficients = product;
+    }
+    assert_eq!(coefficients.iter().sum::<i64>(), 1);
+    let coeff = NtruSecretKey::<u64>::new(coefficients, SecretKeyDistr::gaussian(3.2));
+    assert_unstable_inverse(&RustFftTable::new(PolyLength::new(N)), &coeff);
+    assert_unstable_inverse(&TfheFftTable::new(PolyLength::new(N)), &coeff);
 }
 
 #[test]

@@ -27,7 +27,3 @@ pub type NttGgswCiphertext<S> = primus_lattice::ggsw::NttGgsw<S>;
 /// Fourier-domain GGSW ciphertext.
 #[cfg(feature = "fourier")]
 pub type FourierGgswCiphertext<S> = primus_lattice::ggsw::FourierGgsw<S>;
-
-/// Coefficient-domain GLWE ciphertext with a body truncated to the retained
-/// message coefficients.
-pub type TruncatedGlweCiphertext<S> = primus_lattice::glwe::TruncatedGlwe<S>;

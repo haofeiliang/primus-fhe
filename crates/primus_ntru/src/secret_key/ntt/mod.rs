@@ -183,11 +183,13 @@ impl<T: FheUint> NttNtruSecretKey<T> {
     }
 
     /// Rejection-samples an invertible key and returns its signed coefficient
-    /// and NTT representations.
+    /// and NTT representations. Acceptance requires every NTT evaluation to be nonzero.
     ///
     /// Secret buffers are allocated once, reused across rejected candidates,
-    /// and erased on drop, including exhausted searches and unwinding. See
-    /// [`Self::generate_padded_pair`] for the accepted distribution.
+    /// and erased on drop, including exhausted searches and unwinding. Returns
+    /// the first accepted candidate within 1024 attempts; its distribution is
+    /// the proposal conditioned on backend acceptance. [`NtruSecretKey::distr`]
+    /// records the proposal, not this conditioning.
     ///
     /// # Errors
     ///
@@ -196,8 +198,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
     ///
     /// # Panics
     ///
-    /// Panics if the NTT table length or modulus differs from the parameters,
-    /// or a fixed weight exceeds the polynomial length or its sum overflows.
+    /// Panics if the NTT table length or modulus differs from the parameters.
     pub fn generate_pair<M, Table, R>(
         params: &NtruEncryptionParameters<T, M>,
         ntt_table: &Table,
@@ -208,45 +209,6 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
     {
-        Self::generate_padded_pair(params, params.poly_length().get(), ntt_table, rng)
-    }
-
-    /// Rejection-samples an invertible coefficient prefix padded to the NTRU ring.
-    ///
-    /// The returned coefficient key has `active_length` coefficients sampled
-    /// from the configured distribution followed by zeros. Fixed weights apply
-    /// to this prefix, not to the full ring. This supports compact extraction
-    /// into a smaller LWE dimension while retaining an NTRU key switch.
-    ///
-    /// Returns the first accepted candidate within 1024 attempts. Its distribution
-    /// is the configured prefix distribution conditioned on backend acceptance;
-    /// [`NtruSecretKey::distr`] records the proposal, not this conditioning.
-    /// Buffers are reused and erased as in [`Self::generate_pair`].
-    ///
-    /// # Errors
-    ///
-    /// Returns [`NtruError::KeyGenerationExhausted`] if the search is exhausted.
-    ///
-    /// # Panics
-    ///
-    /// Panics unless `active_length` belongs to `1..=N`. Also panics if a fixed
-    /// weight exceeds `active_length` or its sum overflows, or the NTT table
-    /// length or modulus differs from the parameters.
-    pub fn generate_padded_pair<M, Table, R>(
-        params: &NtruEncryptionParameters<T, M>,
-        active_length: usize,
-        ntt_table: &Table,
-        rng: &mut R,
-    ) -> Result<(NtruSecretKey<T>, Self), NtruError>
-    where
-        M: FieldContext<T>,
-        Table: NttTable<ValueT = T>,
-        R: rand::Rng + rand::CryptoRng,
-    {
-        assert!(
-            (1..=params.poly_length().get()).contains(&active_length),
-            "NTRU active length must belong to 1..=N"
-        );
         assert_eq!(ntt_table.poly_length().get(), params.poly_length().get());
         assert_eq!(ntt_table.modulus(), params.cipher_modulus().value());
 
@@ -259,7 +221,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         );
         let sampler = params.secret_key_sampler();
         for _ in 0..KEY_GENERATION_ATTEMPTS {
-            sampler.sample_signed_to(&mut coefficient_key.key[..active_length], rng);
+            sampler.sample_signed_to(&mut coefficient_key.key, rng);
             match transformed.try_update_from_coeff_secret_key(
                 &coefficient_key,
                 params.cipher_modulus(),

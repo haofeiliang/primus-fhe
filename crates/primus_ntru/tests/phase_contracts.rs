@@ -1,8 +1,10 @@
-//! Small-ring oracles for initialization and normalized trace. Expected values
+//! Small-ring oracles for key pairs, initialization and normalized trace. Expected values
 //! use integer convolution, not the production polynomial/transform kernels.
 
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_decompose::{DecompositionBaseLog, DecompositionConfig, DecompositionLevelCount};
+use primus_distr::sample_gaussian_values_to;
+use primus_encoding::PlaintextEmbedding;
 use primus_fft::{FftEngine, FftTable, RustFftTable, TfheFftTable};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{
@@ -14,7 +16,7 @@ use primus_ntru::{
 use primus_ntt::{NttTable, UintNttTable};
 use primus_poly::{PolyLength, Polynomial};
 
-use rand::{TryCryptoRng, TryRng};
+use rand::{SeedableRng, TryCryptoRng, TryRng, rngs::StdRng};
 
 const N: usize = 32;
 type Poly = [i128; N];
@@ -663,4 +665,65 @@ fn check_native_trace<Table: FftTable>() {
 fn native_reverse_trace_matches_rational_keys_and_projected_rounding_errors() {
     check_native_trace::<RustFftTable>();
     check_native_trace::<TfheFftTable>();
+}
+
+#[test]
+fn generated_ntt_pair_has_exact_coefficient_phase() {
+    let modulus = BarrettModulus::new(132_120_577u32);
+    let table = UintNttTable::new(PolyLength::new(N), modulus).unwrap();
+    let message = Polynomial::new((0..N as u32).map(|i| i % 16).collect::<Vec<_>>());
+    let mut rng = StdRng::seed_from_u64(0xB701);
+    // Even total weight is admissible over the NTT field; Native rejects it.
+    let even = SecretKeyDistr::FixedCompositionTernary {
+        negative_one_weight: 1,
+        one_weight: 1,
+    };
+    for distribution in [
+        SecretKeyDistr::UniformBinary,
+        SecretKeyDistr::UniformTernary,
+        SecretKeyDistr::SparseTernary,
+        SecretKeyDistr::gaussian(3.2),
+        SecretKeyDistr::Ternary {
+            negative_one_probability: 0.125,
+            one_probability: 0.375,
+        },
+        SecretKeyDistr::FixedHammingWeightTernary { hamming_weight: 7 },
+        SecretKeyDistr::FixedCompositionTernary {
+            negative_one_weight: 3,
+            one_weight: 4,
+        },
+        even,
+    ] {
+        let params = NtruParameters::new(PolyLength::new(N), 16, modulus, distribution, 0.7);
+        let (coeff, key) =
+            NttNtruSecretKey::generate_pair(params.encryption_parameters(), &table, &mut rng)
+                .unwrap();
+        assert_eq!(coeff.distr(), distribution);
+
+        // Replay only the encryption noise. Compute f*c directly in the
+        // coefficient ring, independently of the key's cached NTT and inverse.
+        let mut expected = vec![0; N];
+        sample_gaussian_values_to(
+            &mut expected,
+            params.noise_distribution(),
+            &mut StdRng::seed_from_u64(0xB711),
+        );
+        params.plaintext_codec().add_encode_slice_assign(
+            &mut expected,
+            message.as_ref(),
+            PlaintextEmbedding::Unsigned,
+        );
+        let cipher = key.encrypt_message(
+            &message,
+            &params,
+            PlaintextEmbedding::Unsigned,
+            &table,
+            &mut StdRng::seed_from_u64(0xB711),
+        );
+        let mut cipher_coeff = cipher.as_ref().to_vec();
+        table.inverse_transform_slice(&mut cipher_coeff);
+        let secret = std::array::from_fn(|i| i128::from(coeff.as_slice()[i]));
+        let phase = Ring(132_120_577).mul(secret, polynomial(&cipher_coeff));
+        assert_eq!(phase, polynomial(&expected));
+    }
 }

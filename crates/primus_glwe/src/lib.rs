@@ -43,7 +43,7 @@ pub use automorphism::{FourierGlweAutomorphismKey, FourierGlweAutomorphismWorksp
 pub use automorphism::{NttGlweAutomorphismKey, NttGlweAutomorphismWorkspace};
 #[cfg(feature = "fourier")]
 pub use ciphertext::{FourierGgswCiphertext, FourierGlevCiphertext, FourierGlweCiphertext};
-pub use ciphertext::{GlevCiphertext, GlweCiphertext, TruncatedGlweCiphertext};
+pub use ciphertext::{GlevCiphertext, GlweCiphertext};
 #[cfg(feature = "ntt")]
 pub use ciphertext::{NttGgswCiphertext, NttGlevCiphertext, NttGlweCiphertext};
 #[cfg(feature = "fourier")]

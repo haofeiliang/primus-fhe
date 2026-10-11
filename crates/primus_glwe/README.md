@@ -111,13 +111,11 @@ Encoded NTT inputs must be canonical coefficients in `[0, q)`. Match key, parame
 
 For [phase-error diagnostics](../primus_encoding/README.md#phase-error-diagnostics), compare the phase with the **expected message** encoded using the actual codec and embedding. Decoding and re-encoding is not an independent reference.
 
-## Gadget and truncated ciphertexts
+## Gadget ciphertexts
 
 `encrypt_glev_to` and `encrypt_ggsw_to` apply gadget scaling to coefficient-domain ring polynomials without ordinary plaintext encoding. A GGSW control bit is the constant polynomial `0` or `1`. Construct the gadget workspace from `GadgetSize`: GLev needs its polynomial length; GGSW also needs its level count.
 
 `encrypt_ggsw_constant_batch_to` writes consecutive transformed GGSWs: `input.len() * params.ggsw_len()` residues for NTT, or `input.len() * params.fourier_ggsw_len()` complex values for Fourier. NTT constants must be canonical at q; Fourier constants use native-ring values. Both backends also provide `encrypt_ggsw_constant_batch_coeff_to` for coefficient output; its scratch requirements are documented on the method.
-
-NTT truncated encryption keeps the full mask and at most N body coefficients. `encrypt_zeros_truncated` takes `GlweEncryptionParameters`; `decrypt_phase_truncated` and `decrypt_message_truncated` return only the retained coefficients.
 
 ## Evaluation primitives
 

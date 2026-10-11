@@ -72,10 +72,6 @@ name = "lwe_key_switch"
 required-features = ["ntt", "rustfft", "tfhe-fft"]
 
 [[test]]
-name = "padded_secret_key"
-required-features = ["ntt", "rustfft", "tfhe-fft"]
-
-[[test]]
 name = "phase_contracts"
 required-features = ["ntt", "rustfft", "tfhe-fft"]
 
@@ -85,7 +81,7 @@ required-features = ["ntt", "rustfft", "tfhe-fft"]
 
 [[test]]
 name = "secret_key"
-required-features = ["ntt", "rustfft"]
+required-features = ["ntt", "rustfft", "tfhe-fft"]
 
 [[test]]
 name = "ternary_cmux"

@@ -39,7 +39,13 @@ impl TryRng for Words<'_> {
     type Error = Infallible;
 
     fn try_next_u32(&mut self) -> Result<u32, Infallible> {
-        Ok(*self.0.next().expect("scripted u32"))
+        let Some(&word) = self.0.next() else {
+            // Ignore panic-runtime allocations; the observer still checks the
+            // already recorded secret buffers when unwinding drops them.
+            RECORDING.set(false);
+            panic!("scripted RNG exhausted");
+        };
+        Ok(word)
     }
 
     fn try_next_u64(&mut self) -> Result<u64, Infallible> {
@@ -261,93 +267,99 @@ fn secret_buffers_are_reused_and_erased() {
 
     // Reject f = 0, then accept f = X. The allocation count must stay fixed
     // across retries, and the returned key/inverse must contain the new candidate.
-    for padded in [false, true] {
-        // Uniform binary sampling draws one extra word for the remainder,
-        // including when the full 32-coefficient block leaves an empty remainder.
-        let script: &[u32] = if padded { &[0, 2] } else { &[0, 0, 2, 0] };
-        let mut words = Words(script.iter());
-        assert_erased(
-            3,
-            || {
-                if padded {
-                    NttNtruSecretKey::generate_padded_pair(
-                        ntt_params.encryption_parameters(),
-                        N / 2,
-                        &ntt,
-                        &mut words,
-                    )
-                } else {
-                    NttNtruSecretKey::generate_pair(
-                        ntt_params.encryption_parameters(),
-                        &ntt,
-                        &mut words,
-                    )
-                }
-            },
-            |result| {
-                let (coeff, key) = result.as_ref().unwrap();
-                assert_eq!(coeff.as_slice(), coefficient_key.as_slice());
-                assert_eq!(key.cipher_modulus(), 132_120_577);
-                let cipher = key.encrypt_message(
-                    &message,
-                    &ntt_params,
-                    PlaintextEmbedding::Unsigned,
-                    &ntt,
-                    &mut rng,
-                );
-                assert_eq!(
-                    key.decrypt_message(&cipher, &ntt_params, &ntt).as_ref(),
-                    message.as_ref()
-                );
-            },
-        );
-        assert!(words.0.next().is_none());
+    // Uniform binary sampling draws one extra word for the remainder,
+    // including when the full 32-coefficient block leaves an empty remainder.
+    let script = [0, 0, 2, 0];
+    let mut words = Words(script.iter());
+    assert_erased(
+        3,
+        || NttNtruSecretKey::generate_pair(ntt_params.encryption_parameters(), &ntt, &mut words),
+        |result| {
+            let (coeff, key) = result.as_ref().unwrap();
+            assert_eq!(coeff.as_slice(), coefficient_key.as_slice());
+            assert_eq!(key.cipher_modulus(), 132_120_577);
+            let cipher = key.encrypt_message(
+                &message,
+                &ntt_params,
+                PlaintextEmbedding::Unsigned,
+                &ntt,
+                &mut rng,
+            );
+            assert_eq!(
+                key.decrypt_message(&cipher, &ntt_params, &ntt).as_ref(),
+                message.as_ref()
+            );
+        },
+    );
+    assert!(words.0.next().is_none());
 
-        let mut words = Words(script.iter());
-        assert_erased(
-            4,
-            || {
-                if padded {
-                    FourierNtruSecretKey::generate_padded_pair(
-                        fourier_params.encryption_parameters(),
-                        N / 2,
-                        &mut fft,
-                        &mut words,
-                    )
-                } else {
-                    FourierNtruSecretKey::generate_pair(
-                        fourier_params.encryption_parameters(),
-                        &mut fft,
-                        &mut words,
-                    )
-                }
-            },
-            |result| {
-                let (coeff, key) = result.as_ref().unwrap();
-                assert_eq!(coeff.as_slice(), coefficient_key.as_slice());
-                let mut check_fft = FftEngine::new(&table);
-                let mut encrypt = FourierNtruEncryptWorkspace::new(PolyLength::new(N));
-                let mut decrypt = FourierNtruDecryptWorkspace::new(PolyLength::new(N));
-                let cipher = key.encrypt_message(
-                    &message,
-                    &fourier_params,
-                    PlaintextEmbedding::Unsigned,
-                    &mut check_fft,
-                    &mut rng,
-                    &mut encrypt,
-                );
-                assert_eq!(
-                    key.decrypt_message(&cipher, &fourier_params, &mut check_fft, &mut decrypt)
-                        .as_ref(),
-                    message.as_ref(),
-                );
-            },
-        );
-        assert!(words.0.next().is_none());
-    }
+    let mut words = Words(script.iter());
+    assert_erased(
+        4,
+        || {
+            FourierNtruSecretKey::generate_pair(
+                fourier_params.encryption_parameters(),
+                &mut fft,
+                &mut words,
+            )
+        },
+        |result| {
+            let (coeff, key) = result.as_ref().unwrap();
+            assert_eq!(coeff.as_slice(), coefficient_key.as_slice());
+            let mut check_fft = FftEngine::new(&table);
+            let mut encrypt = FourierNtruEncryptWorkspace::new(PolyLength::new(N));
+            let mut decrypt = FourierNtruDecryptWorkspace::new(PolyLength::new(N));
+            let cipher = key.encrypt_message(
+                &message,
+                &fourier_params,
+                PlaintextEmbedding::Unsigned,
+                &mut check_fft,
+                &mut rng,
+                &mut encrypt,
+            );
+            assert_eq!(
+                key.decrypt_message(&cipher, &fourier_params, &mut check_fft, &mut decrypt)
+                    .as_ref(),
+                message.as_ref(),
+            );
+        },
+    );
+    assert!(words.0.next().is_none());
+
+    // Panic after writing a nonzero coefficient block but before completing
+    // the sample. All allocated secret buffers must be erased during unwind.
+    let script = [2];
+    let mut words = Words(script.iter());
+    assert_erased(
+        3,
+        || {
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                NttNtruSecretKey::generate_pair(
+                    ntt_params.encryption_parameters(),
+                    &ntt,
+                    &mut words,
+                )
+            }))
+        },
+        |result| assert!(result.is_err()),
+    );
+    let mut words = Words(script.iter());
+    assert_erased(
+        4,
+        || {
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                FourierNtruSecretKey::generate_pair(
+                    fourier_params.encryption_parameters(),
+                    &mut fft,
+                    &mut words,
+                )
+            }))
+        },
+        |result| assert!(result.is_err()),
+    );
 
     // Every all-one candidate is nonzero but fails the parity check before
-    // FFT. Both retry paths allocate all four buffers once and erase them when
+    // FFT. Generation allocates all four buffers once and erases them when
     // the search exhausts its attempt bound.
     let rejecting_params = NtruParameters::new(
         PolyLength::new(N),
@@ -356,28 +368,17 @@ fn secret_buffers_are_reused_and_erased() {
         SecretKeyDistr::binary(1.0),
         0.7,
     );
-    for padded in [false, true] {
-        assert_erased(
-            4,
-            || {
-                if padded {
-                    FourierNtruSecretKey::generate_padded_pair(
-                        rejecting_params.encryption_parameters(),
-                        N / 2,
-                        &mut fft,
-                        &mut rng,
-                    )
-                } else {
-                    FourierNtruSecretKey::generate_pair(
-                        rejecting_params.encryption_parameters(),
-                        &mut fft,
-                        &mut rng,
-                    )
-                }
-            },
-            |result| assert!(matches!(result, Err(NtruError::KeyGenerationExhausted))),
-        );
-    }
+    assert_erased(
+        4,
+        || {
+            FourierNtruSecretKey::generate_pair(
+                rejecting_params.encryption_parameters(),
+                &mut fft,
+                &mut rng,
+            )
+        },
+        |result| assert!(matches!(result, Err(NtruError::KeyGenerationExhausted))),
+    );
 
     coefficient_key.zeroize();
     ntt_key.zeroize();
