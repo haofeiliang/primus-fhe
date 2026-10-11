@@ -94,7 +94,7 @@ NLev 的 `external_product_sum_to` 和 GGSW/NGSW 的 `cmux_k_to` 接收数量匹
 
 工作区提供可复用 scratch，不验证密钥、basis、table 或模数身份。覆盖式外积会初始化所需缓冲区，合法调用之间无需 reset；累加接口要求输出已有有效值。GLWE 外积工作区的 `with_rebound` 临时改变分解层数，保持 GLWE 形状，并在调用结束后恢复原布局；`resize` 可改变缓冲区尺寸。
 
-批量外积和 k-CMux 先检查数量与固定缓冲区长度，再在消费每对输入时检查对象长度。后续项无效或迭代器 panic 可能留下部分输出或 scratch；丢弃结果后，合法调用仍可复用工作区。具体写入边界见相应方法文档。
+批量外积和 k-CMux 检查迭代器数量；缓冲区长度检查因操作而异，部分只使用 debug 断言。后续项无效或迭代器 panic 可能留下部分输出或 scratch；丢弃结果后，合法调用仍可复用工作区。具体检查与写入边界见相应方法文档。
 
 CMux 的选择语义要求控制加密比特；k-CMux 要求至多一个控制比特为一。三元 `cmux_ternary_monomial_to` 使用互斥比特 `s⁺, s⁻`，理想旋转为 `X^(exponent * (s⁺-s⁻))`；指数须在 `0..2N`，零指数精确复制输入。控制须使用相同密钥、basis 和变换约定；Fourier 控制使用 native-torus 尺度和匹配的 native basis。噪声增长和可解密性由更高层负责。
 
