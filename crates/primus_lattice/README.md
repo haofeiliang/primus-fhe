@@ -61,7 +61,7 @@ Only raw coefficients are serialized. Dimensions, the packed mask/body split, mo
 | Polynomial operations | Monomials in coefficient/NTT form; polynomial multiplication/accumulation in NTT, Fourier, or DCRT form |
 | Plaintext and gadget updates | `add_plaintext_assign`, `set_trivial`, `add_gadget_diagonal_assign` |
 | Conversions | `into_ntt_form`, `write_ntt_form`, inverse coefficient conversions, `write_fourier_form`, `write_torus_form` |
-| Extraction | `extract_lwe_at_to`, compact extraction, packed RLWE extraction, `inverse_extract_glwe_to` |
+| Extraction | `extract_lwe_at_to`, compact GLWE extraction, packed RLWE extraction, `inverse_extract_glwe_to` |
 | External products | Fourier/NTT GGSW and NTRU gadget products; DCRT GLev polynomial products and GGSW products |
 | CMUX | GGSW/NGSW `cmux_to`, `cmux_k_to`, `cmux_monomial_to` |
 | Ternary rotation | NTT/Fourier GGSW and NGSW `cmux_ternary_monomial_to` |

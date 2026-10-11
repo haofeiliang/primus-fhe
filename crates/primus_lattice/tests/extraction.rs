@@ -93,7 +93,8 @@ fn indexed_extraction_preserves_ntru_and_dimension_one_glwe_phases() {
     let n = ntru.as_ref().len();
     let body: Vec<u32> = (0..n).map(|i| (i * 3 + 7) as u32).collect();
     let glwe = Glwe::new([ntru.as_ref(), &body].concat());
-    // Active lengths exercise both sides of the indexed extraction split.
+    // GLWE active lengths exercise both sides of the compact extraction split.
+    // NTRU extraction always returns the full N-dimensional sample.
     for active in [1, 3, 5, n] {
         let secret: Vec<u32> = (0..n)
             .map(|i| if i < active { (i % 3 + 1) as u32 } else { 0 })
@@ -112,24 +113,20 @@ fn indexed_extraction_preserves_ntru_and_dimension_one_glwe_phases() {
             .into_iter()
             .map(|v| v.rem_euclid(i64::from(Q)) as u32)
             .collect();
-        let mut full: Lwe<Vec<u32>> = Lwe::zero(n);
+        let mut storage = vec![u32::MAX; n + 3];
+        let mut full = Lwe::new(&mut storage[1..n + 2]);
         let mut compact: Lwe<Vec<u32>> = Lwe::zero(active);
         for index in 0..n {
             ntru.extract_lwe_at_to(index, &mut full, modulus);
-            ntru.extract_compact_lwe_at_to(index, &mut compact, modulus);
-            for sample in [&full, &compact] {
-                assert_eq!(
-                    modulus.reduce_sub(
-                        sample.b(),
-                        modulus.reduce_dot_product(sample.a(), &secret[..sample.dimension()])
-                    ),
-                    phase[index]
-                );
-            }
+            assert_eq!(full.b(), 0);
+            assert_eq!(
+                modulus.reduce_sub(full.b(), modulus.reduce_dot_product(full.a(), &secret)),
+                phase[index]
+            );
             glwe.extract_lwe_at_to(index, &mut full, n, modulus);
             glwe.extract_compact_lwe_at_to(index, &mut compact, n, modulus);
             let expected = (body[index] + Q - phase[index]) % Q;
-            for sample in [&full, &compact] {
+            for sample in [full.as_view(), compact.as_view()] {
                 assert_eq!(
                     modulus.reduce_sub(
                         sample.b(),
@@ -139,6 +136,13 @@ fn indexed_extraction_preserves_ntru_and_dimension_one_glwe_phases() {
                 );
             }
         }
+        ntru.extract_lwe_to(&mut full, modulus);
+        assert_eq!(
+            modulus.reduce_sub(full.b(), modulus.reduce_dot_product(full.a(), &secret)),
+            phase[0]
+        );
+        assert_eq!(storage[0], u32::MAX);
+        assert_eq!(storage[n + 2], u32::MAX);
     }
 }
 

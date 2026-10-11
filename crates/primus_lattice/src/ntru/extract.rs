@@ -36,9 +36,7 @@ where
         M: RingContext<T>,
         A: DataMut<Elem = T>,
     {
-        let coefficients = self.as_ref();
-        debug_assert_eq!(output.dimension(), coefficients.len());
-        self.extract_compact_lwe_to(output, modulus);
+        self.extract_lwe_at_to(0, output, modulus);
     }
 
     /// Extracts coefficient `index` of the NTRU phase into an LWE buffer.
@@ -63,76 +61,21 @@ where
         M: RingContext<T>,
         A: DataMut<Elem = T>,
     {
-        debug_assert_eq!(
-            output.dimension(),
-            self.as_ref().len(),
-            "LWE output dimension must equal N"
-        );
-        self.extract_compact_lwe_at_to(index, output, modulus);
-    }
-
-    /// Extracts the constant-term phase while omitting a zero-padded suffix.
-    ///
-    /// If the NTRU secret is `[s_lwe..., 0...]`, an output of dimension
-    /// `s_lwe.len()` has the same phase as full extraction without allocating
-    /// or processing the omitted mask coefficients.
-    ///
-    /// # Correctness
-    ///
-    /// The output dimension must be in `1..=N`, where `N` is the NTRU
-    /// polynomial length.
-    ///
-    /// Input is one nonempty coefficient polynomial of length `N`, with
-    /// canonical values under `modulus`. Extraction uses the coefficient
-    /// vector of the NTRU secret `f` as the LWE key; output is overwritten.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the NTRU polynomial is empty.
-    #[inline]
-    pub fn extract_compact_lwe_to<M, A>(&self, output: &mut Lwe<A>, modulus: M)
-    where
-        M: primus_reduce::RingContext<T>,
-        A: DataMut<Elem = T>,
-    {
-        self.extract_compact_lwe_at_to(0, output, modulus);
-    }
-
-    /// Extracts coefficient `index`, omitting a zero suffix of the NTRU secret.
-    ///
-    /// # Correctness
-    ///
-    /// The secret must be `[s_lwe..., 0...]`, where `s_lwe.len()` equals the
-    /// output dimension. The LWE phase equals coefficient `index` of `f*c`.
-    /// Canonical input residues produce canonical output without allocation.
-    /// The output dimension must belong to `1..=N`.
-    ///
-    /// Input is one nonempty coefficient polynomial of length `N`, with
-    /// canonical values under `modulus`. Extraction uses the coefficient
-    /// vector of the NTRU secret `f` as the LWE key; output is overwritten.
-    ///
-    /// # Panics
-    ///
-    /// Panics unless `index < N`.
-    #[inline]
-    pub fn extract_compact_lwe_at_to<M, A>(&self, index: usize, output: &mut Lwe<A>, modulus: M)
-    where
-        M: RingContext<T>,
-        A: DataMut<Elem = T>,
-    {
         let coefficients = self.as_ref();
         assert!(
             index < coefficients.len(),
             "NTRU extraction index is out of range"
         );
-        let (a, b) = output.a_b_mut();
-        debug_assert!(
-            (1..=coefficients.len()).contains(&a.len()),
-            "invalid compact LWE dimension"
+        debug_assert_eq!(
+            output.dimension(),
+            coefficients.len(),
+            "LWE output dimension must equal N"
         );
+        let (a, b) = output.a_b_mut();
         *b = T::ZERO;
-        let split = (index + 1).min(a.len());
-        let (negative, wrapped) = a.split_at_mut(split);
+        // Terms with secret index <= index do not wrap in f*c, so their
+        // mask entries are negated for b-<a,f>. Wrapped terms have positive masks.
+        let (negative, wrapped) = a.split_at_mut(index + 1);
         for (output, &input) in negative.iter_mut().zip(coefficients[..=index].iter().rev()) {
             *output = modulus.reduce_neg(input);
         }

@@ -61,7 +61,7 @@ NLev 与 NGSW 的存储形状相同，但语义不同：`beta` 的 NLev 各层�
 | 多项式运算 | 系数/NTT 形式的单项式操作；NTT、Fourier、DCRT 形式的多项式乘法与累加 |
 | 明文与 gadget 更新 | `add_plaintext_assign`、`set_trivial`、`add_gadget_diagonal_assign` |
 | 表示转换 | `into_ntt_form`、`write_ntt_form`、逆变换到系数形式、`write_fourier_form`、`write_torus_form` |
-| 样本抽取 | `extract_lwe_at_to`、紧凑抽取、打包 RLWE 抽取、`inverse_extract_glwe_to` |
+| 样本抽取 | `extract_lwe_at_to`、GLWE 紧凑抽取、打包 RLWE 抽取、`inverse_extract_glwe_to` |
 | 外积 | Fourier/NTT GGSW 与 NTRU gadget product；DCRT GLev 多项式乘法和 GGSW 乘法 |
 | CMUX | GGSW/NGSW 的 `cmux_to`、`cmux_k_to`、`cmux_monomial_to` |
 | Ternary 旋转 | NTT/Fourier GGSW 和 NGSW 的 `cmux_ternary_monomial_to` |

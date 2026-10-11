@@ -17,20 +17,14 @@ fn extraction<T: FheUint + From<u32>, M: RingContext<T>>(
         let glwe = Glwe::new(data.as_slice());
         let ntru = Ntru::new(&data[..n]);
         let mut group = c.benchmark_group(format!("extraction/{domain}/n{n}"));
-        // A compact secret has a zero suffix; the ciphertext itself remains full-sized.
-        for active in [n / 2, n] {
-            let mut output: Lwe<Vec<T>> = Lwe::zero(active);
-            group.throughput(Throughput::Elements((active + 1) as u64));
-            group.bench_function(format!("ntru/compact/a{active}/index{}", n / 3), |b| {
-                b.iter(|| {
-                    ntru.extract_compact_lwe_at_to(
-                        black_box(n / 3),
-                        black_box(&mut output),
-                        black_box(modulus),
-                    )
-                });
+        let mut output: Lwe<Vec<T>> = Lwe::zero(n);
+        group.throughput(Throughput::Elements((n + 1) as u64));
+        group.bench_function(format!("ntru/full/a{n}/index{}", n / 3), |b| {
+            b.iter(|| {
+                ntru.extract_lwe_at_to(black_box(n / 3), black_box(&mut output), black_box(modulus))
             });
-        }
+        });
+        // A compact GLWE secret has a zero suffix; the ciphertext remains full-sized.
         for active in [n + n / 2, 2 * n] {
             let mut output: Lwe<Vec<T>> = Lwe::zero(active);
             group.throughput(Throughput::Elements((active + 1) as u64));

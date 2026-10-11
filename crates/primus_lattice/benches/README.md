@@ -11,7 +11,7 @@ Choose one target to measure a lattice operation. Parameters and case names are 
 | [glwe_ntt](glwe_ntt.rs) | GGSW coefficient/NTT-output external product, monomial CMux, fused/two-CMux ternary rotation | `ntt` |
 | [ntru_fourier](ntru_fourier.rs) | NGSW coefficient/Fourier-output external product and monomial CMux; both FFT engines | `rustfft,tfhe-fft` |
 | [ntru_ntt](ntru_ntt.rs) | NGSW coefficient/NTT-output external product and monomial CMux | `ntt` |
-| [extraction](extraction.rs) | GLWE/NTRU compact extraction and inverse GLWE extraction | None |
+| [extraction](extraction.rs) | Full NTRU extraction, compact GLWE extraction and inverse GLWE extraction | None |
 | [rns_glev](rns_glev.rs) | CRT/BigUint polynomial × DCRT GLev, with DCRT output or accumulation | `rns` |
 | [rns_ggsw](rns_ggsw.rs) | CRT GLWE × DCRT GGSW, with DCRT output | `rns` |
 
