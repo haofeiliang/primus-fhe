@@ -9,7 +9,6 @@ primus_integer = { path = "../primus_integer" }
 primus_reduce = { path = "../primus_reduce" }
 primus_modulus = { path = "../primus_modulus" }
 primus_factor = { path = "../primus_factor" }
-primus_poly = { path = "../primus_poly" }
 
 thiserror = { workspace = true }
 itertools = { workspace = true }
@@ -23,7 +22,6 @@ simd = [
     "primus_integer/simd",
     "primus_modulus/simd",
     "primus_factor/simd",
-    "primus_poly/simd",
 ]
 
 [[bench]]

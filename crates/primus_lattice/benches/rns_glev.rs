@@ -42,7 +42,12 @@ fn benchmarks(c: &mut Criterion) {
         let mut big_input = BigUintPolynomial::new(vec![0; n * base.big_uint_value_len()]);
         let mut workspace = DcrtGlevMulWorkspace::new(size, &base);
         let mut compose_scratch = vec![0; base.moduli_count()];
-        base.compose_polynomial_to(&input, &mut big_input, n, &mut compose_scratch);
+        base.compose_big_uint_values_to(
+            input.as_ref(),
+            big_input.as_mut_slice(),
+            n,
+            &mut compose_scratch,
+        );
         let mut output = DcrtGlwe::new(vec![0; glwe_len]);
         // Both entry paths must compute the same product. Check outside timing.
         key.mul_crt_polynomial_to(&input, &mut output, &basis, &table, &base, &mut workspace);

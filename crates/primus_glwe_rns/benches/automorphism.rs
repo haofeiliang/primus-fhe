@@ -71,7 +71,7 @@ fn bench_automorphism(c: &mut Criterion) {
         let mut msg: CrtPolynomial<Vec<V>> = CrtPolynomial::zero(crt_poly_len);
         let mut c_ntt: DcrtGlwe<Vec<V>> = DcrtGlweCiphertext::zero(rns_glwe_len);
 
-        base_q.wrapping_decompose_small_polynomial_to(&input, &mut msg, t);
+        base_q.wrapping_decompose_small_values_to(input.as_ref(), msg.as_mut(), t);
         let dcrt_sk_context = dcrt_sk.try_bind(&glwe_params, table_ref).unwrap();
         dcrt_sk_context.encrypt_plaintext_crt_to(&msg, &mut c_ntt, &mut rng);
 

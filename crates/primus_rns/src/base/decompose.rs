@@ -1,7 +1,6 @@
-use primus_data::{Data, DataMut};
+use primus_data::DataMut;
 use primus_factor::FactorBase;
 use primus_integer::{BigUint, FheUint};
-use primus_poly::{BigUintPolynomial, CrtPolynomial};
 use primus_reduce::FieldContext;
 
 use super::RNSBase;
@@ -97,30 +96,5 @@ where
                 *residue = modulus.reduce(value);
             }
         }
-    }
-
-    /// Decomposes a polynomial with big-integer coefficients into CRT form.
-    ///
-    /// `big_uint_poly.as_slice().len()` must equal
-    /// `poly_length * big_uint_value_len()`. It stores `poly_length`
-    /// consecutive little-endian coefficients.
-    ///
-    /// `crt_poly.as_mut_slice().len()` must equal `moduli_count() * poly_length`
-    /// and is written in modulus-major layout.
-    #[inline]
-    pub fn decompose_polynomial_to<A, B>(
-        &self,
-        big_uint_poly: &BigUintPolynomial<A>,
-        crt_poly: &mut CrtPolynomial<B>,
-        poly_length: usize,
-    ) where
-        A: Data<Elem = T>,
-        B: DataMut<Elem = T>,
-    {
-        self.decompose_big_uint_values_to(
-            big_uint_poly.as_slice(),
-            crt_poly.as_mut_slice(),
-            poly_length,
-        );
     }
 }

@@ -2,7 +2,6 @@ use itertools::izip;
 use primus_data::{Data, DataMut};
 use primus_factor::Factor;
 use primus_integer::FheUint;
-use primus_poly::{CrtPolynomial, Polynomial};
 use primus_reduce::FieldContext;
 
 use super::RNSBase;
@@ -126,32 +125,6 @@ where
         }
     }
 
-    /// Decomposes a small polynomial into CRT form with centered wrapping semantics.
-    ///
-    /// Coefficients are expected to be reduced modulo `small_poly_modulus`.
-    /// When `small_poly_modulus == 2`, the binary values `0` and `1` are
-    /// preserved directly; `1` is not interpreted as `-1`.
-    ///
-    /// `crt_poly.as_mut_slice().len()` must equal
-    /// `moduli_count() * small_poly.as_slice().len()` and is written in
-    /// modulus-major layout.
-    #[inline]
-    pub fn wrapping_decompose_small_polynomial_to<A, B>(
-        &self,
-        small_poly: &Polynomial<A>,
-        crt_poly: &mut CrtPolynomial<B>,
-        small_poly_modulus: T,
-    ) where
-        A: Data<Elem = T>,
-        B: DataMut<Elem = T>,
-    {
-        self.wrapping_decompose_small_values_to(
-            small_poly.as_slice(),
-            crt_poly.as_mut_slice(),
-            small_poly_modulus,
-        );
-    }
-
     /// Fused centered decomposition, scaling, and accumulation for small values.
     ///
     /// Each value is expected to be reduced modulo `small_value_modulus`, which
@@ -224,38 +197,6 @@ where
         }
     }
 
-    /// Adds a centered small-polynomial decomposition scaled by per-modulus factors.
-    ///
-    /// Coefficients are expected to be reduced modulo `small_poly_modulus`.
-    /// When `small_poly_modulus == 2`, the binary values `0` and `1` are
-    /// preserved directly; `1` is not interpreted as `-1` before scaling.
-    ///
-    /// `acc.as_mut_slice().len()` must equal
-    /// `moduli_count() * small_poly.as_slice().len()` and uses modulus-major
-    /// CRT polynomial layout. The function accumulates into `acc` without
-    /// clearing it first.
-    ///
-    /// `factors.len()` must equal `moduli_count()`. Factor `i` is used for the
-    /// chunk modulo `moduli()[i]`.
-    #[inline]
-    pub fn add_wrapping_decompose_small_polynomial_scaled_assign<F: Factor<T>, A, C>(
-        &self,
-        small_poly: &Polynomial<A>,
-        acc: &mut CrtPolynomial<C>,
-        small_poly_modulus: T,
-        factors: &ResidueFactors<impl Data<Elem = F>>,
-    ) where
-        A: Data<Elem = T>,
-        C: DataMut<Elem = T>,
-    {
-        self.add_wrapping_decompose_small_values_scaled_assign(
-            small_poly.as_slice(),
-            acc.as_mut_slice(),
-            small_poly_modulus,
-            factors,
-        );
-    }
-
     /// Fused unsigned decomposition, scaling, and accumulation for small values.
     ///
     /// Unlike
@@ -288,31 +229,5 @@ where
         .for_each(|(acc_chunk, modulus, &factor)| {
             factor.add_factor_mul_slice_assign(acc_chunk, small_values, modulus);
         });
-    }
-
-    /// Adds an unsigned small polynomial decomposition scaled by per-modulus factors.
-    ///
-    /// `acc.as_mut_slice().len()` must equal
-    /// `moduli_count() * small_poly.as_slice().len()` and uses modulus-major CRT
-    /// polynomial layout.
-    ///
-    /// `factors.len()` must equal `moduli_count()`. Factor `i` is used for the
-    /// output chunk modulo `moduli()[i]`. The function accumulates into `acc`
-    /// without clearing it first.
-    #[inline]
-    pub fn add_decompose_small_polynomial_scaled_assign<F: Factor<T>, A, C>(
-        &self,
-        small_poly: &Polynomial<A>,
-        acc: &mut CrtPolynomial<C>,
-        factors: &ResidueFactors<impl Data<Elem = F>>,
-    ) where
-        A: Data<Elem = T>,
-        C: DataMut<Elem = T>,
-    {
-        self.add_decompose_small_values_scaled_assign(
-            small_poly.as_slice(),
-            acc.as_mut_slice(),
-            factors,
-        );
     }
 }

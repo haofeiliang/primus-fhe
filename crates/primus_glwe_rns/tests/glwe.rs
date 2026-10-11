@@ -37,9 +37,9 @@ where
     M: FieldContext<ValueT>,
 {
     let mut decomposed: CrtPolynomial<Vec<ValueT>> = CrtPolynomial::zero(params.rns_poly_len());
-    params.base_q().wrapping_decompose_small_polynomial_to(
-        message,
-        &mut decomposed,
+    params.base_q().wrapping_decompose_small_values_to(
+        message.as_ref(),
+        decomposed.as_mut(),
         params.plain_modulus_value(),
     );
     decomposed

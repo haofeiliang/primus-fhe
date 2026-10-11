@@ -2,7 +2,7 @@
 
 [English](README.md) | 简体中文
 
-`primus_rns` 提供剩余数系统基、CRT 组合与分解、基转换，以及 [Primus FHE](../../README.zh_CN.md) 使用的 Hybrid `Q`/`P` 运算。其无分配的 多项式路径在平坦 slice 上工作，并使用调用方拥有的可复用 workspace。
+`primus_rns` 提供剩余数系统基、CRT 组合与分解、基转换，以及 [Primus FHE](../../README.zh_CN.md) 使用的 Hybrid `Q`/`P` 运算。其无分配的批量路径在平坦 slice 上工作，并使用调用方拥有的可复用 workspace。
 
 > [!WARNING]
 > 本 crate 属于实验性的 Primus FHE workspace。其 API、数据布局和数值契约 尚不稳定，可能随时发生不兼容修改。
@@ -54,7 +54,7 @@ assert_eq!(base.decompose(value.view()).as_ref(), [2, 4, 6]);
 
 批量大整数采用相反的分组方式：每个值占据一个连续、定宽的小端 limb 分块， 分块宽度为 `RNSBase::big_uint_value_len()`。
 
-[`CrtPolynomial`](../primus_poly/README.zh_CN.md) 使用相同的 modulus-major 系数布局，无需重排数据。
+[`CrtPolynomial`](../primus_poly/README.zh_CN.md) 使用相同的 modulus-major 系数布局。将其系数 slice 传给批量 API，以多项式长度作为值的数量，无需重排数据。`primus_rns` 不依赖多项式容器类型。
 
 ## RNS 基
 

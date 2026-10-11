@@ -2,7 +2,7 @@
 
 English | [简体中文](README.zh_CN.md)
 
-`primus_rns` provides residue-number-system bases, CRT composition and decomposition, base conversion, and the hybrid `Q`/`P` operations used by [Primus FHE](../../README.md). Its allocation-free polynomial paths operate on flat slices with caller-owned reusable workspace.
+`primus_rns` provides residue-number-system bases, CRT composition and decomposition, base conversion, and the hybrid `Q`/`P` operations used by [Primus FHE](../../README.md). Its allocation-free batched paths operate on flat slices with caller-owned reusable workspace.
 
 > [!WARNING]
 > This crate is part of the experimental Primus FHE workspace. Its API, data layouts, and numerical contracts are unstable and may change incompatibly at any time.
@@ -54,7 +54,7 @@ Batched residues are always modulus-major. For `k` values and moduli `q_0, ..., 
 
 Batched big integers use the opposite grouping: each value occupies one contiguous, fixed-width, little-endian limb chunk. The chunk width is `RNSBase::big_uint_value_len()`.
 
-[`CrtPolynomial`](../primus_poly/README.md) uses the same modulus-major coefficient layout; no rearrangement is needed.
+[`CrtPolynomial`](../primus_poly/README.md) uses the same modulus-major coefficient layout. Pass its coefficient slice to the batched APIs, with the polynomial length as the value count; no rearrangement is needed. `primus_rns` does not depend on polynomial container types.
 
 ## RNS bases
 

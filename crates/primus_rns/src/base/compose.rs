@@ -1,8 +1,7 @@
 use itertools::izip;
-use primus_data::{Data, DataMut};
+use primus_data::Data;
 use primus_factor::FactorMul;
 use primus_integer::{BigUint, BigUintIterMut, FheUint};
-use primus_poly::{BigUintPolynomial, CrtPolynomial};
 use primus_reduce::FieldContext;
 
 use super::RNSBase;
@@ -113,35 +112,5 @@ where
             }
             self.compose_to_kernel(scratch, value);
         }
-    }
-
-    /// Reconstructs a CRT polynomial into big-integer coefficient form.
-    ///
-    /// `crt_poly.as_slice().len()` must equal `moduli_count() * poly_length`
-    /// and is read in modulus-major layout.
-    ///
-    /// `big_uint_poly.as_mut_slice().len()` must equal
-    /// `poly_length * big_uint_value_len()`. It receives `poly_length`
-    /// consecutive little-endian coefficients.
-    ///
-    /// `scratch.len()` must equal `moduli_count()`. It stores one coefficient's
-    /// residue vector while composing each coefficient.
-    #[inline]
-    pub fn compose_polynomial_to<A, B>(
-        &self,
-        crt_poly: &CrtPolynomial<A>,
-        big_uint_poly: &mut BigUintPolynomial<B>,
-        poly_length: usize,
-        scratch: &mut [T],
-    ) where
-        A: Data<Elem = T>,
-        B: DataMut<Elem = T>,
-    {
-        self.compose_big_uint_values_to(
-            crt_poly.as_slice(),
-            big_uint_poly.as_mut_slice(),
-            poly_length,
-            scratch,
-        );
     }
 }

@@ -3,7 +3,8 @@
 //! The crate centers on [`RNSBase`], which stores a pairwise-coprime modulus
 //! basis and the CRT precomputations needed for decomposition and composition.
 //! [`BaseConverter`] builds on two bases to convert residue vectors between
-//! them, including batched polynomial layouts used by `primus_poly`.
+//! them. Batched operations use flat slices with caller-owned output and scratch,
+//! without depending on polynomial container types.
 //!
 //! [`Residues`] represents one value under an ordered basis with owned or
 //! borrowed storage; it does not store or validate the basis.

@@ -84,7 +84,7 @@ fn test_rns_glev() {
 
     // input1 is decomposed into CRT form and encrypted as a GLev structure.
     let mut msg1: CrtPolynomial<Vec<ValueT>> = CrtPolynomial::zero(rns_poly_len);
-    base_q.wrapping_decompose_small_polynomial_to(&input1, &mut msg1, t);
+    base_q.wrapping_decompose_small_values_to(input1.as_ref(), msg1.as_mut(), t);
 
     dcrt_sk.try_bind_gadget(&domain).unwrap().encrypt_crt_to(
         &msg1.as_view(),
@@ -99,7 +99,7 @@ fn test_rns_glev() {
 
     let mut msg2: CrtPolynomial<Vec<ValueT>> = CrtPolynomial::zero(rns_poly_len);
 
-    base_q.wrapping_decompose_small_polynomial_to(&input2, &mut msg2, t);
+    base_q.wrapping_decompose_small_values_to(input2.as_ref(), msg2.as_mut(), t);
 
     msg2.mul_factor_assign(
         glwe_params.delta_factor_mod_q().as_ref(),
@@ -108,9 +108,9 @@ fn test_rns_glev() {
     );
 
     let mut compose_scratch = vec![0; base_q.moduli_count()];
-    base_q.compose_polynomial_to(
-        &msg2,
-        &mut msg2_big_uint_poly,
+    base_q.compose_big_uint_values_to(
+        msg2.as_ref(),
+        msg2_big_uint_poly.as_mut_slice(),
         poly_length,
         &mut compose_scratch,
     );
