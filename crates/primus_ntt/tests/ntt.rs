@@ -212,6 +212,131 @@ where
     }
 }
 
+// A safe external implementation may return malformed root storage. None makes
+// an unused root accessor panic, so the tests also detect unnecessary reads.
+struct CustomMonomialTable {
+    ntt: U32NttTable,
+    roots: Option<Vec<u32>>,
+    inverse_roots: Option<Vec<u32>>,
+}
+
+impl NttTable for CustomMonomialTable {
+    type ValueT = u32;
+
+    fn new<M: FieldContext<u32>>(
+        poly_length: PolyLength,
+        modulus: M,
+    ) -> Result<Self, NttError<u32>> {
+        let ntt = U32NttTable::new(poly_length, modulus)?;
+        Ok(Self {
+            roots: Some(ntt.root_powers().to_vec()),
+            inverse_roots: Some(ntt.inv_root_powers().to_vec()),
+            ntt,
+        })
+    }
+
+    fn poly_length(&self) -> PolyLength {
+        self.ntt.poly_length()
+    }
+
+    fn modulus(&self) -> u32 {
+        self.ntt.modulus()
+    }
+
+    fn lazy_transform_slice(&self, poly: &mut [u32]) {
+        self.ntt.lazy_transform_slice(poly);
+    }
+
+    fn transform_slice(&self, poly: &mut [u32]) {
+        self.ntt.transform_slice(poly);
+    }
+
+    fn lazy_inverse_transform_slice(&self, values: &mut [u32]) {
+        self.ntt.lazy_inverse_transform_slice(values);
+    }
+
+    fn inverse_transform_slice(&self, values: &mut [u32]) {
+        self.ntt.inverse_transform_slice(values);
+    }
+}
+
+impl MonomialNttTable for CustomMonomialTable {
+    fn root_powers(&self) -> &[u32] {
+        self.roots
+            .as_deref()
+            .expect("unused forward roots were read")
+    }
+
+    fn inv_root_powers(&self) -> &[u32] {
+        self.inverse_roots
+            .as_deref()
+            .expect("unused inverse roots were read")
+    }
+}
+
+#[test]
+fn monomial_checks_selected_root_length_before_writing() {
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+
+    let poly_length = PolyLength::new(32);
+    let n = poly_length.get();
+    let modulus = BarrettModulus::new(257u32);
+    // Positive powers of two, general pair/group paths and negative powers of
+    // two read different root slices. Other negative degrees use forward roots.
+    for (degree, inverse) in [
+        (1, false),
+        (4, false),
+        (3, false),
+        (6, false),
+        (2 * n - 1, true),
+        (2 * n - 4, true),
+        (2 * n - 6, false),
+    ] {
+        let mut table = CustomMonomialTable::new(poly_length, modulus).unwrap();
+        let selected_roots = if inverse {
+            table.roots = None;
+            table.inverse_roots.as_mut().unwrap()
+        } else {
+            table.inverse_roots = None;
+            table.roots.as_mut().unwrap()
+        };
+        let valid_roots = selected_roots.clone();
+        // Missing, truncated and oversized arrays must all fail at the boundary,
+        // rather than partly writing output or reaching an unchecked read.
+        for root_len in [0, n - 1, n + 1] {
+            if inverse {
+                table.inverse_roots = Some(vec![0; root_len]);
+            } else {
+                table.roots = Some(vec![0; root_len]);
+            }
+            let mut output = vec![u32::MAX; n];
+            assert!(
+                catch_unwind(AssertUnwindSafe(|| {
+                    table.transform_monomial(13, degree, &mut output);
+                }))
+                .is_err(),
+                "degree={degree}, root_len={root_len}"
+            );
+            assert!(output.iter().all(|&value| value == u32::MAX));
+        }
+        if inverse {
+            table.inverse_roots = Some(valid_roots);
+        } else {
+            table.roots = Some(valid_roots);
+        }
+        // A complete selected array works even when the other accessor panics.
+        assert_monomial(&table, 13, degree);
+    }
+
+    let mut table = CustomMonomialTable::new(poly_length, modulus).unwrap();
+    table.roots = None;
+    table.inverse_roots = None;
+    // Direct fills neither need roots nor validate arrays they do not consume.
+    for (coeff, degree) in [(0, 3), (0, 2 * n - 4), (13, 0), (13, n), (13, 2 * n)] {
+        assert_monomial(&table, coeff, degree);
+    }
+}
+
 // U32 has one modulus-width kernel. Check the minimum SIMD block and a larger
 // buffer, using q near the lazy 4q word limit.
 const U32_Q: u32 = 1_073_692_673;

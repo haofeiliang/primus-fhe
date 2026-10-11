@@ -76,6 +76,8 @@ Transforms operate on mutable slices. When using [`primus_poly`](../primus_poly/
 
 `transform_monomial` requires `coeff` to be canonical, meaning `0 <= coeff < q`; it does not reduce or validate the coefficient. Use `transform_coeff_one_monomial` and `transform_coeff_minus_one_monomial` for the common `X^degree` and `-X^degree` cases.
 
+Custom `MonomialNttTable` implementations must supply the documented root values and ordering. The default monomial methods check the exact length of the root array they use before writing output; direct fills do not read root arrays. Root values and ordering are not validated. See the [monomial API](src/ntt/mod.rs) for the complete contract.
+
 ## DCRT layout
 
 `DcrtTable` requires a nonempty modulus list and one common `PolyLength`. `poly_length()` returns the ring length; `rns_poly_len()` returns the total `moduli_count * N` elements, which must fit `usize`. Coefficient and transform slices use the table's modulus order in modulus-major layout:

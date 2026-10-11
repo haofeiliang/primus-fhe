@@ -124,11 +124,21 @@ pub trait MonomialNttTable: NttTable {
 
     /// Transforms the monomial `coeff * X^degree` directly into NTT form.
     ///
+    /// Degree is interpreted modulo `2N`. Zero coefficients and degrees `0`
+    /// or `N` use direct fills without reading either root array.
+    ///
+    /// # Panics
+    ///
+    /// Panics unless `values` contains exactly `N` entries, or if the root
+    /// array used by the selected branch does not contain exactly `N` entries.
+    /// These length checks precede any output writes.
+    ///
     /// # Correctness
     ///
     /// `coeff` must be a canonical residue modulo [`NttTable::modulus`], that
     /// is, it must lie in `[0, self.modulus())`. This method does not reduce
-    /// `coeff` before using it.
+    /// `coeff` before using it. Root values and ordering must satisfy
+    /// [`Self::root_powers`] and [`Self::inv_root_powers`]; only lengths are checked.
     fn transform_monomial(&self, coeff: Self::ValueT, degree: usize, values: &mut [Self::ValueT]) {
         let n = self.poly_length().get();
         assert_ntt_length(values.len(), n);
@@ -152,9 +162,13 @@ pub trait MonomialNttTable: NttTable {
             return;
         }
 
-        let root_powers = self.root_powers();
-
         if degree.is_power_of_two() {
+            let root_powers = self.root_powers();
+            assert_eq!(
+                root_powers.len(),
+                n,
+                "NTT forward root powers length mismatch"
+            );
             let shift = degree.trailing_zeros();
             let index_shift = shift + 1;
             let index_prefix = n >> index_shift;
@@ -171,6 +185,11 @@ pub trait MonomialNttTable: NttTable {
         let inverse_degree = twice_n - degree;
         if inverse_degree.is_power_of_two() {
             let inv_root_powers = self.inv_root_powers();
+            assert_eq!(
+                inv_root_powers.len(),
+                n,
+                "NTT inverse root powers length mismatch"
+            );
 
             let shift = inverse_degree.trailing_zeros();
             let index_shift = shift + 1;
@@ -185,6 +204,12 @@ pub trait MonomialNttTable: NttTable {
             );
         }
 
+        let root_powers = self.root_powers();
+        assert_eq!(
+            root_powers.len(),
+            n,
+            "NTT forward root powers length mismatch"
+        );
         let log_n = n.trailing_zeros();
         let group_log = degree.trailing_zeros() + 1;
         let exponent_mask = twice_n - 1;
@@ -219,7 +244,8 @@ pub trait MonomialNttTable: NttTable {
 
 // The power of two dividing the degree groups equal evaluations in bit-reversed
 // order. Each group consists of a constant half followed by its negation.
-// The caller supplies valid root indices and an output divisible by the group size.
+// The default dispatch checks the selected root slice has N entries and supplies
+// indices in 0..N and an output divisible by the group size.
 #[inline]
 fn transform_monomial_from_root_indices<Table, IndexFn>(
     table: &Table,
@@ -239,7 +265,8 @@ fn transform_monomial_from_root_indices<Table, IndexFn>(
     let modulus = table.modulus();
     let root_at = |group_index| {
         let (index, negate) = root_index(group_index);
-        // The caller's root-index formula produces indices in `0..N`.
+        // SAFETY: dispatch checked the selected root length is N; its index
+        // formula produces indices in 0..N for every output group.
         let root = unsafe { *root_powers.get_unchecked(index) };
         if negate { modulus - root } else { root }
     };
@@ -281,7 +308,7 @@ fn transform_monomial_from_root_indices<Table, IndexFn>(
 }
 
 // Odd degrees have groups of two. Fixed-size pairs avoid the general fill loops;
-// root-index validity and complete pairs are established by the caller.
+// dispatch establishes checked root length, valid indices and complete pairs.
 #[inline]
 fn transform_monomial_from_root_pairs<Table, IndexFn>(
     table: &Table,
@@ -296,7 +323,8 @@ fn transform_monomial_from_root_pairs<Table, IndexFn>(
     let modulus = table.modulus();
     let root_at = |pair_index| {
         let (index, negate) = root_index(pair_index);
-        // The caller's root-index formula produces indices in `0..N`.
+        // SAFETY: dispatch checked the selected root length is N; its index
+        // formula produces indices in 0..N for every output pair.
         let root = unsafe { *root_powers.get_unchecked(index) };
         if negate { modulus - root } else { root }
     };

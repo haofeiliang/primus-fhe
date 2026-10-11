@@ -76,6 +76,8 @@ Lazy 值表示模 `q` 的剩余类，但其更宽的整数范围属于调用契�
 
 `transform_monomial` 要求 `coeff` 是 canonical residue，即 `0 <= coeff < q`；该方法不会约简或验证系数。常见的 `X^degree` 和 `-X^degree` 情形应分别使用 `transform_coeff_one_monomial` 和 `transform_coeff_minus_one_monomial`。
 
+自定义 `MonomialNttTable` 实现须提供文档规定的根值与排列。默认 monomial 方法在写入输出前检查实际使用的根数组的精确长度；直接填充路径不读取根数组。根值与排列不作运行时验证，完整契约见 [monomial API](src/ntt/mod.rs)。
+
 ## DCRT 布局
 
 `DcrtTable` 要求模数列表非空，所有分量使用同一个 `PolyLength`。`poly_length()` 返回环长度，`rns_poly_len()` 返回总元素数 `moduli_count * N`，后者须能由 `usize` 表示。系数和变换 slice 按 table 的模数顺序采用 modulus-major 布局：
