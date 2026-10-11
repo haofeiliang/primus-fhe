@@ -21,14 +21,6 @@ where
     let moduli = [257u32, 769].map(|q| BarrettModulus::new(Table::ValueT::as_from(q)));
     let table = DcrtTable::<Table>::new(poly_length, &moduli).unwrap();
     let components = moduli.map(|modulus| Table::new(poly_length, modulus).unwrap());
-    // Convert lazy representatives by their modulus-major position only.
-    let canonical = |values: &[Table::ValueT]| -> Vec<_> {
-        values
-            .iter()
-            .enumerate()
-            .map(|(i, &value)| value % moduli[i / n].value())
-            .collect()
-    };
     let input: Vec<_> = (0..table.rns_poly_len())
         .map(|i| Table::ValueT::as_from((i * i + 7 * i + 3) % [257, 769][i / n]))
         .collect();
@@ -43,50 +35,23 @@ where
     table.inverse_transform_slice(&mut actual);
     assert_eq!(actual, input);
 
-    actual.copy_from_slice(&input);
-    table.lazy_transform_slice(&mut actual);
-    assert_eq!(canonical(&actual), expected);
-    // Feed the independently transformed canonical oracle to the lazy inverse.
-    actual.copy_from_slice(&expected);
-    table.lazy_inverse_transform_slice(&mut actual);
-    assert_eq!(canonical(&actual), input);
-
-    // Direct monomials must overwrite every limb, including zero coefficients
-    // and the X^N = -1 sign boundary. Full transforms supply the oracle.
+    // The retained positive monomial wrapper must overwrite each limb. Full
+    // transforms independently verify degree wraparound and X^N = -1.
     for degree in [0, 7, n, n + 7, 2 * n] {
-        for coefficient in [0u32, 1, 13] {
-            let coefficient = Table::ValueT::as_from(coefficient);
-            expected.fill(Table::ValueT::ZERO);
-            for ((values, component), modulus) in
-                expected.chunks_exact_mut(n).zip(&components).zip(moduli)
-            {
-                values[degree % n] = if degree % (2 * n) < n || coefficient == Table::ValueT::ZERO {
-                    coefficient
-                } else {
-                    modulus.value() - coefficient
-                };
-                component.transform_slice(values);
-            }
-            actual.fill(Table::ValueT::ONE);
-            table.transform_monomial(coefficient, degree, &mut actual);
-            assert_eq!(actual, expected);
-            if coefficient == Table::ValueT::ONE {
-                actual.fill(Table::ValueT::ONE);
-                table.transform_coeff_one_monomial(degree, &mut actual);
-                assert_eq!(actual, expected);
-                table.transform_coeff_minus_one_monomial(degree, &mut actual);
-                for (index, (&value, &expected)) in actual.iter().zip(&expected).enumerate() {
-                    assert_eq!(
-                        value,
-                        if expected == Table::ValueT::ZERO {
-                            expected
-                        } else {
-                            moduli[index / n].value() - expected
-                        }
-                    );
-                }
-            }
+        expected.fill(Table::ValueT::ZERO);
+        for ((values, component), modulus) in
+            expected.chunks_exact_mut(n).zip(&components).zip(moduli)
+        {
+            values[degree % n] = if degree % (2 * n) < n {
+                Table::ValueT::ONE
+            } else {
+                modulus.value() - Table::ValueT::ONE
+            };
+            component.transform_slice(values);
         }
+        actual.fill(Table::ValueT::ZERO);
+        table.transform_coeff_one_monomial(degree, &mut actual);
+        assert_eq!(actual, expected);
     }
 }
 

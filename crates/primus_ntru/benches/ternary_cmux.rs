@@ -19,11 +19,11 @@ use primus_ntru::{
     NlevParameters, NtruCiphertext, NtruParameters, NttNgswCiphertext, NttNtruCmuxWorkspace,
     NttNtruExternalProductWorkspace, NttNtruSecretKey, SecretKeyDistr,
 };
-use primus_ntt::{NttTable, PrimitiveRoot, UintNttTable};
+use primus_ntt::{NttTable, UintNttTable};
 use primus_poly::Polynomial;
 use rand::{SeedableRng, rngs::StdRng};
 
-fn ntt<T: FheUint + PrimitiveRoot>(c: &mut Criterion, q: T, levels: usize) {
+fn ntt<T: FheUint>(c: &mut Criterion, q: T, levels: usize) {
     const N: usize = 1024;
     let modulus = BarrettModulus::new(q);
     let poly_length = PolyLength::new(N);

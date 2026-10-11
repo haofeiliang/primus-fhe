@@ -17,9 +17,6 @@ pub use dcrt::*;
 pub use error::NttError;
 pub use ntt::*;
 
-pub use reverse::ReverseLsbs;
-pub use root::PrimitiveRoot;
-
 /// Bits reserved for the lazy `[0, 4q)` representation.
 pub(crate) const NTT_LAZY_REDUCTION_HEADROOM_BITS: u32 = 2;
 

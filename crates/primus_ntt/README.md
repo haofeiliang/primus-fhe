@@ -90,7 +90,7 @@ Custom `MonomialNttTable` implementations must supply the documented root values
 
 This matches `CrtPolynomial` and `DcrtPolynomial` in [`primus_poly`](../primus_poly/README.md). DCRT callers must maintain the exact total length, modulus order, coefficient ranges and component transform conventions; total-length checks are debug diagnostics only. See the [DCRT API](src/dcrt/mod.rs).
 
-For `DcrtTable::transform_monomial`, the single supplied `coeff` must be canonical for every component modulus. The method does not reduce it separately for each limb.
+`DcrtTable` provides full-polynomial forward/inverse transforms and `transform_coeff_one_monomial` for all limbs. Use `iter()` or `ntt_tables()` to access component tables for their lazy and general monomial operations.
 
 ## SIMD backends and build target
 

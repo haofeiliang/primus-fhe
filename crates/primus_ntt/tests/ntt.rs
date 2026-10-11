@@ -64,7 +64,7 @@ fn constructors_and_small_transforms_match_polynomial_evaluation() {
 fn generic_constructor_rejects_unsupported_degrees() {
     let modulus = BarrettModulus::new(12289u16);
     // N fits u16, but the required root order 2N does not. Reject this before
-    // PrimitiveRoot's word-width assertion or any root-table allocation.
+    // root search's word-width assertion or any root-table allocation.
     assert!(matches!(
         UintNttTable::<u16>::new(PolyLength::new(32768), modulus),
         Err(NttError::DegreeNotRepresentable {

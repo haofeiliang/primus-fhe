@@ -90,7 +90,7 @@ Lazy 值表示模 `q` 的剩余类，但其更宽的整数范围属于调用契�
 
 这与 [`primus_poly`](../primus_poly/README.zh_CN.md) 中 `CrtPolynomial` 和 `DcrtPolynomial` 的布局一致。DCRT 调用方须维持精确总长度、模数顺序、系数范围与各分量的变换约定，总长度检查仅作 debug 诊断。完整契约见 [DCRT API](src/dcrt/mod.rs)。
 
-对于 `DcrtTable::transform_monomial`，传入的单个 `coeff` 必须对每个分量模数都是 canonical 的；该方法不会针对每个 limb 分别约简系数。
+`DcrtTable` 提供完整多项式的正逆变换，以及作用于所有分量的 `transform_coeff_one_monomial`。通过 `iter()` 或 `ntt_tables()` 访问分量 table，可使用各自的 lazy 和一般 monomial 操作。
 
 ## SIMD backend 与编译目标
 

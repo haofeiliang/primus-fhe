@@ -7,7 +7,7 @@ use primus_glwe::{
 use primus_integer::FheUint;
 use primus_lattice::GlweDimension;
 use primus_modulus::BarrettModulus;
-use primus_ntt::{NttTable, PrimitiveRoot, UintNttTable};
+use primus_ntt::{NttTable, UintNttTable};
 use primus_poly::{Polynomial, PolynomialOwned};
 use primus_reduce::ReduceAdd;
 use primus_shape::PolyLength;
@@ -21,7 +21,7 @@ const PLAIN_MODULUS: usize = 16;
 
 fn assert_roundtrip<T>(cipher_modulus: T)
 where
-    T: FheUint + PrimitiveRoot,
+    T: FheUint,
 {
     let modulus = BarrettModulus::new(cipher_modulus);
     let ntt = UintNttTable::new(PolyLength::new(POLY_LENGTH), modulus).unwrap();

@@ -1,9 +1,10 @@
 use num_traits::{ConstOne, ConstZero};
 use primus_factor::{FactorMul, ShoupFactor};
+use primus_integer::FheUint;
 use primus_reduce::FieldContext;
 use primus_shape::PolyLength;
 
-use crate::{NttError, reverse::ReverseLsbs, root::PrimitiveRoot};
+use crate::{NttError, reverse::reverse_lsbs};
 
 mod prime32;
 mod prime64;
@@ -28,7 +29,7 @@ pub use primitive::UintNttTable;
 /// slice length in release builds before writes or unchecked transform kernels.
 pub trait NttTable: Sized + Send + Sync {
     /// The value type.
-    type ValueT: PrimitiveRoot;
+    type ValueT: FheUint;
 
     /// Creates a new [`NttTable`].
     ///
@@ -221,9 +222,9 @@ pub trait MonomialNttTable: NttTable {
             root_powers,
             group_log,
             |group_index| {
-                let evaluation_index = group_index.reverse_lsbs(log_n - group_log);
+                let evaluation_index = reverse_lsbs(group_index, log_n - group_log);
                 let exponent = ((2 * evaluation_index + 1) * degree) & exponent_mask;
-                let power_index = (exponent & power_mask).reverse_lsbs(log_n);
+                let power_index = reverse_lsbs(exponent & power_mask, log_n);
                 (power_index, exponent & n != 0)
             },
         );

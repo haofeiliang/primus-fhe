@@ -7,8 +7,8 @@ use primus_shape::PolyLength;
 use crate::{
     NttError,
     ntt::{MonomialNttTable, NttTable, assert_ntt_length},
-    reverse::ReverseLsbs,
-    root::PrimitiveRoot,
+    reverse::reverse_lsbs,
+    root::try_minimal_primitive_root,
 };
 
 use super::precompute::U64Backend;
@@ -35,8 +35,6 @@ pub struct U64NttTable {
     pub(super) poly_length: PolyLength,
     pub(super) q: u64,
     pub(super) two_q: u64,
-    root: u64,
-    inv_root: u64,
 
     pub(super) inverse_final_scale: InverseFinalScale,
 
@@ -58,36 +56,6 @@ fn mod_inv(a: u64, q: u64) -> u64 {
 }
 
 impl U64NttTable {
-    /// Returns `log2(N)`.
-    #[inline]
-    pub fn log_n(&self) -> u32 {
-        self.poly_length.log_n()
-    }
-
-    /// Returns the polynomial length `N`.
-    #[inline]
-    pub fn n(&self) -> usize {
-        self.poly_length.get()
-    }
-
-    /// Returns the primitive `2N`-th root of unity.
-    #[inline]
-    pub fn root(&self) -> u64 {
-        self.root
-    }
-
-    /// Returns the inverse of the primitive root.
-    #[inline]
-    pub fn inv_root(&self) -> u64 {
-        self.inv_root
-    }
-
-    /// Returns the inverse of `N` modulo `q`.
-    #[inline]
-    pub fn inv_n(&self) -> u64 {
-        self.inverse_final_scale.inv_n
-    }
-
     /// Dispatch forward transform to the selected backend.
     fn dispatch_forward(&self, values: &mut [u64], input_mod_factor: u32, output_mod_factor: u32) {
         assert_ntt_length(values.len(), self.poly_length.get());
@@ -262,7 +230,7 @@ impl NttTable for U64NttTable {
         }
 
         let log_n = poly_length.log_n();
-        let root = <u64 as PrimitiveRoot>::try_minimal_primitive_root(log_n + 1, modulus)?;
+        let root = try_minimal_primitive_root(log_n + 1, modulus)?;
         let n = poly_length.get();
         let two_q = q << 1;
         let inv_root = mod_inv(root, q);
@@ -273,7 +241,7 @@ impl NttTable for U64NttTable {
         let mut roots = avec![0u64; n];
         let mut power = 1;
         for i in 0..n {
-            roots[i.reverse_lsbs(log_n)] = power;
+            roots[reverse_lsbs(i, log_n)] = power;
             power = root_sf.factor_mul_modulo(power, q);
         }
 
@@ -283,7 +251,7 @@ impl NttTable for U64NttTable {
         inv_roots[0] = 1;
         let mut inv_power = inv_root;
         for i in 0..n - 1 {
-            inv_roots[i.reverse_lsbs(log_n) + 1] = inv_power;
+            inv_roots[reverse_lsbs(i, log_n) + 1] = inv_power;
             inv_power = inv_root_sf.factor_mul_modulo(inv_power, q);
         }
 
@@ -305,8 +273,6 @@ impl NttTable for U64NttTable {
             poly_length,
             q,
             two_q,
-            root,
-            inv_root,
             inverse_final_scale,
             roots,
             inv_roots,

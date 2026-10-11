@@ -4,7 +4,7 @@ use primus_modulus::PowOf2Modulus;
 use primus_reduce::ReduceMul;
 use primus_shape::PolyLength;
 
-use crate::ReverseLsbs;
+use crate::reverse::reverse_lsbs;
 
 /// Identity uses a contiguous copy instead of an allocated gather table.
 #[derive(Clone)]
@@ -52,7 +52,7 @@ impl NttAutomorphismPermutation {
             for i in 0..n {
                 let mapped_exponent = modulus.reduce_mul(degree, 2 * i + 1);
                 let j = (mapped_exponent - 1) / 2;
-                sources[i.reverse_lsbs(log_n)] = j.reverse_lsbs(log_n) as u32;
+                sources[reverse_lsbs(i, log_n)] = reverse_lsbs(j, log_n) as u32;
             }
             NttOperation::Permutation(sources)
         };

@@ -10,7 +10,7 @@ use primus_ntru::{
     FourierNtruDecryptWorkspace, FourierNtruEncryptWorkspace, FourierNtruSecretKey, NtruError,
     NtruParameters, NtruSecretKey, NttNtruSecretKey, SecretKeyDistr,
 };
-use primus_ntt::{NttTable, PrimitiveRoot, UintNttTable};
+use primus_ntt::{NttTable, UintNttTable};
 use primus_poly::Polynomial;
 use primus_shape::PolyLength;
 use rand::{Rng, SeedableRng, rngs::StdRng};
@@ -29,7 +29,7 @@ fn messages<T: FheUint>() -> Vec<T> {
 // Replay noise independently and overwrite one ciphertext through all encodings.
 fn assert_ntt_roundtrip<T>(cipher_modulus: T)
 where
-    T: FheUint + PrimitiveRoot,
+    T: FheUint,
 {
     let modulus = BarrettModulus::new(cipher_modulus);
     let ntt = UintNttTable::new(PolyLength::new(POLY_LENGTH), modulus).unwrap();
