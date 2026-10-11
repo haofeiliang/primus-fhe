@@ -17,15 +17,21 @@ fn limbs<T: FheUint + AsFrom<u128>>(value: u128, len: usize) -> Vec<T> {
         .collect()
 }
 
+// Compute the centered-wrap threshold with a wide scalar oracle.
+fn wrap_threshold(log_basis: u32, levels: usize, drop_bits: u32) -> u128 {
+    let radix = 1u128 << log_basis;
+    let step = 1u128 << drop_bits;
+    (0..levels)
+        .map(|level| (radix / 2 - 1) << (drop_bits + level as u32 * log_basis))
+        .sum::<u128>()
+        + if drop_bits == 0 { 1 } else { step / 2 }
+}
+
 // Round/drop thresholds and 32/64-bit limb crossings carry the regression
 // coverage; a few fixed-seed interior samples check non-boundary digit patterns.
 fn inputs(q: u128, log_basis: u32, levels: usize, drop_bits: u32) -> Vec<u128> {
-    let radix = 1u128 << log_basis;
     let step = 1u128 << drop_bits;
-    let threshold = (0..levels)
-        .map(|level| (radix / 2 - 1) << (drop_bits + level as u32 * log_basis))
-        .sum::<u128>()
-        + if drop_bits == 0 { 1 } else { step / 2 };
+    let threshold = wrap_threshold(log_basis, levels, drop_bits);
     let mut values = vec![0, 1, q / 2, q - 1];
     for boundary in [step / 2, step, threshold, 1 << 32, 1 << 64] {
         for value in [boundary.saturating_sub(1), boundary, boundary + 1] {
@@ -74,13 +80,33 @@ where
         assert_eq!(to_u128(scalar), expected);
     }
 
+    let threshold = wrap_threshold(log_basis, levels, drop_bits);
+    let adjustment = (1u128 << (q.ilog2() + 1)) - q;
+    let mut value = vec![T::ZERO; len];
+    let mut adjusted = vec![T::ZERO; len];
+    let mut digit = vec![T::ZERO; len];
+    let mut carries = [false];
     for input in inputs(q, log_basis, levels, drop_bits) {
-        let (adjusted, mut carry) = basis.init_value_carry(&BigUint(limbs::<T>(input, len)));
+        for (index, limb) in value.iter_mut().enumerate() {
+            *limb = T::as_from(input >> (index as u32 * T::BITS));
+        }
+        basis.init_value_carry_slice_to(&value, &mut adjusted, &mut carries);
+        let expected_adjusted = input + if input >= threshold { adjustment } else { 0 };
+        let mut expected_carry =
+            drop_bits != 0 && expected_adjusted & (1u128 << (drop_bits - 1)) != 0;
+        assert_eq!(to_u128(&adjusted), expected_adjusted);
+        assert_eq!(carries[0], expected_carry);
         let mut sum = 0i128;
         for (level, decomposer) in basis.decomposer_iter().enumerate() {
-            let (digit, next_carry) = decomposer.decompose(&adjusted, carry);
-            let (unsigned, unsigned_carry) = decomposer.unsigned_decompose(&adjusted, carry);
-            assert_eq!(next_carry, unsigned_carry);
+            let (unsigned, unsigned_carry) = decomposer.unsigned_decompose(&adjusted, carries[0]);
+            decomposer.decompose_slice_to(&adjusted, &mut digit, &mut carries);
+            let offset = drop_bits + level as u32 * log_basis;
+            let window = ((expected_adjusted >> offset) & (radix as u128 - 1)) as i128;
+            let temp = window + i128::from(expected_carry);
+            expected_carry = temp >= radix / 2;
+            let expected_digit = temp - if expected_carry { radix } else { 0 };
+            assert_eq!(carries[0], expected_carry);
+            assert_eq!(unsigned_carry, expected_carry);
             let unsigned = unsigned.into() as i128;
             assert!((0..radix).contains(&unsigned));
             let centered = if unsigned >= radix / 2 {
@@ -88,9 +114,9 @@ where
             } else {
                 unsigned
             };
+            assert_eq!(centered, expected_digit);
             assert_eq!(to_u128(&digit), centered.rem_euclid(q as i128) as u128);
             sum += centered * (1i128 << (drop_bits + level as u32 * log_basis));
-            carry = next_carry;
         }
         let output = sum.rem_euclid(q as i128) as u128;
         let distance = input.abs_diff(output);
@@ -169,18 +195,10 @@ fn check_batch<T: FheUint>() {
                 basis.init_value_carry_slice_assign(&mut in_place, &mut in_place_carries);
                 assert_eq!(adjusted, in_place);
                 assert_eq!(carries, in_place_carries);
-                for ((input, actual), &carry) in values
-                    .chunks_exact(len)
-                    .zip(adjusted.chunks_exact(len))
-                    .zip(&carries)
-                {
-                    let (expected, expected_carry) = basis.init_value_carry(&BigUint(input));
-                    assert_eq!(actual, expected);
-                    assert_eq!(carry, expected_carry);
-                }
-
                 let mut signed_digits = vec![T::MAX; values.len()];
                 let mut unsigned_digits = vec![T::MAX; count];
+                let mut expected_digit = vec![T::ZERO; len];
+                let radix = basis.basis_value();
                 for decomposer in basis.decomposer_iter() {
                     let previous_carries = carries.clone();
                     let mut unsigned_carries = carries.clone();
@@ -192,13 +210,27 @@ fn check_batch<T: FheUint>() {
                     );
                     assert_eq!(carries, unsigned_carries);
                     for (index, value) in adjusted.chunks_exact(len).enumerate() {
-                        let (digit, carry) = decomposer.decompose(value, previous_carries[index]);
-                        assert_eq!(&signed_digits[index * len..(index + 1) * len], digit);
-                        assert_eq!(carries[index], carry);
+                        let (digit, carry) =
+                            decomposer.unsigned_decompose(value, previous_carries[index]);
                         assert_eq!(
                             (unsigned_digits[index], carries[index]),
-                            decomposer.unsigned_decompose(value, previous_carries[index]),
+                            (digit, carry),
                             "limbs={len}, logB={log_basis}, count={count}, index={index}",
+                        );
+                        // Full-width digits encode the same centered value modulo Q,
+                        // whereas compact digits encode it modulo B.
+                        if digit >= radix / T::TWO {
+                            expected_digit.copy_from_slice(&modulus);
+                            let borrow =
+                                BigUint(&mut expected_digit[..]).sub_value_assign(radix - digit);
+                            assert!(!borrow);
+                        } else {
+                            expected_digit.fill(T::ZERO);
+                            expected_digit[0] = digit;
+                        }
+                        assert_eq!(
+                            &signed_digits[index * len..(index + 1) * len],
+                            expected_digit,
                         );
                     }
                 }

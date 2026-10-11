@@ -104,7 +104,7 @@ For `N` values and `W = big_uint_value_len()` limbs per value, full-width buffer
 
 Carry buffers contain `N` booleans. Full-width digit outputs contain `N * W` limbs; compact `unsigned_decompose_slice_to` outputs contain only `N` limbs. BigUint initialization is required even when `Q` is a power of two.
 
-Use `init_value_carry_slice_to` and `decomposer_iter()` with the same ascending-level carry protocol. Exact buffer contracts are in the [BigUint basis API](src/big_integer/basis.rs) and [digit-output API](src/big_integer/common.rs).
+Use `init_value_carry_slice_to` and `decomposer_iter()` with the same ascending-level carry protocol. For a single value, use one full-width value buffer and a one-element carry slice with the same batch APIs. Exact buffer contracts are in the [BigUint basis API](src/big_integer/basis.rs) and [digit-output API](src/big_integer/common.rs).
 
 RNS/CRT residues use modulus-major storage, not this value-major limb layout. Convert them with [`primus_rns`](../primus_rns/README.md) before integer decomposition.
 
@@ -115,7 +115,7 @@ RNS/CRT residues use modulus-major storage, not this value-major limb layout. Co
 - Apply every operator in ascending level order, without skipping levels or resetting carry. A zero digit can still produce a carry. Start each new input batch with initialization, not with the previous batch's final carries.
 - Primitive value, output and carry slices must have equal lengths. BigUint buffers must follow the exact shapes above. The slice methods do not validate these layouts in release builds.
 - Slice methods overwrite outputs and update carries; they do not accumulate digits. BigUint `init_value_carry_slice_assign` also overwrites the original values.
-- Constructors allocate precomputation storage. Slice and caller-output methods do not allocate internally. BigUint `init_value_carry`, `decompose`, and `approximate_error_bound` return newly allocated vectors or big integers; prefer reusable buffers and the `_to`/slice methods in repeated paths.
+- Constructors allocate precomputation storage. Decomposition and slice initialization reuse caller-owned buffers without allocating internally. BigUint `approximate_error_bound` allocates a result for precision diagnostics.
 
 ## Features and further reading
 

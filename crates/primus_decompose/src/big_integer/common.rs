@@ -206,51 +206,21 @@ impl<'a, T: FheUint> OnceBigUintSignedDecomposer<'a, T> {
         temp
     }
 
-    /// Allocates a digit encoded modulo `Q` and returns the next carry.
-    ///
-    /// The signed digit lies in `[-B/2, B/2)`. Negative digits are represented
-    /// by `Q + digit`. `value` must have exactly `big_uint_value_len()` limbs;
-    /// both it and `carry` must follow this operator's initialization protocol.
-    #[inline]
-    pub fn decompose(&self, value: &[T], mut carry: bool) -> (Vec<T>, bool) {
-        debug_assert_eq!(value.len(), self.big_uint_value_len());
-        let temp = self.extract_with_carry(value, &mut carry);
-        let mut result = BigUint(vec![T::ZERO; value.len()]);
-        if carry {
-            if temp <= self.basis_minus_one {
-                let _ = self.modulus_minus_basis.add_value_to(temp, &mut result);
-            }
-        } else {
-            result[0] = temp;
-        }
-
-        (result.0, carry)
-    }
-
     /// Returns a signed digit encoded modulo `B`, and the next carry.
     ///
     /// The result is in `[0, B)`: values below `B/2` encode themselves, and
     /// values at or above `B/2` encode `result - B`. For example, `B - 1`
-    /// encodes `-1`, not a positive digit. Unlike [`Self::decompose`], this
+    /// encodes `-1`, not a positive digit. Unlike [`Self::decompose_slice_to`], this
     /// returns one limb rather than a residue modulo `Q`.
-    /// Input shape and initialization requirements match [`Self::decompose`].
+    /// `value` must contain exactly `big_uint_value_len()` little-endian limbs.
+    /// It must be initialized with this basis and remain unchanged across
+    /// levels; `carry` comes from initialization or the preceding level.
     #[inline]
     pub fn unsigned_decompose(&self, value: &[T], mut carry: bool) -> (T, bool) {
         debug_assert_eq!(value.len(), self.big_uint_value_len());
         let temp = self.extract_with_carry(value, &mut carry);
 
         (temp & self.basis_minus_one, carry)
-    }
-
-    /// Writes a digit modulo `Q` and advances `carry`, as in [`Self::decompose`].
-    ///
-    /// Both value slices must contain exactly `big_uint_value_len()` limbs.
-    /// The output is overwritten, not accumulated.
-    #[inline]
-    pub fn decompose_to(&self, value: &[T], decomposed_value: &mut [T], carry: &mut bool) {
-        debug_assert_eq!(value.len(), self.big_uint_value_len());
-        debug_assert_eq!(decomposed_value.len(), self.big_uint_value_len());
-        self.decompose_to_kernel(value, decomposed_value, carry);
     }
 
     // temp is in [0,B]. A carry encodes the negative digit as Q-B+temp,
@@ -274,19 +244,6 @@ impl<'a, T: FheUint> OnceBigUintSignedDecomposer<'a, T> {
         }
     }
 
-    /// Writes a digit modulo `B` and advances `carry`, as in [`Self::unsigned_decompose`].
-    /// The output is overwritten, not accumulated.
-    #[inline]
-    pub fn unsigned_decompose_to(
-        &self,
-        value: &[T],
-        decomposed_unsigned_value: &mut T,
-        carry: &mut bool,
-    ) {
-        debug_assert_eq!(value.len(), self.big_uint_value_len());
-        self.unsigned_decompose_to_kernel(value, decomposed_unsigned_value, carry);
-    }
-
     #[inline]
     fn unsigned_decompose_to_kernel(
         &self,
@@ -302,8 +259,10 @@ impl<'a, T: FheUint> OnceBigUintSignedDecomposer<'a, T> {
     /// Writes full-width digits modulo `Q` and advances the corresponding carries.
     ///
     /// Both value buffers must have length `carries.len() * big_uint_value_len()`
-    /// in value-major layout. Inputs follow [`Self::decompose`]; all output
-    /// limbs are overwritten, not accumulated.
+    /// in value-major layout. Inputs and carries follow [`Self::unsigned_decompose`].
+    /// The signed digit lies in `[-B/2, B/2)`: negative digits are encoded as
+    /// `Q + digit`, rather than modulo `B`. All output limbs are overwritten,
+    /// not accumulated.
     #[inline]
     pub fn decompose_slice_to(
         &self,

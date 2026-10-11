@@ -1,4 +1,3 @@
-use primus_data::Data;
 use primus_integer::{BigUint, BigUintIter, BigUintIterMut, DivRem, FheUint};
 
 use crate::{
@@ -202,12 +201,6 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
         self.basis
     }
 
-    /// Returns the basis minus one of this [`BigUintApproxSignedBasis<T>`].
-    #[inline]
-    pub fn basis_minus_one(&self) -> T {
-        self.basis_minus_one
-    }
-
     /// Returns the decompose length of this [`BigUintApproxSignedBasis<T>`].
     #[must_use]
     #[inline]
@@ -242,15 +235,10 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
         bound
     }
 
-    /// Returns a reference to the modulus sub basis of this [`BigUintApproxSignedBasis<T>`].
-    #[inline]
-    pub fn modulus_sub_basis(&self) -> &[T] {
-        &self.modulus_sub_basis
-    }
-
     /// Returns decomposition operators from the lowest retained level to the highest.
     ///
-    /// Initialize the input with an `init_value_carry*` method first. Apply all
+    /// Initialize the input with [`Self::init_value_carry_slice_to`] or
+    /// [`Self::init_value_carry_slice_assign`] first. Apply all
     /// operators in order to that same adjusted input, forwarding the carry
     /// from each level to the next. Reversing or skipping levels does not
     /// preserve this carry protocol.
@@ -271,50 +259,12 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
         self.scalars.chunks_exact(self.big_uint_value_len())
     }
 
-    /// Allocates an adjusted input and computes its initial carry.
-    ///
-    /// `value` must be in `[0, Q)` and contain exactly
-    /// [`Self::big_uint_value_len`] little-endian limbs. The returned adjusted
-    /// value is an internal bit representation, not necessarily reduced modulo
-    /// `Q`; pass it unchanged to each successive decomposition operator.
-    #[inline]
-    pub fn init_value_carry<A>(&self, value: &BigUint<A>) -> (Vec<T>, bool)
-    where
-        A: Data<Elem = T>,
-    {
-        debug_assert_eq!(value.len(), self.big_uint_value_len());
-        let value_digits = value.0.as_slice();
-
-        match &self.value_carry_init_mode {
-            BigUintValueCarryInitMode::AdjustAndCarry {
-                threshold,
-                add,
-                index,
-                mask,
-            } => {
-                let mut adjust = BigUint(value_digits.to_vec());
-                if value.cmp(threshold).is_ge() {
-                    let _ = adjust.add_assign(add);
-                }
-                let carry = !(adjust[*index] & *mask).is_zero();
-                (adjust.0, carry)
-            }
-            BigUintValueCarryInitMode::AdjustOnly { threshold, add } => {
-                let mut adjust = BigUint(value_digits.to_vec());
-                if value.cmp(threshold).is_ge() {
-                    let _ = adjust.add_assign(add);
-                }
-                (adjust.0, false)
-            }
-        }
-    }
-
     /// Adjusts a value-major batch in place and overwrites its initial carries.
     ///
     /// Each input must be in `[0, Q)`, stored in exactly
     /// [`Self::big_uint_value_len`] little-endian limbs. `values.len()` must
     /// equal `carries.len() * big_uint_value_len()`. Adjusted values follow the
-    /// internal representation described by [`Self::init_value_carry`].
+    /// internal representation described by [`Self::init_value_carry_slice_to`].
     #[inline]
     pub fn init_value_carry_slice_assign(&self, values: &mut [T], carries: &mut [bool]) {
         let big_uint_value_len = self.big_uint_value_len();
@@ -352,7 +302,9 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
     /// Each input must be in `[0, Q)`, stored in exactly
     /// [`Self::big_uint_value_len`] little-endian limbs. Both value buffers
     /// must have length `carries.len() * big_uint_value_len()`. Outputs are
-    /// overwritten; adjusted values follow [`Self::init_value_carry`].
+    /// overwritten. Adjusted values are an internal bit representation, not
+    /// necessarily reduced modulo `Q`; pass them unchanged to each successive
+    /// decomposition operator, advancing its carry from level to level.
     #[inline]
     pub fn init_value_carry_slice_to(
         &self,

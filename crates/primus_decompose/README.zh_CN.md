@@ -104,7 +104,7 @@ Primitive 二次幂模数的输入不需要 adjusted-value 缓冲区：用 `init
 
 Carry 缓冲区有 `N` 个布尔值。全宽 digit 输出有 `N * W` 个 limb；紧凑的 `unsigned_decompose_slice_to` 输出只有 `N` 个 limb。即使 `Q` 是二次幂，BigUint 版本也必须执行输入初始化。
 
-使用 `init_value_carry_slice_to` 和 `decomposer_iter()`，遵循相同的升序逐层 carry 协议。精确缓冲区契约见 [BigUint basis API](src/big_integer/basis.rs) 和 [digit 输出 API](src/big_integer/common.rs)。
+使用 `init_value_carry_slice_to` 和 `decomposer_iter()`，遵循相同的升序逐层 carry 协议。单值也使用相同的批量接口，提供一个全宽 value 缓冲区和一个元素的 carry slice。精确缓冲区契约见 [BigUint basis API](src/big_integer/basis.rs) 和 [digit 输出 API](src/big_integer/common.rs)。
 
 RNS/CRT residue 使用 modulus-major 存储，不是这里的 value-major limb 布局。整数分解前，使用 [`primus_rns`](../primus_rns/README.zh_CN.md) 完成转换。
 
@@ -115,7 +115,7 @@ RNS/CRT residue 使用 modulus-major 存储，不是这里的 value-major limb �
 - 按层数升序应用每个 operator，不能跳层或重置 carry。Digit 为零时也可能有 carry。 新的一批输入必须重新初始化，不能复用上一批输入的最终 carry 值。
 - Primitive 的输入、输出和 carry slice 必须等长；BigUint 必须满足上述精确形状。 Slice 方法在 release 模式不验证这些布局。
 - Slice 方法覆盖输出并更新 carry，不会累加 digit。BigUint 的 `init_value_carry_slice_assign` 还会覆盖原始输入。
-- 构造器会分配预计算存储。Slice 和调用方提供输出的方法内部不分配。 BigUint 的 `init_value_carry`、`decompose`、`approximate_error_bound` 返回新分配的 vector 或大整数；重复计算路径应优先使用可复用缓冲区和 `_to`/slice 方法。
+- 构造器会分配预计算存储。分解和 slice 初始化复用调用方的缓冲区，内部不分配。BigUint 的 `approximate_error_bound` 为精度诊断分配结果。
 
 ## Feature 与进一步阅读
 
