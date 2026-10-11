@@ -217,11 +217,6 @@ fn batch_initialization_and_digits_match_scalar() {
         let mut adjusted = [u32::MAX; 5];
         let mut carries = [true; 5];
         basis.init_value_carry_slice_to(&values, &mut adjusted, &mut carries);
-        let mut in_place = values;
-        let mut in_place_carries = [true; 5];
-        basis.init_value_carry_slice_assign(&mut in_place, &mut in_place_carries);
-        assert_eq!(adjusted, in_place);
-        assert_eq!(carries, in_place_carries);
         if basis.modulus_is_power_of_2() {
             let mut carry_only = [true; 5];
             basis.init_carry_slice(&values, &mut carry_only);

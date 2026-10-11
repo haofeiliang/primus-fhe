@@ -92,7 +92,7 @@ assert_eq!(basis.drop_bits(), 1);
 assert_eq!(reconstructed, [42, 0]); // Circular errors modulo 97: 0 and 1.
 ```
 
-Power-of-two primitive inputs need no adjusted-value buffer: use `init_carry_slice` and pass the original inputs through every level. It panics for non-power-of-two moduli; use `init_value_carry_slice_to` for those. Scalar processing uses `init_value_carry` followed by `decompose` or `decompose_to` with the same carry protocol. See the [primitive basis API](src/primitive/basis.rs).
+Power-of-two primitive inputs need no adjusted-value buffer: use `init_carry_slice` and pass the original inputs through every level. It panics for non-power-of-two moduli; use `init_value_carry_slice_to` for those. Scalar processing uses `init_value_carry` followed by `decompose` with the same carry protocol. See the [primitive basis API](src/primitive/basis.rs).
 
 ## BigUint workflow and layout
 
@@ -114,7 +114,7 @@ RNS/CRT residues use modulus-major storage, not this value-major limb layout. Co
 - Adjusted inputs are internal bit representations, not necessarily canonical residues. Keep them unchanged throughout decomposition; do not reduce them.
 - Apply every operator in ascending level order, without skipping levels or resetting carry. A zero digit can still produce a carry. Start each new input batch with initialization, not with the previous batch's final carries.
 - Primitive value, output and carry slices must have equal lengths. BigUint buffers must follow the exact shapes above. The slice methods do not validate these layouts in release builds.
-- Slice methods overwrite outputs and update carries; they do not accumulate digits. `init_value_carry_slice_assign` also overwrites the original values.
+- Slice methods overwrite outputs and update carries; they do not accumulate digits. BigUint `init_value_carry_slice_assign` also overwrites the original values.
 - Constructors allocate precomputation storage. Slice and caller-output methods do not allocate internally. BigUint `init_value_carry`, `decompose`, and `approximate_error_bound` return newly allocated vectors or big integers; prefer reusable buffers and the `_to`/slice methods in repeated paths.
 
 ## Features and further reading

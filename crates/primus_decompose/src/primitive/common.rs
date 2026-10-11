@@ -173,7 +173,7 @@ impl<T: FheUint> OnceSignedDecomposer<T> {
 
     /// Overwrites the digit output and advances `carry`, as in [`Self::decompose`].
     #[inline]
-    pub fn decompose_to(&self, value: T, decomposed_value: &mut T, carry: &mut bool) {
+    fn decompose_to(&self, value: T, decomposed_value: &mut T, carry: &mut bool) {
         let temp = self.value_mask.get_value(value) + T::as_from(*carry);
         // Keep this output kernel separate from the value-returning version.
         // Routing either through the other regressed batch decomposition or

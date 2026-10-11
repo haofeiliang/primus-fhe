@@ -29,7 +29,6 @@ pub struct ApproxSignedBasis<T: FheUint> {
     basis_minus_one: T,
     modulus_minus_basis: T,
     decompose_length: DecompositionLevelCount,
-    value_bits: u32,
     log_basis: DecompositionBaseLog,
     drop_bits: u32,
     carry_mask: T,
@@ -155,7 +154,6 @@ impl<T: FheUint> ApproxSignedBasis<T> {
             basis,
             basis_minus_one,
             modulus_minus_basis,
-            value_bits,
             carry_mask,
             decompose_length: checked_decompose_length,
             log_basis: checked_log_basis,
@@ -178,12 +176,6 @@ impl<T: FheUint> ApproxSignedBasis<T> {
         self.modulus_is_power_of_2
     }
 
-    /// Returns the value bits of values in `[0, modulus - 1]`.
-    #[inline]
-    pub fn value_bits(&self) -> u32 {
-        self.value_bits
-    }
-
     /// Returns the decompose length of this [`ApproxSignedBasis<T>`].
     #[must_use]
     #[inline]
@@ -195,12 +187,6 @@ impl<T: FheUint> ApproxSignedBasis<T> {
     #[inline]
     pub fn basis_value(&self) -> T {
         self.basis
-    }
-
-    /// Returns the basis minus one of this [`ApproxSignedBasis<T>`].
-    #[inline]
-    pub fn basis_minus_one(&self) -> T {
-        self.basis_minus_one
     }
 
     /// Returns the log basis of this [`ApproxSignedBasis<T>`].
@@ -287,49 +273,6 @@ impl<T: FheUint> ApproxSignedBasis<T> {
             }
             ValueCarryInitMode::CarryOnly { mask } => (value, !(value & mask).is_zero()),
             ValueCarryInitMode::Plain => (value, false),
-        }
-    }
-
-    /// Adjusts inputs in place and overwrites their initial carries.
-    ///
-    /// For an explicit modulus `q`, every input value must be reduced to
-    /// `[0, q)`. With the implicit native modulus, every value of `T` is valid.
-    /// `values` and `carries` must have equal lengths. Adjusted values follow
-    /// the internal representation described by [`Self::init_value_carry`].
-    #[inline]
-    pub fn init_value_carry_slice_assign(&self, values: &mut [T], carries: &mut [bool]) {
-        debug_assert_eq!(values.len(), carries.len());
-
-        match self.value_carry_init_mode {
-            // When both adjustment and carry extraction are needed, do them in
-            // the same pass so each value is loaded and stored only once.
-            ValueCarryInitMode::AdjustAndCarry {
-                threshold,
-                add,
-                mask,
-            } => {
-                values.iter_mut().zip(carries).for_each(|(value, carry)| {
-                    if *value >= threshold {
-                        *value += add;
-                    }
-                    *carry = !(*value & mask).is_zero();
-                });
-            }
-            // No carry bit exists for this basis, so keep the fast fill path.
-            ValueCarryInitMode::AdjustOnly { threshold, add } => {
-                values.iter_mut().for_each(|value| {
-                    if *value >= threshold {
-                        *value += add;
-                    }
-                });
-                carries.fill(false);
-            }
-            ValueCarryInitMode::CarryOnly { mask } => {
-                values.iter().zip(carries).for_each(|(&value, carry)| {
-                    *carry = !(value & mask).is_zero();
-                });
-            }
-            ValueCarryInitMode::Plain => carries.fill(false),
         }
     }
 

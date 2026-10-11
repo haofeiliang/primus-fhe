@@ -92,7 +92,7 @@ assert_eq!(basis.drop_bits(), 1);
 assert_eq!(reconstructed, [42, 0]); // 模 97 的环距离分别为 0 和 1。
 ```
 
-Primitive 二次幂模数的输入不需要 adjusted-value 缓冲区：用 `init_carry_slice` 初始化，再将原始输入依次传给每层。它对非二次幂模数会 panic，此时应使用 `init_value_carry_slice_to`。单值处理使用 `init_value_carry`，再调用 `decompose` 或 `decompose_to`，同样逐层传递 carry。完整契约见 [primitive basis API](src/primitive/basis.rs)。
+Primitive 二次幂模数的输入不需要 adjusted-value 缓冲区：用 `init_carry_slice` 初始化，再将原始输入依次传给每层。它对非二次幂模数会 panic，此时应使用 `init_value_carry_slice_to`。单值处理使用 `init_value_carry`，再调用 `decompose`，同样逐层传递 carry。完整契约见 [primitive basis API](src/primitive/basis.rs)。
 
 ## BigUint 工作流与布局
 
@@ -114,7 +114,7 @@ RNS/CRT residue 使用 modulus-major 存储，不是这里的 value-major limb �
 - Adjusted inputs 是内部位表示，不保证是 canonical residue。整个分解过程应保持 它们不变，不能再做模约简。
 - 按层数升序应用每个 operator，不能跳层或重置 carry。Digit 为零时也可能有 carry。 新的一批输入必须重新初始化，不能复用上一批输入的最终 carry 值。
 - Primitive 的输入、输出和 carry slice 必须等长；BigUint 必须满足上述精确形状。 Slice 方法在 release 模式不验证这些布局。
-- Slice 方法覆盖输出并更新 carry，不会累加 digit。 `init_value_carry_slice_assign` 还会覆盖原始输入。
+- Slice 方法覆盖输出并更新 carry，不会累加 digit。BigUint 的 `init_value_carry_slice_assign` 还会覆盖原始输入。
 - 构造器会分配预计算存储。Slice 和调用方提供输出的方法内部不分配。 BigUint 的 `init_value_carry`、`decompose`、`approximate_error_bound` 返回新分配的 vector 或大整数；重复计算路径应优先使用可复用缓冲区和 `_to`/slice 方法。
 
 ## Feature 与进一步阅读
