@@ -74,6 +74,7 @@ where
     }
 
     /// Performs `self * scalar` according to `modulus`.
+    #[must_use]
     #[inline]
     pub fn mul_scalar<M>(mut self, scalar: T, modulus: M) -> Self
     where
@@ -84,6 +85,7 @@ where
     }
 
     /// Performs `self * factor` according to `modulus`.
+    #[must_use]
     #[inline]
     pub fn mul_factor<F>(mut self, factor: F, modulus: T) -> Self
     where

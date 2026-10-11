@@ -12,9 +12,9 @@ English | [简体中文](README.zh_CN.md)
 | Type | Representation and layout | Main operations |
 | --- | --- | --- |
 | `Polynomial<S>` | `N` coefficients in ascending-power order under one modulus | Add, subtract, negate, scalar/factor multiplication, negacyclic monomials, naive multiplication, evaluation, and sampling |
-| `NttPolynomial<S>` | `N` point values under one modulus; ordering is defined by the NTT context | Point-wise arithmetic, fused multiply-add, inverse, and uniform sampling |
-| `CrtPolynomial<S>` | Modulus-major coefficient data: one contiguous `N`-coefficient polynomial per modulus | Component-wise arithmetic, scalar/factor operations, negacyclic monomials, and shared uniform-binary/sparse-ternary/Gaussian sampling |
-| `DcrtPolynomial<S>` | Modulus-major NTT data: one contiguous `N`-value transform per modulus | Point-wise arithmetic, fused multiply-add, inverse, uniform sampling, and butterfly kernels |
+| `NttPolynomial<S>` | `N` point values under one modulus; ordering is defined by the NTT context | Point-wise arithmetic, fused multiply-add, and inverse |
+| `CrtPolynomial<S>` | Modulus-major coefficient data: one contiguous `N`-coefficient polynomial per modulus | Component-wise arithmetic, scalar/factor operations, and negacyclic monomials |
+| `DcrtPolynomial<S>` | Modulus-major NTT data: one contiguous `N`-value transform per modulus | Point-wise arithmetic, fused multiply-add, inverse, and factor butterfly kernels |
 | `BigUintPolynomial<S>` | Coefficient-major data: each coefficient is a fixed-width little-endian limb chunk | Multi-limb modular add, subtract, and negate |
 | `FourierPolynomial<S>` | Independent complex evaluations; ordering is defined by the Fourier backend | Point-wise add, subtract, negate, multiply, fused multiply-add, and scalar multiplication |
 
@@ -24,7 +24,7 @@ For flat scalar buffers, use slices and the `Reduce*Slice` traits from
 [`primus_reduce`](../primus_reduce/README.md), such as
 `modulus.reduce_add_slice_assign(lhs, rhs)`. Polynomial and ciphertext wrappers
 retain their representation-specific operations. DCRT inverse butterflies remain
-available through `DcrtPolynomial::butterfly_mul_to` and `butterfly_mul_factor_to`.
+available through `DcrtPolynomial::butterfly_mul_factor_to`.
 
 ## Example
 
@@ -82,7 +82,7 @@ The wrappers deliberately do not store polynomial length, modulus values, transf
 
 - all operands and outputs participating in one operation have the same representation and layout;
 - backing storage is exactly divisible by the supplied polynomial length or multi-limb coefficient width;
-- CRT/DCRT storage has length `moduli.len() * poly_length`; component-wise scalar, factor, distribution, and modulus slices contain one entry per component, while per-point factor polynomials such as butterfly `w` have the same modulus-major layout and length as the backing storage;
+- CRT/DCRT storage has length `moduli.len() * poly_length`; component-wise scalar, factor, and modulus slices contain one entry per component, while per-point factor polynomials such as butterfly `w` have the same modulus-major layout and length as the backing storage;
 - values satisfy the canonical or lazy range required by the selected `primus_reduce` or `primus_factor` operation;
 - monomial exponents belong to the documented `[0, 2N)` range, and methods requiring a power-of-two `N` receive one;
 - NTT and Fourier operands were produced for compatible transform contexts.
@@ -97,9 +97,17 @@ The Barrett-domain `lazy_add_mul_monomial_pair_assign` and `lazy_add_mul_monomia
 
 ## Random sampling
 
-Direct NTT and DCRT sampling is uniform. To sample a non-uniform coefficient distribution, construct a coefficient-domain `Polynomial` or `CrtPolynomial` and then transform it. CRT uniform-binary, sparse-ternary, and Gaussian sampling draw one logical coefficient and encode that same value under every component modulus. The sparse ternary distribution has `P(0) = 1/2` and `P(1) = P(-1) = 1/4`. Random APIs require an RNG implementing both `rand::Rng` and `rand::CryptoRng`.
+`Polynomial::random` collects uniform residues under a modulus;
+`Polynomial::random_with_distribution` collects samples from a caller-selected
+`rand::distr::Distribution`. Both support `FromIterator` storage and require an
+RNG implementing `rand::Rng` and `rand::CryptoRng`. See the [sampling API](src/poly/random.rs).
 
-`Polynomial::random_gaussian` creates sampled storage; `random_gaussian_assign` overwrites existing coefficients, while `add_random_gaussian_assign` adds noise under the supplied modulus. The sampler must encode residues for that same modulus. The in-place methods allocate no scratch. Samples are consumed in coefficient order, and empty Gaussian polynomials consume no randomness. See the [sampling API](src/poly/random.rs).
+For specialized sampling, filling existing buffers, or adding noise, use the
+sampler's slice APIs from [`primus_distr`](../primus_distr/README.md), then wrap
+that storage in the appropriate polynomial type. Sample non-uniform distributions
+in the coefficient domain before transforming. CRT sampling must encode the
+same logical coefficient sample under every component modulus; independently
+sampling Gaussian noise in each modulus block would represent a different value.
 
 ## Monomial arithmetic benchmark
 

@@ -17,6 +17,7 @@ where
     }
 
     /// Multiplies pointwise by `rhs` and returns this Fourier polynomial.
+    #[must_use]
     #[inline]
     #[allow(clippy::should_implement_trait)]
     pub fn mul<A>(mut self, rhs: &FourierPolynomial<A>) -> Self
@@ -35,6 +36,7 @@ where
 
     /// Multiplies every Fourier value by the real scalar `scalar` and returns
     /// this Fourier polynomial.
+    #[must_use]
     #[inline]
     pub fn mul_scalar(mut self, scalar: f64) -> Self {
         self.mul_scalar_assign(scalar);

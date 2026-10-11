@@ -10,6 +10,7 @@ where
     T: FheUint,
 {
     /// Performs the unary `-` operation.
+    #[must_use]
     #[inline]
     pub fn neg<M>(mut self, modulus: M) -> Self
     where

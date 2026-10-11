@@ -12,6 +12,7 @@ where
     T: FheUint,
 {
     /// Performs `self * scalars` according to `moduli`.
+    #[must_use]
     #[inline]
     pub fn mul_scalar<M>(mut self, scalars: &[T], poly_length: usize, moduli: &[M]) -> Self
     where
@@ -33,6 +34,7 @@ where
     }
 
     /// Performs `self * factors` according to `moduli`.
+    #[must_use]
     #[inline]
     pub fn mul_factor<F>(mut self, factors: &[F], poly_length: usize, moduli: &[T]) -> Self
     where

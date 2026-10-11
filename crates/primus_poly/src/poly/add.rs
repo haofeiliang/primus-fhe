@@ -10,6 +10,7 @@ where
     T: FheUint,
 {
     /// Performs `self + rhs` according to `modulus`.
+    #[must_use]
     #[inline]
     pub fn add<M, A>(mut self, rhs: &Polynomial<A>, modulus: M) -> Self
     where

@@ -8,7 +8,6 @@ mod add;
 mod inv;
 mod mul;
 mod neg;
-mod random;
 mod sub;
 
 /// Raw modulus-major NTT storage for a CRT polynomial.
@@ -18,6 +17,15 @@ mod sub;
 /// wrapper stores neither `N`, the base nor the transform identity: empty,
 /// arbitrary-length and packed storage are allowed. [`Self::len`] counts all
 /// stored evaluations; the owning boundary establishes the complete layout.
+///
+/// # Correctness
+///
+/// Component-wise arithmetic requires nonzero `poly_length` and equal input
+/// and output lengths of `poly_length * moduli.len()`. Moduli follow the stored
+/// block order. Per-component scalar/factor slices have one entry per modulus;
+/// per-point factors have the full storage length. Values must satisfy the
+/// selected reduction or factor operation's range contract. These conditions
+/// are established by the caller, not validated by the wrapper.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DcrtPolynomial<S>(pub S)
 where
@@ -146,6 +154,7 @@ where
     }
 
     /// Returns `true` if `self` is equal to `0`.
+    #[must_use]
     #[inline]
     pub fn is_zero(&self) -> bool {
         self.0.iter().all(Zero::is_zero)

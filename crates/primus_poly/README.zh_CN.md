@@ -12,9 +12,9 @@
 | 类型 | 表示与布局 | 主要操作 |
 | --- | --- | --- |
 | `Polynomial<S>` | 单个模数下按幂次递增排列的 `N` 个系数 | 加、减、取负、scalar/factor 乘法、负循环单项式、朴素乘法、求值和采样 |
-| `NttPolynomial<S>` | 单个模数下的 `N` 个点值；顺序由 NTT context 定义 | 逐点算术、融合乘加、逆元和 uniform 采样 |
-| `CrtPolynomial<S>` | modulus-major 系数数据：每个模数对应一个连续的 `N` 系数多项式 | 分量算术、scalar/factor 操作、负循环单项式以及共享的 uniform-binary/sparse-ternary/Gaussian 采样 |
-| `DcrtPolynomial<S>` | modulus-major NTT 数据：每个模数对应一个连续的 `N` 点变换结果 | 逐点算术、融合乘加、逆元、uniform 采样和 butterfly 内核 |
+| `NttPolynomial<S>` | 单个模数下的 `N` 个点值；顺序由 NTT context 定义 | 逐点算术、融合乘加和逆元 |
+| `CrtPolynomial<S>` | modulus-major 系数数据：每个模数对应一个连续的 `N` 系数多项式 | 分量算术、scalar/factor 操作和负循环单项式 |
+| `DcrtPolynomial<S>` | modulus-major NTT 数据：每个模数对应一个连续的 `N` 点变换结果 | 逐点算术、融合乘加、逆元和 factor butterfly 内核 |
 | `BigUintPolynomial<S>` | coefficient-major 数据：每个系数是固定宽度的小端 limb 分块 | 多 limb 模加、模减和模取负 |
 | `FourierPolynomial<S>` | 独立复数求值；顺序由 Fourier 后端定义 | 逐点加、减、取负、乘法、融合乘加和 scalar 乘法 |
 
@@ -23,7 +23,7 @@
 平坦标量缓冲使用 slice 和 [`primus_reduce`](../primus_reduce/README.zh_CN.md)
 的 `Reduce*Slice` trait，例如 `modulus.reduce_add_slice_assign(lhs, rhs)`。
 多项式和密文 wrapper 保留各自表示的运算；DCRT 逆 butterfly 继续通过
-`DcrtPolynomial::butterfly_mul_to` 和 `butterfly_mul_factor_to` 调用。
+`DcrtPolynomial::butterfly_mul_factor_to` 调用。
 
 ## 示例
 
@@ -81,7 +81,7 @@ Raw wrapper 使用 `len()` / `is_empty()` 查看完整存储：
 
 - 一起参与运算的所有输入和输出具有相同表示与布局；
 - backing storage 能被传入的多项式长度或多 limb 系数宽度精确整除；
-- CRT/DCRT 存储长度等于 `moduli.len() * poly_length`；按分量使用的 scalar、factor、distribution 和 modulus slice 均为每个分量提供一个元素，而 butterfly `w` 这类逐点 factor polynomial 与 backing storage 具有相同的 modulus-major 布局和长度；
+- CRT/DCRT 存储长度等于 `moduli.len() * poly_length`；按分量使用的 scalar、factor 和 modulus slice 均为每个分量提供一个元素，而 butterfly `w` 这类逐点 factor polynomial 与 backing storage 具有相同的 modulus-major 布局和长度；
 - 数值满足所选 `primus_reduce` 或 `primus_factor` 操作要求的规范或惰性范围；
 - 单项式指数位于对应文档规定的 `[0, 2N)` 范围内，需要二次幂 `N` 的方法收到满足条件的长度；
 - NTT 和 Fourier 操作数由相互兼容的变换 context 产生。
@@ -96,9 +96,16 @@ Barrett 域的 `lazy_add_mul_monomial_pair_assign` 和 `lazy_add_mul_monomial_as
 
 ## 随机采样
 
-直接在 NTT 和 DCRT 表示中进行的采样仅支持 uniform 分布。若要采样非 uniform 的系数分布，应先构造系数域的 `Polynomial` 或 `CrtPolynomial`，再执行变换。CRT uniform-binary、sparse-ternary 和 Gaussian 采样会生成一个逻辑系数，并在每个分量模数下编码同一个值；其中 sparse ternary 分布满足 `P(0) = 1/2`、`P(1) = P(-1) = 1/4`。随机 API 要求 RNG 同时实现 `rand::Rng` 和 `rand::CryptoRng`。
+`Polynomial::random` 按模数收集 uniform residue；
+`Polynomial::random_with_distribution` 从调用方选择的
+`rand::distr::Distribution` 收集样本。两者均支持 `FromIterator` 存储，
+要求 RNG 实现 `rand::Rng` 和 `rand::CryptoRng`。见[采样 API](src/poly/random.rs)。
 
-`Polynomial::random_gaussian` 创建采样存储；`random_gaussian_assign` 覆盖已有系数，`add_random_gaussian_assign` 则按给定模数累加噪声。采样器须使用同一模数编码 residue。原地方法不分配 scratch，样本按系数顺序消费，空 Gaussian 多项式不消耗随机数。完整契约见[采样 API](src/poly/random.rs)。
+专用分布采样、填充已有缓冲或累加噪声，使用
+[`primus_distr`](../primus_distr/README.zh_CN.md) 中采样器的 slice API，
+再将存储包装为相应多项式类型。非 uniform 分布应在系数域采样后再变换。
+CRT 采样须将同一个逻辑系数样本编码到每个分量模数下；在各模数块中独立
+采样 Gaussian 噪声会表示不同的值。
 
 ## 单项式算术基准
 

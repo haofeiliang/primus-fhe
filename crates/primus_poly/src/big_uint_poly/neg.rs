@@ -9,6 +9,7 @@ where
     T: FheUint,
 {
     /// Performs the unary `-` operation.
+    #[must_use]
     #[inline]
     pub fn neg<A>(mut self, modulus: &BigUint<A>) -> Self
     where

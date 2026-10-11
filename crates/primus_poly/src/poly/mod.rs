@@ -131,19 +131,15 @@ where
         self.0.iter()
     }
 
-    /// Returns an iterator that allows reading each value or coefficient of the polynomial.
-    #[inline]
-    pub fn copied_iter(&self) -> core::iter::Copied<core::slice::Iter<'_, T>> {
-        self.0.iter().copied()
-    }
-
     /// Returns `true` if `self` is equal to `0`.
+    #[must_use]
     #[inline]
     pub fn is_zero(&self) -> bool {
         self.0.iter().all(Zero::is_zero)
     }
 
     /// Evaluate the polynomial with the value `x`.
+    #[must_use]
     #[inline]
     pub fn evaluate<M>(&self, x: T, modulus: M) -> T
     where

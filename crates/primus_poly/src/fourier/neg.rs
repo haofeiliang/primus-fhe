@@ -14,6 +14,7 @@ where
     }
 
     /// Negates every value and returns this Fourier polynomial.
+    #[must_use]
     #[inline]
     #[allow(clippy::should_implement_trait)]
     pub fn neg(mut self) -> Self {

@@ -10,6 +10,7 @@ where
     T: FheUint,
 {
     /// Performs `self - rhs` according to `modulus`.
+    #[must_use]
     #[inline]
     pub fn sub<M, A>(mut self, rhs: &NttPolynomial<A>, modulus: M) -> Self
     where

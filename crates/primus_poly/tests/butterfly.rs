@@ -3,21 +3,17 @@
 
 use primus_factor::{Factor, ShoupFactor};
 use primus_integer::FheUint;
-use primus_modulus::BarrettModulus;
 use primus_poly::DcrtPolynomial;
-use primus_reduce::RingContext;
 
 // Seventeen points include full u32/u64 SIMD vectors and a scalar tail in each
 // limb. These raw pointwise operations do not require a power-of-two ring length.
 fn check<T>(qs: [T; 2])
 where
     T: FheUint + Into<u64>,
-    BarrettModulus<T>: RingContext<T>,
     ShoupFactor<T>: Factor<T>,
 {
     const N: usize = 17;
     let len = N * qs.len();
-    let moduli = qs.map(BarrettModulus::new);
     let values = |offset: usize| -> Vec<T> {
         (0..len)
             .map(|index| {
@@ -40,8 +36,6 @@ where
         .enumerate()
         .map(|(index, &w)| ShoupFactor::new(w, qs[index / N]))
         .collect();
-    let mut factor_lhs = lhs.clone();
-    let mut output = DcrtPolynomial::new(vec![T::ONE; len]);
     let mut factor_output = vec![T::ONE; len + 2];
 
     // A second call verifies reuse of both outputs with the updated sum as lhs.
@@ -57,8 +51,7 @@ where
             expected_product.push(T::as_from((((a + q - b) % q * w) % q) as u64));
         }
 
-        lhs.butterfly_mul_to(&rhs, &weights, &mut output, N, &moduli);
-        factor_lhs.as_mut_view().butterfly_mul_factor_to(
+        lhs.as_mut_view().butterfly_mul_factor_to(
             &rhs.as_view(),
             &factors,
             &mut DcrtPolynomial::new(&mut factor_output[1..len + 1]),
@@ -66,8 +59,6 @@ where
             &qs,
         );
         assert_eq!(lhs.as_ref(), expected_sum);
-        assert_eq!(factor_lhs.as_ref(), expected_sum);
-        assert_eq!(output.as_ref(), expected_product);
         assert_eq!(&factor_output[1..len + 1], expected_product);
         assert_eq!(factor_output[0], T::ONE);
         assert_eq!(factor_output[len + 1], T::ONE);
@@ -75,7 +66,7 @@ where
 }
 
 #[test]
-fn butterflies_preserve_original_lhs_modulus_order_and_tail() {
+fn factor_butterfly_preserves_original_lhs_modulus_order_and_tail() {
     check([132_120_577u32, 754_974_721]);
     check([1_152_921_504_606_830_593u64, 576_460_752_303_439_873]);
 }

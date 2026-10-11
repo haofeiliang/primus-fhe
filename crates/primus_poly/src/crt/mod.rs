@@ -5,7 +5,6 @@ use primus_integer::{ByteCount, FheUint, Size};
 mod add;
 mod mul;
 mod neg;
-mod random;
 mod sub;
 
 /// Raw modulus-major coefficient storage for a CRT polynomial.
@@ -14,6 +13,15 @@ mod sub;
 /// modulus, in the base's order. This wrapper stores neither `N` nor the base:
 /// empty, arbitrary-length and packed storage are allowed, and [`Self::len`]
 /// counts all stored residues. The owning boundary establishes the full layout.
+///
+/// # Correctness
+///
+/// Component-wise arithmetic requires nonzero `poly_length` and equal input
+/// and output lengths of `poly_length * moduli.len()`. Moduli follow the stored
+/// block order. Per-component scalar/factor slices have one entry per modulus;
+/// per-point factors have the full storage length. Values must satisfy the
+/// selected reduction or factor operation's range contract. These conditions
+/// are established by the caller, not validated by the wrapper.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CrtPolynomial<S>(pub S)
 where
@@ -120,6 +128,7 @@ where
     }
 
     /// Returns `true` if `self` is equal to `0`.
+    #[must_use]
     #[inline]
     pub fn is_zero(&self) -> bool {
         self.0.iter().all(Zero::is_zero)

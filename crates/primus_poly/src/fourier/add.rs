@@ -17,6 +17,7 @@ where
     }
 
     /// Adds `rhs` pointwise and returns this Fourier polynomial.
+    #[must_use]
     #[inline]
     #[allow(clippy::should_implement_trait)]
     pub fn add<A>(mut self, rhs: &FourierPolynomial<A>) -> Self

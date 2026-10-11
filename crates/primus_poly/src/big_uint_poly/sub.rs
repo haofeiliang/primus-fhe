@@ -10,6 +10,7 @@ where
     T: FheUint,
 {
     /// Performs `self - rhs` according to `modulus`.
+    #[must_use]
     #[inline]
     pub fn sub<A, B>(mut self, rhs: &BigUintPolynomial<A>, modulus: &BigUint<B>) -> Self
     where

@@ -11,6 +11,7 @@ where
     T: FheUint,
 {
     /// Performs the unary `-` operation.
+    #[must_use]
     #[inline]
     pub fn neg<M>(mut self, poly_length: usize, moduli: &[M]) -> Self
     where

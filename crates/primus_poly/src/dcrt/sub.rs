@@ -11,6 +11,7 @@ where
     T: FheUint,
 {
     /// Performs `self - rhs` according to `moduli`.
+    #[must_use]
     #[inline]
     pub fn sub<M, A>(mut self, rhs: &DcrtPolynomial<A>, poly_length: usize, moduli: &[M]) -> Self
     where

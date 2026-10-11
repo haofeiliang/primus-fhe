@@ -235,7 +235,10 @@ fn dcrt_polynomial_product_preserves_bfv_scaling() {
     let mut decrypt_workspace = DcrtGlweDecryptWorkspace::new(params.size());
 
     let message = message_polynomial(plain_modulus, &mut rng);
-    let multiplier = Polynomial::random_uniform_binary(POLY_LENGTH, &mut rng);
+    let multiplier = Polynomial::new(primus_distr::sample_uniform_binary_values(
+        POLY_LENGTH,
+        &mut rng,
+    ));
     let lifted_multiplier = table.transform_inplace(decompose_message(&multiplier, &params));
     let mut input: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
     let mut output: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);

@@ -3,7 +3,7 @@ use primus_data::{Data, DataMut};
 use primus_factor::{Factor, FactorMul, FactorSliceOps};
 use primus_integer::FheUint;
 use primus_modulus::common::compact;
-use primus_reduce::{ReduceAdd, ReduceMul, ReduceMulAddSlice, ReduceMulSlice, ReduceSub};
+use primus_reduce::{ReduceMulAddSlice, ReduceMulSlice};
 
 #[cfg(feature = "simd")]
 use primus_factor::SimdFactorMul;
@@ -11,24 +11,6 @@ use primus_factor::SimdFactorMul;
 use primus_integer::SimdArray;
 
 use super::DcrtPolynomial;
-
-// Both results depend on the original lhs. Save it before updating the sum,
-// then overwrite output with the weighted difference; no scratch is required.
-#[inline]
-fn butterfly_mul_slice<T, M>(lhs: &mut [T], rhs: &[T], w: &[T], output: &mut [T], modulus: M)
-where
-    T: FheUint,
-    M: Copy + ReduceAdd<T, Output = T> + ReduceSub<T, Output = T> + ReduceMul<T, Output = T>,
-{
-    debug_assert_eq!(lhs.len(), rhs.len());
-    debug_assert_eq!(lhs.len(), w.len());
-    debug_assert_eq!(lhs.len(), output.len());
-    izip!(lhs, rhs, w, output).for_each(|(a, &s, &w, b)| {
-        let a_orig = *a;
-        *a = modulus.reduce_add(a_orig, s);
-        *b = modulus.reduce_mul(modulus.reduce_sub(a_orig, s), w);
-    });
-}
 
 // Writes (a+s, (a-s)*w) modulo the current CRT limb's modulus. Preserve the
 // original a for the difference; the two outputs are not independent updates.
@@ -96,6 +78,7 @@ where
     T: FheUint,
 {
     /// Performs `self * scalars` according to `moduli`.
+    #[must_use]
     #[inline]
     pub fn mul_scalar<M>(mut self, scalars: &[T], poly_length: usize, moduli: &[M]) -> Self
     where
@@ -140,6 +123,7 @@ where
     }
 
     /// Performs `self * factors` according to `moduli`.
+    #[must_use]
     #[inline]
     pub fn mul_factor<F>(mut self, factors: &[F], poly_length: usize, moduli: &[T]) -> Self
     where
@@ -183,6 +167,7 @@ where
     }
 
     /// Performs `self * rhs` according to `moduli`.
+    #[must_use]
     #[inline]
     pub fn mul<M, A>(mut self, rhs: &DcrtPolynomial<A>, poly_length: usize, moduli: &[M]) -> Self
     where
@@ -208,44 +193,6 @@ where
         .for_each(|(a, b, &modulus)| modulus.reduce_mul_slice_assign(a, b))
     }
 
-    /// Inverse butterfly: `(self, output) = (self + rhs, (self_orig - rhs) * w)`.
-    /// Both results use the original `self`; `output` is overwritten.
-    ///
-    /// # Correctness
-    ///
-    /// All four polynomials have the same modulus-major layout and length
-    /// `poly_length * moduli.len()`. Each block uses its corresponding modulus;
-    /// values must satisfy its addition, subtraction and multiplication ranges.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `poly_length` is zero.
-    #[inline]
-    pub fn butterfly_mul_to<M, A, B, C>(
-        &mut self,
-        rhs: &DcrtPolynomial<A>,
-        w: &DcrtPolynomial<B>,
-        output: &mut DcrtPolynomial<C>,
-        poly_length: usize,
-        moduli: &[M],
-    ) where
-        M: Copy + ReduceAdd<T, Output = T> + ReduceSub<T, Output = T> + ReduceMul<T, Output = T>,
-        A: Data<Elem = T>,
-        B: Data<Elem = T>,
-        C: DataMut<Elem = T>,
-    {
-        izip!(
-            self.iter_each_modulus_mut(poly_length),
-            rhs.iter_each_modulus(poly_length),
-            w.iter_each_modulus(poly_length),
-            output.iter_each_modulus_mut(poly_length),
-            moduli
-        )
-        .for_each(|(lhs, rhs, w, output, &modulus)| {
-            butterfly_mul_slice(lhs, rhs, w, output, modulus);
-        });
-    }
-
     /// Inverse butterfly with a precomputed-factor polynomial.
     ///
     /// `(self, result) = (self + rhs, (self_orig - rhs) * w)`.
@@ -253,7 +200,17 @@ where
     /// `self` and `rhs` are expected in `[0, q)`. Both outputs are written
     /// back in `[0, q)`. `w` is a modulus-major factor polynomial with one
     /// factor per stored point, so its length equals the backing length of each
-    /// DCRT polynomial.
+    /// DCRT polynomial. `output` is overwritten; no scratch is needed.
+    ///
+    /// # Correctness
+    ///
+    /// All buffers contain exactly `poly_length * moduli.len()` points, with
+    /// nonzero `poly_length` and matching modulus order. Each factor in `w`
+    /// must be prepared for its block's modulus and satisfy [`Factor`]'s contract.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `poly_length` is zero.
     #[inline]
     pub fn butterfly_mul_factor_to<F, A, B>(
         &mut self,
