@@ -224,7 +224,7 @@ where
         let layout = lookup_table.layout;
         let n = layout.polynomial_length;
         let lengths = lookup_table
-            .fourier_buffer_lengths(one_hot.parameters().output_basis().decompose_length())?;
+            .fourier_buffer_lengths(one_hot.parameters().output_basis().level_count())?;
         let lwe_return = LweReturnEvaluator::new(
             return_key,
             context.parameters().external_lwe().cipher_modulus(),

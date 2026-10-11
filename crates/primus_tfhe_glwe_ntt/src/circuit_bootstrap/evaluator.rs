@@ -243,7 +243,7 @@ where
 
         circuit_key.trace_key().project_prefix_coefficients_to(
             accumulator,
-            parameters.output_basis().decompose_length().get(),
+            parameters.output_basis().level_count().get(),
             self.traced.as_mut(),
             context
                 .parameters()

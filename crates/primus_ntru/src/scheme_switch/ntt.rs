@@ -72,7 +72,7 @@ impl<T: FheUint> NttNtruSchemeSwitchKey<T> {
             "scheme-switch output basis modulus mismatch"
         );
         let output_len = n
-            .checked_mul(output_basis.decompose_length().get())
+            .checked_mul(output_basis.level_count().get())
             .expect("scheme-switch output length overflow");
         let mut encoded = Zeroizing::new(vec![T::ZERO; n]);
         key_parameters

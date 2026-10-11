@@ -29,7 +29,7 @@ where
     ///
     /// Both controls, input, output, basis, modulus and table must satisfy
     /// [`Self::external_product_to`] with `workspace.poly_length()`; each control
-    /// has `workspace.decompose_length().get()` levels matching `basis`.
+    /// has `workspace.level_count().get()` levels matching `basis`.
     /// Control bits must be mutually exclusive (unchecked), under the input's
     /// NTRU key. Independent control encryptions are required for the usual
     /// noise estimate.
@@ -67,10 +67,7 @@ where
         let poly_length = workspace.poly_length().get();
         let control_length = workspace.combined_control.len();
         debug_assert!(exponent < 2 * poly_length);
-        debug_assert_eq!(
-            basis.decompose_length().get(),
-            workspace.decompose_length().get()
-        );
+        debug_assert_eq!(basis.level_count().get(), workspace.level_count().get());
         debug_assert_eq!(self.as_ref().len(), control_length);
         debug_assert_eq!(negative.as_ref().len(), control_length);
         debug_assert_eq!(input.as_ref().len(), poly_length);

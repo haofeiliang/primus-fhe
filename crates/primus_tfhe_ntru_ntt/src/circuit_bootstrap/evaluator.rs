@@ -170,7 +170,7 @@ where
             .trace_key()
             .project_prefix_coefficients_with_scratch_to(
                 &resources.blind_rotation.current,
-                parameters.output_basis().decompose_length().get(),
+                parameters.output_basis().level_count().get(),
                 self.projected.as_mut(),
                 tfhe.accumulator_ntru().cipher_modulus(),
                 resources.context.table(),

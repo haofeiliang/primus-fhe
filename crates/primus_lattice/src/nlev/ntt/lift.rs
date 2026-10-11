@@ -29,7 +29,7 @@ where
     /// # Correctness
     /// Inherits [`Self::external_product_to`]'s representation, modulus, table,
     /// basis, input and output contracts. All controls use that same key and
-    /// basis, with `workspace.decompose_length().get()` levels. Bits are mutually
+    /// basis, with `workspace.level_count().get()` levels. Bits are mutually
     /// exclusive; omit `negative` for a binary secret. `exponent` is in `0..2N`,
     /// already quantized; its inverse is derived modulo `2N`.
     /// If decomposition reconstructs `input - epsilon`, the ideal phase is
@@ -65,10 +65,7 @@ where
     {
         let poly_length = workspace.poly_length().get();
         debug_assert!(exponent < 2 * poly_length);
-        debug_assert_eq!(
-            basis.decompose_length().get(),
-            workspace.decompose_length().get()
-        );
+        debug_assert_eq!(basis.level_count().get(), workspace.level_count().get());
         debug_assert_eq!(positive.as_ref().len(), self.as_ref().len());
         if exponent == 0 {
             self.external_product_to(

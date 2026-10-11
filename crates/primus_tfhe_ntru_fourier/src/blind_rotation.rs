@@ -38,7 +38,7 @@ impl<'a, T: TorusFftValue> BlindRotationResources<'a, T> {
                 BootstrappingControls::Classic(controls) => {
                     let scratch = primus_ntru::FourierNtruCmuxWorkspace::new(
                         poly_length,
-                        parameters.blind_rotation().decompose_length(),
+                        parameters.blind_rotation().level_count(),
                     );
                     if controls.is_binary() {
                         RotationState::Binary { controls, scratch }

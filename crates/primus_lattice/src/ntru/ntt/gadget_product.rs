@@ -18,7 +18,7 @@ use crate::workspace::NttNtruExternalProductWorkspaceRefMut;
 /// # Correctness
 ///
 /// Input contains `N = workspace.poly_length()` canonical coefficients. The
-/// gadget has `basis.decompose_length().get()` complete levels in decomposition
+/// gadget has `basis.level_count().get()` complete levels in decomposition
 /// order, each of length `N` in the NTT table's evaluation order.
 /// Gadget values are canonical. Basis, table, and arithmetic modulus agree,
 /// and the table polynomial length equals `N`. The selected accumulator has
@@ -42,7 +42,7 @@ pub(crate) fn accumulate_ntt_gadget_product<T, M, Table>(
     debug_assert_eq!(ntt.modulus(), modulus.value());
     debug_assert_eq!(basis.modulus(), Some(modulus.value()));
     debug_assert_eq!(input.len(), poly_length);
-    debug_assert_eq!(gadget.len(), basis.decompose_length().get() * poly_length);
+    debug_assert_eq!(gadget.len(), basis.level_count().get() * poly_length);
 
     // Adjust this input and initialize its carries once. The transformed sum
     // remains live while decomposition scratch is reused across inputs/levels.

@@ -83,7 +83,7 @@ impl<T: FheUint> OneHotLookupTable<T> {
         }
         let n = tfhe.poly_length().get();
         let selector_count = t / 2;
-        let level_count = cbs.output_basis().decompose_length();
+        let level_count = cbs.output_basis().level_count();
         let w = level_count.get().next_power_of_two();
         if selector_count > n / (2 * w) {
             return Err(OneHotBootstrapError::InsufficientCapacity);

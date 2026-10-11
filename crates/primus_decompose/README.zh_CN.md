@@ -22,7 +22,7 @@
 
 ## 数学契约
 
-设 `B = 2^log_basis`、`L = decompose_length()`、`d = drop_bits()`，分解的 signed digit 及其权重满足：
+设 `B = 2^log_basis`、`L = level_count()`、`d = drop_bits()`，分解的 signed digit 及其权重满足：
 
 ```text
 -B/2 <= digit_i < B/2
@@ -39,14 +39,14 @@ reconstructed = sum(digit_i * weight_i) mod modulus
 | 操作 | 数学 digit `z` 的编码 |
 | --- | --- |
 | Primitive `decompose*` | 单个模 `q` 的 canonical residue；负 `z` 编码为 `q + z`，native 模数下使用相应 wrapping 表示 |
-| BigUint `decompose*` | 模 `Q` 的全宽 canonical residue；负 `z` 编码为 `Q + z` |
-| BigUint `unsigned_decompose*` | 单 limb 的 `[0, B)` 值，编码 `z mod B`；`u >= B/2` 应解读为 `u - B` |
+| BigUint `decompose_slice_to` | 模 `Q` 的全宽 canonical residue；负 `z` 编码为 `Q + z` |
+| BigUint `decompose_radix*` | 单 limb 的 `[0, B)` 值，编码 `z mod B`；`u >= B/2` 应解读为 `u - B` |
 
-虽然名称包含 `unsigned`，`unsigned_decompose*` 表示的仍然是 **signed digit**。 例如 `B = 256` 时，输出 `255` 表示 `-1`，不是正数 `255`。
+`decompose_radix*` 表示 **signed digit** 模 radix 的编码。例如 `B = 256` 时，输出 `255` 表示 `-1`，不是正数 `255`。提升到其他模数前，应先按中心值解释该 digit。
 
 ## 构造与保留层数
 
-`DecompositionBaseLog` 检查 `log_basis >= 2`；`DecompositionLevelCount` 检查 `L >= 1`。通过 `new`、`try_new` 或 `TryFrom` 构造，用 `.get()` 读取整数。它们不添加固定上限。Basis 构造器及 `log_basis()` / `decompose_length()` 访问器使用这两个类型。
+`DecompositionBaseLog` 检查 `log_basis >= 2`；`DecompositionLevelCount` 检查 `L >= 1`。通过 `new`、`try_new` 或 `TryFrom` 构造，用 `.get()` 读取整数。它们不添加固定上限。Basis 构造器及 `log_basis()` / `level_count()` 访问器使用这两个类型。
 
 两种 basis 还要求 `log_basis < T::BITS`、模数不小于 `B`，并且保留层数适合分解位宽。多 limb basis 的层数可以大于一个 limb 的位数。对这些配对错误，basis 的 `new` 会 panic，`try_new` 返回 `ApproxSignedBasisError`。
 
@@ -102,7 +102,7 @@ Primitive 二次幂模数的输入不需要 adjusted-value 缓冲区：用 `init
 [value_0_low, ..., value_0_high, value_1_low, ..., value_1_high, ...]
 ```
 
-Carry 缓冲区有 `N` 个布尔值。全宽 digit 输出有 `N * W` 个 limb；紧凑的 `unsigned_decompose_slice_to` 输出只有 `N` 个 limb。即使 `Q` 是二次幂，BigUint 版本也必须执行输入初始化。
+Carry 缓冲区有 `N` 个布尔值。全宽 digit 输出有 `N * W` 个 limb；紧凑的 `decompose_radix_slice_to` 输出只有 `N` 个 limb。即使 `Q` 是二次幂，BigUint 版本也必须执行输入初始化。
 
 使用 `init_value_carry_slice_to` 和 `decomposer_iter()`，遵循相同的升序逐层 carry 协议。单值也使用相同的批量接口，提供一个全宽 value 缓冲区和一个元素的 carry slice。精确缓冲区契约见 [BigUint basis API](src/big_integer/basis.rs) 和 [digit 输出 API](src/big_integer/common.rs)。
 

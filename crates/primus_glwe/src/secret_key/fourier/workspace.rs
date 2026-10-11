@@ -105,12 +105,12 @@ impl<T: FheUint> FourierGlweGadgetEncryptWorkspace<T> {
     pub fn new(size: GadgetSize) -> Self {
         let glwe_size = size.glwe_size();
         let poly_length = glwe_size.poly_length().get();
-        let decompose_length = size.decompose_length().get();
+        let level_count = size.level_count().get();
         Self {
             encoded: PolynomialOwned::zero(poly_length),
             level_transforms: vec![
                 Complex64::default();
-                decompose_length * glwe_size.fourier_poly_len()
+                level_count * glwe_size.fourier_poly_len()
             ],
             glwe: FourierGlweEncryptWorkspace::new(glwe_size.poly_length()),
         }
@@ -123,7 +123,7 @@ impl<T: FheUint> FourierGlweGadgetEncryptWorkspace<T> {
 
         self.encoded.0.resize(poly_length, T::ZERO);
         self.level_transforms.resize(
-            size.decompose_length().get() * glwe_size.fourier_poly_len(),
+            size.level_count().get() * glwe_size.fourier_poly_len(),
             Complex64::default(),
         );
         self.glwe.resize(glwe_size.poly_length());
@@ -143,7 +143,7 @@ impl<T: FheUint> FourierGlweGadgetEncryptWorkspace<T> {
         self.assert_glev_compatible(size);
         assert_eq!(
             self.level_transforms.len(),
-            size.decompose_length().get() * size.glwe_size().fourier_poly_len(),
+            size.level_count().get() * size.glwe_size().fourier_poly_len(),
             "gadget level workspace length mismatch"
         );
     }

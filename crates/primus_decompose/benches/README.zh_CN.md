@@ -21,4 +21,6 @@ cargo bench -p primus_decompose --bench decompose -- --test
 cargo +nightly bench -p primus_decompose --bench decompose --features simd
 ```
 
-参数与缓冲区准备以基准源码为准。在线案例复用存储，`levels` 在计时外恢复初始 carry。这些测量只覆盖分解，不代表完整外积或 PBS；分阶段耗时相加不能代替实测 `full`。
+参数与缓冲区准备以基准源码为准。BigUint 在线案例测量 DCRT 消费者使用的紧凑 radix 编码 digit，覆盖固定 stride 1/2/4 和 runtime stride 3。在线案例复用存储，`levels` 在计时外恢复初始 carry。
+
+`pbs` 分组采用固定的历史分解配置，独立于当前 TFHE 预设。这些测量只覆盖分解，不代表完整外积或 PBS；分阶段耗时相加不能代替实测 `full`。

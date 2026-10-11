@@ -40,7 +40,7 @@ impl<'a, T: FheUint> BlindRotationResources<'a, T> {
                 BootstrappingControls::Classic(controls) => {
                     let scratch = NttNtruCmuxWorkspace::new(
                         poly_length,
-                        parameters.blind_rotation().decompose_length(),
+                        parameters.blind_rotation().level_count(),
                     );
                     if controls.is_binary() {
                         RotationState::Binary { controls, scratch }

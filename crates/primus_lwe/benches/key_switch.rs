@@ -32,7 +32,7 @@ fn bench_domain<M: RingContext<u32>>(c: &mut Criterion, name: &str, modulus: M) 
             DecompositionBaseLog::new(log_basis),
             None,
         );
-        let levels = basis.decompose_length().get();
+        let levels = basis.level_count().get();
         let key = LweKeySwitchingKey::generate(
             LweSecretKeyRef::Encoded(&[1; 1024]),
             &secret,

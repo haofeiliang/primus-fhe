@@ -27,7 +27,7 @@ pub struct BigUintApproxSignedBasis<T: FheUint> {
     modulus: Vec<T>,
     basis: T,
     basis_minus_one: T,
-    decompose_length: DecompositionLevelCount,
+    level_count: DecompositionLevelCount,
     log_basis: DecompositionBaseLog,
     drop_bits: u32,
     value_carry_init_mode: BigUintValueCarryInitMode<T>,
@@ -50,6 +50,7 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
     /// # Panics
     ///
     /// Panics when [`try_new`](Self::try_new) returns an error.
+    #[must_use]
     #[inline]
     pub fn new(
         modulus: BigUint<&[T]>,
@@ -106,14 +107,14 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
         let log_basis = log_basis.get();
         let basis = T::ONE << log_basis;
         let basis_minus_one = basis - T::ONE;
-        let (decompose_length, drop_bits) =
+        let (level_count, drop_bits) =
             level_count_and_drop_bits(modulus_bits_count, checked_log_basis, level_count)?;
-        let checked_decompose_length = decompose_length;
-        let decompose_length = decompose_length.get();
-        let scalar_storage_len = big_uint_value_len.checked_mul(decompose_length).ok_or(
+        let checked_level_count = level_count;
+        let level_count = level_count.get();
+        let scalar_storage_len = big_uint_value_len.checked_mul(level_count).ok_or(
             ApproxSignedBasisError::ScalarStorageLengthOverflow {
                 limb_count: big_uint_value_len,
-                level_count: decompose_length,
+                level_count,
             },
         )?;
 
@@ -128,7 +129,7 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
 
         let carry_mask = (T::ONE << log_basis) | (T::ONE << (log_basis - 1));
 
-        let threshold = wrap_threshold(big_uint_value_len, log_basis, decompose_length, drop_bits);
+        let threshold = wrap_threshold(big_uint_value_len, log_basis, level_count, drop_bits);
 
         let mut modulus_sub_basis = BigUint(modulus.0.to_vec());
         let borrow = modulus_sub_basis.sub_value_assign(basis);
@@ -143,7 +144,7 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
         debug_assert!(!carry);
 
         let mut scalars = vec![T::ZERO; scalar_storage_len];
-        let mut value_masks = Vec::with_capacity(decompose_length);
+        let mut value_masks = Vec::with_capacity(level_count);
         // Each reconstruction weight is a single bit, including when the
         // lowest retained level starts beyond the first limb. With m the
         // checked modulus width and d=m-L*log_basis, every offset satisfies
@@ -172,7 +173,7 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
             modulus: modulus.0.to_vec(),
             basis,
             basis_minus_one,
-            decompose_length: checked_decompose_length,
+            level_count: checked_level_count,
             log_basis: checked_log_basis,
             drop_bits,
             value_carry_init_mode,
@@ -184,28 +185,31 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
     }
 
     /// Returns a reference to the modulus of this [`BigUintApproxSignedBasis<T>`].
+    #[must_use]
     #[inline]
     pub fn modulus(&self) -> &[T] {
         &self.modulus
     }
 
     /// Returns the number of limbs in each fixed-width [`BigUint`] value.
+    #[must_use]
     #[inline]
     pub fn big_uint_value_len(&self) -> usize {
         self.modulus.len()
     }
 
     /// Returns the basis of this [`BigUintApproxSignedBasis<T>`].
+    #[must_use]
     #[inline]
     pub fn basis_value(&self) -> T {
         self.basis
     }
 
-    /// Returns the decompose length of this [`BigUintApproxSignedBasis<T>`].
+    /// Returns the retained level count of this [`BigUintApproxSignedBasis<T>`].
     #[must_use]
     #[inline]
-    pub fn decompose_length(&self) -> DecompositionLevelCount {
-        self.decompose_length
+    pub fn level_count(&self) -> DecompositionLevelCount {
+        self.level_count
     }
 
     /// Returns the log basis of this [`BigUintApproxSignedBasis<T>`].
@@ -216,6 +220,7 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
     }
 
     /// Returns the drop bits of this [`BigUintApproxSignedBasis<T>`].
+    #[must_use]
     #[inline]
     pub fn drop_bits(&self) -> u32 {
         self.drop_bits
@@ -225,6 +230,7 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
     ///
     /// This is `0` when no bits are dropped, otherwise `2^(drop_bits - 1)`.
     /// Error is measured as circular distance modulo `Q`.
+    #[must_use]
     #[inline]
     pub fn approximate_error_bound(&self) -> BigUint<Vec<T>> {
         let mut bound = BigUint(vec![T::ZERO; self.big_uint_value_len()]);
@@ -242,6 +248,7 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
     /// operators in order to that same adjusted input, forwarding the carry
     /// from each level to the next. Reversing or skipping levels does not
     /// preserve this carry protocol.
+    #[must_use]
     #[inline]
     pub fn decomposer_iter<'a>(&'a self) -> BigUintSignedDecomposerIter<'a, T> {
         BigUintSignedDecomposerIter {

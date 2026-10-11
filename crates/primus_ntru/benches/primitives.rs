@@ -125,7 +125,7 @@ fn ntt(c: &mut Criterion, n: usize) {
         let mut ss_output = NttNgswCiphertext::<Vec<u64>>::zero(output_parameters.nlev_len());
         let mut group = c.benchmark_group(format!(
             "ntru/ntt/n{n}/logb{log_basis}/l{}",
-            parameters.decompose_length().get()
+            parameters.level_count().get()
         ));
         group.throughput(Throughput::Elements(n as u64));
         group.bench_function("key_switch", |b| {
@@ -334,7 +334,7 @@ fn fourier<Table: FftTable>(c: &mut Criterion, n: usize, backend: &str) {
             FourierNgswCiphertext::<Vec<Complex64>>::zero(output_parameters.fourier_nlev_len());
         let mut group = c.benchmark_group(format!(
             "ntru/fourier/{backend}/n{n}/logb{log_basis}/l{}",
-            parameters.decompose_length().get()
+            parameters.level_count().get()
         ));
         group.throughput(Throughput::Elements(n as u64));
         group.bench_function("key_switch", |b| {

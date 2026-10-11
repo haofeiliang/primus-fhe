@@ -19,7 +19,7 @@ const N: usize = 32;
 // With f=1, a noiseless encryption of control bit one is just the gadget weights.
 // A valid first pair then leaves a nonzero partial sum before a later shape error.
 fn control_one(basis: &ApproxSignedBasis<u32>) -> Ngsw<Vec<u32>> {
-    let mut control = Ngsw::zero(basis.decompose_length().get() * N);
+    let mut control = Ngsw::zero(basis.level_count().get() * N);
     for (scalar, mut row) in basis.scalar_iter().zip(control.iter_ntru_mut(N)) {
         row.as_mut()[0] = scalar;
     }
@@ -147,7 +147,7 @@ fn fourier<Table: FftTable>() {
     let basis = ApproxSignedBasis::new(None, DecompositionBaseLog::new(8), None);
     let table = Table::new(PolyLength::new(N));
     let mut fft = FftEngine::new(&table);
-    let mut control = FourierNgswOwned::zero(basis.decompose_length().get() * N / 2);
+    let mut control = FourierNgswOwned::zero(basis.level_count().get() * N / 2);
     control_one(&basis).write_fourier_form(&mut control, &mut fft);
     let control_len = control.as_ref().len();
     let mut storage = control.as_ref().to_vec();

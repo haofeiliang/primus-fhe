@@ -24,7 +24,7 @@ where
     ///
     /// # Correctness
     ///
-    /// Let `N = workspace.poly_length().get()` and `L = basis.decompose_length().get()`.
+    /// Let `N = workspace.poly_length().get()` and `L = basis.level_count().get()`.
     /// The polynomial input and output each contain exactly `N` coefficients.
     /// `self` contains exactly `L * N` evaluations, grouped
     /// by level in `basis.decomposer_iter()` order. The basis must be the

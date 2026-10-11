@@ -28,7 +28,7 @@ pub struct ApproxSignedBasis<T: FheUint> {
     basis: T,
     basis_minus_one: T,
     modulus_minus_basis: T,
-    decompose_length: DecompositionLevelCount,
+    level_count: DecompositionLevelCount,
     log_basis: DecompositionBaseLog,
     drop_bits: u32,
     carry_mask: T,
@@ -44,7 +44,7 @@ impl<T: FheUint> PartialEq for ApproxSignedBasis<T> {
     fn eq(&self, other: &Self) -> bool {
         self.modulus == other.modulus
             && self.basis == other.basis
-            && self.decompose_length == other.decompose_length
+            && self.level_count == other.level_count
     }
 }
 
@@ -66,6 +66,7 @@ impl<T: FheUint> ApproxSignedBasis<T> {
     /// Panics if `log_basis >= T::BITS`, if an explicit modulus
     /// is smaller than the basis, or if `level_count` exceeds
     /// the full level count.
+    #[must_use]
     #[inline]
     pub fn new(
         modulus: Option<T>,
@@ -111,10 +112,10 @@ impl<T: FheUint> ApproxSignedBasis<T> {
                 (power_of_two, bits, q - basis)
             }
         };
-        let (decompose_length, drop_bits) =
+        let (level_count, drop_bits) =
             level_count_and_drop_bits(value_bits, checked_log_basis, level_count)?;
-        let checked_decompose_length = decompose_length;
-        let decompose_length = decompose_length.get();
+        let checked_level_count = level_count;
+        let level_count = level_count.get();
         let init_carry_mask = drop_bits.checked_sub(1).map(|bit| T::ONE << bit);
 
         // Power-of-two inputs already have the right bit representation. Other
@@ -126,7 +127,7 @@ impl<T: FheUint> ApproxSignedBasis<T> {
             }
         } else {
             let q = modulus.unwrap();
-            let threshold = wrap_threshold(log_basis, decompose_length, drop_bits);
+            let threshold = wrap_threshold(log_basis, level_count, drop_bits);
             // Compute 2^value_bits - q without representing 2^T::BITS.
             let add = (T::MAX >> (T::BITS - value_bits)) - (q - T::ONE);
             match init_carry_mask {
@@ -140,10 +141,10 @@ impl<T: FheUint> ApproxSignedBasis<T> {
         };
 
         // Weights and extraction windows refer to the same ascending levels.
-        let scalars = (0..decompose_length)
+        let scalars = (0..level_count)
             .map(|level| T::ONE << (drop_bits + level as u32 * log_basis))
             .collect();
-        let value_masks = (0..decompose_length)
+        let value_masks = (0..level_count)
             .map(|level| ValueMask::new(basis_minus_one, drop_bits + level as u32 * log_basis))
             .collect();
         let carry_mask = (T::ONE << log_basis) | (T::ONE << (log_basis - 1));
@@ -155,7 +156,7 @@ impl<T: FheUint> ApproxSignedBasis<T> {
             basis_minus_one,
             modulus_minus_basis,
             carry_mask,
-            decompose_length: checked_decompose_length,
+            level_count: checked_level_count,
             log_basis: checked_log_basis,
             drop_bits,
             value_carry_init_mode,
@@ -165,25 +166,28 @@ impl<T: FheUint> ApproxSignedBasis<T> {
     }
 
     /// Returns the explicit modulus, or `None` for the implicit native modulus.
+    #[must_use]
     #[inline]
     pub fn modulus(&self) -> Option<T> {
         self.modulus
     }
 
     /// Checks whether the modulus of this [`ApproxSignedBasis<T>`] is power of 2.
+    #[must_use]
     #[inline]
     pub fn modulus_is_power_of_2(&self) -> bool {
         self.modulus_is_power_of_2
     }
 
-    /// Returns the decompose length of this [`ApproxSignedBasis<T>`].
+    /// Returns the retained level count of this [`ApproxSignedBasis<T>`].
     #[must_use]
     #[inline]
-    pub fn decompose_length(&self) -> DecompositionLevelCount {
-        self.decompose_length
+    pub fn level_count(&self) -> DecompositionLevelCount {
+        self.level_count
     }
 
     /// Returns the basis value of this [`ApproxSignedBasis<T>`].
+    #[must_use]
     #[inline]
     pub fn basis_value(&self) -> T {
         self.basis
@@ -201,6 +205,7 @@ impl<T: FheUint> ApproxSignedBasis<T> {
     /// This means some bits of the value will be dropped according to
     /// approximate signed decomposition. The discarded part is rounded to
     /// the nearest retained value, with exact half-way cases rounded up.
+    #[must_use]
     #[inline]
     pub fn drop_bits(&self) -> u32 {
         self.drop_bits
@@ -210,6 +215,7 @@ impl<T: FheUint> ApproxSignedBasis<T> {
     ///
     /// This is `0` when no bits are dropped, otherwise `2^(drop_bits - 1)`.
     /// Error is measured as circular distance modulo the decomposition modulus.
+    #[must_use]
     #[inline]
     pub fn approximate_error_bound(&self) -> T {
         if self.drop_bits == 0 {
@@ -226,6 +232,7 @@ impl<T: FheUint> ApproxSignedBasis<T> {
     /// operators in order to that same adjusted input, forwarding the carry
     /// from each level to the next. Reversing or skipping levels does not
     /// preserve this carry protocol.
+    #[must_use]
     #[inline]
     pub fn decomposer_iter<'a>(&'a self) -> SignedDecomposerIter<'a, T> {
         SignedDecomposerIter {
@@ -248,6 +255,7 @@ impl<T: FheUint> ApproxSignedBasis<T> {
     /// With the implicit native modulus, every value of `T` is valid.
     /// The adjusted value is an internal bit representation, not necessarily
     /// reduced modulo `q`; pass it unchanged to every decomposition operator.
+    #[must_use]
     #[inline]
     pub fn init_value_carry(&self, value: T) -> (T, bool) {
         match self.value_carry_init_mode {

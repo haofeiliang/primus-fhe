@@ -39,7 +39,7 @@ macro_rules! impl_gadget_diagonal_single_modulus {
             {
                 let glwe_size = size.glwe_size();
                 debug_assert!(
-                    level < size.decompose_length().get(),
+                    level < size.level_count().get(),
                     "gadget level is out of range"
                 );
                 for diagonal in crate::gadget::diagonal_level_mut(
@@ -100,7 +100,7 @@ macro_rules! impl_gadget_diagonal_multiple_modulus {
                 let glwe_size = size.rns_glwe_size();
                 let poly_length = glwe_size.poly_length().get();
                 debug_assert!(
-                    level < size.decompose_length().get(),
+                    level < size.level_count().get(),
                     "gadget level is out of range"
                 );
                 for diagonal in crate::gadget::diagonal_level_mut(

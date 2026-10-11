@@ -21,4 +21,6 @@ cargo bench -p primus_decompose --bench decompose -- --test
 cargo +nightly bench -p primus_decompose --bench decompose --features simd
 ```
 
-Parameters and buffer setup are in the bench source. Online cases reuse storage; the `levels` cases restore initial carries outside timing. These measurements cover decomposition, not an entire external product or PBS; adding separately timed stages does not replace measuring `full`.
+Parameters and buffer setup are in the bench source. BigUint online cases measure compact radix-encoded digits used by DCRT consumers, with fixed strides 1/2/4 and runtime stride 3. Online cases reuse storage; the `levels` cases restore initial carries outside timing.
+
+The `pbs` group uses fixed historical decomposition profiles, independent of current TFHE presets. These measurements cover decomposition, not an entire external product or PBS; adding separately timed stages does not replace measuring `full`.

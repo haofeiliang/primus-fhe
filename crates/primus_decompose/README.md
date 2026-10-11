@@ -22,7 +22,7 @@ English | [简体中文](README.zh_CN.md)
 
 ## Mathematical contract
 
-For `B = 2^log_basis`, `L = decompose_length()` and `d = drop_bits()`, decomposition produces signed digits with weights:
+For `B = 2^log_basis`, `L = level_count()` and `d = drop_bits()`, decomposition produces signed digits with weights:
 
 ```text
 -B/2 <= digit_i < B/2
@@ -39,14 +39,14 @@ The output encoding depends on the operation:
 | Operation | Encoding of a mathematical digit `z` |
 | --- | --- |
 | Primitive `decompose*` | One canonical residue modulo `q`; negative `z` becomes `q + z`, or its native wrapping representation |
-| BigUint `decompose*` | A full-width canonical residue modulo `Q`; negative `z` becomes `Q + z` |
-| BigUint `unsigned_decompose*` | One limb in `[0, B)` encoding `z mod B`; decode `u >= B/2` as `u - B` |
+| BigUint `decompose_slice_to` | A full-width canonical residue modulo `Q`; negative `z` becomes `Q + z` |
+| BigUint `decompose_radix*` | One limb in `[0, B)` encoding `z mod B`; decode `u >= B/2` as `u - B` |
 
-Despite its name, `unsigned_decompose*` still represents a **signed** digit. For example, with `B = 256`, output `255` means `-1`, not positive `255`.
+`decompose_radix*` represents a **signed** digit modulo the radix. For example, with `B = 256`, output `255` means `-1`, not positive `255`. Interpret it as a centered digit before lifting to another modulus.
 
 ## Construction and retained levels
 
-`DecompositionBaseLog` checks `log_basis >= 2`; `DecompositionLevelCount` checks `L >= 1`. Construct them with `new`, `try_new` or `TryFrom`, and read the integer with `.get()`. They add no fixed upper bounds. Basis constructors and their `log_basis()` / `decompose_length()` accessors use these types.
+`DecompositionBaseLog` checks `log_basis >= 2`; `DecompositionLevelCount` checks `L >= 1`. Construct them with `new`, `try_new` or `TryFrom`, and read the integer with `.get()`. They add no fixed upper bounds. Basis constructors and their `log_basis()` / `level_count()` accessors use these types.
 
 Both bases additionally require `log_basis < T::BITS`, a modulus at least `B`, and a retained count that fits the decomposition width. A multi-limb basis can have more levels than one limb has bits. Basis `new` panics on these contextual errors; `try_new` returns `ApproxSignedBasisError`.
 
@@ -102,7 +102,7 @@ For `N` values and `W = big_uint_value_len()` limbs per value, full-width buffer
 [value_0_low, ..., value_0_high, value_1_low, ..., value_1_high, ...]
 ```
 
-Carry buffers contain `N` booleans. Full-width digit outputs contain `N * W` limbs; compact `unsigned_decompose_slice_to` outputs contain only `N` limbs. BigUint initialization is required even when `Q` is a power of two.
+Carry buffers contain `N` booleans. Full-width digit outputs contain `N * W` limbs; compact `decompose_radix_slice_to` outputs contain only `N` limbs. BigUint initialization is required even when `Q` is a power of two.
 
 Use `init_value_carry_slice_to` and `decomposer_iter()` with the same ascending-level carry protocol. For a single value, use one full-width value buffer and a one-element carry slice with the same batch APIs. Exact buffer contracts are in the [BigUint basis API](src/big_integer/basis.rs) and [digit-output API](src/big_integer/common.rs).
 

@@ -100,7 +100,7 @@ where
         basis: ApproxSignedBasis<T>,
     ) -> Result<Self, GlevParameterError> {
         Ok(Self {
-            size: GadgetSize::try_new(glwe_size, basis.decompose_length())?,
+            size: GadgetSize::try_new(glwe_size, basis.level_count())?,
             encryption_parameters,
             basis,
         })
@@ -258,11 +258,11 @@ where
         &self.basis
     }
 
-    /// Returns the decomposition length.
+    /// Returns the number of retained decomposition levels.
     #[must_use]
     #[inline]
-    pub fn decompose_length(&self) -> DecompositionLevelCount {
-        self.size.decompose_length()
+    pub fn level_count(&self) -> DecompositionLevelCount {
+        self.size.level_count()
     }
 
     /// Returns the number of values in one coefficient/NTT-domain GLWE ciphertext.

@@ -72,7 +72,7 @@ impl<T: FheUint> LweKeySwitchingKey<T> {
         let output_dimension = output_parameters.dimension();
         let output_lwe_len = output_dimension.ciphertext_len();
         let coefficient_len = output_lwe_len
-            .checked_mul(basis.decompose_length().get())
+            .checked_mul(basis.level_count().get())
             .expect("LWE key-switching coefficient block length overflow");
         let length = input_dimension
             .get()
@@ -214,7 +214,7 @@ impl<T: FheUint> LweKeySwitchingKey<T> {
         modulus: M,
     ) {
         let output_lwe_len = self.output_dimension.ciphertext_len();
-        let coefficient_len = output_lwe_len * self.basis.decompose_length().get();
+        let coefficient_len = output_lwe_len * self.basis.level_count().get();
         for (&coefficient, block) in input_mask
             .iter()
             .zip(self.data.chunks_exact(coefficient_len))

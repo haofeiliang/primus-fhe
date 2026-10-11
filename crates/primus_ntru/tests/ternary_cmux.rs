@@ -90,7 +90,7 @@ fn encrypted_ternary_step_matches_phase_oracle_and_two_binary_cmuxes() {
     let input_phase = phase(input.as_ref(), coeff.as_slice());
     let secret_norm: u64 = coeff.as_slice().iter().map(|v| v.unsigned_abs()).sum();
     let mut controls = vec![0; 2 * gadget.nlev_len()];
-    let mut fused = NttNtruCmuxWorkspace::new(PolyLength::new(N), gadget.decompose_length());
+    let mut fused = NttNtruCmuxWorkspace::new(PolyLength::new(N), gadget.level_count());
     let mut binary = NttNtruExternalProductWorkspace::new(PolyLength::new(N));
     let mut output = NtruCiphertext::new(vec![Q - 1; N]);
     let mut intermediate = NtruCiphertext::<Vec<u64>>::zero(N);
@@ -251,7 +251,7 @@ fn check_fourier_step<T: TorusFftValue, Table: FftTable>() {
     .unwrap();
     let mut controls = vec![Complex64::default(); 2 * gadget.fourier_nlev_len()];
     let mut encrypt_workspace = FourierNtruGadgetEncryptWorkspace::new(PolyLength::new(N));
-    let mut fused = FourierNtruCmuxWorkspace::new(PolyLength::new(N), gadget.decompose_length());
+    let mut fused = FourierNtruCmuxWorkspace::new(PolyLength::new(N), gadget.level_count());
     let mut binary = FourierNtruExternalProductWorkspace::new(PolyLength::new(N));
     let mut output = NtruCiphertext::new(vec![T::MAX; N]);
     let mut intermediate = NtruCiphertext::<Vec<T>>::zero(N);
@@ -308,8 +308,7 @@ fn check_fourier_step<T: TorusFftValue, Table: FftTable>() {
         let residual_bound = secret_norm * basis.approximate_error_bound();
         let noise_bound = T::try_from(N).unwrap()
             * (basis.basis_value() / T::TWO)
-            * (control_error_sum
-                + secret_norm * T::try_from(gadget.decompose_length().get()).unwrap());
+            * (control_error_sum + secret_norm * T::try_from(gadget.level_count().get()).unwrap());
         let fused_bound = residual_bound + noise_bound + secret_norm * floating_budget;
         let binary_bound = T::TWO * (residual_bound + secret_norm * floating_budget) + noise_bound;
         let (positive, negative) = controls.split_at(gadget.fourier_nlev_len());

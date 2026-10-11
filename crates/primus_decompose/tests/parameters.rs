@@ -21,6 +21,6 @@ fn units_validate_basic_ranges_without_imposing_a_word_width() {
         DecompositionBaseLog::new(2),
         Some(DecompositionLevelCount::new(48)),
     );
-    assert_eq!(basis.decompose_length().get(), 48);
+    assert_eq!(basis.level_count().get(), 48);
     assert_eq!(basis.drop_bits(), 1);
 }

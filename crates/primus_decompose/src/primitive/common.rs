@@ -48,6 +48,7 @@ pub(super) struct ValueMask<T: FheUint> {
 
 impl<T: FheUint> ValueMask<T> {
     /// Creates a mask starting at bit offset `drop_bits`.
+    #[must_use]
     #[inline]
     pub fn new(mask: T, drop_bits: u32) -> Self {
         Self {
@@ -57,6 +58,7 @@ impl<T: FheUint> ValueMask<T> {
     }
 
     /// Extracts the masked window from `value`.
+    #[must_use]
     #[inline]
     pub fn get_value(&self, value: T) -> T {
         (value >> self.shr_bits) & self.mask
@@ -153,6 +155,7 @@ impl<T: FheUint> OnceSignedDecomposer<T> {
     /// The signed digit lies in `[-B/2, B/2)`. Negative digits are represented
     /// by `q + digit`, using `q = 2^T::BITS` for the implicit native modulus.
     /// `value` and `carry` must follow this operator's initialization protocol.
+    #[must_use]
     #[inline]
     pub fn decompose(&self, value: T, carry: bool) -> (T, bool) {
         let mut temp = self.value_mask.get_value(value) + T::as_from(carry);

@@ -259,7 +259,7 @@ fn check_batch_sum<T: primus_integer::FheUint, M: RingContext<T>>(modulus: M) {
                 output[65] = input.b();
                 for (&coefficient, block) in input.a().iter().zip(
                     key.as_slice()
-                        .chunks_exact(66 * key.basis().decompose_length().get()),
+                        .chunks_exact(66 * key.basis().level_count().get()),
                 ) {
                     let (adjusted, mut carry) = key.basis().init_value_carry(coefficient);
                     for (decomposer, entry) in

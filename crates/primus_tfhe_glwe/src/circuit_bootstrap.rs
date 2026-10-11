@@ -101,9 +101,8 @@ impl<T: FheUint, M: RingContext<T>> CbsGadgetParameters<T, M> {
         trace: GlevParameters<T, M>,
         scheme_switch: GgswParameters<T, M>,
     ) -> Result<Self, CircuitBootstrapParameterError> {
-        let output_size =
-            GadgetSize::try_new(trace.glwe_size(), output_basis.decompose_length())
-                .map_err(|_| CircuitBootstrapParameterError::OutputDecompositionTooLarge)?;
+        let output_size = GadgetSize::try_new(trace.glwe_size(), output_basis.level_count())
+            .map_err(|_| CircuitBootstrapParameterError::OutputDecompositionTooLarge)?;
         Ok(Self {
             output_basis,
             output_size,
@@ -207,10 +206,7 @@ impl<T: FheUint, M: RingContext<T>> CbsGadgetParameters<T, M> {
     #[must_use]
     #[inline]
     pub fn lookup_table_padded_output_count(&self) -> usize {
-        self.output_basis
-            .decompose_length()
-            .get()
-            .next_power_of_two()
+        self.output_basis.level_count().get().next_power_of_two()
     }
 
     /// Checks the accumulator layout and ciphertext modulus independently of message encoding.

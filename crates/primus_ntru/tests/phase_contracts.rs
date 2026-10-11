@@ -147,7 +147,7 @@ fn project(input: Poly, retained: usize) -> Poly {
 fn digits(ring: Ring, input: Poly, basis: &ApproxSignedBasis<u32>) -> Vec<Poly> {
     let radix = i128::from(basis.basis_value());
     let delta = 1i128 << basis.drop_bits();
-    let levels = basis.decompose_length().get();
+    let levels = basis.level_count().get();
     let max_positive: i128 = (0..levels)
         .map(|i| (radix / 2 - 1) * radix.pow(i as u32) * delta)
         .sum();

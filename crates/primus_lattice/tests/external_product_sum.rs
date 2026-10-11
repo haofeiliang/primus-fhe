@@ -56,7 +56,7 @@ fn fixture<T: FheUint, M: RingContext<T>>(
     let gadgets = messages
         .iter()
         .map(|message| {
-            let mut gadget = Nlev::zero(basis.decompose_length().get() * N);
+            let mut gadget = Nlev::zero(basis.level_count().get() * N);
             for (scalar, mut row) in basis.scalar_iter().zip(gadget.iter_ntru_mut(N)) {
                 message.mul_scalar_to(scalar, &mut Polynomial::new(row.as_mut()), modulus);
             }
@@ -210,7 +210,7 @@ fn fourier<T: TorusFftValue, Table: FftTable>() {
     let gadgets: Vec<_> = gadgets
         .iter()
         .map(|g| {
-            let mut transformed = FourierNlevOwned::zero(basis.decompose_length().get() * N / 2);
+            let mut transformed = FourierNlevOwned::zero(basis.level_count().get() * N / 2);
             g.write_fourier_form(&mut transformed, &mut fft);
             transformed
         })

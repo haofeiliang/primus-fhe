@@ -106,7 +106,7 @@ impl<T: FheUint, M: RingContext<T>> CbsGadgetParameters<T, M> {
         }
         let poly_length = trace.poly_length();
         // N <= 2^17 and levels <= 32 keep their product within usize.
-        let output_nlev_len = poly_length.get() * output_basis.decompose_length().get();
+        let output_nlev_len = poly_length.get() * output_basis.level_count().get();
         Ok(Self {
             trace,
             scheme_switch,
@@ -204,10 +204,7 @@ impl<T: FheUint, M: RingContext<T>> CbsGadgetParameters<T, M> {
     /// Returns the LUT padded output count for the output gadget levels.
     #[must_use]
     pub fn lookup_table_padded_output_count(&self) -> usize {
-        self.output_basis
-            .decompose_length()
-            .get()
-            .next_power_of_two()
+        self.output_basis.level_count().get().next_power_of_two()
     }
 
     /// Checks the accumulator ring and modulus independently of message encoding.

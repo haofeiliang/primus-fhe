@@ -268,7 +268,7 @@ fn check_fourier_evaluation_key_generation_boundaries<Table: FftTable>() {
         0.7,
     )
     .unwrap();
-    let long_gadget = GadgetSize::new(long_size, params.basis().decompose_length());
+    let long_gadget = GadgetSize::new(long_size, params.basis().level_count());
     let secret = |size: GlweSize| GlweSecretKey::new(vec![1; size.mask_len()], size, distr);
     let small_secret = secret(small_size);
     let long_secret = secret(long_size);

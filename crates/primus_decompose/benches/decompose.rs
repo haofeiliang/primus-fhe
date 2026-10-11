@@ -4,7 +4,7 @@
 // BigUint setup measures integer decomposition precomputation only. RNS
 // reconstruction weights belong to primus_glwe_rns parameter construction.
 // The generic online cases include initialization and every retained level.
-// PBS cases use the real external-product shapes and separate initialization,
+// PBS cases use fixed external-product profiles and separate initialization,
 // all retained levels, and their combined cost. They do not measure a full PBS.
 
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
@@ -89,8 +89,9 @@ fn bench_primitive_online(c: &mut Criterion) {
 }
 
 fn bench_pbs_decomposition(c: &mut Criterion) {
-    // Keep these external-product parameters aligned with primus_tfhe/BENCHMARKS.md.
-    // N=1024 is Boolean; N=2048 is the 2 message + 2 carry bit workload.
+    // Fixed historical decomposition profiles, independent of the current
+    // TFHE presets. N=1024/2048 cover common external-product polynomial lengths;
+    // the labels identify the coefficient representation, not a current PBS config.
     for n in [1024, 2048] {
         pbs_decomposition(c, "glwe_ntt/u32", Some(132_120_577u32), 5, Some(5), n);
         pbs_decomposition(c, "glwe_ntt/u64", Some(MODULI[0]), 23, Some(1), n);
@@ -167,7 +168,7 @@ fn pbs_decomposition<T: FheUint>(
 
     let mut group = c.benchmark_group(format!(
         "decompose/pbs/{label}/logB={log_basis}/L={}/drop={}/N={n}",
-        basis.decompose_length().get(),
+        basis.level_count().get(),
         basis.drop_bits(),
     ));
     group.throughput(Throughput::Elements(n as u64));
@@ -238,7 +239,7 @@ fn primitive_online<T: FheUint>(
             "scalar",
             format!(
                 "{label}/logB={log_basis}/L={}/drop={}",
-                basis.decompose_length().get(),
+                basis.level_count().get(),
                 basis.drop_bits()
             ),
         ),
@@ -258,7 +259,7 @@ fn primitive_online<T: FheUint>(
     );
     let case = format!(
         "{label}/logB={log_basis}/L={}/drop={}/N={COEFFICIENT_COUNT}",
-        basis.decompose_length().get(),
+        basis.level_count().get(),
         basis.drop_bits(),
     );
     let values: Vec<T> = primitive_values(None, COEFFICIENT_COUNT)
@@ -348,7 +349,7 @@ fn bench_big_online(c: &mut Criterion) {
         );
         let case = format!(
             "{limb_count}_limbs/logB={log_basis}/L={}/drop={}/N={COEFFICIENT_COUNT}",
-            basis.decompose_length().get(),
+            basis.level_count().get(),
             basis.drop_bits()
         );
         let values = big_values(modulus.view(), COEFFICIENT_COUNT);
@@ -356,7 +357,7 @@ fn bench_big_online(c: &mut Criterion) {
         let mut digits = vec![0; COEFFICIENT_COUNT];
         let mut carries = vec![false; COEFFICIENT_COUNT];
         group.throughput(Throughput::Elements(COEFFICIENT_COUNT as u64));
-        group.bench_function(BenchmarkId::new("batch_unsigned_to", &case), |b| {
+        group.bench_function(BenchmarkId::new("batch_radix_to", &case), |b| {
             b.iter(|| {
                 basis.init_value_carry_slice_to(
                     black_box(&values),
@@ -364,7 +365,7 @@ fn bench_big_online(c: &mut Criterion) {
                     black_box(&mut carries),
                 );
                 for decomposer in basis.decomposer_iter() {
-                    decomposer.unsigned_decompose_slice_to(
+                    decomposer.decompose_radix_slice_to(
                         black_box(&adjusted),
                         black_box(&mut digits),
                         black_box(&mut carries),
@@ -373,29 +374,6 @@ fn bench_big_online(c: &mut Criterion) {
                 }
             });
         });
-
-        // One matched full-width case tracks the output-layout cost relative
-        // to the compact path used by DCRT key switching and external products.
-        if (limb_count, log_basis) == (2, 20) {
-            let mut decomposed = vec![0; values.len()];
-            group.bench_function(BenchmarkId::new("batch_to", &case), |b| {
-                b.iter(|| {
-                    basis.init_value_carry_slice_to(
-                        black_box(&values),
-                        black_box(&mut adjusted),
-                        black_box(&mut carries),
-                    );
-                    for decomposer in basis.decomposer_iter() {
-                        decomposer.decompose_slice_to(
-                            black_box(&adjusted),
-                            black_box(&mut decomposed),
-                            black_box(&mut carries),
-                        );
-                        black_box(&decomposed);
-                    }
-                });
-            });
-        }
     }
     group.finish();
 }

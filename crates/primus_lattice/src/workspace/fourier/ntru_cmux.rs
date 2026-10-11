@@ -13,25 +13,25 @@ use super::FourierNtruExternalProductWorkspace;
 /// its transform; decomposition overwrites both afterwards. The output NTRU
 /// supplies the coefficient difference buffer. This does not bind an FFT table.
 pub struct FourierNtruCmuxWorkspace<T: TorusFftValue> {
-    decompose_length: DecompositionLevelCount,
+    level_count: DecompositionLevelCount,
     pub(crate) combined_control: Box<[Complex64]>,
     pub(crate) external_product: FourierNtruExternalProductWorkspace<T>,
 }
 
 impl<T: TorusFftValue> FourierNtruCmuxWorkspace<T> {
-    /// Allocates all buffers for `decompose_length` Fourier gadget levels.
+    /// Allocates all buffers for `level_count` Fourier gadget levels.
     ///
     /// # Panics
-    /// Panics if `(N / 2) * decompose_length`
+    /// Panics if `(N / 2) * level_count`
     /// overflows `usize`.
     #[must_use]
-    pub fn new(poly_length: PolyLength, decompose_length: DecompositionLevelCount) -> Self {
+    pub fn new(poly_length: PolyLength, level_count: DecompositionLevelCount) -> Self {
         let control_length = poly_length
             .fourier_poly_len()
-            .checked_mul(decompose_length.get())
+            .checked_mul(level_count.get())
             .expect("Fourier gadget ciphertext length must fit in usize");
         Self {
-            decompose_length,
+            level_count,
             combined_control: vec![Complex64::default(); control_length].into_boxed_slice(),
             external_product: FourierNtruExternalProductWorkspace::new(poly_length),
         }
@@ -54,7 +54,7 @@ impl<T: TorusFftValue> FourierNtruCmuxWorkspace<T> {
 
     /// Returns the level count bound to the combined-control scratch.
     #[must_use]
-    pub fn decompose_length(&self) -> DecompositionLevelCount {
-        self.decompose_length
+    pub fn level_count(&self) -> DecompositionLevelCount {
+        self.level_count
     }
 }

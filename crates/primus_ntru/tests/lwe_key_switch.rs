@@ -88,7 +88,7 @@ impl<'a, T: FheUint> ReturnOracle<'a, T> {
     // Decode the stored key rows once, reusing them for every input and coefficient.
     fn new(key: &'a NtruLweKeySwitchingKey<T>, q: u128) -> Self {
         let basis = key.basis();
-        let levels = basis.decompose_length().get();
+        let levels = basis.level_count().get();
         let scalars: Vec<u128> = basis.scalar_iter().map(|v| v.as_into()).collect();
         let entries: Vec<Vec<u128>> = LweIter::new(key.as_slice(), S.len() + 1)
             .map(|row| row.as_ref().iter().map(|&v| v.as_into()).collect())
@@ -123,7 +123,7 @@ impl<'a, T: FheUint> ReturnOracle<'a, T> {
         output: &LweCiphertext<T>,
     ) {
         let q = self.q;
-        let levels = self.basis.decompose_length().get();
+        let levels = self.basis.level_count().get();
         let input_phase = ring_phase(switched, index, q);
         let scaled_phase = rounded(ring_phase(raw, index, source_q) as u128, source_q, q) as i128;
         // Each coefficient rounds within 1/2; rounding the phase adds at most 1/2.

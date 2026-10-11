@@ -405,7 +405,7 @@ fn cached_weights_and_centered_digits_follow_rns_order() {
         let basis = params.basis();
         assert_eq!(
             params.scalar_residue_iter().len(),
-            basis.decompose_length().get()
+            basis.level_count().get()
         );
         for (level, residues) in params.scalar_residue_iter().enumerate() {
             let weight = 1u64 << (basis.drop_bits() + level as u32 * log_basis);
@@ -424,7 +424,7 @@ fn cached_weights_and_centered_digits_follow_rns_order() {
         for decomposer in basis.decomposer_iter() {
             let mut unsigned_carries = carries.clone();
             decomposer.decompose_slice_to(&adjusted, &mut signed_digits, &mut carries);
-            decomposer.unsigned_decompose_slice_to(
+            decomposer.decompose_radix_slice_to(
                 &adjusted,
                 &mut unsigned_digits,
                 &mut unsigned_carries,

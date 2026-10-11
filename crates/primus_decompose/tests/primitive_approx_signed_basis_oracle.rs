@@ -19,7 +19,7 @@ where
     let radix = 1u128 << basis.log_basis().get();
     let half_radix = radix / 2;
 
-    assert_eq!(basis.scalar_iter().len(), basis.decompose_length().get());
+    assert_eq!(basis.scalar_iter().len(), basis.level_count().get());
     let (adjusted, mut carry) = basis.init_value_carry(value);
     let mut recomposed = 0u128;
     for (level, (decomposer, scalar)) in

@@ -262,7 +262,7 @@ fn fourier_scheme_switch<Table: primus_fft::FftTable>() {
     let mut wrong_fft = FftEngine::new(&wrong_table);
     let wrong_size = primus_lattice::GadgetSize::new(
         GlweSize::new(GlweDimension::new(K + 1), PolyLength::new(N)),
-        key_params.size().decompose_length(),
+        key_params.size().level_count(),
     );
     for (input_len, output_len, wrong_fft_length, size) in [
         (

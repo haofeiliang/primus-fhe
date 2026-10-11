@@ -33,7 +33,7 @@ where
     /// Let `size = workspace.size()`, `N = table.poly_length().get()`,
     /// `m = rns_base.moduli_count()`, and `w = rns_base.big_uint_value_len()`.
     /// The bound size must match `N`, `m`, the GLWE dimension, and
-    /// `basis.decompose_length().get()`; `workspace.is_compatible(size, rns_base)`
+    /// `basis.level_count().get()`; `workspace.is_compatible(size, rns_base)`
     /// must hold. The table uses the base's modulus order and the gadget
     /// uses its evaluation order and `basis.decomposer_iter()` level order.
     /// CRT/DCRT values must be canonical residues.
@@ -79,7 +79,7 @@ where
     /// Let `size = workspace.size()`, `N = table.poly_length().get()`,
     /// `m = rns_base.moduli_count()`, and `w = rns_base.big_uint_value_len()`.
     /// The bound size must match `N`, `m`, the GLWE dimension, and
-    /// `basis.decompose_length().get()`; `workspace.is_compatible(size, rns_base)`
+    /// `basis.level_count().get()`; `workspace.is_compatible(size, rns_base)`
     /// must hold. The table uses the base's modulus order and the gadget
     /// uses its evaluation order and `basis.decomposer_iter()` level order.
     /// CRT/DCRT values must be canonical residues.
@@ -156,14 +156,11 @@ where
         );
         debug_assert_eq!(size.rns_glwe_size().poly_length().get(), poly_length);
         debug_assert_eq!(size.rns_glwe_size().rns_glwe_len(), dcrt_glwe_len);
-        debug_assert_eq!(
-            size.decompose_length().get(),
-            basis.decompose_length().get()
-        );
+        debug_assert_eq!(size.level_count().get(), basis.level_count().get());
 
         debug_assert_eq!(
             dcrt_glev.as_ref().len(),
-            dcrt_glwe_len * basis.decompose_length().get()
+            dcrt_glwe_len * basis.level_count().get()
         );
         let scratch = workspace.as_mut();
 
@@ -222,14 +219,11 @@ where
         );
         debug_assert_eq!(size.rns_glwe_size().poly_length().get(), poly_length);
         debug_assert_eq!(size.rns_glwe_size().rns_glwe_len(), dcrt_glwe_len);
-        debug_assert_eq!(
-            size.decompose_length().get(),
-            basis.decompose_length().get()
-        );
+        debug_assert_eq!(size.level_count().get(), basis.level_count().get());
 
         debug_assert_eq!(
             dcrt_glev.as_ref().len(),
-            dcrt_glwe_len * basis.decompose_length().get()
+            dcrt_glwe_len * basis.level_count().get()
         );
         let scratch = workspace.as_mut();
 
@@ -283,7 +277,7 @@ impl<T: FheUint> DcrtGlwe<&mut [T]> {
             .iter_dcrt_glwe(dcrt_glwe_len)
             .zip(basis.decomposer_iter())
         {
-            decomposer.unsigned_decompose_slice_to(
+            decomposer.decompose_radix_slice_to(
                 adjust_big_uint_values.as_ref(),
                 decomposed_unsigned_values,
                 carries,

@@ -46,8 +46,8 @@ impl<T: FheUint> AutomorphismKeyMetadata<T> {
         Table: NttTable<ValueT = T>,
     {
         validate_glwe_size(self.size.rns_glwe_size(), domain.size().rns_glwe_size())?;
-        let expected = self.size.decompose_length().get();
-        let actual = domain.size().decompose_length().get();
+        let expected = self.size.level_count().get();
+        let actual = domain.size().level_count().get();
         if expected != actual {
             return Err(RnsDomainError::DecompositionLevelCountMismatch { expected, actual });
         }

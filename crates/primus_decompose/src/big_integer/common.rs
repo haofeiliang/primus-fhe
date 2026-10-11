@@ -54,6 +54,7 @@ impl<T: FheUint> ValueMask<T> {
     ///
     /// `drop_bits` may span multiple limbs — `index` advances past whole limbs,
     /// `shr_bits` is the remainder within the current limb.
+    #[must_use]
     #[inline]
     pub fn new(mask: T, drop_bits: u32) -> Self {
         let index = (drop_bits / T::BITS) as usize;
@@ -178,7 +179,7 @@ impl<'a, T: FheUint> ExactSizeIterator for BigUintSignedDecomposerIter<'a, T> {
 ///
 /// Full-width values have exactly the basis's `big_uint_value_len()`
 /// little-endian limbs. Batch buffers are value-major, with all limbs of each
-/// value contiguous. Unsigned digit outputs instead use one limb per value.
+/// value contiguous. Radix-encoded digit outputs instead use one limb per value.
 pub struct OnceBigUintSignedDecomposer<'a, T: FheUint> {
     pub(super) value_mask: ValueMask<T>,
     pub(super) carry_mask: T,
@@ -215,8 +216,11 @@ impl<'a, T: FheUint> OnceBigUintSignedDecomposer<'a, T> {
     /// `value` must contain exactly `big_uint_value_len()` little-endian limbs.
     /// It must be initialized with this basis and remain unchanged across
     /// levels; `carry` comes from initialization or the preceding level.
+    /// When lifting to another modulus, interpret the result as a centered
+    /// signed digit, not as an ordinary nonnegative residue.
+    #[must_use]
     #[inline]
-    pub fn unsigned_decompose(&self, value: &[T], mut carry: bool) -> (T, bool) {
+    pub fn decompose_radix(&self, value: &[T], mut carry: bool) -> (T, bool) {
         debug_assert_eq!(value.len(), self.big_uint_value_len());
         let temp = self.extract_with_carry(value, &mut carry);
 
@@ -245,21 +249,16 @@ impl<'a, T: FheUint> OnceBigUintSignedDecomposer<'a, T> {
     }
 
     #[inline]
-    fn unsigned_decompose_to_kernel(
-        &self,
-        value: &[T],
-        decomposed_unsigned_value: &mut T,
-        carry: &mut bool,
-    ) {
+    fn decompose_radix_to_kernel(&self, value: &[T], radix_digit: &mut T, carry: &mut bool) {
         let temp = self.extract_with_carry(value, carry);
 
-        *decomposed_unsigned_value = temp & self.basis_minus_one;
+        *radix_digit = temp & self.basis_minus_one;
     }
 
     /// Writes full-width digits modulo `Q` and advances the corresponding carries.
     ///
     /// Both value buffers must have length `carries.len() * big_uint_value_len()`
-    /// in value-major layout. Inputs and carries follow [`Self::unsigned_decompose`].
+    /// in value-major layout. Inputs and carries follow [`Self::decompose_radix`].
     /// The signed digit lies in `[-B/2, B/2)`: negative digits are encoded as
     /// `Q + digit`, rather than modulo `B`. All output limbs are overwritten,
     /// not accumulated.
@@ -286,49 +285,37 @@ impl<'a, T: FheUint> OnceBigUintSignedDecomposer<'a, T> {
     ///
     /// `big_uint_values.len()` must equal `carries.len() * big_uint_value_len()`
     /// in value-major layout. The digit output must have `carries.len()` limbs.
-    /// Inputs follow [`Self::unsigned_decompose`]; outputs are overwritten.
+    /// Inputs follow [`Self::decompose_radix`]; outputs are overwritten.
     #[inline]
-    pub fn unsigned_decompose_slice_to(
+    pub fn decompose_radix_slice_to(
         &self,
         big_uint_values: &[T],
-        decomposed_unsigned_values: &mut [T],
+        radix_digits: &mut [T],
         carries: &mut [bool],
     ) {
         let big_uint_value_len = self.big_uint_value_len();
-        debug_assert_eq!(carries.len(), decomposed_unsigned_values.len());
+        debug_assert_eq!(carries.len(), radix_digits.len());
         debug_assert_eq!(big_uint_values.len(), carries.len() * big_uint_value_len);
         // Constant strides let the optimizer use interleaved vector loads for
         // common widths. Choose the width once per batch.
         match big_uint_value_len {
             1 => {
-                return self.unsigned_decompose_fixed::<1>(
-                    big_uint_values,
-                    decomposed_unsigned_values,
-                    carries,
-                );
+                return self.decompose_radix_fixed::<1>(big_uint_values, radix_digits, carries);
             }
             2 => {
-                return self.unsigned_decompose_fixed::<2>(
-                    big_uint_values,
-                    decomposed_unsigned_values,
-                    carries,
-                );
+                return self.decompose_radix_fixed::<2>(big_uint_values, radix_digits, carries);
             }
             4 => {
-                return self.unsigned_decompose_fixed::<4>(
-                    big_uint_values,
-                    decomposed_unsigned_values,
-                    carries,
-                );
+                return self.decompose_radix_fixed::<4>(big_uint_values, radix_digits, carries);
             }
             _ => {}
         }
-        for ((value, decomposed_unsigned_value), carry) in big_uint_values
+        for ((value, radix_digit), carry) in big_uint_values
             .chunks_exact(big_uint_value_len)
-            .zip(decomposed_unsigned_values.iter_mut())
+            .zip(radix_digits.iter_mut())
             .zip(carries)
         {
-            self.unsigned_decompose_to_kernel(value, decomposed_unsigned_value, carry);
+            self.decompose_radix_to_kernel(value, radix_digit, carry);
         }
     }
 
@@ -337,7 +324,7 @@ impl<'a, T: FheUint> OnceBigUintSignedDecomposer<'a, T> {
     /// the level loop and can regress the runtime-stride fallback. One call
     /// per batch lets each fixed-stride loop be optimized independently.
     #[inline(never)]
-    fn unsigned_decompose_fixed<const LIMBS: usize>(
+    fn decompose_radix_fixed<const LIMBS: usize>(
         &self,
         values: &[T],
         digits: &mut [T],
@@ -345,7 +332,7 @@ impl<'a, T: FheUint> OnceBigUintSignedDecomposer<'a, T> {
     ) {
         let (values, _) = values.as_chunks::<LIMBS>();
         for ((value, digit), carry) in values.iter().zip(digits).zip(carries) {
-            self.unsigned_decompose_to_kernel(value, digit, carry);
+            self.decompose_radix_to_kernel(value, digit, carry);
         }
     }
 }

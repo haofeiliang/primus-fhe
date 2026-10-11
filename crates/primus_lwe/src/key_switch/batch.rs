@@ -66,7 +66,7 @@ impl<T: FheUint> LweKeySwitchingKey<T> {
     ) {
         let input_len = self.input_dimension.ciphertext_len();
         let output_len = self.output_dimension.ciphertext_len();
-        let coefficient_len = output_len * self.basis.decompose_length().get();
+        let coefficient_len = output_len * self.basis.level_count().get();
         let mut input = input;
         let mut output = output;
         while !input.is_empty() {

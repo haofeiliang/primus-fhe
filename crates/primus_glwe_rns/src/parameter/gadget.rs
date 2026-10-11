@@ -122,11 +122,10 @@ where
                 });
             }
         }
-        let size = RnsGadgetSize::try_new(encryption_parameters.size, basis.decompose_length())?;
+        let size = RnsGadgetSize::try_new(encryption_parameters.size, basis.level_count())?;
         // L*m weights fit because the checked gadget layout contains
         // L*m*(k+1)*N coefficients. Validate that layout before allocating.
-        let mut scalar_residues =
-            vec![T::ZERO; basis.decompose_length().get() * base_q.moduli_count()];
+        let mut scalar_residues = vec![T::ZERO; basis.level_count().get() * base_q.moduli_count()];
         for (scalar, residues) in basis
             .scalar_iter()
             .zip(scalar_residues.chunks_exact_mut(base_q.moduli_count()))
@@ -279,8 +278,8 @@ where
 
     /// Returns the number of decomposition levels.
     #[must_use]
-    pub fn decompose_length(&self) -> DecompositionLevelCount {
-        self.basis.decompose_length()
+    pub fn level_count(&self) -> DecompositionLevelCount {
+        self.basis.level_count()
     }
 
     /// Returns the limb length of one polynomial in big-integer representation.

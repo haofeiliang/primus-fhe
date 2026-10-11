@@ -222,8 +222,8 @@ where
             key.output_size.rns_glwe_size(),
             domain.size().rns_glwe_size(),
         )?;
-        let expected = key.output_size.decompose_length().get();
-        let actual = domain.size().decompose_length().get();
+        let expected = key.output_size.level_count().get();
+        let actual = domain.size().level_count().get();
         if expected != actual {
             return Err(RnsDomainError::DecompositionLevelCountMismatch { expected, actual });
         }

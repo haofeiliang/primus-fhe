@@ -94,7 +94,7 @@ where
         }
 
         let control_len = basis
-            .decompose_length()
+            .level_count()
             .get()
             .checked_mul(poly_length / 2)
             .expect("CMUX control length overflow");

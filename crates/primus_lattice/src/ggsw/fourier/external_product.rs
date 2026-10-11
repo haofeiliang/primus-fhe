@@ -25,7 +25,7 @@ where
     /// # Correctness
     ///
     /// Let `size = workspace.size()`, `N = size.glwe_size().poly_length().get()`,
-    /// and `L = size.decompose_length().get()`. Input and output each have
+    /// and `L = size.level_count().get()`. Input and output each have
     /// `size.glwe_size().glwe_len()` elements; `self` has exactly
     /// `size.fourier_ggsw_len()` elements. The `k + 1` GLev rows correspond
     /// to the input mask polynomials followed by its body, with `L` levels
@@ -120,10 +120,7 @@ impl FourierGgsw<&[Complex64]> {
         debug_assert_eq!(fft.poly_length().get(), poly_len);
         debug_assert_eq!(fft.fourier_length(), fourier_poly_len);
         debug_assert_eq!(basis.modulus(), None);
-        debug_assert_eq!(
-            basis.decompose_length().get(),
-            size.decompose_length().get()
-        );
+        debug_assert_eq!(basis.level_count().get(), size.level_count().get());
         debug_assert_eq!(input.as_ref().len(), glwe_size.glwe_len());
         debug_assert_eq!(self.as_ref().len(), size.fourier_ggsw_len());
 

@@ -251,7 +251,7 @@ impl RnsGlweSize {
 #[derive(Debug, Clone, Copy, Eq)]
 pub struct GadgetSize {
     glwe_size: GlweSize,
-    decompose_length: DecompositionLevelCount,
+    level_count: DecompositionLevelCount,
     glev_len: usize,
     ggsw_len: usize,
 }
@@ -259,7 +259,7 @@ pub struct GadgetSize {
 impl PartialEq for GadgetSize {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
-        self.glwe_size == other.glwe_size && self.decompose_length == other.decompose_length
+        self.glwe_size == other.glwe_size && self.level_count == other.level_count
     }
 }
 
@@ -272,9 +272,9 @@ impl GadgetSize {
     /// does not fit in `usize`.
     pub fn try_new(
         glwe_size: GlweSize,
-        decompose_length: DecompositionLevelCount,
+        level_count: DecompositionLevelCount,
     ) -> Result<Self, GlweSizeError> {
-        let glev_len = decompose_length
+        let glev_len = level_count
             .get()
             .checked_mul(glwe_size.glwe_len())
             .ok_or(GlweSizeError::LengthOverflow("GLev ciphertext"))?;
@@ -285,7 +285,7 @@ impl GadgetSize {
 
         Ok(Self {
             glwe_size,
-            decompose_length,
+            level_count,
             glev_len,
             ggsw_len,
         })
@@ -297,8 +297,8 @@ impl GadgetSize {
     ///
     /// Panics on length overflow reported by [`Self::try_new`].
     #[must_use]
-    pub fn new(glwe_size: GlweSize, decompose_length: DecompositionLevelCount) -> Self {
-        Self::try_new(glwe_size, decompose_length).unwrap_or_else(|error| panic!("{error}"))
+    pub fn new(glwe_size: GlweSize, level_count: DecompositionLevelCount) -> Self {
+        Self::try_new(glwe_size, level_count).unwrap_or_else(|error| panic!("{error}"))
     }
 
     /// Returns the underlying GLWE sizes.
@@ -311,8 +311,8 @@ impl GadgetSize {
     /// Returns the number of decomposition levels.
     #[must_use]
     #[inline]
-    pub const fn decompose_length(self) -> DecompositionLevelCount {
-        self.decompose_length
+    pub const fn level_count(self) -> DecompositionLevelCount {
+        self.level_count
     }
 
     /// Returns the flattened GLev ciphertext length.
@@ -355,7 +355,7 @@ impl GadgetSize {
 #[derive(Debug, Clone, Copy, Eq)]
 pub struct RnsGadgetSize {
     rns_glwe_size: RnsGlweSize,
-    decompose_length: DecompositionLevelCount,
+    level_count: DecompositionLevelCount,
     rns_glev_len: usize,
     rns_ggsw_len: usize,
 }
@@ -363,7 +363,7 @@ pub struct RnsGadgetSize {
 impl PartialEq for RnsGadgetSize {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
-        self.rns_glwe_size == other.rns_glwe_size && self.decompose_length == other.decompose_length
+        self.rns_glwe_size == other.rns_glwe_size && self.level_count == other.level_count
     }
 }
 
@@ -376,9 +376,9 @@ impl RnsGadgetSize {
     /// does not fit in `usize`.
     pub fn try_new(
         rns_glwe_size: RnsGlweSize,
-        decompose_length: DecompositionLevelCount,
+        level_count: DecompositionLevelCount,
     ) -> Result<Self, GlweSizeError> {
-        let rns_glev_len = decompose_length
+        let rns_glev_len = level_count
             .get()
             .checked_mul(rns_glwe_size.rns_glwe_len())
             .ok_or(GlweSizeError::LengthOverflow("RNS GLev ciphertext"))?;
@@ -390,7 +390,7 @@ impl RnsGadgetSize {
 
         Ok(Self {
             rns_glwe_size,
-            decompose_length,
+            level_count,
             rns_glev_len,
             rns_ggsw_len,
         })
@@ -402,8 +402,8 @@ impl RnsGadgetSize {
     ///
     /// Panics on length overflow reported by [`Self::try_new`].
     #[must_use]
-    pub fn new(rns_glwe_size: RnsGlweSize, decompose_length: DecompositionLevelCount) -> Self {
-        Self::try_new(rns_glwe_size, decompose_length).unwrap_or_else(|error| panic!("{error}"))
+    pub fn new(rns_glwe_size: RnsGlweSize, level_count: DecompositionLevelCount) -> Self {
+        Self::try_new(rns_glwe_size, level_count).unwrap_or_else(|error| panic!("{error}"))
     }
 
     /// Returns the underlying RNS GLWE sizes.
@@ -416,8 +416,8 @@ impl RnsGadgetSize {
     /// Returns the number of decomposition levels.
     #[must_use]
     #[inline]
-    pub const fn decompose_length(self) -> DecompositionLevelCount {
-        self.decompose_length
+    pub const fn level_count(self) -> DecompositionLevelCount {
+        self.level_count
     }
 
     /// Returns the flattened RNS GLev ciphertext length.

@@ -27,7 +27,7 @@ where
     /// Let `size = workspace.size()`, `N = table.poly_length().get()`,
     /// and `m = rns_base.moduli_count()`.
     /// The bound size must match `N`, `m`, the GLWE dimension, and
-    /// `basis.decompose_length().get()`; `workspace.is_compatible(size, rns_base)`
+    /// `basis.level_count().get()`; `workspace.is_compatible(size, rns_base)`
     /// must hold. The table uses the base's modulus order and the gadget
     /// uses its evaluation order and `basis.decomposer_iter()` level order.
     /// CRT/DCRT values must be canonical residues.
@@ -50,7 +50,7 @@ where
         B: DataMut<Elem = T>,
     {
         let rns_poly_len = table.rns_poly_len();
-        let dcrt_glev_len = basis.decompose_length().get() * input.as_ref().len();
+        let dcrt_glev_len = basis.level_count().get() * input.as_ref().len();
 
         output.set_zero();
 

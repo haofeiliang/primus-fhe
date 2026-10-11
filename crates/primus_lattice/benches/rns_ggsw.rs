@@ -28,7 +28,7 @@ fn benchmarks(c: &mut Criterion) {
             DecompositionBaseLog::new(log_b),
             None,
         );
-        let levels = basis.decompose_length();
+        let levels = basis.level_count();
         let size = RnsGadgetSize::new(
             RnsGlweSize::new(
                 GlweSize::new(GlweDimension::new(dimension), PolyLength::new(n)),

@@ -56,7 +56,7 @@ where
         basis: ApproxSignedBasis<T>,
     ) -> Result<Self, NlevParameterError> {
         let nlev_len = basis
-            .decompose_length()
+            .level_count()
             .get()
             .checked_mul(encryption_parameters.poly_length().get())
             .ok_or(NlevParameterError::CiphertextLengthOverflow)?;
@@ -150,8 +150,8 @@ where
     /// Returns the number of retained decomposition levels.
     #[must_use]
     #[inline]
-    pub fn decompose_length(&self) -> DecompositionLevelCount {
-        self.basis.decompose_length()
+    pub fn level_count(&self) -> DecompositionLevelCount {
+        self.basis.level_count()
     }
 
     /// Returns the number of coefficient or NTT values in an NLev/NGSW

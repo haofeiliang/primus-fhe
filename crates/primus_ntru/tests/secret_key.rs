@@ -492,7 +492,7 @@ fn parameter_parts_bind_codec_and_basis_to_shared_sampling_state() {
         let derived = NlevParameters::try_with_ntru_params(&ordinary, decomposition).unwrap();
         // q=257 has nine value bits: two 4-bit levels, or one retained level.
         assert_eq!(
-            derived.decompose_length().get(),
+            derived.level_count().get(),
             level_count.map_or(2, DecompositionLevelCount::get)
         );
         assert_eq!(derived.basis().modulus(), Some(257));
@@ -501,10 +501,7 @@ fn parameter_parts_bind_codec_and_basis_to_shared_sampling_state() {
                 ordinary.encryption_parameters(),
                 parameters.encryption_parameters()
             ));
-            assert_eq!(
-                parameters.nlev_len(),
-                32 * parameters.decompose_length().get()
-            );
+            assert_eq!(parameters.nlev_len(), 32 * parameters.level_count().get());
         }
     }
     assert!(matches!(

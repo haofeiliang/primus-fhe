@@ -223,7 +223,7 @@ where
         // replace full coefficient projection here.
         circuit_key.trace_key().project_prefix_coefficients_to(
             accumulator,
-            parameters.output_basis().decompose_length().get(),
+            parameters.output_basis().level_count().get(),
             self.projected.as_mut(),
             fft,
             &mut self.trace,

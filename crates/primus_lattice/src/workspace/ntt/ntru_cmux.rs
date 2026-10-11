@@ -12,25 +12,25 @@ use super::NttNtruExternalProductWorkspace;
 /// first holds the monomial NTT factor. The output NTRU supplies the coefficient
 /// difference buffer. This binds lengths, not a modulus, basis or transform table.
 pub struct NttNtruCmuxWorkspace<T: FheUint> {
-    decompose_length: DecompositionLevelCount,
+    level_count: DecompositionLevelCount,
     pub(crate) combined_control: Box<[T]>,
     pub(crate) external_product: NttNtruExternalProductWorkspace<T>,
 }
 
 impl<T: FheUint> NttNtruCmuxWorkspace<T> {
-    /// Allocates all buffers for `decompose_length` gadget levels of length `N`.
+    /// Allocates all buffers for `level_count` gadget levels of length `N`.
     ///
     /// # Panics
-    /// Panics if `N * decompose_length`
+    /// Panics if `N * level_count`
     /// overflows `usize`.
     #[must_use]
-    pub fn new(poly_length: PolyLength, decompose_length: DecompositionLevelCount) -> Self {
+    pub fn new(poly_length: PolyLength, level_count: DecompositionLevelCount) -> Self {
         let control_length = poly_length
             .get()
-            .checked_mul(decompose_length.get())
+            .checked_mul(level_count.get())
             .expect("gadget ciphertext length must fit in usize");
         Self {
-            decompose_length,
+            level_count,
             combined_control: vec![T::ZERO; control_length].into_boxed_slice(),
             external_product: NttNtruExternalProductWorkspace::new(poly_length),
         }
@@ -53,7 +53,7 @@ impl<T: FheUint> NttNtruCmuxWorkspace<T> {
 
     /// Returns the level count bound to the combined-control scratch.
     #[must_use]
-    pub fn decompose_length(&self) -> DecompositionLevelCount {
-        self.decompose_length
+    pub fn level_count(&self) -> DecompositionLevelCount {
+        self.level_count
     }
 }

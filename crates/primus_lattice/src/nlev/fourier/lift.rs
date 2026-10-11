@@ -24,7 +24,7 @@ where
     /// # Correctness
     /// Inherits [`Self::external_product_to`]'s native basis, normalized torus
     /// scale, input/output layout and FFT contracts. All controls use the same
-    /// key, basis, exact FFT table instance and `workspace.decompose_length().get()`
+    /// key, basis, exact FFT table instance and `workspace.level_count().get()`
     /// levels. Bits are mutually exclusive; omit `negative` for binary.
     /// `exponent` is already quantized into `0..2N`.
     /// The ideal phase is the basis reconstruction of `input` times
@@ -59,10 +59,7 @@ where
     {
         let poly_length = workspace.poly_length().get();
         debug_assert!(exponent < 2 * poly_length);
-        debug_assert_eq!(
-            basis.decompose_length().get(),
-            workspace.decompose_length().get()
-        );
+        debug_assert_eq!(basis.level_count().get(), workspace.level_count().get());
         debug_assert_eq!(positive.as_ref().len(), self.as_ref().len());
         if exponent == 0 {
             self.external_product_to(input, output, basis, fft, &mut workspace.external_product);

@@ -32,7 +32,7 @@ fn fourier_ggsw_workspace_reuse<Table: FftTable>() {
     let components = 3;
     let n = fft.poly_length().get();
     let basis = ApproxSignedBasis::<u32>::new(None, DecompositionBaseLog::new(8), None);
-    let levels = basis.decompose_length().get();
+    let levels = basis.level_count().get();
     let mut gadget = Ggsw::new(vec![0u32; components * levels * components * n]);
     for row in 0..components {
         for (level, scalar) in basis.scalar_iter().enumerate() {
@@ -105,7 +105,7 @@ fn ntt_ntru_gadget_products_match_negacyclic_product() {
     let mut beta = Polynomial::<Vec<u32>>::zero(N);
 
     let make_nlev = |message: &Polynomial<Vec<u32>>, basis: &ApproxSignedBasis<u32>| {
-        let mut nlev = Nlev::<Vec<u32>>::zero(basis.decompose_length().get() * N);
+        let mut nlev = Nlev::<Vec<u32>>::zero(basis.level_count().get() * N);
         for (scalar, mut level) in basis.scalar_iter().zip(nlev.iter_ntru_mut(N)) {
             message.mul_scalar_to(scalar, &mut Polynomial(level.as_mut()), modulus);
         }
@@ -235,7 +235,7 @@ fn fourier_ntru_gadget_products<Table: FftTable>() {
     let mut beta = Polynomial::<Vec<u32>>::zero(N);
 
     let make_nlev = |message: &Polynomial<Vec<u32>>, basis: &ApproxSignedBasis<u32>| {
-        let mut nlev = Nlev::<Vec<u32>>::zero(basis.decompose_length().get() * N);
+        let mut nlev = Nlev::<Vec<u32>>::zero(basis.level_count().get() * N);
         for (scalar, mut level) in basis.scalar_iter().zip(nlev.iter_ntru_mut(N)) {
             message.mul_scalar_to(scalar, &mut Polynomial(level.as_mut()), modulus);
         }
@@ -256,11 +256,11 @@ fn fourier_ntru_gadget_products<Table: FftTable>() {
         let coeff_nlev = make_nlev(&beta, &basis);
         let coeff_ngsw = Ngsw::new(coeff_nlev.as_ref().to_vec());
 
-        let fourier_length = basis.decompose_length().get() * fft.fourier_length();
+        let fourier_length = basis.level_count().get() * fft.fourier_length();
         let mut fourier_nlev = FourierNlevOwned::zero(fourier_length);
         coeff_nlev.write_fourier_form(&mut fourier_nlev, &mut engine);
         let mut fourier_ngsw =
-            FourierNgswOwned::zero(basis.decompose_length().get() * fft.fourier_length());
+            FourierNgswOwned::zero(basis.level_count().get() * fft.fourier_length());
         coeff_ngsw.write_fourier_form(&mut fourier_ngsw, &mut engine);
 
         if amplitude != 0 {

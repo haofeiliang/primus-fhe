@@ -126,7 +126,7 @@ fn check_ntt_batch<T: FheUint, Table: NttTable<ValueT = T>>() {
     ] {
         let mut workspace = NttGlweGadgetEncryptWorkspace::new(GadgetSize::new(
             GlweSize::new(GlweDimension::new(2), PolyLength::new(scratch_length)),
-            params.size().decompose_length(),
+            params.size().level_count(),
         ));
         let mut output = vec![sentinel; len];
         let mut rng = StdRng::seed_from_u64(43);

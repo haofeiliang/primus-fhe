@@ -70,7 +70,7 @@ where
     let len = basis.big_uint_value_len();
     assert_eq!(to_u128(basis.modulus()), q);
     assert_eq!(basis.drop_bits(), drop_bits);
-    assert_eq!(basis.decompose_length().get(), levels);
+    assert_eq!(basis.level_count().get(), levels);
     assert_eq!(basis.decomposer_iter().len(), levels);
     assert_eq!(basis.scalar_iter().len(), levels);
     assert_eq!(to_u128(basis.approximate_error_bound().digits()), bound);
@@ -98,7 +98,7 @@ where
         assert_eq!(carries[0], expected_carry);
         let mut sum = 0i128;
         for (level, decomposer) in basis.decomposer_iter().enumerate() {
-            let (unsigned, unsigned_carry) = decomposer.unsigned_decompose(&adjusted, carries[0]);
+            let (radix_digit, radix_carry) = decomposer.decompose_radix(&adjusted, carries[0]);
             decomposer.decompose_slice_to(&adjusted, &mut digit, &mut carries);
             let offset = drop_bits + level as u32 * log_basis;
             let window = ((expected_adjusted >> offset) & (radix as u128 - 1)) as i128;
@@ -106,13 +106,13 @@ where
             expected_carry = temp >= radix / 2;
             let expected_digit = temp - if expected_carry { radix } else { 0 };
             assert_eq!(carries[0], expected_carry);
-            assert_eq!(unsigned_carry, expected_carry);
-            let unsigned = unsigned.into() as i128;
-            assert!((0..radix).contains(&unsigned));
-            let centered = if unsigned >= radix / 2 {
-                unsigned - radix
+            assert_eq!(radix_carry, expected_carry);
+            let radix_digit = radix_digit.into() as i128;
+            assert!((0..radix).contains(&radix_digit));
+            let centered = if radix_digit >= radix / 2 {
+                radix_digit - radix
             } else {
-                unsigned
+                radix_digit
             };
             assert_eq!(centered, expected_digit);
             assert_eq!(to_u128(&digit), centered.rem_euclid(q as i128) as u128);
@@ -196,24 +196,24 @@ fn check_batch<T: FheUint>() {
                 assert_eq!(adjusted, in_place);
                 assert_eq!(carries, in_place_carries);
                 let mut signed_digits = vec![T::MAX; values.len()];
-                let mut unsigned_digits = vec![T::MAX; count];
+                let mut radix_digits = vec![T::MAX; count];
                 let mut expected_digit = vec![T::ZERO; len];
                 let radix = basis.basis_value();
                 for decomposer in basis.decomposer_iter() {
                     let previous_carries = carries.clone();
-                    let mut unsigned_carries = carries.clone();
+                    let mut radix_carries = carries.clone();
                     decomposer.decompose_slice_to(&adjusted, &mut signed_digits, &mut carries);
-                    decomposer.unsigned_decompose_slice_to(
+                    decomposer.decompose_radix_slice_to(
                         &adjusted,
-                        &mut unsigned_digits,
-                        &mut unsigned_carries,
+                        &mut radix_digits,
+                        &mut radix_carries,
                     );
-                    assert_eq!(carries, unsigned_carries);
+                    assert_eq!(carries, radix_carries);
                     for (index, value) in adjusted.chunks_exact(len).enumerate() {
                         let (digit, carry) =
-                            decomposer.unsigned_decompose(value, previous_carries[index]);
+                            decomposer.decompose_radix(value, previous_carries[index]);
                         assert_eq!(
-                            (unsigned_digits[index], carries[index]),
+                            (radix_digits[index], carries[index]),
                             (digit, carry),
                             "limbs={len}, logB={log_basis}, count={count}, index={index}",
                         );

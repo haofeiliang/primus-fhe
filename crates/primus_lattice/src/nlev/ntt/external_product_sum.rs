@@ -76,7 +76,7 @@ where
             return;
         }
         let gadget_len = basis
-            .decompose_length()
+            .level_count()
             .get()
             .checked_mul(poly_length)
             .expect("external-product gadget length overflow");
