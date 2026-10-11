@@ -8,7 +8,7 @@ use primus_lattice::GlweDimension;
 use primus_lattice::glwe::DcrtGlwe;
 use primus_modulus::BarrettModulus;
 use primus_ntt::UintDcrtTable;
-use primus_poly::{CrtPolynomial, PolyLength, Polynomial};
+use primus_poly::{CrtPolynomial, DcrtPolynomial, PolyLength, Polynomial};
 use primus_reduce::FieldContext;
 use rand::distr::Uniform;
 use rand::{Rng, SeedableRng, rngs::StdRng};
@@ -239,7 +239,9 @@ fn dcrt_polynomial_product_preserves_bfv_scaling() {
         POLY_LENGTH,
         &mut rng,
     ));
-    let lifted_multiplier = table.transform_inplace(decompose_message(&multiplier, &params));
+    let mut lifted_multiplier = decompose_message(&multiplier, &params);
+    table.transform_slice(lifted_multiplier.as_mut());
+    let lifted_multiplier = DcrtPolynomial::new(lifted_multiplier.into_inner());
     let mut input: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
     let mut output: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
 

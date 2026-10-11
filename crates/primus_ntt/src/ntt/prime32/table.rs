@@ -1,8 +1,7 @@
 use aligned_vec::{AVec, avec};
-use primus_data::DataMut;
 use primus_factor::{FactorMul, ShoupFactor};
 use primus_gcd::Xgcd;
-use primus_poly::{NttPolynomial, PolyLength, Polynomial};
+use primus_poly::PolyLength;
 use primus_reduce::FieldContext;
 
 use crate::{
@@ -328,24 +327,6 @@ impl NttTable for U32NttTable {
     #[inline]
     fn modulus(&self) -> Self::ValueT {
         self.q
-    }
-
-    #[inline]
-    fn transform_inplace<S: DataMut<Elem = Self::ValueT>>(
-        &self,
-        mut poly: Polynomial<S>,
-    ) -> NttPolynomial<S> {
-        self.transform_slice(poly.as_mut_slice());
-        NttPolynomial::new(poly.0)
-    }
-
-    #[inline]
-    fn inverse_transform_inplace<S: DataMut<Elem = Self::ValueT>>(
-        &self,
-        mut values: NttPolynomial<S>,
-    ) -> Polynomial<S> {
-        self.inverse_transform_slice(values.as_mut_slice());
-        Polynomial::new(values.0)
     }
 
     fn lazy_transform_slice(&self, poly: &mut [u32]) {

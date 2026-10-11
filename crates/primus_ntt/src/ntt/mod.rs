@@ -1,7 +1,6 @@
 use num_traits::{ConstOne, ConstZero};
-use primus_data::DataMut;
 use primus_factor::{FactorMul, ShoupFactor};
-use primus_poly::{NttPolynomial, PolyLength, Polynomial};
+use primus_poly::PolyLength;
 use primus_reduce::FieldContext;
 
 use crate::{NttError, reverse::ReverseLsbs, root::PrimitiveRoot};
@@ -15,6 +14,11 @@ pub use prime64::U64NttTable;
 pub use primitive::UintNttTable;
 
 /// Abstract interface for Number Theory Transform (NTT).
+///
+/// Forward transforms consume ascending-power coefficients and produce
+/// bit-reversed evaluations. Inverse transforms restore coefficient order and
+/// include inverse-length normalization. Slices carry no representation or
+/// table identity; callers must preserve the originating table's convention.
 ///
 /// # Slice length contract
 ///
@@ -56,30 +60,6 @@ pub trait NttTable: Sized + Send + Sync {
 
     /// Returns the coefficient modulus used to build this table.
     fn modulus(&self) -> Self::ValueT;
-
-    /// Perform a fast number theory transform in place.
-    ///
-    /// This function transforms a polynomial to a ntt polynomial.
-    ///
-    /// # Arguments
-    ///
-    /// * `poly` - inputs in normal order, outputs in bit-reversed order
-    fn transform_inplace<S: DataMut<Elem = Self::ValueT>>(
-        &self,
-        poly: Polynomial<S>,
-    ) -> NttPolynomial<S>;
-
-    /// Perform a fast inverse number theory transform in place.
-    ///
-    /// This function transforms a ntt polynomial to a polynomial.
-    ///
-    /// # Arguments
-    ///
-    /// * `values` - inputs in bit-reversed order, outputs in normal order
-    fn inverse_transform_inplace<S: DataMut<Elem = Self::ValueT>>(
-        &self,
-        values: NttPolynomial<S>,
-    ) -> Polynomial<S>;
 
     /// Perform a fast number theory transform in place.
     ///

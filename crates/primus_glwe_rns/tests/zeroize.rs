@@ -9,12 +9,10 @@ use std::{
     sync::atomic::{AtomicBool, AtomicPtr, AtomicUsize, Ordering},
 };
 
-use primus_data::DataMut;
 use primus_glwe_rns::{DcrtGlweSecretKey, GlweSecretKey, SecretKeyDistr};
 use primus_lattice::GlweSize;
 use primus_modulus::BarrettModulus;
 use primus_ntt::{DcrtTable, NttError, NttTable, U64NttTable};
-use primus_poly::{NttPolynomial, Polynomial};
 use primus_reduce::FieldContext;
 
 struct ObservingAllocator;
@@ -72,17 +70,6 @@ impl NttTable for InterruptedTable {
 
     fn modulus(&self) -> u64 {
         self.0.modulus()
-    }
-
-    fn transform_inplace<S: DataMut<Elem = u64>>(&self, poly: Polynomial<S>) -> NttPolynomial<S> {
-        self.0.transform_inplace(poly)
-    }
-
-    fn inverse_transform_inplace<S: DataMut<Elem = u64>>(
-        &self,
-        values: NttPolynomial<S>,
-    ) -> Polynomial<S> {
-        self.0.inverse_transform_inplace(values)
     }
 
     fn lazy_transform_slice(&self, poly: &mut [u64]) {

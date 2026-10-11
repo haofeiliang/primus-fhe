@@ -46,7 +46,7 @@ Table 不可变并实现 `Send + Sync`，可在线程间共享，各线程使用
 
 ## 表示与取值范围
 
-对于 `N = 2^log_n`，正向变换读取按幂次升序排列的系数，生成 bit-reversed 顺序的 求值；逆向变换读取这种 bit-reversed 表示，并恢复按幂次升序排列的系数。
+对于 `N = 2^log_n`，正向变换读取按幂次升序排列的系数，生成 bit-reversed 顺序的求值；逆向变换读取这种 bit-reversed 表示，包含乘以长度逆元的归一化，并恢复按幂次升序排列的系数。
 
 每个单模数输入或输出 slice 都必须恰好包含 `table.poly_length().get()` 个值，长度不匹配会 panic。不同 table 的点值只有在根、顺序和归一化一致时才能互换，不能仅凭长度和模数相同判断兼容。
 
@@ -59,7 +59,7 @@ Table 不可变并实现 `Send + Sync`，可在线程间共享，各线程使用
 
 Lazy 值表示模 `q` 的剩余类，但其更宽的整数范围属于调用契约。特别是，lazy forward 的结果不一定能直接作为 lazy inverse 的输入；调用 inverse 前应先将其 规范化到对应方法接受的范围。
 
-消费 wrapper 的 `transform_inplace` 和 `inverse_transform_inplace` 使用 canonical 变换，同时在 [`Polynomial`](../primus_poly/README.zh_CN.md) 与 `NttPolynomial` 之间改变存储 wrapper。
+变换操作接收 mutable slice。使用 [`primus_poly`](../primus_poly/README.zh_CN.md) wrapper 时，借用其存储执行变换，再将同一存储包装为结果的表示类型。
 
 ## 构造约束
 

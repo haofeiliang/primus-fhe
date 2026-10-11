@@ -7,7 +7,7 @@ use primus_modulus::BarrettModulus;
 use primus_ntt::{
     DcrtTable, MonomialNttTable, NttError, U32DcrtTable, U32NttTable, U64NttTable, UintNttTable,
 };
-use primus_poly::{CrtPolynomial, PolyLength};
+use primus_poly::PolyLength;
 use primus_reduce::FieldContext;
 
 // Distinct moduli make swapped limbs observable; deterministic nonconstant
@@ -38,11 +38,10 @@ where
     }
 
     let mut actual = input.clone();
-    let transformed = table.transform_inplace(CrtPolynomial::new(actual.as_mut_slice()));
-    assert_eq!(transformed.len(), table.moduli_count() * n);
-    assert_eq!(transformed.as_ref(), expected);
-    let restored = table.inverse_transform_inplace(transformed);
-    assert_eq!(restored.as_ref(), input);
+    table.transform_slice(&mut actual);
+    assert_eq!(actual, expected);
+    table.inverse_transform_slice(&mut actual);
+    assert_eq!(actual, input);
 
     actual.copy_from_slice(&input);
     table.lazy_transform_slice(&mut actual);

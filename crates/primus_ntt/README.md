@@ -46,7 +46,7 @@ Tables are immutable and implement `Send + Sync`, so they can be shared across t
 
 ## Representation and ranges
 
-For `N = 2^log_n`, the forward transform consumes coefficients in ascending-power order and produces evaluations in bit-reversed order. The inverse transform consumes that bit-reversed representation and restores ascending-power coefficient order.
+For `N = 2^log_n`, the forward transform consumes coefficients in ascending-power order and produces evaluations in bit-reversed order. The inverse transform consumes that bit-reversed representation and restores ascending-power coefficient order, including inverse-length normalization.
 
 Every single-modulus input or output slice must contain exactly `table.poly_length().get()` values; a mismatched length panics. Values from different tables are interchangeable only when their roots, ordering and normalization agree, not merely their lengths and moduli.
 
@@ -59,7 +59,7 @@ Every single-modulus input or output slice must contain exactly `table.poly_leng
 
 Lazy values represent residues modulo `q`, but their wider integer ranges are part of the calling contract. In particular, a lazy forward result is not automatically a valid lazy-inverse input; normalize it to the inverse method's accepted range first.
 
-The consuming `transform_inplace` and `inverse_transform_inplace` methods use the canonical operations while changing the storage wrapper between [`Polynomial`](../primus_poly/README.md) and `NttPolynomial`.
+Transforms operate on mutable slices. When using [`primus_poly`](../primus_poly/README.md) wrappers, borrow their storage for the transform and wrap that same storage in the resulting representation.
 
 ## Construction constraints
 

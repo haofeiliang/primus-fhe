@@ -1,8 +1,7 @@
-use primus_data::DataMut;
 use primus_factor::{FactorMul, LazyFactorMul, ShoupFactor};
 use primus_integer::FheUint;
 use primus_modulus::common::compact;
-use primus_poly::{NttPolynomial, PolyLength, Polynomial};
+use primus_poly::PolyLength;
 use primus_reduce::FieldContext;
 
 use crate::{NttError, reverse::ReverseLsbs, root::PrimitiveRoot};
@@ -217,24 +216,6 @@ impl<T: FheUint> NttTable for UintNttTable<T> {
     #[inline]
     fn modulus(&self) -> Self::ValueT {
         self.modulus
-    }
-
-    #[inline]
-    fn transform_inplace<S: DataMut<Elem = Self::ValueT>>(
-        &self,
-        mut poly: Polynomial<S>,
-    ) -> NttPolynomial<S> {
-        self.transform_slice(poly.as_mut_slice());
-        NttPolynomial::new(poly.0)
-    }
-
-    #[inline]
-    fn inverse_transform_inplace<S: DataMut<Elem = Self::ValueT>>(
-        &self,
-        mut values: NttPolynomial<S>,
-    ) -> Polynomial<S> {
-        self.inverse_transform_slice(values.as_mut_slice());
-        Polynomial::new(values.0)
     }
 
     #[inline]

@@ -1,5 +1,4 @@
-use primus_data::DataMut;
-use primus_poly::{CrtPolynomial, DcrtPolynomial, PolyLength};
+use primus_poly::PolyLength;
 use primus_reduce::FieldContext;
 
 use crate::{MonomialNttTable, NttError, NttTable, U32NttTable, U64NttTable, UintNttTable};
@@ -99,36 +98,6 @@ where
     #[inline]
     pub fn rns_poly_len(&self) -> usize {
         self.rns_poly_len
-    }
-
-    /// Transforms a CRT polynomial in place into a DCRT polynomial.
-    ///
-    /// # Correctness
-    /// Storage must have exactly [`Self::rns_poly_len`] elements in the table's
-    /// modulus-major order. Inherits [`NttTable::transform_slice`]'s input range and
-    /// representation requirements; complete storage is assumed in release.
-    #[inline]
-    pub fn transform_inplace<S>(&self, mut crt_poly: CrtPolynomial<S>) -> DcrtPolynomial<S>
-    where
-        S: DataMut<Elem = Ntt::ValueT>,
-    {
-        self.transform_slice(crt_poly.as_mut());
-        DcrtPolynomial::new(crt_poly.0)
-    }
-
-    /// Inversely transforms a DCRT polynomial in place into a CRT polynomial.
-    ///
-    /// # Correctness
-    /// Storage must have exactly [`Self::rns_poly_len`] elements in the table's
-    /// modulus-major order. Inherits [`NttTable::inverse_transform_slice`]'s input range and
-    /// representation requirements; complete storage is assumed in release.
-    #[inline]
-    pub fn inverse_transform_inplace<S>(&self, mut dcrt_poly: DcrtPolynomial<S>) -> CrtPolynomial<S>
-    where
-        S: DataMut<Elem = Ntt::ValueT>,
-    {
-        self.inverse_transform_slice(dcrt_poly.as_mut());
-        CrtPolynomial::new(dcrt_poly.0)
     }
 
     /// Lazily transforms every CRT limb in place.
