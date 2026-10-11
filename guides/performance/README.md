@@ -12,8 +12,8 @@ Current APIs and contracts are in the [development guide](../development/README.
 | Fourier first-product write | Keep clear-then-accumulate. F1 improves binary PBS and classic CBS in measured profiles, but sparse CBS and process variability prevent global acceptance. The [final comparison](fourier-first-write.md) summarizes the corrected 108-process comparison and retains all 54 paired results. |
 | Layout and batching | Retain the internal paired NTRU LUT blind rotation. Aggregation tiles, first-bucket specialization, streaming products and GLWE tile-major keys did not justify adoption in the tested workloads. See [layout and batching](sparse-layout-and-batching.md). |
 | Parameters | Historical GLWE NTT replica/bucket and decomposition candidates are scoped to their tested consumers. PBS success alone does not validate CBS output scales. See [parameters and consumer budgets](sparse-parameters.md). |
-| Shared projection | The first-level prototype was withdrawn: the small complete-request gain did not justify storage, API and error-contract costs. The [study](shared-projection-analysis.md) retains the derivation and negative result. |
-| Workspace storage | Reuse across requests and sharing addresses across stages are separate choices. Keep role-specific buffers where warranted; neither less memory nor equal buffer shapes proves faster execution. See [workspace measurements](workspace-measurements.md) and the [sparse scratch comparison](sparse-baseline.md#aggregate-scratch-address-comparison). |
+| Shared projection | The first-level prototype was withdrawn: the small complete-request gain did not justify storage, API and error-contract costs. The [layout report](sparse-layout-and-batching.md#shared-projection-withdrawn) retains the cost decision; current trace conditions belong in the [numerical guide](../development/bootstrapping-contracts.md#normalized-reverse-trace). |
+| Workspace storage | Reuse across requests and sharing addresses across stages are separate choices. Keep role-specific buffers where warranted; neither less memory nor equal buffer shapes proves faster execution. See [workspace measurements](workspace-measurements.md) and the [sparse scratch comparison](workspace-measurements.md#aggregate-scratch-addresses). |
 | Paper comparison | Algorithm 2, OpenFHE and HEXL measurements have explicit adaptation boundaries. Absolute timings do not establish equivalence to the authors' unavailable sparse implementation. See [paper comparison](sparse-paper-comparison.md). |
 
 ## Evidence index
@@ -21,15 +21,12 @@ Current APIs and contracts are in the [development guide](../development/README.
 | Report | What it answers |
 | --- | --- |
 | [Benchmark schema 2](tfhe-benchmark-schema2.md) | Centralized runner/report validation: six workloads, three serial processes each, CPU 4 only |
-| [TFHE baseline](tfhe-baseline.md) | Benchmark coverage, setup, alignment and container measurements from the earlier cleanup |
 | [Fourier first-product write](fourier-first-write.md) | Final F0/F1 full-request comparison, resource costs, build validation and the decision to retain F0 |
-| [Preparation and workspace measurements](workspace-measurements.md) | NTT construction, NTRU/RNS key-set preparation, borrowed resources, parameter sharing, return buffers and storage costs |
-| [Sparse baseline](sparse-baseline.md) | Complete requests, stage diagnosis, retained/peak heap and aggregate scratch |
+| [Preparation and workspace measurements](workspace-measurements.md) | Preparation costs, scratch addresses, aligned/fixed containers, ownership and complete-consumer tradeoffs |
 | [Sparse arithmetic](sparse-arithmetic.md) | Pair/four-way accumulation, lazy ranges and compact reduction |
 | [Sparse layout and batching](sparse-layout-and-batching.md) | Tiles, first buckets, streaming, source layout and paired LUT rotations |
 | [Paper comparison](sparse-paper-comparison.md) | Parameter/operation alignment, OpenFHE, expanded storage and HEXL |
 | [Sparse parameters and consumers](sparse-parameters.md) | Matching and conditioning, decomposition/error tradeoffs, PBS/ManyLUT/MVB feedback and CBS→CMux scale limits |
-| [Shared projection](shared-projection-analysis.md) | Reverse-trace cost, arbitrary-tail errors and the withdrawn prototype |
 
 ## Measurement method
 
@@ -71,11 +68,10 @@ Validation commands and ordinary CI belong in the [testing guide](../development
 
 ## Data and tools
 
-Raw measurement tables live in [data/](data/); the linked report defines each
-CSV's columns and comparison. The independent [projection oracle](tools/shared_projection_oracle.py)
-is explained in the [projection study](shared-projection-analysis.md#oracle-与进入原型的条件).
-Keep these evidence assets with their report, without retaining temporary
-candidate implementations or adding experiments to ordinary CI.
+Retained measurement tables live in [data/](data/); each report explains its
+CSV columns, historical revision and comparison limits. Keep evidence assets
+with their report, without retaining temporary candidate implementations or
+adding experiments to ordinary CI.
 
 Extend the relevant topic report when revisiting a decision; keep stage progress
 and local implementation plans out of this directory. Public contracts remain in

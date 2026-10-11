@@ -1,899 +1,300 @@
-# Workspace and parameter-preparation measurements
+# Workspace and preparation costs
 
-[Performance decisions and measurement method](README.md) · [Current ownership contracts](../development/composition.md#reusing-workspaces)
+[Performance guide](README.md) · [Ownership contracts](../development/composition.md#reusing-workspaces) · [Current benchmark commands](../development/testing.md)
 
-These are measurements of the named historical revisions. Current API names and
-recommended workflows belong to the development guide. Retained heap, allocation
-traffic, live peak, code size and latency are different metrics; a smaller buffer
-or fewer allocations alone do not prove faster evaluation. The original tables,
-regressions and rechecks remain below, with their own parameters and toolchains.
+Reuse prepared state across requests, but decide cross-stage buffer sharing,
+alignment and ownership independently. Smaller storage and fewer allocations
+do not by themselves establish lower latency. These historical comparisons
+retain the useful costs and counterexamples; detailed migration tables are
+available in Git at `bbf235ed`, not maintained as descriptions of current APIs.
 
-## One-hot four-way consumption, 2026-10-10
+Unless noted otherwise, measurements used Ryzen 9 9955HX3D, x86_64 Linux,
+rustc 1.98.1 / LLVM 22.1.8, release and repository native CPU flags. Builds and
+measurements ran separately. CPU 4/8 are different cache groups on that one
+machine. Each timed iteration performs one named operation; setup and diagnostics
+are outside timing unless they are the construction being measured. Percentage
+changes compare the same workload on the same CPU. Historical functional
+parameters and successful decryptions are not security/DFR certificates.
 
-At `21440eab`, four-way record selection can generate compact δ1…δ3, copy C0
-into a result and apply three serial `cmux_to` calls using alternating result and
-scratch ciphertexts. The new `OneHotEvaluator::cmux_k_to` in both NTRU backends
-binds the existing lattice k-CMux kernel to that same selector batch, C0 and
-C1…C3. It computes `C0 + sum_r delta_r*(Cr-C0)` with one transform-domain sum
-and inverse transform. No kernel, decomposition, BR or selector type changed.
+Requested allocation traffic, retained heap, live peak and inline metadata are
+different quantities. Heap observations exclude allocator overhead and RSS;
+resource-set comparisons include owners moved outside an evaluator. A shorter
+object or different owner does not imply that its buffers disappeared. Historical
+allocation probes are not current test coverage, and no counter API is required
+to consume these results.
 
-Temporary external consumers used `experimental::CLASSIC_ONE_HOT_U64`: u64,
-n800/h32/N1024, Rounded input t=8 (M=4), three base-256 output gadget levels,
-Scaled candidate t_ring=8, seed 42. NTT used Q50; Fourier used Native, with
-RustFFT and TFHE-FFT measured separately. Both used external q24. Candidate
-records were `[0,1,2,3]`, `[1,3,0,2]`, `[3,0,1,2]`, `[2,1,3,0]`, repeated across
-all coefficients, rather than independent SIMD slots. Sparse changed only the
-BR algorithm to three copies/64 buckets on the same fixed-weight config.
+## Aggregate scratch addresses
 
-One Criterion iteration measured **one complete nonzero one-hot generation and
-four-way selection** at input 3. Both methods generated only δ1…δ3. Context,
-keys, candidate/input encryption, evaluator and all output buffers were outside
-`b.iter`; decryption validated all coefficients before sampling. The serial
-method included copying C0 and three CMux calls; the fused method used one
-multiway call. AMD Ryzen 9 9955HX3D, rustc 1.98.1, release, repository compiler
-flags, RustFFT/TFHE-FFT features enabled, no Cargo `simd` feature. Criterion used
-30 samples, 1 s warmup and a 3 s measurement target, extended when necessary.
-Adjacent serial/fused runs were pinned to the same CPU; each CPU is a separate
-comparison, not a comparison between cores.
+The 2026-10-04 diagnostic GLWE NTT sparse CBS experiment compared using one
+aggregate address with alternating two addresses between buckets. The fixture
+was u64/n728/h32/N1024/k1, Q1125899906826241, BR logB8/L6, r3/B64, t4,
+BR→KS, client/server seed 42, independent input seed 43 and message 1. See the
+[historical profile](sparse-layout-and-batching.md#historical-fixtures-and-evidence).
 
-| Backend / BR | CPU 4 serial → fused | CPU 8 serial → fused |
-| --- | --- | --- |
-| NTRU NTT / classic | 5.107 → 5.052 ms | 5.959 → 5.990 ms |
-| NTRU RustFFT / classic | 6.060 → 6.044 ms | 7.475 → 7.408 ms |
-| NTRU TFHE-FFT / classic | 4.736 → 4.749 ms | 6.220 → 6.224 ms |
-| NTRU NTT / sparse | 4.007 → 3.984 ms | 4.739 → 4.681 ms |
-| NTRU RustFFT / sparse | 4.706 → 4.718 ms | 5.381 → 5.300 ms |
-| NTRU TFHE-FFT / sparse | 4.384 → 4.396 ms | 5.027 → 4.986 ms |
+Both policies retained two ordinary Vec buffers and used the **same executable**,
+keys, input and workspace. A runtime mask selected A for every bucket or A/B by
+bucket parity. Dummy copy overwrote the chosen buffer; aggregation, in-place NTT
+and product order were unchanged. Each aggregate was 192 KiB; either experimental
+policy retained 581312 bytes versus production's 384704 bytes. Thus alternating
+addresses would cost another allocation and 192 KiB, not save memory.
 
-These are point estimates for the complete pipeline. Classic changes were
-within approximately -1% to +0.5%; sparse point estimates ranged from -1.5%
-to +0.3%. These paired runs showed no material regression and do not establish
-a general speedup. The retained benefit is simpler consumption and one less
-coefficient ciphertext buffer; fewer inverse transforms alone are not an end-to-end speedup claim.
+Each process ran ABBA followed by BAAB, 30 samples, 0.5 s warmup and 2 s target
+per round. Values are averages of four round means with their ranges, in ms;
+they are descriptive summaries, not pooled confidence intervals:
 
-Constructor accounting covered the owning evaluator, compact selectors, result
-and (serial only) alternating scratch, excluding context, keys, candidates and
-allocator overhead:
-
-| Backend | Allocations serial → fused | Retained requested heap serial → fused |
-| --- | --- | --- |
-| NTRU NTT | 13 → 12 | 230400 → 222208 bytes |
-| NTRU RustFFT | 15 → 14 | 263168 → 254976 bytes |
-| NTRU TFHE-FFT | 15 → 14 | 263168 → 254976 bytes |
-
-The 8192-byte difference is one N1024/u64 ciphertext. Compact selectors occupy
-73728 bytes in each representation. Both paths allocated zero times from their
-first online request. Seeds 42/4242, all four branches and classic/sparse passed
-for all three transform engines. Shape diagnostics rejected full selector
-ranges, unequal candidate counts and incorrect default/output/first-candidate
-lengths before output writes. A malformed later candidate was rejected while
-streaming; a subsequent valid call recovered without clearing scratch and
-without allocating.
-
-The fused noise propagation differs from serial CMux: budget the sum of the
-external-product errors, and Fourier rounding occurs after summation. Successful
-fixed-seed decryption does not establish failure probability or a general noise
-bound. No bitwise ciphertext equality was required between methods.
-
-To repeat, use the named configs and record patterns. Prepare both methods'
-compact selector storage and outputs once. Serial consumption copies C0, then
-iterates `nonzero_ngsw_selectors(...).iter()` and swaps two result buffers after
-each `cmux_to`; fused consumption passes that view, C0 and `&candidates[1..]` to
-`cmux_k_to`. Time selector generation plus consumption together with the same
-input, seed, features and CPU. The temporary consumers and counters were removed;
-backend-local permanent benches follow the API cleanup.
-
-## MVB owning PBS state, 2026-10-10
-
-Compared `aba0b657` with the implementation where `FactorizedEvaluator` owns
-its prepared PBS evaluator. Four crate-local threshold examples use
-`context.mvb_evaluator(&server_key)`; advanced bindings move existing state into
-`FactorizedEvaluator::new(pbs)`. Context and keys remain borrowed. The numerical
-pipeline, factor storage, GLWE PBS orders and NTRU return tiles are unchanged.
-
-Temporary external Criterion consumers used the four backends'
-`experimental::CLASSIC_THRESHOLD_MVB_U64`: u64, n728/h32/N1024, Rounded t_in=128,
-Scaled t_out=2, D64/k17, seed 42. GLWE used KS→BR; NTT used Q50, Fourier RustFFT
-used Native, and NTRU returned to q24. One iteration measured one complete
-17-output MVB at score 63. Context, keys, program, encryption, evaluator and
-outputs were outside timing; decryption checked the results before sampling.
-AMD Ryzen 9 9955HX3D, rustc 1.98.1, release, repository compiler flags,
-default features plus `rustfft`, no Cargo `simd` feature. Criterion used 30
-samples, 1 s warmup and a 3 s measurement target, extended when necessary.
-Adjacent old/new executable runs were pinned to each listed CPU independently.
-
-| Backend | CPU 4 before → after | CPU 8 before → after |
-| --- | --- | --- |
-| GLWE NTT | 12.638 → 12.651 ms | 12.611 → 12.559 ms |
-| GLWE RustFFT | 16.304 → 15.317 ms | 15.828 → 15.019 ms |
-| NTRU NTT | 14.320 → 14.316 ms | 16.094 → 16.043 ms |
-| NTRU RustFFT | 14.422 → 14.346 ms | 16.219 → 16.167 ms |
-
-These are Criterion point estimates. Three backends showed no statistically
-detected change in these paired runs; GLWE RustFFT was lower on both CPUs.
-The decision retains the simpler ownership and observed absence of regression;
-it does not establish a general algorithmic speedup or sparse/BK performance.
-
-Constructor accounting covered retained evaluator buffers only, excluding keys,
-context, program, outputs and allocator overhead. Before measured PBS plus MVB;
-after measured the owning MVB factory. Heap and allocation counts were identical:
-
-| Backend | Allocations | Retained requested heap | Inline state before → after |
-| --- | --- | --- | --- |
-| GLWE NTT | 13 | 138952 bytes | 584 → 576 bytes |
-| GLWE RustFFT | 16 | 163528 bytes | 608 → 600 bytes |
-| NTRU NTT | 12 | 227976 bytes | 368 → 360 bytes |
-| NTRU RustFFT | 15 | 268936 bytes | 432 → 424 bytes |
-
-The redundant context reference is gone; no scratch was duplicated. Temporary
-diagnostics checked zero online allocations from the first request, including
-classic/sparse and both GLWE orders. They were removed after validation.
-
-To repeat, use the named experimental configs and `compile_mvb_fn(64, 17, ...)`
-with thresholds `i*64/18`, i=1..17, then time only `apply_lookup_table_to` with
-preallocated outputs. At `aba0b657`, prepare `pbs`, call
-`FactorizedEvaluator::new(&pbs)` and pass `&mut pbs` per request. With the owning
-API, use the context factory and omit that argument. Compare separate release
-executables on the same CPU; existing mutable state remains outside `b.iter`.
-Backend-local permanent MVB benches will be rebuilt after the API cleanup.
-
-## RNS key-set preparation, 2026-10-10
-
-Compared with `2fa5863d`, on AMD Ryzen 9 9955HX3D, x86_64 Linux,
-rustc 1.98.1 (48a229cea), repository compiler flags and default features.
-`U64DcrtTable` still selects native kernels at runtime without the Cargo `simd`
-feature. A temporary Criterion probe generated and dropped one complete named
-key set per iteration, including metadata and, for expansion/reverse trace,
-normalization and monomial preparation. N=1024, u64, GLWE dimension 2,
-sparse ternary secret, sigma=3.2, ordered Q=[1125899906826241,1125899906629633],
-logB=20 with all five gadget levels; t=12289 and gamma=2199023190017.
-These are the existing trace benchmark's functional parameters, not a security
-recommendation. Parameters, secrets, table and checked domain were outside timing.
-Secret generation used seed 42; each case's generation RNG started at seed 4242
-and advanced across iterations.
-
-Saved executables ran sequentially on CPU 4 in before/after/after/before order;
-no compilation overlapped measurement. Each process used 30 samples, 1 s warmup
-and 2 s measurement. Criterion mean point estimates, in microseconds:
-
-| Complete key set | Before, min–max | After, min–max | Change across the two pairs |
+| Process / CPU | Reuse A | Alternate A/B | Change |
 | --- | ---: | ---: | ---: |
-| crt_trace | 3362.09–3371.79 | 3325.16–3326.07 | -1.38% to -1.07% |
-| dcrt_trace | 3352.50–3356.38 | 3308.49–3322.13 | -1.31% to -1.02% |
-| dcrt_reverse | 3348.71–3370.62 | 3315.63–3319.32 | -1.52% to -0.99% |
-| crt_expand | 3359.58–3370.58 | 3322.32–3334.21 | -1.11% to -1.08% |
-| dcrt_expand | 3440.98–3453.12 | 3401.12–3407.91 | -1.51% to -0.96% |
+| First / 4 | 16.370 (16.311–16.420) | 16.366 (16.333–16.397) | -0.025% |
+| Second / 8 | 17.016 (16.960–17.074) | 17.029 (17.004–17.054) | +0.076% |
+| Fresh / 4 | 16.182 (16.178–16.194) | 16.194 (16.176–16.230) | +0.073% |
 
-Retain the local preparation change: the five complete constructors improved
-slightly in both pairs, without additional retained/peak storage or public API.
-One bound `DcrtGlevEncryptor` replaces log2(N) identical bindings, reducing
-ordered-modulus comparisons from O(m log N) to O(m) for m limbs. CRT coefficient
-key layout is also checked once. Encryption, permutation and CRT signed-message
-encoding still run for every degree/row in their existing order; no transform
-or gadget level is removed. CRT and DCRT keep separate generation helpers and
-scratch representations. Standalone automorphism constructors retain independent
-checks. No online trace, expansion, PBS or CBS improvement is claimed.
+Intervals overlapped in every process, with no stable complete-request benefit.
+Both arrays had offset 16 modulo 64 and modulo 4096, separated by 200704 bytes;
+this was not a controlled alignment or physical-page sweep. Outputs matched
+exactly. Hardware counters were unavailable (`perf_event_paranoid=4`), so the
+result cannot identify cache writeback, store forwarding or false dependencies.
+Keep one aggregate for this path. This says nothing about sharing BR/trace/SS
+roles, Fourier, other shapes or parallel requests. The temporary second buffer
+and dispatch were removed.
 
-A separate allocator probe retained the returned complete key. Counts include
-allocation and reallocation requests during generation; bytes exclude allocator
-metadata, caller resources and RSS. Retained bytes are live requested bytes at
-return; peak is their maximum during the constructor.
+## Alignment and fixed containers
 
-| Complete key set | Requests before → after | Requested bytes before → after | Retained bytes, unchanged | Peak bytes, unchanged |
-| --- | ---: | ---: | ---: | ---: |
-| crt_trace | 41 → 23 | 5198400 → 4977216 | 4952640 | 4977200 |
-| dcrt_trace | 32 → 23 | 5120576 → 4973120 | 4956736 | 4973104 |
-| dcrt_reverse | 33 → 24 | 5120608 → 4973152 | 4956768 | 4973104 |
-| crt_expand | 64 → 46 | 5199192 → 4978008 | 4953256 | 4977200 |
-| dcrt_expand | 97 → 88 | 5777144 → 5629688 | 5285272 | 5301024 |
+On 2026-09-28, temporary lattice consumers compared identical transformed NTRU
+key coefficients borrowed from Vec versus cache-aligned ABox. Both used the same
+nightly `1.100.0-nightly (bff8e12ff)` / LLVM 23.1.0, CPU 0, N1024, with default and
+Cargo SIMD features measured separately. The representative recheck used
+Q998244353/base 2/L15 (u32 NTT), Q1125899906826241/base 8/L6 (u64 NTT), and native
+Fourier base 2/L16 or base 8/L8. One coefficient external product was timed;
+conversion and equality checks stayed outside. Sampling: 15 samples, 0.3 s
+warmup, 1.2 s target, ordinary storage before aligned storage.
 
-CRT scratch allocations fall from 20 to 2, saving 18 requests and 221184 bytes
-(216 KiB) per key set. DCRT scratch allocations fall from 10 to 1, saving 9
-requests and 147456 bytes (144 KiB). Peak is unchanged because the old final
-degree already held those scratch buffers alongside the preceding keys.
-`Zeroizing` buffers remain local, are erased on return/unwind, and are released
-before the owner prepares its final metadata or expansion factors. No online
-workspace gains storage or shares new addresses.
-
-Temporary N=32 snapshots with dimension 2, ordered Q=[257,769], logB=4 and all
-five levels checked every stored ciphertext row and the next four RNG words
-for u32/u64 across all five key sets; all matched the baseline byte for byte.
-A temporary allocator observer checked CRT's two buffers and DCRT's one buffer
-immediately before release on normal return and interrupted sampling for every
-u64/N1024 constructor. The probes were removed. Ordinary tests retain small
-trace/reverse-trace/expansion oracles and ordered-domain/radix/level rejection;
-one generation regression checks secret layout/basis rejection before sampling,
-including a foreign coefficient key with a valid DCRT binding.
-
-[Per-run estimates and storage counts](data/rns-key-set-preparation.csv) retain
-the evidence. To reproduce the timing workload, use the fixture above and
-`b.iter(|| black_box(Key::new(&domain, ..., &mut rng)))` for each of
-`CrtGlweTraceKey`, `DcrtGlweTraceKey`, `DcrtGlweRevTraceKey`,
-`CrtGlweExpandCoeffKey` and `DcrtGlweExpandCoeffKey`; drop the key in the iteration.
-The existing `trace` and `expand_coeff` benchmarks instead measure online
-operations. CPU 8, other sizes/dimensions, u32 timing and nightly-feature latency
-were not measured; the small latency changes are scoped to these runs.
-
-## NTRU trace preparation, 2026-10-10
-
-Compared with `08cc5af4`, on AMD Ryzen 9 9955HX3D, x86_64 Linux,
-rustc 1.98.1 (48a229cea), repository compiler flags and `ntt,rustfft,tfhe-fft`
-without the Cargo `simd` feature. The U64 NTT table still selects native kernels
-at runtime. A temporary Criterion probe generated and dropped one complete trace
-key per iteration. N=1024, u64, sparse ternary secret, sigma=3.2, logB=10 and
-maximum valid decomposition length: 5 levels at q=1125899906826241 for NTT,
-6 at Native64 for Fourier. Secret pair generation used seed 42; trace generation
-used seed 4242 and advanced that RNG across iterations. Parameters, secrets,
-tables, FFT engines and caller gadget workspaces were prepared outside timing.
-These are functional fixtures, not security recommendations or equivalent
-NTT/Fourier noise budgets.
-
-Saved executables ran sequentially on CPU 4, in before/after/after/before order,
-with no overlapping compilation. Each process used 30 samples, 1 s warmup and
-2 s measurement. Criterion mean point estimates, in microseconds:
-
-| Backend | Before, min–max | After, min–max | Change across the two pairs |
-| --- | ---: | ---: | ---: |
-| NTT | 600.33–600.98 | 600.02–600.60 | −0.06% to −0.05% |
-| RustFFT | 472.13–473.20 | 473.35–473.87 | +0.03% to +0.37% |
-| TFHE-FFT | 475.46–476.69 | 476.58–476.92 | −0.02% to +0.31% |
-
-There is no established latency improvement. The retained change removes repeated
-preparation: one secret encoding instead of log2(N), two temporary coefficient
-allocations instead of 2*log2(N), and one shared resource check before sampling.
-Permutations and gadget encryption still run for every degree in the original
-order. Standalone automorphism and key-switch generation retain their checks;
-their internal paths use the same existing NLev encryption kernel.
-
-A separate allocator probe measured complete generation while retaining its
-result. Requested bytes exclude allocator metadata, caller-owned resources and
-RSS. Retained bytes are allocated minus released bytes at constructor return;
-peak is the maximum simultaneously live requested bytes inside that constructor.
-
-| Backend | Allocation requests before → after | Requested bytes before → after | Retained bytes, unchanged | Peak bytes, unchanged |
-| --- | ---: | ---: | ---: | ---: |
-| NTT | 71 → 53 | 655200 → 507744 | 491360 | 507568 |
-| RustFFT | 70 → 52 | 778064 → 630608 | 614224 | 630608 |
-| TFHE-FFT | 70 → 52 | 778064 → 630608 | 614224 | 630608 |
-
-Each case saves 18 allocation requests and 147456 requested bytes (144 KiB).
-The two N-word buffers still coexist at the last degree, so their longer
-lifetime does not reduce peak storage. They remain local `Zeroizing` buffers,
-erased before returning (and before NTT normalization metadata), with no new online storage
-or public API. The probes were removed; [per-run estimates and storage counts](data/ntru-trace-preparation.csv)
-retain the evidence. To reproduce the temporary timing workload, prepare the
-above fixture, then use `b.iter(|| black_box(TraceKey::generate(...)))`; keep
-caller workspace and RNG outside the iteration and drop the returned key inside
-it. This measures key generation plus destruction, not the existing `primitives`
-benchmark's online trace evaluation.
-
-Temporary N=32 snapshots checked every stored key coefficient and subsequent
-four RNG words for u32/u64, NTT and both FFT engines, with seed 4242 and
-logB=8/L=3; all were byte-identical. A temporary observer checked both secret
-copies immediately before deallocation on normal return and sampling unwind
-for all three u64/N1024 backends. Ordinary tests retain phase, reverse-normalization,
-standalone generation and rejection-before-sampling contracts. CPU 8, other
-sizes, u32 timing and nightly-feature latency were not measured. No online
-PBS/CBS speedup is claimed.
-
-## NTT root preparation, 2026-10-10
-
-Compared with `53a0307a`, on AMD Ryzen 9 9955HX3D, x86_64 Linux,
-rustc 1.98.1 (48a229cea), default features and repository compiler flags.
-Executables were built in the same checkout, saved, and run sequentially on
-CPU 4 in before/after/after/before order; no compilation overlapped measurement.
-Each process used 30 samples, 1 s warmup
-and 2 s measurement. The existing `bench_ntt` construction cases create and
-drop one complete N=4096 table per iteration, including root search, numerical
-preparation, layout, allocations and destruction; modulus preparation is outside
-measurement. Random root search is unchanged and is not seeded. The generic
-table is portable; specialized tables select native kernels at runtime, so
-default features do not imply scalar-only specialized construction.
-
-For order D=2N, multiplying by the sampled root's square visits the D/2
-distinct odd powers, which are exactly the primitive roots in the prime field.
-The previous D-step loop visited that orbit twice. The retained change scans
-D/2 steps and returns the same minimum; it adds no storage, allocation or API.
-One small integer-oracle test covers orders 2 through 256 for u16/u32/u64 and
-an unavailable-order error. Default and nightly all-feature NTT tests cover
-direct polynomial evaluation, specialized/generic kernels and DCRT normalization.
-
-The two runs' Criterion mean point estimates, in microseconds:
-
-| Word / modulus | Table | Before, min–max | After, min–max | Change across the two pairs |
-| --- | --- | ---: | ---: | ---: |
-| u32 / 268369921 | Generic | 46.51–46.55 | 37.81–37.83 | −18.8% to −18.7% |
-| u32 / 268369921 | Specialized | 58.03–58.33 | 49.42–49.48 | −15.3% to −14.7% |
-| u64 / 1073692673 | Generic | 57.71–58.25 | 48.21–48.21 | −17.2% to −16.5% |
-| u64 / 1073692673 | Specialized | 65.48–65.53 | 56.50–56.53 | −13.8% to −13.7% |
-| u64 / 1125899906826241 | Generic | 58.01–58.68 | 48.36–48.36 | −17.6% to −16.6% |
-| u64 / 1125899906826241 | Specialized | 65.47–65.53 | 56.69–56.73 | −13.4% to −13.4% |
-| u64 / 1152921504606830593 | Generic | 57.86–58.60 | 48.44–48.98 | −16.4% to −16.3% |
-| u64 / 1152921504606830593 | Specialized | 65.83–66.02 | 56.63–56.64 | −14.2% to −14.0% |
-
-[Per-run estimates](data/ntt-root-construction.csv) retain the paired values.
-Complete construction improved by about 13–19% in these cases; halving the
-scan does not halve the constructor. Online transforms are unchanged. CPU 8,
-other sizes and nightly-feature latency were not measured. Reproduce on each
-revision with the existing target:
-
-```sh
-taskset -c 4 cargo bench -p primus_ntt --bench bench_ntt -- '^construction/' --sample-size 30 --warm-up-time 1 --measurement-time 2 --noplot
-```
-
-## Binding migration measurements
-
-Compared with `9564b7b5` on 2026-10-04, AMD Ryzen 9 9955HX3D,
-rustc 1.98.1, release/default features and the repository's `target-cpu=native`.
-Both versions used the existing u64/N1024/k2 fixtures, two approximately 50-bit
-Q limbs, base_log=20 and seed=42. Executables were built in the same checkout,
-saved, and run sequentially on CPUs 0/1; expansion used two Rayon workers.
-Setup, binding and output allocation stayed outside each single-operation
-iteration. Initial median timings in milliseconds:
-
-| Operation | Before | After |
+| Backend / word | Default Vec → ABox, µs | SIMD Vec → ABox, µs |
 | --- | ---: | ---: |
-| CRT trace | 0.572 | 0.573 |
-| DCRT trace | 0.582 | 0.590 |
-| Normalized reverse trace | 0.574 | 0.600 |
-| CRT serial expansion | 67.406 | 68.349 |
-| DCRT serial expansion | 69.601 | 67.742 |
-| CRT parallel expansion | 35.321 | 34.747 |
-| DCRT parallel expansion | 34.952 | 39.468 |
+| NTT / u32 | 7.945 → 7.915 | 7.981 → 7.960 |
+| NTT / u64 | 5.184 → 5.162 | 5.261 → 5.222 |
+| RustFFT / u32 | 10.581 → 10.557 | 10.676 → 10.647 |
+| RustFFT / u64 | 6.249 → 6.233 | 6.237 → 6.223 |
+| TFHE-FFT / u32 | 7.735 → 7.679 | 7.648 → 7.559 |
+| TFHE-FFT / u64 | 4.604 → 4.568 | 4.655 → 4.633 |
 
-Automorphisms covered identity, N+1 and degree 5, taking roughly 50–54 us;
-initial changes ranged from -0.1% to +5.4%. The larger differences prompted an
-after/before/before/after recheck of the saved executables (two runs per version):
+These small differences do not justify migrating all keys. Ordinary allocation
+already yielded offsets 0/16/32 modulo 64; ABox guaranteed 128-byte alignment on
+this target. Order/system drift was not isolated. N1024 polynomial strides
+preserve base alignment, while n+1 LWE rows generally do not; aligning an outer
+container does not align separately owned inner buffers. No padding or online
+conversion follows from this comparison.
 
-| Rechecked operation | Before medians, min–max | After medians, min–max |
+The related complete c8/d5/o8 lookup comparison changed only fixed Box/ABox
+workspace fields back to Vec/AVec, retaining lengths, alignment and exact
+capacity. Both variants used that same nightly SIMD configuration and CPU 0;
+Box was measured first. Vec/AVec ranged from about 0.7% faster to 1.6% slower
+across NTT and both FFT engines at u32/u64, with identical retained coefficient
+heap and no consistent advantage. Keep fixed-length ownership without claiming
+a boxed-storage speedup.
+
+An earlier `e55ec2e` lookup at n64/N1024/M4/c7/d5/o3 saved 25 KiB (NTT) or
+41 KiB (Fourier) through workspace consolidation. Its pinned SIMD means were
+7.084→7.053 ms, 7.985→8.169 ms and 6.289→6.256 ms for NTT/RustFFT/TFHE-FFT.
+The RustFFT increase was about 2.3%; retaining AVec only in the product workspace
+recovered part, not all, of it. This establishes a memory/latency tradeoff, not a
+universal reuse benefit. Both lookup studies predate the current fixed tree and
+its parameters; their absolute times cannot be compared as a before/after pair.
+
+## Prepared state and ownership
+
+Sharing immutable preparation has an initial owner cost. The 2026-10-03
+comparisons retained ordinary parameters, one derived gadget parameter and one
+gadget clone together; reported totals combine inline size and requested heap:
+
+| Study | Three-object storage before → after | Tradeoff |
+| --- | ---: | --- |
+| NTRU vs `d8eedf4f`, sparse ternary | 2960 → 1336 B | One extra 464-byte initial allocation; gadget bases remain separately owned. |
+| NTRU, Gaussian secret sigma 3.2 | 3920 → 1656 B | Reuses larger sampler state; no global interning. |
+| RNS shared base, two Q50 limbs | 3888 → 3208 B | Initial Arc/cache storage grows, repeated base clones no longer duplicate it. |
+
+NTRU used u64/N1024/t16, noise 3.2; RNS used k1/N1024, t2,
+Q=[1125899906826241,1125899906629633], gamma 2305843009213554689 and logB20.
+The online NTRU encryption screen found no established regression; RNS conversion,
+BFV and key-switch rechecks were roughly within 1%. These short default-feature
+checks support avoiding preparation duplication, not faster encryption or a
+general latency bound. Full original fixture and sampling details remain in Git.
+
+A separate NTRU return-workspace change against `a0d5716e` removed unused
+return buffers from the historical n800/N1024/c8/d5/o8 lookup evaluator. At u64,
+NTT retained heap fell 912520→787464 B and Fourier 1068168→1059968 B. The savings
+were respectively `(N+8*(N+1)+8*(n+1))*sizeof(T)` and `(N+1)*sizeof(T)`; work
+required by other consumers was not removed. Complete-request changes were
+small or changed direction on recheck. Select buffers by actual operation needs;
+these numbers are neither current evaluator sizes nor an algorithmic speedup.
+
+Borrowing shared operation resources preserved the complete resource sets'
+coefficient heap. The 2026-10-03 GLWE NTT migration against `d566a73a` nevertheless
+showed sparse CBS increasing from 16.640/16.730 to 17.037/17.316 ms (BR→KS) and
+16.682/16.733 to 17.255/17.328 ms (KS→BR) on CPU 4. CPU 8 did not reproduce it.
+Removing an inline hint helped some sparse observations but harmed classic CBS;
+that experiment was reverted. A later comparison with `def858ef` on both CPUs
+also failed to reproduce the original 3–4% increase. It was not a bisect, and it
+does not invalidate the earlier result. Unchanged arithmetic/heap alone cannot
+prove performance parity or identify the cause of code-layout sensitivity.
+
+## Complete consumers of reusable state
+
+Two 2026-10-10 API changes were measured with u64, default arithmetic, seed 42,
+N1024, Q50 for NTT and Native for Fourier, external q24 for NTRU. Temporary
+Criterion consumers ran adjacent before/after binaries on each CPU separately,
+30 samples, 1 s warmup and 3 s target. They timed complete requests, excluding
+setup, encryption and output allocation.
+
+- **MVB owns prepared PBS state**, compared with `aba0b657`: n728/h32,
+  Rounded t_in=128, Scaled t_out=2, D64 and 17 outputs, GLWE KS→BR, input 63.
+  No buffer was duplicated; retained evaluator heap was unchanged and inline
+  metadata fell by 8 B. GLWE NTT, NTRU NTT and NTRU RustFFT stayed close to their preceding times; GLWE RustFFT fell from 16.304→15.317 ms
+  on CPU 4 and 15.828→15.019 ms on CPU 8. The choice simplifies ownership; these
+  pairs do not establish a general speedup or sparse/BR→KS result.
+- **One-hot four-way consumption**, compared with `21440eab`: n800/h32,
+  M4/t8, three base 256 output levels, Scaled candidates t_ring=8 and input 3.
+  Four coefficient-repeated records were [0,1,2,3], [1,3,0,2], [3,0,1,2] and
+  [2,1,3,0]. Both methods generated only δ1…δ3. Fused k-CMux replaced copying
+  C0 plus three serial CMux calls with one transform-domain sum/conversion.
+  Classic changes were approximately -1% to +0.5%; sparse r3/B64 changes
+  -1.5% to +0.3%, across NTT and both FFT engines. Retained consumption storage
+  fell by 8192 B, one N1024/u64 ciphertext. Simpler use and one fewer buffer are
+  established; a general latency gain is not.
+
+The fused consumer has its own sum-of-product error budget and, in Fourier,
+one conversion after summation. Serial CMux noise estimates and bitwise outputs
+cannot be assumed interchangeable. See [one-hot consumption](../development/bootstrapping-contracts.md#one-hot-cbs).
+
+## Public-key sampler reuse
+
+A 2026-10-09/10 study against `fe4111a4` retained the raw LWE generator's explicit
+sampling dependencies and inline hint, but rejected GLWE sampler reuse. CPU 4,
+u64 binary secrets, Q50/Native64, n800 for BR→KS and n1024 for KS→BR; seeds 42
+and 4242. Each iteration allocated and generated all n zero rows, excluding
+output destruction and fixture preparation. Two order-reversed pairs used
+30 samples, 1 s warmup and 2 s measurement; no FFT was involved.
+
+| Full generation | Raw API + inline, retained | Also reuse order-specific samplers, rejected |
 | --- | ---: | ---: |
-| CRT auto, degree N+1 (us) | 51.41–53.71 | 53.49–53.70 |
-| DCRT auto, degree N+1 (us) | 50.90–53.48 | 53.43–54.05 |
-| CRT trace (us) | 568.5–593.9 | 572.3–604.1 |
-| DCRT trace (us) | 581.7–583.4 | 586.2–589.7 |
-| Reverse trace (us) | 588.0–589.6 | 579.5–596.7 |
-| DCRT parallel expansion (ms) | 40.01–40.17 | 37.63–37.79 |
-
-The initial 13% parallel-expansion increase reversed; latency also varied within
-the same binary. DCRT trace retained a small increase in this sample. These
-results do not establish a general speedup or exact parity on other machines.
-No arithmetic, scheduling or inlining adjustment was retained to tune this sample.
-Reproduce with the crate's `automorphism`, `trace` and `expand_coeff` benches,
-filtering `N=1024/|N=1024$`, with `RAYON_NUM_THREADS=2` and `taskset -c 0,1`.
-Initial runs used 0.3 s warmup, 1 s measurement and 20 samples; rechecks used
-0.5 s, 2 s and 30 samples. Expansion retains its fixture's 10-sample setting.
-
-A temporary process-wide allocator probe checked the first and repeated online
-calls for all three automorphism degrees, CRT/DCRT trace, reverse trace and both
-expansion modes. With a two-worker Rayon pool initialized before measurement,
-all reported zero allocations, including worker threads. An incompatible-radix
-parallel binding was also rejected with zero allocations. The probe was removed;
-ordinary tests retain domain rejection, dirty-buffer reuse and guard unwind
-coverage. Other sizes, u32 timing and SIMD timing were not measured.
-
-## NTRU parameter sharing measurements
-
-The constructor calls below describe the measured revision. Current parameter and codec composition is described in the [composition guide](../development/composition.md#keep-messages-encoded-values-and-phases-separate).
-
-Measured on 2026-10-03 against `d8eedf4f`, on AMD Ryzen 9 9955HX3D, x86_64 Linux, rustc 1.98.1 (48a229cea, LLVM 22.1.8), default features and the repository's `target-cpu=native`. Construction measurements counted allocation requests and requested/released bytes, not timing or RSS. The three measured stages retained all returned values: create `NtruParameters::new(1024, 16u64, NativeModulus::new(), distr, 3.2)`, derive `NlevParameters::with_ntru_params(&ordinary, base_log=8, levels=Some(3))`, then clone that NLev. Each stage was measured separately, keeping all three parameter objects alive until after the measurements.
-
-| Secret distribution | Stage | Allocation count before → after | Allocated bytes before → after | Released bytes before → after |
-| --- | --- | --- | --- | --- |
-| Sparse ternary | Ordinary construction | 2 → 3 | 632 → 1096 | 312 → 312 |
-| Sparse ternary | Gadget derivation | 3 → 2 | 392 → 72 | 0 → 0 |
-| Sparse ternary | Gadget clone | 3 → 2 | 392 → 72 | 0 → 0 |
-| Gaussian, sigma=3.2 | Ordinary construction | 4 → 5 | 1264 → 1728 | 624 → 624 |
-| Gaussian, sigma=3.2 | Gadget derivation | 4 → 2 | 712 → 72 | 0 → 0 |
-| Gaussian, sigma=3.2 | Gadget clone | 4 → 2 | 712 → 72 | 0 → 0 |
-
-For these three live parameter objects, `sum(size_of_val)` fell from 1856 to 408 bytes. Total retained requested heap (`sum(allocated_bytes - released_bytes)`) fell from 1104 to 928 bytes for sparse ternary and from 2064 to 1248 bytes for Gaussian secrets. Inline plus retained heap therefore fell from **2960 to 1336 bytes**, or **3920 to 1656 bytes**, respectively. This estimate excludes allocator overhead and stack placement. The tradeoff is one additional 464-byte allocation at initial construction; the encryption state was previously inline, so heap bytes alone do not express its total memory cost. Each gadget still allocates its own basis arrays.
-
-Online encryption was measured separately using the existing [encryption benchmark](../../crates/primus_ntru/benches/encryption.rs), with one `encrypt_to` per iteration. Setup, keys, tables and output allocation were excluded. N=1024, u64, t=16, sparse ternary secret, noise sigma=3.2; NTT used q=1125899906826241 and Fourier used the native modulus. Commands on the baseline and changed tree, respectively:
-
-```sh
-cargo bench -p primus_ntru --bench encryption --features ntt,rustfft,tfhe-fft -- 'n1024/encrypt_to' --sample-size 20 --warm-up-time 0.2 --measurement-time 1 --save-baseline before-3b
-cargo bench -p primus_ntru --bench encryption --features ntt,rustfft,tfhe-fft -- 'n1024/encrypt_to' --sample-size 20 --warm-up-time 0.2 --measurement-time 1 --baseline before-3b
-```
-
-| Backend | Before, µs (95% CI) | After, µs (95% CI) |
-| --- | --- | --- |
-| NTT | 10.679–10.688 | 10.452–10.640 |
-| RustFFT | 6.8924–6.9093 | 6.9015–6.9046 |
-| TFHE-FFT | 6.8672–6.8726 | 6.8720–6.8969 |
-
-This short local comparison found no regression; Fourier changes were not statistically significant, and NTT was slightly faster. The reason for sharing is reduced parameter duplication, not a general claim of faster encryption. SIMD was checked functionally, not benchmarked in this comparison. The ordinary encoding, RNG draw order, inverse filtering and gadget arithmetic are unchanged.
-
-## RNS base sharing measurements
-
-Measured on 2026-10-03, on AMD Ryzen 9 9955HX3D, x86_64 Linux, rustc 1.98.1 (48a229cea, LLVM 22.1.8), default features and repository compiler flags. As in the NTRU comparison above, measurements counted requested allocation traffic while retaining returned objects. The fixture used u64 Barrett moduli `[1125899906826241, 1125899906629633]`, k=1, N=1024, t=2, gamma=2305843009213554689, sparse ternary secrets, sigma=3.2 and a full gadget basis with logB=20. Measure ordinary construction, `CrtGlevParameters::with_glwe_params`, and gadget clone separately.
-
-| Stage | Allocation count before → after | Allocated bytes before → after | Released bytes before → after |
-| --- | --- | --- | --- |
-| Base construction alone | 6 → 7 | 176 → 312 | 48 → 32 |
-| Base clone | 4 → 0 | 128 → 0 | 0 → 0 |
-| Ordinary construction | 35 → 31 | 2080 → 2192 | 576 → 544 |
-| Gadget derivation | 12 → 7 | 488 → 344 | 0 → 0 |
-| Gadget clone | 12 → 7 | 488 → 344 | 0 → 0 |
-
-For the ordinary parameter, derived gadget and gadget clone together, inline storage plus retained requested heap fell from **3888 to 3208 bytes** (about 17.5%). This excludes allocator overhead and is not RSS. Creating an unshared base now costs an extra Arc allocation and retains the numeric cache; the benefit comes from sharing the repeated bases. No global interning is performed. BFV encode and decode with prepared buffers made zero measured allocations.
-
-Online screening used the existing `decompose`, `bfv_rns` and `key_switching` benchmarks, with setup outside measurement. Old and new executables ran sequentially on CPU 2; no compilation ran concurrently. Use these commands on each tree, with `--save-baseline rns-owned` before and `--baseline rns-owned` after:
-
-```sh
-taskset -c 2 cargo bench -p primus_rns --bench decompose -- --warm-up-time 0.5 --measurement-time 1.5 --sample-size 20 --noplot
-taskset -c 2 cargo bench -p primus_encoding --features rns --bench bfv_rns -- --warm-up-time 0.5 --measurement-time 1.5 --sample-size 20 --noplot
-taskset -c 2 cargo bench -p primus_glwe_rns --bench key_switching -- 'N=1024' --warm-up-time 0.5 --measurement-time 1.5 --sample-size 20 --noplot
-```
-
-The key-switch group fixes its sample count to 10. An initial roughly 1.7% fast-conversion regression was removed by copying the small destination arithmetic context before its coefficient loop. Alternating old/new runs then measured 3-to-2 conversion at 36.22–36.42 µs before and 36.02–36.18 µs after (point estimates, N=4096, 20 samples, 1.5 s). This is a check against regression, not a general speedup claim. SIMD is checked functionally; these timings use default features.
-
-Final N=4096 BFV point estimates were 16.54 → 16.53 µs (single-limb decode), 2.33 → 2.31 µs (two-limb unsigned accumulation), 6.20 → 6.24 µs (centered accumulation), and 43.65 → 43.75 µs (two-limb decode). N=1024 full key switches measured 24.52 → 24.38 µs (CRT), 36.15 → 36.11 µs (grouped hybrid), and 36.73 → 36.57 µs (singleton hybrid). These local results are within about 1%; they do not establish a universal performance bound.
-
-## Independent NTRU return workspace measurement
-
-Measured on 2026-10-03 against `a0d5716e`, AMD Ryzen 9 9955HX3D, x86_64 Linux,
-rustc 1.98.1 (48a229cea, LLVM 22.1.8), default features and the repository's
-`target-cpu=native`. Old and new executables ran sequentially on logical CPU 2,
-without concurrent compilation. These are the existing functional benchmark
-profiles, not security recommendations.
-
-The public LUT fixture is unchanged: n800/N1024, eight two-bit input/output
-chunks, d=5, seed 42, `x*x+3*x+7`. The allocator measures complete evaluator
-construction, excluding context, keys, compiled public LUT and caller output.
-Retained requested heap is `allocated_bytes - released_bytes`, excluding allocator
-metadata and RSS. Inline sizes are reported separately.
-
-| LUT backend / word | Allocations before → after | Retained requested bytes before → after | Inline bytes before → after | Constructor median before → after |
-| --- | --- | --- | --- | --- |
-| NTT / u32 | 22 → 19 | 571460 → 508932 | 744 → 672 | 37.32 → 29.92 µs |
-| NTT / u64 | 22 → 19 | 912520 → 787464 | 744 → 672 | 7.63 → 6.35 µs |
-| RustFFT / u32 | 27 → 26 | 1120324 → 1116224 | 816 → 800 | 16.38 → 15.90 µs |
-| RustFFT / u64 | 27 → 26 | 1068168 → 1059968 | 816 → 800 | 15.71 → 16.06 µs |
-| TFHE-FFT / u32 | 27 → 26 | 1120324 → 1116224 | 824 → 808 | 14.86 → 14.44 µs |
-| TFHE-FFT / u64 | 27 → 26 | 1068168 → 1059968 | 824 → 808 | 14.52 → 14.31 µs |
-
-The NTT saving is exactly its unused batch storage,
-`(N + 8*(N+1) + 8*(n+1))*size_of::<T>()`; Fourier removes the unused scalar
-`(N+1)*size_of::<T>()`. Complete PBS and factorized MVB retain both allocations;
-standalone CBS still has neither. Binding `LweReturnEvaluator` itself allocates
-nothing. A compatible return-key rebind now retains existing PBS scratch, even
-when the supplied key is a different object; existing recovery tests also decrypt
-an ordinary PBS result after that rebind.
-
-Constructor timing used a temporary probe in the existing pipeline fixture:
-101 separate `try_new(context, server, table)` calls, each timed with `Instant`
-from immediately before construction to its return; `black_box(&evaluator)` and
-destruction follow the timer. The median excludes key/LUT preparation and drops.
-`measure(|| try_new(...))` and `size_of_val(&evaluator)` provide the memory columns.
-The probe was removed afterward. These short cached-allocator observations do
-not imply a general constructor speedup.
-
-Full LUT request point estimates (20 samples, 0.5 s warmup, 1.5 s measurement)
-were 66.65 → 65.72 ms (NTT/u32), 50.12 → 49.25 ms (NTT/u64),
-109.64 → 104.84 ms (RustFFT/u32), 57.34 → 56.42 ms (RustFFT/u64),
-87.03 → 86.77 ms (TFHE-FFT/u32), and 46.45 → 45.36 ms (TFHE-FFT/u64).
-Every fixture verified its decrypted outputs and measured zero online allocations.
-The established benefit is smaller retained storage; these timings do not claim
-an algorithmic speedup. SIMD is verified functionally, not timed here.
-
-Complete u64 requests were also screened with the existing PBS and MVB fixtures
-(30 samples, 0.5 s warmup, 3 s measurement on CPU 2):
-
-| Backend | Ordinary PBS before → after | Shared-input ManyLUT before → after | Streamed factorized MVB before → after |
-| --- | --- | --- | --- |
-| NTT | 5.986 → 5.982 ms | 6.041 → 6.113 ms | 6.143 → 6.194 ms |
-| RustFFT | 7.150 → 7.159 ms | 7.375 → 7.306 ms | 7.353 → 7.320 ms |
-| TFHE-FFT | 5.941 → 5.981 ms | 6.171 → 6.168 ms | 6.161 → 6.175 ms |
-
-NTT ManyLUT showed an approximately 1.2% increase on CPU 2, so it was rerun in
-new/old/new/old order on CPU 4, with 1 s warmup and 3 s measurement. New versus old
-estimates were 6.117/6.195 ms and 6.146/6.133 ms: the direction did not persist
-across cores/runs. Ordinary PBS rechecks also varied in direction. This screening
-does not establish a consistent latency regression or improvement; it leaves
-roughly percent-level platform/code-layout variation unresolved. No alignment
-padding or numerical-kernel change was added to tune these samples.
-
-Reproduce online measurements with the same tree-specific toolchain, features and
-profiles. Use `--save-baseline ntru-returns` before and `--baseline ntru-returns`
-after; compile both versions before running their benchmark executables when
-alternating them:
-
-```sh
-taskset -c 2 cargo bench -p primus_tfhe_ntru_lut --bench pipeline --features ntt,rustfft,tfhe-fft -- 'u(32|64)/n800_N1024/c8_d5_o8/evaluate' --warm-up-time 0.5 --measurement-time 1.5 --sample-size 20 --noplot
-taskset -c 2 cargo bench -p primus_tfhe_ntru_ntt --bench pbs -- 'u64/binary/boolean/.*/complete' --warm-up-time 0.5 --measurement-time 3 --sample-size 30 --noplot
-taskset -c 2 cargo bench -p primus_tfhe_ntru_ntt --bench mvb -- 'u64/mvb/classic/.*/D8_k3/(interleaved|factorized)' --warm-up-time 0.5 --measurement-time 3 --sample-size 30 --noplot
-```
-
-Use `primus_tfhe_ntru_fourier` for the corresponding PBS/MVB commands; both FFT
-engines are selected. Ordinary PBS uses n800/N1024 and MVB uses n728/N1024,
-D8/k3. The shared-input and streamed return schedules, Q→q-before-sign order,
-transform kernels and fixed tile size are unchanged.
-
-## NTT borrowed-resource measurement
-
-Compared with `c6fbb13d` on 2026-10-03 using the machine/toolchain above,
-default features, logical CPU 2, sequential executables and no concurrent builds.
-Common resources and operation state were measured together, so moving storage
-out of an evaluator is not counted as a memory saving. Keys, context, input and
-public programs were prepared outside measurement.
-
-A temporary Criterion probe used the existing `ntru::circuit` u64 binary profile
-(n800/N1024), seed 42, and `ntru::cbs` material. Each iteration constructed and
-dropped one PBS, standalone CBS (t=4), standalone one-hot (t=8), or complete
-PBS+factorized MVB resource set. Warmup was 0.5 s, measurement 1.5 s, 20 samples.
-The counting allocator measured one retained construction separately; requested
-heap excludes allocator metadata. The probe was removed after measurement.
-
-| Resource set | Allocations, unchanged | Retained heap bytes, unchanged | Inline bytes before → after | Construction + drop, µs before → after |
-| --- | --- | --- | --- | --- |
-| Ordinary PBS | 11 | 224392 | 328 → 328 | 3.351 → 3.311 |
-| Standalone CBS | 11 | 140288 | 528 → 440 | 1.092 → 1.115 |
-| Standalone one-hot | 10 | 140288 | 496 → 408 | 1.119 → 1.116 |
-| PBS + factorized MVB | 12 | 232584 | 352 → 368 | 1.416 → 1.433 |
-
-Removing the CBS ownership enum saves inline space; MVB now keeps two binding
-references alongside its separately owned PBS. Allocation count and retained
-heap are unchanged. These short timings depend on allocator reuse and do not
-establish a constructor speedup. The NTT public LUT fixture also retained the
-same heap: 508932 bytes (u32), 787464 bytes (u64), with zero online allocations.
-
-Initial full-request screening used 20 samples, 0.5 s warmup and 1.5 s
-measurement; pipeline measures all eight output chunks in one iteration.
-
-| Request | Before → after, ms |
-| --- | --- |
-| u64 binary PBS, n800/N1024 | 6.169 → 6.043 |
-| u64 fixed-weight classic PBS, n728/h32/N1024 | 5.289 → 5.426 |
-| u64 sparse PBS, same shape | 5.575 → 5.447 |
-| u64 interleaved / factorized MVB, D8/k3 | 6.187 → 6.200 / 6.232 → 6.193 |
-| u64 CBS / full one-hot / nonzero one-hot, n800/N1024 | 4.721 → 4.594 / 5.232 → 5.259 / 5.092 → 5.064 |
-| NTT LUT, u32 / u64, c8/d5/o8 | 66.307 → 66.986 / 49.553 → 49.036 |
-
-The initial fixed-weight classic result was rerun in before/after/after/before
-order. Its increase shrank from about 3% on CPU 2 to about 1% on CPU 4; the
-normalized BR disassembly was unchanged. Scalar PBS was then simplified to leave
-independent batch state untouched. The final CPU 4 comparison (2 s measurement)
-was 5.218/5.255 ms before versus 5.214/5.211 ms after for fixed-weight classic,
-and 6.047/6.035 versus 6.066/6.099 ms for binary PBS. The earlier larger increase
-did not persist. The u32 LUT recheck on CPU 2 was 65.691/65.566 ms before versus
-66.040/65.953 ms after. Sub-percent differences and code-layout/platform effects
-remain unresolved; these measurements support resource reuse, not a speedup or
-an exact latency guarantee.
-
-Reproduce with `pbs`, `sparse_pbs`, `mvb`, `circuit_bootstrap` targets in
-`primus_tfhe_ntru_ntt`, and `pipeline` in `primus_tfhe_ntru_lut`. Select the IDs
-above, build each revision separately, then run the saved executables in
-sequence with `taskset -c 2`, `--bench`, `--sample-size 20`,
-`--warm-up-time 0.5 --measurement-time 1.5 --noplot`. Do not share a Cargo target
-directory between simultaneous revision builds. Default and nightly SIMD tests
-cover semantics and online allocation; SIMD timing is not claimed here.
-
-## Fourier borrowed-resource measurement
-
-Compared with `77704a36` on 2026-10-03 using the machine/toolchain above,
-default features and repository compiler flags. Saved executables ran sequentially
-on logical CPU 4, without concurrent builds. One Criterion iteration measured one
-complete request or one construction-and-drop. Warmup was 0.5 s, measurement 2 s,
-20 samples. Keys, context, input, public programs and online output buffers were
-prepared outside timing. These are functional fixtures, not security profiles.
-
-The temporary constructor probe used the u64 `ntru::circuit` binary profile
-(n800/N1024, native Q, external q=2^24), seed 42 and `ntru::cbs` material.
-Standalone CBS used t=4 and one-hot t=8. Both revisions measured the entire
-resource set, including separately owned common resources or PBS. The counting
-allocator separately measured a construction while retaining its result; heap
-bytes exclude allocator metadata and inline storage. The probe was removed.
-
-| Engine / resource set | Allocations, unchanged | Retained heap bytes, unchanged | Inline bytes before → after | Construction + drop, µs before → after |
-| --- | --- | --- | --- | --- |
-| RustFFT PBS | 13 | 257160 | 368 → 368 | 3.734 → 3.797 |
-| RustFFT CBS | 13 | 173056 | 568 → 480 | 1.514 → 1.536 |
-| RustFFT one-hot | 12 | 173056 | 536 → 448 | 1.513 → 1.526 |
-| RustFFT PBS + MVB | 15 | 273544 | 416 → 432 | 1.830 → 1.825 |
-| TFHE-FFT PBS | 13 | 257160 | 376 → 376 | 2.440 → 2.437 |
-| TFHE-FFT CBS | 13 | 173056 | 576 → 488 | 2.224 → 2.235 |
-| TFHE-FFT one-hot | 12 | 173056 | 544 → 456 | 2.229 → 2.237 |
-| TFHE-FFT PBS + MVB | 15 | 273544 | 424 → 440 | 2.575 → 2.572 |
-
-Removing the CBS ownership enum saves 88 inline bytes; MVB adds 16 bytes of
-binding references. No extra FFT engine, allocation or retained heap is added.
-The constructor timings include deallocation and allocator reuse, so they do
-not establish a speedup. LUT retained heap was unchanged for both engines:
-1,116,224 bytes for u32 and 1,059,968 bytes for u64. Online allocation remained zero.
-
-Initial full-request point estimates follow. The LUT request includes all eight
-output chunks; factorized MVB and Fourier LUT keep their streamed return tiles.
-
-| Request | RustFFT before → after, ms | TFHE-FFT before → after, ms |
-| --- | --- | --- |
-| u64 binary PBS, n800/N1024 | 7.136 → 7.267 | 6.067 → 5.949 |
-| u64 fixed-weight classic PBS, n728/h32/N1024 | 6.544 → 6.415 | 5.390 → 5.222 |
-| u64 sparse PBS, same shape | 7.020 → 6.975 | 6.890 → 6.999 |
-| u64 interleaved MVB, D8/k3 | 7.312 → 7.414 | 6.277 → 6.082 |
-| u64 factorized MVB, D8/k3 | 7.322 → 7.385 | 6.227 → 6.203 |
-| u64 CBS, n800/N1024 | 5.757 → 5.714 | 4.406 → 4.432 |
-| u64 full one-hot, M=4 | 6.444 → 6.371 | 4.845 → 4.942 |
-| u64 nonzero one-hot, M=4 | 6.213 → 6.158 | 4.650 → 4.776 |
-| LUT u32, c8/d5/o8 | 106.160 → 106.050 | 87.652 → 88.018 |
-| LUT u64, c8/d5/o8 | 56.658 → 58.037 | 45.568 → 45.913 |
-
-Rechecks alternated executables rather than tuning code for a single run. On CPU 2
-(after/before/before/after, 3 s measurement), RustFFT u64 LUT measured
-57.095/57.108 ms after versus 57.522/57.678 before, reversing the initial increase.
-TFHE-FFT full one-hot measured 4.887/4.959 after versus 4.932/5.038 before;
-nonzero one-hot measured 4.819/4.826 versus 4.767/4.962. RustFFT PBS measured
-7.329/7.255 after versus 7.132/7.246 before. TFHE-FFT sparse PBS measured
-6.895/7.677 after versus 6.961/6.965 before, including one much slower new run.
-
-The final PBS recheck on CPU 4 used before/after/after/before order, 1 s warmup,
-4 s measurement and 30 samples. RustFFT PBS measured 7.184/7.367 ms before versus
-7.300/7.391 after; TFHE-FFT sparse PBS measured 6.945/7.151 before versus
-6.963/6.996 after. The earlier larger increases did not persist consistently,
-but percent-level platform/code-layout drift remains unresolved. These results
-support resource reuse without a speedup claim or an exact latency guarantee.
-
-Reproduce using `pbs`, `sparse_pbs`, `mvb`, `circuit_bootstrap` in
-`primus_tfhe_ntru_fourier`, and `pipeline` in `primus_tfhe_ntru_lut`, with the
-parameter IDs above. Build each revision separately, then run its saved
-executable with `taskset -c 4`, `--bench`, `--sample-size 20`,
-`--warm-up-time 0.5 --measurement-time 2 --noplot`. Pipeline filters are
-`lookup/(rustfft|tfhe_fft)/u(32|64)/n800_N1024/c8_d5_o8/evaluate`.
-Default and nightly SIMD tests cover both FFT engines, operation alternation,
-short return tiles and zero online allocation. SIMD latency was not measured.
-
-## GLWE NTT borrowed-resource measurement
-
-Compared with `d566a73a` on 2026-10-03, AMD Ryzen 9 9955HX3D, x86_64 Linux,
-rustc 1.98.1 (48a229cea, LLVM 22.1.8), default features and the repository's
-`target-cpu=native`. Saved executables ran sequentially without concurrent builds.
-These are functional profiles, not security recommendations.
-
-A temporary constructor probe used u64, N1024, `ntt_circuit_modulus`, seed 42,
-`glwe::cbs` and t=4. Classic used the n800 binary `glwe::circuit` profile;
-sparse used `glwe::diagnostic`, n728/h32, three copies and 64 buckets.
-Each iteration constructed and dropped the entire PBS, standalone CBS, or
-PBS+MVB resource set. Separate counting-allocator measurements retained the
-returned values. Moving common resources out of CBS/MVB was not counted as a
-heap saving. Timings below used CPU 4, 0.5 s warmup, 2 s measurement and 20 samples.
-
-| Order / key / set | Allocations, unchanged | Retained heap bytes, unchanged | Inline bytes before → after | Construction + drop, µs before → after |
-| --- | --- | --- | --- | --- |
-| BR→KS / classic / PBS | 11 | 116736 | 544 → 544 | 0.762 → 0.777 |
-| BR→KS / classic / CBS | 16 | 182272 | 832 → 712 | 1.334 → 1.327 |
-| BR→KS / classic / PBS+MVB | 12 | 133120 | 568 → 576 | 0.880 → 0.882 |
-| BR→KS / sparse / PBS | 13 | 319168 | 544 → 544 | 1.571 → 1.572 |
-| BR→KS / sparse / CBS | 18 | 384704 | 832 → 712 | 2.101 → 2.100 |
-| BR→KS / sparse / PBS+MVB | 14 | 335552 | 568 → 576 | 1.667 → 1.659 |
-| KS→BR / classic / PBS | 12 | 123144 | 544 → 544 | 0.892 → 0.888 |
-| KS→BR / classic / CBS | 22 | 238856 | 832 → 712 | 1.800 → 1.738 |
-| KS→BR / classic / PBS+MVB | 13 | 139528 | 568 → 576 | 0.990 → 0.981 |
-| KS→BR / sparse / PBS | 14 | 325000 | 544 → 544 | 1.599 → 1.612 |
-| KS→BR / sparse / CBS | 24 | 440712 | 832 → 712 | 2.489 → 2.470 |
-| KS→BR / sparse / PBS+MVB | 15 | 341384 | 568 → 576 | 1.704 → 1.707 |
-
-The CBS ownership enum removal saves 120 inline bytes in the combined resource
-set; MVB adds one 8-byte context reference. Heap and allocation counts are
-unchanged, excluding allocator metadata. Constructor timing includes allocator
-reuse and does not establish a speedup. The temporary probe was removed.
-Existing tests keep online allocation at zero across PBS, CBS/CMux and MVB;
-assembling standalone resources into PBS allocates output KS only for BR→KS,
-and rebinding compatible KS material does not allocate.
-
-Each iteration evaluates one complete request with keys, input, LUT, outputs and
-workspaces prepared outside timing. MVB includes all three output ciphertexts.
-Initial CPU 4 point estimates in milliseconds, using the same sampling settings:
-
-| u64 request | BR→KS before → after | KS→BR before → after |
-| --- | --- | --- |
-| Binary PBS, n800/N1024 | 3.121 → 3.114 | 3.200 → 3.198 |
-| Fixed-weight classic PBS, n728/h32/N1024 | 12.831 → 12.819 | 12.595 → 12.606 |
-| Sparse PBS, same fixed-weight profile | 16.533 → 16.463 | 16.647 → 16.442 |
-| Classic interleaved MVB, D8/k3 | 12.501 → 12.582 | 12.662 → 12.829 |
-| Classic factorized MVB, D8/k3 | 12.500 → 12.897 | 12.693 → 12.625 |
-| Sparse interleaved MVB, D8/k3 | 17.094 → 16.523 | 16.638 → 16.544 |
-| Sparse factorized MVB, D8/k3 | 16.801 → 16.769 | 17.026 → 16.732 |
-| Classic CBS, n800/N1024 | 15.096 → 14.664 | 14.775 → 14.142 |
-| Sparse CBS, n728/h32/N1024 | 16.683 → 17.428 | 16.718 → 17.372 |
-
-Alternating runs checked the MVB and sparse CBS increases. With 0.5 s warmup,
-3 s measurement and 20 samples, classic factorized MVB on CPU 4 measured
-12.692/12.689 ms before versus 12.661/12.870 ms after for BR→KS, and
-12.733/12.757 versus 12.732/12.700 ms for KS→BR. Its initial increase did not
-persist consistently. Sparse CBS did remain slower in that recheck:
-
-| CPU 4 sparse CBS | Before, two runs (ms) | After, two runs (ms) |
-| --- | --- | --- |
-| BR→KS | 16.640 / 16.730 | 17.037 / 17.316 |
-| KS→BR | 16.682 / 16.733 | 17.255 / 17.328 |
-
-Disassembly showed changed inlining/register allocation despite unchanged
-arithmetic, but this does not establish the cause of the slowdown. An experiment
-removed the common BR stage's `#[inline]` hint: the benchmark's u64 CBS entry
-shrank from 2736 to 513 machine-code bytes (baseline: 942). Sparse CBS on CPU 8
-then approached baseline, while classic BR→KS CBS became about 2% slower in
-alternating runs. This did not establish a general benefit, so the experiment
-was reverted. No forced inlining, alignment or numerical specialization remains.
-
-The retained implementation, with the original hint, was also compared on CPU 8.
-Both revisions used that same CPU, with after/before/before/after run order,
-0.5 s warmup, 2 s measurement and 20 samples:
-
-| CPU 8 CBS | Before, two runs (ms) | After, two runs (ms) |
-| --- | --- | --- |
-| Classic BR→KS | 14.301 / 14.277 | 14.423 / 14.146 |
-| Sparse BR→KS | 17.208 / 17.242 | 17.224 / 17.196 |
-| Classic KS→BR | 14.446 / 15.832 | 15.553 / 14.559 |
-| Sparse KS→BR | 17.266 / 17.157 | 17.200 / 17.163 |
-
-CPU 8 does not reproduce the sparse CBS increase; it does not invalidate the
-CPU 4 result. Other CPU 2/4 runs varied substantially for both revisions.
-Zero extra allocation and unchanged retained heap are established, but the
-CPU-dependent sparse CBS latency difference remains unresolved. Its analysis and
-sparse PBS optimization are deferred; no resolution is claimed here. Do not claim
-an online speedup or unconditional performance parity from these measurements.
-
-Reproduce with `pbs`, `sparse_pbs`, `mvb`, and `circuit_bootstrap` in
-`primus_tfhe_glwe_ntt`, selecting the parameter IDs above. Build each revision
-separately, then run saved executables with `taskset -c 4` (or 8), `--bench`,
-`--warm-up-time 0.5 --measurement-time 2 --sample-size 20 --noplot`.
-The MVB filter is `u64/mvb/.*/D8_k3/(interleaved|factorized)`; CBS uses `u64/cbs/`.
-SIMD and u32 are validated functionally, not timed.
-
-## GLWE Fourier borrowed-resource measurement
-
-Compared with `07c3117e` on 2026-10-03, AMD Ryzen 9 9955HX3D, x86_64 Linux,
-rustc 1.98.1 (48a229cea, LLVM 22.1.8), default features and the repository's
-`target-cpu=native`. Each revision was built in the same checkout and its
-executables saved; timing ran sequentially on CPU 8 without concurrent builds.
-The fixtures are arithmetic profiles, not security recommendations.
-
-The temporary constructor probe used u64/Native/N1024, seed 42, t=4 and
-`glwe::cbs`. Classic used n800 binary `glwe::circuit`; sparse used n728/h32
-`glwe::diagnostic`, three copies and 64 buckets. The probe retained the complete
-PBS, standalone CBS or PBS+MVB resource set, including the owners moved out of
-CBS/MVB. Requested allocation counts and retained heap (allocated minus released
-bytes, excluding allocator metadata) are unchanged for both FFT engines:
-
-| Order / key | PBS count / heap bytes | CBS count / heap bytes | PBS+MVB count / heap bytes |
-| --- | --- | --- | --- |
-| BR→KS / classic | 13 / 133120 | 18 / 198656 | 15 / 157696 |
-| BR→KS / sparse | 16 / 663232 | 21 / 728768 | 18 / 687808 |
-| KS→BR / classic | 14 / 139528 | 24 / 255240 | 16 / 164104 |
-| KS→BR / sparse | 17 / 669064 | 27 / 784776 | 19 / 693640 |
-
-For either order/key, RustFFT inline sizes are PBS 544 → 544, CBS 800 → 712,
-and PBS+MVB 592 → 600 bytes. TFHE-FFT adds 8 bytes to each size on both revisions.
-The removed CBS ownership enum saves 88 inline bytes; MVB adds one context
-reference. The probe has been removed, and constructor latency was not measured.
-Tests cover zero online allocation from the first call and after alternating
-CBS/CMux/external product/PBS or MVB/PBS. Moving resources into ordinary PBS
-allocates output KS only for BR→KS; compatible KS rebinding does not allocate.
-
-One timed iteration evaluates one complete request, excluding setup, keys,
-input, LUT, outputs and workspace allocation. Classic PBS/CBS use n800/N1024;
-classic MVB uses n728/h32/N1024, D8/k3 and returns all three ciphertexts.
-Sparse online latency was deliberately not measured: sparse CBS analysis and
-sparse PBS optimization are deferred. Initial u64 point estimates in ms,
-with 0.5 s warmup, 2 s measurement and 20 samples:
-
-| Engine / request | BR→KS before → after | KS→BR before → after |
-| --- | --- | --- |
-| RustFFT binary PBS | 3.164 → 3.158 | 3.194 → 3.182 |
-| TFHE-FFT binary PBS | 2.769 → 2.803 | 2.807 → 2.721 |
-| RustFFT classic CBS | 16.266 → 16.316 | 16.144 → 16.314 |
-| TFHE-FFT classic CBS | 15.012 → 14.514 | 14.907 → 15.651 |
-| RustFFT interleaved MVB | 16.086 → 15.950 | 16.164 → 16.335 |
-| RustFFT factorized MVB | 15.736 → 15.828 | 15.968 → 16.035 |
-| TFHE-FFT interleaved MVB | 14.105 → 13.445 | 13.986 → 14.254 |
-| TFHE-FFT factorized MVB | 13.850 → 13.378 | 13.899 → 13.365 |
-
-The initial TFHE-FFT KS→BR CBS increase prompted an after/before/before/after
-recheck on CPU 8, with 0.5 s warmup, 3 s measurement and 20 samples. It also
-rechecked classic CBS on RustFFT, TFHE-FFT PBS and the slower interleaved MVB case:
-
-| Rechecked request | Before, two runs (ms) | After, two runs (ms) |
-| --- | --- | --- |
-| RustFFT CBS BR→KS | 16.411 / 16.138 | 16.285 / 16.248 |
-| RustFFT CBS KS→BR | 16.294 / 18.021 | 16.272 / 16.388 |
-| TFHE-FFT CBS BR→KS | 15.708 / 14.453 | 15.197 / 14.444 |
-| TFHE-FFT CBS KS→BR | 15.919 / 16.044 | 15.268 / 14.436 |
-| TFHE-FFT PBS BR→KS | 2.729 / 2.740 | 2.729 / 2.727 |
-| TFHE-FFT PBS KS→BR | 2.730 / 2.753 | 2.731 / 2.790 |
-| TFHE-FFT interleaved MVB KS→BR | 12.916 / 12.984 | 13.228 / 12.921 |
-
-The initial increases did not persist consistently; baseline latency also
-varied. The retained implementation keeps the original arithmetic, transform
-schedule and inline hints. These measurements establish neither a general
-speedup nor exact latency parity across environments. Sparse online performance
-remains outside this comparison.
-
-Reproduce with `pbs`, `circuit_bootstrap`, and `mvb` in
-`primus_tfhe_glwe_fourier`. Build each revision separately, then run its saved
-executable with `taskset -c 8`, `--bench`, `--warm-up-time 0.5`,
-`--measurement-time 2 --sample-size 20 --noplot`. Filters are
-`u64/binary/boolean/.*/complete`, `u64/cbs/classic/`, and
-`u64/mvb/classic/.*/D8_k3/(interleaved|factorized)` respectively.
-SIMD and u32 are checked functionally, not timed.
-
-## Historical fixed-workspace comparison
-
-Measured on 2026-09-28 with AMD Ryzen 9 9955HX3D, x86_64 Linux, rustc 1.100.0-nightly (bff8e12ff5, LLVM 23.1.0), and the repository's `target-cpu=native` configuration. The comparison baseline is `85ea4cf` plus the naming-only changes. These are functional fixtures, not security recommendations.
-
-Temporary variants of the existing lattice NTRU benches compared ordinary Vec-backed keys and guaranteed cache-aligned ABox keys, before and after the fixed-workspace migration. Both variants borrowed the same kind of ciphertext slice and used identical deterministic coefficients. Tests covered N=1024, u32/u64, specialized NTT, RustFFT and TFHE-FFT, with default features and SIMD on the same nightly compiler. The NTT moduli were 132120577 and 1125899906826241; radix bits were 9 with 3/5 levels. Fourier used native moduli with 3/7 levels. Setup and conversion were outside timing: one iteration was one external product, 15 samples, 200 ms warmup and 1 s measurement.
-
-Ordinary versus aligned key differences were small (roughly 0–2% in the initial runs) and did not establish a consistent benefit across configurations. The ordinary allocator may itself return aligned addresses; this was a container comparison, not a controlled misalignment study. Workspace-container changes also produced small improvements and regressions. These results support neither a general key migration nor a speedup claim for boxed storage. Temporary benchmark variants were removed.
-
-The historical lookup fixture in `e55ec2e` measured retained requested heap and zero online allocation. Its u64/N=1024/n=64/M=4/c=7/d=5/o=3 parameters and key generation were held fixed for the following comparison. Later n800/c8/d5/o8 measurements used different parameters and still used content-dependent selection; neither they nor this table establish current fixed-tree latency.
-
-| Backend | Lookup workspace before → after | Retained reduction | Pinned complete lookup before → after |
-| --- | --- | --- | --- |
-| NTT | 731152 → 705552 bytes | 25 KiB | 7.084 → 7.053 ms |
-| RustFFT | 903184 → 861200 bytes | 41 KiB | 7.985 → 8.169 ms |
-| TFHE-FFT | 903184 → 861200 bytes | 41 KiB | 6.289 → 6.256 ms |
-
-The pinned comparison used logical CPU 0, SIMD, 20 samples, 500 ms warmup and 2 s measurement, running the new executable first to reverse the earlier unpinned comparison's order. Entries are Criterion mean estimates. Server-key retained heap stayed at 5462856 bytes for NTT and 6749368 for Fourier. Heap counts exclude stack, allocator metadata and shared context/tables. Existing setup checked known outputs, phase errors and zero online allocations.
-
-Memory reduction is established; latency is a tradeoff. RustFFT was about 2.3% slower in that pinned run. A subsequent isolation run retained AVec in the NTRU external-product workspace while keeping shared lookup buffers: 8.091 ms versus 8.148 ms with boxed workspace buffers. Container layout accounts for part, not all, of the observed difference. The current choice preserves fixed-length ownership and the smaller retained workspace, without claiming improved throughput. Revisit this choice when parameters, compiler or backend change.
-
-The measured pipeline harness has been retired. Current [lookup benchmarks](../../crates/primus_tfhe_ntru_lut/README.md#benchmarks) separate creation from complete evaluation and use different parameters and a fixed tree. They do not reproduce this comparison. The historical harness measured construction heap and online allocation; key-generation and Vec-to-aligned-key conversion latency were not claimed or optimized. The lattice comparisons can be repeated with `ntru_ntt` and `ntru_fourier`, filtering `n1024.*external_product_coeff`, and preparing a second key with `AVec::from_iter(CACHELINE_ALIGN, key.as_ref().iter().copied()).into_boxed_slice()` before timing. Borrow it through the same NGSW slice view as the ordinary key.
-
-## Representative-parameter recheck
-
-The [current benchmark report](tfhe-baseline.md#aligned-key-recheck) repeats the key-alignment comparison with N1024, Q30/Q50/native, u32 base2 and u64 base8 at full internal levels. It separates container alignment from changes in decomposition work and complete-lookup geometry. The comparison keeps fixed workspace storage and semantic ciphertext views; it does not turn key alignment into a permanent dimension of every benchmark.
-
-## Fixed complete NTRU lookup tree (2026-10-10)
-
-The [current LUT](../development/bootstrapping-contracts.md#fixed-complete-high-precision-lookup)
-retains every public polynomial and executes every selection layer for every
-output. This replaces `b1a716ff`'s polynomial interning, pruned graph and shared
-results. The choice establishes function-independent work, rather than keeping
-an optimization for repeated tables. Temporary consumers were removed; this
-comparison does not introduce a permanent benchmark driver or public diagnostic API.
-
-A temporary Criterion 0.8 consumer used the unchanged u64 classic lookup configs:
-n800/h32/N1024, M=4, c8/d5, with independent output count o=2. NTT used Q50 and
-Fourier used RustFFT/native Q; both returned at q=2^24, retaining their respective
-BR/CBS/KS decompositions and noise. The function was the low four bits of SplitMix64's
-output for x: add `0x9e3779b97f4a7c15`, then its xor-shift/multiply finalizer
-(30/27/31 shifts, multipliers `0xbf58476d1ce4e5b9` and `0x94d049bb133111eb`).
+| Q50 / BR→KS | -0.41% to -0.15% | +0.44% to +1.06% |
+| Native64 / BR→KS | -0.17% to +0.57% | -3.10% to -2.50% |
+| Q50 / KS→BR | -0.48% to -0.07% | +3.42% to +5.19% |
+| Native64 / KS→BR | -2.24% to -2.23% | -3.09% to -2.64% |
+
+Columns use separate original/modified pairs; ranges are observed changes, not
+confidence intervals. Sampler reuse saved 624 B of peak requested storage at
+Q50 or 7353 B at Native64, beside an 8,396,800-byte n1024 matrix. That small saving
+did not justify the repeated Q50 regression. Output rows and subsequent RNG
+state matched. CPU 8/SIMD were not timed, and no online PBS/CBS gain follows.
+
+## Preparation data and measurement scope
+
+Three small CSVs preserve complete-constructor comparisons measured on 2026-10-10.
+Each uses the host/toolchain above, CPU 4, two saved executables in ABBA order,
+30 samples, 1 s warmup and 2 s target, with no concurrent build. Default arithmetic
+was used; specialized transform tables could still dispatch native kernels.
+Parameters, secrets, caller workspaces and arithmetic domains existed before
+timing. Each iteration generated/constructed **and dropped** one complete result.
+These are setup costs, not online trace, PBS or CBS acceleration.
+
+| CSV | Rows | Baseline | Workload and interpretation |
+| --- | ---: | --- | --- |
+| [RNS key sets](data/rns-key-set-preparation.csv) | 5 | `2fa5863d` | CRT/DCRT trace and expansion, DCRT reverse trace; one binding and reusable local scratch. |
+| [NTRU trace](data/ntru-trace-preparation.csv) | 3 | `08cc5af4` | NTT, RustFFT, TFHE-FFT trace-key generation; encode secret once. |
+| [NTT root construction](data/ntt-root-construction.csv) | 8 | `53a0307a` | Generic/specialized complete N4096 tables, four word/modulus cases. |
+
+`before_r1_us`, `after_r1_us`, `before_r2_us`, `after_r2_us` are Criterion mean
+point estimates in microseconds; r2 reverses the order of r1.
+`change_r*_percent = 100*(after/before-1)`. No confidence intervals or raw sample
+distributions are stored. Allocation columns in the first two CSVs are separate
+single-constructor observations with the result retained: `*_allocations` counts
+allocation/reallocation requests, `*_allocated_bytes` is requested traffic,
+`*_retained_bytes` is live requested storage at return and `*_peak_bytes` its
+maximum above the pre-call state. They exclude caller resources, allocator
+metadata and RSS. They are not additional timing samples.
+
+### RNS key-set preparation
+
+N1024/u64/k2, sparse ternary secret, sigma 3.2,
+Q=[1125899906826241,1125899906629633], logB20/L5, t12289,
+gamma 2199023190017. Secret seed 42; generation RNG starts at 4242 and advances
+between iterations. Complete constructors include metadata and expansion/reverse
+normalization preparation. One checked DCRT encryptor binding replaces log2(N)
+identical bindings, reducing ordered-modulus comparisons from O(m log N) to O(m)
+for m limbs. CRT checks its coefficient-key layout once; per-degree permutation,
+encoding and encryption remain in order, with distinct CRT/DCRT scratch.
+
+All five constructor comparisons improved by about 0.96–1.52% across the two
+pairs. CRT saved 18 allocation requests/216 KiB of traffic, DCRT 9/144 KiB.
+Retained and peak bytes were unchanged: the old last degree already held the
+same scratch beside earlier keys. Local Zeroizing scratch is erased and released
+on return/unwind; no online workspace grows. Historical coefficient/RNG captures
+matched. Rebuilding this workload requires complete key generation and drop;
+the crate's online trace/expansion benches measure different operations.
+
+### NTRU trace preparation
+
+N1024/u64, sparse ternary secret, sigma 3.2, logB10 with all valid levels:
+L5 at Q1125899906826241 for NTT, L6 at Native64 for Fourier. Features were
+`ntt,rustfft,tfhe-fft`, without Cargo SIMD; secret seed 42 and advancing keygen
+RNG seed 4242. Tables, FFT engines and caller gadget workspace were outside timing.
+These are not equivalent NTT/Fourier noise budgets.
+
+One secret encoding and two local coefficient buffers replace log2(N) encodings
+and 2*log2(N) buffers; degree/row sampling order stays unchanged. Each backend
+saved 18 requests and 144 KiB of traffic, with identical retained/peak bytes.
+Latency ranged from about -0.06% to +0.37%, establishing no speedup. Buffers remain
+Zeroizing and disappear before return; standalone generation retains its own
+checks. Historical coefficients and subsequent RNG words matched.
+
+### NTT root preparation
+
+At N4096, the CSV identifies each word, modulus and generic/specialized table.
+For D=2N in a prime field, stepping by the sampled primitive root's square visits
+the D/2 distinct odd powers, exactly the primitive roots. The prior D-step scan
+visited that orbit twice. Scanning D/2 returns the same minimum, with unchanged
+random root search and no extra storage. Full construction/drop improved by
+about 13–19%; it did not halve the constructor or change online transforms.
+
+The [construction benchmark](../../crates/primus_ntt/benches/bench_ntt.rs) retains
+this workload family; use the historical revisions and N4096 cases for an
+equivalent comparison. CPU 8, other sizes, u32 NTRU/RNS timing and nightly-feature
+latency were outside these three preparation studies. The CSVs remain unchanged;
+temporary key-generation probes are not maintained as public benchmark APIs.
+
+## Fixed complete NTRU lookup tree
+
+The current [fixed tree](../development/bootstrapping-contracts.md#fixed-complete-high-precision-lookup)
+retains all public polynomials and executes every selection layer. Compared with
+`b1a716ff` on 2026-10-10, the compiler no longer hashes/interns polynomials or
+maintains a pruned graph. This enforces function-independent work; repeated
+functions can require much more storage and evaluation than before.
+
+The controlled comparison used classic u64/n800/h32/N1024/M4/c8/d5/o2,
+Q50/NTT or Native/RustFFT and external q24. The map was the low four bits of
+SplitMix64(x): add `0x9e3779b97f4a7c15`, then xor shifts 30/27/31 and multipliers
+`0xbf58476d1ce4e5b9` / `0x94d049bb133111eb`. Seed 4242, input 43981.
 The old compiler confirmed 128 logical and 128 unique polynomials, 42 selection
-nodes, no standalone lifts and all eight one-hot inputs. Thus both versions
-performed the same complete selection work; this was not a pruned-function comparison.
+nodes, no standalone lifts and all eight one-hot inputs. Both versions therefore
+executed complete selection work. This is not a pruned-function comparison.
 
-Setup used StdRng seed 4242 and input 43981; decoded output was checked against
-the clear function. `evaluate_to` measured one complete two-output request per
-iteration, with all setup/encryption/allocation outside timing. `compile_and_drop`
-measured compilation plus destruction, including output-major function enumeration.
-Both operands/output were black-boxed at the timed boundary. Separate old/new
-release binaries ran consecutively on CPU 4, then CPU 8, with affinity fixed per
-comparison. Criterion used 30 samples, 1 s warmup, 3 s target time. Host: Ryzen
-9 9955HX3D; rustc 1.98.1 / LLVM 22.1.8; repository `target-cpu=native`, no Cargo
-SIMD, LUT features `ntt,rustfft,tfhe-fft` (only NTT and RustFFT were timed).
+Saved binaries ran consecutively on CPU 4, then CPU 8, features
+`ntt,rustfft,tfhe-fft` but only NTT/RustFFT timed, without Cargo SIMD. Criterion:
+30 samples, 1 s warmup, 3 s target. `evaluate_to` measured both returned outputs;
+all preparation was excluded. Compile/drop included output-major enumeration.
+Mean estimates with 95% intervals:
 
-Criterion estimates (95% intervals):
+| CPU / backend | Old evaluate → fixed tree, ms | Old compile/drop → fixed tree, µs |
+| --- | --- | --- |
+| 4 / NTT | 45.769 [45.698,45.844] → 45.063 [44.888,45.245] | 385.33 [385.07,385.57] → 234.82 [234.78,234.86] |
+| 4 / RustFFT | 52.778 [52.490,53.080] → 52.947 [52.732,53.205] | 384.14 [383.94,384.32] → 234.66 [234.54,234.84] |
+| 8 / NTT | 51.200 [51.062,51.362] → 51.365 [51.226,51.537] | 370.15 [369.85,370.53] → 225.83 [225.77,225.91] |
+| 8 / RustFFT | 62.167 [62.018,62.340] → 62.005 [61.818,62.227] | 366.13 [365.96,366.42] → 226.94 [226.90,226.98] |
 
-| CPU | Backend | Old evaluate, ms | Complete tree, ms | Old compile+drop, µs | Complete tree, µs |
-| ---: | --- | --- | --- | --- | --- |
-| 4 | NTT | 45.769 [45.698,45.844] | 45.063 [44.888,45.245] | 385.33 [385.07,385.57] | 234.82 [234.78,234.86] |
-| 4 | RustFFT | 52.778 [52.490,53.080] | 52.947 [52.732,53.205] | 384.14 [383.94,384.32] | 234.66 [234.54,234.84] |
-| 8 | NTT | 51.200 [51.062,51.362] | 51.365 [51.226,51.537] | 370.15 [369.85,370.53] | 225.83 [225.77,225.91] |
-| 8 | RustFFT | 62.167 [62.018,62.340] | 62.005 [61.818,62.227] | 366.13 [365.96,366.42] | 226.94 [226.90,226.98] |
-
-No evaluate regression was detected in these comparisons. CPU 4 NTT showed a
-small improvement, while the other three comparisons detected no change; this
-does not establish a general online speedup. Eliminating hashing and graph
-construction reduced compile+drop by about 38–39% in the point estimates.
-CPU 4 and CPU 8 are independent comparisons, not interchangeable samples.
-
-Public coefficient storage stayed 1 MiB in this nonrepeating case. Intermediate
-selection storage changed from seven scheduled NTRU slots (56 KiB) to eight
-fixed layer slots (64 KiB). The extra 8 KiB buys simple contiguous M-way child
-groups and removes the graph's liveness/slot metadata; current/product and
-selector buffers are unchanged. Total peak allocation was not measured.
-A separate small-parameter consumer checked that first and subsequent online
-requests allocate nothing in both backends and both FFT engines, classic/sparse.
-
-Repeated functions can now require substantially more public storage and online
-work than the old pruned path. That is intentional and is not covered by the
-nonrepeating performance table above. The results do not establish latency or
-noise margins for M=16/N4096 or new decomposition parameters.
+No evaluation regression was detected here; only CPU 4 NTT showed an improvement.
+Compile/drop fell about 38–39%. Public coefficient storage stayed 1 MiB in this
+nonrepeating case. Intermediate selection buffers increased from seven to eight
+NTRU slots (56→64 KiB), replacing graph slot/liveness metadata with contiguous
+child groups. Total peak was not measured. These results do not establish a
+universal online gain, repeated-function cost, or latency/noise margins for the
+current M16/N4096 cases.

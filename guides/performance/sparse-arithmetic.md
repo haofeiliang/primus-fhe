@@ -159,7 +159,7 @@ GLWE has k=1. Paper ring KS uses b7/L4 for NAND and b5/L10 for the function;
 r2 and r3 are distinct parameter sets, each held fixed across its arithmetic
 comparison. The diagnostic PBS/CBS message moduli are 8/4; one-hot uses t8/M4
 and emits three nonzero controls. Historical diagnostic bases/noise are recorded
-in the [baseline](sparse-baseline.md#conditions-and-workload-pairing); all other
+in the [historical fixtures](sparse-layout-and-batching.md#historical-fixtures-and-evidence); all other
 return, trace and scheme-switch settings remain fixed within each comparison.
 
 The LUT workloads have eight two-bit input and output chunks, d=5, and return

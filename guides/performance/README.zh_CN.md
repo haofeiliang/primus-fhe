@@ -12,8 +12,8 @@
 | Fourier 首项覆盖 | 保留清零后累加。F1 在已测 binary PBS 和 classic CBS 中有收益，但 sparse CBS 与进程间波动阻止全局采纳。[最终对照](fourier-first-write.md)汇总修正后的 108 进程比较，并保留全部 54 组配对结果。 |
 | 布局与批处理 | 保留 NTRU LUT 内部双输入盲旋转。聚合 tiles、首桶特化、流式外积及 GLWE tile-major 密钥在受测负载中不足以采纳。见[布局与批处理](sparse-layout-and-batching.md)。 |
 | 参数 | 历史 GLWE NTT 副本/桶数与分解候选限于当时测试的消费者。PBS 通过不能证明 CBS 输出尺度有效。见[参数与消费者预算](sparse-parameters.md)。 |
-| 共享投影 | 一级原型已撤回：完整请求的小幅收益不足以抵偿存储、接口和误差契约成本。[研究报告](shared-projection-analysis.md)保留推导和负面结果。 |
-| 工作区存储 | 跨请求复用与跨阶段共用地址分别决策。按角色保留必要缓冲；更少内存或相同形状不能证明更快。见[工作区测量](workspace-measurements.md)及 [sparse scratch 对照](sparse-baseline.md#aggregate-scratch-address-comparison)。 |
+| 共享投影 | 一级原型已撤回：完整请求的小幅收益不足以抵偿存储、接口和误差契约成本。[布局报告](sparse-layout-and-batching.md#shared-projection-withdrawn)保留成本取舍，现行 trace 条件见[数值指南](../development/bootstrapping-contracts.md#normalized-reverse-trace)。 |
+| 工作区存储 | 跨请求复用与跨阶段共用地址分别决策。按角色保留必要缓冲；更少内存或相同形状不能证明更快。见[工作区测量](workspace-measurements.md)及 [sparse scratch 对照](workspace-measurements.md#aggregate-scratch-addresses)。 |
 | 论文对照 | Algorithm 2、OpenFHE 和 HEXL 测量有明确的适配边界。绝对延迟不能证明与尚未取得的作者 sparse 实现等价。见[论文对照](sparse-paper-comparison.md)。 |
 
 ## 证据索引
@@ -21,15 +21,12 @@
 | 报告 | 回答的问题 |
 | --- | --- |
 | [Benchmark 测量版本 2](tfhe-benchmark-schema2.md) | 集中执行/报告流程验证：六种负载、每种三个串行进程，仅 CPU 4 |
-| [TFHE 基线](tfhe-baseline.md) | 前轮整理中的基准覆盖、setup、对齐与容器测量 |
 | [Fourier 首项覆盖](fourier-first-write.md) | 最终 F0/F1 完整请求比较、资源成本、构建核验及保留 F0 的决定 |
-| [准备与工作区测量](workspace-measurements.md) | NTT 构造、NTRU/RNS 密钥集准备、借用资源、参数共享、返回缓冲与存储成本 |
-| [Sparse 基线](sparse-baseline.md) | 完整请求、阶段诊断、保留/峰值 heap 与 aggregate scratch |
+| [准备与工作区测量](workspace-measurements.md) | 准备成本、scratch 地址、对齐/固定容器、所有权及完整消费者取舍 |
 | [Sparse 算术](sparse-arithmetic.md) | Pair/四路累加、惰性范围与紧凑约简 |
 | [Sparse 布局与批处理](sparse-layout-and-batching.md) | Tiles、首桶、流式处理、源布局和 LUT 双输入旋转 |
 | [论文对照](sparse-paper-comparison.md) | 参数/操作对齐、OpenFHE、扩展存储与 HEXL |
 | [Sparse 参数与消费者](sparse-parameters.md) | 匹配与条件分布、分解/误差取舍、PBS/ManyLUT/MVB 反馈及 CBS→CMux 尺度限制 |
-| [共享投影](shared-projection-analysis.md) | Reverse trace 成本、任意尾部误差与已撤回原型 |
 
 ## 测量方法
 
@@ -45,6 +42,6 @@
 
 ## 数据与工具
 
-原始测量表放在 [data/](data/)，对应报告解释 CSV 列及比较方式。独立[投影 oracle](tools/shared_projection_oracle.py)的用法见[投影研究](shared-projection-analysis.md#oracle-与进入原型的条件)。证据资产随报告维护，不保留临时候选实现，也不把实验加入普通 CI。
+保留的测量表放在 [data/](data/)，对应报告解释 CSV 列、历史版本和比较限制。证据资产随报告维护，不保留临时候选实现，也不把实验加入普通 CI。
 
 复评时扩展对应主题报告；阶段进度与本地实施计划不放在此目录。公开契约仍在 rustdoc/README，局部算法理由仍在实现旁。

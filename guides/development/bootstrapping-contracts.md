@@ -85,6 +85,40 @@ For CMux consumption, F must be bit-valued over the entire programmed domain. Ca
 
 NTRU scheme-switch material binds the complete output basis. GLWE material binds output layout and supports a different output basis only through the evaluator's checked compatibility entry. Neither check proves actual secret or transform identity. See [GLWE CBS](../../crates/primus_tfhe_glwe/README.md#boolean-and-cbs) and [NTRU CBS](../../crates/primus_tfhe_ntru/README.md#cbs-and-examples).
 
+## Normalized reverse trace
+
+Let `N=2^ell`, `sigma_d(P)=P(X^d)` and let `Pi_r` retain coefficients at positions divisible by N/r, for `r=2^h`. Reverse trace visits degrees `d_k=2^k+1` in ascending order, k=h+1,...,ell: halve the current coefficient ciphertext, apply automorphism with key switching, then add the two results. It preserves ring size. Full trace has r=1; r=N copies the input.
+
+For odd Q, `H_k=(I+sigma_dk)/2` uses the modular inverse of two and satisfies
+
+```text
+H_ell ... H_(k+1) = Pi_(2^k).
+Phi(output) = Pi_r(Phi(input)) + sum_{k=h+1}^{ell} Pi_(2^k)(e_k).
+```
+
+Here Phi is the phase under the original secret and e_k is the actual automorphism/KS phase error after halving, including approximate decomposition. The identity follows by eliminating unwanted coefficient positions from the highest degree downward. It describes the completed suffix, not independent real-valued divisions of each intermediate error by two, and it does not make approximate key switching linear. Late e_k can remain outside the target coefficients.
+
+| Backend | Halving and its numerical domain |
+| --- | --- |
+| NTT | Canonical residues multiplied by `2^-1 mod Q`; the current path requires odd Q below `2^(T::BITS-1)`. This is not rounded integer division and does not inherit native-torus noise bounds. |
+| Fourier | Unsigned `floor(c/2)` on each canonical coefficient, including wrapped negative representatives, before automorphism. Complex Fourier values are never divided by two. |
+
+For native `Q=2^w`, define p_k from the parity of the **actual current ciphertext**, before that step's halving. Since `2*floor(C/2)=C-p`, its phase correction is `rho_k=f*p_k` for NTRU and `rho_k=p_b-sum_j p_aj*s_j` for GLWE. After completing the suffix, the exact modular identity is
+
+```text
+Phi(output) = Pi_r(Phi(input))
+            - sum_{k=h+1}^{ell} Pi_(2^(k-1))(rho_k)
+            + sum_{k=h+1}^{ell} Pi_(2^k)(e_k).
+```
+
+Half-modulus lift ambiguities cancel in the completed suffix; e_k includes actual FFT/conversion and KS errors. Do not move floor-halving across addition or signed monomial shifts, or reuse parity from a differently scheduled ciphertext. Each rho term has coefficient bound `||f||_1` for NTRU or `1+sum_j ||s_j||_1` for GLWE. If the actual e_k have bounds B_k, the introduced contribution is bounded by `sum B_k` for odd Q, or `sum B_k+(ell-h)*rho_bound` for native Q. Include the projected input error separately. These are conditional deterministic bounds, not Gaussian variance or tail estimates; parity need not be independent or unbiased.
+
+To project coefficient i, first use `X^-i*C` and then full reverse trace. Reduce i modulo 2N: indices at least N carry the negacyclic minus sign and cannot simply be reduced modulo N. Ordinary CBS uses i=l; one-hot selector j uses i=l-j*S modulo 2N, with S=N/M. This does not add a factor N or change the gadget scalar. Arbitrary message tails are allowed. Prefix expansion yields independent constants only when the target message is zero outside that prefix; fewer requested outputs do not establish that premise, nor does a message zero tail imply zero ciphertext/noise tails.
+
+Outputs share BR and evaluation-key errors; sharing an intermediate projection would introduce further correlations. Do not combine selector/level errors by root-sum-of-squares without additional assumptions. Bound all coefficients needed by subsequent scheme switching, CMux and rotation, not only the projected constant.
+
+Method-level contracts remain on NTRU [NTT](../../crates/primus_ntru/src/trace/ntt.rs) / [Fourier](../../crates/primus_ntru/src/trace/fourier.rs) and GLWE [NTT](../../crates/primus_glwe/src/trace/ntt_operations.rs) / [Fourier](../../crates/primus_glwe/src/trace/fourier_operations.rs) trace. The withdrawn shared-projection experiment's cost decision is in the [layout report](../performance/sparse-layout-and-batching.md#shared-projection-withdrawn).
+
 ## One-hot CBS
 
 Let the chunk radix be `M=2^tau`, with input message modulus t=2M. Input m uses unsigned Rounded encoding `round(q*m/(2M))`. If L is the output gadget level count, set `W=next_power_of_two(L)`, `S=N/M` and `A=N/(2MW)`; require `2MW<=N`. Padding levels are zero. The test polynomial is
@@ -95,14 +129,7 @@ T = sum_{j=1-A}^{A} sum_{l=0}^{L-1} g_l*X^(l-jW).
 
 BR quantization uses step W, not MW. If its actual quantized phase satisfies `u_bar=S*m+W*e mod 2N` with `-A<=e<A`, negative BR followed by `X^(rS-l)` and full normalized reverse trace targets `g_l*delta_r(m)`. The guard is left-closed/right-open: a midpoint belongs to the larger message. e includes input encryption, encoding and coordinate-quantization errors. N and gadget capacity checks cannot prove this guard. See [OneHotLookupTable](../../crates/primus_tfhe_ntru/src/one_hot.rs).
 
-Full reverse trace targets a constant without assuming a zero message tail. Partial reverse trace retains a subring polynomial; prefix coefficient expansion yields independent constants only when the target plaintext is zero outside that prefix. Requesting fewer outputs does not establish this premise, nor does a plaintext zero tail imply zero ciphertext/noise tails.
-
-| Backend | Trace normalization and error |
-| --- | --- |
-| NTT | Multiply canonical residues by `2^-1 mod Q`, requiring odd Q below `2^(T::BITS-1)`. This is not rounded integer division or independent real-noise halving. Late automorphism-KS errors can remain outside the target coefficients. |
-| Fourier | Apply unsigned `floor(c/2)` to coefficients, including wrapped negative representatives, before automorphism. Never divide Fourier complex values by two. Coefficient parity/rounding error enters the phase multiplied by f; account for f's norm, subsequent trace maps, FFT and KS errors. Parity errors need not be independent or unbiased. |
-
-The precise projection/normalization contracts are on [NTT trace](../../crates/primus_ntru/src/trace/ntt.rs) and [Fourier trace](../../crates/primus_ntru/src/trace/fourier.rs). NLEV→NGSW scheme switching preserves the complete output basis and adds f/f²-dependent errors; see [CBS parameters](../../crates/primus_tfhe_ntru/src/circuit_bootstrap.rs). Budget them at the smallest output gadget scale and at the eventual consumer.
+NLEV→NGSW scheme switching preserves the complete output basis and adds f/f²-dependent errors; see [CBS parameters](../../crates/primus_tfhe_ntru/src/circuit_bootstrap.rs). Budget them at the smallest output gadget scale and at the eventual consumer.
 
 Full one-hot APIs produce all M coefficient NLEVs or transformed NGSWs. Compact NGSW APIs omit branch zero for consumers of the form `C0 + sum_{r>0} delta_r*(Cr-C0)`. They skip its projection/scheme switch, not shared BR, and do not widen the guard. The fused consumer sums all external-product errors; sequential CMux estimates cannot simply be reused. Fourier rounds after the sum, so ciphertext coefficients can differ from separately converted products. The first public lookup layer still needs all M NLEVs.
 
