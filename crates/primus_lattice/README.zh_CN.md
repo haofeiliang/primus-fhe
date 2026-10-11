@@ -72,6 +72,8 @@ NLev 与 NGSW 的存储形状相同，但语义不同：`beta` 的 NLev 各层�
 
 外积可以输出系数，也可以通过 `external_product_ntt_to` / `external_product_fourier_to` 保留变换域结果。
 
+`DcrtGgsw::external_product_to` 接收系数域的 `CrtGlwe` 输入并覆盖写入 `DcrtGlwe` 输出，使用匹配的 RNS 基、分解基、变换表和 `DcrtGlevMulWorkspace`。
+
 NLev 的 `external_product_sum_to` 和 GGSW/NGSW 的 `cmux_k_to` 接收数量匹配的精确长度迭代器。可传入借用的 gadget 和多项式/密文视图；输出用 `output.as_mut_view()`，CMux 默认分支用 `default.as_view()`。候选项可来自 `GlweIter` / `NtruIter` 或借用的密文集合，无需收集视图。空求和写零，空 CMux 复制默认分支。Fourier 对聚合结果统一舍入，可能与逐项转回系数后相加不同。
 
 完整 GLWE 抽取将全部 mask 多项式展平为 LWE mask；紧凑抽取要求省略的秘密后缀为零。`MultiMsgLwe` 保存按常数项抽取顺序排列的共享 mask，其抽取接口通过负循环旋转 mask 得到各个保留 body 系数的样本。逆抽取嵌入常数项 LWE 样本并将未使用位置清零，不恢复原 GLWE 明文的全部系数。

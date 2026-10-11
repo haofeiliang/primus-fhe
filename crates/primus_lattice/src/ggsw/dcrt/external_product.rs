@@ -11,12 +11,13 @@ use crate::ggsw::DcrtGgsw;
 use crate::glwe::{CrtGlwe, DcrtGlwe};
 use crate::workspace::DcrtGlevMulWorkspace;
 
-impl<S, T> CrtGlwe<S>
+impl<S, T> DcrtGgsw<S>
 where
     S: Data<Elem = T>,
     T: FheUint,
 {
-    /// Multiplies this CRT GLWE by a DCRT GGSW ciphertext, storing the output into `output`.
+    /// Computes the external product of this DCRT GGSW and a CRT GLWE `input`,
+    /// overwriting `output` in the DCRT domain.
     ///
     /// # Correctness
     ///
@@ -24,7 +25,7 @@ where
     /// smaller than every RNS modulus for the fast centered digit lift.
     ///
     /// Let `size = workspace.size()`, `N = table.poly_length().get()`,
-    /// `m = rns_base.moduli_count()`, and `w = rns_base.big_uint_value_len()`.
+    /// and `m = rns_base.moduli_count()`.
     /// The bound size must match `N`, `m`, the GLWE dimension, and
     /// `basis.decompose_length().get()`; `workspace.is_compatible(size, rns_base)`
     /// must hold. The table uses the base's modulus order and the gadget
@@ -34,9 +35,9 @@ where
     /// elements, and the gadget has `size.rns_ggsw_len()` evaluations in
     /// row/level/component/modulus order under a compatible key. Output is
     /// cleared before accumulation; scratch needs no manual reset.
-    pub fn mul_dcrt_ggsw_to<M, Table, A, B>(
+    pub fn external_product_to<M, Table, A, B>(
         &self,
-        dcrt_ggsw: &DcrtGgsw<A>,
+        input: &CrtGlwe<A>,
         output: &mut DcrtGlwe<B>,
         basis: &BigUintApproxSignedBasis<T>,
         table: &DcrtTable<Table>,
@@ -49,13 +50,12 @@ where
         B: DataMut<Elem = T>,
     {
         let rns_poly_len = table.rns_poly_len();
-        let dcrt_glev_len = basis.decompose_length().get() * self.as_ref().len();
+        let dcrt_glev_len = basis.decompose_length().get() * input.as_ref().len();
 
         output.set_zero();
 
-        dcrt_ggsw
-            .iter_dcrt_glev(dcrt_glev_len)
-            .zip(self.iter_crt_poly(rns_poly_len))
+        self.iter_dcrt_glev(dcrt_glev_len)
+            .zip(input.iter_crt_poly(rns_poly_len))
             .for_each(|(dcrt_glev, crt_poly)| {
                 output.add_dcrt_glev_mul_crt_polynomial_assign(
                     &dcrt_glev, &crt_poly, basis, table, rns_base, workspace,

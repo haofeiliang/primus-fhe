@@ -86,8 +86,8 @@ fn test_external_product() {
     for degree in [0, 1, poly_length - 1] {
         let ggsw = ggsw_encryptor.encrypt_monomial_ggsw(&Residues([1, 1]), degree, &mut rng);
 
-        c1.mul_dcrt_ggsw_to(
-            &ggsw,
+        ggsw.external_product_to(
+            &c1,
             &mut c2,
             glev_params.basis(),
             &table,

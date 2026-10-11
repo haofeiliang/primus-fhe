@@ -72,6 +72,8 @@ Availability depends on the type and representation. RNS scalar/factor inputs us
 
 External products can return coefficients or retain transformed output through `external_product_ntt_to` / `external_product_fourier_to`.
 
+`DcrtGgsw::external_product_to` accepts a coefficient-domain `CrtGlwe` input and overwrites a `DcrtGlwe` output, using a matching RNS base, decomposition basis, transform table and `DcrtGlevMulWorkspace`.
+
 NLev `external_product_sum_to` and GGSW/NGSW `cmux_k_to` accept exact-size iterators with matching counts. Pass borrowed gadgets and polynomial/ciphertext views, `output.as_mut_view()` for output, and `default.as_view()` for the CMux default. Candidates may come from `GlweIter` / `NtruIter` or borrowed ciphertext collections, without collecting views. Empty sums write zero; empty CMux copies its default. Fourier rounds the aggregate result, which can differ from summing separately converted coefficient products.
 
 Full GLWE extraction flattens all mask polynomials into an LWE mask; compact extraction requires the omitted secret suffix to be zero. `MultiMsgLwe` represents one shared mask in constant-term extraction order; its extractors rotate that mask negacyclically for each retained body coefficient. Inverse extraction embeds the constant-term LWE sample and zero-fills unused storage; it does not recover every coefficient of the original GLWE plaintext.

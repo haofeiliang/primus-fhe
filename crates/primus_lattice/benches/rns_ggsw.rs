@@ -49,8 +49,8 @@ fn benchmarks(c: &mut Criterion) {
         group.throughput(Throughput::Elements(glwe_len as u64));
         group.bench_function("crt_to_dcrt", |b| {
             b.iter(|| {
-                black_box(&input).mul_dcrt_ggsw_to(
-                    black_box(&key),
+                black_box(&key).external_product_to(
+                    black_box(&input),
                     black_box(&mut output),
                     black_box(&basis),
                     black_box(&table),
