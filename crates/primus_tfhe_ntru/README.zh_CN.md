@@ -40,7 +40,7 @@ BR 和 KS 分别使用 `GadgetEncryptionConfig { decomposition, noise_standard_d
 
 Classic binary/ternary 和 sparse fixed-weight binary 支持 PBS、ManyLUT、Boolean、MVB、CBS 和 one-hot。Sparse 须通过 `config.algorithm` 显式选择，`SparseTernary` 秘密分布本身不会选择桶聚合。外部固定重量可以为偶数，仍须满足[共享 sparse 限制](../primus_tfhe/README.zh_CN.md#选择盲旋转算法)。
 
-两后端共享 `SparseNtruBootstrappingKey<T>` 系数存储，首桶为提升用 NLev 控制，后续桶为加密旋转用 NGSW 控制。NTT 剩余类和 Native 系数仍是不同表示。优先用 context/key-generator 工厂，原始存储契约见 [sparse 密钥类型](src/sparse.rs)，提升推导见[旋转说明](../primus_tfhe/IMPLEMENTATION.md#ternary-and-sparse-rotation)。
+两后端共享 `SparseNtruBootstrappingKey<T>` 系数存储，首桶为提升用 NLev 控制，后续桶为加密旋转用 NGSW 控制。NTT 剩余类和 Native 系数仍是不同表示。优先用 context/key-generator 工厂，原始存储契约见 [sparse 密钥类型](src/sparse.rs)，提升推导见[首次提升推导](../../guides/development/bootstrapping-contracts.md#ntru-first-lifting)。
 
 ## 客户端与 LUT
 
@@ -79,7 +79,7 @@ NTT reverse trace 使用模逆元，Fourier 使用原生整数减半及额外 FF
 
 通过 `nlev_selectors`、`ngsw_selectors` 或 `nonzero_ngsw_selectors` 借用分支视图。`selector(r)` 使用数学分支编号，`iter()` 返回 `(r, ciphertext)`；视图不分配。完整布局、basis 和表示要求见 [selector 类型](src/one_hot/selectors.rs)及后端 evaluator。
 
-令 S=N/M、A=N/(2MW)。正确选择要求量化相位 `u_bar=S*m+W*e mod 2N` 满足 `-A<=e<A`，窗口左闭右开。e 包含输入噪声、编码舍入及逐坐标量化误差；形状检查不能证明该保护区条件或输出可解码。见 [one-hot 推导](../primus_tfhe/IMPLEMENTATION.md#one-hot-cbs)。
+令 S=N/M、A=N/(2MW)。正确选择要求量化相位 `u_bar=S*m+W*e mod 2N` 满足 `-A<=e<A`，窗口左闭右开。e 包含输入噪声、编码舍入及逐坐标量化误差；形状检查不能证明该保护区条件或输出可解码。见 [one-hot 推导](../../guides/development/bootstrapping-contracts.md#one-hot-cbs)。
 
 独立的[高精度 LUT 库](../primus_tfhe_ntru_lut/README.zh_CN.md)处理多个输入 chunk 和表多项式，默认采用 classic BR，sparse 可显式选择。
 
@@ -99,4 +99,4 @@ NTT reverse trace 使用模逆元，Fourier 使用原生整数减半及额外 FF
 
 默认 features 为空，本家族不启用 NTT/FFT；`simd` 转发给算术依赖。同态求值须选择具体后端。
 
-[API 源码](src/lib.rs) · [共享操作与编码](../primus_tfhe/README.zh_CN.md) · [实现说明](../primus_tfhe/IMPLEMENTATION.md)
+[API 源码](src/lib.rs) · [共享操作与编码](../primus_tfhe/README.zh_CN.md) · [数值契约](../../guides/development/bootstrapping-contracts.md)

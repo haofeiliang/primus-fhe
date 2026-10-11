@@ -19,7 +19,7 @@ Primus FHE 是实验性的 Rust 全同态加密 workspace，提供算术与格�
 cargo run --release -p primus_tfhe_glwe_ntt --example ntt_basic
 ```
 
-示例直接展示参数构造，区分 client 与 server，并复用求值器和输出缓冲。各后端 README 提供其他操作的完整示例。
+示例选择 `experimental` 操作配置，创建 context 和配套密钥，连续执行两次 PBS。源码区分 client 与 server，复用密钥、LUT、求值器和输出缓冲。各后端 README 提供其他操作的完整示例。
 
 ## TFHE 后端
 
@@ -30,7 +30,7 @@ cargo run --release -p primus_tfhe_glwe_ntt --example ntt_basic
 
 GLWE 支持两种 PBS 顺序。NTRU 使用独立的外部 LWE 秘密与环秘密，支持环模数 Q 到外部模数 q 的返回；可逆性要求针对环秘密，外部 binary/ternary 秘密没有奇数重量要求。Fourier 环目前只支持 `NativeModulus`，支持 RustFFT 与 TFHE-FFT；NTRU 的外部 q 可独立选择。
 
-Classic 与 sparse 的操作覆盖见[能力表](crates/primus_tfhe/README.zh_CN.md#crate-分工与能力)。对独立加密的多个 chunk 求高精度函数，使用 [NTRU 高精度查表](crates/primus_tfhe_ntru_lut/README.zh_CN.md)。编码和密钥域由调用方明确约定，raw 密文不携带这些信息。
+Classic 与 sparse 的操作覆盖见[能力表](crates/primus_tfhe/README.zh_CN.md#crate-分工与能力)。对独立加密的多个 chunk 求高精度函数，使用 [NTRU 高精度查表](crates/primus_tfhe_ntru_lut/README.zh_CN.md)。操作配置绑定消息模数和密钥域，context 准备相应客户端及 LUT 编译器；raw 密文不携带编码或秘密身份。
 
 ## Workspace 导航
 
@@ -52,7 +52,7 @@ RNS 与编码组件是构建模块，目前没有完整的 BFV、BGV 或 CKKS �
 默认 features 使用 stable Rust；可选 `simd` 需要 nightly。在仓库根目录运行 `cargo check --workspace --all-targets` 或 `cargo doc --workspace --no-deps`。仓库设置了 `target-cpu=native`，分发到其他 CPU 的二进制需要显式调整构建配置。
 
 - [测试指南](guides/development/testing.md)：普通测试、doctest、feature 覆盖和独立的示例/基准 smoke。
-- [TFHE 实现说明](crates/primus_tfhe/IMPLEMENTATION.md)：旋转、首次提升、one-hot 与 MVB 的数学依据。
+- [TFHE 数值契约](guides/development/bootstrapping-contracts.md)：旋转舍入、首次提升、one-hot、MVB 与完整查表树的数学条件。
 - [贡献规范](AGENTS.md)与 [justfile](justfile)：仓库开发约定和便捷命令。
 
 ## 许可证

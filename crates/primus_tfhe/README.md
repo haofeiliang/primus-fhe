@@ -73,7 +73,7 @@ Prepare a reusable compiler with `context.pbs_lookup_table_compiler()?`. It uses
 | Front-half, multiple outputs | `compile_interleaved_fn(k, function)` | `compile_interleaved_slice(k, values)` |
 | Odd full domain, one output | `compile_odd_full_domain_fn(function)` | `compile_odd_full_domain_slice(values)` |
 
-Front-half compilation programs `D=ceil(t_in/2)` inputs, with output values in `0..t_out`. ManyLUT requires positive k and `D<=N/s`, where `s=next_power_of_two(k)`. A three-output program occupies four slots but returns three ciphertexts. Callbacks receive `(input, output_index)` in input-major order; slices contain D*k values in that order. More outputs reduce input-noise margin. Detailed intervals and rounding are in the [rotation geometry](IMPLEMENTATION.md#rotation-geometry).
+Front-half compilation programs `D=ceil(t_in/2)` inputs, with output values in `0..t_out`. ManyLUT requires positive k and `D<=N/s`, where `s=next_power_of_two(k)`. A three-output program occupies four slots but returns three ciphertexts. Callbacks receive `(input, output_index)` in input-major order; slices contain D*k values in that order. More outputs reduce input-noise margin. Detailed intervals and rounding are in the [rotation geometry](../../guides/development/bootstrapping-contracts.md#rotation-geometry).
 
 ### Choosing the output encoding
 
@@ -148,7 +148,7 @@ Keep the context, keys and compiled programs across requests. An evaluator owns 
 
 `compile_odd_full_domain_fn` / `compile_odd_full_domain_slice` program all of `0..t_in`, requiring odd `t_in>=3` and `t_in<=N`. Slices contain t_in outputs in input order. Encrypt with ordinary `encrypt`, then use the existing PBS evaluator and corresponding output decoder.
 
-Folded negacyclic rotation centers must be distinct; collisions return `RotationCenterCollision`. Typical spacing is `N/t_in`, giving about half the front-half input margin. Capacity checks do not establish a failure probability: budget input error and per-coefficient modulus switching. This entry is single-output; interleaved and bivariate compilers retain their front-half contracts. See [rotation geometry](IMPLEMENTATION.md#rotation-geometry).
+Folded negacyclic rotation centers must be distinct; collisions return `RotationCenterCollision`. Typical spacing is `N/t_in`, giving about half the front-half input margin. Capacity checks do not establish a failure probability: budget input error and per-coefficient modulus switching. This entry is single-output; interleaved and bivariate compilers retain their front-half contracts. See [rotation geometry](../../guides/development/bootstrapping-contracts.md#rotation-geometry).
 
 ## Bounded two-input PBS
 
@@ -162,7 +162,7 @@ Reuse a packed LWE and output; `pack_to` forms `lhs+B*rhs`. Inputs must share th
 
 All outputs share one step-one BR, followed by separate public polynomial products. Output count is positive and unpadded, without reducing input resolution. Integer factor norms amplify BR noise; NTRU factors also amplify encrypted initialization error, and Fourier needs an FFT error budget. Scaled outputs require `mvb_decryptor`; feeding a Rounded-input PBS needs a separate encoding/noise check. Odd full-domain MVB and CBS outputs are not provided.
 
-All four backends support classic and sparse modes, with both GLWE orders. The [GLWE](../primus_tfhe_glwe_ntt/examples/mvb_thresholds.rs) and [NTRU](../primus_tfhe_ntru_ntt/examples/ntru_ntt_mvb_thresholds.rs) examples produce 17 threshold flags. Prefer ManyLUT when its capacity and rotation margin suffice; consider MVB for more outputs with small factor norms. Algebra and noise conditions are in [FactorizedLookupTable](src/lookup_table/factorized.rs) and the [MVB design](IMPLEMENTATION.md#factorized-mvb).
+All four backends support classic and sparse modes, with both GLWE orders. The [GLWE](../primus_tfhe_glwe_ntt/examples/mvb_thresholds.rs) and [NTRU](../primus_tfhe_ntru_ntt/examples/ntru_ntt_mvb_thresholds.rs) examples produce 17 threshold flags. Prefer ManyLUT when its capacity and rotation margin suffice; consider MVB for more outputs with small factor norms. Algebra and noise conditions are in [FactorizedLookupTable](src/lookup_table/factorized.rs) and the [MVB design](../../guides/development/bootstrapping-contracts.md#factorized-mvb).
 
 ## Error boundaries
 
@@ -172,4 +172,4 @@ Use `try_*` configuration/binding factories and handle their returned error type
 
 Default features are empty; `simd` forwards to arithmetic dependencies. Choose a concrete backend for homomorphic evaluation.
 
-[API sources](src/lib.rs) · [Parameter conditions](../../guides/development/tfhe-parameters.md) · [Implementation notes](IMPLEMENTATION.md)
+[API sources](src/lib.rs) · [Parameter conditions](../../guides/development/tfhe-parameters.md) · [Numerical contracts](../../guides/development/bootstrapping-contracts.md)

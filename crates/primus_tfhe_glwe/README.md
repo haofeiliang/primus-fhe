@@ -69,4 +69,4 @@ Compile identity or a custom function with `compile_cbs_identity`, `compile_cbs_
 
 Default features are empty; this family does not enable NTT/FFT. `simd` forwards to arithmetic dependencies. Select a concrete backend for evaluation.
 
-[API sources](src/lib.rs) · [Shared operations and encoding](../primus_tfhe/README.md) · [Implementation notes](../primus_tfhe/IMPLEMENTATION.md)
+[API sources](src/lib.rs) · [Shared operations and encoding](../primus_tfhe/README.md) · [Numerical contracts](../../guides/development/bootstrapping-contracts.md)

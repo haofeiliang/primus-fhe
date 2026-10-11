@@ -108,7 +108,7 @@ reusing those slots after their parent consumes them; h=c-d gives
 `M*max(h-1,0)` intermediate NTRUs. For h=0, the sole public polynomial is lifted
 with NLEV[1] before low-chunk rotations. Selectors and rotation controls are
 shared across outputs, but intermediate tree results are not. See the
-[table layout](../../crates/primus_tfhe_ntru_lut/IMPLEMENTATION.md#public-table-storage-and-complete-choices).
+[table layout](../../crates/primus_tfhe_ntru_lut/README.md#encoding-and-table-partition).
 
 One-hot CBS reuses its BR external-product workspace for BR, trace and scheme switching. Table selection and encrypted rotation now borrow that same workspace between one-hot calls. The NTT entry point is `BootstrapResources::external_product_workspace`; Fourier's `BootstrapResources::external_product_workspaces` returns the FFT engine and external-product buffers together. Borrowers retain polynomial lengths and the FFT table identity. Every subsequent one-hot call overwrites its scratch before reading it.
 

@@ -104,4 +104,4 @@ cargo bench -p primus_tfhe_glwe_fourier --bench pbs --no-default-features --feat
 
 ## 进一步阅读
 
-[API 源码](src/lib.rs) · [共享编码与错误](../primus_tfhe/README.zh_CN.md) · [实现说明](../primus_tfhe/IMPLEMENTATION.md) · [性能说明](../../guides/performance/README.zh_CN.md)
+[API 源码](src/lib.rs) · [共享编码与错误](../primus_tfhe/README.zh_CN.md) · [数值契约](../../guides/development/bootstrapping-contracts.md) · [性能说明](../../guides/performance/README.zh_CN.md)

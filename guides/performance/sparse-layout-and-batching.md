@@ -688,8 +688,10 @@ reusing the existing nonzero-selector and coefficient-conversion batches. The
 callback cannot replace BR state; its input/output and unwind contracts are in
 rustdoc. Classic and unpaired tails retain single-input execution. No threads,
 queues, second evaluator or all-chunk BR scratch are introduced. See the
-[LUT implementation notes](../../crates/primus_tfhe_ntru_lut/IMPLEMENTATION.md#fixed-sparse-input-pairs)
-for buffer lifetimes and the unchanged selector formulas.
+[NTT](../../crates/primus_tfhe_ntru_ntt/src/circuit_bootstrap/one_hot/pair.rs) /
+[Fourier](../../crates/primus_tfhe_ntru_fourier/src/circuit_bootstrap/one_hot/pair.rs)
+API contracts for scoped projection, and the [numerical guide](../development/bootstrapping-contracts.md#fixed-complete-high-precision-lookup)
+for the selector formulas.
 
 ### Complete evaluation
 

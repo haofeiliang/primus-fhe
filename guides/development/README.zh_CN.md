@@ -7,6 +7,8 @@
 
 本指南用于组合或扩展 workspace 中的库，说明已有接口及其边界；详细契约仍以 rustdoc 为准。各库职责见 [workspace 导航](../../README.zh_CN.md#workspace-导航)，验证命令见[测试指南](testing.md)。
 
+跨层旋转、提升、trace 与查表误差条件见[自举数值契约](bootstrapping-contracts.md)。
+
 ## 选择算术域
 
 先选择模数，再选择变换和分解 basis。实现见 [primus_modulus](../../crates/primus_modulus/src/lib.rs)，算术能力 trait 见 [primus_reduce](../../crates/primus_reduce/src/lib.rs)。

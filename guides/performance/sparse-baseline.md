@@ -384,8 +384,7 @@ existing table selection, low-chunk rotations and Q→q/extraction/KS return.
 An independent NLEV[1] is generated only for explicit public lifts; its basis
 and row noise are caller-selected. No online numerical kernel changed.
 
-The [pipeline fixture](../../crates/primus_tfhe_ntru_lut/IMPLEMENTATION.md#historical-measurements)
-pairs classic/sparse at **n800/h32/N1024**, q24/t8, c8/d5/o8, the public function
+The historical pipeline fixture paired classic/sparse at **n800/h32/N1024**, q24/t8, c8/d5/o8, the public function
 `(x*x+3*x+7) mod 65536`, and input 43981. Client seed 42 and input seed 43 produce
 the same client coefficients and encrypted input in each pair; server material
 consumes different randomness. Sparse uses r3/B64. This deliberately retains the

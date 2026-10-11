@@ -823,7 +823,7 @@ Temporary variants of the existing lattice NTRU benches compared ordinary Vec-ba
 
 Ordinary versus aligned key differences were small (roughly 0–2% in the initial runs) and did not establish a consistent benefit across configurations. The ordinary allocator may itself return aligned addresses; this was a container comparison, not a controlled misalignment study. Workspace-container changes also produced small improvements and regressions. These results support neither a general key migration nor a speedup claim for boxed storage. Temporary benchmark variants were removed.
 
-The historical lookup fixture in `e55ec2e` measured retained requested heap and zero online allocation. Its u64/N=1024/n=64/M=4/c=7/d=5/o=3 parameters and key generation were held fixed for the following comparison. The [current fixture](../../crates/primus_tfhe_ntru_lut/IMPLEMENTATION.md#historical-measurements) uses n800/c8/d5/o8; its latency cannot be compared directly with this table.
+The historical lookup fixture in `e55ec2e` measured retained requested heap and zero online allocation. Its u64/N=1024/n=64/M=4/c=7/d=5/o=3 parameters and key generation were held fixed for the following comparison. Later n800/c8/d5/o8 measurements used different parameters and still used content-dependent selection; neither they nor this table establish current fixed-tree latency.
 
 | Backend | Lookup workspace before → after | Retained reduction | Pinned complete lookup before → after |
 | --- | --- | --- | --- |
@@ -835,13 +835,7 @@ The pinned comparison used logical CPU 0, SIMD, 20 samples, 500 ms warmup and 2 
 
 Memory reduction is established; latency is a tradeoff. RustFFT was about 2.3% slower in that pinned run. A subsequent isolation run retained AVec in the NTRU external-product workspace while keeping shared lookup buffers: 8.091 ms versus 8.148 ms with boxed workspace buffers. Container layout accounts for part, not all, of the observed difference. The current choice preserves fixed-length ownership and the smaller retained workspace, without claiming improved throughput. Revisit this choice when parameters, compiler or backend change.
 
-For future comparisons, use the pipeline target on an available fixed CPU and separate baseline names for each revision. The command below measures the current geometry; reproducing the historical numbers requires the old fixture from `e55ec2e` and its comparison revision:
-
-```sh
-taskset -c 0 cargo +nightly bench -p primus_tfhe_ntru_lut --bench pipeline --features ntt,simd,rustfft,tfhe-fft -- '/evaluate$' --sample-size 20 --warm-up-time 0.5 --measurement-time 2 --noplot --save-baseline workspace-current
-```
-
-Construction heap and online allocation are measured by that harness; key-generation latency and Vec-to-aligned-key conversion latency were not claimed or optimized. The lattice comparisons can be repeated with `ntru_ntt` and `ntru_fourier`, filtering `n1024.*external_product_coeff`, and preparing a second key with `AVec::from_iter(CACHELINE_ALIGN, key.as_ref().iter().copied()).into_boxed_slice()` before timing. Borrow it through the same NGSW slice view as the ordinary key.
+The measured pipeline harness has been retired. Current [lookup benchmarks](../../crates/primus_tfhe_ntru_lut/README.md#benchmarks) separate creation from complete evaluation and use different parameters and a fixed tree. They do not reproduce this comparison. The historical harness measured construction heap and online allocation; key-generation and Vec-to-aligned-key conversion latency were not claimed or optimized. The lattice comparisons can be repeated with `ntru_ntt` and `ntru_fourier`, filtering `n1024.*external_product_coeff`, and preparing a second key with `AVec::from_iter(CACHELINE_ALIGN, key.as_ref().iter().copied()).into_boxed_slice()` before timing. Borrow it through the same NGSW slice view as the ordinary key.
 
 ## Representative-parameter recheck
 
@@ -849,7 +843,7 @@ The [current benchmark report](tfhe-baseline.md#aligned-key-recheck) repeats the
 
 ## Fixed complete NTRU lookup tree (2026-10-10)
 
-The [current LUT](../../crates/primus_tfhe_ntru_lut/IMPLEMENTATION.md#stage-and-buffer-layout)
+The [current LUT](../development/bootstrapping-contracts.md#fixed-complete-high-precision-lookup)
 retains every public polynomial and executes every selection layer for every
 output. This replaces `b1a716ff`'s polynomial interning, pruned graph and shared
 results. The choice establishes function-independent work, rather than keeping

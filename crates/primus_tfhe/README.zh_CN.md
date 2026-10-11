@@ -73,7 +73,7 @@ Client 保留秘密密钥，向 server 提供求值密钥和输入密文。CBS �
 | 前半区，多输出 | `compile_interleaved_fn(k, function)` | `compile_interleaved_slice(k, values)` |
 | 奇数全域，单输出 | `compile_odd_full_domain_fn(function)` | `compile_odd_full_domain_slice(values)` |
 
-前半区编译为 `D=ceil(t_in/2)` 个输入编程，输出值属于 `0..t_out`。ManyLUT 要求 k 为正且 `D<=N/s`，其中 `s=next_power_of_two(k)`。三个输出占四个槽，但只返回三个密文。回调按输入优先顺序接收 `(input, output_index)`，切片按相同顺序保存 D*k 个值。输出越多，输入噪声余量越小。完整区间及舍入规则见[旋转几何](IMPLEMENTATION.md#rotation-geometry)。
+前半区编译为 `D=ceil(t_in/2)` 个输入编程，输出值属于 `0..t_out`。ManyLUT 要求 k 为正且 `D<=N/s`，其中 `s=next_power_of_two(k)`。三个输出占四个槽，但只返回三个密文。回调按输入优先顺序接收 `(input, output_index)`，切片按相同顺序保存 D*k 个值。输出越多，输入噪声余量越小。完整区间及舍入规则见[旋转几何](../../guides/development/bootstrapping-contracts.md#rotation-geometry)。
 
 ### 选择输出编码
 
@@ -148,7 +148,7 @@ NTRU 的 `one_hot_evaluator` 使用专用 selector 表；`cmux_k_to` 消费非�
 
 `compile_odd_full_domain_fn` / `compile_odd_full_domain_slice` 编程整个 `0..t_in`，要求奇数 `t_in>=3` 且 `t_in<=N`；切片按输入顺序包含 t_in 个输出。用普通 `encrypt` 加密，随后使用已有 PBS evaluator 和对应输出解码器。
 
-折叠后的负循环旋转中心须互不相同，碰撞返回 `RotationCenterCollision`。典型间距为 `N/t_in`，输入余量约为前半区的一半。容量检查不建立失败概率，仍须预算输入误差和逐系数模切误差。该入口只支持单输出，交错和双输入编译器保持前半区契约。见[旋转几何](IMPLEMENTATION.md#rotation-geometry)。
+折叠后的负循环旋转中心须互不相同，碰撞返回 `RotationCenterCollision`。典型间距为 `N/t_in`，输入余量约为前半区的一半。容量检查不建立失败概率，仍须预算输入误差和逐系数模切误差。该入口只支持单输出，交错和双输入编译器保持前半区契约。见[旋转几何](../../guides/development/bootstrapping-contracts.md#rotation-geometry)。
 
 ## 有界双输入 PBS
 
@@ -162,7 +162,7 @@ NTRU 的 `one_hot_evaluator` 使用专用 selector 表；`cmux_k_to` 消费非�
 
 所有输出共享一次步长 1 的 BR，再分别乘公开多项式。输出数为正、不补齐，也不降低输入分辨率。整数因子范数放大 BR 噪声，NTRU 因子也放大加密初始化误差，Fourier 还需 FFT 误差预算。Scaled 输出使用 `mvb_decryptor`，反馈给 Rounded 输入 PBS 需另行检查编码和噪声。本实现不提供奇数全域 MVB 或 CBS 输出。
 
-四后端均支持 classic 和 sparse，GLWE 支持两种顺序。[GLWE](../primus_tfhe_glwe_ntt/examples/mvb_thresholds.rs) 和 [NTRU](../primus_tfhe_ntru_ntt/examples/ntru_ntt_mvb_thresholds.rs) 示例产生 17 个阈值标志。ManyLUT 容量及旋转余量足够时优先使用；更多输出且因子范数较小时可考虑 MVB。代数和噪声条件见 [FactorizedLookupTable](src/lookup_table/factorized.rs) 及 [MVB 设计](IMPLEMENTATION.md#factorized-mvb)。
+四后端均支持 classic 和 sparse，GLWE 支持两种顺序。[GLWE](../primus_tfhe_glwe_ntt/examples/mvb_thresholds.rs) 和 [NTRU](../primus_tfhe_ntru_ntt/examples/ntru_ntt_mvb_thresholds.rs) 示例产生 17 个阈值标志。ManyLUT 容量及旋转余量足够时优先使用；更多输出且因子范数较小时可考虑 MVB。代数和噪声条件见 [FactorizedLookupTable](src/lookup_table/factorized.rs) 及 [MVB 设计](../../guides/development/bootstrapping-contracts.md#factorized-mvb)。
 
 ## 错误边界
 
@@ -172,4 +172,4 @@ NTRU 的 `one_hot_evaluator` 使用专用 selector 表；`cmux_k_to` 消费非�
 
 默认 features 为空，`simd` 转发给算术依赖。同态求值须选择具体后端。
 
-[API 源码](src/lib.rs) · [参数条件](../../guides/development/tfhe-parameters.md) · [实现说明](IMPLEMENTATION.md)
+[API 源码](src/lib.rs) · [参数条件](../../guides/development/tfhe-parameters.md) · [数值契约](../../guides/development/bootstrapping-contracts.md)

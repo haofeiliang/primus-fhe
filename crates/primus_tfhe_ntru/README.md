@@ -40,7 +40,7 @@ Ordinary PBS follows f,Q blind rotation → coefficient-wise nearest Q→q round
 
 Classic binary/ternary and sparse fixed-weight binary support PBS, ManyLUT, Boolean, MVB, CBS and one-hot. Select sparse explicitly through `config.algorithm`; the `SparseTernary` secret distribution alone does not select bucket aggregation. External fixed weights may be even; [shared sparse restrictions](../primus_tfhe/README.md#selecting-blind-rotation) still apply.
 
-Both backends share `SparseNtruBootstrappingKey<T>` coefficient storage. Its first bucket contains NLev controls for lifting; later buckets contain NGSW controls for encrypted rotation. NTT residues and Native coefficients remain distinct representations. Prefer context/key-generator factories; raw storage contracts are on the [sparse key type](src/sparse.rs), and the [rotation notes](../primus_tfhe/IMPLEMENTATION.md#ternary-and-sparse-rotation) explain lifting.
+Both backends share `SparseNtruBootstrappingKey<T>` coefficient storage. Its first bucket contains NLev controls for lifting; later buckets contain NGSW controls for encrypted rotation. NTT residues and Native coefficients remain distinct representations. Prefer context/key-generator factories; raw storage contracts are on the [sparse key type](src/sparse.rs), and the [first-lift derivation](../../guides/development/bootstrapping-contracts.md#ntru-first-lifting) explain lifting.
 
 ## Clients and LUTs
 
@@ -79,7 +79,7 @@ Full output covers δ_r(m), r=0..M-1. Compact NGSW slot r-1 represents r=1..M-1;
 
 Borrow branch views with `nlev_selectors`, `ngsw_selectors` or `nonzero_ngsw_selectors`. `selector(r)` takes the mathematical branch number; `iter()` yields `(r, ciphertext)`. Views allocate nothing. Full layout, basis and representation requirements are on the [selector types](src/one_hot/selectors.rs) and backend evaluators.
 
-Let S=N/M and A=N/(2MW). Correct selection requires quantized phase `u_bar=S*m+W*e mod 2N` with `-A<=e<A`: the window is left-closed/right-open. e includes input noise, encoding rounding and per-coordinate quantization; shape checks prove neither this guard nor output decryptability. See the [one-hot derivation](../primus_tfhe/IMPLEMENTATION.md#one-hot-cbs).
+Let S=N/M and A=N/(2MW). Correct selection requires quantized phase `u_bar=S*m+W*e mod 2N` with `-A<=e<A`: the window is left-closed/right-open. e includes input noise, encoding rounding and per-coordinate quantization; shape checks prove neither this guard nor output decryptability. See the [one-hot derivation](../../guides/development/bootstrapping-contracts.md#one-hot-cbs).
 
 The separate [high-precision LUT crate](../primus_tfhe_ntru_lut/README.md) handles multiple input chunks and table polynomials, with classic as the default BR and sparse available explicitly.
 
@@ -99,4 +99,4 @@ Inputs must be canonical coefficients under the paired f at Q. Q→q rounding pr
 
 Default features are empty; this family does not enable NTT/FFT. `simd` forwards to arithmetic dependencies. Select a concrete backend for evaluation.
 
-[API sources](src/lib.rs) · [Shared operations and encoding](../primus_tfhe/README.md) · [Implementation notes](../primus_tfhe/IMPLEMENTATION.md)
+[API sources](src/lib.rs) · [Shared operations and encoding](../primus_tfhe/README.md) · [Numerical contracts](../../guides/development/bootstrapping-contracts.md)

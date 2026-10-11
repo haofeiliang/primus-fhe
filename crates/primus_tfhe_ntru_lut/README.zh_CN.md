@@ -5,17 +5,22 @@
 > [!WARNING]
 > 本 crate 属于实验性的 [Primus FHE](../../README.zh_CN.md) workspace。其 API 和数值契约尚不稳定，可能随时发生不兼容修改。
 
-对已加密的 NTRU-TFHE chunks 执行高精度查表，串联 one-hot CBS、公开及密文表选择、负向旋转和独立 LWE 返回。
+对独立加密的 NTRU-TFHE chunks 计算有限函数。One-hot CBS 选择公开表，加密旋转选择其中的系数，再返回外部 LWE 秘密。推荐配置使用 classic binary BR，也支持 classic ternary 和显式选择的 sparse 固定重量 binary BR。
+
+## 快速开始
+
+```sh
+cargo run --release -p primus_tfhe_ntru_lut --example ntt_lookup
+cargo run --release -p primus_tfhe_ntru_lut --example fourier_lookup
+```
+
+[NTT](examples/ntt_lookup.rs) 和 [Fourier](examples/fourier_lookup.rs) 示例将 16 位输入映射为 16 位分段费用。源码区分客户端/服务端阶段，复用密钥、表、evaluator 和缓冲，并检查分段点及域边界。两者均使用 u64 系数，库也支持 u32。
 
 ## 实验配套参数
 
-`experimental::NTT_CLASSIC_LOOKUP_U64` / `FOURIER_CLASSIC_LOOKUP_U64` 组合 n800/h32/N1024 one-hot CBS、其必需返回 KS 和八个输入/八个输出两位 chunks。`coefficient_chunk_count: None` 默认得到 d=5；`Some(d)` 可显式选择其他分区。输入、输出 chunk 数独立。这些算术教学配置没有经过安全性或失败概率评估，见[参数指南](../../guides/development/tfhe-parameters.md#scope-of-paired-parameter-entries)。
+从 `experimental::NTT_CLASSIC_LOOKUP_U64` 或 `FOURIER_CLASSIC_LOOKUP_U64` 开始。它们组合 n800/h32/N1024 one-hot CBS、必需返回 KS 和八个输入/八个输出两位 chunks。`coefficient_chunk_count: None` 选择 d=5，`Some(d)` 可覆盖分区；输入输出数量独立。这些算术教学配置的**安全性与失败概率尚未评估**，见[参数指南](../../guides/development/tfhe-parameters.md#scope-of-paired-parameter-entries)。
 
-`NttHighPrecLutContext::try_from_config` / `FourierHighPrecLutContext::try_from_config` 准备完整操作、q/Q 编码和一份变换表，不生成密钥或求值工作区。若需要先于变换离线编译，使用 `HighPrecLutParameters::try_from_config` 及其编译方法，再将该 owner 移入对应 Context。CBS/BR/返回公共状态与 sampler 只有一份，移动时不 clone，也不增加 Arc。
-
-## 工作流
-
-两个后端支持 classic binary/ternary 和 sparse 固定重量 binary 查表。推荐直接提供纯整数函数与完整整数输入输出，由库处理 chunk 提取、padding 加密和拼接：
+`NttHighPrecLutContext::try_from_config` / `FourierHighPrecLutContext::try_from_config` 准备操作参数、编码和变换表；密钥、公开函数编译和可变 evaluator 状态分别准备：
 
 ```rust,no_run
 use primus_ntt::U64NttTable;
@@ -55,56 +60,40 @@ for (value, expected) in [(16_383u64, 4_095u64), (49_152, 20_480)] {
 # Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
-Fourier 使用 `FourierHighPrecLutContext<u64, RustFftTable, _>` 与对应实验常量。完整示例为 [ntt_lookup.rs](examples/ntt_lookup.rs) 和 [fourier_lookup.rs](examples/fourier_lookup.rs)，对 16-bit 输入计算上述分段费用，返回 16-bit 结果，检查分段点前后、域端点和一个内部值共七次请求。最大费用为 36863。密钥、表、evaluator 与密文缓冲重复使用；示例先打印函数和位数，再打印普通整数结果。五个低 chunk 填满 N=1024 个系数，三个高 chunk 寻址每个输出的 64 个完整存储的多项式；每个输出都执行三层选表。示例固定 u64 系数，库也支持 u32。
+Fourier 使用 `FourierHighPrecLutContext<u64, RustFftTable, _>` 和对应实验常量。客户端工厂不接收 LUT 或手工 codec：输入/返回 chunks 使用 q，表系数使用 Q。API 处理 chunk 提取、padding 加密和拼接，不对单个高精度 LWE 做同态拆分。
 
-`compile_fn(|x: W| -> W)` 将明文整数 W 与密文系数 T 分开。完整输入输出位宽必须能被 W 容纳，超出输出域的结果直接报错，不截断。编译仍为 output-major：同一纯函数会为每个输出 chunk 再计算一次，不保留全域明文缓存。昂贵函数可以显式预先准备值。`compile_chunks_fn(|x, output| digit)` 保留 digit 回调，支持超过一个整数容量的输出。客户端同样提供 `encrypt_chunks_to` / `decrypt_chunks_to`，使用调用方已有 digit 切片。
-
-Encryptor/decryptor 工厂不接收 LUT 或函数，根据完整操作准备编码：输入、返回 chunks 使用 q，公开表系数使用 Q。整值加解密不分配 digit 缓冲，输入密文分配显式执行。加密前先验证完整数量、维数、整数容量与输入范围，失败时不写入或消耗 RNG。解密会拒绝 padding 半区的 digit，不将其掩码为合法值。`decrypt_chunks_to` 遇到非法解码 digit 时可能已写入前缀，应丢弃该部分结果。密文本身仍不携带秘密/编码身份。
-
-```sh
-cargo run --release -p primus_tfhe_ntru_lut --example ntt_lookup --features ntt
-cargo run --release -p primus_tfhe_ntru_lut --example fourier_lookup
-```
+`compile_fn(|x: W| -> W)` 的明文整数类型 W 独立于系数类型 T。完整输入输出位宽须能被 W 容纳，结果须属于输出域，超出位数直接拒绝。编译会为每个输出 chunk 再调用一次纯函数。超过单个机器字的输出可使用 `compile_chunks_fn(|x, output| digit)`、`encrypt_chunks_to` 和 `decrypt_chunks_to`；原始 chunk 切片按低位在前排列。分块解码失败可能已写入前缀，应丢弃该结果。见[客户端契约](src/client.rs)。
 
 ## 编码与表分区
 
-要求明文模数 `t=2*M`，其中 `M=2^tau>=2`。输入与输出 chunks 共用 tau，数量独立指定且均为正。两个密文切片都按低位在前排列：`x=sum_i m_i*M^i`。输入已经分别加密，API 不对单个高精度 LWE 做同态拆分。
-
-`ChunkFormat::new(tau)` 统一派生 `bits()`、`radix()`、`mask()` 和 `plaintext_modulus()`；用后者构造 Rounded codec。`bit_count(count)` 以 u32 返回各自的总位宽，超出范围时拒绝。编译器从 codec 派生相同格式，通过 `table.chunk_format()` 取得，编译时无需再传第二份位宽。格式本身不持有缓冲或 codec。`table.chunk_bits()` 同样使用 `u32`，编译在分配或调用回调前拒绝超过 `u32::MAX` 的总位宽。Chunk 数量、表长度和索引仍使用 `usize`。
-
-明文机器字使用 `chunks.split_to(value, &mut digits)` 覆盖复用的低位在前切片，再用 `chunks.join(&digits)` 组合。工具拒绝容量超限、截断和非法 digit，允许恰好填满机器字。`chunks.chunk(value, index)` 提取单项 digit，超出机器字部分按零扩展，可用于表回调。机器字转换为可选功能：回调仍可分别提供总位宽超过 u64 或其他单个机器字的输出 digits；LUT 独立保留完整输入枚举与存储上限。
-
-令 `c=input_chunk_count`、`d=coefficient_chunk_count`、`o=output_chunk_count`，要求 `0<=d<=c`、`M^d<=N`。低 d 个 chunks 选择系数，其余高位 chunks 选择多项式。各布局量的含义为：
+令 `M=2^tau>=2`，chunk 使用明文模数 `t=2*M` 和 `0..M` 内的 unsigned digit。输入输出共用 tau，但数量独立且均为正。`ChunkFormat` 提供 `split_to`、`join` 和 `chunk` 明文转换，`context.chunk_format()` 返回已准备格式。位数用 u32，数量和索引用 usize。
 
 | 布局量 | 含义 |
 | --- | --- |
-| `chunk_bits()` = tau | 每个输入/输出 chunk 的统一位宽 |
-| `input_value_count()` = M^c | 完整输入可能的取值总数 |
-| `entries_per_polynomial()` = K = M^d | 每个多项式中用于存放 LUT 表项的系数个数 |
-| `polynomials_per_output()` = P = M^(c-d) | 每个输出 chunk 的实际存储多项式数量 |
-| N | 每个多项式实际分配的系数个数，包括补零区域 |
+| `input_chunk_count` = c | `x=sum_i m_i*M^i` 中的输入 chunk 数 |
+| `output_chunk_count` = o | 独立指定的输出 chunk 数 |
+| `coefficient_chunk_count` = d | 选择系数的低位 chunk 数，`0<=d<=c` |
+| `entries_per_polynomial()` = K = M^d | 每个多项式中使用的系数数量，K<=N |
+| `polynomials_per_output()` = P = M^(c-d) | 每个输出 chunk 的存储多项式数量 |
+| `input_value_count()` = M^c | 编译时枚举的完整输入域 |
 
-将输入拆成 `x=p*K+z`。对于输出 chunk j，第 p 个多项式的第 z 个系数存放 `E_Q(F(x,j))`，系数 `K..N` 补零。其中 `E_Q(v)=round(Q*v/(2*M))`，乘法在舍入之前。`F(x,j)` 返回目标函数结果的第 j 个 chunk，必须位于 `0..M`。编译按输出优先、再按 x 升序枚举，每对 `(x,j)` 恰好调用一次。在值域及存储限制内可以编译任意有限映射；整数、有符号数或定点数的解释由调用方的 chunk 编码和回调决定。
+将输入写成 `x=p*K+z`。输出 chunk j 的多项式 p 在系数 z 存放 `E_Q(F(x,j))`，K..N 补零，其中 `E_Q(v)=round(Q*v/(2*M))`。`F(x,j)` 须属于 `0..M`。编译按输出 j 优先、x 升序枚举，每对调用一次。值域及存储限制内可支持任意有限映射；有符号数或定点数的解释由 digit 映射约定。
 
-例如 `M=4, c=3, d=1, N=64` 时，有 64 种输入，每个输出对应 16 个多项式，每个多项式放 4 个表项。多项式 0 存放输入 0..3，多项式 1 存放输入 4..7，以此类推。输入 6 选择多项式 1 的系数 2。每个多项式其余 60 个系数均为零。
+`polynomial(j,p)` 借用 N 个系数。全部 `o*P*N` 个系数按 `[output][prefix][coefficient]` 连续保存，包括相同多项式和重复输出。M=4、c=3、d=1、N=64 时，每个输出有 16 个多项式，各含四个表项及 60 个零；输入 6 选择多项式 1 的系数 2。
 
-`polynomial(j,p)` 直接借用输出 j、前缀 p 对应的 N 个系数。全部 `o*P*N` 个系数按 `[output][prefix][coefficient]` 连续存储。重复多项式和重复输出仍独立存储，并执行与其他函数相同的完整选表树。
-
-输入取值总数本身必须能用 `usize` 表示，即 `tau*c < usize::BITS`；这是完整枚举的索引限制，并非论文约束。分配或调用回调前检查 `o*P*N` 个系数及其字节大小。这些检查不保证指数级表一定有足够物理内存可分配。
+完整输入域大小须能用 usize 表示，因此 `tau*c < usize::BITS`；这是实现中的枚举限制，不是论文约束。编译在分配或调用回调前检查总位宽、元素数和字节大小，但不保证实际可用内存。公开表存储随 c-d 指数增长，占 `o*P*N*sizeof(T)` 字节。
 
 ### 选择系数 chunk 数
 
-固定 N、M、c 时，可从 `d=min(c, floor(log2(N)/tau))` 开始，让 M^d 尽量接近 N。d 每增加 1，公开表的存储量缩小 M 倍，每个输出多一次旋转乘积；最佳选择仍取决于实测时间与噪声余量，计算公式见[阶段说明](IMPLEMENTATION.md#stage-and-buffer-layout)。
+固定 N、M、c 时，从 `d=min(c, floor(log2(N)/tau))` 开始，让 M^d 接近 N。d 每增加一，公开存储缩小 M 倍，每个输出多一次旋转乘积，同时减少选表运算；应根据完整求值时间和噪声余量选择。
 
-h=c-d>0 时，每个输出执行 `P+P/M-1` 次选表外积，再执行 d 次旋转外积。首层使用完整 M 个 NLEV selectors，后续每层使用 M-1 个 NGSW selectors。h=0 时，唯一公开多项式先通过独立 NLEV[1] 提升，再旋转。工作量由几何决定，不随表项重复改变；这些数量不预测延迟，也不建立噪声预算。
+`h=c-d>0` 时，每个输出执行 `P+P/M-1` 次选表乘积，分为 `(P-1)/(M-1)` 组，再做 d 次旋转乘积。首层通过全部 M 个 NLEV selectors 提升，后续层使用 M-1 个 NGSW selectors。h=0 时，唯一公开多项式先经一次 NLEV[1] 提升，再做 d 次旋转。所有输出都执行完整树，包括常量/重复表。推导与共享误差条件见[数值指南](../../guides/development/bootstrapping-contracts.md#fixed-complete-high-precision-lookup)。
 
 ## 求值与工作区
 
-`context.try_generate_keys(rng)` 根据已配置的 chunk 几何生成一份 BR/CBS/返回组合，不接收编译后的函数。Classic 借用已有 initializer；sparse 仅在 c=d 时，按 BR 的 basis/noise 生成独立 `NLEV[1]`。BR、CBS 和 lift 共用已接受的环秘密变换/逆元，不生成第二份 BR 或变换表。普通 sparse PBS/CBS/one-hot 不受影响。
+用 `context.try_generate_keys(rng)` 生成完整组合，不传入函数；用 `context.evaluator(&server, &table)` 绑定密钥和已编译表，分配一次输出后复用 `evaluate_to`。Evaluator 借用这些所有者，在构造时分配缓冲，在线求值无额外分配。并发 evaluator 需要各自的可变状态。
 
-两个配套查表配置已经采用 h32 固定重量 binary 秘密，因此 sparse 查表只需修改算法。保留相同的费用函数和客户端/求值流程；密钥生成只在 c=d 时补充独立公开提升材料。推荐配置保持 classic BR；固定重量秘密本身不会选择 sparse 算法。
-
-使用 sparse 查表时，在创建高精度 Context 前修改 one-hot PBS 的算法：
+c=d 时 context 提供提升材料：classic 使用 initializer，sparse 使用按 BR basis/noise 生成的独立 NLEV[1]。c>d 时首层公开选表已完成提升。配套配置采用固定重量秘密，可在创建 context 前选择 sparse：
 
 ```rust,ignore
 use primus_tfhe::BlindRotationMethod;
@@ -115,31 +104,29 @@ config.one_hot.pbs.algorithm =
 let context = NttHighPrecLutContext::<u64, U64NttTable, _>::try_from_config(config)?;
 ```
 
-服务端组合可复用于布局、编码和材料兼容的其他公开表；函数值不改变 lift 需求。跨几何的底层材料绑定仍要求在 c=d 时显式提供 lift，不在线生成密钥。实际秘密与变换身份须一致，元数据不能证明这些条件。
+密钥组合可服务其他几何、编码及材料相容的表，函数值不改变 lift 需求。资源须匹配 N/q/Q 和实际秘密，Fourier 还要求同一个 FFT table 实例。输入输出形状在写入前检查。返回依次执行逐系数 Q→q、提取及到外部秘密的 KS。
 
-显式组合使用 `backend_context()` 借用原 NTRU 环境，通过 `server.into_parts()` 移出完整 `CircuitBootstrapServerKey` 和可选拥有型 lift。`NttPublicLiftKey` / `FourierPublicLiftKey` 将拥有型变换域 NLEV 与生成它的 `NlevParameters` 配对；`NttPublicLift` / `FourierPublicLift` 是借用视图。原有 `NttLookupTableEvaluator` / `FourierLookupTableEvaluator` 构造器与 `try_from_parts` 保留。独立 lift 可以选择其他 basis/noise，默认工作流不隐式重建或重新解释它。
+显式组合可使用 `backend_context()` 和底层 [NTT](src/ntt.rs) / [Fourier](src/fourier.rs) evaluator。公开 lift 视图将 NLEV[1] 与生成参数配对。c=d 时显式 lift 优先于 classic initializer，必须通过验证；c>d 忽略多余 lift。它可采用不同 basis/noise，但必须在对应环秘密和变换下编码一；元数据不能证明这些事实或足够的分解精度。
 
-底层公开编译仍可用 `HighPrecisionLookupTable::try_new(poly_length, ring_modulus, input_codec, config, function)`，仅需 N/Q 与输入 q/t。启用后端后也可通过 `try_from_parameters` 复用已有 PBS 参数；两者都不需要密钥或变换。底层 evaluator 绑定检查 N/q/Q 和 one-hot 容量；完整 Context 额外要求匹配自己的 chunk 数、分区与 t。c=d 时，显式 lift 优先于 classic initializer；c>d 的表忽略多余 lift。检查证明布局与公开域相容，不证明秘密身份、lift 编码为一或完整噪声余量。
+## 数值限制
 
-每次调用对全部 c 个输入 chunks 执行 one-hot CBS。低 d 个 chunk 聚合为旋转控制；h>0 时，chunk d 提供完整 NLEV selectors，执行首次 M 路公开选表与提升，后续高位 chunk 提供非零 NGSW selectors，选择密文。每个输出都独立执行完整 h 层、旋转与返回，常量表和重复输出也不例外。h=0 时，改由绑定的 NLEV[1] 提升唯一公开多项式。
+数据表为每个逻辑输入/输出 chunk 存放一个值，输入误差容忍由此前的 [one-hot 保护区](../primus_tfhe_ntru/README.zh_CN.md#one-hot-cbs)提供，不依靠重复数据表项。保护区须预算加密/逐坐标舍入误差，最终解码还须预算 CBS、选表、旋转及 Q→q/KS 误差。Fourier 额外包含 trace 减半和 FFT/转换误差，融合求和不保证与逐项转换后的密文系数相同。共享 selectors 会使输出误差相关；形状检查和示例成功不建立失败概率，见[数值指南](../../guides/development/bootstrapping-contracts.md)。
 
-Sparse 求值在单线程内将输入 chunks 两两分组，再依次投影并消费结果。单个输入或奇数尾项沿用普通路径。至少需要两个 chunk 时，构造额外保留一个 BR aggregate、累加器和指数向量，共 `(L_BR+1)*N*sizeof(T) + n*sizeof(usize)` 字节；变换、外积和投影 scratch 仍共享。调度不减少 BR 次数，也不新增 selector 批次；公开求值接口不变。
+## Features
 
-深度优先求值为每个密文选择层保留 M 个子结果，父节点消费后复用该层。除了 `current`/`product`，共需 `M*max(h-1,0)` 个 N 系数密文 slot，没有持久选择图或在线分配。Selectors 与旋转控制仍在输出间共享，因此输出误差不保证独立。完整公式和数值条件见[实现说明](IMPLEMENTATION.md#stage-and-buffer-layout)。
+默认 features 为 `ntt,rustfft`。Features 不改变回调顺序、系数编码或完整表布局。
 
-每组选表在变换域累加所有乘积后只逆变换一次。Fourier 的舍入结果可能与逐个乘积分别转换后求和不同；编码函数保持不变，结果仍需留出足够的解码余量。
+| Feature | 启用内容 |
+| --- | --- |
+| `--no-default-features` | 无密钥、变换或 evaluator 的公开编译与检查 |
+| `ntt` | NTT context、服务端组合和 evaluator |
+| `fourier` | 不包含具体 FFT 引擎的泛型 Fourier 工作流 |
+| `rustfft` / `tfhe-fft` | `fourier` 及所选 FFT 实现 |
+| `simd` | 已选依赖中的 nightly SIMD，不选择 evaluator/引擎 |
 
-数据 LUT 为每个逻辑输入/输出 chunk 编码一个函数值，保留全部多项式。容忍输入相位误差的重复保护区位于此前的 one-hot CBS 测试多项式；后续选择和旋转带来加性密文误差，仍需解码余量。
+纯编译使用 `HighPrecisionLookupTable::try_new(poly_length, ring_modulus, input_codec, config, function)`，仅需 N/Q、Rounded 输入 q/t 和 chunk 几何。启用后端时，`HighPrecLutParameters::try_from_config` 可先于变换编译，再移入对应 context。
 
-Evaluator 借用 context、server key 和 table，并在构造时分配全部缓冲。复用 `allocate_output()` 的结果与 `evaluate_to`，在线无额外分配；所有 chunk 数量和 LWE 维数在写入前检查。资源必须匹配 N/q/Q，表的 t 决定 one-hot 几何；密钥须实际配套；Fourier 还要求相同 FFT table 实例。每个并发 evaluator 持有独立可变工作区。
-
-返回链路对每个多项式独立执行逐系数 Q→q 和相位提取，再切换到外部 LWE 秘密。NTT 逐项返回，仅分配 scalar 返回缓冲；Fourier 仅分配 `LweReturnBatchWorkspace`，通过独立 `LweReturnEvaluator` 批量执行 key switch，只保留一小块中间 LWE，每次提取后即可覆盖多项式缓冲；输出近似 q 下的 chunk 编码，双重舍入与返回误差须纳入预算。
-
-## 数值限制与进一步阅读
-
-输入须满足 [one-hot 保护区](../primus_tfhe_ntru/README.zh_CN.md#one-hot-cbs)，包含加密、编码与逐坐标量化误差。CBS 和每次选择/旋转外积继续引入误差，Fourier 还包含原生 trace 减半及 FFT 舍入；公开提升分解必须能解析 LUT 尺度。形状校验和示例成功运行不能认证安全性、生产参数或失败概率。
-
-[参数指南](../../guides/development/tfhe-parameters.md)记录示例选择及数值限制，[实现说明](IMPLEMENTATION.md)记录算法和内部缓冲布局。
+`--no-default-features --features ntt` 仅选择 NTT，`--no-default-features --features tfhe-fft` 仅选择 TFHE-FFT。Fourier 示例导入 `RustFftTable` 且要求 `rustfft`；切换时须同时修改表导入及 [Cargo.toml](Cargo.toml) 中该 target 的 `required-features`。仅添加 `--features tfhe-fft` 会启用另一引擎，不会切换该示例。
 
 ## 基准
 
@@ -148,21 +135,6 @@ cargo bench -p primus_tfhe_ntru_lut --bench lookup_create -- 'c4_'
 cargo bench -p primus_tfhe_ntru_lut --bench lookup_evaluate -- 'c4_'
 ```
 
-`lookup_create` 测完整公开 LUT 的创建，**包含分配与 drop**；随机映射在计时外准备，无需密钥或变换。`lookup_evaluate` 测一次完整同态请求，密钥、表、输入和缓冲区均预先准备。默认 classic BR，运行 NTT/RustFFT；添加 `--features tfhe-fft` 可同时测量 TFHE-FFT。
+`lookup_create` 测完整公开表创建，**包含分配与 drop**，随机映射在计时外准备。`lookup_evaluate` 测一次完整同态请求，密钥、表、输入和缓冲均已准备。它使用 classic BR，默认测 NTT/RustFFT，`--features tfhe-fft` 额外测 TFHE-FFT。
 
-两者均使用 M=16、d=3、N=4096 和独立的四个输出 chunk。把 `c4_` 换成 `c5_` 或 `c6_`，可分别选择 16、20、24 位输入的计时，输出始终为 16 位。完整表分别占 2/32/512 MiB。Criterion 只过滤计时，其他 case 的计时外准备与求值校验仍会运行。引擎选择、计时和内存见[基准指南](../../guides/development/testing.md#high-precision-lut-benchmarks)，实验数值配置见[参数指南](../../guides/development/tfhe-parameters.md#random-high-precision-lut-benchmark)。
-
-## Features
-
-使用 `--no-default-features` 时，提供 `ChunkFormat`、`HighPrecisionLookupTable`、`LookupTableConfig`、相关错误及公开多项式访问，无需变换或 evaluator。`try_new` 接收 `PolyLength`、累加 Q、输入 codec 和 chunk 配置；普通依赖不包含 LWE/GLWE/NTRU/TFHE 材料或变换 crate。编译保留完整的不可变公开表及其几何，回调顺序、系数编码和表布局不随 feature 改变。
-
-| Feature | 启用内容 |
-| --- | --- |
-| `ntt` | NTT Context、服务端组合与 evaluator，不选择具体 FFT 引擎 |
-| `fourier` | Fourier Context、服务端组合与 evaluator，不选择具体 FFT 引擎 |
-| `rustfft` / `tfhe-fft` | `fourier` 与选定的 FFT 实现 |
-| `simd` | 已启用算术依赖中的 nightly SIMD，不会激活 evaluator 或 FFT 引擎 |
-
-默认 feature 为 `ntt,rustfft`，提供 NTT 和使用 RustFFT 的 Fourier 后端。使用 `--no-default-features --features ntt` 单独选择 NTT，`--no-default-features --features tfhe-fft` 单独选择 TFHE-FFT，或用 `--features tfhe-fft` 在默认后端之外增加 TFHE-FFT。所有 feature 可以叠加。`LookupTableError::OneHot` / `Evaluation` 只在启用 `ntt` 或 `fourier` 时可用。
-
-两个示例均可用默认 feature 运行。Fourier 示例使用 `RustFftTable`；单独使用 TFHE-FFT 时，切换 `Table` 导入和 target 的 `required-features`，再用 `--no-default-features --features tfhe-fft` 运行。
+两者均使用 M=16、d=3、N=4096 和四个输出 chunk。过滤器 `c4_`、`c5_`、`c6_` 对应 16、20、24 位输入，输出保持 16 位，公开存储为 2/32/512 MiB。Criterion 仅过滤计时，其他 case 的计时外准备和检查仍执行。见[基准命令与成本](../../guides/development/testing.md#high-precision-lut-benchmarks)及[实验数值配置](../../guides/development/tfhe-parameters.md#random-high-precision-lut-benchmark)。

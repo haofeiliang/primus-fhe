@@ -19,7 +19,7 @@ Run a complete encryption → lookup → decryption example from the repository 
 cargo run --release -p primus_tfhe_glwe_ntt --example ntt_basic
 ```
 
-The example constructs parameters directly, separates client and server roles, and reuses its evaluator and output buffers. Each backend README links complete examples for other operations.
+The example selects an `experimental` operation config, builds a context and paired keys, and applies two successive PBS calls. Client/server roles are separate; keys, LUTs, evaluator and output buffers are reused. Each backend README links complete examples for other operations.
 
 ## TFHE backends
 
@@ -30,7 +30,7 @@ The example constructs parameters directly, separates client and server roles, a
 
 GLWE supports both PBS orders. NTRU uses independent external LWE and ring secrets, with a return path from ring modulus Q to external modulus q. Invertibility applies to the ring secret; external binary/ternary secrets have no odd-weight requirement. Fourier rings currently support only `NativeModulus`, with RustFFT or TFHE-FFT; NTRU's external q is independently configurable.
 
-See the [capability table](crates/primus_tfhe/README.md#crate-map-and-capabilities) for classic and sparse coverage. For functions of several independently encrypted chunks, use [NTRU high-precision lookup](crates/primus_tfhe_ntru_lut/README.md). Callers agree on encodings and key domains explicitly; raw ciphertexts do not carry that information.
+See the [capability table](crates/primus_tfhe/README.md#crate-map-and-capabilities) for classic and sparse coverage. For functions of several independently encrypted chunks, use [NTRU high-precision lookup](crates/primus_tfhe_ntru_lut/README.md). Operation configs bind message moduli and key domains; contexts prepare the corresponding clients and LUT compilers. Raw ciphertexts do not carry encoding or key identity.
 
 ## Workspace map
 
@@ -52,7 +52,7 @@ RNS and encoding components are building blocks; complete BFV, BGV and CKKS appl
 Default features use stable Rust; optional `simd` requires nightly. Run `cargo check --workspace --all-targets` or `cargo doc --workspace --no-deps` from the repository root. The repository sets `target-cpu=native`; adjust the build configuration explicitly when distributing binaries to other CPUs.
 
 - [Testing guide](guides/development/testing.md): ordinary tests, doctests, feature coverage and separate example/benchmark smoke runs.
-- [TFHE implementation notes](crates/primus_tfhe/IMPLEMENTATION.md): rotation, first lifting, one-hot and MVB mathematics.
+- [TFHE numerical contracts](guides/development/bootstrapping-contracts.md): rotation rounding, first lifting, one-hot, MVB and complete lookup trees.
 - [Contribution rules](AGENTS.md) and [justfile](justfile): repository conventions and convenience commands.
 
 ## License

@@ -154,4 +154,4 @@ Use `--features tfhe-fft` with default features to measure both engines separate
 
 ## Further reading
 
-[API sources](src/lib.rs) · [Shared encoding and errors](../primus_tfhe/README.md) · [Implementation notes](../primus_tfhe/IMPLEMENTATION.md) · [Performance notes](../../guides/performance/README.md)
+[API sources](src/lib.rs) · [Shared encoding and errors](../primus_tfhe/README.md) · [Numerical contracts](../../guides/development/bootstrapping-contracts.md) · [Performance notes](../../guides/performance/README.md)

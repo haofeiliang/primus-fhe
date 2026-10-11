@@ -335,8 +335,8 @@ This table and the full-suite smoke timings below describe the cleanup snapshot.
 The lookup pipeline subsequently added ten `dense_seed42` and ten
 `shared_middle_chunk` IDs, bringing that target to 30 IDs. The historical
 382-case smoke does not cover those additions or later algorithm changes.
-Their mapping and timing boundaries are documented in the
-[lookup fixture](../../crates/primus_tfhe_ntru_lut/IMPLEMENTATION.md#historical-measurements).
+These IDs used content-dependent table sharing/pruning; they do not describe
+the current fixed complete selection tree or its benchmark targets.
 
 There are 20 → 18 targets and 463 → 382 IDs. The previous executables spent
 36.83 s collectively running `--list`, including unconditional key generation,

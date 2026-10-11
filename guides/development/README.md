@@ -7,6 +7,8 @@ English | [简体中文](README.zh_CN.md)
 
 Use this guide when composing or extending workspace libraries. It points to existing APIs and their boundaries; detailed contracts belong in rustdoc. Start with the [workspace map](../../README.md#workspace-map) for crate responsibilities and the [testing guide](testing.md) for validation commands.
 
+Cross-layer rotation, lifting, trace and lookup error conditions are in [bootstrapping numerical contracts](bootstrapping-contracts.md).
+
 ## Choose the arithmetic domain
 
 Choose the modulus before choosing a transform or decomposition basis. The implementations are in [primus_modulus](../../crates/primus_modulus/src/lib.rs); arithmetic capability traits are in [primus_reduce](../../crates/primus_reduce/src/lib.rs).
