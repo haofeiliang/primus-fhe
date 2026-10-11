@@ -1,7 +1,7 @@
 //! Observe secret storage immediately before its allocator releases it.
 
 use primus_lattice::GlweDimension;
-use primus_poly::PolyLength;
+use primus_shape::PolyLength;
 use std::{
     alloc::{GlobalAlloc, Layout, System},
     cell::Cell,

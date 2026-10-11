@@ -5,7 +5,8 @@
 use primus_fft::{FftTable, TorusFftValue};
 use primus_modulus::PowOf2Modulus;
 use primus_ntru::{LweDimension, SecretKeyDistr};
-use primus_tfhe::{DecompositionBaseLog, DecompositionLevelCount, PolyLength};
+use primus_shape::PolyLength;
+use primus_tfhe::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_tfhe_ntru_fourier::{
     BlindRotationMethod, CbsConfig, CbsGadgetConfig, DecompositionConfig, GadgetEncryptionConfig,
     LweConfig, ModulusConfig, PbsConfig, PbsMessageConfig, TfheContext,

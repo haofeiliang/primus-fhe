@@ -10,7 +10,8 @@ mod workloads {
     use primus_fft::{FftTable, TorusFftValue};
     use primus_glwe::{GlweDimension, SecretKeyDistr};
     use primus_lwe::LweDimension;
-    use primus_tfhe::{DecompositionBaseLog, DecompositionLevelCount, PolyLength};
+    use primus_shape::PolyLength;
+    use primus_tfhe::{DecompositionBaseLog, DecompositionLevelCount};
     use primus_tfhe_glwe_fourier::{
         BlindRotationMethod, DecompositionConfig, GadgetEncryptionConfig, LweConfig, ModulusConfig,
         PbsConfig, PbsMessageConfig, TfheContext, experimental,

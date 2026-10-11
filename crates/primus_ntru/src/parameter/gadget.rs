@@ -5,8 +5,8 @@ use primus_decompose::{
     DecompositionConfig, DecompositionLevelCount, primitive::ApproxSignedBasis,
 };
 use primus_integer::FheUint;
-use primus_poly::PolyLength;
 use primus_reduce::RingContext;
+use primus_shape::PolyLength;
 use std::sync::Arc;
 
 /// Parameters for NLev and NGSW ciphertexts in one NTRU modulus domain.

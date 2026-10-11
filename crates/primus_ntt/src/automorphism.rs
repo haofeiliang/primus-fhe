@@ -1,8 +1,8 @@
 //! Evaluation-point permutation in the standard bit-reversed NTT order.
 
 use primus_modulus::PowOf2Modulus;
-use primus_poly::PolyLength;
 use primus_reduce::ReduceMul;
+use primus_shape::PolyLength;
 
 use crate::ReverseLsbs;
 

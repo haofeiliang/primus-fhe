@@ -1,6 +1,6 @@
 use primus_decompose::DecompositionBaseLog;
 use primus_lattice::GlweDimension;
-use primus_poly::PolyLength;
+use primus_shape::PolyLength;
 use rand::{SeedableRng, rngs::StdRng};
 use std::hint::black_box;
 

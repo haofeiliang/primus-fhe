@@ -11,7 +11,7 @@ use primus_lattice::{
     glwe::Glwe,
     workspace::{FourierGlweExternalProductWorkspace, FourierGlweTernaryCmuxWorkspace},
 };
-use primus_poly::PolyLength;
+use primus_shape::PolyLength;
 
 fn fourier<T: TorusFftValue>(
     c: &mut Criterion,

@@ -8,8 +8,9 @@ use primus_lattice::GlweDimension;
 use primus_lattice::glwe::{CrtGlwe, DcrtGlwe};
 use primus_modulus::BarrettModulus;
 use primus_ntt::UintDcrtTable;
-use primus_poly::{PolyLength, Polynomial};
+use primus_poly::Polynomial;
 use primus_reduce::ReduceNeg;
+use primus_shape::PolyLength;
 use rand::{SeedableRng, rngs::StdRng};
 
 // Scatter m_i to X^(i*degree), applying the sign from reduction modulo X^N+1.

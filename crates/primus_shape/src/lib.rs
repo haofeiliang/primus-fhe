@@ -4,6 +4,8 @@
 //! establish a modulus, transform convention, buffer layout or security level.
 //! Transform constructors retain their own numerical requirements.
 
+#![deny(missing_docs)]
+
 /// Smallest supported FHE polynomial length.
 ///
 /// The shared range starts at a full SIMD transform block (32 coefficients),
@@ -31,13 +33,13 @@ pub struct PolyLengthError {
 /// and transform availability still require their own checks.
 ///
 /// ```
-/// use primus_poly::PolyLength;
+/// use primus_shape::PolyLength;
 ///
 /// let length = PolyLength::try_new(1024)?;
 /// assert_eq!(length.get(), 1024);
 /// assert_eq!(length.log_n(), 10);
 /// assert_eq!(length.fourier_poly_len(), 512);
-/// # Ok::<(), primus_poly::PolyLengthError>(())
+/// # Ok::<(), primus_shape::PolyLengthError>(())
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PolyLength(usize);

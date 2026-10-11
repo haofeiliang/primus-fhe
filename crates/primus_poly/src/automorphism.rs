@@ -1,9 +1,9 @@
 //! Precomputed coefficient permutations for negacyclic automorphisms.
 
-use crate::PolyLength;
 use primus_integer::{FheUint, WrappingNeg};
 use primus_modulus::PowOf2Modulus;
 use primus_reduce::{ReduceMul, RingContext};
+use primus_shape::PolyLength;
 
 /// One source index and its negacyclic sign, packed into four bytes.
 /// PolyLength leaves the high bit free; the table is independent of word width.

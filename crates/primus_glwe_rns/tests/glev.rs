@@ -7,8 +7,9 @@ use primus_lattice::{GlweDimension, GlweSize, RnsGlweSize};
 use primus_lattice::{glev::DcrtGlev, glwe::DcrtGlwe, workspace::DcrtGlevMulWorkspace};
 use primus_modulus::BarrettModulus;
 use primus_ntt::UintDcrtTable;
-use primus_poly::{BigUintPolynomial, CrtPolynomial, PolyLength, Polynomial};
+use primus_poly::{BigUintPolynomial, CrtPolynomial, Polynomial};
 use primus_rns::RNSBase;
+use primus_shape::PolyLength;
 use rand::{SeedableRng, rngs::StdRng};
 use std::sync::Arc;
 

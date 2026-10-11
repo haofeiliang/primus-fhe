@@ -1,6 +1,6 @@
 //! Shared FHE geometry is checked once before passing sizes across layers.
 
-use primus_poly::{MAX_POLY_LENGTH, MIN_POLY_LENGTH, PolyLength};
+use primus_shape::{MAX_POLY_LENGTH, MIN_POLY_LENGTH, PolyLength};
 
 #[test]
 fn polynomial_length_checks_supported_geometry() {

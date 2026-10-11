@@ -12,7 +12,7 @@
 | 需求 | 入口 |
 | --- | --- |
 | 模数、算术与 gadget 分解 | [primus_modulus](../../crates/primus_modulus/README.zh_CN.md)、[primus_reduce](../../crates/primus_reduce/README.zh_CN.md)、[primus_decompose](../../crates/primus_decompose/README.zh_CN.md) |
-| 存储、多项式与变换 | [primus_data](../../crates/primus_data/README.zh_CN.md)、[primus_poly](../../crates/primus_poly/README.zh_CN.md)、[primus_ntt](../../crates/primus_ntt/README.zh_CN.md)、[primus_fft](../../crates/primus_fft/README.zh_CN.md) |
+| 存储、多项式与变换 | [primus_shape](../../crates/primus_shape/README.zh_CN.md)、[primus_data](../../crates/primus_data/README.zh_CN.md)、[primus_poly](../../crates/primus_poly/README.zh_CN.md)、[primus_ntt](../../crates/primus_ntt/README.zh_CN.md)、[primus_fft](../../crates/primus_fft/README.zh_CN.md) |
 | 密文布局与算术 | [primus_lattice](../../crates/primus_lattice/README.zh_CN.md) |
 | 消息、编码与 phase 诊断 | [primus_encoding](../../crates/primus_encoding/README.zh_CN.md) |
 | 独立加密与 key switch | [LWE](../../crates/primus_lwe/README.zh_CN.md)、[GLWE](../../crates/primus_glwe/README.zh_CN.md)、[NTRU](../../crates/primus_ntru/README.zh_CN.md) |

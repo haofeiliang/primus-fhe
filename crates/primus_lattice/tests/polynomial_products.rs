@@ -6,7 +6,8 @@ use primus_lattice::{
 };
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, UintNttTable};
-use primus_poly::{PolyLength, PolynomialIterMut};
+use primus_poly::PolynomialIterMut;
+use primus_shape::PolyLength;
 
 // Independent coefficient oracle, including sign changes after one or two wraps.
 fn expected(acc: &[u32], rhs: &[u32], exponent: usize, n: usize, qs: &[u32]) -> Vec<u32> {

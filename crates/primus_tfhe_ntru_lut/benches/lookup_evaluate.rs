@@ -10,8 +10,8 @@ mod workloads {
     use criterion::{Criterion, Throughput};
     use primus_modulus::PowOf2Modulus;
     use primus_ntru::{LweDimension, SecretKeyDistr};
-    use primus_poly::PolyLength;
     use primus_reduce::RingContext;
+    use primus_shape::PolyLength;
     use primus_tfhe::{
         BlindRotationMethod, CbsGadgetConfig, DecompositionBaseLog, DecompositionConfig,
         DecompositionLevelCount, GadgetEncryptionConfig, LweConfig, ModulusConfig,

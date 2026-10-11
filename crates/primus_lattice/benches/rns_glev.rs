@@ -11,8 +11,9 @@ use primus_lattice::{
 };
 use primus_modulus::BarrettModulus;
 use primus_ntt::U64DcrtTable;
-use primus_poly::{BigUintPolynomial, CrtPolynomial, PolyLength};
+use primus_poly::{BigUintPolynomial, CrtPolynomial};
 use primus_rns::RNSBase;
+use primus_shape::PolyLength;
 
 fn benchmarks(c: &mut Criterion) {
     for &(log_n, dimension, count, log_b) in support::CASES {

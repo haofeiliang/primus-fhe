@@ -1,6 +1,6 @@
 //! Complex arithmetic and torus/integer scaling across both FFT backends.
 
-use primus_poly::PolyLength;
+use primus_shape::PolyLength;
 
 use primus_decompose::DecompositionLevelCount;
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable};

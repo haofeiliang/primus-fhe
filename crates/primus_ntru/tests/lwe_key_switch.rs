@@ -3,7 +3,7 @@
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_encoding::PlaintextEmbedding;
 use primus_lattice::LweDimension;
-use primus_poly::PolyLength;
+use primus_shape::PolyLength;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use primus_decompose::primitive::ApproxSignedBasis;

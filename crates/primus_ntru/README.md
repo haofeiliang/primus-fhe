@@ -16,7 +16,8 @@ use primus_encoding::PlaintextEmbedding;
 use primus_modulus::BarrettModulus;
 use primus_ntru::{NtruParameters, NttNtruSecretKey, SecretKeyDistr};
 use primus_ntt::{NttTable, U64NttTable};
-use primus_poly::{PolyLength, Polynomial};
+use primus_poly::Polynomial;
+use primus_shape::PolyLength;
 
 let poly_length = PolyLength::new(32);
 let modulus = BarrettModulus::new(132_120_577u64);
@@ -77,7 +78,7 @@ NLev and NGSW store the same number of rows but have different roles. `NLev[1]` 
 
 Use `NtruParameters::try_new` for ordinary messages. Given ordinary parameters, `NlevParameters::try_with_ntru_params(&ntru_params, decomposition)` takes a `DecompositionConfig` and derives gadget parameters in the same ring, reusing the prepared samplers; `try_with_basis` accepts an already prepared basis. Gadget-only construction is documented on [NlevParameters](src/parameter/gadget.rs).
 
-Construct [PolyLength](../primus_poly/README.md#ring-polynomial-length) once and reuse it for parameters, tables and workspaces. Fixed secret weights must fit N. Parameter checks cover encoding and sampling, not secret invertibility, transform availability or a noise/security budget.
+Construct [PolyLength](../primus_shape/README.md#polynomial-length) once and reuse it for parameters, tables and workspaces. Fixed secret weights must fit N. Parameter checks cover encoding and sampling, not secret invertibility, transform availability or a noise/security budget.
 
 Pass `encryption_parameters()` to `NttNtruSecretKey::generate_pair` or `FourierNtruSecretKey::generate_pair`. The returned signed coefficient secret generates evaluation keys; the transformed secret supports encryption and phase extraction. `try_from_coeff_secret_key` converts an existing secret and can reject it. NTT import requires signed coefficient magnitudes below q. Keep the construction representation: matching q/N does not prove NTT roots, evaluation order or secret identity.
 

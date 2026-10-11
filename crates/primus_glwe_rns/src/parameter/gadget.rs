@@ -6,9 +6,9 @@ use primus_decompose::{
 use primus_distr::SignedDiscreteGaussian;
 use primus_integer::{BigUint, FheUint};
 use primus_lattice::{GlweDimension, RnsGadgetSize};
-use primus_poly::PolyLength;
 use primus_reduce::FieldContext;
 use primus_rns::{RNSBase, Residues};
+use primus_shape::PolyLength;
 use rand::distr::Uniform;
 use std::sync::Arc;
 

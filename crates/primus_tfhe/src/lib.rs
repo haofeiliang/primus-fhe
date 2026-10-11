@@ -17,7 +17,7 @@
 //! Client and evaluation APIs take borrowed [`Lwe`] views for single operands;
 //! allocating methods return [`LweCiphertext`].
 //!
-//! Ring-length arguments use the checked [`PolyLength`] shared with GLWE/NTRU.
+//! Ring-length arguments use the checked [`primus_shape::PolyLength`] shared with GLWE/NTRU.
 //! LUT compilation additionally checks rotation-domain and encoding requirements.
 //!
 //! Raw LWE views carry no encoding or key identity. Encoding and Boolean
@@ -56,4 +56,3 @@ pub use parameters::{BlindRotationMethod, CbsGadgetConfig, GadgetEncryptionConfi
 pub use primus_decompose::{DecompositionBaseLog, DecompositionConfig, DecompositionLevelCount};
 pub use primus_lattice::lwe::Lwe;
 pub use primus_lwe::{LweCiphertext, LweSecretKeyRef};
-pub use primus_poly::PolyLength;

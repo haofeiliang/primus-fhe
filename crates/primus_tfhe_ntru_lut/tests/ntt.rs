@@ -6,7 +6,7 @@ use primus_integer::FheUint;
 use primus_modulus::{BarrettModulus, PowOf2Modulus};
 use primus_ntru::{LweDimension, SecretKeyDistr};
 use primus_ntt::{MonomialNttTable, U32NttTable, U64NttTable};
-use primus_poly::PolyLength;
+use primus_shape::PolyLength;
 use primus_tfhe::{
     BlindRotationMethod, CbsGadgetConfig, DecompositionBaseLog, DecompositionConfig,
     DecompositionLevelCount, GadgetEncryptionConfig, LweConfig, ModulusConfig, PbsMessageConfig,

@@ -45,9 +45,7 @@ assert_eq!(lhs.as_slice(), &[84, 13, 21, 4]);
 
 ## 环多项式长度
 
-`PolyLength` 表示经过检查的系数数量 `N`：必须是 `MIN_POLY_LENGTH..=MAX_POLY_LENGTH`（目前为 `32..=2^17`）内的二次幂。这是 FHE 布局和变换库共用的支持范围，只在此类型构造时检查一次。使用 `PolyLength::try_new(N)` 或 `PolyLength::new(N)` 构造；`PolyLengthError` 保留被拒绝的长度。
-
-`get()`、`log_n()`、`fourier_poly_len()` 分别返回 `N`、`log2(N)` 和 `N/2` 个复数元素。FHE 布局和变换表使用此类型；长度合法并不保证变换与模数参数兼容。Raw wrapper 不另存环长度，其元素数量仍为 `usize`。
+FHE 布局和变换表使用 [`primus_shape::PolyLength`](../primus_shape/README.zh_CN.md#多项式长度)，表示经过检查的系数数量 `N`。Raw 多项式 wrapper 不另存环长度，元素数量仍为 `usize`。
 
 Raw wrapper 使用 `len()` / `is_empty()` 查看完整存储：
 

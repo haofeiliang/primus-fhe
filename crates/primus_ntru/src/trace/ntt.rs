@@ -7,8 +7,8 @@ use primus_integer::FheUint;
 use primus_lattice::ntru::NtruIterMut;
 use primus_modulus::PowOf2Modulus;
 use primus_ntt::NttTable;
-use primus_poly::PolyLength;
 use primus_reduce::{FieldContext, ReduceNeg};
+use primus_shape::PolyLength;
 use zeroize::Zeroizing;
 
 use super::kernels;

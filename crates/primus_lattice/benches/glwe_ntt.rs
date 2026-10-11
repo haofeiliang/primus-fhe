@@ -13,7 +13,7 @@ use primus_lattice::{
 };
 use primus_modulus::BarrettModulus;
 use primus_ntt::{MonomialNttTable, U32NttTable, U64NttTable};
-use primus_poly::PolyLength;
+use primus_shape::PolyLength;
 
 fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     c: &mut Criterion,

@@ -1,7 +1,8 @@
 use primus_encoding::{PlaintextEmbedding, RoundedCodec, ScaledCodec};
 use primus_integer::FheUint;
-use primus_poly::{PolyLength, PolynomialIter, PolynomialOwned};
+use primus_poly::{PolynomialIter, PolynomialOwned};
 use primus_reduce::{PrepareModulusSwitch, ReduceAdd, RingContext};
+use primus_shape::PolyLength;
 
 use super::{
     LookupTableEncoding,

@@ -5,8 +5,8 @@ use crate::SecretKeyDistr;
 use primus_distr::DiscreteGaussian;
 use primus_encoding::ScaledCodec;
 use primus_integer::FheUint;
-use primus_poly::PolyLength;
 use primus_reduce::RingContext;
+use primus_shape::PolyLength;
 use std::sync::Arc;
 
 /// Parameters for scalar secret-key NTRU encryption.

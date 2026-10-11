@@ -1,5 +1,5 @@
 use num_complex::Complex64;
-use primus_poly::PolyLength;
+use primus_shape::PolyLength;
 use zeroize::Zeroize;
 
 use crate::TorusFftValue;

@@ -55,7 +55,7 @@ pub(super) fn approx_mod_down_ntt<T, M, Table>(
 mod tests {
     use primus_modulus::BarrettModulus;
     use primus_ntt::{NttTable, UintDcrtTable};
-    use primus_poly::PolyLength;
+    use primus_shape::PolyLength;
 
     use super::*;
 

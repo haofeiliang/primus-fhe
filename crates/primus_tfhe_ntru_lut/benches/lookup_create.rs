@@ -8,8 +8,8 @@ use std::hint::black_box;
 use criterion::{Criterion, Throughput};
 use primus_encoding::RoundedCodec;
 use primus_modulus::{BarrettModulus, NativeModulus, PowOf2Modulus};
-use primus_poly::PolyLength;
 use primus_reduce::RingContext;
+use primus_shape::PolyLength;
 use primus_tfhe_ntru_lut::{HighPrecisionLookupTable, LookupTableConfig};
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 

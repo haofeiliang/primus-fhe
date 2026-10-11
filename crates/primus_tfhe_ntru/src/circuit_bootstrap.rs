@@ -5,8 +5,8 @@ use primus_encoding::RoundedCodec;
 use primus_integer::FheUint;
 use primus_modulus::NativeModulus;
 use primus_ntru::NlevParameters;
-use primus_poly::PolyLength;
 use primus_reduce::RingContext;
+use primus_shape::PolyLength;
 use primus_tfhe::{CircuitBootstrapLookupTable, LookupTableError};
 
 use crate::{CbsGadgetConfig, CircuitBootstrapParameterError, PbsParameters};

@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+primus_shape = { path = "../primus_shape" }
 primus_data = { path = "../primus_data", features = ["aligned-vec"] }
 primus_integer = { path = "../primus_integer" }
 primus_reduce = { path = "../primus_reduce" }

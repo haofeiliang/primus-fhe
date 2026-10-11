@@ -5,8 +5,8 @@ use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{FftEngine, FftTable, TorusFftValue};
 use primus_lattice::ntru::NtruIterMut;
 use primus_modulus::{NativeModulus, PowOf2Modulus};
-use primus_poly::PolyLength;
 use primus_reduce::{EncodeSigned, ReduceNeg};
+use primus_shape::PolyLength;
 use zeroize::Zeroizing;
 
 use super::kernels;

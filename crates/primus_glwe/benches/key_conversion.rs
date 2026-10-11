@@ -27,7 +27,8 @@ use primus_lattice::{
 use primus_lwe::LweSecretKeyRef;
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntt::{NttTable, U64NttTable};
-use primus_poly::{PolyLength, Polynomial};
+use primus_poly::Polynomial;
+use primus_shape::PolyLength;
 use rand::{SeedableRng, rngs::StdRng};
 use std::{hint::black_box, time::Duration};
 

@@ -1,6 +1,7 @@
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttAutomorphismPermutation, NttTable, UintNttTable};
-use primus_poly::{CoeffAutomorphismPermutation, PolyLength};
+use primus_poly::CoeffAutomorphismPermutation;
+use primus_shape::PolyLength;
 
 #[test]
 fn ntt_permutation_matches_coefficient_automorphism() {

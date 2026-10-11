@@ -5,7 +5,8 @@ use primus_encoding::RoundedCodec;
 use primus_lwe::LweDimension;
 use primus_modulus::{BarrettModulus, PowOf2Modulus};
 use primus_ntru::SecretKeyDistr;
-use primus_tfhe::{BlindRotationMethod, DecompositionBaseLog, DecompositionLevelCount, PolyLength};
+use primus_shape::PolyLength;
+use primus_tfhe::{BlindRotationMethod, DecompositionBaseLog, DecompositionLevelCount};
 use primus_tfhe_ntru::{
     CbsGadgetConfig, CbsGadgetParameters, CbsParameters, CircuitBootstrapParameterError,
     DecompositionConfig, GadgetEncryptionConfig, LookupTableError, LweConfig, ModulusConfig,

@@ -2,7 +2,7 @@
 //! cargo bench -p primus_ntru --bench encryption --features ntt,rustfft,tfhe-fft
 
 use primus_encoding::PlaintextEmbedding;
-use primus_poly::PolyLength;
+use primus_shape::PolyLength;
 use std::hint::black_box;
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};

@@ -1,8 +1,9 @@
 use core::fmt;
 
 use primus_integer::FheUint;
-use primus_poly::{PolyLength, PolynomialOwned};
+use primus_poly::PolynomialOwned;
 use primus_reduce::{PrepareModulusSwitch, ReduceAdd, RingContext};
+use primus_shape::PolyLength;
 
 use crate::LookupTableError;
 

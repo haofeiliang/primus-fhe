@@ -12,8 +12,9 @@ use primus_lattice::{
     glwe::{FourierGlwe, Glwe},
 };
 use primus_modulus::NativeModulus;
-use primus_poly::{FourierPolynomial, PolyLength, Polynomial};
+use primus_poly::{FourierPolynomial, Polynomial};
 use primus_reduce::ReduceAddSlice;
+use primus_shape::PolyLength;
 use zeroize::Zeroizing;
 
 use crate::{

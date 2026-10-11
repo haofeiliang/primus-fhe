@@ -22,8 +22,9 @@ use primus_lattice::GlweDimension;
 use primus_lattice::glwe::Glwe;
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntt::{NttTable, U64NttTable};
-use primus_poly::{PolyLength, Polynomial};
+use primus_poly::Polynomial;
 use primus_reduce::ReduceAdd;
+use primus_shape::PolyLength;
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 use std::{hint::black_box, time::Duration};
 

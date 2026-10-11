@@ -11,7 +11,8 @@ use primus_ntru::{
     NtruParameters, NtruSecretKey, NttNtruSecretKey, SecretKeyDistr,
 };
 use primus_ntt::{NttTable, PrimitiveRoot, UintNttTable};
-use primus_poly::{PolyLength, Polynomial};
+use primus_poly::Polynomial;
+use primus_shape::PolyLength;
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
 // Small functional ring; both word widths retain their original moduli and noise.

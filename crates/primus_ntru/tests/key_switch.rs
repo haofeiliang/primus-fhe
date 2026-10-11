@@ -2,7 +2,7 @@
 
 use primus_decompose::{DecompositionBaseLog, DecompositionConfig};
 use primus_encoding::PlaintextEmbedding;
-use primus_poly::PolyLength;
+use primus_shape::PolyLength;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use primus_fft::{FftEngine, FftTable, RustFftTable, TfheFftTable};

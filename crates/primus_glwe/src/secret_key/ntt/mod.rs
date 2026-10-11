@@ -5,8 +5,9 @@ use primus_lattice::GlweDimension;
 use primus_lattice::GlweSize;
 use primus_modulus::UintModulus;
 use primus_ntt::NttTable;
-use primus_poly::{NttPolynomialIter, PolyLength};
+use primus_poly::NttPolynomialIter;
 use primus_reduce::{EncodeSigned, ExplicitModulus, FieldContext};
+use primus_shape::PolyLength;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::{GlweEncryptionParameters, SecretKeyDistr};

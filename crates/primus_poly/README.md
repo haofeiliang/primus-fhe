@@ -46,9 +46,7 @@ assert_eq!(lhs.as_slice(), &[84, 13, 21, 4]);
 
 ## Ring polynomial length
 
-`PolyLength` is a checked coefficient count `N`: a power of two in `MIN_POLY_LENGTH..=MAX_POLY_LENGTH` (currently `32..=2^17`). FHE layouts and transform libraries share this supported range, checked once by the type's constructor. Use `PolyLength::try_new(N)` or `PolyLength::new(N)`; `PolyLengthError` retains the rejected length.
-
-`get()`, `log_n()` and `fourier_poly_len()` return `N`, `log2(N)` and `N/2` complex elements. Use this type with FHE layouts and transform tables; the length alone does not guarantee compatible transform or modulus parameters. Raw wrappers store no separate ring length, so their element counts remain `usize`.
+FHE layouts and transform tables use [`primus_shape::PolyLength`](../primus_shape/README.md#polynomial-length), a checked coefficient count `N`. Raw polynomial wrappers store no separate ring length, so their element counts remain `usize`.
 
 The raw wrappers use `len()` / `is_empty()` to inspect their complete storage:
 

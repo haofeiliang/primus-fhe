@@ -6,7 +6,7 @@
 
 use crate::GlweDimension;
 use primus_decompose::DecompositionLevelCount;
-use primus_poly::PolyLength;
+use primus_shape::PolyLength;
 
 /// An error produced while constructing a checked GLWE-family size.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]

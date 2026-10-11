@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+primus_shape = { path = "../primus_shape" }
 primus_lwe = { path = "../primus_lwe" }
 primus_encoding = { path = "../primus_encoding" }
 primus_decompose = { path = "../primus_decompose" }

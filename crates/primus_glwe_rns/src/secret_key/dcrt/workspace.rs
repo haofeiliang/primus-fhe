@@ -70,7 +70,7 @@ mod tests {
     use super::*;
     use primus_lattice::GlweDimension;
     use primus_lattice::GlweSize;
-    use primus_poly::PolyLength;
+    use primus_shape::PolyLength;
 
     #[test]
     fn decrypt_workspace_erases_both_buffers_without_changing_layout() {

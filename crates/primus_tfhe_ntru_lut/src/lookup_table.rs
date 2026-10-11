@@ -1,7 +1,8 @@
 use primus_encoding::RoundedCodec;
 use primus_integer::FheUint;
-use primus_poly::{PolyLength, Polynomial};
+use primus_poly::Polynomial;
 use primus_reduce::RingContext;
+use primus_shape::PolyLength;
 #[cfg(any(feature = "ntt", feature = "fourier"))]
 use primus_tfhe_ntru::OneHotBootstrapError;
 

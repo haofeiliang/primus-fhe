@@ -7,8 +7,8 @@ use primus_modulus::BarrettModulus;
 use primus_ntt::{
     DcrtTable, MonomialNttTable, NttError, U32DcrtTable, U32NttTable, U64NttTable, UintNttTable,
 };
-use primus_poly::PolyLength;
 use primus_reduce::FieldContext;
+use primus_shape::PolyLength;
 
 // Distinct moduli make swapped limbs observable; deterministic nonconstant
 // coefficients expose skipped blocks without relying on forward/inverse cancellation.

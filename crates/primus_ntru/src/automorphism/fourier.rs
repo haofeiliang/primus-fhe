@@ -5,8 +5,9 @@ use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
 use primus_lattice::nlev::FourierNlev;
 use primus_modulus::NativeModulus;
-use primus_poly::{CoeffAutomorphismPermutation, PolyLength, Polynomial};
+use primus_poly::{CoeffAutomorphismPermutation, Polynomial};
 use primus_reduce::EncodeSigned;
+use primus_shape::PolyLength;
 use zeroize::Zeroizing;
 
 use crate::{

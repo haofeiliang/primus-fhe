@@ -5,7 +5,7 @@ use primus_distr::SecretKeySampler;
 use primus_integer::FheUint;
 use primus_lattice::GlweDimension;
 use primus_lattice::GlweSize;
-use primus_poly::PolyLength;
+use primus_shape::PolyLength;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::SecretKeyDistr;

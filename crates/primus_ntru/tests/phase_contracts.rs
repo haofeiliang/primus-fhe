@@ -14,7 +14,8 @@ use primus_ntru::{
     NttNtruSecretKey, NttNtruTraceKey, NttNtruTraceWorkspace, SecretKeyDistr,
 };
 use primus_ntt::{NttTable, UintNttTable};
-use primus_poly::{PolyLength, Polynomial};
+use primus_poly::Polynomial;
+use primus_shape::PolyLength;
 
 use rand::{SeedableRng, TryCryptoRng, TryRng, rngs::StdRng};
 

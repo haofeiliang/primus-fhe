@@ -2,8 +2,8 @@
 
 use primus_integer::FheUint;
 use primus_lattice::{GadgetSize, GlweDimension, GlweSize, GlweSizeError};
-use primus_poly::PolyLength;
 use primus_reduce::RingContext;
+use primus_shape::PolyLength;
 
 use super::GlevParameters;
 

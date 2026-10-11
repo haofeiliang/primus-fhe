@@ -2,7 +2,7 @@
 
 use primus_decompose::{DecompositionBaseLog, DecompositionConfig, DecompositionLevelCount};
 use primus_encoding::PlaintextEmbedding;
-use primus_poly::PolyLength;
+use primus_shape::PolyLength;
 use std::{
     alloc::{GlobalAlloc, Layout, System},
     cell::Cell,

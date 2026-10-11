@@ -9,7 +9,7 @@ use primus_lattice::{
     ntru::{FourierNtruOwned, Ntru},
     workspace::FourierNtruExternalProductWorkspace,
 };
-use primus_poly::PolyLength;
+use primus_shape::PolyLength;
 
 fn fourier<T: TorusFftValue>(
     c: &mut Criterion,

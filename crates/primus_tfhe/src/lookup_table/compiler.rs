@@ -1,7 +1,7 @@
 use primus_encoding::{PlaintextEmbedding, RoundedCodec};
 use primus_integer::FheUint;
-use primus_poly::PolyLength;
 use primus_reduce::{Modulus, PrepareModulusSwitch, ReduceAdd, RingContext};
+use primus_shape::PolyLength;
 
 use super::{InterleavedLookupTable, LookupTable, front_half_domain_len};
 use crate::LookupTableError;
@@ -20,7 +20,8 @@ use crate::LookupTableError;
 /// ```
 /// use primus_encoding::RoundedCodec;
 /// use primus_modulus::NativeModulus;
-/// use primus_tfhe::{LookupTableCompiler, PolyLength};
+/// use primus_tfhe::LookupTableCompiler;
+/// use primus_shape::PolyLength;
 ///
 /// let modulus = NativeModulus::<u32>::new();
 /// let input_codec = RoundedCodec::new(16, modulus);

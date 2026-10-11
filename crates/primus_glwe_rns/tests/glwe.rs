@@ -8,8 +8,9 @@ use primus_lattice::GlweDimension;
 use primus_lattice::glwe::DcrtGlwe;
 use primus_modulus::BarrettModulus;
 use primus_ntt::UintDcrtTable;
-use primus_poly::{CrtPolynomial, DcrtPolynomial, PolyLength, Polynomial};
+use primus_poly::{CrtPolynomial, DcrtPolynomial, Polynomial};
 use primus_reduce::FieldContext;
+use primus_shape::PolyLength;
 use rand::distr::Uniform;
 use rand::{Rng, SeedableRng, rngs::StdRng};
 

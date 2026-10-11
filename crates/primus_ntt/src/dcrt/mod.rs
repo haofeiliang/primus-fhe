@@ -1,5 +1,5 @@
-use primus_poly::PolyLength;
 use primus_reduce::FieldContext;
+use primus_shape::PolyLength;
 
 use crate::{MonomialNttTable, NttError, NttTable, U32NttTable, U64NttTable, UintNttTable};
 

@@ -2,9 +2,9 @@ use primus_decompose::big_integer::BigUintApproxSignedBasis;
 use primus_integer::FheUint;
 use primus_lattice::{RnsGadgetSize, RnsGlweSize};
 use primus_ntt::{DcrtTable, NttTable};
-use primus_poly::PolyLength;
 use primus_reduce::FieldContext;
 use primus_rns::{HybridRNS, RNSBase};
+use primus_shape::PolyLength;
 
 use super::CrtGlevParameters;
 

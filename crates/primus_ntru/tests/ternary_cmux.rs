@@ -11,7 +11,8 @@ use primus_ntru::{
     NttNtruCmuxWorkspace, NttNtruExternalProductWorkspace, NttNtruSecretKey, SecretKeyDistr,
 };
 use primus_ntt::{NttTable, UintNttTable};
-use primus_poly::{PolyLength, Polynomial};
+use primus_poly::Polynomial;
+use primus_shape::PolyLength;
 use rand::{SeedableRng, rngs::StdRng};
 
 const N: usize = 32;

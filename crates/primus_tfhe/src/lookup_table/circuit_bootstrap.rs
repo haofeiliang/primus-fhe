@@ -6,8 +6,9 @@ use core::cell::Cell;
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_encoding::RoundedCodec;
 use primus_integer::FheUint;
-use primus_poly::{PolyLength, PolynomialOwned};
+use primus_poly::PolynomialOwned;
 use primus_reduce::RingContext;
+use primus_shape::PolyLength;
 
 use super::{InterleavedLookupTable, front_half_domain_len};
 use crate::LookupTableError;

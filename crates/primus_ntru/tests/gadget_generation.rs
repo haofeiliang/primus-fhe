@@ -16,7 +16,8 @@ use primus_ntru::{
     NttNtruGadgetEncryptWorkspace, NttNtruSecretKey, SecretKeyDistr,
 };
 use primus_ntt::{NttTable, UintNttTable};
-use primus_poly::{PolyLength, Polynomial, PolynomialOwned};
+use primus_poly::{Polynomial, PolynomialOwned};
+use primus_shape::PolyLength;
 use rand::{SeedableRng, rngs::StdRng};
 
 // Functional ring size; keep the original word widths, moduli and decomposition.

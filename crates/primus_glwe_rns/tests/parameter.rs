@@ -8,8 +8,8 @@ use primus_integer::BigUint;
 use primus_lattice::{GlweDimension, GlweSize, GlweSizeError, RnsGlweSize};
 use primus_modulus::BarrettModulus;
 use primus_ntt::UintDcrtTable;
-use primus_poly::PolyLength;
 use primus_rns::RNSBase;
+use primus_shape::PolyLength;
 use std::sync::Arc;
 
 #[test]

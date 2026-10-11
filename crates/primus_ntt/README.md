@@ -26,7 +26,7 @@ Transforms run in place without per-call scratch allocation. Construct and reuse
 ```rust
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
-use primus_poly::PolyLength;
+use primus_shape::PolyLength;
 
 let modulus = BarrettModulus::new(193_u32);
 let table = U32NttTable::new(PolyLength::new(32), modulus).unwrap(); // N = 32; 2N divides 193 - 1
@@ -63,7 +63,7 @@ Transforms operate on mutable slices. When using [`primus_poly`](../primus_poly/
 
 ## Construction constraints
 
-- Constructors take [`primus_poly::PolyLength`](../primus_poly/README.md#ring-polynomial-length), a power of two in `32..=2^17`; `poly_length()` returns the same type.
+- Constructors take [`primus_shape::PolyLength`](../primus_shape/README.md#polynomial-length); `poly_length()` returns the same type.
 - The modulus must be prime and admit a primitive `2N`-th root, requiring `2N` to divide `q - 1`. Primality is a caller precondition; neither construction nor `FieldContext` proves it.
 - `UintNttTable<T>` requires `1 < q < 2^(T::BITS - 2)`; `U32NttTable` requires `q < 2^30`, and `U64NttTable` requires `q < 2^62`. The two spare bits make lazy values below `4q` representable.
 - The generic table also requires the root order `2N` to fit `T` and `N < q`.

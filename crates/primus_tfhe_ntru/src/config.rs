@@ -3,8 +3,8 @@
 use crate::{CbsGadgetConfig, GadgetEncryptionConfig, PbsMessageConfig};
 use primus_integer::FheUint;
 use primus_ntru::SecretKeyDistr;
-use primus_poly::PolyLength;
 use primus_reduce::RingContext;
+use primus_shape::PolyLength;
 use primus_tfhe::{BlindRotationMethod, LweConfig, ModulusConfig};
 
 /// Ordinary PBS/ManyLUT/MVB choices, including BR and key switching.

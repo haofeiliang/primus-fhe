@@ -23,7 +23,8 @@ use primus_glwe::{
 use primus_lattice::GlweDimension;
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntt::{NttTable, UintNttTable};
-use primus_poly::{PolyLength, Polynomial};
+use primus_poly::Polynomial;
+use primus_shape::PolyLength;
 use rand::{SeedableRng, rngs::StdRng};
 use std::{hint::black_box, time::Duration};
 use zeroize::Zeroizing;

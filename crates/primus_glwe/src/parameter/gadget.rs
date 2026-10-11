@@ -6,8 +6,8 @@ use primus_decompose::{
 use primus_distr::DiscreteGaussian;
 use primus_integer::FheUint;
 use primus_lattice::{GadgetSize, GlweDimension, GlweSize};
-use primus_poly::PolyLength;
 use primus_reduce::RingContext;
+use primus_shape::PolyLength;
 use std::sync::Arc;
 
 use super::{GlevParameterError, GlweEncryptionParameters, GlweParameters};

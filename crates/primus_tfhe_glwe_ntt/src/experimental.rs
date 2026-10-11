@@ -9,7 +9,7 @@ use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_glwe::{GlweDimension, SecretKeyDistr};
 use primus_lwe::LweDimension;
 use primus_modulus::BarrettModulus;
-use primus_poly::PolyLength;
+use primus_shape::PolyLength;
 
 use crate::{
     BlindRotationMethod, CbsConfig, CbsGadgetConfig, DecompositionConfig, GadgetEncryptionConfig,

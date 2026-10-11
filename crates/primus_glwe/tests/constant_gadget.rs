@@ -14,7 +14,8 @@ use primus_lattice::{
 };
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntt::{NttTable, U32NttTable, U64NttTable, UintNttTable};
-use primus_poly::{PolyLength, PolynomialOwned};
+use primus_poly::PolynomialOwned;
+use primus_shape::PolyLength;
 use rand::{Rng, SeedableRng, rngs::StdRng};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 

@@ -5,8 +5,9 @@ use crate::{GlweEncryptionParameters, NttGlweCiphertext};
 use primus_data::{Data, DataMut};
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
-use primus_poly::{NttPolynomial, PolyLength, Polynomial};
+use primus_poly::{NttPolynomial, Polynomial};
 use primus_reduce::FieldContext;
+use primus_shape::PolyLength;
 
 impl<S, T> NttGlwePublicKey<S>
 where

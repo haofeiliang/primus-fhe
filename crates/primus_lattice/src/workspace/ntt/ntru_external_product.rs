@@ -3,7 +3,7 @@
 use aligned_vec::{ABox, avec};
 use primus_data::DataMut;
 use primus_integer::FheUint;
-use primus_poly::PolyLength;
+use primus_shape::PolyLength;
 
 use crate::ntru::NttNtru;
 

@@ -15,7 +15,7 @@ use primus_ntru::{
     SecretKeyDistr,
 };
 use primus_ntt::{NttTable, UintNttTable};
-use primus_poly::PolyLength;
+use primus_shape::PolyLength;
 use rand::{SeedableRng, rngs::StdRng};
 use std::{hint::black_box, time::Duration};
 

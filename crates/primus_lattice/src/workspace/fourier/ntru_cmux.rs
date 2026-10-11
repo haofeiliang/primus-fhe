@@ -2,7 +2,7 @@
 
 use primus_decompose::DecompositionLevelCount;
 use primus_fft::{Complex64, TorusFftValue};
-use primus_poly::PolyLength;
+use primus_shape::PolyLength;
 
 use super::FourierNtruExternalProductWorkspace;
 

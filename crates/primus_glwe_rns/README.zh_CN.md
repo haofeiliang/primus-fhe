@@ -23,7 +23,8 @@ use primus_glwe_rns::{
 };
 use primus_modulus::BarrettModulus;
 use primus_ntt::UintDcrtTable;
-use primus_poly::{PolyLength, Polynomial};
+use primus_poly::Polynomial;
+use primus_shape::PolyLength;
 
 let moduli = [998_244_353u32, 1_004_535_809].map(BarrettModulus::new);
 let poly_length = PolyLength::new(32);
@@ -71,7 +72,7 @@ m 个模数下，普通密文包含 `(k+1)*m*N` 个元素，顺序为 `[componen
 | `CrtGlweEncryptionParameters` | 布局、有序模数及采样器；无明文 codec |
 | `CrtGlevParameters` | 加密参数及乘积模数 Q 下的 gadget 分解；无 BFV 缩放 |
 
-维数和环长度使用 `GlweDimension` 与 [PolyLength](../primus_poly/README.zh_CN.md#环多项式长度)，分解使用 `DecompositionBaseLog` / `DecompositionLevelCount`，在参数、尺寸和表之间复用这些已验证值。固定秘密重量作用于完整 kN 个有符号系数，不是逐多项式或逐 RNS limb 应用。秘密和噪声幅度须小于每个 q_i，噪声标准差以系数为单位。
+维数和环长度使用 `GlweDimension` 与 [PolyLength](../primus_shape/README.zh_CN.md#多项式长度)，分解使用 `DecompositionBaseLog` / `DecompositionLevelCount`，在参数、尺寸和表之间复用这些已验证值。固定秘密重量作用于完整 kN 个有符号系数，不是逐多项式或逐 RNS limb 应用。秘密和噪声幅度须小于每个 q_i，噪声标准差以系数为单位。
 
 已有普通参数时，`CrtGlevParameters::try_with_glwe_params` 派生同一有序基下的 gadget 参数。仅需 gadget 时无需 t 或 gamma，构造方式见 [`CrtGlevParameters::try_from_parts`](src/parameter/gadget.rs)。分解基须匹配 Q 及其定宽 limb 表示，radix 须严格小于每个 q_i。密钥角色需要不同噪声分布时，应分别准备加密参数。
 

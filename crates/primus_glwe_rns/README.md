@@ -23,7 +23,8 @@ use primus_glwe_rns::{
 };
 use primus_modulus::BarrettModulus;
 use primus_ntt::UintDcrtTable;
-use primus_poly::{PolyLength, Polynomial};
+use primus_poly::Polynomial;
+use primus_shape::PolyLength;
 
 let moduli = [998_244_353u32, 1_004_535_809].map(BarrettModulus::new);
 let poly_length = PolyLength::new(32);
@@ -71,7 +72,7 @@ With m moduli, ordinary ciphertext storage contains `(k+1)*m*N` elements in `[co
 | `CrtGlweEncryptionParameters` | Layout, ordered moduli and samplers; no plaintext codec |
 | `CrtGlevParameters` | Encryption parameters and gadget decomposition under product modulus Q; no BFV scaling |
 
-Use `GlweDimension` and [PolyLength](../primus_poly/README.md#ring-polynomial-length) for dimensions and ring length, and `DecompositionBaseLog` / `DecompositionLevelCount` for decomposition. Reuse these checked values across parameters, sizes and tables. Fixed secret weights apply to the complete kN signed key, not separately per polynomial or RNS limb. Secret and noise magnitudes must fit below every q_i; noise deviation is in coefficient units.
+Use `GlweDimension` and [PolyLength](../primus_shape/README.md#polynomial-length) for dimensions and ring length, and `DecompositionBaseLog` / `DecompositionLevelCount` for decomposition. Reuse these checked values across parameters, sizes and tables. Fixed secret weights apply to the complete kN signed key, not separately per polynomial or RNS limb. Secret and noise magnitudes must fit below every q_i; noise deviation is in coefficient units.
 
 Given ordinary parameters, `CrtGlevParameters::try_with_glwe_params` derives gadget parameters in the same ordered basis. Gadget-only construction needs no t or gamma; see [`CrtGlevParameters::try_from_parts`](src/parameter/gadget.rs). The decomposition basis must match Q and its fixed-width limb representation, with radix strictly smaller than every q_i. Prepare separate encryption parameters when key roles require different noise distributions.
 

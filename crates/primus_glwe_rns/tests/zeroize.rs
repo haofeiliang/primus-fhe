@@ -1,7 +1,7 @@
 //! Observe partially converted secrets before their allocation is released.
 
 use primus_lattice::GlweDimension;
-use primus_poly::PolyLength;
+use primus_shape::PolyLength;
 use std::{
     alloc::{GlobalAlloc, Layout, System},
     panic::catch_unwind,

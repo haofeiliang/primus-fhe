@@ -1,7 +1,7 @@
 use num_traits::{ConstOne, ConstZero};
 use primus_factor::{FactorMul, ShoupFactor};
-use primus_poly::PolyLength;
 use primus_reduce::FieldContext;
+use primus_shape::PolyLength;
 
 use crate::{NttError, reverse::ReverseLsbs, root::PrimitiveRoot};
 

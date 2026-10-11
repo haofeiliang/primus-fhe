@@ -1,8 +1,8 @@
 use aligned_vec::{AVec, avec};
 use primus_factor::{FactorMul, MultiplyFactor, ShoupFactor};
 use primus_gcd::Xgcd;
-use primus_poly::PolyLength;
 use primus_reduce::FieldContext;
+use primus_shape::PolyLength;
 
 use crate::{
     NttError,

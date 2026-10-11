@@ -5,9 +5,9 @@ use primus_encoding::PlaintextEmbedding;
 use primus_factor::ShoupFactor;
 use primus_integer::{BigUint, FheUint};
 use primus_lattice::{GlweDimension, GlweSize, RnsGlweSize};
-use primus_poly::PolyLength;
 use primus_reduce::FieldContext;
 use primus_rns::{RNSBase, ResidueFactors};
+use primus_shape::PolyLength;
 use rand::distr::Uniform;
 use std::sync::Arc;
 

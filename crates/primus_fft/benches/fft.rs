@@ -1,4 +1,4 @@
-use primus_poly::PolyLength;
+use primus_shape::PolyLength;
 use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};

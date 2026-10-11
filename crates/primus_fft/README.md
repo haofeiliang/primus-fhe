@@ -32,7 +32,7 @@ Both may be enabled together. Select explicitly in your dependency, for example 
 
 ```rust
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable};
-use primus_poly::PolyLength;
+use primus_shape::PolyLength;
 
 let table = RustFftTable::new(PolyLength::new(32)); // N = 32
 let mut fft = FftEngine::new(&table);
@@ -74,7 +74,7 @@ Built-in workspaces erase their buffers on drop; `fft.zeroize_workspace()` erase
 
 ## Length and precision
 
-`FftTable::new` takes [`primus_poly::PolyLength`](../primus_poly/README.md#ring-polynomial-length), a power of two in `32..=2^17`. Table and engine `poly_length()` accessors return that type; `fourier_length()` returns the complex element count. Table construction performs planning and allocation, so keep it outside repeated transform paths.
+`FftTable::new` takes [`primus_shape::PolyLength`](../primus_shape/README.md#polynomial-length). Table and engine `poly_length()` accessors return that type; `fourier_length()` returns the complex element count. Table construction performs planning and allocation, so keep it outside repeated transform paths.
 
 Transforms use `f64` and are approximate; a word-wide torus input is not guaranteed to round-trip bit-for-bit. Correct rounding depends on accumulated floating-point error and integer operand magnitudes, so the surrounding algorithm must maintain a suitable precision budget. Conversion and rounding rules are in the [torus API](src/torus.rs).
 

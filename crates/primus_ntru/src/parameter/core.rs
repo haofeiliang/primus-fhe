@@ -4,8 +4,8 @@ use super::NtruParameterError;
 use crate::SecretKeyDistr;
 use primus_distr::{DiscreteGaussian, SecretKeySampler};
 use primus_integer::FheUint;
-use primus_poly::PolyLength;
 use primus_reduce::RingContext;
+use primus_shape::PolyLength;
 
 /// Prepared NTRU ring, secret sampler and coefficient-unit encryption noise.
 ///

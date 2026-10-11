@@ -1,7 +1,7 @@
 use primus_encoding::{PlaintextEmbedding, RoundedCodec};
 use primus_integer::FheUint;
-use primus_poly::PolyLength;
 use primus_reduce::{Modulus, ReduceAdd, RingContext};
+use primus_shape::PolyLength;
 
 use super::LookupTable;
 use crate::{LookupTableError, Lwe};

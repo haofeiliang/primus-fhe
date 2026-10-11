@@ -6,7 +6,7 @@
 
 use primus_decompose::{DecompositionBaseLog, DecompositionConfig, DecompositionLevelCount};
 use primus_encoding::PlaintextEmbedding;
-use primus_poly::PolyLength;
+use primus_shape::PolyLength;
 use std::{hint::black_box, time::Duration};
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};

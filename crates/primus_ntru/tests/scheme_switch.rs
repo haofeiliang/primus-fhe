@@ -1,5 +1,5 @@
 use primus_decompose::{DecompositionBaseLog, DecompositionConfig, DecompositionLevelCount};
-use primus_poly::PolyLength;
+use primus_shape::PolyLength;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable};

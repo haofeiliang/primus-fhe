@@ -13,8 +13,8 @@ use criterion::{BatchSize, BenchmarkGroup, BenchmarkId, Criterion, measurement::
 use primus_integer::FheUint;
 use primus_modulus::BarrettModulus;
 use primus_ntt::{MonomialNttTable, NttTable, U32NttTable, U64NttTable, UintNttTable};
-use primus_poly::PolyLength;
 use primus_reduce::FieldContext;
+use primus_shape::PolyLength;
 use rand::{
     SeedableRng,
     distr::{Distribution, Uniform},

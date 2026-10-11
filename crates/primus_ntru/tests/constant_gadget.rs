@@ -10,7 +10,8 @@ use primus_ntru::{
     SecretKeyDistr,
 };
 use primus_ntt::{NttTable, UintNttTable};
-use primus_poly::{PolyLength, Polynomial};
+use primus_poly::Polynomial;
+use primus_shape::PolyLength;
 use rand::{Rng, SeedableRng, rngs::StdRng};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;

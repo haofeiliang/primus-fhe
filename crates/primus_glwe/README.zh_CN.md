@@ -16,7 +16,8 @@ use primus_encoding::PlaintextEmbedding;
 use primus_glwe::{GlweDimension, GlweParameters, NttGlweSecretKey, SecretKeyDistr};
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U64NttTable};
-use primus_poly::{PolyLength, Polynomial};
+use primus_poly::Polynomial;
+use primus_shape::PolyLength;
 
 let poly_length = PolyLength::new(32);
 let modulus = BarrettModulus::new(132_120_577u64);
@@ -76,7 +77,7 @@ assert_eq!(decoded, message.as_ref());
 
 普通消息使用 `GlweParameters::try_new`；仅需 gadget 时使用 `GgswParameters::try_new(size, modulus, secret_distr, decomposition, sigma)`。其中 `size` 为 `GlweSize`，`decomposition` 为 `DecompositionConfig`，`sigma` 以系数为单位。已有普通参数时，可用 `GlevParameters::try_with_glwe_params(&glwe_params, decomposition)` 派生同一环上的 gadget 参数，并复用已准备的采样器。
 
-[PolyLength](../primus_poly/README.zh_CN.md#环多项式长度) 构造一次，供参数、表和工作区复用。GLWE 维数使用 `GlweDimension`；固定秘密重量作用于全部 `k*N` 个系数，不是逐多项式分别应用。可失败构造器报告布局、编码或采样配置错误，不证明变换可用性及噪声/安全预算。
+[PolyLength](../primus_shape/README.zh_CN.md#多项式长度) 构造一次，供参数、表和工作区复用。GLWE 维数使用 `GlweDimension`；固定秘密重量作用于全部 `k*N` 个系数，不是逐多项式分别应用。可失败构造器报告布局、编码或采样配置错误，不证明变换可用性及噪声/安全预算。
 
 | 密钥 | 表示与用途 |
 | --- | --- |

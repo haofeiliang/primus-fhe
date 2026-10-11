@@ -26,7 +26,7 @@
 ```rust
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
-use primus_poly::PolyLength;
+use primus_shape::PolyLength;
 
 let modulus = BarrettModulus::new(193_u32);
 let table = U32NttTable::new(PolyLength::new(32), modulus).unwrap(); // N = 32；2N 整除 193 - 1
@@ -63,7 +63,7 @@ Lazy 值表示模 `q` 的剩余类，但其更宽的整数范围属于调用契�
 
 ## 构造约束
 
-- 构造器接收 [`primus_poly::PolyLength`](../primus_poly/README.zh_CN.md#环多项式长度)，即 `32..=2^17` 内的二次幂；`poly_length()` 返回同一类型。
+- 构造器接收 [`primus_shape::PolyLength`](../primus_shape/README.zh_CN.md#多项式长度)；`poly_length()` 返回同一类型。
 - 模数必须为素数且存在本原 `2N` 次单位根，要求 `2N` 整除 `q - 1`。素性由调用方保证，构造器和 `FieldContext` 均不证明素性。
 - `UintNttTable<T>` 要求 `1 < q < 2^(T::BITS - 2)`；`U32NttTable` 要求 `q < 2^30`，`U64NttTable` 要求 `q < 2^62`。预留的两个高位保证小于 `4q` 的 lazy 值可表示。
 - 通用 table 还要求根的阶 `2N` 能由 `T` 表示，且 `N < q`。

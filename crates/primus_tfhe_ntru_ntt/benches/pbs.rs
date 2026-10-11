@@ -8,7 +8,8 @@ use primus_lwe::LweDimension;
 use primus_modulus::PowOf2Modulus;
 use primus_ntru::SecretKeyDistr;
 use primus_ntt::{MonomialNttTable, U32NttTable, U64NttTable};
-use primus_tfhe::{DecompositionBaseLog, PolyLength};
+use primus_shape::PolyLength;
+use primus_tfhe::DecompositionBaseLog;
 use primus_tfhe_ntru_ntt::{
     BlindRotationMethod, DecompositionConfig, GadgetEncryptionConfig, LweConfig, ModulusConfig,
     PbsConfig, PbsMessageConfig, TfheContext, experimental,

@@ -14,7 +14,8 @@ use primus_lattice::GlweDimension;
 use primus_lattice::glwe::{FourierGlweOwned, Glwe, NttGlwe};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntt::{NttTable, UintNttTable};
-use primus_poly::{PolyLength, Polynomial};
+use primus_poly::Polynomial;
+use primus_shape::PolyLength;
 use rand::{SeedableRng, rngs::StdRng};
 
 const INPUT_DIMENSION: usize = 2;

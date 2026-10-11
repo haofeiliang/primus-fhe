@@ -1,7 +1,8 @@
 //! Reusable secret workspaces.
 
 use primus_integer::FheUint;
-use primus_poly::{PolyLength, PolynomialOwned};
+use primus_poly::PolynomialOwned;
+use primus_shape::PolyLength;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 /// Reusable coefficient buffer for NTT NLev/NGSW generation.

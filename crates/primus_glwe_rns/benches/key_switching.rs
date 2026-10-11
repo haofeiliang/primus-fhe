@@ -1,4 +1,4 @@
-use primus_poly::PolyLength;
+use primus_shape::PolyLength;
 // cargo bench -p primus_glwe_rns --bench key_switching
 
 use primus_decompose::DecompositionBaseLog;

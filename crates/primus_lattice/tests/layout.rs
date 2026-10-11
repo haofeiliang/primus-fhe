@@ -5,7 +5,7 @@ use primus_lattice::{
     GadgetSize, GlweDimension, GlweSize, GlweSizeError, RnsGadgetSize, RnsGlweSize,
 };
 use primus_modulus::{BarrettModulus, NativeModulus};
-use primus_poly::{MAX_POLY_LENGTH, MIN_POLY_LENGTH, PolyLength};
+use primus_shape::{MAX_POLY_LENGTH, MIN_POLY_LENGTH, PolyLength};
 
 #[test]
 fn dimensions_validate_body_counts_and_derive_extracted_lwe_layouts() {

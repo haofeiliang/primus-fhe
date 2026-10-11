@@ -14,8 +14,8 @@ use primus_glwe_rns::{
 use primus_lattice::GlweDimension;
 use primus_modulus::BarrettModulus;
 use primus_ntt::UintDcrtTable;
-use primus_poly::PolyLength;
 use primus_rns::{HybridRNS, HybridRNSPartitioning};
+use primus_shape::PolyLength;
 use rand::{SeedableRng, rngs::StdRng};
 
 // Small NTT primes keep construction tests cheap; no security or post-switch noise claim.

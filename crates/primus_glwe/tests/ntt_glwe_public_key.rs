@@ -8,7 +8,8 @@ use primus_glwe::{
 use primus_lattice::GlweDimension;
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, UintNttTable};
-use primus_poly::{PolyLength, Polynomial};
+use primus_poly::Polynomial;
+use primus_shape::PolyLength;
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
 const DIMENSION: usize = 2;

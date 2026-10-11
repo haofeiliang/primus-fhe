@@ -16,7 +16,8 @@ use primus_encoding::PlaintextEmbedding;
 use primus_modulus::BarrettModulus;
 use primus_ntru::{NtruParameters, NttNtruSecretKey, SecretKeyDistr};
 use primus_ntt::{NttTable, U64NttTable};
-use primus_poly::{PolyLength, Polynomial};
+use primus_poly::Polynomial;
+use primus_shape::PolyLength;
 
 let poly_length = PolyLength::new(32);
 let modulus = BarrettModulus::new(132_120_577u64);
@@ -77,7 +78,7 @@ NLev 和 NGSW 存储的行数相同，角色却不同。`NLev[1]` 可通过外�
 
 普通消息使用 `NtruParameters::try_new`。已有普通参数时，`NlevParameters::try_with_ntru_params(&ntru_params, decomposition)` 接收 `DecompositionConfig`，派生同一环上的 gadget 参数并复用已准备的采样器；`try_with_basis` 接收已准备的分解基。仅使用 gadget 的构造方式见 [NlevParameters](src/parameter/gadget.rs)。
 
-[PolyLength](../primus_poly/README.zh_CN.md#环多项式长度) 构造一次，供参数、表和工作区复用。固定秘密重量不得超过 N。参数检查覆盖编码及采样，不证明秘密可逆、变换可用或噪声/安全预算成立。
+[PolyLength](../primus_shape/README.zh_CN.md#多项式长度) 构造一次，供参数、表和工作区复用。固定秘密重量不得超过 N。参数检查覆盖编码及采样，不证明秘密可逆、变换可用或噪声/安全预算成立。
 
 将 `encryption_parameters()` 传给 `NttNtruSecretKey::generate_pair` 或 `FourierNtruSecretKey::generate_pair`。返回的有符号系数私钥用于生成求值密钥，变换私钥用于加密和相位提取。`try_from_coeff_secret_key` 转换已有私钥，也可能拒绝它；NTT 导入要求有符号系数幅度小于 q。后续操作须保持构造时的表示，相同 q/N 不能证明 NTT 根、求值顺序或秘密身份相同。
 

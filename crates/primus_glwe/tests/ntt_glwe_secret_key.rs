@@ -8,8 +8,9 @@ use primus_integer::FheUint;
 use primus_lattice::GlweDimension;
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, PrimitiveRoot, UintNttTable};
-use primus_poly::{PolyLength, Polynomial, PolynomialOwned};
+use primus_poly::{Polynomial, PolynomialOwned};
 use primus_reduce::ReduceAdd;
+use primus_shape::PolyLength;
 use rand::{Rng, SeedableRng, rngs::StdRng};
 use zeroize::Zeroizing;
 

@@ -9,7 +9,7 @@ use primus_lattice::{
 };
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, UintNttTable};
-use primus_poly::PolyLength;
+use primus_shape::PolyLength;
 
 const N: usize = 32;
 const Q: u32 = 132_120_577;

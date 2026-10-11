@@ -10,8 +10,9 @@ use primus_lattice::{
     glwe::{Glwe, NttGlwe},
 };
 use primus_ntt::NttTable;
-use primus_poly::{NttPolynomial, PolyLength, Polynomial};
+use primus_poly::{NttPolynomial, Polynomial};
 use primus_reduce::FieldContext;
+use primus_shape::PolyLength;
 use zeroize::Zeroizing;
 
 use crate::{GlevParameters, GlweSecretKey, NttGlweGadgetEncryptWorkspace, NttGlweSecretKey};

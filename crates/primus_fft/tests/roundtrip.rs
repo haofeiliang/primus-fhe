@@ -6,7 +6,7 @@ use primus_fft::RustFftTable;
 #[cfg(feature = "tfhe-fft")]
 use primus_fft::TfheFftTable;
 use primus_fft::{Complex64, FftEngine, FftTable};
-use primus_poly::PolyLength;
+use primus_shape::PolyLength;
 
 fn roundtrip<Table: FftTable>() {
     // Minimum supported packing and a complete vector-sized buffer with offset slices.

@@ -1,5 +1,5 @@
 use core::fmt::Debug;
-use primus_poly::PolyLength;
+use primus_shape::PolyLength;
 
 use num_traits::{ConstOne, ConstZero};
 use primus_integer::{AsFrom, FheUint};

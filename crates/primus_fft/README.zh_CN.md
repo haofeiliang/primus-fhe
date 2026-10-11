@@ -32,7 +32,7 @@
 
 ```rust
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable};
-use primus_poly::PolyLength;
+use primus_shape::PolyLength;
 
 let table = RustFftTable::new(PolyLength::new(32)); // N = 32
 let mut fft = FftEngine::new(&table);
@@ -74,7 +74,7 @@ Table 不可变并实现 `Send + Sync`，可在线程间共享；每个并发 wo
 
 ## 长度与精度
 
-`FftTable::new` 接收 [`primus_poly::PolyLength`](../primus_poly/README.zh_CN.md#环多项式长度)，即 `32..=2^17` 内的二次幂。Table 和 engine 的 `poly_length()` 返回此类型，`fourier_length()` 返回复数元素数量。构造包含 planning 和分配，应放在重复变换路径之外。
+`FftTable::new` 接收 [`primus_shape::PolyLength`](../primus_shape/README.zh_CN.md#多项式长度)。Table 和 engine 的 `poly_length()` 返回此类型，`fourier_length()` 返回复数元素数量。构造包含 planning 和分配，应放在重复变换路径之外。
 
 变换使用 `f64`，属于近似计算，不保证整字宽 torus 输入逐位往返一致。正确舍入取决于累积浮点误差和整数操作数大小，外层算法须维持合适的精度预算。转换与舍入规则见 [torus API](src/torus.rs)。
 

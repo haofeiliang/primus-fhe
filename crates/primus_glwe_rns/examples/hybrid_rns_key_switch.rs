@@ -9,8 +9,9 @@ use primus_lattice::GlweDimension;
 use primus_lattice::glwe::DcrtGlwe;
 use primus_modulus::BarrettModulus;
 use primus_ntt::UintDcrtTable;
-use primus_poly::{PolyLength, Polynomial};
+use primus_poly::Polynomial;
 use primus_rns::HybridRNS;
+use primus_shape::PolyLength;
 use rand::{SeedableRng, rngs::StdRng};
 
 fn main() {

@@ -3,7 +3,8 @@
 use primus_glwe::GlweDimension;
 use primus_lwe::LweDimension;
 use primus_modulus::NativeModulus;
-use primus_tfhe::{BlindRotationMethod, DecompositionBaseLog, DecompositionLevelCount, PolyLength};
+use primus_shape::PolyLength;
+use primus_tfhe::{BlindRotationMethod, DecompositionBaseLog, DecompositionLevelCount};
 use primus_tfhe_glwe::{
     CbsGadgetConfig, CbsParameters, ClientKey, DecompositionConfig, GadgetEncryptionConfig,
     LweConfig, ModulusConfig, PbsConfig, PbsMessageConfig, PbsOrder, PbsParameters, SecretKeyDistr,

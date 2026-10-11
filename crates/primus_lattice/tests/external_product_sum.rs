@@ -12,8 +12,9 @@ use primus_lattice::{
 };
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntt::{NttTable, U32NttTable, U64NttTable};
-use primus_poly::{PolyLength, Polynomial, PolynomialIter};
+use primus_poly::{Polynomial, PolynomialIter};
 use primus_reduce::{Reduce, RingContext};
+use primus_shape::PolyLength;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 const N: usize = 32;

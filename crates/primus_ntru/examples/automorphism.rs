@@ -11,7 +11,8 @@ use primus_ntru::{
     NttNtruCiphertext, NttNtruGadgetEncryptWorkspace, NttNtruSecretKey, SecretKeyDistr,
 };
 use primus_ntt::{NttTable, U64NttTable};
-use primus_poly::{PolyLength, Polynomial};
+use primus_poly::Polynomial;
+use primus_shape::PolyLength;
 use rand::{SeedableRng, rngs::StdRng};
 
 fn main() {

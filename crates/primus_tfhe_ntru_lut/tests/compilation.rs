@@ -2,7 +2,7 @@
 
 use primus_encoding::RoundedCodec;
 use primus_modulus::{BarrettModulus, PowOf2Modulus};
-use primus_poly::PolyLength;
+use primus_shape::PolyLength;
 use primus_tfhe_ntru_lut::{
     ChunkFormat, HighPrecisionLookupTable, LookupTableConfig, LookupTableError,
 };

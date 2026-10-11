@@ -60,7 +60,6 @@ pub use parameter::{
 };
 pub use primus_distr::SecretKeyDistr;
 pub use primus_lattice::{GlweDimension, GlweDimensionError, LweDimension};
-pub use primus_poly::PolyLength;
 #[cfg(feature = "ntt")]
 pub use public_key::{NttGlwePublicEncryptWorkspace, NttGlwePublicKey};
 #[cfg(feature = "fourier")]

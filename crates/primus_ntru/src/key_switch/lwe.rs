@@ -6,8 +6,8 @@ use primus_integer::{FheUint, SignedInteger};
 use primus_lattice::LweDimension;
 use primus_lattice::lwe::Lwe;
 use primus_lwe::{LweEncryptionParameters, LweKeySwitchingKey, LweSecretKey, LweSecretKeyRef};
-use primus_poly::PolyLength;
 use primus_reduce::{Modulus, ModulusSwitch, RingContext};
+use primus_shape::PolyLength;
 
 use crate::{NtruCiphertext, NtruSecretKey};
 

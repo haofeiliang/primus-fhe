@@ -102,7 +102,6 @@ pub use primus_lattice::workspace::{
 };
 #[cfg(feature = "ntt")]
 pub use primus_lattice::workspace::{NttNtruCmuxWorkspace, NttNtruExternalProductWorkspace};
-pub use primus_poly::PolyLength;
 #[cfg(feature = "fourier")]
 pub use scheme_switch::FourierNtruSchemeSwitchKey;
 #[cfg(feature = "ntt")]

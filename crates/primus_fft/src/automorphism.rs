@@ -1,6 +1,6 @@
 //! Maps odd-root evaluations through a backend's Fourier storage order.
 
-use primus_poly::PolyLength;
+use primus_shape::PolyLength;
 
 /// Both bundled backends evaluate at exp(i*pi*(1-4*j)/N), j=0..N/2.
 /// An odd exponent maps these roots either to stored roots or their conjugates.

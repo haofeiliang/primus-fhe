@@ -44,7 +44,7 @@ Wrappers are generic over storage `S` through [`primus_data`](../primus_data/REA
 
 Allocate storage using the length accessors of `GlweSize`, `GadgetSize`, `RnsGlweSize` and `RnsGadgetSize`. These types check combined-length overflow and RNS modulus counts; `LweDimension::from(glwe_size)` derives the extracted dimension `kN`. They do not validate actual buffers, transform tables, moduli or security.
 
-Layouts and workspaces take [`primus_poly::PolyLength`](../primus_poly/README.md#ring-polynomial-length), a power of two in `32..=2^17`. Its `.get()`, `.log_n()` and `.fourier_poly_len()` return `N`, `log2(N)` and `N/2`.
+Layouts and workspaces take [`primus_shape::PolyLength`](../primus_shape/README.md#polynomial-length). Its `.get()`, `.log_n()` and `.fourier_poly_len()` return `N`, `log2(N)` and `N/2`.
 
 ## Serialization
 
@@ -104,7 +104,7 @@ Borrow storage, add an already encoded polynomial to the body, then extract its 
 
 ```rust
 use primus_lattice::{GlweDimension, GlweSize, glwe::Glwe, lwe::Lwe};
-use primus_poly::PolyLength;
+use primus_shape::PolyLength;
 use primus_modulus::BarrettModulus;
 use primus_poly::Polynomial;
 

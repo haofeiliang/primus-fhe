@@ -44,7 +44,7 @@ NLev 与 NGSW 的存储形状相同，但语义不同：`beta` 的 NLev 各层�
 
 用 `GlweSize`、`GadgetSize`、`RnsGlweSize` 和 `RnsGadgetSize` 的长度访问器分配存储。这些类型检查组合长度溢出和 RNS 模数数量；`LweDimension::from(glwe_size)` 派生提取维数 `kN`。它们不验证实际缓冲区、变换表、模数或安全性。
 
-布局和工作区接收 [`primus_poly::PolyLength`](../primus_poly/README.zh_CN.md#环多项式长度)，其范围是 `32..=2^17` 内的二次幂。`.get()`、`.log_n()` 和 `.fourier_poly_len()` 分别返回 `N`、`log2(N)` 和 `N/2`。
+布局和工作区接收 [`primus_shape::PolyLength`](../primus_shape/README.zh_CN.md#多项式长度)。`.get()`、`.log_n()` 和 `.fourier_poly_len()` 分别返回 `N`、`log2(N)` 和 `N/2`。
 
 ## 序列化
 
@@ -104,7 +104,7 @@ CMux 的选择语义要求控制加密比特；k-CMux 要求至多一个控制�
 
 ```rust
 use primus_lattice::{GlweDimension, GlweSize, glwe::Glwe, lwe::Lwe};
-use primus_poly::PolyLength;
+use primus_shape::PolyLength;
 use primus_modulus::BarrettModulus;
 use primus_poly::Polynomial;
 

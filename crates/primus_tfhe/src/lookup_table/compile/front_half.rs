@@ -24,8 +24,9 @@
 
 use primus_encoding::{PlaintextEmbedding, RoundedCodec};
 use primus_integer::FheUint;
-use primus_poly::{PolyLength, PolynomialOwned};
+use primus_poly::PolynomialOwned;
 use primus_reduce::{PrepareModulusSwitch, ReduceAdd, RingContext};
+use primus_shape::PolyLength;
 
 use super::{fill_negated_tail, repeat_output_group, upper_midpoint, validate_input_encoding};
 use crate::{LookupTableError, rotation::RotationModulusSwitch};

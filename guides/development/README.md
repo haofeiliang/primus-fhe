@@ -12,7 +12,7 @@ Choose the lowest-level crate that owns your operation. For complete TFHE applic
 | Need | Start here |
 | --- | --- |
 | Moduli, arithmetic and gadget decomposition | [primus_modulus](../../crates/primus_modulus/README.md), [primus_reduce](../../crates/primus_reduce/README.md), [primus_decompose](../../crates/primus_decompose/README.md) |
-| Storage, polynomials and transforms | [primus_data](../../crates/primus_data/README.md), [primus_poly](../../crates/primus_poly/README.md), [primus_ntt](../../crates/primus_ntt/README.md), [primus_fft](../../crates/primus_fft/README.md) |
+| Storage, polynomials and transforms | [primus_shape](../../crates/primus_shape/README.md), [primus_data](../../crates/primus_data/README.md), [primus_poly](../../crates/primus_poly/README.md), [primus_ntt](../../crates/primus_ntt/README.md), [primus_fft](../../crates/primus_fft/README.md) |
 | Ciphertext layouts and arithmetic | [primus_lattice](../../crates/primus_lattice/README.md) |
 | Messages, encoding and phase diagnostics | [primus_encoding](../../crates/primus_encoding/README.md) |
 | Standalone encryption and key switching | [LWE](../../crates/primus_lwe/README.md), [GLWE](../../crates/primus_glwe/README.md), [NTRU](../../crates/primus_ntru/README.md) |

@@ -3,8 +3,8 @@ use primus_ntru::{
     NtruCiphertext, NtruLweKeySwitchingBatchWorkspace, NtruLweKeySwitchingKey,
     NtruLweKeySwitchingWorkspace,
 };
-use primus_poly::PolyLength;
 use primus_reduce::RingContext;
+use primus_shape::PolyLength;
 use primus_tfhe::{Lwe, LweCiphertext};
 
 /// Coefficient-domain NTRU→LWE returns, independent of blind rotation and NTT/FFT scratch.

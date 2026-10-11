@@ -4,7 +4,8 @@ use std::cell::{Cell, RefCell};
 
 use primus_encoding::RoundedCodec;
 use primus_modulus::BarrettModulus;
-use primus_tfhe::{LookupTableCompiler, LookupTableError, PolyLength};
+use primus_shape::PolyLength;
+use primus_tfhe::{LookupTableCompiler, LookupTableError};
 
 const N: usize = 32;
 const Q_IN: u32 = 97;

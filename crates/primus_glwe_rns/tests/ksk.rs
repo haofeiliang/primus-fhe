@@ -11,7 +11,8 @@ use primus_lattice::GlweDimension;
 use primus_lattice::{GlweSize, glwe::DcrtGlwe};
 use primus_modulus::BarrettModulus;
 use primus_ntt::UintDcrtTable;
-use primus_poly::{PolyLength, Polynomial};
+use primus_poly::Polynomial;
+use primus_shape::PolyLength;
 use rand::{SeedableRng, rngs::StdRng};
 
 /// Layout rejection must precede sampling, rather than silently truncating zip.

@@ -11,7 +11,7 @@ use primus_lattice::{glwe::Glwe, lwe::Lwe};
 use primus_lwe::LweSecretKeyRef;
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntt::{NttTable, U64NttTable};
-use primus_poly::PolyLength;
+use primus_shape::PolyLength;
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 
 #[allow(dead_code)]

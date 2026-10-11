@@ -3,7 +3,7 @@
 use aligned_vec::{ABox, avec};
 use primus_data::DataMut;
 use primus_fft::{Complex64, TorusFftValue};
-use primus_poly::PolyLength;
+use primus_shape::PolyLength;
 
 use crate::ntru::FourierNtru;
 

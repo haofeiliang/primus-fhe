@@ -1,4 +1,4 @@
-use primus_poly::PolyLength;
+use primus_shape::PolyLength;
 use std::{f64::consts::PI, time::Duration};
 
 use aligned_vec::{ABox, AVec, CACHELINE_ALIGN, avec};

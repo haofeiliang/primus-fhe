@@ -5,7 +5,8 @@ use primus_integer::SignedInteger;
 use primus_lattice::GlweDimension;
 use primus_lattice::GlweSize;
 use primus_modulus::NativeModulus;
-use primus_poly::{FourierPolynomialIter, PolyLength};
+use primus_poly::FourierPolynomialIter;
+use primus_shape::PolyLength;
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use crate::{GlweEncryptionParameters, SecretKeyDistr};

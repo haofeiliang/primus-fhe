@@ -6,7 +6,7 @@ Start from the [library guide](README.md) to choose a crate. This guide covers t
 
 Choose the modulus, representation and decomposition before allocating ciphertexts. Use `NativeModulus` for the implicit machine-word modulus and `PowOf2Modulus` for an explicit power of two. NTT paths need suitable moduli and roots; `RingContext` / `FieldContext` describe arithmetic capabilities, not proofs of primality or invertibility. See [modulus choices](../../crates/primus_modulus/README.md) and [NTT construction](../../crates/primus_ntt/README.md).
 
-Reuse checked `PolyLength`, `LweDimension`, `GlweDimension` and decomposition values when constructing parameters, sizes and tables. `GlweSize`, `GadgetSize` and their RNS counterparts describe complete ciphertext layouts; a matching size does not establish a modulus, basis or secret identity. The [lattice layout guide](../../crates/primus_lattice/README.md#storage-and-layout) describes these sizes.
+Reuse checked [`primus_shape::PolyLength`](../../crates/primus_shape/README.md), `LweDimension`, `GlweDimension` and decomposition values when constructing parameters, sizes and tables. `GlweSize`, `GadgetSize` and their RNS counterparts describe complete ciphertext layouts; a matching size does not establish a modulus, basis or secret identity. The [lattice layout guide](../../crates/primus_lattice/README.md#storage-and-layout) describes these sizes.
 
 | Representation | Pairing to preserve |
 | --- | --- |

@@ -2,7 +2,7 @@
 
 use primus_decompose::DecompositionLevelCount;
 use primus_integer::FheUint;
-use primus_poly::PolyLength;
+use primus_shape::PolyLength;
 
 use super::NttNtruExternalProductWorkspace;
 

@@ -9,8 +9,8 @@ use primus_decompose::primitive::ApproxSignedBasis;
 use primus_integer::FheUint;
 use primus_lwe::{LweDimension, LweEncryptionParameters};
 use primus_ntru::{NlevParameters, NtruEncryptionParameters, SecretKeyDistr};
-use primus_poly::PolyLength;
 use primus_reduce::RingContext;
+use primus_shape::PolyLength;
 use primus_tfhe::{BlindRotationMethod, PbsMessageConfig, rotation::RotationModulusSwitch};
 
 use crate::{GadgetEncryptionConfig, TfheParameterError};

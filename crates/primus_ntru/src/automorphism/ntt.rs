@@ -5,8 +5,9 @@ use primus_decompose::primitive::ApproxSignedBasis;
 use primus_integer::FheUint;
 use primus_lattice::nlev::NttNlev;
 use primus_ntt::{NttAutomorphismPermutation, NttTable};
-use primus_poly::{CoeffAutomorphismPermutation, PolyLength, Polynomial};
+use primus_poly::{CoeffAutomorphismPermutation, Polynomial};
 use primus_reduce::FieldContext;
+use primus_shape::PolyLength;
 use zeroize::Zeroizing;
 
 use crate::{

@@ -5,7 +5,8 @@ use primus_glwe::{GlweDimension, SecretKeyDistr};
 use primus_integer::FheUint;
 use primus_lwe::LweDimension;
 use primus_ntt::{MonomialNttTable, U32NttTable, U64NttTable};
-use primus_tfhe::{DecompositionBaseLog, DecompositionLevelCount, PolyLength};
+use primus_shape::PolyLength;
+use primus_tfhe::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_tfhe_glwe_ntt::{
     BlindRotationMethod, CbsConfig, CbsGadgetConfig, DecompositionConfig, GadgetEncryptionConfig,
     LweConfig, ModulusConfig, PbsConfig, PbsMessageConfig, PbsOrder, TfheContext,

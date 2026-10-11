@@ -9,7 +9,8 @@ use primus_glwe::{
 use primus_integer::FheUint;
 use primus_lattice::GlweDimension;
 use primus_modulus::NativeModulus;
-use primus_poly::{PolyLength, Polynomial};
+use primus_poly::Polynomial;
+use primus_shape::PolyLength;
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
 const DIMENSION: usize = 2;

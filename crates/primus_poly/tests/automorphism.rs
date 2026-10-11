@@ -1,5 +1,6 @@
 use primus_modulus::{BarrettModulus, NativeModulus};
-use primus_poly::{CoeffAutomorphismPermutation, PolyLength};
+use primus_poly::CoeffAutomorphismPermutation;
+use primus_shape::PolyLength;
 
 #[test]
 fn coefficient_permutation_matches_monomial_substitution() {

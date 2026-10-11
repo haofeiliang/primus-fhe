@@ -5,7 +5,7 @@ use primus_fft::RustFftTable;
 #[cfg(feature = "tfhe-fft")]
 use primus_fft::TfheFftTable;
 use primus_fft::{Complex64, FftEngine, FftTable};
-use primus_poly::PolyLength;
+use primus_shape::PolyLength;
 
 fn check_automorphism<Table: FftTable>() {
     // Check coefficient signs and packed conjugation. The private TFHE-FFT

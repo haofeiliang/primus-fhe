@@ -3,8 +3,8 @@
 use primus_distr::{DiscreteGaussian, SecretKeySampler};
 use primus_integer::FheUint;
 use primus_lattice::{GlweDimension, GlweSize};
-use primus_poly::PolyLength;
 use primus_reduce::RingContext;
+use primus_shape::PolyLength;
 use rand::distr::Uniform;
 use std::sync::Arc;
 

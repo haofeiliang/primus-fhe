@@ -6,7 +6,8 @@ use primus_decompose::DecompositionLevelCount;
 use primus_lattice::GlweDimension;
 use primus_lattice::{GadgetSize, GlweSize, ggsw::Ggsw, glwe::Glwe, lwe::Lwe};
 use primus_modulus::BarrettModulus;
-use primus_poly::{PolyLength, Polynomial};
+use primus_poly::Polynomial;
+use primus_shape::PolyLength;
 
 #[test]
 fn encoded_plaintext_operations_preserve_masks_and_trivial_overwrites_them() {

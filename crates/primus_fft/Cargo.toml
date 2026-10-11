@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 primus_integer = { path = "../primus_integer" }
-primus_poly = { path = "../primus_poly" }
+primus_shape = { path = "../primus_shape" }
 aligned-vec = { version = "0.6.4", optional = true }
 num-complex = { workspace = true }
 rustfft = { workspace = true, optional = true }

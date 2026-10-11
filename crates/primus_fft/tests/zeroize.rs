@@ -1,7 +1,7 @@
 #![cfg(any(feature = "rustfft", feature = "tfhe-fft"))]
 
 //! Observe owned workspace allocations while live and immediately before release.
-use primus_poly::PolyLength;
+use primus_shape::PolyLength;
 use std::{
     alloc::{GlobalAlloc, Layout, System},
     cell::Cell,

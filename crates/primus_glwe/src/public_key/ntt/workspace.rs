@@ -1,7 +1,7 @@
 //! Reusable public-key encryption workspace.
 
 use primus_integer::FheUint;
-use primus_poly::PolyLength;
+use primus_shape::PolyLength;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 /// Reusable ephemeral secret storage for NTT GLWE public-key encryption.

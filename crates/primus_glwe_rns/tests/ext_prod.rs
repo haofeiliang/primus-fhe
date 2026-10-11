@@ -9,10 +9,11 @@ use primus_lattice::{GlweDimension, GlweSize, RnsGlweSize};
 use primus_lattice::{glwe::DcrtGlwe, workspace::DcrtGlevMulWorkspace};
 use primus_modulus::BarrettModulus;
 use primus_ntt::UintDcrtTable;
-use primus_poly::{PolyLength, Polynomial};
+use primus_poly::Polynomial;
 use primus_reduce::ReduceNegSlice;
 use primus_rns::RNSBase;
 use primus_rns::Residues;
+use primus_shape::PolyLength;
 use rand::{SeedableRng, rngs::StdRng};
 use std::sync::Arc;
 

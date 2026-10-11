@@ -11,7 +11,7 @@ use primus_lattice::{
 };
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable, U64NttTable};
-use primus_poly::PolyLength;
+use primus_shape::PolyLength;
 
 fn ntt<T: FheUint, Table: NttTable<ValueT = T>>(
     c: &mut Criterion,
