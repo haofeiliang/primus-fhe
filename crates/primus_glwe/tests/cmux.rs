@@ -10,14 +10,15 @@ use primus_glwe::{
 };
 use primus_lattice::GlweDimension;
 use primus_lattice::{
-    ggsw::{FourierGgsw, NttGgsw, NttGgswIter},
-    glwe::{FourierGlweOwned, Glwe, NttGlwe, TorusGlwe},
+    ggsw::{FourierGgsw, FourierGgswIter, NttGgsw, NttGgswIter},
+    glwe::{FourierGlweOwned, Glwe, GlweIter, NttGlwe, TorusGlwe},
     workspace::{FourierGlweExternalProductWorkspace, NttGlweExternalProductWorkspace},
 };
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntt::{NttTable, UintNttTable};
 use primus_poly::{PolyLength, Polynomial};
 use rand::{SeedableRng, rngs::StdRng};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 
 mod common;
 
@@ -32,9 +33,9 @@ fn plaintext(offset: u32) -> Vec<u32> {
         .collect()
 }
 
-#[test]
-fn fourier_cmux_selects_requested_glwe() {
-    let table = RustFftTable::new(PolyLength::new(POLY_LENGTH));
+// Both FFT engines consume packed ciphertext views and encrypted selectors.
+fn check_fourier_cmux<Table: FftTable>() {
+    let table = Table::new(PolyLength::new(POLY_LENGTH));
     let mut fft = FftEngine::new(&table);
     let mut rng = StdRng::seed_from_u64(42);
     let glwe_params = GlweParameters::new(
@@ -80,11 +81,30 @@ fn fourier_cmux_selects_requested_glwe() {
         fourier.write_torus_form(ciphertext, &mut fft);
     }
 
-    let mut output: TorusGlwe<Vec<u32>> = TorusGlwe::zero(params.glwe_len());
+    let packed_candidates = [ciphertexts[1].as_ref(), ciphertexts[2].as_ref()].concat();
+    let mut output = TorusGlwe::new(vec![u32::MAX; params.glwe_len()]);
     let ggsw_len = params.fourier_ggsw_len();
     let mut controls = vec![Complex64::default(); 2 * ggsw_len];
-    // Exercise both CMUX kernels and every valid selector, reusing output/workspace.
-    for (control_count, selected) in [(1, 0), (1, 1), (2, 0), (2, 1), (2, 2)] {
+    // Counts are checked before any write; the subsequent valid calls reuse scratch.
+    assert!(
+        catch_unwind(AssertUnwindSafe(|| {
+            FourierGgsw::cmux_k_to(
+                FourierGgswIter::new(&controls[..ggsw_len], ggsw_len),
+                ciphertexts[0].as_view(),
+                GlweIter::new(&packed_candidates, params.glwe_len()),
+                output.as_mut_view(),
+                params.basis(),
+                &mut fft,
+                &mut cmux_workspace,
+            );
+        }))
+        .is_err()
+    );
+    assert!(output.as_ref().iter().all(|&value| value == u32::MAX));
+
+    // Empty k-CMux copies the default exactly; nonempty calls also cover
+    // ordinary two-way CMux and every selector with reused output/workspace.
+    for (control_count, selected) in [(0, 0), (1, 0), (1, 1), (2, 0), (2, 1), (2, 2)] {
         let selectors = [u32::from(selected == 1), u32::from(selected == 2)];
         secret_key.encrypt_ggsw_constant_batch_to(
             &selectors[..control_count],
@@ -106,16 +126,22 @@ fn fourier_cmux_selects_requested_glwe() {
             );
         } else {
             FourierGgsw::cmux_k_to(
-                controls.chunks_exact(ggsw_len).map(FourierGgsw::new),
-                &ciphertexts[0],
-                &ciphertexts[1..],
-                &mut output,
+                FourierGgswIter::new(&controls[..control_count * ggsw_len], ggsw_len),
+                ciphertexts[0].as_view(),
+                GlweIter::new(
+                    &packed_candidates[..control_count * params.glwe_len()],
+                    params.glwe_len(),
+                ),
+                output.as_mut_view(),
                 params.basis(),
                 &mut fft,
                 &mut cmux_workspace,
             );
         }
 
+        if control_count == 0 {
+            assert_eq!(output.as_ref(), ciphertexts[0].as_ref());
+        }
         let mut output_fourier = FourierGlweOwned::zero(params.fourier_glwe_len());
         output.write_fourier_form(&mut output_fourier, &mut fft);
         assert_eq!(
@@ -130,6 +156,12 @@ fn fourier_cmux_selects_requested_glwe() {
             messages[selected].as_slice()
         );
     }
+}
+
+#[test]
+fn fourier_cmux_selects_requested_glwe() {
+    check_fourier_cmux::<RustFftTable>();
+    check_fourier_cmux::<TfheFftTable>();
 }
 
 #[test]
@@ -179,10 +211,28 @@ fn ntt_cmux_selects_requested_glwe() {
         ntt_ciphertext.write_coeff_form(ciphertext, &ntt);
     }
 
-    let mut output: Glwe<Vec<u32>> = Glwe::zero(params.glwe_len());
+    let mut output = Glwe::new(vec![u32::MAX; params.glwe_len()]);
     let ggsw_len = params.ggsw_len();
     let mut controls = vec![0u32; 2 * ggsw_len];
-    for (control_count, selected) in [(1, 0), (1, 1), (2, 0), (2, 1), (2, 2)] {
+    // Borrowed candidates need no intermediate collection of views.
+    assert!(
+        catch_unwind(AssertUnwindSafe(|| {
+            NttGgsw::cmux_k_to(
+                NttGgswIter::new(&controls[..ggsw_len], ggsw_len),
+                ciphertexts[0].as_view(),
+                ciphertexts[1..].iter(),
+                output.as_mut_view(),
+                params.basis(),
+                modulus,
+                &ntt,
+                &mut cmux_workspace,
+            );
+        }))
+        .is_err()
+    );
+    assert!(output.as_ref().iter().all(|&value| value == u32::MAX));
+
+    for (control_count, selected) in [(0, 0), (1, 0), (1, 1), (2, 0), (2, 1), (2, 2)] {
         let selectors = [u32::from(selected == 1), u32::from(selected == 2)];
         secret_key.encrypt_ggsw_constant_batch_to(
             &selectors[..control_count],
@@ -205,10 +255,10 @@ fn ntt_cmux_selects_requested_glwe() {
             );
         } else {
             NttGgsw::cmux_k_to(
-                NttGgswIter::new(&controls, ggsw_len),
-                &ciphertexts[0],
-                &ciphertexts[1..],
-                &mut output,
+                NttGgswIter::new(&controls[..control_count * ggsw_len], ggsw_len),
+                ciphertexts[0].as_view(),
+                ciphertexts[1..1 + control_count].iter(),
+                output.as_mut_view(),
                 params.basis(),
                 modulus,
                 &ntt,
@@ -216,6 +266,9 @@ fn ntt_cmux_selects_requested_glwe() {
             );
         }
 
+        if control_count == 0 {
+            assert_eq!(output.as_ref(), ciphertexts[0].as_ref());
+        }
         let mut output_ntt: NttGlwe<Vec<u32>> = NttGlwe::zero(params.glwe_len());
         output.write_ntt_form(&mut output_ntt, &ntt);
         assert_eq!(

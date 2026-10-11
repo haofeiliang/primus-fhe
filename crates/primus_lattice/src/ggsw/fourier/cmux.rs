@@ -79,31 +79,38 @@ where
     /// Controls and candidates have equal counts and matching order. Each
     /// control encrypts a bit, with at most one bit equal to one; bit values
     /// and exclusivity are not checked. Empty lists copy `default` exactly.
+    /// Controls may be borrowed objects or semantic iterators over packed storage.
+    /// Candidate items convert to shared views via `Into`; use `as_view()` and
+    /// `as_mut_view()` for owned default and output ciphertexts. Chunk iterators
+    /// must not omit incomplete trailing ciphertexts, and their reported counts
+    /// must match the number of yielded items.
     /// Output is overwritten and workspace scratch needs no manual reset.
+    /// Products are summed in the Fourier domain before one inverse transform
+    /// and torus rounding; rounding each product separately can differ.
     ///
     /// # Panics
     ///
-    /// Panics if the reported control count differs from `candidates.len()`,
-    /// or if empty-list copying encounters unequal default/output lengths.
-    pub fn cmux_k_to<T, Table, B, C, D, I>(
+    /// Panics before output writes if the reported iterator counts differ.
+    /// Incorrect lengths may panic but are not systematically validated.
+    /// A panicking iterator, item conversion, or later length failure can leave
+    /// output holding an intermediate difference and scratch holding a partial
+    /// sum. Discard the result; a valid call can reuse the workspace without reset.
+    pub fn cmux_k_to<'a, T, Table, I, J>(
         controls: I,
-        default: &TorusGlwe<B>,
-        candidates: &[TorusGlwe<C>],
-        output: &mut TorusGlwe<D>,
+        default: TorusGlwe<&[T]>,
+        candidates: J,
+        mut output: TorusGlwe<&mut [T]>,
         basis: &ApproxSignedBasis<T>,
         fft: &mut FftEngine<'_, Table>,
         workspace: &mut FourierGlweExternalProductWorkspace<T>,
     ) where
         T: TorusFftValue,
         Table: FftTable,
-        B: Data<Elem = T>,
-        C: Data<Elem = T>,
-        D: DataMut<Elem = T>,
-        I: IntoIterator,
-        I::IntoIter: ExactSizeIterator,
-        I::Item: Borrow<Self>,
+        I: IntoIterator<Item: Borrow<Self>, IntoIter: ExactSizeIterator>,
+        J: IntoIterator<Item: Into<TorusGlwe<&'a [T]>>, IntoIter: ExactSizeIterator>,
     {
         let controls = controls.into_iter();
+        let candidates = candidates.into_iter();
         assert_eq!(
             controls.len(),
             candidates.len(),
@@ -112,20 +119,18 @@ where
         let glwe_len = workspace.size().glwe_size().glwe_len();
         debug_assert_eq!(default.as_ref().len(), glwe_len);
         debug_assert_eq!(output.as_ref().len(), glwe_len);
-        debug_assert!(
-            candidates
-                .iter()
-                .all(|candidate| candidate.as_ref().len() == glwe_len)
-        );
-
-        if candidates.is_empty() {
+        if candidates.len() == 0 {
             output.as_mut().copy_from_slice(default.as_ref());
             return;
         }
 
         workspace.fourier_accumulator.set_zero();
+        // Round only after summing all products. Rounding per pair would
+        // change the approximation error and traverse the coefficients again.
         for (control, candidate) in controls.zip(candidates) {
-            candidate.sub_to(default, output, NativeModulus::new());
+            let candidate = candidate.into();
+            debug_assert_eq!(candidate.as_ref().len(), glwe_len);
+            candidate.sub_to(&default, &mut output, NativeModulus::new());
             let control: &Self = control.borrow();
             control.as_view().accumulate_external_product(
                 output.as_view(),
@@ -134,8 +139,10 @@ where
                 &mut workspace.as_mut(),
             );
         }
-        workspace.fourier_accumulator.write_torus_form(output, fft);
-        output.add_assign(default, NativeModulus::new());
+        workspace
+            .fourier_accumulator
+            .write_torus_form(&mut output, fft);
+        output.add_assign(&default, NativeModulus::new());
     }
 
     /// Computes `output = input + self external_product

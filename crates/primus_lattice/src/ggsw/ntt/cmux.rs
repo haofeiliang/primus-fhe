@@ -90,21 +90,30 @@ where
     /// Controls and candidates have equal counts and matching order. Each
     /// control encrypts a bit, with at most one bit equal to one; bit values
     /// and exclusivity are not checked. Empty lists copy `default` exactly.
+    /// Controls may be borrowed objects or semantic iterators over packed storage.
+    /// Candidate items convert to shared views via `Into`; use `as_view()` and
+    /// `as_mut_view()` for owned default and output ciphertexts. Chunk iterators
+    /// must not omit incomplete trailing ciphertexts, and their reported counts
+    /// must match the number of yielded items.
     /// Output is overwritten and workspace scratch needs no manual reset.
+    /// Products are summed in the NTT domain before a single inverse transform.
     ///
     /// # Panics
     ///
-    /// Panics if the reported control count differs from `candidates.len()`,
-    /// or if empty-list copying encounters unequal default/output lengths.
+    /// Panics before output writes if the reported iterator counts differ.
+    /// Incorrect lengths may panic but are not systematically validated.
+    /// A panicking iterator, item conversion, or later length failure can leave
+    /// output holding an intermediate difference and scratch holding a partial
+    /// sum. Discard the result; a valid call can reuse the workspace without reset.
     #[expect(
         clippy::too_many_arguments,
         reason = "Keep operands, decomposition basis, arithmetic, transform, and scratch explicit"
     )]
-    pub fn cmux_k_to<T, M, Table, B, C, D, I>(
+    pub fn cmux_k_to<'a, T, M, Table, I, J>(
         controls: I,
-        default: &Glwe<B>,
-        candidates: &[Glwe<C>],
-        output: &mut Glwe<D>,
+        default: Glwe<&[T]>,
+        candidates: J,
+        mut output: Glwe<&mut [T]>,
         basis: &ApproxSignedBasis<T>,
         modulus: M,
         ntt: &Table,
@@ -114,14 +123,11 @@ where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         S: Data<Elem = T>,
-        B: Data<Elem = T>,
-        C: Data<Elem = T>,
-        D: DataMut<Elem = T>,
-        I: IntoIterator,
-        I::IntoIter: ExactSizeIterator,
-        I::Item: Borrow<Self>,
+        I: IntoIterator<Item: Borrow<Self>, IntoIter: ExactSizeIterator>,
+        J: IntoIterator<Item: Into<Glwe<&'a [T]>>, IntoIter: ExactSizeIterator>,
     {
         let controls = controls.into_iter();
+        let candidates = candidates.into_iter();
         assert_eq!(
             controls.len(),
             candidates.len(),
@@ -130,21 +136,19 @@ where
         let glwe_len = workspace.size().glwe_size().glwe_len();
         debug_assert_eq!(default.as_ref().len(), glwe_len);
         debug_assert_eq!(output.as_ref().len(), glwe_len);
-        debug_assert!(
-            candidates
-                .iter()
-                .all(|candidate| candidate.as_ref().len() == glwe_len)
-        );
-
-        if candidates.is_empty() {
+        if candidates.len() == 0 {
             output.as_mut().copy_from_slice(default.as_ref());
             return;
         }
 
         let mut workspace = workspace.as_mut();
         workspace.ntt_accumulator.set_zero();
+        // Each difference uses the same default; only the transformed sum
+        // survives between pairs, so inversion and default addition happen once.
         for (control, candidate) in controls.zip(candidates) {
-            candidate.sub_to(default, output, modulus);
+            let candidate = candidate.into();
+            debug_assert_eq!(candidate.as_ref().len(), glwe_len);
+            candidate.sub_to(&default, &mut output, modulus);
             let control: &Self = control.borrow();
             control.as_view().accumulate_external_product(
                 output.as_view(),
@@ -154,8 +158,8 @@ where
                 &mut workspace,
             );
         }
-        workspace.ntt_accumulator.write_coeff_form(output, ntt);
-        output.add_assign(default, modulus);
+        workspace.ntt_accumulator.write_coeff_form(&mut output, ntt);
+        output.add_assign(&default, modulus);
     }
 
     /// Computes `output = input + self external_product
