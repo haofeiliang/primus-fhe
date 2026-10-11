@@ -74,7 +74,7 @@ Use `encrypt_message_to` to reuse ciphertext storage without a separate encoded 
 | `GlweEncryptionParameters` | Modulus and samplers for key generation and encoded/zero encryption; no codec or layout |
 | `GlevParameters` / its alias `GgswParameters` | GLWE layout, encryption parameters and gadget decomposition; no plaintext codec |
 
-Use `GlweParameters::try_new` for ordinary messages, or `GgswParameters::try_new(size, modulus, secret_distr, decomposition, sigma)` for gadget-only work. Here `size` is a `GlweSize`, `decomposition` a `DecompositionConfig`, and `sigma` is in coefficient units. With ordinary parameters already prepared, `GlevParameters::try_with_glwe_params` derives gadget parameters in the same ring.
+Use `GlweParameters::try_new` for ordinary messages, or `GgswParameters::try_new(size, modulus, secret_distr, decomposition, sigma)` for gadget-only work. Here `size` is a `GlweSize`, `decomposition` a `DecompositionConfig`, and `sigma` is in coefficient units. With ordinary parameters already prepared, `GlevParameters::try_with_glwe_params(&glwe_params, decomposition)` derives gadget parameters in the same ring, reusing the prepared samplers.
 
 Construct [PolyLength](../primus_poly/README.md#ring-polynomial-length) once and reuse it for parameters, tables and workspaces. GLWE dimensions use `GlweDimension`; fixed secret weights apply to all `k*N` coefficients, not separately to each polynomial. Fallible constructors report invalid layouts, encoding or sampling configurations; they do not establish transform availability or a noise/security budget.
 

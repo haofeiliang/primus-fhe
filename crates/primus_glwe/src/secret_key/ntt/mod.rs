@@ -5,7 +5,7 @@ use primus_lattice::GlweDimension;
 use primus_lattice::GlweSize;
 use primus_modulus::UintModulus;
 use primus_ntt::NttTable;
-use primus_poly::NttPolynomialIter;
+use primus_poly::{NttPolynomialIter, PolyLength};
 use primus_reduce::{EncodeSigned, ExplicitModulus, FieldContext};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
@@ -103,8 +103,8 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     /// Returns the coefficient polynomial length.
     #[inline]
     #[must_use]
-    pub fn poly_length(&self) -> usize {
-        self.size.poly_length().get()
+    pub fn poly_length(&self) -> PolyLength {
+        self.size.poly_length()
     }
 
     /// Returns the GLWE dimension.
@@ -235,7 +235,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
             "NTT ciphertext modulus mismatch"
         );
         assert_eq!(
-            ntt_table.poly_length().get(),
+            ntt_table.poly_length(),
             self.poly_length(),
             "NTT polynomial length mismatch"
         );

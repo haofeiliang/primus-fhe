@@ -1,6 +1,6 @@
 //! Constant batches preserve polynomial encryption and RNG consumption exactly.
 
-use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_decompose::{DecompositionBaseLog, DecompositionConfig, DecompositionLevelCount};
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable, TorusFftValue};
 use primus_glwe::{
     FourierGgswCiphertext, FourierGlweGadgetEncryptWorkspace, FourierGlweSecretKey, GlevParameters,
@@ -37,7 +37,13 @@ fn check_ntt_batch<T: FheUint, Table: NttTable<ValueT = T>>() {
         SecretKeyDistr::UniformBinary,
         0.7,
     );
-    let params = GlevParameters::with_glwe_params(&glwe, DecompositionBaseLog::new(4), None);
+    let params = GlevParameters::with_glwe_params(
+        &glwe,
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(4),
+            level_count: None,
+        },
+    );
     let table = Table::new(PolyLength::new(n), modulus).unwrap();
     let mut rng = StdRng::seed_from_u64(42);
     let (_, key) = NttGlweSecretKey::generate_pair(
@@ -173,8 +179,10 @@ fn check_fourier_batch<T: TorusFftValue, Table: FftTable>() {
     );
     let params = GlevParameters::with_glwe_params(
         &glwe,
-        DecompositionBaseLog::new(3),
-        Some(DecompositionLevelCount::new(3)),
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(3),
+            level_count: Some(DecompositionLevelCount::new(3)),
+        },
     );
     let table = Table::new(PolyLength::new(n));
     let mut fft = FftEngine::new(&table);
@@ -269,8 +277,10 @@ fn check_fourier_batch<T: TorusFftValue, Table: FftTable>() {
     }
     let wrong_levels = GlevParameters::with_glwe_params(
         &glwe,
-        DecompositionBaseLog::new(3),
-        Some(DecompositionLevelCount::new(2)),
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(3),
+            level_count: Some(DecompositionLevelCount::new(2)),
+        },
     );
     for (input, len, size) in [
         (

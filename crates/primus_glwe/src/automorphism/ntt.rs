@@ -211,7 +211,7 @@ impl<T: FheUint> NttGlweAutomorphismKey<T> {
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
     {
-        let poly_length = self.key_switching.poly_length();
+        let poly_length = self.key_switching.poly_length().get();
         debug_assert_eq!(
             input.as_ref().len(),
             self.key_switching.input_size().glwe_len()
@@ -297,7 +297,7 @@ impl<T: FheUint> NttGlweAutomorphismKey<T> {
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
     {
-        let poly_length = self.key_switching.poly_length();
+        let poly_length = self.key_switching.poly_length().get();
         debug_assert_eq!(
             input.as_ref().len(),
             self.key_switching.input_size().glwe_len()

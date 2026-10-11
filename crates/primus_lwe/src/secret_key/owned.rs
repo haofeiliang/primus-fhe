@@ -10,11 +10,10 @@ use super::LweSecretKeyRef;
 ///
 /// Secret coefficients are erased when the key (including each clone) is dropped.
 /// Message operations use [`crate::LweParameters`] for encoding and sampling.
-/// Single and packed encoded encryption use [`LweEncryptionParameters`]; raw
-/// batches take the modulus and samplers directly, including for zero-dimensional
-/// keys. [`Self::as_view`] borrows the coefficients for single raw operations
-/// without the owner's modulus check.
-/// Batch operations, including raw encoded encryption and phase decryption,
+/// Single, batch and packed encoded encryption use [`LweEncryptionParameters`].
+/// [`Self::as_view`] borrows the coefficients for single raw operations without
+/// the owner's modulus check; those views also support zero-dimensional samples.
+/// Batch operations, including encoded encryption and phase decryption,
 /// require this owned key, ensuring that reused single-ciphertext operations
 /// always receive encoded coefficients.
 /// Construction guarantees that the ciphertext length `dimension() + 1` fits

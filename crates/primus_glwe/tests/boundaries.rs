@@ -34,7 +34,13 @@ fn key_switch_parameters_check_input_layout_at_construction() {
         SecretKeyDistr::UniformBinary,
         0.7,
     );
-    let output = GlevParameters::with_glwe_params(&glwe, DecompositionBaseLog::new(4), None);
+    let output = GlevParameters::with_glwe_params(
+        &glwe,
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(4),
+            level_count: None,
+        },
+    );
     // Parameters allocate no ciphertexts; address-space boundaries can be
     // checked without constructing a large key or buffer.
     for (dimension, error) in [
@@ -409,7 +415,13 @@ fn ntt_operations_reject_incompatible_domains_and_workspace_before_writes() {
     let table = UintNttTable::new(PolyLength::new(N), modulus).unwrap();
     let wrong_table = UintNttTable::new(PolyLength::new(N), BarrettModulus::new(769u32)).unwrap();
     let wrong_length_table = UintNttTable::new(PolyLength::new(N * 2), modulus).unwrap();
-    let gadget = GlevParameters::with_glwe_params(&params, DecompositionBaseLog::new(4), None);
+    let gadget = GlevParameters::with_glwe_params(
+        &params,
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(4),
+            level_count: None,
+        },
+    );
     let mut rng = StdRng::seed_from_u64(42);
     let (coeff_key, key) = NttGlweSecretKey::generate_pair(
         params.size(),
@@ -657,13 +669,17 @@ fn only_ggsw_requires_matching_workspace_levels_in_both_domains() {
     );
     let ntt_gadget = GlevParameters::with_glwe_params(
         &ntt_params,
-        DecompositionBaseLog::new(8),
-        Some(DecompositionLevelCount::new(3)),
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(8),
+            level_count: Some(DecompositionLevelCount::new(3)),
+        },
     );
     let fourier_gadget = GlevParameters::with_glwe_params(
         &fourier_params,
-        DecompositionBaseLog::new(8),
-        Some(DecompositionLevelCount::new(3)),
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(8),
+            level_count: Some(DecompositionLevelCount::new(3)),
+        },
     );
     let ntt = UintNttTable::new(PolyLength::new(N), modulus).unwrap();
     let table = RustFftTable::new(PolyLength::new(N));
@@ -774,6 +790,19 @@ fn glev_construction_reuses_basis_and_rejects_incompatible_domains_or_layouts() 
             levels.map(DecompositionLevelCount::new),
         );
         let params = GlevParameters::try_with_basis(&native_clone, basis.clone()).unwrap();
+        let from_config = GlevParameters::try_with_glwe_params(
+            &native_clone,
+            DecompositionConfig {
+                log_basis: basis.log_basis(),
+                level_count: levels.map(DecompositionLevelCount::new),
+            },
+        )
+        .unwrap();
+        assert_eq!(from_config.basis(), &basis);
+        assert!(std::ptr::eq(
+            from_config.encryption_parameters(),
+            native.encryption_parameters()
+        ));
         assert_eq!(params.basis(), &basis);
         assert_eq!(params.glwe_size(), native.size());
         // Derivation and both outer parameter clones retain the prepared samplers.
@@ -812,6 +841,17 @@ fn glev_construction_reuses_basis_and_rejects_incompatible_domains_or_layouts() 
             Err(GlevParameterError::BasisModulusMismatch)
         ));
     }
+    // Each value is valid on its own, but two 8-bit levels cannot fit at q=257.
+    assert!(matches!(
+        GlevParameters::try_with_glwe_params(
+            &explicit,
+            DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(8),
+                level_count: Some(DecompositionLevelCount::new(2)),
+            },
+        ),
+        Err(GlevParameterError::InvalidBasis(_))
+    ));
     // GLWE lengths fit but the quadratic GGSW layout overflows, without allocating it.
     let huge = GlweParameters::new(
         GlweDimension::new(1usize << (usize::BITS / 2)),
@@ -822,7 +862,13 @@ fn glev_construction_reuses_basis_and_rejects_incompatible_domains_or_layouts() 
         0.7,
     );
     assert!(matches!(
-        GlevParameters::try_with_glwe_params(&huge, DecompositionBaseLog::new(3), None),
+        GlevParameters::try_with_glwe_params(
+            &huge,
+            DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(3),
+                level_count: None
+            }
+        ),
         Err(GlevParameterError::InvalidSize(_))
     ));
 }

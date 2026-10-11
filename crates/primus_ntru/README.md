@@ -75,7 +75,7 @@ NLev and NGSW store the same number of rows but have different roles. `NLev[1]` 
 | `NtruEncryptionParameters` | Ring and samplers for key generation and encoded/zero encryption; no codec |
 | `NlevParameters` | Encryption parameters and gadget decomposition; no plaintext codec |
 
-Use `NtruParameters::try_new` for ordinary messages. Given ordinary parameters, `NlevParameters::try_with_ntru_params` derives gadget parameters in the same ring; `try_with_basis` accepts an already prepared basis. Gadget-only construction is documented on [NlevParameters](src/parameter/gadget.rs).
+Use `NtruParameters::try_new` for ordinary messages. Given ordinary parameters, `NlevParameters::try_with_ntru_params(&ntru_params, decomposition)` takes a `DecompositionConfig` and derives gadget parameters in the same ring, reusing the prepared samplers; `try_with_basis` accepts an already prepared basis. Gadget-only construction is documented on [NlevParameters](src/parameter/gadget.rs).
 
 Construct [PolyLength](../primus_poly/README.md#ring-polynomial-length) once and reuse it for parameters, tables and workspaces. Fixed secret weights must fit N. Parameter checks cover encoding and sampling, not secret invertibility, transform availability or a noise/security budget.
 

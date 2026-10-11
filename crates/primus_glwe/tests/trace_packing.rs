@@ -1,4 +1,4 @@
-use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_decompose::{DecompositionBaseLog, DecompositionConfig, DecompositionLevelCount};
 use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_glwe::{
     FourierGlweGadgetEncryptWorkspace, FourierGlwePackingWorkspace, FourierGlweSecretKey,
@@ -138,8 +138,10 @@ fn ntt_trace_projection_and_packing() {
     );
     let glev = GlevParameters::with_glwe_params(
         &params,
-        DecompositionBaseLog::new(10),
-        Some(DecompositionLevelCount::new(5)),
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(10),
+            level_count: Some(DecompositionLevelCount::new(5)),
+        },
     );
     let s = secret();
     let coeff = GlweSecretKey::new(s.clone(), size, SecretKeyDistr::UniformTernary);
@@ -321,8 +323,10 @@ fn fourier_trace_projection_and_packing_backend<Table: FftTable>() {
     );
     let glev = GlevParameters::with_glwe_params(
         &params,
-        DecompositionBaseLog::new(8),
-        Some(DecompositionLevelCount::new(7)),
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(8),
+            level_count: Some(DecompositionLevelCount::new(7)),
+        },
     );
     let s = secret();
     let coeff = GlweSecretKey::<u64>::new(s.clone(), size, SecretKeyDistr::UniformTernary);

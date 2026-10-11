@@ -1,4 +1,4 @@
-use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_decompose::{DecompositionBaseLog, DecompositionConfig, DecompositionLevelCount};
 use primus_poly::PolyLength;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
@@ -102,15 +102,19 @@ fn ntt_scheme_switch_has_independent_bases_and_produces_cmux_controls() {
     for log_key_basis in [3, 10] {
         let key_parameters = NlevParameters::with_ntru_params(
             &parameters,
-            DecompositionBaseLog::new(log_key_basis),
-            None,
+            DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(log_key_basis),
+                level_count: None,
+            },
         );
         // L_output below and above L_key=5 for B_key=2^10.
         for output_levels in [2, 6] {
             let output_parameters = NlevParameters::with_ntru_params(
                 &parameters,
-                DecompositionBaseLog::new(8),
-                Some(DecompositionLevelCount::new(output_levels)),
+                DecompositionConfig {
+                    log_basis: DecompositionBaseLog::new(8),
+                    level_count: Some(DecompositionLevelCount::new(output_levels)),
+                },
             );
             let ss = NttNtruSchemeSwitchKey::generate(
                 &secret,
@@ -206,8 +210,13 @@ fn ntt_scheme_switch_has_independent_bases_and_produces_cmux_controls() {
         DecompositionBaseLog::new(8),
         Some(DecompositionLevelCount::new(2)),
     );
-    let key_parameters =
-        NlevParameters::with_ntru_params(&parameters, DecompositionBaseLog::new(10), None);
+    let key_parameters = NlevParameters::with_ntru_params(
+        &parameters,
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(10),
+            level_count: None,
+        },
+    );
     let mut untouched = StdRng::seed_from_u64(19);
     let mut invalid = StdRng::seed_from_u64(19);
     assert!(
@@ -263,14 +272,18 @@ fn fourier<Table: FftTable>() {
     for log_key_basis in [3, 10] {
         let key_parameters = NlevParameters::with_ntru_params(
             &parameters,
-            DecompositionBaseLog::new(log_key_basis),
-            None,
+            DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(log_key_basis),
+                level_count: None,
+            },
         );
         for output_levels in [2, 7] {
             let output_parameters = NlevParameters::with_ntru_params(
                 &parameters,
-                DecompositionBaseLog::new(8),
-                Some(DecompositionLevelCount::new(output_levels)),
+                DecompositionConfig {
+                    log_basis: DecompositionBaseLog::new(8),
+                    level_count: Some(DecompositionLevelCount::new(output_levels)),
+                },
             );
             let ss = FourierNtruSchemeSwitchKey::generate(
                 &secret,

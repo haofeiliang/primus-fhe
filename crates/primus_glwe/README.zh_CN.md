@@ -74,7 +74,7 @@ assert_eq!(decoded, message.as_ref());
 | `GlweEncryptionParameters` | 密钥生成、encoded/零加密所需的模数和采样器；无 codec 或布局 |
 | `GlevParameters` / 其别名 `GgswParameters` | GLWE 布局、加密参数及 gadget 分解；无明文 codec |
 
-普通消息使用 `GlweParameters::try_new`；仅需 gadget 时使用 `GgswParameters::try_new(size, modulus, secret_distr, decomposition, sigma)`。其中 `size` 为 `GlweSize`，`decomposition` 为 `DecompositionConfig`，`sigma` 以系数为单位。已有普通参数时，可用 `GlevParameters::try_with_glwe_params` 派生同一环上的 gadget 参数。
+普通消息使用 `GlweParameters::try_new`；仅需 gadget 时使用 `GgswParameters::try_new(size, modulus, secret_distr, decomposition, sigma)`。其中 `size` 为 `GlweSize`，`decomposition` 为 `DecompositionConfig`，`sigma` 以系数为单位。已有普通参数时，可用 `GlevParameters::try_with_glwe_params(&glwe_params, decomposition)` 派生同一环上的 gadget 参数，并复用已准备的采样器。
 
 [PolyLength](../primus_poly/README.zh_CN.md#环多项式长度) 构造一次，供参数、表和工作区复用。GLWE 维数使用 `GlweDimension`；固定秘密重量作用于全部 `k*N` 个系数，不是逐多项式分别应用。可失败构造器报告布局、编码或采样配置错误，不证明变换可用性及噪声/安全预算。
 

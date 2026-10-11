@@ -1,6 +1,6 @@
 //! Independent NTRU key switching and validation before output mutation.
 
-use primus_decompose::DecompositionBaseLog;
+use primus_decompose::{DecompositionBaseLog, DecompositionConfig};
 use primus_encoding::PlaintextEmbedding;
 use primus_poly::PolyLength;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -41,8 +41,13 @@ fn ntt_key_switch_preserves_plaintext() {
         SecretKeyDistr::SparseTernary,
         0.7,
     );
-    let key_switching =
-        NlevParameters::with_ntru_params(&parameters, DecompositionBaseLog::new(9), None);
+    let key_switching = NlevParameters::with_ntru_params(
+        &parameters,
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(9),
+            level_count: None,
+        },
+    );
     let (input_coefficient_key, input_key) =
         NttNtruSecretKey::generate_pair(parameters.encryption_parameters(), &ntt, &mut rng)
             .unwrap();
@@ -103,8 +108,13 @@ fn check_fourier_key_switch<Table: FftTable>() {
         SecretKeyDistr::SparseTernary,
         0.7,
     );
-    let key_switching =
-        NlevParameters::with_ntru_params(&parameters, DecompositionBaseLog::new(8), None);
+    let key_switching = NlevParameters::with_ntru_params(
+        &parameters,
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(8),
+            level_count: None,
+        },
+    );
     let (input_coefficient_key, input_key) =
         FourierNtruSecretKey::generate_pair(parameters.encryption_parameters(), &mut fft, &mut rng)
             .unwrap();
@@ -175,7 +185,13 @@ fn ntt_key_switch_rejects_mismatched_resources_before_writing() {
         SecretKeyDistr::UniformBinary,
         0.7,
     );
-    let params = NlevParameters::with_ntru_params(&params, DecompositionBaseLog::new(9), None);
+    let params = NlevParameters::with_ntru_params(
+        &params,
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(9),
+            level_count: None,
+        },
+    );
     let coeff_key = unit_key();
     let key = NttNtruSecretKey::try_from_coeff_secret_key(&coeff_key, modulus, &ntt).unwrap();
     let mut rng = StdRng::seed_from_u64(0x4e54_545f_424f_554e);
@@ -265,7 +281,13 @@ fn fourier_key_switch_rejects_mismatched_resources_before_writing() {
         SecretKeyDistr::UniformBinary,
         0.7,
     );
-    let params = NlevParameters::with_ntru_params(&params, DecompositionBaseLog::new(8), None);
+    let params = NlevParameters::with_ntru_params(
+        &params,
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(8),
+            level_count: None,
+        },
+    );
     let coeff_key = unit_key();
     let key = FourierNtruSecretKey::try_from_coeff_secret_key(&coeff_key, &mut fft).unwrap();
     let mut rng = StdRng::seed_from_u64(0x4646_545f_424f_554e);

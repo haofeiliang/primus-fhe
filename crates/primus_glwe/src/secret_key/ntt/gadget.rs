@@ -42,7 +42,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         workspace.assert_glev_compatible(params.size());
         assert_eq!(
             input.as_ref().len(),
-            self.poly_length(),
+            self.poly_length().get(),
             "gadget input length mismatch"
         );
         assert_eq!(
@@ -125,7 +125,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         workspace.assert_ggsw_compatible(params.size());
         assert_eq!(
             input.as_ref().len(),
-            self.poly_length(),
+            self.poly_length().get(),
             "gadget input length mismatch"
         );
         assert_eq!(
@@ -159,7 +159,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         R: rand::Rng + rand::CryptoRng,
     {
         workspace.encoded.as_mut().copy_from_slice(input.as_ref());
-        let poly_length = self.poly_length();
+        let poly_length = self.poly_length().get();
         let modulus = params.cipher_modulus();
 
         // NTT(g_l * m) = g_l * NTT(m) modulo q. Reuse the GLev encoding
@@ -190,7 +190,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
     {
-        let poly_length = self.poly_length();
+        let poly_length = self.poly_length().get();
         let modulus = params.cipher_modulus();
         let glwe_len = params.glwe_len();
 

@@ -359,7 +359,10 @@ fn fallible_parameters_check_codec_and_samplers() {
 
 #[test]
 fn parameter_parts_bind_codec_and_basis_to_shared_sampling_state() {
-    use primus_decompose::{DecompositionBaseLog, primitive::ApproxSignedBasis};
+    use primus_decompose::{
+        DecompositionBaseLog, DecompositionConfig, DecompositionLevelCount,
+        primitive::ApproxSignedBasis,
+    };
     use primus_encoding::ScaledCodec;
     use primus_ntru::{
         NlevParameterError, NlevParameters, NtruEncryptionParameters, NtruParameterError,
@@ -393,17 +396,39 @@ fn parameter_parts_bind_codec_and_basis_to_shared_sampling_state() {
 
     let gadget = NlevParameters::try_from_parts(Arc::clone(&inner), basis(Some(257))).unwrap();
     let ordinary = NtruParameters::try_from_parts(inner, ScaledCodec::new(4, modulus)).unwrap();
-    let derived = NlevParameters::with_ntru_params(&ordinary, DecompositionBaseLog::new(4), None);
-    for parameters in [&gadget, &derived, &gadget.clone()] {
-        assert!(std::ptr::eq(
-            ordinary.encryption_parameters(),
-            parameters.encryption_parameters()
-        ));
+    for level_count in [None, Some(DecompositionLevelCount::new(1))] {
+        let decomposition = DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(4),
+            level_count,
+        };
+        let derived = NlevParameters::try_with_ntru_params(&ordinary, decomposition).unwrap();
+        // q=257 has nine value bits: two 4-bit levels, or one retained level.
         assert_eq!(
-            parameters.nlev_len(),
-            32 * parameters.decompose_length().get()
+            derived.decompose_length().get(),
+            level_count.map_or(2, DecompositionLevelCount::get)
         );
+        assert_eq!(derived.basis().modulus(), Some(257));
+        for parameters in [&gadget, &derived, &gadget.clone()] {
+            assert!(std::ptr::eq(
+                ordinary.encryption_parameters(),
+                parameters.encryption_parameters()
+            ));
+            assert_eq!(
+                parameters.nlev_len(),
+                32 * parameters.decompose_length().get()
+            );
+        }
     }
+    assert!(matches!(
+        NlevParameters::try_with_ntru_params(
+            &ordinary,
+            DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(8),
+                level_count: Some(DecompositionLevelCount::new(2)),
+            },
+        ),
+        Err(NlevParameterError::InvalidBasis(_))
+    ));
     assert!(std::ptr::eq(
         ordinary.encryption_parameters(),
         ordinary.clone().encryption_parameters()

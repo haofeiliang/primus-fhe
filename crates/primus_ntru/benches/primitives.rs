@@ -4,7 +4,7 @@
 //! Functional u64 workloads: sparse ternary keys, sigma 3.2, maximum basis length.
 //! Setup is excluded; these parameters do not establish cryptographic security.
 
-use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_decompose::{DecompositionBaseLog, DecompositionConfig, DecompositionLevelCount};
 use primus_encoding::PlaintextEmbedding;
 use primus_poly::PolyLength;
 use std::{hint::black_box, time::Duration};
@@ -60,14 +60,18 @@ fn ntt(c: &mut Criterion, n: usize) {
     let mut auto_workspace = NttNtruAutomorphismWorkspace::new(poly_length);
     let output_parameters = NlevParameters::with_ntru_params(
         &parameters,
-        DecompositionBaseLog::new(8),
-        Some(DecompositionLevelCount::new(3)),
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(8),
+            level_count: Some(DecompositionLevelCount::new(3)),
+        },
     );
     for log_basis in [3, 10] {
         let parameters = NlevParameters::with_ntru_params(
             &parameters,
-            DecompositionBaseLog::new(log_basis),
-            None,
+            DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(log_basis),
+                level_count: None,
+            },
         );
         let ksk = NttNtruKeySwitchingKey::generate(
             &coeff_key,
@@ -263,14 +267,18 @@ fn fourier<Table: FftTable>(c: &mut Criterion, n: usize, backend: &str) {
     let mut auto_workspace = FourierNtruAutomorphismWorkspace::new(poly_length);
     let output_parameters = NlevParameters::with_ntru_params(
         &parameters,
-        DecompositionBaseLog::new(8),
-        Some(DecompositionLevelCount::new(3)),
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(8),
+            level_count: Some(DecompositionLevelCount::new(3)),
+        },
     );
     for log_basis in [3, 10] {
         let parameters = NlevParameters::with_ntru_params(
             &parameters,
-            DecompositionBaseLog::new(log_basis),
-            None,
+            DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(log_basis),
+                level_count: None,
+            },
         );
         let ksk = FourierNtruKeySwitchingKey::generate(
             &coeff_key,

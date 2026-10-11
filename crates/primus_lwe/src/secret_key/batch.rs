@@ -1,6 +1,7 @@
 //! Independent ciphertext batches; message adapters share these streaming kernels.
 
 use super::LweSecretKey;
+use crate::LweEncryptionParameters;
 use crate::batch::{batch_iter, batch_len, check_batch};
 use primus_distr::DiscreteGaussian;
 use primus_integer::FheUint;
@@ -16,9 +17,7 @@ impl<T: FheUint> LweSecretKey<T> {
     pub fn encrypt_encoded_batch<M, R>(
         &self,
         plaintexts: &[T],
-        modulus: M,
-        uniform: Uniform<T>,
-        noise: &DiscreteGaussian<T>,
+        params: &LweEncryptionParameters<T, M>,
         rng: &mut R,
     ) -> Vec<T>
     where
@@ -26,7 +25,7 @@ impl<T: FheUint> LweSecretKey<T> {
         R: rand::Rng + rand::CryptoRng,
     {
         let mut output = vec![T::ZERO; batch_len(self.dimension(), plaintexts.len())];
-        self.encrypt_encoded_batch_to(plaintexts, &mut output, modulus, uniform, noise, rng);
+        self.encrypt_encoded_batch_to(plaintexts, &mut output, params, rng);
         output
     }
 
@@ -39,35 +38,33 @@ impl<T: FheUint> LweSecretKey<T> {
     ///
     /// # Correctness
     ///
-    /// Every plaintext and key coefficient must be canonical under `modulus`.
-    /// Samplers must satisfy [`super::LweSecretKeyRef::encrypt_encoded_to`].
-    /// As for raw single-ciphertext operations, dimension zero is allowed.
+    /// The key must satisfy the [type's parameter contract](Self#correctness).
+    /// Every plaintext must be canonical under the parameter modulus.
     ///
     /// # Panics
     ///
     /// Modulus or output length mismatches, or length overflow, panic before writing
-    /// or sampling.
+    /// or sampling. Debug builds also check the parameter dimension.
     /// A panicking RNG can leave partial output.
     pub fn encrypt_encoded_batch_to<M, R>(
         &self,
         plaintexts: &[T],
         output: &mut [T],
-        modulus: M,
-        uniform: Uniform<T>,
-        noise: &DiscreteGaussian<T>,
+        params: &LweEncryptionParameters<T, M>,
         rng: &mut R,
     ) where
         M: RingContext<T>,
         R: rand::Rng + rand::CryptoRng,
     {
-        self.check_modulus(modulus);
+        self.check_modulus(params.cipher_modulus());
+        debug_assert_eq!(self.dimension(), params.dimension().get());
         check_batch(output, self.dimension(), plaintexts.len());
         self.encrypt_batch_iter_to(
             plaintexts.iter().copied(),
             output,
-            modulus,
-            uniform,
-            noise,
+            params.cipher_modulus(),
+            params.cipher_modulus_uniform_distr(),
+            params.noise_distribution(),
             rng,
         );
     }

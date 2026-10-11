@@ -99,7 +99,7 @@ The encryption noise sampler describes `e1` and `e2`, not the total noise. Param
 Independent batches contain `count` consecutive `[a,b]` samples of length `n+1`; the count is not limited by `n`. Borrow individual ciphertexts with `LweIter` / `LweIterMut`. These iterators omit incomplete tails, while LWE batch entry points reject them.
 
 - `encrypt_message_batch_to` requires exactly `messages.len()*(n+1)` output elements; `decrypt_message_batch_to` writes one message per ciphertext.
-- Encoded and phase operations use `encrypt_encoded_batch[_to]` and `decrypt_phase_batch[_to]`. Secret-key batches require an owned `LweSecretKey<T>`; Signed views support single-ciphertext raw operations only. Raw secret-key batches take the modulus and samplers, and allow dimension-zero keys.
+- Encoded and phase operations use `encrypt_encoded_batch[_to]` and `decrypt_phase_batch[_to]`. Secret-key batches require an owned `LweSecretKey<T>`; Signed views support single-ciphertext raw operations only. Encoded secret-key batches take `&LweEncryptionParameters`, as single-ciphertext encryption does; the key must match its nonzero dimension and modulus.
 - Empty independent batches consume no randomness. RNG ordering need not match individual encryptions, and fixed seeds do not guarantee identical ciphertext bytes across versions.
 - Batch entry points check complete lengths first; invalid messages or a panicking RNG can leave partial output and consume randomness.
 

@@ -1,4 +1,4 @@
-use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_decompose::{DecompositionBaseLog, DecompositionConfig, DecompositionLevelCount};
 use primus_fft::{FftEngine, FftTable, RustFftTable, TfheFftTable};
 use primus_glwe::{
     FourierGlweGadgetEncryptWorkspace, FourierGlweKeySwitchingWorkspace, FourierGlweSecretKey,
@@ -93,8 +93,10 @@ fn ntt_packing(log_basis: u32, levels: usize) {
     );
     let glev = GlevParameters::with_glwe_params(
         &params,
-        DecompositionBaseLog::new(log_basis),
-        Some(DecompositionLevelCount::new(levels)),
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(log_basis),
+            level_count: Some(DecompositionLevelCount::new(levels)),
+        },
     );
     let coeff = GlweSecretKey::<u64>::new(secret(), params.size(), SecretKeyDistr::UniformTernary);
     let sk = NttGlweSecretKey::from_coeff_secret_key(&coeff, &ntt);
@@ -171,8 +173,10 @@ fn fourier_packing<Table: FftTable>(log_basis: u32, levels: usize) {
     );
     let glev = GlevParameters::with_glwe_params(
         &params,
-        DecompositionBaseLog::new(log_basis),
-        Some(DecompositionLevelCount::new(levels)),
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(log_basis),
+            level_count: Some(DecompositionLevelCount::new(levels)),
+        },
     );
     let coeff = GlweSecretKey::<u64>::new(secret(), params.size(), SecretKeyDistr::UniformTernary);
     let sk = FourierGlweSecretKey::from_coeff_secret_key(&coeff, &mut fft);

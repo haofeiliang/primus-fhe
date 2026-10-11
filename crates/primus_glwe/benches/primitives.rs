@@ -8,7 +8,7 @@
 //! cargo bench -p primus_glwe --bench primitives --features ntt,rustfft,tfhe-fft
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
-use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_decompose::{DecompositionBaseLog, DecompositionConfig, DecompositionLevelCount};
 use primus_encoding::PlaintextEmbedding;
 use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_glwe::{
@@ -52,8 +52,10 @@ fn ntt_primitives(c: &mut Criterion) {
         );
         let glev = GlevParameters::with_glwe_params(
             &params,
-            DecompositionBaseLog::new(10),
-            Some(DecompositionLevelCount::new(3)),
+            DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(10),
+                level_count: Some(DecompositionLevelCount::new(3)),
+            },
         );
         let mut gadget = NttGlweGadgetEncryptWorkspace::new(glev.size());
         let key = NttGlweTraceKey::generate(&coeff, &sk, &glev, &table, &mut rng, &mut gadget);
@@ -203,8 +205,10 @@ fn fourier_primitives(c: &mut Criterion) {
         );
         let glev = GlevParameters::with_glwe_params(
             &params,
-            DecompositionBaseLog::new(10),
-            Some(DecompositionLevelCount::new(3)),
+            DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(10),
+                level_count: Some(DecompositionLevelCount::new(3)),
+            },
         );
         let mut gadget = FourierGlweGadgetEncryptWorkspace::new(glev.size());
         let key =
@@ -342,8 +346,10 @@ fn fourier_automorphism_backend<Table: FftTable>(c: &mut Criterion, backend: &st
         );
         let glev = GlevParameters::with_glwe_params(
             &params,
-            DecompositionBaseLog::new(10),
-            Some(DecompositionLevelCount::new(3)),
+            DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(10),
+                level_count: Some(DecompositionLevelCount::new(3)),
+            },
         );
         let mut gadget = FourierGlweGadgetEncryptWorkspace::new(glev.size());
         let key = FourierGlweAutomorphismKey::generate(

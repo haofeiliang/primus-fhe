@@ -1,6 +1,6 @@
 //! Original-secret phases after automorphism, including nonbinary Fourier keys.
 
-use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_decompose::{DecompositionBaseLog, DecompositionConfig, DecompositionLevelCount};
 use primus_encoding::PlaintextEmbedding;
 use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_glwe::{
@@ -52,8 +52,10 @@ fn ntt_and_coefficient_inputs_reuse_the_automorphism_key() {
     );
     let glev_parameters = GlevParameters::with_glwe_params(
         &glwe_parameters,
-        DecompositionBaseLog::new(10),
-        Some(DecompositionLevelCount::new(3)),
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(10),
+            level_count: Some(DecompositionLevelCount::new(3)),
+        },
     );
     let mut rng = StdRng::seed_from_u64(0x0043_4253_5052_494d);
     let (coefficient_secret, secret) = NttGlweSecretKey::generate_pair(
@@ -155,8 +157,10 @@ fn fourier_automorphism_input<Table: FftTable>() {
     );
     let glev = GlevParameters::with_glwe_params(
         &params,
-        DecompositionBaseLog::new(8),
-        Some(DecompositionLevelCount::new(7)),
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(8),
+            level_count: Some(DecompositionLevelCount::new(7)),
+        },
     );
     let s = secret();
     let coeff = GlweSecretKey::<u64>::new(s.clone(), size, SecretKeyDistr::UniformTernary);

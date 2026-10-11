@@ -3,7 +3,7 @@
 //! cargo bench -p primus_ntru --bench ternary_cmux --features ntt,rustfft,tfhe-fft
 //! SIMD comparison: cargo +nightly bench -p primus_ntru --bench ternary_cmux --features ntt,simd,rustfft,tfhe-fft
 
-use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_decompose::{DecompositionBaseLog, DecompositionConfig, DecompositionLevelCount};
 use primus_encoding::PlaintextEmbedding;
 use primus_poly::PolyLength;
 use std::{hint::black_box, time::Duration};
@@ -37,8 +37,10 @@ fn ntt<T: FheUint + PrimitiveRoot>(c: &mut Criterion, q: T, levels: usize) {
     );
     let gadget = NlevParameters::with_ntru_params(
         &params,
-        DecompositionBaseLog::new(8),
-        Some(DecompositionLevelCount::new(levels)),
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(8),
+            level_count: Some(DecompositionLevelCount::new(levels)),
+        },
     );
     let mut rng = StdRng::seed_from_u64(0xB702);
     let key = NttNtruSecretKey::generate(params.encryption_parameters(), &table, &mut rng).unwrap();
@@ -154,8 +156,10 @@ fn fourier<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str, 
     );
     let gadget = NlevParameters::with_ntru_params(
         &params,
-        DecompositionBaseLog::new(8),
-        Some(DecompositionLevelCount::new(levels)),
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(8),
+            level_count: Some(DecompositionLevelCount::new(levels)),
+        },
     );
     let mut rng = StdRng::seed_from_u64(0xB703);
     let (coeff, key) =

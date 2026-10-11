@@ -72,7 +72,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         );
         assert_eq!(
             input.as_ref().len(),
-            self.poly_length(),
+            self.poly_length().get(),
             "GLWE message length mismatch"
         );
         self.encrypt_message_kernel_to(

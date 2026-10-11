@@ -25,7 +25,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         R: rand::Rng + rand::CryptoRng,
     {
         let modulus = params.cipher_modulus();
-        let (masks, mut body) = output.a_b_mut(self.poly_length());
+        let (masks, mut body) = output.a_b_mut(self.poly_length().get());
         primus_distr::sample_gaussian_values_to(body.as_mut(), params.noise_distribution(), rng);
         add_message(body.as_mut());
 
@@ -78,7 +78,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
             modulus,
             ntt_table,
         );
-        let (masks, body) = input.a_b(self.poly_length());
+        let (masks, body) = input.a_b(self.poly_length().get());
         output.as_mut().fill(T::ZERO);
         let mut product = NttPolynomial::new(output.as_mut());
         for (secret, mask) in self.iter().zip(masks) {
@@ -101,7 +101,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
     {
-        let n = self.poly_length();
+        let n = self.poly_length().get();
         assert_eq!(polynomial_len, n, "GLWE polynomial length mismatch");
         assert_eq!(ciphertext_len, self.size.glwe_len(), "GLWE layout mismatch");
         assert_eq!(scratch_len, n, "GLWE coefficient scratch length mismatch");

@@ -1,6 +1,6 @@
 //! Automorphism under the original NTRU secret in NTT and Fourier representations.
 
-use primus_decompose::DecompositionBaseLog;
+use primus_decompose::{DecompositionBaseLog, DecompositionConfig};
 use primus_encoding::PlaintextEmbedding;
 use primus_poly::PolyLength;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -71,8 +71,10 @@ fn fourier_automorphism<Table: FftTable>() {
     for log_basis in [3, 10] {
         let gadget = NlevParameters::with_ntru_params(
             &parameters,
-            DecompositionBaseLog::new(log_basis),
-            None,
+            DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(log_basis),
+                level_count: None,
+            },
         );
         for degree in [1, 3, N + 1, 2 * N - 1] {
             let auto = FourierNtruAutomorphismKey::generate(
@@ -130,7 +132,13 @@ fn fourier_automorphism_rejects_incompatible_resources_before_writes() {
         SecretKeyDistr::SparseTernary,
         0.7,
     );
-    let gadget = NlevParameters::with_ntru_params(&parameters, DecompositionBaseLog::new(3), None);
+    let gadget = NlevParameters::with_ntru_params(
+        &parameters,
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(3),
+            level_count: None,
+        },
+    );
     let mut rng = StdRng::seed_from_u64(0x6175_746f_4642_4e44);
     let (secret, key) =
         FourierNtruSecretKey::generate_pair(parameters.encryption_parameters(), &mut fft, &mut rng)
@@ -238,8 +246,10 @@ fn ntt_automorphism_preserves_the_original_nonbinary_secret() {
     for log_basis in [3, 10] {
         let gadget = NlevParameters::with_ntru_params(
             &parameters,
-            DecompositionBaseLog::new(log_basis),
-            None,
+            DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(log_basis),
+                level_count: None,
+            },
         );
         for degree in [1, 3, N + 1, 2 * N - 1] {
             let auto = NttNtruAutomorphismKey::generate(
@@ -291,7 +301,13 @@ fn ntt_automorphism_rejects_incompatible_resources_before_writes() {
         SecretKeyDistr::SparseTernary,
         0.7,
     );
-    let gadget = NlevParameters::with_ntru_params(&parameters, DecompositionBaseLog::new(3), None);
+    let gadget = NlevParameters::with_ntru_params(
+        &parameters,
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(3),
+            level_count: None,
+        },
+    );
     let mut rng = StdRng::seed_from_u64(0x6175_746f_626f_756e);
     let (secret, key) =
         NttNtruSecretKey::generate_pair(parameters.encryption_parameters(), &table, &mut rng)

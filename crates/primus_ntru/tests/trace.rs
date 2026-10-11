@@ -1,4 +1,4 @@
-use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_decompose::{DecompositionBaseLog, DecompositionConfig, DecompositionLevelCount};
 use primus_poly::PolyLength;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
@@ -173,7 +173,13 @@ fn ntt_trace_projection_and_expansion_match_ring_phases() {
         SecretKeyDistr::SparseTernary,
         0.7,
     );
-    let gadget = NlevParameters::with_ntru_params(&parameters, DecompositionBaseLog::new(10), None);
+    let gadget = NlevParameters::with_ntru_params(
+        &parameters,
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(10),
+            level_count: None,
+        },
+    );
     let secret = secret();
     let key = NttNtruSecretKey::try_from_coeff_secret_key(&secret, modulus, &table).unwrap();
     let mut rng = StdRng::seed_from_u64(0x4e54_545f_5452_4143);
@@ -300,8 +306,10 @@ fn fourier_trace<Table: FftTable>() {
     );
     let gadget = NlevParameters::with_ntru_params(
         &parameters,
-        DecompositionBaseLog::new(8),
-        Some(DecompositionLevelCount::new(7)),
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(8),
+            level_count: Some(DecompositionLevelCount::new(7)),
+        },
     );
     let secret = secret();
     let key = FourierNtruSecretKey::try_from_coeff_secret_key(&secret, &mut fft).unwrap();
@@ -446,7 +454,13 @@ fn reverse_trace_preserves_the_distinct_modular_and_native_halving_paths() {
         SecretKeyDistr::UniformBinary,
         0.7,
     );
-    let params = NlevParameters::with_ntru_params(&params, DecompositionBaseLog::new(3), None);
+    let params = NlevParameters::with_ntru_params(
+        &params,
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(3),
+            level_count: None,
+        },
+    );
     let key = NttNtruSecretKey::try_from_coeff_secret_key(&secret, modulus, &table).unwrap();
     let trace = NttNtruTraceKey::generate(
         &secret,
@@ -484,7 +498,13 @@ fn reverse_trace_preserves_the_distinct_modular_and_native_halving_paths() {
         SecretKeyDistr::UniformBinary,
         0.7,
     );
-    let params = NlevParameters::with_ntru_params(&params, DecompositionBaseLog::new(8), None);
+    let params = NlevParameters::with_ntru_params(
+        &params,
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(8),
+            level_count: None,
+        },
+    );
     let key = FourierNtruSecretKey::try_from_coeff_secret_key(&secret, &mut fft).unwrap();
     let trace = FourierNtruTraceKey::generate(
         &secret,
@@ -538,7 +558,13 @@ fn ntt_trace_generation_rejects_incompatible_resources_before_sampling() {
     let other_key =
         NttNtruSecretKey::try_from_coeff_secret_key(&secret, other_modulus, &other_table).unwrap();
     let parameters = NtruParameters::new(length, 4, modulus, SecretKeyDistr::SparseTernary, 0.7);
-    let gadget = NlevParameters::with_ntru_params(&parameters, DecompositionBaseLog::new(10), None);
+    let gadget = NlevParameters::with_ntru_params(
+        &parameters,
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(10),
+            level_count: None,
+        },
+    );
 
     for (secret, key, table, workspace_length) in [
         (&wrong_secret, &key, &table, length),
@@ -571,7 +597,13 @@ fn fourier_trace_generation_rejects_incompatible_resources_before_sampling() {
         SecretKeyDistr::SparseTernary,
         0.7,
     );
-    let gadget = NlevParameters::with_ntru_params(&parameters, DecompositionBaseLog::new(10), None);
+    let gadget = NlevParameters::with_ntru_params(
+        &parameters,
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(10),
+            level_count: None,
+        },
+    );
 
     for (secret, table, workspace_length) in [
         (&wrong_secret, &table, length),

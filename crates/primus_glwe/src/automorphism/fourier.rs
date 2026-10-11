@@ -236,7 +236,7 @@ impl<T: TorusFftValue> FourierGlweAutomorphismKey<T> {
         fft: &mut FftEngine<'_, Table>,
         workspace: &mut FourierGlweAutomorphismWorkspace<T>,
     ) {
-        let n = self.key_switching.poly_length();
+        let n = self.key_switching.poly_length().get();
         for (input, mut output) in input
             .iter_poly(n)
             .zip(workspace.transformed.iter_poly_mut(n))

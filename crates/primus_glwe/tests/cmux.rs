@@ -1,6 +1,6 @@
 //! Encrypted CMux controls checked against selected messages and signed phase rotations.
 
-use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_decompose::{DecompositionBaseLog, DecompositionConfig, DecompositionLevelCount};
 use primus_encoding::PlaintextEmbedding;
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable};
 use primus_glwe::{
@@ -45,7 +45,13 @@ fn fourier_cmux_selects_requested_glwe() {
         SecretKeyDistr::UniformBinary,
         0.7,
     );
-    let params = GlevParameters::with_glwe_params(&glwe_params, DecompositionBaseLog::new(8), None);
+    let params = GlevParameters::with_glwe_params(
+        &glwe_params,
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(8),
+            level_count: None,
+        },
+    );
     let (_, secret_key) = FourierGlweSecretKey::generate_pair(
         glwe_params.size(),
         glwe_params.encryption_parameters(),
@@ -141,7 +147,13 @@ fn ntt_cmux_selects_requested_glwe() {
         SecretKeyDistr::SparseTernary,
         0.7,
     );
-    let params = GlevParameters::with_glwe_params(&glwe_params, DecompositionBaseLog::new(8), None);
+    let params = GlevParameters::with_glwe_params(
+        &glwe_params,
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(8),
+            level_count: None,
+        },
+    );
     let (_, secret_key) = NttGlweSecretKey::generate_pair(
         glwe_params.size(),
         glwe_params.encryption_parameters(),
@@ -234,8 +246,10 @@ fn ntt_ternary_cmux_rotates_phase_with_encrypted_controls() {
     );
     let params = GlevParameters::with_glwe_params(
         &glwe,
-        DecompositionBaseLog::new(8),
-        Some(DecompositionLevelCount::new(3)),
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(8),
+            level_count: Some(DecompositionLevelCount::new(3)),
+        },
     );
     let secret = secret();
     let coeff_key = GlweSecretKey::new(secret.clone(), glwe.size(), glwe.secret_key_distr());
@@ -318,8 +332,10 @@ fn check_fourier_ternary_cmux<Table: FftTable>() {
     );
     let params = GlevParameters::with_glwe_params(
         &glwe,
-        DecompositionBaseLog::new(8),
-        Some(DecompositionLevelCount::new(3)),
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(8),
+            level_count: Some(DecompositionLevelCount::new(3)),
+        },
     );
     let secret = secret();
     let coeff_key = GlweSecretKey::<u64>::new(secret.clone(), glwe.size(), glwe.secret_key_distr());

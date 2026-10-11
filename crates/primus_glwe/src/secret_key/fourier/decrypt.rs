@@ -32,7 +32,7 @@ impl FourierGlweSecretKey {
         T: TorusFftValue,
     {
         assert_eq!(
-            fft.poly_length().get(),
+            fft.poly_length(),
             self.poly_length(),
             "FFT polynomial length mismatch"
         );

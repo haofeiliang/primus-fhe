@@ -1,6 +1,6 @@
 //! Observe sensitive allocations before deallocation, without reading freed memory.
 
-use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_decompose::{DecompositionBaseLog, DecompositionConfig, DecompositionLevelCount};
 use primus_encoding::PlaintextEmbedding;
 use primus_poly::PolyLength;
 use std::{
@@ -159,13 +159,17 @@ fn secret_buffers_are_reused_and_erased() {
         NtruParameters::new(PolyLength::new(N), 4, NativeModulus::new(), distr, 0.7);
     let ntt_gadget = NlevParameters::with_ntru_params(
         &ntt_params,
-        DecompositionBaseLog::new(4),
-        Some(DecompositionLevelCount::new(3)),
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(4),
+            level_count: Some(DecompositionLevelCount::new(3)),
+        },
     );
     let fourier_gadget = NlevParameters::with_ntru_params(
         &fourier_params,
-        DecompositionBaseLog::new(4),
-        Some(DecompositionLevelCount::new(3)),
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(4),
+            level_count: Some(DecompositionLevelCount::new(3)),
+        },
     );
     let mut rng = StdRng::seed_from_u64(42);
     let message = Polynomial::new(vec![1u32; N]);

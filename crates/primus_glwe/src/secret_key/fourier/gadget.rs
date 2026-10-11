@@ -39,7 +39,7 @@ impl FourierGlweSecretKey {
         self.assert_gadget_compatible(params, fft);
         assert_eq!(
             input.as_ref().len(),
-            self.poly_length(),
+            self.poly_length().get(),
             "gadget input length mismatch"
         );
         assert_eq!(
@@ -122,7 +122,7 @@ impl FourierGlweSecretKey {
         self.assert_gadget_compatible(params, fft);
         assert_eq!(
             input.as_ref().len(),
-            self.poly_length(),
+            self.poly_length().get(),
             "gadget input length mismatch"
         );
         assert_eq!(
@@ -224,7 +224,7 @@ impl FourierGlweSecretKey {
             "GLWE parameter layout mismatch"
         );
         assert_eq!(
-            fft.poly_length().get(),
+            fft.poly_length(),
             self.poly_length(),
             "FFT polynomial length mismatch"
         );

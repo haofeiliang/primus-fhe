@@ -6,7 +6,7 @@
 //! cargo bench -p primus_ntru --bench constant_gadget --features ntt,rustfft
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
-use primus_decompose::DecompositionBaseLog;
+use primus_decompose::{DecompositionBaseLog, DecompositionConfig};
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{
@@ -36,8 +36,10 @@ fn ntt(c: &mut Criterion) {
         for log_basis in [3, 10] {
             let gadget = NlevParameters::with_ntru_params(
                 &params,
-                DecompositionBaseLog::new(log_basis),
-                None,
+                DecompositionConfig {
+                    log_basis: DecompositionBaseLog::new(log_basis),
+                    level_count: None,
+                },
             );
             let mut nlev = NttNlevCiphertext::<Vec<u64>>::zero(gadget.nlev_len());
             let mut batch = vec![0; CONSTANTS.len() * gadget.nlev_len()];
@@ -94,8 +96,10 @@ fn fourier(c: &mut Criterion) {
         for log_basis in [3, 10] {
             let gadget = NlevParameters::with_ntru_params(
                 &params,
-                DecompositionBaseLog::new(log_basis),
-                None,
+                DecompositionConfig {
+                    log_basis: DecompositionBaseLog::new(log_basis),
+                    level_count: None,
+                },
             );
             let mut nlev = FourierNlevCiphertext::<Vec<Complex64>>::zero(gadget.fourier_nlev_len());
             let mut batch = vec![Complex64::default(); CONSTANTS.len() * gadget.fourier_nlev_len()];

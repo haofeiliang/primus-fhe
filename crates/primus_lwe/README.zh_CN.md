@@ -99,7 +99,7 @@ phase = Encode(message) + e^T r + e2 - e1^T s  (mod q)
 独立 batch 连续存放 `count` 条 `[a,b]`，每条长 `n+1`，条数不受 `n` 限制。用 `LweIter` / `LweIterMut` 借用单条密文；迭代器会忽略不完整尾部，而 LWE batch 入口会拒绝这种输入。
 
 - `encrypt_message_batch_to` 的输出恰好包含 `messages.len()*(n+1)` 个元素；`decrypt_message_batch_to` 每条密文写出一个消息。
-- 已编码与相位接口为 `encrypt_encoded_batch[_to]`、`decrypt_phase_batch[_to]`。私钥 batch 要求拥有型 `LweSecretKey<T>`；Signed 视图只支持单条 raw 操作。Raw 私钥 batch 接收模数和采样器，允许零维密钥。
+- 已编码与相位接口为 `encrypt_encoded_batch[_to]`、`decrypt_phase_batch[_to]`。私钥 batch 要求拥有型 `LweSecretKey<T>`；Signed 视图只支持单条 raw 操作。私钥已编码 batch 与单条加密一样接收 `&LweEncryptionParameters`；密钥必须匹配其非零维数和模数。
 - 空的独立 batch 不消耗随机数。RNG 顺序不保证与逐条加密一致，固定 seed 也不保证跨版本密文字节相同。
 - Batch 入口先检查完整长度；非法消息或 RNG panic 可能留下部分输出并消耗随机数。
 

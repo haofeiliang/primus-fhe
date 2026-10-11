@@ -62,7 +62,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
             for (scalar, transformed) in params.basis().scalar_iter().zip(
                 workspace
                     .level_transforms
-                    .chunks_exact_mut(self.poly_length()),
+                    .chunks_exact_mut(self.poly_length().get()),
             ) {
                 transformed.fill(modulus.reduce_mul(constant, scalar));
             }
@@ -122,7 +122,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
             "coefficient GGSW batch output layout mismatch"
         );
 
-        let n = self.poly_length();
+        let n = self.poly_length().get();
         let modulus = params.cipher_modulus();
         for (&constant, block) in input.iter().zip(output.chunks_exact_mut(ggsw_len)) {
             for (row, mut glev) in Ggsw::new(block)

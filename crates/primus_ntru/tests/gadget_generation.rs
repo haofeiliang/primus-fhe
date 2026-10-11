@@ -1,6 +1,6 @@
 //! NLev/NGSW gadget encryption checked through row phases and encrypted selection.
 
-use primus_decompose::DecompositionBaseLog;
+use primus_decompose::{DecompositionBaseLog, DecompositionConfig};
 use primus_encoding::PlaintextEmbedding;
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable};
 use primus_lattice::{
@@ -86,8 +86,13 @@ fn ntt_nlev_generation_and_ngsw_cmux() {
         SecretKeyDistr::SparseTernary,
         0.7,
     );
-    let gadget_params =
-        NlevParameters::with_ntru_params(&params, DecompositionBaseLog::new(9), None);
+    let gadget_params = NlevParameters::with_ntru_params(
+        &params,
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(9),
+            level_count: None,
+        },
+    );
     let basis = gadget_params.basis();
     let mut rng = StdRng::seed_from_u64(42);
     let secret_key =
@@ -232,8 +237,13 @@ fn fourier_nlev_generation_and_ngsw_cmux() {
         SecretKeyDistr::SparseTernary,
         0.7,
     );
-    let gadget_params =
-        NlevParameters::with_ntru_params(&params, DecompositionBaseLog::new(8), None);
+    let gadget_params = NlevParameters::with_ntru_params(
+        &params,
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(8),
+            level_count: None,
+        },
+    );
     let basis = gadget_params.basis();
     let mut rng = StdRng::seed_from_u64(42);
     let secret_key =

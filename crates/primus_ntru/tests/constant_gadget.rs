@@ -1,6 +1,6 @@
 //! Constant and signed gadget batches compared with polynomial encryption and RNG order.
 
-use primus_decompose::{DecompositionBaseLog, primitive::ApproxSignedBasis};
+use primus_decompose::{DecompositionBaseLog, DecompositionConfig, primitive::ApproxSignedBasis};
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{
@@ -182,7 +182,13 @@ fn signed_ngsw_batches_match_polynomial_encryption() {
         SecretKeyDistr::SparseTernary,
         0.7,
     );
-    let gadget = NlevParameters::with_ntru_params(&params, DecompositionBaseLog::new(9), None);
+    let gadget = NlevParameters::with_ntru_params(
+        &params,
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(9),
+            level_count: None,
+        },
+    );
     let mut rng = StdRng::seed_from_u64(79);
     let key = NttNtruSecretKey::generate(params.encryption_parameters(), &ntt, &mut rng).unwrap();
     let mut workspace = NttNtruGadgetEncryptWorkspace::new(PolyLength::new(POLY_LENGTH));
@@ -260,7 +266,13 @@ fn check_fourier_ngsw_batch<Table: FftTable>() {
         SecretKeyDistr::SparseTernary,
         0.7,
     );
-    let gadget = NlevParameters::with_ntru_params(&params, DecompositionBaseLog::new(8), None);
+    let gadget = NlevParameters::with_ntru_params(
+        &params,
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(8),
+            level_count: None,
+        },
+    );
     let mut rng = StdRng::seed_from_u64(79);
     let key =
         FourierNtruSecretKey::generate(params.encryption_parameters(), &mut fft, &mut rng).unwrap();

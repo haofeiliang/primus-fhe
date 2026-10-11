@@ -10,7 +10,7 @@ use primus_lattice::{
     glwe::{Glwe, NttGlwe},
 };
 use primus_ntt::NttTable;
-use primus_poly::{NttPolynomial, Polynomial};
+use primus_poly::{NttPolynomial, PolyLength, Polynomial};
 use primus_reduce::FieldContext;
 use zeroize::Zeroizing;
 
@@ -140,9 +140,10 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
     }
 
     /// Returns the polynomial length.
+    #[must_use]
     #[inline]
-    pub fn poly_length(&self) -> usize {
-        self.input_size.poly_length().get()
+    pub fn poly_length(&self) -> PolyLength {
+        self.input_size.poly_length()
     }
 
     /// Returns the input layout bound to this key.
@@ -303,7 +304,7 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
         Table: NttTable<ValueT = T>,
     {
         assert_eq!(
-            ntt.poly_length().get(),
+            ntt.poly_length(),
             self.poly_length(),
             "key-switch NTT polynomial length mismatch"
         );

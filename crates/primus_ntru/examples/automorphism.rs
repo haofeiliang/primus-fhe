@@ -3,7 +3,7 @@
 //! These are functional example parameters, not a security recommendation.
 //! Run: `cargo run --release -p primus_ntru --example automorphism --features ntt`.
 
-use primus_decompose::DecompositionBaseLog;
+use primus_decompose::{DecompositionBaseLog, DecompositionConfig};
 use primus_encoding::PlaintextEmbedding;
 use primus_modulus::BarrettModulus;
 use primus_ntru::{
@@ -25,8 +25,13 @@ fn main() {
     let (coeff_secret, secret) =
         NttNtruSecretKey::generate_pair(parameters.encryption_parameters(), &table, &mut rng)
             .unwrap();
-    let key_parameters =
-        NlevParameters::with_ntru_params(&parameters, DecompositionBaseLog::new(3), None);
+    let key_parameters = NlevParameters::with_ntru_params(
+        &parameters,
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(3),
+            level_count: None,
+        },
+    );
     let auto = NttNtruAutomorphismKey::generate(
         3,
         &coeff_secret,

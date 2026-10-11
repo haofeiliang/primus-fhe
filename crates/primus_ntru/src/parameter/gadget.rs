@@ -2,7 +2,7 @@
 
 use super::{NlevParameterError, NtruEncryptionParameters, NtruParameters};
 use primus_decompose::{
-    DecompositionBaseLog, DecompositionLevelCount, primitive::ApproxSignedBasis,
+    DecompositionConfig, DecompositionLevelCount, primitive::ApproxSignedBasis,
 };
 use primus_integer::FheUint;
 use primus_poly::PolyLength;
@@ -96,9 +96,8 @@ where
 
     /// Creates NLev/NGSW parameters from matching NTRU parameters.
     ///
-    /// `log_basis` is the base-2 logarithm of the gadget basis.
-    /// `level_count`, when present, selects the retained decomposition
-    /// level count.
+    /// Shares the ordinary parameters' sampler tables; only the new decomposition
+    /// and gadget layout are validated. No plaintext codec is retained.
     ///
     /// # Panics
     ///
@@ -108,22 +107,22 @@ where
     #[inline]
     pub fn with_ntru_params(
         ntru: &NtruParameters<T, M>,
-        log_basis: DecompositionBaseLog,
-        level_count: Option<DecompositionLevelCount>,
+        decomposition: DecompositionConfig,
     ) -> Self {
-        Self::try_with_ntru_params(ntru, log_basis, level_count)
+        Self::try_with_ntru_params(ntru, decomposition)
             .unwrap_or_else(|error| panic!("failed to construct NLev parameters: {error}"))
     }
 
     /// Tries to create NLev/NGSW parameters and their decomposition basis in
     /// the modulus domain of `ntru`.
+    ///
+    /// # Errors
+    /// Rejects invalid decomposition parameters or an overflowing N*L layout.
     pub fn try_with_ntru_params(
         ntru: &NtruParameters<T, M>,
-        log_basis: DecompositionBaseLog,
-        level_count: Option<DecompositionLevelCount>,
+        decomposition: DecompositionConfig,
     ) -> Result<Self, NlevParameterError> {
-        let basis =
-            ApproxSignedBasis::try_new(ntru.cipher_modulus_value(), log_basis, level_count)?;
+        let basis = ApproxSignedBasis::try_from((decomposition, ntru.cipher_modulus_value()))?;
         Self::try_from_matching_parts(Arc::clone(&ntru.encryption_parameters), basis)
     }
 

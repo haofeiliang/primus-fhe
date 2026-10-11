@@ -146,9 +146,7 @@ fn check_batches<T: FheUint, M: RingContext<T>>(modulus: M, dimension: usize) {
                 } else {
                     secret.encrypt_encoded_batch(
                         &encoded,
-                        modulus,
-                        params.cipher_modulus_uniform_distr(),
-                        params.noise_distribution(),
+                        params.encryption_parameters(),
                         &mut raw_rng,
                     )
                 };
@@ -190,39 +188,6 @@ fn batches_decrypt_across_moduli_embeddings_and_tail_sizes() {
     // A longer non-power-of-two mask exercises multiple vector blocks and a tail.
     check_batches(NativeModulus::<u32>::new(), 65);
     check_batches(BarrettModulus::new(132_120_577u32), 65);
-}
-
-#[test]
-fn raw_secret_batch_accepts_zero_dimension() {
-    use rand::distr::Distribution;
-    let modulus = BarrettModulus::new(97u32);
-    let key = LweSecretKey::new(vec![], SecretKeyDistr::UniformTernary, modulus);
-    // Message-level parameters disallow dimension zero; raw APIs permit it.
-    let params = LweParameters::new(
-        LweDimension::new(1),
-        4,
-        modulus,
-        SecretKeyDistr::UniformTernary,
-        0.7,
-    );
-    let plaintexts = [0, 96];
-    let mut rng = StdRng::seed_from_u64(0x1_ee23);
-    let mut oracle_rng = StdRng::seed_from_u64(0x1_ee23);
-    let batch = key.encrypt_encoded_batch(
-        &plaintexts,
-        modulus,
-        params.cipher_modulus_uniform_distr(),
-        params.noise_distribution(),
-        &mut rng,
-    );
-    let expected: Vec<u32> = plaintexts
-        .iter()
-        .map(|&plaintext| (plaintext + params.noise_distribution().sample(&mut oracle_rng)) % 97)
-        .collect();
-    // Without a mask each stored coefficient is already its own phase.
-    assert_eq!(batch, expected);
-    assert_eq!(key.decrypt_phase_batch(&batch, modulus), expected);
-    assert_eq!(rng.next_u64(), oracle_rng.next_u64());
 }
 
 #[test]
@@ -272,6 +237,19 @@ fn batch_boundaries_validate_layout_and_reject_invalid_messages() {
                 }))
                 .is_err()
             );
+            if !use_public {
+                assert!(
+                    catch_unwind(AssertUnwindSafe(|| {
+                        secret.encrypt_encoded_batch_to(
+                            &[0u32, 1],
+                            &mut storage,
+                            params.encryption_parameters(),
+                            &mut rng,
+                        );
+                    }))
+                    .is_err()
+                );
+            }
             assert!(storage.iter().all(|&c| c == 11));
             assert_eq!(rng.next_u64(), expected.next_u64());
         }

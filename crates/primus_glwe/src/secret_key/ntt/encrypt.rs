@@ -38,7 +38,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         self.assert_encrypt_compatible(output.as_ref().len(), params, ntt_table);
         assert_eq!(
             input.as_ref().len(),
-            self.poly_length(),
+            self.poly_length().get(),
             "GLWE message length mismatch"
         );
         self.encrypt_encoded_kernel_to(

@@ -1,6 +1,6 @@
 //! GLev-to-GGSW conversion checked through gadget phases and external products.
 
-use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_decompose::{DecompositionBaseLog, DecompositionConfig, DecompositionLevelCount};
 use primus_encoding::PlaintextEmbedding;
 use primus_glwe::{
     GlevParameters, GlweParameters, GlweSecretKey, NttGlweGadgetEncryptWorkspace,
@@ -40,13 +40,17 @@ fn ntt_scheme_switch_produces_an_external_product_control() {
     );
     let output_parameters = GlevParameters::with_glwe_params(
         &glwe_parameters,
-        DecompositionBaseLog::new(10),
-        Some(DecompositionLevelCount::new(2)),
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(10),
+            level_count: Some(DecompositionLevelCount::new(2)),
+        },
     );
     let scheme_parameters = GlevParameters::with_glwe_params(
         &glwe_parameters,
-        DecompositionBaseLog::new(10),
-        Some(DecompositionLevelCount::new(3)),
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(10),
+            level_count: Some(DecompositionLevelCount::new(3)),
+        },
     );
     let mut rng = StdRng::seed_from_u64(0x0043_4253_5052_494d);
     let (coefficient_secret, secret) = NttGlweSecretKey::generate_pair(
@@ -171,13 +175,17 @@ fn fourier_scheme_switch<Table: primus_fft::FftTable>() {
     // The output's gadget basis is independent of the scheme-switch key's basis.
     let output_params = GlevParameters::with_glwe_params(
         &params,
-        DecompositionBaseLog::new(8),
-        Some(DecompositionLevelCount::new(3)),
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(8),
+            level_count: Some(DecompositionLevelCount::new(3)),
+        },
     );
     let key_params = GlevParameters::with_glwe_params(
         &params,
-        DecompositionBaseLog::new(10),
-        Some(DecompositionLevelCount::new(4)),
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(10),
+            level_count: Some(DecompositionLevelCount::new(4)),
+        },
     );
     let coeff = GlweSecretKey::<u64>::new(secret(), params.size(), SecretKeyDistr::UniformTernary);
     let sk = FourierGlweSecretKey::from_coeff_secret_key(&coeff, &mut fft);

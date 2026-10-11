@@ -10,7 +10,7 @@
 //! cargo bench -p primus_glwe --bench encryption --features ntt,rustfft -- encrypt_ggsw_to
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_decompose::{DecompositionBaseLog, DecompositionConfig, DecompositionLevelCount};
 use primus_encoding::PlaintextEmbedding;
 use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_glwe::{
@@ -68,8 +68,10 @@ fn ntt_encryption(c: &mut Criterion) {
         let decrypt_input = ciphertext.clone();
         let gadget = GlevParameters::with_glwe_params(
             &params,
-            DecompositionBaseLog::new(LOG_BASE),
-            Some(DecompositionLevelCount::new(LEVELS)),
+            DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(LOG_BASE),
+                level_count: Some(DecompositionLevelCount::new(LEVELS)),
+            },
         );
         let mut gadget_workspace = NttGlweGadgetEncryptWorkspace::new(gadget.size());
         let mut glev = NttGlevCiphertext::<Vec<u64>>::zero(gadget.glev_len());
@@ -256,8 +258,10 @@ fn fourier_encryption(c: &mut Criterion) {
         let decrypt_input = ciphertext.clone();
         let gadget = GlevParameters::with_glwe_params(
             &params,
-            DecompositionBaseLog::new(LOG_BASE),
-            Some(DecompositionLevelCount::new(LEVELS)),
+            DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(LOG_BASE),
+                level_count: Some(DecompositionLevelCount::new(LEVELS)),
+            },
         );
         let mut gadget_workspace = FourierGlweGadgetEncryptWorkspace::new(gadget.size());
         let mut glev = FourierGlevCiphertext::<Vec<_>>::zero(gadget.fourier_glev_len());

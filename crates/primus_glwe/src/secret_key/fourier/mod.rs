@@ -5,7 +5,7 @@ use primus_integer::SignedInteger;
 use primus_lattice::GlweDimension;
 use primus_lattice::GlweSize;
 use primus_modulus::NativeModulus;
-use primus_poly::FourierPolynomialIter;
+use primus_poly::{FourierPolynomialIter, PolyLength};
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use crate::{GlweEncryptionParameters, SecretKeyDistr};
@@ -89,8 +89,8 @@ impl FourierGlweSecretKey {
     /// Returns the coefficient polynomial length.
     #[inline]
     #[must_use]
-    pub fn poly_length(&self) -> usize {
-        self.size.poly_length().get()
+    pub fn poly_length(&self) -> PolyLength {
+        self.size.poly_length()
     }
 
     /// Returns the GLWE dimension.

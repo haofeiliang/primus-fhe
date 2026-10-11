@@ -12,7 +12,7 @@ use primus_lattice::{
     glwe::{FourierGlwe, Glwe},
 };
 use primus_modulus::NativeModulus;
-use primus_poly::{FourierPolynomial, Polynomial};
+use primus_poly::{FourierPolynomial, PolyLength, Polynomial};
 use primus_reduce::ReduceAddSlice;
 use zeroize::Zeroizing;
 
@@ -147,9 +147,10 @@ impl<T: TorusFftValue> FourierGlweKeySwitchingKey<T> {
     }
 
     /// Returns the polynomial length.
+    #[must_use]
     #[inline]
-    pub fn poly_length(&self) -> usize {
-        self.input_size.poly_length().get()
+    pub fn poly_length(&self) -> PolyLength {
+        self.input_size.poly_length()
     }
 
     /// Returns the output gadget layout bound to this key.
@@ -239,7 +240,7 @@ impl<T: TorusFftValue> FourierGlweKeySwitchingKey<T> {
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        let poly_length = self.poly_length();
+        let poly_length = self.poly_length().get();
         let (input_mask, input_body) = input.a_b_slices(poly_length);
         self.accumulate_mask_kernel(input_mask, fft, workspace);
 
@@ -287,7 +288,7 @@ impl<T: TorusFftValue> FourierGlweKeySwitchingKey<T> {
         fft: &mut FftEngine<'_, Table>,
         workspace: &mut FourierGlweKeySwitchingWorkspace<T>,
     ) {
-        let poly_length = self.poly_length();
+        let poly_length = self.poly_length().get();
         let basis = &self.basis;
         let fourier_glwe_len = self.output_size.glwe_size().fourier_glwe_len();
         workspace.accumulator.set_zero();

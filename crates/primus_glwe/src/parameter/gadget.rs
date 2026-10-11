@@ -1,8 +1,7 @@
 //! GLev/GGSW layouts and signed-decomposition basis.
 
 use primus_decompose::{
-    DecompositionBaseLog, DecompositionConfig, DecompositionLevelCount,
-    primitive::ApproxSignedBasis,
+    DecompositionConfig, DecompositionLevelCount, primitive::ApproxSignedBasis,
 };
 use primus_distr::DiscreteGaussian;
 use primus_integer::FheUint;
@@ -164,10 +163,9 @@ where
     #[inline]
     pub fn with_glwe_params(
         glwe_params: &GlweParameters<T, M>,
-        log_basis: DecompositionBaseLog,
-        level_count: Option<DecompositionLevelCount>,
+        decomposition: DecompositionConfig,
     ) -> Self {
-        Self::try_with_glwe_params(glwe_params, log_basis, level_count)
+        Self::try_with_glwe_params(glwe_params, decomposition)
             .unwrap_or_else(|message| panic!("failed to construct GLev parameters: {message}"))
     }
 
@@ -182,11 +180,10 @@ where
     #[inline]
     pub fn try_with_glwe_params(
         glwe_params: &GlweParameters<T, M>,
-        log_basis: DecompositionBaseLog,
-        level_count: Option<DecompositionLevelCount>,
+        decomposition: DecompositionConfig,
     ) -> Result<Self, GlevParameterError> {
         let basis =
-            ApproxSignedBasis::try_new(glwe_params.cipher_modulus_value(), log_basis, level_count)?;
+            ApproxSignedBasis::try_from((decomposition, glwe_params.cipher_modulus_value()))?;
         Self::try_from_matching_parts(
             glwe_params.size(),
             Arc::clone(&glwe_params.encryption_parameters),

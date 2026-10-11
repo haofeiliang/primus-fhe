@@ -1,5 +1,5 @@
 use num_traits::{ConstOne, ConstZero};
-use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_decompose::{DecompositionBaseLog, DecompositionConfig, DecompositionLevelCount};
 use primus_encoding::PlaintextEmbedding;
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable, TorusFftValue};
 use primus_integer::SignedInteger;
@@ -67,8 +67,10 @@ fn encrypted_ternary_step_matches_phase_oracle_and_two_binary_cmuxes() {
     );
     let gadget = NlevParameters::with_ntru_params(
         &params,
-        DecompositionBaseLog::new(8),
-        Some(DecompositionLevelCount::new(6)),
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(8),
+            level_count: Some(DecompositionLevelCount::new(6)),
+        },
     );
     let basis = gadget.basis();
     let mut rng = StdRng::seed_from_u64(0xB702);
@@ -212,8 +214,10 @@ fn check_fourier_step<T: TorusFftValue, Table: FftTable>() {
     );
     let gadget = NlevParameters::with_ntru_params(
         &params,
-        DecompositionBaseLog::new(8),
-        Some(DecompositionLevelCount::new((T::BITS / 8 - 1) as usize)),
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(8),
+            level_count: Some(DecompositionLevelCount::new((T::BITS / 8 - 1) as usize)),
+        },
     );
     let basis = gadget.basis();
     let mut rng = StdRng::seed_from_u64(0xB703);

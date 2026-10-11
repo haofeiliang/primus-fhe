@@ -34,7 +34,7 @@ impl FourierGlweSecretKey {
         self.assert_encrypt_compatible(output.as_ref().len(), fft, workspace);
         assert_eq!(
             input.as_ref().len(),
-            self.poly_length(),
+            self.poly_length().get(),
             "GLWE message length mismatch"
         );
         self.encrypt_encoded_kernel_to(
@@ -150,7 +150,7 @@ impl FourierGlweSecretKey {
         T: TorusFftValue,
     {
         assert_eq!(
-            fft.poly_length().get(),
+            fft.poly_length(),
             self.poly_length(),
             "FFT polynomial length mismatch"
         );
@@ -159,7 +159,7 @@ impl FourierGlweSecretKey {
             self.size.fourier_glwe_len(),
             "Fourier GLWE output layout mismatch"
         );
-        workspace.assert_poly_length(self.poly_length());
+        workspace.assert_poly_length(self.poly_length().get());
     }
 
     /// Encrypts with validated layouts and matching parameter/transform domains.

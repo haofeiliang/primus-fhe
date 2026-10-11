@@ -2,7 +2,7 @@
 //! use integer convolution, not the production polynomial/transform kernels.
 
 use primus_decompose::primitive::ApproxSignedBasis;
-use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_decompose::{DecompositionBaseLog, DecompositionConfig, DecompositionLevelCount};
 use primus_fft::{FftEngine, FftTable, RustFftTable, TfheFftTable};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{
@@ -336,8 +336,10 @@ fn check_native_lift<Table: FftTable>() {
     for levels in [3, 4] {
         let gadget = NlevParameters::with_ntru_params(
             &params,
-            DecompositionBaseLog::new(8),
-            Some(DecompositionLevelCount::new(levels)),
+            DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(8),
+                level_count: Some(DecompositionLevelCount::new(levels)),
+            },
         );
         let basis = gadget.basis();
         let mut workspace = primus_ntru::FourierNtruCmuxWorkspace::new(
@@ -562,7 +564,13 @@ fn ntt_reverse_trace_matches_exact_same_secret_oracle() {
         SecretKeyDistr::SparseTernary,
         0.7,
     );
-    let gadget = NlevParameters::with_ntru_params(&params, DecompositionBaseLog::new(3), None);
+    let gadget = NlevParameters::with_ntru_params(
+        &params,
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(3),
+            level_count: None,
+        },
+    );
     let key = NttNtruSecretKey::try_from_coeff_secret_key(&secret, modulus, &table).unwrap();
     let trace = NttNtruTraceKey::generate(
         &secret,
@@ -608,7 +616,13 @@ fn check_native_trace<Table: FftTable>() {
         SecretKeyDistr::SparseTernary,
         0.7,
     );
-    let gadget = NlevParameters::with_ntru_params(&params, DecompositionBaseLog::new(8), None);
+    let gadget = NlevParameters::with_ntru_params(
+        &params,
+        DecompositionConfig {
+            log_basis: DecompositionBaseLog::new(8),
+            level_count: None,
+        },
+    );
     let key = FourierNtruSecretKey::try_from_coeff_secret_key(&secret, &mut fft).unwrap();
     let trace = FourierNtruTraceKey::generate(
         &secret,

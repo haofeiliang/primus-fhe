@@ -8,7 +8,7 @@
 //!
 //! cargo bench -p primus_glwe --bench key_conversion --features ntt,rustfft
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
-use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
+use primus_decompose::{DecompositionBaseLog, DecompositionConfig, DecompositionLevelCount};
 use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_glwe::{
     FourierGlweGadgetEncryptWorkspace, FourierGlweKeySwitchingWorkspace,
@@ -57,8 +57,10 @@ fn ntt_conversion(c: &mut Criterion) {
         );
         let glev = GlevParameters::with_glwe_params(
             &params,
-            DecompositionBaseLog::new(10),
-            Some(DecompositionLevelCount::new(3)),
+            DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(10),
+                level_count: Some(DecompositionLevelCount::new(3)),
+            },
         );
         let mut gadget = NttGlweGadgetEncryptWorkspace::new(glev.size());
         let source = params
@@ -113,8 +115,10 @@ fn ntt_conversion(c: &mut Criterion) {
         // exercise a different accumulation cost than the large-basis path.
         let small_glev = GlevParameters::with_glwe_params(
             &params,
-            DecompositionBaseLog::new(3),
-            Some(DecompositionLevelCount::new(10)),
+            DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(3),
+                level_count: Some(DecompositionLevelCount::new(10)),
+            },
         );
         let key = NttLwePackingKeySwitchingKey::generate(
             source,
@@ -197,8 +201,10 @@ fn fourier_conversion(c: &mut Criterion) {
         );
         let glev = GlevParameters::with_glwe_params(
             &params,
-            DecompositionBaseLog::new(10),
-            Some(DecompositionLevelCount::new(3)),
+            DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(10),
+                level_count: Some(DecompositionLevelCount::new(3)),
+            },
         );
         let mut gadget = FourierGlweGadgetEncryptWorkspace::new(glev.size());
         let source = params
@@ -246,8 +252,10 @@ fn fourier_conversion(c: &mut Criterion) {
         // Track zero-skipping with frequent zeros as well as the rare-zero large basis.
         let small_glev = GlevParameters::with_glwe_params(
             &params,
-            DecompositionBaseLog::new(3),
-            Some(DecompositionLevelCount::new(10)),
+            DecompositionConfig {
+                log_basis: DecompositionBaseLog::new(3),
+                level_count: Some(DecompositionLevelCount::new(10)),
+            },
         );
         let key = FourierLwePackingKeySwitchingKey::generate(
             source,
