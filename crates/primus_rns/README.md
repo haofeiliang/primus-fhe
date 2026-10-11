@@ -15,7 +15,7 @@ English | [简体中文](README.zh_CN.md)
 | `ResidueFactors<S>` | Precomputed multiplication factors for one value under an ordered RNS basis |
 | `RNSBase<T, M>` | A non-empty, pairwise-coprime modulus basis and its CRT precomputations |
 | `BaseConverter<T, M>` | Precomputed fast or corrected conversion between two RNS bases |
-| `ExactConversionWorkspace<T>` | Reusable workspace for corrected batched conversion |
+| `CorrectedConversionWorkspace<T>` | Reusable workspace for corrected batched conversion |
 | `HybridRNSPartitioning` | Fixed full-`Q` partition rule shared across modulus-chain levels |
 | `HybridRNS<T, M>` | Bases and precomputations for one active hybrid-RNS level |
 | `HybridRNSPartition<T, M>` | One contiguous `Q` partition and its approximate ModUp converter |
@@ -77,9 +77,9 @@ Conversion is intended for runtime or derived Barrett contexts. Multi-modulus co
 The two conversion families have different mathematical contracts:
 
 - `fast_convert` and `fast_convert_array` compute a SEAL-style approximate CRT lift. With a multi-modulus input basis, the result represents `x + kQ` for some integer `k`; it is not generally the canonical `x mod p_j`. This is suitable only when the surrounding algorithm cancels or accepts the multiple-of-`Q` term. A single-modulus input uses exact direct reduction.
-- `exact_convert_array` applies a quotient correction, interprets the input through its centered representative in `[-Q/2, Q/2)`, and requires exactly one output modulus. The name "exact" follows SEAL terminology. For multi-modulus inputs, correction uses `f64`, so values near the centered boundary may differ by one multiple of `Q` modulo the output modulus; applications requiring exactness there need a higher-precision method. See the [corrected-conversion API](src/converter/exact.rs).
+- `corrected_convert_array` applies a quotient correction, interprets the input through its centered representative in `[-Q/2, Q/2)`, and requires exactly one output modulus. For multi-modulus inputs, correction uses `f64`, so values near the centered boundary may differ by one multiple of `Q` modulo the output modulus; applications requiring exactness there need a higher-precision method. See the [corrected-conversion API](src/converter/corrected.rs).
 
-Create an `ExactConversionWorkspace` through `exact_conversion_workspace` and reuse it with the same converter and length. Fast conversion accepts a scratch slice sized by `fast_convert_scratch_len` or `fast_convert_array_scratch_len`. Each concurrent operation needs separate mutable workspace.
+Create a `CorrectedConversionWorkspace` through `corrected_conversion_workspace` and reuse it with the same converter and length. Fast conversion accepts a scratch slice sized by `fast_convert_scratch_len` or `fast_convert_array_scratch_len`. Empty batches perform no writes; corrected conversion still requires one output modulus and a workspace of the matching shape. Each concurrent operation needs separate mutable workspace.
 
 ## Hybrid RNS
 
@@ -93,13 +93,15 @@ The fixed size must produce exactly `dnum` non-empty partitions. For example, fi
 
 Use `HybridRNS::from_partitioning` at shorter, ordered-prefix levels of the same modulus chain so key-compatible partition boundaries remain fixed. The constructor validates the active modulus count; the owner of the modulus chain must preserve the prefix relationship.
 
-Each partition supports approximate ModUp into `Q || P`; streaming ModUp emits only converted complement limbs, leaving the caller to supply unchanged partition limbs. ModDown converts the `P` correction into `Q`, subtracts it, and multiplies by `P^-1 mod q_i`. See the [hybrid APIs](src/hybrid).
+Each partition supports approximate ModUp into `Q || P`; streaming ModUp emits only converted complement limbs, leaving the caller to supply unchanged partition limbs. ModDown converts the `P` correction into `Q`, subtracts it, and multiplies by `P^-1 mod q_i`.
+
+For scheme-specific corrections, use `approx_convert_p_to_q_to` followed by `approx_mod_down_from_correction_q_assign`; the caller owns the correction's source, sign and scaling in the same ordered Q basis. This is not automatically a BFV, BGV or CKKS modulus-reduction rule. Zero-length Hybrid operations perform no writes or streaming callbacks. See the [hybrid APIs](src/hybrid).
 
 ## Caller contracts and workspace
 
 - Input residues supplied to arithmetic and base-conversion kernels must be canonical for their corresponding moduli unless the method documents a wider range.
 - Moduli combined in one basis, including `Q || P`, must be pairwise coprime.
-- Slice lengths and modulus-major ordering must match the selected base and polynomial length exactly.
+- Slice lengths and modulus-major ordering must match the selected base and value count (polynomial length for Hybrid operations).
 - Reuse converter workspaces and scratch buffers outside hot loops. The batched APIs perform no internal allocation once their output and workspace are provided.
 - Not every low-level operation validates these conditions in release builds; uphold its documented contract.
 

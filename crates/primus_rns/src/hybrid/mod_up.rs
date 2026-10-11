@@ -14,6 +14,7 @@ where
 {
     /// Returns the minimum scratch length required by the approximate ModUp
     /// methods.
+    #[must_use]
     #[inline]
     pub fn mod_up_scratch_len(&self, poly_length: usize) -> usize {
         self.mod_up_converter
@@ -75,11 +76,18 @@ where
     /// at least [`mod_up_scratch_len`](Self::mod_up_scratch_len). The partition
     /// limbs are copied exactly; all complementary `Q` and `P` limbs are
     /// produced by approximate RNS base conversion.
+    /// Zero length requires empty input and output and performs no writes.
     ///
     /// # Panics
     ///
     /// Panics if an input, output, or scratch buffer has the wrong length, or
     /// if a derived polynomial length overflows `usize`.
+    ///
+    /// # Correctness
+    ///
+    /// Inputs must be canonical for this partition's ordered Q basis. The
+    /// cross-modulus arithmetic requirements of [`crate::BaseConverter::fast_convert`]
+    /// apply to the converted complement.
     pub fn approx_mod_up_to(
         &self,
         polynomial_mod_q: &[T],
@@ -95,11 +103,15 @@ where
 
         let (partition_elements, partition_polynomial) =
             self.partition_view(polynomial_mod_q, poly_length);
+        if poly_length == 0 {
+            return;
+        }
+        // Prepare and validate scratch before changing any digit limbs.
+        let conversions =
+            self.approx_mod_up_complement_limbs(partition_polynomial, poly_length, scratch);
         digit_mod_qp[partition_elements].copy_from_slice(partition_polynomial);
 
-        for (qp_modulus_index, conversion) in
-            self.approx_mod_up_complement_limbs(partition_polynomial, poly_length, scratch)
-        {
+        for (qp_modulus_index, conversion) in conversions {
             let output_start = qp_modulus_index * poly_length;
             conversion.write_to(&mut digit_mod_qp[output_start..output_start + poly_length]);
         }
@@ -116,11 +128,19 @@ where
     /// `output_limb.len()` must equal `poly_length`. The callback may modify the
     /// limb; the next conversion overwrites it completely. The operation does
     /// not allocate.
+    /// Zero length requires empty input and output and does not invoke `consume`.
     ///
     /// # Panics
     ///
     /// Panics if an input, output, or scratch buffer has the wrong length, or
     /// if a derived polynomial length overflows `usize`.
+    /// A panicking callback may leave scratch and the reusable limb modified;
+    /// previously consumed limbs are not rolled back.
+    ///
+    /// # Correctness
+    ///
+    /// The ordered-basis and arithmetic requirements of
+    /// [`approx_mod_up_to`](Self::approx_mod_up_to) apply.
     pub fn for_each_approx_mod_up_complement_limb<F>(
         &self,
         polynomial_mod_q: &[T],
@@ -133,6 +153,9 @@ where
     {
         assert_eq!(output_limb.len(), poly_length);
         let (_, partition_polynomial) = self.partition_view(polynomial_mod_q, poly_length);
+        if poly_length == 0 {
+            return;
+        }
         self.approx_mod_up_complement_limbs(partition_polynomial, poly_length, scratch)
             .for_each(|(qp_modulus_index, conversion)| {
                 conversion.write_to(output_limb);

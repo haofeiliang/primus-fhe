@@ -15,7 +15,7 @@
 | `ResidueFactors<S>` | 一个值在有序 RNS 基下的预计算乘法因子 |
 | `RNSBase<T, M>` | 非空、模数两两互素的 RNS 基及其 CRT 预计算 |
 | `BaseConverter<T, M>` | 在两个 RNS 基之间执行 fast 或 corrected 转换的预计算 |
-| `ExactConversionWorkspace<T>` | corrected 批量转换使用的可复用 workspace |
+| `CorrectedConversionWorkspace<T>` | corrected 批量转换使用的可复用 workspace |
 | `HybridRNSPartitioning` | 在 modulus chain 各层之间共享的固定 full-`Q` 分区规则 |
 | `HybridRNS<T, M>` | 一个 active Hybrid-RNS level 的基与预计算 |
 | `HybridRNSPartition<T, M>` | 一个连续 `Q` 分区及其 approximate ModUp converter |
@@ -77,9 +77,9 @@ assert_eq!(base.decompose(value.view()).as_ref(), [2, 4, 6]);
 两类转换具有不同的数学契约：
 
 - `fast_convert` 和 `fast_convert_array` 执行 SEAL 风格的 approximate CRT lift。输入基包含多个模数时，结果表示某个整数 `x + kQ`，通常不等于规范的 `x mod p_j`。只有外层算法会消去或允许这个 `Q` 倍数项时才能使用。单模数输入 使用精确的直接约简。
-- `exact_convert_array` 应用商修正，将输入解释为 `[-Q/2, Q/2)` 中的居中代表元，要求输出基恰好包含一个模数。名称“exact”沿用 SEAL 术语；多模数输入的修正使用 `f64`，靠近居中边界时仍可能相差一个 `Q` 的倍数，需要在此边界精确转换的应用须采用更高精度方法。完整契约见[修正转换 API](src/converter/exact.rs)。
+- `corrected_convert_array` 应用商修正，将输入解释为 `[-Q/2, Q/2)` 中的居中代表元，要求输出基恰好包含一个模数。多模数输入的修正使用 `f64`，靠近居中边界时仍可能相差一个 `Q` 的倍数，需要在此边界精确转换的应用须采用更高精度方法。完整契约见[修正转换 API](src/converter/corrected.rs)。
 
-通过 `exact_conversion_workspace` 创建 `ExactConversionWorkspace`，在同一 converter 和长度下复用。Fast conversion 接收由 `fast_convert_scratch_len` 或 `fast_convert_array_scratch_len` 确定大小的 scratch slice；每个并发操作使用独立的可变工作区。
+通过 `corrected_conversion_workspace` 创建 `CorrectedConversionWorkspace`，在同一 converter 和长度下复用。Fast conversion 接收由 `fast_convert_scratch_len` 或 `fast_convert_array_scratch_len` 确定大小的 scratch slice；空批量不写入数据；corrected 转换仍要求单模数输出基及形状匹配的工作区。每个并发操作使用独立的可变工作区。
 
 ## Hybrid RNS
 
@@ -93,13 +93,15 @@ alpha = ceil(full_q_moduli_count / dnum)
 
 在同一 modulus chain 的较短有序前缀 level 上，应使用 `HybridRNS::from_partitioning`，以保持与 key 兼容的固定分区边界。构造器只验证 active 模数数量；modulus chain 的所有者负责保证前缀关系。
 
-每个分区支持 approximate ModUp 到 `Q || P`；streaming ModUp 只生成转换后的 complement limb，原分区 limb 由调用方提供。ModDown 将 `P` correction 转换到 `Q`，执行减法，再乘以 `P^-1 mod q_i`。完整契约见 [hybrid API](src/hybrid)。
+每个分区支持 approximate ModUp 到 `Q || P`；streaming ModUp 只生成转换后的 complement limb，原分区 limb 由调用方提供。ModDown 将 `P` correction 转换到 `Q`，执行减法，再乘以 `P^-1 mod q_i`。
+
+方案需要自定义 correction 时，可组合 `approx_convert_p_to_q_to` 和 `approx_mod_down_from_correction_q_assign`；调用方负责 correction 的来源、符号、缩放及相同 Q 基顺序。这并不自动构成 BFV、BGV 或 CKKS 的降模规则。零长度 Hybrid 运算不写入数据，也不触发流式回调。完整契约见 [hybrid API](src/hybrid)。
 
 ## 调用方契约与 workspace
 
 - 除非方法记录了更宽的范围，传给算术和基转换内核的 residue 必须是对应模数下 的规范剩余类。
 - 组合进同一个基的模数必须两两互素，包括 `Q || P`。
-- Slice 长度、modulus-major 顺序必须与所选基和多项式长度严格匹配。
+- Slice 长度、modulus-major 顺序必须与所选基和值的数量严格匹配；Hybrid 运算使用多项式长度。
 - Converter workspace 和 scratch buffer 应在热循环外创建并复用。调用方提供输出和 workspace 后，批量 API 不会在内部执行分配。
 - 并非所有底层运算都在 release 模式验证这些条件，调用方须维持方法的文档契约。
 

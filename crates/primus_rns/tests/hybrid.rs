@@ -43,6 +43,8 @@ fn construction_uses_fixed_partitioning_and_precomputes_p() {
         .map(|partition| partition.q_range())
         .collect();
     assert_eq!(active.partitioning(), partitioning);
+    assert_eq!(active.decomposition_count(), 3);
+    assert_eq!(active.partition_count(), 2);
     assert_eq!(active_ranges, [Range::from(0..2), Range::from(2..3)]);
 
     assert!(matches!(
@@ -105,6 +107,23 @@ fn mod_up_full_and_streaming_outputs_match() {
         let mut scratch = vec![0; partition.mod_up_scratch_len(poly_length)];
         partition.approx_mod_up_to(&polynomial_q, &mut digit_qp, poly_length, &mut scratch);
         assert_eq!(digit_qp, expected);
+        if !scratch.is_empty() {
+            let mut invalid_scratch = vec![ValueT::MAX; scratch.len() - 1];
+            let mut invalid_digit = vec![ValueT::MAX; digit_qp.len()];
+            assert!(
+                catch_unwind(AssertUnwindSafe(|| {
+                    partition.approx_mod_up_to(
+                        &polynomial_q,
+                        &mut invalid_digit,
+                        poly_length,
+                        &mut invalid_scratch,
+                    );
+                }))
+                .is_err()
+            );
+            assert!(invalid_digit.iter().all(|&value| value == ValueT::MAX));
+            assert!(invalid_scratch.iter().all(|&value| value == ValueT::MAX));
+        }
 
         let mut streamed = vec![0; hybrid.qp_moduli_count() * poly_length];
         streamed[partition_elements].copy_from_slice(&polynomial_q[partition_elements]);
@@ -202,6 +221,28 @@ fn mod_down_matches_expected_output() {
         assert_eq!(separate_q, expected_q);
         // A single P limb ignores scratch entirely; general conversion only writes its prefix.
         assert_eq!(&scratch[scratch_len..], &[ValueT::MAX; 3]);
+
+        // A public weight can change the prepared correction before the common
+        // final step. This checks the modular identity, not a BGV scheme.
+        let weighted: Vec<_> = converted_p
+            .chunks_exact(poly_length)
+            .zip([17, 41, 73])
+            .flat_map(|(limb, modulus)| limb.iter().map(move |&value| 3 * value % modulus))
+            .collect();
+        let mut weighted_q = original[..q_len].to_vec();
+        hybrid.approx_mod_down_from_correction_q_assign(&mut weighted_q, &weighted, poly_length);
+        for (modulus_index, qi) in [17, 41, 73].into_iter().enumerate() {
+            // Enumerate P^-1 as an independent small-integer oracle.
+            let p: u64 = p_moduli.iter().product();
+            let inverse = (1..qi)
+                .find(|&candidate| candidate * (p % qi) % qi == 1)
+                .unwrap();
+            for coefficient in 0..poly_length {
+                let index = modulus_index * poly_length + coefficient;
+                let expected = ((original[index] + qi - weighted[index]) * inverse) % qi;
+                assert_eq!(weighted_q[index], expected);
+            }
+        }
     }
 }
 
@@ -258,5 +299,28 @@ fn mod_down_validates_public_buffers_before_writes() {
             .is_err()
         );
         assert!(q.iter().all(|&value| value == 0));
+    }
+}
+
+#[test]
+fn empty_hybrid_operations_do_not_write_or_consume_limbs() {
+    // Cover both P-conversion kernels and both singleton/general partitions.
+    for p_moduli in [&[89][..], &[89, 97][..]] {
+        let hybrid = make_hybrid(&[17, 41, 73], p_moduli, 2);
+        let mut scratch = [ValueT::MAX; 3];
+        hybrid.approx_mod_down_q_assign(&mut [], 0, &mut [], &mut scratch);
+        hybrid.approx_convert_p_to_q_to(&[], &mut [], 0, &mut scratch);
+        hybrid.approx_mod_down_from_correction_q_assign(&mut [], &[], 0);
+        for partition in hybrid.partitions() {
+            partition.approx_mod_up_to(&[], &mut [], 0, &mut scratch);
+            partition.for_each_approx_mod_up_complement_limb(
+                &[],
+                &mut [],
+                0,
+                &mut scratch,
+                |_, _| panic!("empty ModUp must not consume a limb"),
+            );
+        }
+        assert_eq!(scratch, [ValueT::MAX; 3]);
     }
 }

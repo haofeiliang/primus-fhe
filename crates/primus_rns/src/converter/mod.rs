@@ -1,6 +1,6 @@
-mod exact;
+mod corrected;
 mod fast;
-pub use exact::ExactConversionWorkspace;
+pub use corrected::CorrectedConversionWorkspace;
 pub(crate) use fast::FastConversionLimb;
 
 use primus_integer::FheUint;
@@ -56,9 +56,9 @@ enum BaseConversionKernel<T> {
 /// specialized kernel directly reduces the input residue and is exact.
 ///
 /// Batched conversion APIs take input and output residue arrays in modulus-major
-/// layout. Their scratch buffer uses a different coefficient-major layout:
+/// layout. Their scratch buffer uses a different value-major layout:
 /// chunk `j` of length `input_moduli_count()` stores all adjusted input
-/// residues for coefficient `j`.
+/// residues for value `j`.
 #[derive(Clone)]
 pub struct BaseConverter<T: FheUint, M: FieldContext<T>> {
     /// Source basis for incoming residues.
@@ -73,6 +73,7 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
     /// The conversion matrix is prepared separately for this ordered pair.
     ///
     /// See [`from_owned_bases`](Self::from_owned_bases) for the owned variant.
+    #[must_use]
     pub fn new(input_base: &RNSBase<T, M>, output_base: &RNSBase<T, M>) -> Self {
         Self::from_owned_bases(input_base.clone(), output_base.clone())
     }
@@ -86,6 +87,7 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
     /// # Panics
     ///
     /// Panics if the base-change matrix length overflows `usize`.
+    #[must_use]
     pub fn from_owned_bases(input_base: RNSBase<T, M>, output_base: RNSBase<T, M>) -> Self {
         let input_moduli_count = input_base.moduli_count();
         let output_moduli_count = output_base.moduli_count();
@@ -94,7 +96,7 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
             input_moduli_count
                 .checked_mul(output_moduli_count)
                 .is_some(),
-            "the len can not be too large!"
+            "RNS base-change matrix length overflow"
         );
 
         let kernel = if input_moduli_count == 1 {
@@ -124,11 +126,13 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
     }
 
     /// Returns the number of moduli in the input basis.
+    #[must_use]
     pub fn input_moduli_count(&self) -> usize {
         self.input_base.moduli_count()
     }
 
     /// Returns the number of moduli in the output basis.
+    #[must_use]
     pub fn output_moduli_count(&self) -> usize {
         self.output_base.moduli_count()
     }

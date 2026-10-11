@@ -17,11 +17,19 @@ where
     /// `q_moduli_count() * poly_length` elements. `scratch.len()` must be at
     /// least [`mod_down_scratch_len`](Self::mod_down_scratch_len). A
     /// single-prime `P` ignores scratch.
+    /// Only the required scratch prefix is overwritten. Zero length requires
+    /// empty input and output and performs no writes.
     ///
     /// # Panics
     ///
     /// Panics if an input, output, or scratch buffer has the wrong length, or
     /// if a derived polynomial length overflows `usize`.
+    ///
+    /// # Correctness
+    ///
+    /// Input residues must be canonical for this instance's ordered P basis.
+    /// Conversion retains the approximate lift described by
+    /// [`crate::BaseConverter::fast_convert`], including its arithmetic requirements.
     pub fn approx_convert_p_to_q_to(
         &self,
         polynomial_mod_p: &[T],
@@ -46,11 +54,18 @@ where
     /// `q_moduli_count() * poly_length` elements. `scratch.len()` must be at
     /// least [`mod_down_scratch_len`](Self::mod_down_scratch_len). A
     /// single-prime `P` ignores scratch.
+    /// Zero length requires empty data slices and performs no writes.
     ///
     /// # Panics
     ///
     /// Panics if an input, output, or scratch buffer has the wrong length, or
     /// if a derived polynomial length overflows `usize`.
+    ///
+    /// # Correctness
+    ///
+    /// Input residues must be canonical in this instance's `Q || P` order.
+    /// The P-to-Q conversion requirements of
+    /// [`approx_convert_p_to_q_to`](Self::approx_convert_p_to_q_to) apply.
     pub fn approx_mod_down_q_assign(
         &self,
         polynomial_mod_qp: &mut [T],
@@ -92,11 +107,21 @@ where
     /// `(polynomial_mod_q - correction_mod_q) * P^-1 mod q_i`.
     /// Scheme-specific callers may prepare and scale `correction_mod_q` before
     /// applying this common final step.
+    /// The function neither converts the correction nor allocates. Zero length
+    /// requires empty data slices and performs no writes.
     ///
     /// # Panics
     ///
     /// Panics if either polynomial has the wrong length or if the derived `Q`
     /// polynomial length overflows `usize`.
+    ///
+    /// # Correctness
+    ///
+    /// Both slices must contain canonical residues in this instance's Q order.
+    /// The caller owns the correction's mathematical source, sign and scaling;
+    /// this method always subtracts it before multiplying by `P^-1`. Equal
+    /// buffer lengths alone do not establish a compatible basis or a correct
+    /// scheme-specific ModDown correction.
     pub fn approx_mod_down_from_correction_q_assign(
         &self,
         polynomial_mod_q: &mut [T],
@@ -123,6 +148,9 @@ where
         poly_length: usize,
     ) {
         debug_assert_eq!(polynomial_mod_q.len(), correction_mod_q.len());
+        if poly_length == 0 {
+            return;
+        }
         izip!(
             polynomial_mod_q.chunks_exact_mut(poly_length),
             correction_mod_q.chunks_exact(poly_length),

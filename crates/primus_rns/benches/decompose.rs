@@ -154,9 +154,9 @@ fn bench_base_slice_operations(c: &mut Criterion) {
 fn bench_base_conversion(c: &mut Criterion) {
     let input_base = base(MODULI_3);
     let output_base = base(MODULI_2);
-    let exact_output_base = base(&MODULI_2[..1]);
+    let corrected_output_base = base(&MODULI_2[..1]);
     let converter = BaseConverter::new(&input_base, &output_base);
-    let exact_converter = BaseConverter::new(&input_base, &exact_output_base);
+    let corrected_converter = BaseConverter::new(&input_base, &corrected_output_base);
     let input = crt_residues(&input_base, POLY_LENGTH);
 
     let mut group = c.benchmark_group("rns/slice_base_convert");
@@ -175,15 +175,15 @@ fn bench_base_conversion(c: &mut Criterion) {
         });
     });
 
-    let mut exact_output = vec![0; POLY_LENGTH];
-    let mut exact_workspace = exact_converter.exact_conversion_workspace(POLY_LENGTH);
-    group.bench_function("exact_convert_array/3mod_to_1mod", |b| {
+    let mut corrected_output = vec![0; POLY_LENGTH];
+    let mut corrected_workspace = corrected_converter.corrected_conversion_workspace(POLY_LENGTH);
+    group.bench_function("corrected_convert_array/3mod_to_1mod", |b| {
         b.iter(|| {
-            exact_converter.exact_convert_array(
+            corrected_converter.corrected_convert_array(
                 black_box(&input),
-                black_box(&mut exact_output),
+                black_box(&mut corrected_output),
                 POLY_LENGTH,
-                black_box(&mut exact_workspace),
+                black_box(&mut corrected_workspace),
             );
         });
     });
