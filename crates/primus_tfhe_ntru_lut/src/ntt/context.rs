@@ -35,7 +35,7 @@ pub enum NttHighPrecLutContextError<T: FheUint> {
 /// use primus_tfhe_ntru_lut::{NttHighPrecLutContext, experimental};
 /// use rand::{SeedableRng, rngs::StdRng};
 /// let context = NttHighPrecLutContext::<u64, U64NttTable, _>::try_from_config(
-///     experimental::NTT_CLASSIC_LOOKUP_U64,
+///     experimental::NTT_LOW_PREC_LOOKUP_U64,
 /// )?;
 /// let function = |x: u64| (x*x + 3*x + 7) & 0xffff;
 /// let table = context.compile_fn(function)?;

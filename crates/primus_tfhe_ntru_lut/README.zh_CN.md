@@ -18,7 +18,7 @@ cargo run --release -p primus_tfhe_ntru_lut --example fourier_lookup
 
 ## 实验配套参数
 
-从 `experimental::NTT_CLASSIC_LOOKUP_U64` 或 `FOURIER_CLASSIC_LOOKUP_U64` 开始。它们组合 n800/h32/N1024 one-hot CBS、必需返回 KS 和八个输入/八个输出两位 chunks。`coefficient_chunk_count: None` 选择 d=5，`Some(d)` 可覆盖分区；输入输出数量独立。这些算术教学配置的**安全性与失败概率尚未评估**，见[参数指南](../../guides/development/tfhe-parameters.md#scope-of-paired-parameter-entries)。
+使用 `experimental::NTT_LOW_PREC_LOOKUP_U64` / `NTT_HIGH_PREC_LOOKUP_U64`，或对应的 `FOURIER_*` 常量。LowPrec/HighPrec 表示两组 gadget 精度；两者默认 M=16、c=4、d=3、o=4（16 位输入/输出）。它们使用独立的 n1024/h128、q=2^52 LWE 密钥及 N4096 NTRU 密钥：NTT 采用 50 位素数、σ_f=σ_g=1，Fourier 采用 native64、σ_f=σ_g=1.5。输入输出 chunk 数可独立调整。分解参数和数值限制见[参数指南](../../guides/development/tfhe-parameters.md#random-high-precision-lut-benchmark)；修改后的配置尚无安全性或失败概率评估。
 
 `NttHighPrecLutContext::try_from_config` / `FourierHighPrecLutContext::try_from_config` 准备操作参数、编码和变换表；密钥、公开函数编译和可变 evaluator 状态分别准备：
 
@@ -28,7 +28,7 @@ use primus_tfhe_ntru_lut::{NttHighPrecLutContext, experimental};
 use rand::{SeedableRng, rngs::StdRng};
 
 let context = NttHighPrecLutContext::<u64, U64NttTable, _>::try_from_config(
-    experimental::NTT_CLASSIC_LOOKUP_U64,
+    experimental::NTT_LOW_PREC_LOOKUP_U64,
 )?;
 let fee = |x: u64| {
     if x < 16_384 {
@@ -98,7 +98,7 @@ c=d 时 context 提供提升材料：classic 使用 initializer，sparse 使用�
 ```rust,ignore
 use primus_tfhe::BlindRotationMethod;
 
-let mut config = experimental::NTT_CLASSIC_LOOKUP_U64;
+let mut config = experimental::NTT_LOW_PREC_LOOKUP_U64;
 config.one_hot.pbs.algorithm =
     BlindRotationMethod::Sparse { copy_count: 3, bucket_count: 64 };
 let context = NttHighPrecLutContext::<u64, U64NttTable, _>::try_from_config(config)?;
@@ -135,6 +135,6 @@ cargo bench -p primus_tfhe_ntru_lut --bench lookup_create -- 'c4_'
 cargo bench -p primus_tfhe_ntru_lut --bench lookup_evaluate -- 'c4_'
 ```
 
-`lookup_create` 测完整公开表创建，**包含分配与 drop**，随机映射在计时外准备。`lookup_evaluate` 测一次完整同态请求，密钥、表、输入和缓冲均已准备。它使用 classic BR，默认测 NTT/RustFFT，`--features tfhe-fft` 额外测 TFHE-FFT。
+`lookup_create` 测完整公开表创建，**包含分配与 drop**，随机映射在计时外准备。`lookup_evaluate` 测一次完整同态请求，密钥、表、输入和缓冲均已准备。它使用 classic BR，分别测 LowPrec/HighPrec，默认测 NTT/RustFFT，`--features tfhe-fft` 额外测 TFHE-FFT。
 
 两者均使用 M=16、d=3、N=4096 和四个输出 chunk。过滤器 `c4_`、`c5_`、`c6_` 对应 16、20、24 位输入，输出保持 16 位，公开存储为 2/32/512 MiB。Criterion 仅过滤计时，其他 case 的计时外准备和检查仍执行。见[基准命令与成本](../../guides/development/testing.md#high-precision-lut-benchmarks)及[实验数值配置](../../guides/development/tfhe-parameters.md#random-high-precision-lut-benchmark)。

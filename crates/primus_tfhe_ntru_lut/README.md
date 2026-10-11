@@ -18,7 +18,7 @@ The [NTT](examples/ntt_lookup.rs) and [Fourier](examples/fourier_lookup.rs) exam
 
 ## Experimental paired parameters
 
-Start from `experimental::NTT_CLASSIC_LOOKUP_U64` or `FOURIER_CLASSIC_LOOKUP_U64`. Each combines n800/h32/N1024 one-hot CBS and required return KS with eight input/eight output two-bit chunks. `coefficient_chunk_count: None` selects d=5; `Some(d)` overrides the partition. Input/output counts are independent. These are arithmetic teaching configurations with **unassessed security and failure probability**; see the [parameter guide](../../guides/development/tfhe-parameters.md#scope-of-paired-parameter-entries).
+Use `experimental::NTT_LOW_PREC_LOOKUP_U64` / `NTT_HIGH_PREC_LOOKUP_U64`, or the matching `FOURIER_*` constants. LowPrec/HighPrec select two gadget precisions; both default to M=16, c=4, d=3, o=4 (16-bit input/output). They use independent n1024/h128 LWE keys at q=2^52 and N4096 NTRU keys: a 50-bit NTT prime with σ_f=σ_g=1, or native64 Fourier with σ_f=σ_g=1.5. Input/output chunk counts can be changed independently. Exact decompositions and numerical limits are in the [parameter guide](../../guides/development/tfhe-parameters.md#random-high-precision-lut-benchmark); these modified profiles have no established security or failure-probability assessment.
 
 `NttHighPrecLutContext::try_from_config` / `FourierHighPrecLutContext::try_from_config` prepare the operation's parameters, encodings and transform table. Keys, public function compilation and mutable evaluator state are prepared separately:
 
@@ -28,7 +28,7 @@ use primus_tfhe_ntru_lut::{NttHighPrecLutContext, experimental};
 use rand::{SeedableRng, rngs::StdRng};
 
 let context = NttHighPrecLutContext::<u64, U64NttTable, _>::try_from_config(
-    experimental::NTT_CLASSIC_LOOKUP_U64,
+    experimental::NTT_LOW_PREC_LOOKUP_U64,
 )?;
 let fee = |x: u64| {
     if x < 16_384 {
@@ -98,7 +98,7 @@ The context supplies lifting material when c=d: classic uses its initializer; sp
 ```rust,ignore
 use primus_tfhe::BlindRotationMethod;
 
-let mut config = experimental::NTT_CLASSIC_LOOKUP_U64;
+let mut config = experimental::NTT_LOW_PREC_LOOKUP_U64;
 config.one_hot.pbs.algorithm =
     BlindRotationMethod::Sparse { copy_count: 3, bucket_count: 64 };
 let context = NttHighPrecLutContext::<u64, U64NttTable, _>::try_from_config(config)?;
@@ -135,6 +135,6 @@ cargo bench -p primus_tfhe_ntru_lut --bench lookup_create -- 'c4_'
 cargo bench -p primus_tfhe_ntru_lut --bench lookup_evaluate -- 'c4_'
 ```
 
-`lookup_create` measures the complete public table, **including allocation and drop**, with the random mapping prepared outside timing. `lookup_evaluate` measures one complete homomorphic request with prebuilt keys, table, input and buffers. It uses classic BR and defaults to NTT/RustFFT; `--features tfhe-fft` also measures TFHE-FFT.
+`lookup_create` measures the complete public table, **including allocation and drop**, with the random mapping prepared outside timing. `lookup_evaluate` measures one complete homomorphic request with prebuilt keys, table, input and buffers. It measures LowPrec and HighPrec with classic BR and defaults to NTT/RustFFT; `--features tfhe-fft` also measures TFHE-FFT.
 
 Both use M=16, d=3, N=4096 and four output chunks. Filters `c4_`, `c5_` and `c6_` select 16-, 20- and 24-bit inputs; output stays 16 bits and public storage is 2/32/512 MiB. Criterion filters timing only: other cases' untimed preparation and checks still run. See [benchmark commands and costs](../../guides/development/testing.md#high-precision-lut-benchmarks) and the [experimental numerical profile](../../guides/development/tfhe-parameters.md#random-high-precision-lut-benchmark).

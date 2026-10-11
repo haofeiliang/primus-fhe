@@ -26,7 +26,7 @@ fn random_function(input_chunk_count: usize) -> Vec<u16> {
 /// Measure allocation, enumeration, encoding, full storage and drop together.
 fn benchmark<M: RingContext<u64>>(c: &mut Criterion, ring_modulus: M, name: &str) {
     let poly_length = PolyLength::new(4096);
-    let input_codec = RoundedCodec::try_new(32, PowOf2Modulus::new(1 << 24)).unwrap();
+    let input_codec = RoundedCodec::try_new(32, PowOf2Modulus::new(1 << 52)).unwrap();
     let mut group = c.benchmark_group(format!("lookup/create_and_drop/{name}"));
     group.sampling_mode(criterion::SamplingMode::Flat);
     group.throughput(Throughput::Elements(1)); // Complete tables, not coefficients.

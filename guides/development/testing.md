@@ -114,8 +114,8 @@ cargo bench -p primus_tfhe_ntru_lut --bench lookup_evaluate -- 'c4_'
 | [lookup_create](../../crates/primus_tfhe_ntru_lut/benches/lookup_create.rs) | 一次 `HighPrecisionLookupTable::try_new` 的检查、分配、完整枚举/编码/存储及 drop | 随机函数、codec 与几何；不生成密钥 |
 | [lookup_evaluate](../../crates/primus_tfhe_ntru_lut/benches/lookup_evaluate.rs) | 一次 `evaluate_to`：one-hot CBS、完整选表树、低位旋转、模数切换与 LWE KS | context、随机函数、LUT、密钥、加密、输出/workspace 分配及解密校验 |
 
-`lookup_create` 分别测量 Q50/native64 编码，可加 `--no-default-features` 运行；不会为两个 FFT 引擎重复相同的公开编译。`lookup_evaluate` 默认测 NTT 和 RustFFT，按前面的 feature 规则单选或增加引擎。每次迭代创建一张完整表或求值一个完整请求。
+`lookup_create` 分别测量 Q50/native64 编码，可加 `--no-default-features` 运行；不因 FFT 引擎或 gadget 精度重复相同的公开编译。`lookup_evaluate` 对 LowPrec/HighPrec 两组参数分别测量，默认测 NTT 和 RustFFT，按前面的 feature 规则单选或增加引擎。每次迭代创建一张完整表或求值一个完整请求。
 
 将过滤器换成 `c5_`、`c6_`，或去掉它测量所有尺寸。对于 `lookup_evaluate`，**即使只采样 c4，也会准备 c5/c6 并校验求值**；最大公开表的系数存储为 512 MiB，此外还有随机映射、密钥、工作区和变换表。`lookup_create` 被过滤的 case 仍生成随机函数，但不创建其 LUT。`--list` 同样会执行计时外准备，只看名称时直接阅读基准文件。Smoke 也执行这些大尺寸工作，不放入普通 CI。
 
-随机完整函数、classic BR、完整选表树及具体几何保持固定，输入 chunk 数决定表的尺寸。配置、内存和输入保护界见[高精度基准参数](tfhe-parameters.md#random-high-precision-lut-benchmark)。这组负载与教学示例不同，不能互换性能或噪声结论。
+随机完整函数、classic BR、完整选表树及具体几何保持固定，输入 chunk 数决定表的尺寸。配置、内存和输入保护界见[高精度基准参数](tfhe-parameters.md#random-high-precision-lut-benchmark)。参数与示例共用，但随机完整函数与示例函数不同，不能互换性能或噪声结论。

@@ -43,7 +43,7 @@ All examples use u64 and prepare reusable state outside the request loop. Replac
 | CBS predicate → CMux → ring addition | `CLASSIC_CBS_U64` | [ntru_ntt_circuit_bootstrap](examples/ntru_ntt_circuit_bootstrap.rs) |
 | 17 numeric threshold flags from one input | `CLASSIC_THRESHOLD_MVB_U64` | [ntru_ntt_mvb_thresholds](examples/ntru_ntt_mvb_thresholds.rs) |
 | One-hot CBS → four-way record selection | `CLASSIC_ONE_HOT_U64` | [ntru_ntt_one_hot](examples/ntru_ntt_one_hot.rs) |
-| High-precision integer lookup | LUT crate's `NTT_CLASSIC_LOOKUP_U64` | [ntt_lookup](../primus_tfhe_ntru_lut/examples/ntt_lookup.rs) |
+| High-precision integer lookup | LUT crate's `NTT_LOW_PREC_LOOKUP_U64` / `NTT_HIGH_PREC_LOOKUP_U64` | [ntt_lookup](../primus_tfhe_ntru_lut/examples/ntt_lookup.rs) |
 
 Ordinary PBS/ManyLUT and MVB use `context.try_generate_keys(rng)`. Bind `client.external_lwe_secret_key()` to `context.encryptor`; use `pbs_decryptor` for Rounded PBS/ManyLUT output and `mvb_decryptor` for Scaled MVB output. Public-key input uses `public_encryptor`. Clients receive no LUT or manual codec.
 

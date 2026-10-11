@@ -10,7 +10,8 @@ use rand::{SeedableRng, rngs::StdRng};
 type Word = u64;
 
 fn main() {
-    let config = experimental::NTT_CLASSIC_LOOKUP_U64;
+    // Switch to NTT_HIGH_PREC_LOOKUP_U64 for the HighPrec gadget set.
+    let config = experimental::NTT_LOW_PREC_LOOKUP_U64;
     let context = NttHighPrecLutContext::<Word, Table, _>::try_from_config(config).unwrap();
     let fee = |x: Word| {
         if x < 16_384 {
@@ -31,8 +32,8 @@ fn main() {
     );
 
     // Server, offline: compile the public function; no secrets are needed.
-    // Eight two-bit input chunks: low five select a coefficient (N=1024),
-    // high three select a polynomial. Output chunks are configured independently.
+    // Four four-bit input chunks: low three select a coefficient (N=4096),
+    // the high chunk selects a polynomial. Output chunks are independent.
     let table = context.compile_fn(fee).unwrap();
 
     // Client: generate paired secrets and complete server material once, without the LUT.

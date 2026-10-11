@@ -43,7 +43,7 @@ let context = TfheContext::<u64, Table, _>::try_from_pbs_config(config)?;
 | CBS 谓词 → CMux → 环加法 | `CLASSIC_CBS_U64` | [ntru_fourier_circuit_bootstrap](examples/ntru_fourier_circuit_bootstrap.rs) |
 | 同一输入产生 17 个数值阈值标志 | `CLASSIC_THRESHOLD_MVB_U64` | [ntru_fourier_mvb_thresholds](examples/ntru_fourier_mvb_thresholds.rs) |
 | One-hot CBS → 四路记录选择 | `CLASSIC_ONE_HOT_U64` | [ntru_fourier_one_hot](examples/ntru_fourier_one_hot.rs) |
-| 高精度整数查表 | LUT crate 的 `FOURIER_CLASSIC_LOOKUP_U64` | [fourier_lookup](../primus_tfhe_ntru_lut/examples/fourier_lookup.rs) |
+| 高精度整数查表 | LUT crate 的 `FOURIER_LOW_PREC_LOOKUP_U64` / `FOURIER_HIGH_PREC_LOOKUP_U64` | [fourier_lookup](../primus_tfhe_ntru_lut/examples/fourier_lookup.rs) |
 
 普通 PBS/ManyLUT 和 MVB 使用 `context.try_generate_keys(rng)`。将 `client.external_lwe_secret_key()` 绑定到 `context.encryptor`；Rounded PBS/ManyLUT 输出用 `pbs_decryptor`，Scaled MVB 输出用 `mvb_decryptor`。公钥输入使用 `public_encryptor`，客户端不接收 LUT 或手工 codec。
 
