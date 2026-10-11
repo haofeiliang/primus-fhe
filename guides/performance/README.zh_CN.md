@@ -8,7 +8,7 @@
 
 | 主题 | 决策与依据 |
 | --- | --- |
-| 系数算术 | 在各自约束内保留 NTRU pair、有界 NTT pair、GLWE u64 分组累加与紧凑桶末约简，以及 NTRU Fourier u64 四路累加。见[算术报告](sparse-arithmetic.md)，尤其是当前[分组与约简联合复评](sparse-arithmetic.md#combined-7-g-and-7-l-reassessment)和 [Fourier 复评](sparse-arithmetic.md#current-source-four-way-reassessment)。不同基线的收益不能相加。 |
+| 系数算术 | 在各自约束内保留 NTRU pair、有界 NTT pair、GLWE u64 分组累加与紧凑桶末约简，以及 NTRU Fourier u64 四路累加。见[算术报告](sparse-arithmetic.md)，尤其是已记录的[分组与约简联合复评](sparse-arithmetic.md#grouped-ntt-reassessment)和 [Fourier 复评](sparse-arithmetic.md#fourier-four-way-reassessment)。不同基线的收益不能相加。 |
 | Fourier 首项覆盖 | 保留清零后累加。F1 在已测 binary PBS 和 classic CBS 中有收益，但 sparse CBS 与进程间波动阻止全局采纳。[最终对照](fourier-first-write.md)汇总修正后的 108 进程比较，并保留全部 54 组配对结果。 |
 | 布局与批处理 | 保留 NTRU LUT 内部双输入盲旋转。聚合 tiles、首桶特化、流式外积及 GLWE tile-major 密钥在受测负载中不足以采纳。见[布局与批处理](sparse-layout-and-batching.md)。 |
 | 参数 | GLWE NTT 副本/桶数与分解候选仅适用于已验收消费者，默认配置不变。PBS 通过不能证明 CBS 输出尺度有效。见[证据索引](#证据索引)中的三份参数报告。 |
