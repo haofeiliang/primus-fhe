@@ -88,44 +88,6 @@ where
         )
     }
 
-    /// Inverse butterfly with a DCRT polynomial multiplier.
-    /// `(self, output) = (self + rhs, (self_orig - rhs) * dcrt_poly)`
-    ///
-    /// # Correctness
-    ///
-    /// Ciphertexts must have equal lengths, compatible keys, and matching
-    /// complete DCRT layouts. Each polynomial has `poly_length * moduli.len()`
-    /// entries, with nonzero polynomial length and modulus count. The
-    /// multiplier contains exactly one such polynomial in the same modulus
-    /// and evaluation order. Inputs are canonical residues; both outputs are
-    /// canonical. Precomputed factors, when used, must be prepared for the
-    /// corresponding modulus. `output` is overwritten.
-    ///
-    /// # Panics
-    ///
-    /// Panics when a zero-length polynomial chunk is used.
-    pub fn butterfly_mul_dcrt_polynomial_to<M, A, B, C>(
-        &mut self,
-        rhs: &DcrtGlwe<A>,
-        dcrt_poly: &DcrtPolynomial<B>,
-        output: &mut DcrtGlwe<C>,
-        poly_length: usize,
-        moduli: &[M],
-    ) where
-        M: FieldContext<T>,
-        A: Data<Elem = T>,
-        B: Data<Elem = T>,
-        C: DataMut<Elem = T>,
-    {
-        let rns_poly_len = dcrt_poly.len();
-        self.iter_dcrt_poly_mut(rns_poly_len)
-            .zip(rhs.iter_dcrt_poly(rns_poly_len))
-            .zip(output.iter_dcrt_poly_mut(rns_poly_len))
-            .for_each(|((mut a, s), mut b)| {
-                a.butterfly_mul_to(&s, dcrt_poly, &mut b, poly_length, moduli);
-            });
-    }
-
     /// Inverse butterfly with a Shoup-factor DCRT polynomial.
     /// `(self, output) = (self + rhs, (self_orig - rhs) * factor_poly)`.
     ///

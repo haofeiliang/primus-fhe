@@ -106,11 +106,12 @@ fn test_rns_glev() {
         glwe_params.cipher_moduli_value(),
     );
 
+    let mut compose_scratch = vec![0; base_q.moduli_count()];
     base_q.compose_polynomial_to(
         &msg2,
         &mut msg2_big_uint_poly,
         poly_length,
-        glev_workspace.compose_buffer_mut(),
+        &mut compose_scratch,
     );
 
     let mut c1: DcrtGlwe<Vec<ValueT>> = DcrtGlwe::zero(rns_glwe_len);

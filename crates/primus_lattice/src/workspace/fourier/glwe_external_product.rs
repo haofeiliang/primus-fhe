@@ -113,7 +113,7 @@ impl<T: TorusFftValue> FourierGlweExternalProductWorkspace<T> {
     /// # Panics
     ///
     /// Panics if `size` has a different GLWE dimension or polynomial length.
-    pub fn rebind(&mut self, size: GadgetSize) {
+    fn rebind(&mut self, size: GadgetSize) {
         assert_eq!(
             self.size.glwe_size(),
             size.glwe_size(),

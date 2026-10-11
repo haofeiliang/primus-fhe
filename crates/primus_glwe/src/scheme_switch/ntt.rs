@@ -124,9 +124,10 @@ impl<T: FheUint> NttGlweSchemeSwitchKey<T> {
     /// Uses the stored layout and key decomposition basis. The output preserves
     /// the input GLev's gadget scaling; the key basis only decomposes products.
     ///
-    /// Bind `workspace` to [`Self::key_size`]. It can be reused by other external
-    /// products through [`NttGlweExternalProductWorkspace::rebind`]; restore the
-    /// key layout before calling this method.
+    /// Bind `workspace` to [`Self::key_size`]. To reuse it temporarily with a
+    /// different decomposition depth, use
+    /// [`NttGlweExternalProductWorkspace::with_rebound`], which restores the key
+    /// layout after the call.
     ///
     /// # Correctness
     ///

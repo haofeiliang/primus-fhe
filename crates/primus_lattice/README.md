@@ -92,7 +92,7 @@ These low-level operations deliberately omit some checks. Invalid inputs may sil
 | `NttNtruCmuxWorkspace` / `FourierNtruCmuxWorkspace` | Polynomial length and decomposition levels |
 | `DcrtGlevMulWorkspace` | RNS gadget layout and product-modulus limb width |
 
-Workspaces provide reusable scratch, without validating key, basis, table or modulus identity. Overwriting external products initialize their buffers, so valid calls need no reset; accumulating APIs require valid existing output. GLWE external-product workspace `rebind` preserves the GLWE shape; `resize` can change buffer sizes.
+Workspaces provide reusable scratch, without validating key, basis, table or modulus identity. Overwriting external products initialize their buffers, so valid calls need no reset; accumulating APIs require valid existing output. GLWE external-product workspace `with_rebound` temporarily changes decomposition depth while preserving the GLWE shape and restores the original layout after the call; `resize` can change buffer sizes.
 
 Batch external products and k-CMux check counts and fixed-buffer lengths first, then object lengths as each pair is consumed. An invalid later pair or panicking iterator can leave partial output or scratch; discard the result, then reuse the workspace in a valid call. The method documentation specifies the exact write boundaries.
 

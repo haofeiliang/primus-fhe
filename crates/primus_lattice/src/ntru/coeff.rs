@@ -36,29 +36,6 @@ impl_mul_factor_single_modulus!(Ntru);
 
 impl<S, T> Ntru<S>
 where
-    S: DataOwned<Elem = T>,
-    T: FheUint,
-{
-    /// Creates a new [`Ntru<S>`] with reference of [`Polynomial<A>`].
-    ///
-    /// This copies the polynomial into owned storage.
-    ///
-    /// # Correctness
-    ///
-    /// `h` must be a complete coefficient-domain NTRU ciphertext polynomial;
-    /// copying does not establish encryption validity or infer its key.
-    #[inline]
-    #[must_use]
-    pub fn from_ref<A>(h: &Polynomial<A>) -> Self
-    where
-        A: Data<Elem = T>,
-    {
-        Self(S::from_vec(h.as_ref().to_vec()))
-    }
-}
-
-impl<S, T> Ntru<S>
-where
     S: Data<Elem = T>,
     T: FheUint,
 {

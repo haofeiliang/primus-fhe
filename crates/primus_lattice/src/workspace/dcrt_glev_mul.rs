@@ -105,11 +105,4 @@ impl<T: FheUint> DcrtGlevMulWorkspace<T> {
             compose_buffer: &mut self.compose_buffer,
         }
     }
-
-    /// Borrows the temporary recomposition buffer (one element per RNS modulus).
-    ///
-    /// Its previous contents need not be preserved; recomposition initializes it.
-    pub fn compose_buffer_mut(&mut self) -> &mut [T] {
-        &mut self.compose_buffer
-    }
 }

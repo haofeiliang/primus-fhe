@@ -124,9 +124,10 @@ impl<T: TorusFftValue> FourierGlweSchemeSwitchKey<T> {
     /// Preserves the input's gadget scaling; the key basis only decomposes
     /// external products. Overwrites output without allocating or inverse FFTs.
     ///
-    /// Bind `workspace` to [`Self::key_size`]. It can be reused by other external
-    /// products through [`FourierGlweExternalProductWorkspace::rebind`]; restore the
-    /// key layout before calling this method.
+    /// Bind `workspace` to [`Self::key_size`]. To reuse it temporarily with a
+    /// different decomposition depth, use
+    /// [`FourierGlweExternalProductWorkspace::with_rebound`], which restores the key
+    /// layout after the call.
     ///
     /// # Correctness
     ///

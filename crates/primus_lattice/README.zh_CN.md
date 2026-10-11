@@ -92,7 +92,7 @@ NLev 的 `external_product_sum_to` 和 NGSW 的 `cmux_k_to` 接收数量匹配�
 | `NttNtruCmuxWorkspace` / `FourierNtruCmuxWorkspace` | 多项式长度与分解层数 |
 | `DcrtGlevMulWorkspace` | RNS gadget 布局与乘积模数的 limb 宽度 |
 
-工作区提供可复用 scratch，不验证密钥、basis、table 或模数身份。覆盖式外积会初始化所需缓冲区，合法调用之间无需 reset；累加接口要求输出已有有效值。GLWE 外积工作区的 `rebind` 保持 GLWE 形状，`resize` 可改变缓冲区尺寸。
+工作区提供可复用 scratch，不验证密钥、basis、table 或模数身份。覆盖式外积会初始化所需缓冲区，合法调用之间无需 reset；累加接口要求输出已有有效值。GLWE 外积工作区的 `with_rebound` 临时改变分解层数，保持 GLWE 形状，并在调用结束后恢复原布局；`resize` 可改变缓冲区尺寸。
 
 批量外积和 k-CMux 先检查数量与固定缓冲区长度，再在消费每对输入时检查对象长度。后续项无效或迭代器 panic 可能留下部分输出或 scratch；丢弃结果后，合法调用仍可复用工作区。具体写入边界见相应方法文档。
 
