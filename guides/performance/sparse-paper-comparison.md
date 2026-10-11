@@ -25,13 +25,12 @@ algorithm. The original NOT results below remain explicitly historical, not
 silently relabeled NAND measurements. The alignment audit below distinguishes
 matched contracts from remaining implementation differences.
 
-A subsequent [copy/bucket parameter experiment](sparse-parameter-measurements.md)
+A subsequent [copy/bucket parameter experiment](sparse-parameters.md#matching-and-conditional-distribution)
 holds these profiles' decomposition, noise and return path fixed. Two copies
 with B=2h reduce complete-request latency by 15.7–45.1% against the original
 sparse configurations on the two measured CPU groups. The report also records
 the h70/B73 map-matching failure rate and conditioning limits. These remain
-research candidates; the registered benchmarks and historical comparisons below
-retain their original parameters.
+research candidates; the historical comparisons below use the original parameters.
 
 ## Parameters and comparison boundary
 

@@ -11,7 +11,7 @@
 | 系数算术 | 在各自约束内保留 NTRU pair、有界 NTT pair、GLWE u64 分组累加与紧凑桶末约简，以及 NTRU Fourier u64 四路累加。见[算术报告](sparse-arithmetic.md)，尤其是已记录的[分组与约简联合复评](sparse-arithmetic.md#grouped-ntt-reassessment)和 [Fourier 复评](sparse-arithmetic.md#fourier-four-way-reassessment)。不同基线的收益不能相加。 |
 | Fourier 首项覆盖 | 保留清零后累加。F1 在已测 binary PBS 和 classic CBS 中有收益，但 sparse CBS 与进程间波动阻止全局采纳。[最终对照](fourier-first-write.md)汇总修正后的 108 进程比较，并保留全部 54 组配对结果。 |
 | 布局与批处理 | 保留 NTRU LUT 内部双输入盲旋转。聚合 tiles、首桶特化、流式外积及 GLWE tile-major 密钥在受测负载中不足以采纳。见[布局与批处理](sparse-layout-and-batching.md)。 |
-| 参数 | GLWE NTT 副本/桶数与分解候选仅适用于已验收消费者，默认配置不变。PBS 通过不能证明 CBS 输出尺度有效。见[证据索引](#证据索引)中的三份参数报告。 |
+| 参数 | 历史 GLWE NTT 副本/桶数与分解候选限于当时测试的消费者。PBS 通过不能证明 CBS 输出尺度有效。见[参数与消费者预算](sparse-parameters.md)。 |
 | 共享投影 | 一级原型已撤回：完整请求的小幅收益不足以抵偿存储、接口和误差契约成本。[研究报告](shared-projection-analysis.md)保留推导和负面结果。 |
 | 工作区存储 | 跨请求复用与跨阶段共用地址分别决策。按角色保留必要缓冲；更少内存或相同形状不能证明更快。见[工作区测量](workspace-measurements.md)及 [sparse scratch 对照](sparse-baseline.md#aggregate-scratch-address-comparison)。 |
 | 论文对照 | Algorithm 2、OpenFHE 和 HEXL 测量有明确的适配边界。绝对延迟不能证明与尚未取得的作者 sparse 实现等价。见[论文对照](sparse-paper-comparison.md)。 |
@@ -28,9 +28,7 @@
 | [Sparse 算术](sparse-arithmetic.md) | Pair/四路累加、惰性范围与紧凑约简 |
 | [Sparse 布局与批处理](sparse-layout-and-batching.md) | Tiles、首桶、流式处理、源布局和 LUT 双输入旋转 |
 | [论文对照](sparse-paper-comparison.md) | 参数/操作对齐、OpenFHE、扩展存储与 HEXL |
-| [副本与桶数参数](sparse-parameter-measurements.md) | 匹配、重试分布、内存与固定 basis 候选 |
-| [分解参数](sparse-decomposition-measurements.md) | 各角色误差预算与有限候选筛选 |
-| [消费者验收](sparse-consumer-measurements.md) | PBS/ManyLUT/MVB、反馈及 CBS→CMux，包含失败尺度 |
+| [Sparse 参数与消费者](sparse-parameters.md) | 匹配与条件分布、分解/误差取舍、PBS/ManyLUT/MVB 反馈及 CBS→CMux 尺度限制 |
 | [共享投影](shared-projection-analysis.md) | Reverse trace 成本、任意尾部误差与已撤回原型 |
 
 ## 测量方法

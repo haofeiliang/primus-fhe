@@ -11,7 +11,7 @@ Current APIs and contracts are in the [development guide](../development/README.
 | Coefficient arithmetic | Retain NTRU pairs, bounded NTT pairs, GLWE u64 grouped accumulation and compact bucket reduction, and NTRU Fourier u64 four-way accumulation within their documented bounds. See [arithmetic](sparse-arithmetic.md), especially the recorded [grouped/reduction](sparse-arithmetic.md#grouped-ntt-reassessment) and [Fourier](sparse-arithmetic.md#fourier-four-way-reassessment) reassessments. Do not add gains measured against different baselines. |
 | Fourier first-product write | Keep clear-then-accumulate. F1 improves binary PBS and classic CBS in measured profiles, but sparse CBS and process variability prevent global acceptance. The [final comparison](fourier-first-write.md) summarizes the corrected 108-process comparison and retains all 54 paired results. |
 | Layout and batching | Retain the internal paired NTRU LUT blind rotation. Aggregation tiles, first-bucket specialization, streaming products and GLWE tile-major keys did not justify adoption in the tested workloads. See [layout and batching](sparse-layout-and-batching.md). |
-| Parameters | GLWE NTT replica/bucket and decomposition candidates are scoped to validated consumers; defaults remain unchanged. PBS success alone does not validate CBS output scales. See the three [parameter reports](#evidence-index). |
+| Parameters | Historical GLWE NTT replica/bucket and decomposition candidates are scoped to their tested consumers. PBS success alone does not validate CBS output scales. See [parameters and consumer budgets](sparse-parameters.md). |
 | Shared projection | The first-level prototype was withdrawn: the small complete-request gain did not justify storage, API and error-contract costs. The [study](shared-projection-analysis.md) retains the derivation and negative result. |
 | Workspace storage | Reuse across requests and sharing addresses across stages are separate choices. Keep role-specific buffers where warranted; neither less memory nor equal buffer shapes proves faster execution. See [workspace measurements](workspace-measurements.md) and the [sparse scratch comparison](sparse-baseline.md#aggregate-scratch-address-comparison). |
 | Paper comparison | Algorithm 2, OpenFHE and HEXL measurements have explicit adaptation boundaries. Absolute timings do not establish equivalence to the authors' unavailable sparse implementation. See [paper comparison](sparse-paper-comparison.md). |
@@ -28,9 +28,7 @@ Current APIs and contracts are in the [development guide](../development/README.
 | [Sparse arithmetic](sparse-arithmetic.md) | Pair/four-way accumulation, lazy ranges and compact reduction |
 | [Sparse layout and batching](sparse-layout-and-batching.md) | Tiles, first buckets, streaming, source layout and paired LUT rotations |
 | [Paper comparison](sparse-paper-comparison.md) | Parameter/operation alignment, OpenFHE, expanded storage and HEXL |
-| [Replica and bucket parameters](sparse-parameter-measurements.md) | Matching, retry distributions, memory and fixed-basis candidates |
-| [Decomposition parameters](sparse-decomposition-measurements.md) | Role-specific error budgets and finite candidate screening |
-| [Consumer validation](sparse-consumer-measurements.md) | PBS/ManyLUT/MVB, feedback and CBS→CMux, including rejected scales |
+| [Sparse parameters and consumers](sparse-parameters.md) | Matching and conditioning, decomposition/error tradeoffs, PBS/ManyLUT/MVB feedback and CBS→CMux scale limits |
 | [Shared projection](shared-projection-analysis.md) | Reverse-trace cost, arbitrary-tail errors and the withdrawn prototype |
 
 ## Measurement method
