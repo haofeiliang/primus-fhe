@@ -2,7 +2,9 @@ use num_traits::{ConstOne, ConstZero};
 use primus_integer::{AsInto, FheInt, FheUint};
 use rand::distr::Bernoulli;
 
-use crate::{SecretKeyDistr, SignedDiscreteGaussian, ternary::TernarySampler};
+use crate::{
+    SecretKeyDistr, SecretKeySamplerError, SignedDiscreteGaussian, ternary::TernarySampler,
+};
 
 /// Prepared whole-key sampling with shared signed and modular output paths.
 ///
@@ -53,12 +55,12 @@ impl<T: FheUint> SecretKeySampler<T> {
     /// Prepares probabilities and Gaussian tables, returning their validation
     /// errors. Fixed weights are checked separately by [`Self::validate_length`]
     /// or when sampling into the actual output.
-    pub fn try_new(distr: SecretKeyDistr) -> Result<Self, crate::SecretKeySamplerError> {
+    pub fn try_new(distr: SecretKeyDistr) -> Result<Self, SecretKeySamplerError> {
         let method = match distr {
             SecretKeyDistr::UniformBinary => SamplingMethod::UniformBinary,
             SecretKeyDistr::Binary { one_probability } => SamplingMethod::Binary(
                 Bernoulli::new(one_probability)
-                    .map_err(|_| crate::SecretKeySamplerError::InvalidProbabilities)?,
+                    .map_err(|_| SecretKeySamplerError::InvalidProbabilities)?,
             ),
             SecretKeyDistr::SparseTernary => SamplingMethod::SparseTernary,
             SecretKeyDistr::UniformTernary => SamplingMethod::UniformTernary,
@@ -92,7 +94,7 @@ impl<T: FheUint> SecretKeySampler<T> {
     /// Checks fixed weights against a complete logical key before key generation.
     /// Returns an error if the weight sum overflows or exceeds `length`.
     /// Sampling still checks the actual output, which may have a different length.
-    pub fn validate_length(&self, length: usize) -> Result<(), crate::SecretKeySamplerError> {
+    pub fn validate_length(&self, length: usize) -> Result<(), SecretKeySamplerError> {
         let weight = match self.distr {
             SecretKeyDistr::FixedHammingWeightBinary { hamming_weight }
             | SecretKeyDistr::FixedHammingWeightTernary { hamming_weight } => Some(hamming_weight),
@@ -103,7 +105,7 @@ impl<T: FheUint> SecretKeySampler<T> {
             _ => Some(0),
         };
         if weight.is_none_or(|weight| weight > length) {
-            return Err(crate::SecretKeySamplerError::InvalidWeight { length });
+            return Err(SecretKeySamplerError::InvalidWeight { length });
         }
         Ok(())
     }
@@ -112,13 +114,10 @@ impl<T: FheUint> SecretKeySampler<T> {
     /// Call once when preparing parameters, and once per modulus for RNS output.
     /// `T::MAX` denotes the native modulus; no modulus is stored by the sampler.
     /// Returns an error if the inclusive support bound exceeds `modulus_minus_one`.
-    pub fn validate_modulus(
-        &self,
-        modulus_minus_one: T,
-    ) -> Result<(), crate::SecretKeySamplerError> {
+    pub fn validate_modulus(&self, modulus_minus_one: T) -> Result<(), SecretKeySamplerError> {
         let maximum_magnitude = self.maximum_magnitude();
         if maximum_magnitude > modulus_minus_one {
-            return Err(crate::SecretKeySamplerError::ModulusTooSmall {
+            return Err(SecretKeySamplerError::ModulusTooSmall {
                 maximum_magnitude: maximum_magnitude.as_into(),
                 modulus_minus_one: modulus_minus_one.as_into(),
             });
