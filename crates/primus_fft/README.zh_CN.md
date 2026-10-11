@@ -50,7 +50,6 @@ assert_eq!(output, input);
 
 - `forward_as_torus` 将每个无符号整数重新解释为有符号位模式，再乘以 `2^-BITS`；例如 `u32::MAX` 表示 `-1 / 2^32`。
 - `forward_as_integer` 执行相同的有符号位模式解释，但不做 torus 缩放。它适合 secret key、分解 digit 等小整数多项式。
-- `forward_integer_f64` 接受以 `f64` 保存的整数值系数，不再执行额外的表示转换。
 - `backward_as_torus` 执行逆变换、torus 反向缩放、舍入以及到无符号字长的 wrapping 转换。
 
 负循环卷积应对 torus 多项式调用 `forward_as_torus`，对整数多项式调用 `forward_as_integer`，逐点执行复数乘法，再调用 `backward_as_torus`。
@@ -66,7 +65,7 @@ Table 不可变并实现 `Send + Sync`，可在线程间共享；每个并发 wo
 - 系数 slice 包含 `poly_length().get()` 个值；
 - Fourier slice 包含 `fourier_length() == poly_length().fourier_poly_len()` 个值。
 
-推荐使用 `FftEngine::new(table)`。通过 `from_workspace` 复用已有分配时，须保留 `into_parts` 返回的 table/workspace 配对，接口不检查工作区来源。完整方法契约见 [table 与 engine API](src/table.rs)。
+推荐使用 `FftEngine::new(table)`，并保留 engine 以重复执行变换。完整方法契约见 [table 与 engine API](src/table.rs)。
 
 内置工作区在析构时擦除缓冲区；`fft.zeroize_workspace()` 可擦除并保留分配。变换不会在每次调用后擦除 scratch。调用方持有的输入/输出、寄存器和栈副本不在此缓冲区保证内，自定义后端自行定义擦除行为。
 

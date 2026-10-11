@@ -4,13 +4,13 @@ use std::hint::black_box;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable, TorusFftValue};
 
-fn bench_forward<Table: FftTable>(c: &mut Criterion, name: &str) {
+fn bench_forward<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, name: &str) {
     let mut group = c.benchmark_group(name);
     for log_n in [9u32, 10, 11, 12] {
         let fft = Table::new(PolyLength::new(1usize << log_n));
         let mut engine = FftEngine::new(&fft);
         let input = (0..fft.poly_length().get())
-            .map(|i| (i as u64).wrapping_mul(0x9e3779b97f4a7c15))
+            .map(|i| T::as_from((i as u64).wrapping_mul(0x9e3779b97f4a7c15)))
             .collect::<Vec<_>>();
         let mut output = vec![Complex64::default(); fft.fourier_length()];
         group.bench_with_input(
@@ -61,10 +61,12 @@ fn bench_conversion<T: TorusFftValue>(c: &mut Criterion) {
 fn fft(c: &mut Criterion) {
     bench_conversion::<u32>(c);
     bench_conversion::<u64>(c);
-    bench_forward::<RustFftTable>(c, "rustfft_forward_torus");
+    bench_forward::<u32, RustFftTable>(c, "rustfft_forward_torus_u32");
+    bench_forward::<u64, RustFftTable>(c, "rustfft_forward_torus");
     bench_inverse::<u32, RustFftTable>(c, "rustfft_backward_torus_u32");
     bench_inverse::<u64, RustFftTable>(c, "rustfft_backward_torus");
-    bench_forward::<TfheFftTable>(c, "tfhe_fft_forward_torus");
+    bench_forward::<u32, TfheFftTable>(c, "tfhe_fft_forward_torus_u32");
+    bench_forward::<u64, TfheFftTable>(c, "tfhe_fft_forward_torus");
     bench_inverse::<u32, TfheFftTable>(c, "tfhe_fft_backward_torus_u32");
     bench_inverse::<u64, TfheFftTable>(c, "tfhe_fft_backward_torus");
 }

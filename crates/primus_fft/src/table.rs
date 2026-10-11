@@ -33,7 +33,9 @@ pub trait FftTable: Send + Sync {
     fn poly_length(&self) -> PolyLength;
     /// Returns the number of complex Fourier values, `N / 2`.
     #[must_use]
-    fn fourier_length(&self) -> usize;
+    fn fourier_length(&self) -> usize {
+        self.poly_length().fourier_poly_len()
+    }
     /// Builds the frequency permutation for the negacyclic automorphism `X -> X^degree`.
     /// Entry j is `(source, conjugate)`: `output[j]` is `input[source]`, conjugated
     /// when requested. The map contains exactly N/2 entries and is bound to this
@@ -81,23 +83,6 @@ pub trait FftTable: Send + Sync {
     fn forward_as_integer<T: TorusFftValue>(
         &self,
         input: &[T],
-        output: &mut [Complex64],
-        workspace: &mut Self::Workspace,
-    );
-    /// Transforms ordinary integer-valued floating point coefficients to this
-    /// table's Fourier form and completely overwrites `output`.
-    ///
-    /// `input` must contain [`Self::poly_length`] coefficients, `output` must
-    /// contain [`Self::fourier_length`] complex values, and `workspace` must have
-    /// been allocated by this table instance.
-    ///
-    /// # Panics
-    ///
-    /// Panics when either slice has the wrong length. Backend workspace-capacity
-    /// checks may also panic; they do not validate table identity.
-    fn forward_integer_f64(
-        &self,
-        input: &[f64],
         output: &mut [Complex64],
         workspace: &mut Self::Workspace,
     );
@@ -159,21 +144,6 @@ impl<'a, Table: FftTable + ?Sized> FftEngine<'a, Table> {
         }
     }
 
-    /// Creates an engine from a workspace allocated by `table`.
-    ///
-    /// Reuses the allocation without copying, including a workspace recovered
-    /// through [`Self::into_parts`]. This constructor performs no compatibility check.
-    ///
-    /// # Correctness
-    /// `workspace` must originate from this exact `table` instance. A matching
-    /// length or capacity does not prove that requirement; using another table's
-    /// workspace is unsupported, even if later transforms do not panic.
-    #[must_use]
-    #[inline]
-    pub fn from_workspace(table: &'a Table, workspace: Table::Workspace) -> Self {
-        Self { table, workspace }
-    }
-
     /// Returns the shared immutable table.
     #[must_use]
     #[inline]
@@ -225,21 +195,6 @@ impl<'a, Table: FftTable + ?Sized> FftEngine<'a, Table> {
             .forward_as_integer(input, output, &mut self.workspace);
     }
 
-    /// Transforms ordinary integer-valued floating point coefficients.
-    ///
-    /// Completely overwrites `output`, which must contain
-    /// [`Self::fourier_length`] values; `input` must contain
-    /// [`Self::poly_length`] coefficients.
-    ///
-    /// # Panics
-    ///
-    /// Panics when either slice has the wrong length.
-    #[inline]
-    pub fn forward_integer_f64(&mut self, input: &[f64], output: &mut [Complex64]) {
-        self.table
-            .forward_integer_f64(input, output, &mut self.workspace);
-    }
-
     /// Converts this engine's Fourier form back to torus coefficients.
     ///
     /// `input` must contain [`Self::fourier_length`] values produced for this
@@ -253,15 +208,5 @@ impl<'a, Table: FftTable + ?Sized> FftEngine<'a, Table> {
     pub fn backward_as_torus<T: TorusFftValue>(&mut self, input: &[Complex64], output: &mut [T]) {
         self.table
             .backward_as_torus(input, output, &mut self.workspace);
-    }
-
-    /// Splits the engine into its table reference and reusable workspace.
-    ///
-    /// Keep these parts together: [`Self::from_workspace`] can rebind them
-    /// without allocating, while the workspace remains specific to that table.
-    #[must_use]
-    #[inline]
-    pub fn into_parts(self) -> (&'a Table, Table::Workspace) {
-        (self.table, self.workspace)
     }
 }

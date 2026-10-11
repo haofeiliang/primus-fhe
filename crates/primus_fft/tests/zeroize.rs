@@ -84,7 +84,7 @@ where
     RELEASED.store(0, Ordering::SeqCst);
     ERASED.store(true, Ordering::SeqCst);
     RECORDING.set(true);
-    let mut workspace = table.new_workspace();
+    let mut fft = FftEngine::new(&table);
     RECORDING.set(false);
     // Small RustFFT plans need no extra backend work buffer.
     let allocation_count = ALLOCATIONS.load(Ordering::SeqCst);
@@ -103,7 +103,7 @@ where
             );
         }
     }
-    workspace.zeroize();
+    fft.zeroize_workspace();
     for (pointer, size) in POINTERS.iter().zip(&SIZES).take(allocation_count) {
         // SAFETY: initialized, still-live workspace storage with no mutation.
         let bytes = unsafe {
@@ -112,7 +112,6 @@ where
         assert!(bytes.iter().all(|&byte| byte == 0));
     }
 
-    let mut fft = FftEngine::from_workspace(&table, workspace);
     let input: Vec<u32> = (0..table.poly_length().get())
         .map(|i| (i as u32).wrapping_mul(0x12345))
         .collect();
@@ -123,10 +122,6 @@ where
         fft.forward_as_torus(&input, &mut fourier);
         fft.backward_as_torus(&fourier, &mut output);
         assert_eq!(input, output);
-        // Rebind the recovered workspace to its original table, retaining the
-        // same live allocations and their eventual erasing owner.
-        let (table, workspace) = fft.into_parts();
-        fft = FftEngine::from_workspace(table, workspace);
     }
     // Inverse FFT has just repopulated workspace with nonzero phase data.
     drop(fft);

@@ -102,9 +102,6 @@ impl FftTable for TfheFftTable {
     fn poly_length(&self) -> PolyLength {
         self.poly_length
     }
-    fn fourier_length(&self) -> usize {
-        self.poly_length.fourier_poly_len()
-    }
 
     fn automorphism_map(&self, degree: usize) -> Vec<(usize, bool)> {
         // tfhe-fft 0.10 unordered::Plan stores standard bin i at bit_rev_twice(i),
@@ -148,14 +145,6 @@ impl FftTable for TfheFftTable {
         workspace: &mut Self::Workspace,
     ) {
         self.forward_with(input, output, TorusFftValue::into_signed_f64, workspace);
-    }
-    fn forward_integer_f64(
-        &self,
-        input: &[f64],
-        output: &mut [Complex64],
-        workspace: &mut Self::Workspace,
-    ) {
-        self.forward_with(input, output, core::convert::identity, workspace);
     }
     fn backward_as_torus<T: TorusFftValue>(
         &self,
@@ -205,25 +194,25 @@ mod tests {
                 },
             );
             let mut fft = FftEngine::new(&table);
-            let mut coefficients = vec![0.0; table.poly_length.get()];
-            coefficients[1] = 1.0;
+            let mut coefficients = vec![0u32; table.poly_length.get()];
+            coefficients[1] = 1;
             let mut input = vec![Complex64::default(); table.poly_length.fourier_poly_len()];
             let mut expected = input.clone();
-            fft.forward_integer_f64(&coefficients, &mut input);
+            fft.forward_as_integer(&coefficients, &mut input);
             for degree in [
                 3,
                 5,
                 table.poly_length.get() + 1,
                 2 * table.poly_length.get() - 1,
             ] {
-                coefficients.fill(0.0);
+                coefficients.fill(0);
                 coefficients[degree % table.poly_length.get()] = if degree < table.poly_length.get()
                 {
-                    1.0
+                    1
                 } else {
-                    -1.0
+                    u32::MAX // Signed -1 at integer scale.
                 };
-                fft.forward_integer_f64(&coefficients, &mut expected);
+                fft.forward_as_integer(&coefficients, &mut expected);
                 for (&expected, (source, conjugate)) in
                     expected.iter().zip(table.automorphism_map(degree))
                 {

@@ -50,7 +50,6 @@ assert_eq!(output, input);
 
 - `forward_as_torus` reinterprets each unsigned word as its signed bit pattern, then scales it by `2^-BITS`. For example, `u32::MAX` represents `-1 / 2^32`.
 - `forward_as_integer` performs the same signed-bit-pattern interpretation without torus scaling. It is intended for small integer polynomials such as secret keys and decomposition digits.
-- `forward_integer_f64` accepts integer-valued `f64` coefficients without an additional representation conversion.
 - `backward_as_torus` applies the inverse transform, torus scaling, rounding, and wrapping conversion back to the selected unsigned word type.
 
 A negacyclic convolution uses `forward_as_torus` for a torus polynomial, `forward_as_integer` for an integer polynomial, point-wise complex multiplication, and then `backward_as_torus`.
@@ -66,7 +65,7 @@ Input and output lengths must match exactly; otherwise transforms panic:
 - coefficient slices contain `poly_length().get()` values;
 - Fourier slices contain `fourier_length() == poly_length().fourier_poly_len()` values.
 
-Use `FftEngine::new(table)` for the recommended workflow. When reusing an allocation through `from_workspace`, preserve the table/workspace pair returned by `into_parts`; workspace provenance is not checked. Complete method contracts are in the [table and engine API](src/table.rs).
+Use `FftEngine::new(table)` and retain it for repeated transforms. Complete method contracts are in the [table and engine API](src/table.rs).
 
 Built-in workspaces erase their buffers on drop; `fft.zeroize_workspace()` erases them without releasing the allocation. Transforms do not erase scratch after each call. Caller-owned inputs/outputs, registers and stack copies are outside this buffer guarantee; custom backends define their own erasure behavior.
 

@@ -107,9 +107,6 @@ impl FftTable for RustFftTable {
     fn poly_length(&self) -> PolyLength {
         self.poly_length
     }
-    fn fourier_length(&self) -> usize {
-        self.poly_length.fourier_poly_len()
-    }
 
     fn automorphism_map(&self, degree: usize) -> Vec<(usize, bool)> {
         crate::automorphism::automorphism_map(self.poly_length, degree, core::convert::identity)
@@ -143,15 +140,6 @@ impl FftTable for RustFftTable {
         workspace: &mut Self::Workspace,
     ) {
         self.forward_with(input, output, TorusFftValue::into_signed_f64, workspace);
-    }
-
-    fn forward_integer_f64(
-        &self,
-        input: &[f64],
-        output: &mut [Complex64],
-        workspace: &mut Self::Workspace,
-    ) {
-        self.forward_with(input, output, core::convert::identity, workspace);
     }
 
     fn backward_as_torus<T: TorusFftValue>(
