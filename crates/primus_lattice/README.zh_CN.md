@@ -70,7 +70,7 @@ NLev 与 NGSW 的存储形状相同，但语义不同：`beta` 的 NLev 各层�
 
 `*_assign` 原地修改接收者，`*_to` 写入独立输出，`add_*_assign` 累加到已初始化的存储。消费式方法可能复用存储，返回新抽取样本的方法会分配；以具体方法契约为准。
 
-外积可以输出系数，也可以通过 `external_product_ntt_to` / `external_product_fourier_to` 保留变换域结果。`NGSW.external_product_nlev_to` 保留输入 NLev 的层数和 gadget 尺度，它们可与控制的分解基不同。
+外积可以输出系数，也可以通过 `external_product_ntt_to` / `external_product_fourier_to` 保留变换域结果。
 
 NLev 的 `external_product_sum_to` 和 NGSW 的 `cmux_k_to` 接收数量匹配的精确长度迭代器。可传入借用的 gadget 和多项式/密文视图；输出用 `output.as_mut_view()`，CMux 默认分支用 `default.as_view()`。空求和写零，空 CMux 复制默认分支。Fourier 对聚合结果统一舍入，可能与逐项转回系数后相加不同。
 

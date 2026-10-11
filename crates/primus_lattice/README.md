@@ -70,7 +70,7 @@ Availability depends on the type and representation. RNS scalar/factor inputs us
 
 `*_assign` mutates its receiver, `*_to` writes a separate output, and `add_*_assign` accumulates into initialized storage. Consuming methods may reuse storage, while methods returning a new extracted sample allocate; consult the specific method contract.
 
-External products can return coefficients or retain transformed output through `external_product_ntt_to` / `external_product_fourier_to`. `NGSW.external_product_nlev_to` preserves the input NLev's level count and gadget scales, which may differ from the control's decomposition basis.
+External products can return coefficients or retain transformed output through `external_product_ntt_to` / `external_product_fourier_to`.
 
 NLev `external_product_sum_to` and NGSW `cmux_k_to` accept exact-size iterators with matching counts. Pass borrowed gadgets and polynomial/ciphertext views, `output.as_mut_view()` for output, and `default.as_view()` for the CMux default. Empty sums write zero; empty CMux copies its default. Fourier rounds the aggregate result, which can differ from summing separately converted coefficient products.
 

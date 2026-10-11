@@ -4,7 +4,6 @@ use primus_data::{Data, DataMut};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
 
-use crate::nlev::Nlev;
 use crate::ntru::{FourierNtru, Ntru, accumulate_fourier_gadget_product};
 use crate::workspace::FourierNtruExternalProductWorkspace;
 
@@ -98,54 +97,5 @@ where
             fft,
             &mut workspace,
         );
-    }
-
-    /// Applies this NGSW external product to every NTRU level in `input`.
-    ///
-    /// If `input` encrypts `alpha` as NLev and `self` encrypts `beta` as
-    /// NGSW, `output` encrypts `alpha * beta` as NLev.
-    ///
-    /// # Correctness
-    ///
-    /// The gadget, basis, table, and workspace must satisfy
-    /// [`Self::external_product_to`]. Input and output have the same number of
-    /// complete `workspace.poly_length().get()`-coefficient levels in matching NLev
-    /// order under compatible keys. Their level count and gadget scalars are
-    /// independent of the control's `basis`, and are preserved by this operation.
-    /// Each output level is overwritten; workspace scratch needs no manual reset.
-    pub fn external_product_nlev_to<T, Table, A, C>(
-        &self,
-        input: &Nlev<A>,
-        output: &mut Nlev<C>,
-        basis: &ApproxSignedBasis<T>,
-        fft: &mut FftEngine<'_, Table>,
-        workspace: &mut FourierNtruExternalProductWorkspace<T>,
-    ) where
-        T: TorusFftValue,
-        Table: FftTable,
-        A: Data<Elem = T>,
-        C: DataMut<Elem = T>,
-    {
-        let poly_length = workspace.poly_length().get();
-        debug_assert_eq!(input.as_ref().len() & (poly_length - 1), 0);
-        debug_assert_eq!(output.as_ref().len(), input.as_ref().len());
-
-        let mut workspace = workspace.as_mut();
-        for (input_level, mut output_level) in input
-            .iter_ntru(poly_length)
-            .zip(output.iter_ntru_mut(poly_length))
-        {
-            workspace.fourier_accumulator.set_zero();
-            accumulate_fourier_gadget_product(
-                self.as_ref(),
-                input_level.as_ref(),
-                basis,
-                fft,
-                &mut workspace,
-            );
-            workspace
-                .fourier_accumulator
-                .write_torus_form(&mut output_level, fft);
-        }
     }
 }

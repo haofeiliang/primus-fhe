@@ -6,7 +6,6 @@ use primus_integer::FheUint;
 use primus_ntt::NttTable;
 use primus_reduce::FieldContext;
 
-use crate::nlev::Nlev;
 use crate::ntru::{Ntru, NttNtru, accumulate_ntt_gadget_product};
 use crate::workspace::NttNtruExternalProductWorkspace;
 
@@ -119,57 +118,5 @@ where
             ntt,
             &mut workspace,
         );
-    }
-
-    /// Applies this NGSW external product to every NTRU level in `input`.
-    ///
-    /// If `input` encrypts `alpha` as NLev and `self` encrypts `beta` as
-    /// NGSW, `output` encrypts `alpha * beta` as NLev.
-    ///
-    /// # Correctness
-    ///
-    /// The gadget, basis, table, and workspace must satisfy
-    /// [`Self::external_product_to`]. Input and output have the same number of
-    /// complete `workspace.poly_length().get()`-coefficient levels in matching NLev
-    /// order under compatible keys. Their level count and gadget scalars are
-    /// independent of the control's `basis`, and are preserved by this operation.
-    /// Each output level is overwritten; workspace scratch needs no manual reset.
-    pub fn external_product_nlev_to<T, M, Table, A, C>(
-        &self,
-        input: &Nlev<A>,
-        output: &mut Nlev<C>,
-        basis: &ApproxSignedBasis<T>,
-        modulus: M,
-        ntt: &Table,
-        workspace: &mut NttNtruExternalProductWorkspace<T>,
-    ) where
-        T: FheUint,
-        M: FieldContext<T>,
-        Table: NttTable<ValueT = T>,
-        A: Data<Elem = T>,
-        C: DataMut<Elem = T>,
-        S: Data<Elem = T>,
-    {
-        let poly_length = workspace.poly_length().get();
-        debug_assert_eq!(input.as_ref().len() & (poly_length - 1), 0);
-        debug_assert_eq!(output.as_ref().len(), input.as_ref().len());
-
-        for (input_level, mut output_level) in input
-            .iter_ntru(poly_length)
-            .zip(output.iter_ntru_mut(poly_length))
-        {
-            let mut transformed = NttNtru(output_level.as_mut());
-            let mut workspace = workspace.as_mut_with_accumulator(&mut transformed);
-            workspace.ntt_accumulator.set_zero();
-            accumulate_ntt_gadget_product(
-                self.as_ref(),
-                input_level.as_ref(),
-                basis,
-                modulus,
-                ntt,
-                &mut workspace,
-            );
-            ntt.inverse_transform_slice(workspace.ntt_accumulator.as_mut());
-        }
     }
 }

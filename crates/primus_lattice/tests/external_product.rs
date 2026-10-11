@@ -196,36 +196,11 @@ fn ntt_ntru_gadget_products_match_negacyclic_product() {
         }
         transformed.write_coeff_form(&mut ngsw_product, &ntt);
         assert_eq!(ngsw_product.as_ref(), expected.as_ref());
-
-        // The control basis decomposes each row's coefficients; it does not
-        // determine how many rows the input NLev contains or their gadget scales.
-        for log_basis in [2, 6] {
-            let output_basis =
-                ApproxSignedBasis::new(Some(Q), DecompositionBaseLog::new(log_basis), None);
-            assert_ne!(
-                output_basis.decompose_length().get(),
-                basis.decompose_length().get()
-            );
-            let input_nlev = make_nlev(&alpha, &output_basis);
-            let expected_nlev = make_nlev(&expected, &output_basis);
-            let mut output_nlev = Nlev::new(vec![u32::MAX; input_nlev.as_ref().len()]);
-            ntt_ngsw.external_product_nlev_to(
-                &input_nlev,
-                &mut output_nlev,
-                &basis,
-                modulus,
-                &ntt,
-                &mut workspace,
-            );
-            assert_eq!(output_nlev.as_ref(), expected_nlev.as_ref());
-        }
     }
     assert_eq!([storage[0], storage[N + 1]], [u32::MAX; 2]);
 }
 
-// Both FFT backends must preserve torus scale. Control levels and the output
-// NLev levels intentionally differ in both directions, preventing accidental
-// use of the control basis to traverse the output ciphertext.
+// Both FFT backends must preserve torus scale at coefficient and Fourier endpoints.
 fn fourier_ntru_gadget_products<Table: FftTable>() {
     const LOG_N: u32 = 5;
     const N: usize = 1 << LOG_N;
@@ -361,26 +336,6 @@ fn fourier_ntru_gadget_products<Table: FftTable>() {
         }
         transformed.write_torus_form(&mut ngsw_product, &mut engine);
         assert_eq!(ngsw_product.as_ref(), expected.as_ref());
-
-        for log_basis in [4, 12] {
-            let output_basis =
-                ApproxSignedBasis::new(None, DecompositionBaseLog::new(log_basis), None);
-            assert_ne!(
-                output_basis.decompose_length().get(),
-                basis.decompose_length().get()
-            );
-            let input_nlev = make_nlev(&alpha, &output_basis);
-            let expected_nlev = make_nlev(&expected, &output_basis);
-            let mut output_nlev = Nlev::new(vec![u32::MAX; input_nlev.as_ref().len()]);
-            fourier_ngsw.external_product_nlev_to(
-                &input_nlev,
-                &mut output_nlev,
-                &basis,
-                &mut engine,
-                &mut workspace,
-            );
-            assert_eq!(output_nlev.as_ref(), expected_nlev.as_ref());
-        }
     }
     assert_eq!([storage[0], storage[N / 2 + 1]], [guard; 2]);
 }
