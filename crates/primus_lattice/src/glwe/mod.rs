@@ -1,10 +1,7 @@
-mod big_uint;
-
 mod coeff;
 mod extract;
 #[cfg(feature = "ntt")]
 mod ntt;
-mod truncate;
 
 #[cfg(feature = "rns")]
 mod crt;
@@ -14,12 +11,9 @@ mod dcrt;
 #[cfg(feature = "fourier")]
 mod fourier;
 
-pub use big_uint::{BigUintGlwe, BigUintGlweIter, BigUintGlweIterMut};
-
 pub use coeff::{Glwe, GlweIter, GlweIterMut};
 #[cfg(feature = "ntt")]
 pub use ntt::{NttGlwe, NttGlweIter, NttGlweIterMut};
-pub use truncate::TruncatedGlwe;
 
 #[cfg(feature = "rns")]
 pub use crt::{CrtGlwe, CrtGlweIter, CrtGlweIterMut};

@@ -1,14 +1,11 @@
-//! Sample order and phase signs, compact padding, and packed allocation reuse.
+//! Sample order and phase signs, compact padding, and packed extraction.
 
-use primus_lattice::GlweDimension;
 use primus_lattice::{
-    GlweSize,
-    glwe::{Glwe, TruncatedGlwe},
+    glwe::Glwe,
     lwe::{Lwe, MultiMsgLwe},
     ntru::Ntru,
 };
 use primus_modulus::{BarrettModulus, NativeModulus};
-use primus_poly::PolyLength;
 use primus_reduce::{ReduceDotProduct, ReduceSub};
 
 #[test]
@@ -146,54 +143,24 @@ fn indexed_extraction_preserves_ntru_and_dimension_one_glwe_phases() {
 }
 
 #[test]
-#[should_panic(expected = "packed multi-message LWE extraction requires GLWE dimension 1")]
-fn packed_extraction_rejects_multiple_glwe_masks() {
-    // Packed extraction owns its layout boundary and supports exactly one mask.
-    let ciphertext = TruncatedGlwe::new(vec![1u32, 2, 3, 4, 5, 6, 7, 8, 10, 20]);
-    let _ = ciphertext.into_multi_msg_lwe(
-        2,
-        GlweSize::new(GlweDimension::new(2), PolyLength::new(32)),
-        NativeModulus::new(),
-    );
-}
-
-#[test]
-fn packed_and_consuming_extraction_match_individual_samples() {
+fn packed_extraction_matches_negacyclic_sample_order() {
     let modulus = BarrettModulus::new(97u32);
-    let ciphertext = Glwe((1..=64u32).collect::<Vec<_>>());
-    let size = GlweSize::new(GlweDimension::new(1), PolyLength::new(32));
-    let mut sample = Lwe::zero(size.mask_len());
-    ciphertext.extract_lwe_to(&mut sample, size.poly_length().get(), modulus);
-    let truncated = TruncatedGlwe(ciphertext.as_ref()[..size.mask_len() + 2].to_vec());
-    assert_eq!(truncated.clone().into_lwe(size, modulus), sample);
-
-    // Empty, one, truncated-body capacity and full-body capacity; consuming
-    // packing must reuse the original allocation for every supported count.
-    for count in [0, 1, 2, size.poly_length().get()] {
-        let owned = TruncatedGlwe(ciphertext.as_ref().to_vec());
-        let allocation = owned.as_ref().as_ptr();
-        let packed = owned.into_multi_msg_lwe(count, size, modulus);
-        assert_eq!(packed.as_ref().as_ptr(), allocation);
-        assert_eq!(packed.as_ref().len(), size.mask_len() + count);
-        assert_eq!(&packed.as_ref()[..4], &[1, 65, 66, 67]);
-        if count <= 2 {
-            assert_eq!(
-                truncated.clone().into_multi_msg_lwe(count, size, modulus),
-                packed
-            );
-        }
-        let borrowed = MultiMsgLwe(packed.as_ref());
-        if count > 0 {
-            let all = borrowed.extract_all(count, modulus);
-            assert_eq!(all.len(), count);
-            for (index, extracted) in all.iter().enumerate() {
-                ciphertext.extract_lwe_at_to(index, &mut sample, size.poly_length().get(), modulus);
-                assert_eq!(*extracted, sample);
-                assert_eq!(
-                    borrowed.extract_lwe_at(index, size.mask_len(), modulus),
-                    sample
-                );
-            }
+    // A constant-term extraction mask followed by four bodies. Hand-written
+    // samples fix right rotations and the signs of coefficients crossing X^4.
+    let storage = [1u32, 2, 3, 4, 10, 20, 30, 40];
+    let expected = [
+        [1, 2, 3, 4, 10],
+        [93, 1, 2, 3, 20],
+        [94, 93, 1, 2, 30],
+        [95, 94, 93, 1, 40],
+    ];
+    for count in [1, 2, 4] {
+        let packed = MultiMsgLwe::new(&storage[..4 + count]);
+        let all = packed.extract_all(count, modulus);
+        assert_eq!(all.len(), count);
+        for (index, (sample, expected)) in all.iter().zip(&expected).enumerate() {
+            assert_eq!(sample.as_ref(), expected);
+            assert_eq!(packed.extract_lwe_at(index, 4, modulus).as_ref(), expected);
         }
     }
 }

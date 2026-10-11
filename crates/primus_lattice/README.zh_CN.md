@@ -22,8 +22,6 @@
 | `Ggsw` | `k+1` 行 GLev | 系数、NTT、Fourier、CRT/DCRT |
 | `Ntru` | 单个多项式 `h`，在秘密多项式 `f` 下的相位为 `f*h` | 系数、NTT、Fourier |
 | `Nlev` / `Ngsw` | 按分解顺序排列的 `L` 个 NTRU 多项式 | 系数、NTT、Fourier |
-| `TruncatedGlwe` | 完整掩码多项式，后接 body 的一个前缀 | 系数 |
-| `BigUintGlwe` | GLWE 多项式，每个系数用固定宽度的小端 limb 序列表示 | 多 limb 系数 |
 
 RLWE、RLev 和 RGSW 分别使用 `Glwe`、`Glev` 和 `Ggsw`，并配合 `GlweSize::new(GlweDimension::new(1), PolyLength::new(N))`；NTT 和 CRT/DCRT 表示同样使用维度为 1 的布局。
 
@@ -40,7 +38,7 @@ NLev 与 NGSW 的存储形状相同，但语义不同：`beta` 的 NLev 各层�
 - 普通 GLWE 占 `(k+1)*N` 个元素，GLev 占 `L*(k+1)*N`，GGSW 占 `(k+1)*L*(k+1)*N`。
 - CRT 的每个多项式包含 `m` 个长度为 `N` 的系数块；DCRT 保持相同布局，但块内为 NTT 数据。嵌套 gadget 顺序为 `[row][level][component][modulus][coefficient/evaluation]`。
 - Fourier 多项式包含 `N/2` 个复数元素，顺序由后端定义。密文使用归一化 torus 变换；多项式乘数的尺度须符合相应运算契约。
-- BigUint 在每个多项式内按系数排列，每个系数使用固定宽度的小端 limb 序列。
+- RNS GLev 乘法还接受 `primus_poly::BigUintPolynomial` 输入，按系数排列，每个系数使用固定宽度的小端 limb 序列。
 
 `LweDimension` 和 `GlweDimension` 表示正的 mask 计数，分别用 `.ciphertext_len()` 和 `.component_count()` 返回包含 body 的 `n+1` 和 `k+1`。这些类型保证计数可表示，不代表安全参数；原始密文和秘密切片仍允许零维。
 
@@ -50,7 +48,7 @@ NLev 与 NGSW 的存储形状相同，但语义不同：`beta` 的 NLev 各层�
 
 ## 序列化
 
-`serde` 为存储支持相应 trait 的 `Lwe<S>` 和 `MultiMsgLwe<S>` 提供序列化。若还需序列化 `BigUint`，须另行启用 `primus_integer/serde`。
+`serde` 为存储支持相应 trait 的 `Lwe<S>` 和 `MultiMsgLwe<S>` 提供序列化。
 
 序列化仅保存原始系数。维数、packed mask/body 分界、模数、编码和密钥身份仍由外部提供；反序列化不验证这些条件。这不是带版本的密钥或参数格式。
 
@@ -76,7 +74,7 @@ NLev 与 NGSW 的存储形状相同，但语义不同：`beta` 的 NLev 各层�
 
 NLev 的 `external_product_sum_to` 和 NGSW 的 `cmux_k_to` 接收数量匹配的精确长度迭代器。可传入借用的 gadget 和多项式/密文视图；输出用 `output.as_mut_view()`，CMux 默认分支用 `default.as_view()`。空求和写零，空 CMux 复制默认分支。Fourier 对聚合结果统一舍入，可能与逐项转回系数后相加不同。
 
-完整 GLWE 抽取将全部 mask 多项式展平为 LWE mask；紧凑抽取要求省略的秘密后缀为零。`MultiMsgLwe` 只表示一个 RLWE mask，从截断 GLWE 转换时要求 `k == 1`。逆抽取嵌入常数项 LWE 样本并将未使用位置清零，不恢复原 GLWE 明文的全部系数。
+完整 GLWE 抽取将全部 mask 多项式展平为 LWE mask；紧凑抽取要求省略的秘密后缀为零。`MultiMsgLwe` 保存按常数项抽取顺序排列的共享 mask，其抽取接口通过负循环旋转 mask 得到各个保留 body 系数的样本。逆抽取嵌入常数项 LWE 样本并将未使用位置清零，不恢复原 GLWE 明文的全部系数。
 
 ## 正确性与工作区契约
 
@@ -132,9 +130,9 @@ assert_eq!(sample.b(), 76);
 - `ntt` 启用 NTT 密文、转换、运算和工作区。
 - `fourier` 启用对应的 Fourier 泛型接口，不选择具体 FFT 引擎。
 - `rustfft` / `tfhe-fft` 同时启用 `fourier` 和对应 FFT 实现，可叠加使用。
-- `rns` 启用 CRT/DCRT 密文、乘法工作区及 `BigUintGlwe` 的 CRT 转换；DCRT 需要的 `ntt` 一并启用。
+- `rns` 启用 CRT/DCRT 密文及乘法工作区；DCRT 需要的 `ntt` 一并启用。
 - `simd` 仅向已启用的算术依赖传播 nightly SIMD，不激活后端、FFT 引擎或 `rns`。
-- `BigUintGlwe`、`RnsGlweSize` 和 `RnsGadgetSize` 不依赖 `rns` feature。
+- `RnsGlweSize` 和 `RnsGadgetSize` 不依赖 `rns` feature。
 
 各 target 显式声明所需表示和具体 FFT 实现。混合后端的对照测试需要全部对应 feature；缺失时 Cargo 跳过整个 target。
 

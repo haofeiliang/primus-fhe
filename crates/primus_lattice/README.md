@@ -22,8 +22,6 @@ Let `N` be the polynomial length, `k` the GLWE mask dimension, `L` the gadget le
 | `Ggsw` | `k+1` GLev rows | Coefficient, NTT, Fourier, CRT/DCRT |
 | `Ntru` | One polynomial `h`, with phase `f*h` under secret `f` | Coefficient, NTT, Fourier |
 | `Nlev` / `Ngsw` | `L` NTRU polynomials in decomposition order | Coefficient, NTT, Fourier |
-| `TruncatedGlwe` | Full mask polynomials followed by a prefix of the body | Coefficients |
-| `BigUintGlwe` | GLWE polynomials with fixed-width little-endian limbs per coefficient | Multi-limb coefficients |
 
 RLWE, RLev and RGSW use `Glwe`, `Glev` and `Ggsw` with `GlweSize::new(GlweDimension::new(1), PolyLength::new(N))`; their NTT and CRT/DCRT representations follow the same dimension-one layout.
 
@@ -40,7 +38,7 @@ Wrappers are generic over storage `S` through [`primus_data`](../primus_data/REA
 - Ordinary GLWE uses `(k+1)*N` elements, GLev uses `L*(k+1)*N`, and GGSW uses `(k+1)*L*(k+1)*N`.
 - CRT stores each polynomial as `m` coefficient blocks of length `N`; DCRT uses the same layout with NTT data in each block. Nested gadget order is `[row][level][component][modulus][coefficient/evaluation]`.
 - Fourier polynomials contain `N/2` complex entries in backend-defined order. Ciphertexts use normalized torus transforms; polynomial multipliers must use the scale required by the operation.
-- BigUint storage is coefficient-major within each polynomial, with fixed-width little-endian limbs per coefficient.
+- RNS GLev multiplication also accepts `primus_poly::BigUintPolynomial` inputs, stored coefficient-major with fixed-width little-endian limbs per coefficient.
 
 `LweDimension` and `GlweDimension` represent positive mask counts; `.ciphertext_len()` and `.component_count()` return the body-inclusive `n+1` and `k+1`. They guarantee representable counts, not secure parameters. Raw ciphertext and secret-key slices can still represent dimension zero.
 
@@ -50,7 +48,7 @@ Layouts and workspaces take [`primus_poly::PolyLength`](../primus_poly/README.md
 
 ## Serialization
 
-`serde` enables serialization for `Lwe<S>` and `MultiMsgLwe<S>` when their storage supports the corresponding traits. Enable `primus_integer/serde` separately to serialize `BigUint` values.
+`serde` enables serialization for `Lwe<S>` and `MultiMsgLwe<S>` when their storage supports the corresponding traits.
 
 Only raw coefficients are serialized. Dimensions, the packed mask/body split, modulus, encoding and key identity remain external; deserialization does not validate them. This is not a versioned key or parameter format.
 
@@ -76,7 +74,7 @@ External products can return coefficients or retain transformed output through `
 
 NLev `external_product_sum_to` and NGSW `cmux_k_to` accept exact-size iterators with matching counts. Pass borrowed gadgets and polynomial/ciphertext views, `output.as_mut_view()` for output, and `default.as_view()` for the CMux default. Empty sums write zero; empty CMux copies its default. Fourier rounds the aggregate result, which can differ from summing separately converted coefficient products.
 
-Full GLWE extraction flattens all mask polynomials into an LWE mask; compact extraction requires the omitted secret suffix to be zero. `MultiMsgLwe` represents one RLWE mask, so conversion from truncated GLWE requires `k == 1`. Inverse extraction embeds the constant-term LWE sample and zero-fills unused storage; it does not recover every coefficient of the original GLWE plaintext.
+Full GLWE extraction flattens all mask polynomials into an LWE mask; compact extraction requires the omitted secret suffix to be zero. `MultiMsgLwe` represents one shared mask in constant-term extraction order; its extractors rotate that mask negacyclically for each retained body coefficient. Inverse extraction embeds the constant-term LWE sample and zero-fills unused storage; it does not recover every coefficient of the original GLWE plaintext.
 
 ## Correctness and workspace contracts
 
@@ -132,9 +130,9 @@ Default features are empty: coefficient storage, layouts and basic arithmetic do
 - `ntt` enables NTT ciphertexts, conversions, operations and workspaces.
 - `fourier` enables the corresponding generic Fourier APIs without selecting an FFT engine.
 - `rustfft` / `tfhe-fft` enable `fourier` and the corresponding FFT implementation; they can be combined.
-- `rns` enables CRT/DCRT ciphertexts, multiplication workspaces and CRT conversions on `BigUintGlwe`, including the `ntt` capability required by DCRT.
+- `rns` enables CRT/DCRT ciphertexts and multiplication workspaces, including the `ntt` capability required by DCRT.
 - `simd` propagates nightly SIMD only to active arithmetic dependencies; it does not activate a backend, FFT engine or `rns`.
-- `BigUintGlwe`, `RnsGlweSize`, and `RnsGadgetSize` remain available without `rns`.
+- `RnsGlweSize` and `RnsGadgetSize` remain available without `rns`.
 
 Each target declares the representations and concrete FFT implementations it needs. Mixed-backend comparisons require all corresponding features; Cargo skips the entire target when any requirement is missing.
 
