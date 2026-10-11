@@ -172,28 +172,10 @@ where
         self.size
     }
 
-    /// Returns the coefficient/NTT mask length `kN`.
-    #[inline]
-    pub fn glwe_mid(&self) -> usize {
-        self.size.mask_len()
-    }
-
     /// Returns the coefficient/NTT GLWE ciphertext length `(k + 1)N`.
     #[inline]
     pub fn glwe_len(&self) -> usize {
         self.size.glwe_len()
-    }
-
-    /// Returns the coefficient-domain secret-key length `kN`.
-    #[inline]
-    pub fn secret_key_len(&self) -> usize {
-        self.size.mask_len()
-    }
-
-    /// Returns the Fourier mask length `kN/2`.
-    #[inline]
-    pub fn fourier_glwe_mid(&self) -> usize {
-        self.size.fourier_mask_len()
     }
 
     /// Returns the Fourier GLWE ciphertext length `(k + 1)N/2`.
@@ -252,13 +234,5 @@ where
     #[inline]
     pub fn noise_distribution(&self) -> &DiscreteGaussian<T> {
         self.encryption_parameters.noise_distribution()
-    }
-
-    /// Forwards to [`GlweEncryptionParameters::noise_distribution_div_count`],
-    /// including its minimum-sigma bound and panic conditions.
-    #[inline]
-    pub fn noise_distribution_div_count(&self, count: u32, min_sigma: f64) -> DiscreteGaussian<T> {
-        self.encryption_parameters
-            .noise_distribution_div_count(count, min_sigma)
     }
 }

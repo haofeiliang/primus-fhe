@@ -103,7 +103,7 @@ phase = Encode(message) + e^T r + e2 - e1^T s  (mod q)
 - 空的独立 batch 不消耗随机数。RNG 顺序不保证与逐条加密一致，固定 seed 也不保证跨版本密文字节相同。
 - Batch 入口先检查完整长度；非法消息或 RNG panic 可能留下部分输出并消耗随机数。
 
-Packed 加密用一个长度为 `n` 的共享 mask 和 `count <= n` 个 body，共 `n+count` 个系数。第 `i` 个 body 使用 mask 右移 `i` 位、前 `i` 项取负后的掩码；这些样本不是独立 mask。使用 `encrypt_message_packed` / `decrypt_message_packed` 或 `MultiMsgLwe::extract_lwe_at`，不能直接用 `LweIter` 遍历其中的样本。已编码与相位接口为 `encrypt_encoded_packed`、`decrypt_phase_packed`；`encrypt_zeros_packed` 创建零消息。空 packed 消息列表仍采样并保存共享 mask。
+Packed 加密用一个长度为 `n` 的共享 mask 和 `count <= n` 个 body，共 `n+count` 个系数。第 `i` 个 body 使用 mask 右移 `i` 位、前 `i` 项取负后的掩码；这些样本不是独立 mask。使用 `encrypt_message_packed` / `decrypt_message_packed` 或 `MultiMsgLwe::extract_lwe_at`，不能直接用 `LweIter` 遍历其中的样本。已编码与相位接口为 `encrypt_encoded_packed`、`decrypt_phase_packed`；加密零消息时传入全零的已编码切片。空 packed 消息列表仍采样并保存共享 mask。
 
 ## 密钥切换
 

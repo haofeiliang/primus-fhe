@@ -103,7 +103,7 @@ Independent batches contain `count` consecutive `[a,b]` samples of length `n+1`;
 - Empty independent batches consume no randomness. RNG ordering need not match individual encryptions, and fixed seeds do not guarantee identical ciphertext bytes across versions.
 - Batch entry points check complete lengths first; invalid messages or a panicking RNG can leave partial output and consume randomness.
 
-Packed encryption stores one length-`n` shared mask and `count <= n` bodies, totaling `n+count` coefficients. Body `i` uses the mask rotated right by `i`, with its first `i` entries negated; these are not independent masks. Use `encrypt_message_packed` / `decrypt_message_packed` or `MultiMsgLwe::extract_lwe_at`, rather than `LweIter` over this storage. Encoded and phase operations use `encrypt_encoded_packed` and `decrypt_phase_packed`; `encrypt_zeros_packed` creates zero messages. An empty packed message list still samples and retains the shared mask.
+Packed encryption stores one length-`n` shared mask and `count <= n` bodies, totaling `n+count` coefficients. Body `i` uses the mask rotated right by `i`, with its first `i` entries negated; these are not independent masks. Use `encrypt_message_packed` / `decrypt_message_packed` or `MultiMsgLwe::extract_lwe_at`, rather than `LweIter` over this storage. Encoded and phase operations use `encrypt_encoded_packed` and `decrypt_phase_packed`; pass a zero-filled encoded slice to encrypt zeros. An empty packed message list still samples and retains the shared mask.
 
 ## Key switching
 

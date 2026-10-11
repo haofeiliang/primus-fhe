@@ -40,12 +40,6 @@ fn packed_capacity_is_enforced() {
     );
     assert!(
         catch_unwind(AssertUnwindSafe(|| {
-            key.encrypt_zeros_packed(count, params.encryption_parameters(), &mut rng)
-        }))
-        .is_err()
-    );
-    assert!(
-        catch_unwind(AssertUnwindSafe(|| {
             key.encrypt_encoded_packed(&vec![0u32; count], params.encryption_parameters(), &mut rng)
         }))
         .is_err()
@@ -128,9 +122,10 @@ fn check_packed_samples<T: FheUint, M: RingContext<T>>(modulus: M) {
         }
     }
     for count in [0, 3] {
+        let zeros = &[T::ZERO; 3][..count];
         check(
-            key.encrypt_zeros_packed(count, params.encryption_parameters(), &mut rng),
-            &[T::ZERO; 3][..count],
+            key.encrypt_encoded_packed(zeros, params.encryption_parameters(), &mut rng),
+            zeros,
         );
     }
 }

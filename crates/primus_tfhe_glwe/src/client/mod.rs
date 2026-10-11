@@ -141,19 +141,13 @@ impl<T: FheUint, M: RingContext<T>> PbsParameters<T, M> {
                 )
             }
             crate::PbsOrder::KeyswitchBootstrap => {
-                let glwe = self.blind_rotation_params();
-                let lwe = primus_lwe::LweEncryptionParameters::new(
-                    self.external_lwe_dimension(),
-                    self.cipher_modulus(),
-                    glwe.secret_key_distr(),
-                    glwe.noise_distribution().standard_deviation(),
-                );
+                let glwe = self.blind_rotation_params().encryption_parameters();
                 LwePublicKey::generate(
                     key,
-                    lwe.dimension(),
-                    lwe.cipher_modulus(),
-                    lwe.cipher_modulus_uniform_distr(),
-                    lwe.noise_distribution(),
+                    self.external_lwe_dimension(),
+                    glwe.cipher_modulus(),
+                    glwe.cipher_modulus_uniform_distr(),
+                    glwe.noise_distribution(),
                     rng,
                 )
             }

@@ -139,17 +139,4 @@ where
     pub fn noise_distribution(&self) -> &DiscreteGaussian<T> {
         &self.noise_distribution
     }
-
-    /// Returns noise with standard deviation `max(sigma / sqrt(count), min_sigma)`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the resulting standard deviation is rejected by [`DiscreteGaussian::new`].
-    #[inline]
-    pub fn noise_distribution_div_count(&self, count: u32, min_sigma: f64) -> DiscreteGaussian<T> {
-        let noise_standard_deviation = self.noise_distribution.standard_deviation();
-        let var = noise_standard_deviation * noise_standard_deviation;
-        let sigma = (var / count as f64).sqrt().max(min_sigma);
-        DiscreteGaussian::new(sigma, self.cipher_modulus_minus_one).unwrap()
-    }
 }

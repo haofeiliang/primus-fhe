@@ -46,34 +46,6 @@ impl<T: FheUint> LweSecretKey<T> {
         output
     }
 
-    /// Encrypts multiple zeros using the secret key.
-    ///
-    /// Uses the layout and key contract of
-    /// [`Self::encrypt_encoded_packed`]. A zero count is allowed.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the recorded key modulus differs from `params`, `zero_count`
-    /// exceeds `params.dimension().get()`, or the storage length overflows.
-    #[must_use]
-    #[inline]
-    pub fn encrypt_zeros_packed<R, Modulus>(
-        &self,
-        zero_count: usize,
-        params: &LweEncryptionParameters<T, Modulus>,
-        rng: &mut R,
-    ) -> MultiMsgLweCiphertext<T>
-    where
-        R: rand::Rng + rand::CryptoRng,
-        Modulus: RingContext<T>,
-    {
-        self.check_modulus(params.cipher_modulus());
-        debug_assert_eq!(self.dimension(), params.dimension().get());
-        let mut output = allocate_packed(params.dimension().get(), zero_count);
-        self.encrypt_packed_bodies_assign(&mut output, params, rng);
-        output
-    }
-
     /// Samples the shared mask and adds each rotated mask product and noise to
     /// the encoded bodies. The caller supplies exactly `n + count` coefficients,
     /// with `count <= n`, canonical bodies, and a key matching the parameters.

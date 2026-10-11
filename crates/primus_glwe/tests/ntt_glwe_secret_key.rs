@@ -174,7 +174,7 @@ fn phase_error_uses_the_expected_message_embedding() {
     );
     let table = UintNttTable::new(PolyLength::new(POLY_LENGTH), modulus).unwrap();
     let secret_key = NttGlweSecretKey::new(
-        vec![0; params.secret_key_len()],
+        vec![0; params.size().mask_len()],
         params.size(),
         SecretKeyDistr::UniformBinary,
         modulus,

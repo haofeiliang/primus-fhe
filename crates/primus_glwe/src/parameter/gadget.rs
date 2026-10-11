@@ -268,12 +268,6 @@ where
         self.size.decompose_length()
     }
 
-    /// Returns the coefficient/NTT mask length `kN`.
-    #[inline]
-    pub fn glwe_mid(&self) -> usize {
-        self.size.glwe_size().mask_len()
-    }
-
     /// Returns the number of values in one coefficient/NTT-domain GLWE ciphertext.
     #[inline]
     pub fn glwe_len(&self) -> usize {
@@ -296,12 +290,6 @@ where
     #[inline]
     pub fn fourier_glwe_len(&self) -> usize {
         self.size.glwe_size().fourier_glwe_len()
-    }
-
-    /// Returns the Fourier mask length `kN/2`.
-    #[inline]
-    pub fn fourier_glwe_mid(&self) -> usize {
-        self.size.glwe_size().fourier_mask_len()
     }
 
     /// Returns the number of complex values in one Fourier-domain GLev ciphertext.

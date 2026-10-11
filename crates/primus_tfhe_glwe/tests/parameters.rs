@@ -1,14 +1,15 @@
-//! GLWE-specific capacity, PBS order and independently paired CBS/KS domains.
+//! GLWE-specific capacity, external client roles and independently paired CBS/KS domains.
 
 use primus_glwe::GlweDimension;
 use primus_lwe::LweDimension;
 use primus_modulus::NativeModulus;
 use primus_tfhe::{BlindRotationMethod, DecompositionBaseLog, DecompositionLevelCount, PolyLength};
 use primus_tfhe_glwe::{
-    CbsGadgetConfig, CbsParameters, DecompositionConfig, GadgetEncryptionConfig, LweConfig,
-    ModulusConfig, PbsConfig, PbsMessageConfig, PbsOrder, PbsParameters, SecretKeyDistr,
+    CbsGadgetConfig, CbsParameters, ClientKey, DecompositionConfig, GadgetEncryptionConfig,
+    LweConfig, ModulusConfig, PbsConfig, PbsMessageConfig, PbsOrder, PbsParameters, SecretKeyDistr,
     TfheParameterError,
 };
+use rand::{SeedableRng, rngs::StdRng};
 
 fn decomposition(base: u32) -> DecompositionConfig {
     DecompositionConfig {
@@ -50,6 +51,27 @@ fn gadget() -> CbsGadgetConfig {
             log_basis: DecompositionBaseLog::new(4),
             level_count: Some(DecompositionLevelCount::new(3)),
         },
+    }
+}
+
+#[test]
+fn public_encryption_uses_the_active_external_secret() {
+    // BR→KS uses the small encoded secret; KS→BR uses the signed kN ring secret.
+    // Public encryption needs no transform table or bootstrapping key.
+    for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
+        let parameters = PbsParameters::try_from_config(config(order)).unwrap();
+        let mut rng = StdRng::seed_from_u64(103);
+        let client = ClientKey::generate(&parameters, &mut rng);
+        let secret = client.external_lwe_secret_key();
+        let public_key = parameters
+            .try_generate_public_key(secret, &mut rng)
+            .unwrap();
+        let encryptor = parameters.public_encryptor(&public_key).unwrap();
+        let decryptor = parameters.pbs_decryptor(secret).unwrap();
+        for message in [0, 3, 7] {
+            let ciphertext = encryptor.encrypt(message, &mut rng).unwrap();
+            assert_eq!(decryptor.decrypt(ciphertext.as_view()).unwrap(), message);
+        }
     }
 }
 
