@@ -1,6 +1,6 @@
 # Workspace and parameter-preparation measurements
 
-[Performance decisions and measurement method](README.md) · [Current ownership contracts](../development/workspaces-and-storage.md)
+[Performance decisions and measurement method](README.md) · [Current ownership contracts](../development/composition.md#reusing-workspaces)
 
 These are measurements of the named historical revisions. Current API names and
 recommended workflows belong to the development guide. Retained heap, allocation
@@ -373,7 +373,7 @@ coverage. Other sizes, u32 timing and SIMD timing were not measured.
 
 ## NTRU parameter sharing measurements
 
-The constructor calls below describe the measured revision. Current composition APIs and TFHE codec ownership are documented in the [parameter guide](../development/tfhe-parameters-and-boundaries.md#ntru-普通与-gadget-参数组合).
+The constructor calls below describe the measured revision. Current parameter and codec composition is described in the [composition guide](../development/composition.md#keep-messages-encoded-values-and-phases-separate).
 
 Measured on 2026-10-03 against `d8eedf4f`, on AMD Ryzen 9 9955HX3D, x86_64 Linux, rustc 1.98.1 (48a229cea, LLVM 22.1.8), default features and the repository's `target-cpu=native`. Construction measurements counted allocation requests and requested/released bytes, not timing or RSS. The three measured stages retained all returned values: create `NtruParameters::new(1024, 16u64, NativeModulus::new(), distr, 3.2)`, derive `NlevParameters::with_ntru_params(&ordinary, base_log=8, levels=Some(3))`, then clone that NLev. Each stage was measured separately, keeping all three parameter objects alive until after the measurements.
 

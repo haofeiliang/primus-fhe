@@ -38,7 +38,11 @@ For an odd full domain `t_in=2h+1`, fold centers modulo N and negate upper-half 
 | Raw LUT compilation | Input q and coefficient Q can be independent; output encoding is a separate choice. |
 | Bivariate LUT | Its constructor currently requires a common ciphertext modulus. |
 
+For GLWE, let n be the small BR-control dimension and kN the flattened ring-secret dimension, with `n<=kN`. `BootstrapKeyswitch` accepts and returns the small-secret LWE: BR precedes ring KS and compact extraction. `KeyswitchBootstrap` accepts and returns the flattened-ring-secret LWE: inverse extraction, ring KS and compact extraction prepare the small input for BR, followed by full extraction. Equal ciphertext moduli do not make these external domains interchangeable.
+
 Returning a phase rescales its existing centers; it does not recreate the output codec's centers. Include coefficient rounding multiplied by the extraction secret, KS error and encoding-scale mismatch in the output budget. For example, a Scaled output requires accounting for `(q/Q)*round(Q/t_out) - round(q/t_out)`. ManyLUT shares the conversion across extracted outputs; MVB converts each factor product. See [GLWE orders](../../crates/primus_tfhe_glwe/README.md) and [NTRU returns](../../crates/primus_tfhe_ntru/README.md#ntrulwe-returns).
+
+All configured noise standard deviations use coefficient units, including Fourier configurations. BR and KS noise are independent choices; NTRU return KS uses q while BR uses Q. CBS trace/scheme-switch rows inherit accumulator encryption noise but have separate decompositions and error propagation. In GLWE KS→BR, fresh external LWE encryption uses the ring/BR noise setting, not KS-key noise. These sampler deviations describe fresh private-key encryption or individual key rows; public-key encryption includes additional public-key and combination errors. The [GLWE](../../crates/primus_tfhe_glwe/README.md#parameters-and-external-key-domain) and [NTRU](../../crates/primus_tfhe_ntru/README.md) family guides identify the configuration fields.
 
 ## Ternary and sparse rotation
 
@@ -72,6 +76,14 @@ C = sum_l D_l(P)*K_l.
 I is NLEV[1], the B controls are NLEV secret bits, and binary omits B_minus. K targets `H=X^(a*secret_0)`, so the phase is `P*H - epsilon(P)*H + sum_l D_l(P)*e_l(K)`. Only P is approximately decomposed: a small monomial difference is not discarded by that decomposition. If a=0, K=I still performs the required lift.
 
 Sparse BR uses the first bucket's NLEV aggregate K_0 instead. The same phase formula holds with H equal to the selected monomial, or one for an unoccupied bucket. Even an empty first bucket lifts through its encrypted dummy. Later coordinates/buckets use NGSW on encrypted accumulators; NGSW's extra f factor prevents substituting it for this public-polynomial lift. MVB, CBS and one-hot use the same BR initialization. See the [NTRU family](../../crates/primus_tfhe_ntru/README.md#sparse-coefficient-keys).
+
+## Ordinary CBS and consumption
+
+Ordinary CBS programs a front-half Rounded input domain with gadget-scaled values `g_l*F(m)`, projects the resulting coefficients into GLev/NLev rows, and can scheme-switch to GGSW/NGSW. The result remains under the accumulator secret, without an ordinary output message codec or LWE return. GLWE KS→BR still performs input KS before this flow. The ManyLUT accumulator may have a nonzero message tail, so prefix expansion requiring a zero tail cannot replace its projections.
+
+For CMux consumption, F must be bit-valued over the entire programmed domain. Candidate ciphertexts must share the accumulator secret, modulus and encoding. Matching output lengths does not establish that BR decomposition resolves the LUT's smallest gadget scale or that the resulting control's noise fits its consumer. See [CBS compilation and consumption](../../crates/primus_tfhe/README.md#cbs-output-and-consumption).
+
+NTRU scheme-switch material binds the complete output basis. GLWE material binds output layout and supports a different output basis only through the evaluator's checked compatibility entry. Neither check proves actual secret or transform identity. See [GLWE CBS](../../crates/primus_tfhe_glwe/README.md#boolean-and-cbs) and [NTRU CBS](../../crates/primus_tfhe_ntru/README.md#cbs-and-examples).
 
 ## One-hot CBS
 
