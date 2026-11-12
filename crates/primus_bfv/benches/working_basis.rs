@@ -2,6 +2,8 @@
 //!
 //! Each iteration encrypts prepared plaintexts, evaluates and decrypts the result.
 //! The recovered coefficients and zero tail are checked before sampling.
+//! The former `fresh_prepared_encrypt2_mul_square_decode` cases at `094067dc`
+//! also timed plaintext setup and validation.
 
 use std::hint::black_box;
 
@@ -116,7 +118,7 @@ fn benchmark(c: &mut Criterion) {
             let mut cb = context.new_ciphertext(0);
             let mut out = context.new_ciphertext(0);
             let name = format!(
-                "bfv_q240/{backend:?}/{}/fresh_prepared_encrypt2_mul_square_decode",
+                "bfv_q240/{backend:?}/{}/encrypt2_mul_square_decrypt",
                 if planned {
                     "leveled_plan"
                 } else {
