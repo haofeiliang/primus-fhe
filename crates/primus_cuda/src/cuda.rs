@@ -10,8 +10,10 @@ use cudarc::{
 use primus_ntt::{MonomialNttTable, NttTable, U32NttTable, U64NttTable};
 
 mod block_rotation;
+mod clue_extraction;
 mod external_product;
 pub use block_rotation::{CudaBlockBlindRotationWorkspace32, CudaBlockBlindRotationWorkspace64};
+pub use clue_extraction::CudaPackedLweExtraction32;
 pub use external_product::{CudaExternalProductWorkspace32, CudaExternalProductWorkspace64};
 
 const THREADS: u32 = 256;

@@ -19,5 +19,5 @@ mod cuda;
 pub use cuda::{
     CudaBlockBlindRotationWorkspace32, CudaBlockBlindRotationWorkspace64, CudaError,
     CudaExternalProductWorkspace32, CudaExternalProductWorkspace64, CudaNttPlan32, CudaNttPlan64,
-    cuda_smoke,
+    CudaPackedLweExtraction32, cuda_smoke,
 };

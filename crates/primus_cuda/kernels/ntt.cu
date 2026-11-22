@@ -282,3 +282,4 @@ extern "C" __global__ void primus_inverse_u64(
 }
 
 #include "external_product.cuh"
+#include "clue_extraction.cuh"

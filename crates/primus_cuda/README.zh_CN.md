@@ -26,3 +26,7 @@ CPU workspace 构建可在没有 CUDA Toolkit 和驱动的环境中运行。[smo
 
 - `CudaExternalProductWorkspace32` 和 `CudaExternalProductWorkspace64` 绑定 gadget 尺寸、有符号分解基和批容量。`external_product_to` 为各 lane 接收一个 NTT GGSW 和一个系数域 GLWE，写出系数域 GLWE，并复用设备工作区。
 - `CudaBlockBlindRotationWorkspace32` 和 `CudaBlockBlindRotationWorkspace64` 将系数域 Block key 上传一次。`blind_rotate_lookup_table_to` 对批量 LWE 求值同一张普通 LUT，输入按 mask、body 顺序排列，模数为二次幂。设备量化输入，按各条 LWE 的负 body 指数旋转 LUT，并依次应用全部 key block。每条 LWE 使用独立 accumulator，共享只读 key 和 LUT。已有 accumulator 和量化块指数时，可以用 `apply_block_to` 单独更新一块。
+
+## Packed LWE 提取
+
+`CudaPackedLweExtraction32` 将一份共享 mask 和四个 body 按 clue、body 顺序展开为四条普通 LWE。支持二次幂 LWE 模数，以及等宽 ExactlyOne 块的可选 body 居中。输出布局可以直接交给 u32 盲旋转工作区。

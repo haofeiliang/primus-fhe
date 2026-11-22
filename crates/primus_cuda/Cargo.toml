@@ -55,3 +55,7 @@ required-features = ["cuda"]
 [[test]]
 name = "blind_rotation"
 required-features = ["cuda"]
+
+[[test]]
+name = "clue_extraction"
+required-features = ["cuda"]
