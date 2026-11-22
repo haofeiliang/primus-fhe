@@ -16,4 +16,8 @@
 mod cuda;
 
 #[cfg(feature = "cuda")]
-pub use cuda::{CudaError, CudaNttPlan32, CudaNttPlan64, cuda_smoke};
+pub use cuda::{
+    CudaBlockBlindRotationWorkspace32, CudaBlockBlindRotationWorkspace64, CudaError,
+    CudaExternalProductWorkspace32, CudaExternalProductWorkspace64, CudaNttPlan32, CudaNttPlan64,
+    cuda_smoke,
+};

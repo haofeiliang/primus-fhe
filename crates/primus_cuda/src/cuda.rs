@@ -2,12 +2,17 @@ use std::{mem::size_of, sync::Arc};
 
 use cudarc::{
     driver::{
-        CudaFunction, CudaSlice, CudaStream, CudaView, CudaViewMut, DeviceRepr, DeviceSlice,
-        DriverError, LaunchConfig, PushKernelArg, sys,
+        CudaFunction, CudaModule, CudaSlice, CudaStream, CudaView, CudaViewMut, DeviceRepr,
+        DeviceSlice, DriverError, LaunchConfig, PushKernelArg, sys,
     },
     nvrtc::Ptx,
 };
 use primus_ntt::{MonomialNttTable, NttTable, U32NttTable, U64NttTable};
+
+mod block_rotation;
+mod external_product;
+pub use block_rotation::{CudaBlockBlindRotationWorkspace32, CudaBlockBlindRotationWorkspace64};
+pub use external_product::{CudaExternalProductWorkspace32, CudaExternalProductWorkspace64};
 
 const THREADS: u32 = 256;
 const MAX_POLYNOMIAL_LENGTH: usize = 2048;
@@ -31,6 +36,22 @@ pub enum CudaError {
         length: usize,
         /// Coefficient count of one polynomial.
         polynomial_length: usize,
+    },
+    /// The coefficient view ends with an incomplete GLWE ciphertext.
+    #[error("CUDA batch length {length} is not a multiple of GLWE length {glwe_length}")]
+    IncompleteGlweBatch {
+        /// Rejected coefficient count.
+        length: usize,
+        /// Coefficient count of one GLWE ciphertext.
+        glwe_length: usize,
+    },
+    /// The coefficient view ends with an incomplete LWE ciphertext.
+    #[error("CUDA batch length {length} is not a multiple of LWE length {lwe_length}")]
+    IncompleteLweBatch {
+        /// Rejected coefficient count.
+        length: usize,
+        /// Coefficient count of one LWE ciphertext.
+        lwe_length: usize,
     },
     /// Operands of the same operation have different lengths.
     #[error("CUDA operand lengths differ: {lhs} and {rhs}")]
@@ -147,6 +168,7 @@ fn elementwise_config(count: u32, max_grid: u32) -> Result<LaunchConfig, CudaErr
 
 struct NttPlan<T> {
     stream: Arc<CudaStream>,
+    module: Arc<CudaModule>,
     roots: CudaSlice<T>,
     root_precon: CudaSlice<T>,
     inverse_roots: CudaSlice<T>,
@@ -236,6 +258,7 @@ impl<T: Copy + DeviceRepr + Into<u128> + TryFrom<u128>> NttPlan<T> {
             inverse_roots: stream.clone_htod(inverse_roots)?,
             inverse_root_precon: stream.clone_htod(&inverse_root_precon)?,
             stream: Arc::clone(stream),
+            module,
             forward,
             inverse,
             multiply,
@@ -252,7 +275,7 @@ impl<T: Copy + DeviceRepr + Into<u128> + TryFrom<u128>> NttPlan<T> {
 }
 
 impl<T: DeviceRepr> NttPlan<T> {
-    fn check_view_stream(&self, view: &impl DeviceSlice<T>) -> Result<(), CudaError> {
+    fn check_view_stream<U>(&self, view: &impl DeviceSlice<U>) -> Result<(), CudaError> {
         // The allocation has one read event and one write event. Submissions
         // through several plans must not overwrite either event from unrelated
         // queues. The allocation and plan share the same ordered queue.
@@ -262,16 +285,23 @@ impl<T: DeviceRepr> NttPlan<T> {
         Ok(())
     }
 
-    fn transform_assign(
-        &self,
-        mut values: CudaViewMut<'_, T>,
-        inverse: bool,
-    ) -> Result<(), CudaError> {
+    fn transform_assign(&self, values: CudaViewMut<'_, T>, inverse: bool) -> Result<(), CudaError> {
         self.check_view_stream(&values)?;
         let count = checked_count::<T>(values.len())?;
         self.check_full_polynomials(count)?;
         let blocks = count / self.n;
         check_limit("grid x dimension", blocks as usize, self.max_grid as usize)?;
+        self.transform_batch(values, blocks, inverse)
+    }
+
+    // The caller has checked this extent, the device grid limit and stream.
+    fn transform_batch(
+        &self,
+        mut values: CudaViewMut<'_, T>,
+        blocks: u32,
+        inverse: bool,
+    ) -> Result<(), CudaError> {
+        debug_assert_eq!(values.len(), blocks as usize * self.n as usize);
         if blocks == 0 {
             return Ok(());
         }

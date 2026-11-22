@@ -1,6 +1,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "block_rotation.cuh"
+
 // Host wrappers establish all geometry, allocation, and numerical contracts
 // before launching. Transforms use one block per contiguous polynomial, a
 // one-dimensional block, and n * sizeof(T) bytes of dynamic shared memory.
@@ -9,22 +11,6 @@
 // NTT moduli satisfy q < 2^30 (u32) or q < 2^62 (u64), so 4q fits the word.
 
 namespace {
-
-struct MonomialPreimage {
-    uint32_t source;
-    bool negate;
-};
-
-// For power-of-two n and local < n, these bits interpret any u32 degree
-// modulo 2n. The source stays inside the same length-n polynomial; crossing
-// X^n flips the sign, including the extra flip from a degree's n bit.
-__device__ __forceinline__ MonomialPreimage monomial_preimage(
-    uint32_t local, uint32_t n, uint32_t degree) {
-    const uint32_t mask = n - 1;
-    const uint32_t shift = degree & mask;
-    return {(local + n - shift) & mask,
-            ((degree & n) != 0) != (local < shift)};
-}
 
 __device__ __forceinline__ uint32_t high_product(uint32_t lhs, uint32_t rhs) {
     return __umulhi(lhs, rhs);
@@ -294,3 +280,5 @@ extern "C" __global__ void primus_inverse_u64(
     inverse(values, roots, roots_precon, n, q, inv_n, inv_n_precon,
             reinterpret_cast<uint64_t*>(shared_memory));
 }
+
+#include "external_product.cuh"

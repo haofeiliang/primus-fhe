@@ -21,3 +21,8 @@ CPU workspace 构建可在没有 CUDA Toolkit 和驱动的环境中运行。[smo
 - 算术使用规范残基。`mul_assign` 和 `add_mul_assign` 分别对等长视图做逐点模乘和模乘累加，可用于两种表示。
 - `mul_monomial_to` 将批次中每个系数域多项式乘以同一个 `X^degree`，按 `X^N + 1` 约简。指数按 `2N` 取模，结果写入独立的输出视图。
 - 使用 `plan.stream()` 分配设备缓冲区。可用 `new_stream()` 或 `default_stream()` 创建 plan 的 stream。算术提交到该 stream，结果留在设备显存。同步 stream 可检查执行是否完成。复制到 pageable host memory 后，用 `CudaContext::check_err()` 检查延迟报告的复制错误。
+
+## GLWE 求值
+
+- `CudaExternalProductWorkspace32` 和 `CudaExternalProductWorkspace64` 绑定 gadget 尺寸、有符号分解基和批容量。`external_product_to` 为各 lane 接收一个 NTT GGSW 和一个系数域 GLWE，写出系数域 GLWE，并复用设备工作区。
+- `CudaBlockBlindRotationWorkspace32` 和 `CudaBlockBlindRotationWorkspace64` 将系数域 Block key 上传一次。`blind_rotate_lookup_table_to` 对批量 LWE 求值同一张普通 LUT，输入按 mask、body 顺序排列，模数为二次幂。设备量化输入，按各条 LWE 的负 body 指数旋转 LUT，并依次应用全部 key block。每条 LWE 使用独立 accumulator，共享只读 key 和 LUT。已有 accumulator 和量化块指数时，可以用 `apply_block_to` 单独更新一块。
