@@ -2,6 +2,7 @@ set windows-shell := ["powershell.exe", "-NoLogo", "-Command"]
 export RUSTDOCFLAGS := "-D warnings"
 
 stable_ci_features := "ntt,fourier,rustfft,tfhe-fft,rns,batching,derive,high_precision"
+cpu_workspace := "--workspace --exclude primus_cuda"
 parallel_packages := "-p primus_ntt -p primus_lattice -p primus_bfv -p primus_bgv"
 parallel_features := "rns,batching,parallel"
 ci_parallel_tests := "--test dcrt_prefix --test leveled_parameters"
@@ -34,7 +35,7 @@ ci-nightly-check:
   cargo +nightly check -p primus_modulus -p primus_encoding -p primus_tfhe_glwe -p primus_tfhe_ntru --lib --no-default-features --features simd
 
 ci-nightly-doc:
-  cargo +nightly doc --workspace --no-deps --document-private-items --all-features
+  cargo +nightly doc {{cpu_workspace}} --no-deps --document-private-items --all-features
 
 fmt:
   cargo fmt --all
@@ -57,8 +58,8 @@ test-doc package="*":
   cargo test -p '{{package}}' --doc
 
 simd package="*":
-  cargo +nightly clippy -p '{{package}}' --all-targets --all-features -- -D warnings
-  cargo +nightly nextest run -p '{{package}}' --lib --tests --all-features
+  cargo +nightly clippy {{if package == "*" { cpu_workspace } else { "-p '" + package + "'" }}} --all-targets --all-features -- -D warnings
+  cargo +nightly nextest run {{if package == "*" { cpu_workspace } else { "-p '" + package + "'" }}} --lib --tests --all-features
 
 # TFHE examples, libraries and small numerical regressions, including both FFT engines.
 tfhe: (lint "primus_tfhe*" "rustfft,tfhe-fft") (test "primus_tfhe*" "rustfft,tfhe-fft")

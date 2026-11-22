@@ -1,0 +1,30 @@
+[package]
+name = "primus_cuda"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = []
+cuda = [
+    "dep:cudarc",
+    "dep:primus_ntt",
+    "dep:thiserror",
+]
+
+[dependencies]
+cudarc = { version = "=0.19.10", default-features = false, features = ["std", "driver", "nvrtc", "dynamic-loading", "cuda-12080"], optional = true }
+primus_ntt = { path = "../primus_ntt", optional = true }
+thiserror = { workspace = true, optional = true }
+
+[dev-dependencies]
+primus_modulus = { path = "../primus_modulus" }
+primus_poly = { path = "../primus_poly" }
+primus_shape = { path = "../primus_shape" }
+
+[[example]]
+name = "cuda_smoke"
+required-features = ["cuda"]
+
+[[test]]
+name = "device"
+required-features = ["cuda"]
