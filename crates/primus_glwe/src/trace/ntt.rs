@@ -10,7 +10,7 @@ use primus_reduce::FieldContext;
 
 use crate::{
     GlevParameters, GlweSecretKey, NttGlweAutomorphismKey, NttGlweAutomorphismWorkspace,
-    NttGlweGadgetEncryptWorkspace, NttGlweSecretKey,
+    NttGlweGadgetEncryptWorkspace, NttGlweKeySwitchingKey, NttGlweSecretKey,
 };
 
 /// Reusable workspace for homomorphic GLWE trace evaluation.
@@ -123,6 +123,24 @@ impl<T: FheUint> NttGlweTraceKey<T> {
     #[inline]
     pub fn basis(&self) -> &ApproxSignedBasis<T> {
         self.first_automorphism_key().basis()
+    }
+
+    /// Borrows each automorphism degree and its NTT key-switching material in
+    /// reverse-trace evaluation order: `3, 5, 9, ..., N + 1`.
+    ///
+    /// For each entry, reverse trace first multiplies the current coefficient
+    /// ciphertext by `1/2`, then applies `X -> X^degree` and this key switch,
+    /// and adds that result to the halved ciphertext. The key-switching rows
+    /// retain [`NttGlweKeySwitchingKey::as_slice`]'s layout and NTT representation.
+    #[must_use]
+    pub fn reverse_key_switching_keys(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (usize, &NttGlweKeySwitchingKey<T>)> + DoubleEndedIterator
+    {
+        self.automorphism_keys
+            .iter()
+            .rev()
+            .map(|key| (key.degree(), key.key_switching_key()))
     }
 
     /// Evaluates the full trace and overwrites `output` with an encryption of

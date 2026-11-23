@@ -155,6 +155,11 @@ impl<T: FheUint> NttGlweAutomorphismKey<T> {
         self.key_switching.basis()
     }
 
+    #[must_use]
+    pub(crate) fn key_switching_key(&self) -> &NttGlweKeySwitchingKey<T> {
+        &self.key_switching
+    }
+
     /// Applies the automorphism and writes a coefficient-domain GLWE under the
     /// original secret key.
     ///

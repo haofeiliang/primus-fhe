@@ -6,6 +6,11 @@ fn main() {
     println!("cargo:rerun-if-changed=kernels/external_product.cuh");
     println!("cargo:rerun-if-changed=kernels/block_rotation.cuh");
     println!("cargo:rerun-if-changed=kernels/clue_extraction.cuh");
+    println!("cargo:rerun-if-changed=kernels/omr_bridge.cuh");
+    println!("cargo:rerun-if-changed=kernels/key_switch.cuh");
+    println!("cargo:rerun-if-changed=kernels/reverse_trace.cuh");
+    println!("cargo:rerun-if-changed=kernels/digest_accumulation.cuh");
+    println!("cargo:rerun-if-changed=kernels/digest_packing.cuh");
     println!("cargo:rerun-if-env-changed=PRIMUS_CUDA_NVCC");
     println!("cargo:rerun-if-env-changed=PRIMUS_CUDA_ARCH");
     if env::var_os("CARGO_FEATURE_CUDA").is_none() {

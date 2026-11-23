@@ -26,7 +26,15 @@ The CUDA Toolkit and driver are optional for CPU workspace builds. See the [smok
 
 - `CudaExternalProductWorkspace32` and `CudaExternalProductWorkspace64` bind a gadget size, signed basis and batch capacity. `external_product_to` consumes one NTT GGSW and one coefficient-domain GLWE per lane. It writes a coefficient-domain GLWE to each output lane and reuses device scratch.
 - `CudaBlockBlindRotationWorkspace32` and `CudaBlockBlindRotationWorkspace64` upload a coefficient-domain Block key once. `blind_rotate_lookup_table_to` evaluates an ordinary LUT for a batch of mask-then-body LWEs with a power-of-two input modulus. It quantizes the input, rotates the LUT by each negative body exponent, and applies all the key blocks in order. Each lane has its own accumulator and shares the read-only key and LUT. `apply_block_to` is available for cases with already initialized accumulators and quantized block exponents.
+- `CudaGlweKeySwitchingWorkspace32` and `CudaGlweKeySwitchingWorkspace64` use one resident NTT key for a batch of coefficient-domain GLWEs. `CudaReverseTraceWorkspace64` applies the CPU key's ordered reverse trace, halving coefficients in the field before each automorphism and key switch.
+- `CudaOmrBridge32` sums groups of four rank-one GLWEs, extracts the active LWE mask prefix after key switching, and switches compact coefficients to the `q=4096` u64 BR2 representation.
 
 ## Packed LWE extraction
 
 `CudaPackedLweExtraction32` expands records with one shared mask and four bodies into four ordinary LWEs in clue and body order. It supports binary LWE moduli and optional body centering for equal ExactlyOne blocks. Its output layout goes directly into the u32 blind-rotation workspace.
+
+## Digest accumulation
+
+`CudaDigestPacking64::pack_to` expands compact F257 index coefficients, payload digits and row weights into centered coefficient-domain public polynomials. Rows can span physical polynomials. Only the final physical polynomial has padding.
+
+`CudaDigestAccumulation64::accumulate_assign` transforms coefficient-domain flags and already packed public polynomials in place, then adds their full products to caller-initialized device NTT sums. A batch contains one public polynomial per physical ciphertext for each flag. Reuse the sums across batches and apply the plan's inverse transform once when coefficient form is needed.

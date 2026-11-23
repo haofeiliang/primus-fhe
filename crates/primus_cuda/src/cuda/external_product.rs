@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use cudarc::driver::{
     CudaFunction, CudaSlice, CudaView, CudaViewMut, DeviceRepr, PushKernelArg, ValidAsZeroBits,
 };
@@ -10,20 +12,55 @@ use super::{
     elementwise_config, launch_grid_limit,
 };
 
-pub(super) struct ExternalProduct<'a, T> {
-    pub(super) ntt: &'a NttPlan<T>,
+pub(super) struct ExternalProduct<T> {
+    pub(super) ntt: Arc<NttPlan<T>>,
     pub(super) size: GadgetSize,
     pub(super) batch_capacity: usize,
     digits: CudaSlice<T>,
     decompose: CudaFunction,
     accumulate: CudaFunction,
     components: u32,
-    levels: u32,
-    base_log: u32,
-    drop_bits: u32,
-    threshold: T,
-    adjustment: T,
-    barrett: Option<(u32, u64)>,
+    decomposition: SignedDecomposition<T>,
+    modulus_bits: Option<u32>,
+    reciprocal: u64,
+}
+
+pub(super) struct SignedDecomposition<T> {
+    pub(super) levels: u32,
+    pub(super) base_log: u32,
+    pub(super) drop_bits: u32,
+    pub(super) threshold: T,
+    pub(super) adjustment: T,
+}
+
+impl<T: FheUint + Into<u128> + TryFrom<u128>> SignedDecomposition<T> {
+    pub(super) fn new(ntt: &NttPlan<T>, basis: &ApproxSignedBasis<T>) -> Result<Self, CudaError> {
+        if basis.modulus() != Some(ntt.modulus) || basis.modulus_is_power_of_2() {
+            return Err(CudaError::InvalidParameters(
+                "signed decomposition requires the plan's explicit odd modulus",
+            ));
+        }
+        let drop_bits = basis.drop_bits();
+        let half_base = basis.basis_value().into() >> 1;
+        let max_positive: u128 = basis
+            .scalar_iter()
+            .map(|weight| (half_base - 1) * weight.into())
+            .sum();
+        // Match ApproxSignedBasis::wrap_threshold: with no dropped bits the
+        // split lies one above the largest positive representable integer.
+        let threshold = T::try_from(max_positive + (1u128 << drop_bits.saturating_sub(1)))
+            .map_err(|_| CudaError::InvalidParameters("decomposition threshold overflow"))?;
+        let q = ntt.modulus.into();
+        let adjustment = T::try_from((1u128 << (q.ilog2() + 1)) - q)
+            .map_err(|_| CudaError::InvalidParameters("decomposition adjustment overflow"))?;
+        Ok(Self {
+            levels: basis.level_count().get() as u32,
+            base_log: basis.log_basis().get(),
+            drop_bits,
+            threshold,
+            adjustment,
+        })
+    }
 }
 
 pub(super) fn checked_batch_len<T>(count: usize, stride: usize) -> Result<u32, CudaError> {
@@ -35,27 +72,26 @@ pub(super) fn checked_batch_len<T>(count: usize, stride: usize) -> Result<u32, C
     checked_count::<T>(length)
 }
 
-impl<'a, T> ExternalProduct<'a, T>
+impl<T> ExternalProduct<T>
 where
     T: FheUint + DeviceRepr + ValidAsZeroBits + Into<u128> + TryFrom<u128>,
 {
     fn new(
-        ntt: &'a NttPlan<T>,
+        ntt: &Arc<NttPlan<T>>,
         size: GadgetSize,
         basis: &ApproxSignedBasis<T>,
         batch_capacity: usize,
         [decompose, accumulate]: [&str; 2],
-        barrett: Option<(u32, u64)>,
+        (modulus_bits, reciprocal): (Option<u32>, u64),
     ) -> Result<Self, CudaError> {
         if size.glwe_size().poly_length().get() != ntt.n as usize
             || size.level_count() != basis.level_count()
-            || basis.modulus() != Some(ntt.modulus)
-            || basis.modulus_is_power_of_2()
         {
             return Err(CudaError::InvalidParameters(
                 "external product requires a matching GLWE size and explicit odd-modulus basis",
             ));
         }
+        let decomposition = SignedDecomposition::new(ntt, basis)?;
         if batch_capacity == 0 {
             return Err(CudaError::InvalidParameters(
                 "batch capacity must be positive",
@@ -74,42 +110,26 @@ where
         )?;
         elementwise_config((batch_capacity * size.glwe_len()) as u32, ntt.max_grid)?;
 
-        let drop_bits = basis.drop_bits();
-        let half_base = basis.basis_value().into() >> 1;
-        let max_positive: u128 = basis
-            .scalar_iter()
-            .map(|weight| (half_base - 1) * weight.into())
-            .sum();
-        // ApproxSignedBasis lifts the negative region into the binary domain
-        // starting at the maximum positive value plus the rounding offset.
-        let threshold = T::try_from(max_positive + (1u128 << drop_bits.saturating_sub(1)))
-            .map_err(|_| CudaError::InvalidParameters("decomposition threshold overflow"))?;
-        let q = ntt.modulus.into();
-        let adjustment = T::try_from((1u128 << (q.ilog2() + 1)) - q)
-            .map_err(|_| CudaError::InvalidParameters("decomposition adjustment overflow"))?;
         let decompose = ntt.module.load_function(decompose)?;
         let accumulate = ntt.module.load_function(accumulate)?;
         launch_grid_limit(&ntt.stream, &[(&decompose, 0), (&accumulate, 0)])?;
         let digits = ntt.stream.alloc_zeros(digit_len)?;
         Ok(Self {
-            ntt,
+            ntt: Arc::clone(ntt),
             size,
             batch_capacity,
             digits,
             decompose,
             accumulate,
             components,
-            levels,
-            base_log: basis.log_basis().get(),
-            drop_bits,
-            threshold,
-            adjustment,
-            barrett,
+            decomposition,
+            modulus_bits,
+            reciprocal,
         })
     }
 }
 
-impl<T: DeviceRepr> ExternalProduct<'_, T> {
+impl<T: DeviceRepr> ExternalProduct<T> {
     pub(super) fn check_batch(
         &self,
         input: &CudaView<'_, T>,
@@ -155,9 +175,10 @@ impl<T: DeviceRepr> ExternalProduct<'_, T> {
         if count == 0 {
             return Ok(());
         }
-        let ntt = self.ntt;
+        let ntt = &self.ntt;
         let config = elementwise_config(count, ntt.max_grid)?;
-        let digit_len = count as usize * self.levels as usize;
+        let decomposition = &self.decomposition;
+        let digit_len = count as usize * decomposition.levels as usize;
         let mut digits = self.digits.slice_mut(..digit_len);
         // SAFETY: the entry point writes one digit polynomial per input
         // polynomial and level. Both views are distinct and on ntt's stream.
@@ -168,15 +189,15 @@ impl<T: DeviceRepr> ExternalProduct<'_, T> {
                 .arg(&mut digits)
                 .arg(&count)
                 .arg(&ntt.n)
-                .arg(&self.levels)
-                .arg(&self.base_log)
-                .arg(&self.drop_bits)
-                .arg(&self.threshold)
-                .arg(&self.adjustment)
+                .arg(&decomposition.levels)
+                .arg(&decomposition.base_log)
+                .arg(&decomposition.drop_bits)
+                .arg(&decomposition.threshold)
+                .arg(&decomposition.adjustment)
                 .arg(&ntt.modulus)
                 .launch(config)?;
         }
-        ntt.transform_batch(digits, count / ntt.n * self.levels, false)?;
+        ntt.transform_batch(digits, count / ntt.n * decomposition.levels, false)?;
 
         let digits = self.digits.slice(..digit_len);
         {
@@ -188,11 +209,12 @@ impl<T: DeviceRepr> ExternalProduct<'_, T> {
                 .arg(&count)
                 .arg(&ntt.n)
                 .arg(&self.components)
-                .arg(&self.levels)
+                .arg(&decomposition.levels)
                 .arg(&ntt.modulus);
-            if let Some((bits, reciprocal)) = &self.barrett {
-                launch.arg(bits).arg(reciprocal);
+            if let Some(bits) = &self.modulus_bits {
+                launch.arg(bits);
             }
+            launch.arg(&self.reciprocal);
             // SAFETY: the typed entry point reads each lane's gadget and transformed
             // digits, and writes exactly count coefficients on the same stream.
             unsafe { launch.launch(config)? };
@@ -204,18 +226,18 @@ impl<T: DeviceRepr> ExternalProduct<'_, T> {
 macro_rules! workspace {
     ($workspace:ident, $plan:ident, $word:ty, $decompose:literal, $reduce:literal, $barrett:expr) => {
         /// Reusable device scratch for batched GLWE external products of this word width.
-        pub struct $workspace<'a> {
-            pub(super) inner: ExternalProduct<'a, $word>,
+        pub struct $workspace {
+            pub(super) inner: ExternalProduct<$word>,
         }
 
-        impl<'a> $workspace<'a> {
+        impl $workspace {
             /// Allocates scratch for up to `batch_capacity` GLWE ciphertexts on `ntt.stream()`.
             ///
             /// # Errors
             /// Rejects incompatible basis, dimensions or device limits, zero capacity,
             /// and driver failures.
             pub fn new(
-                ntt: &'a $plan,
+                ntt: &$plan,
                 size: GadgetSize,
                 basis: &ApproxSignedBasis<$word>,
                 batch_capacity: usize,
@@ -263,7 +285,10 @@ workspace!(
     u32,
     "primus_decompose_u32",
     "primus_external_product_u32",
-    |_: &CudaNttPlan32| None
+    |ntt: &CudaNttPlan32| {
+        // The plan's checked q > 1 makes floor(2^64 / q) fit in u64.
+        (None, ((1u128 << 64) / u128::from(ntt.modulus())) as u64)
+    }
 );
 workspace!(
     CudaExternalProductWorkspace64,
@@ -271,5 +296,5 @@ workspace!(
     u64,
     "primus_decompose_u64",
     "primus_external_product_u64",
-    |ntt: &CudaNttPlan64| Some((ntt.modulus_bits, ntt.reciprocal))
+    |ntt: &CudaNttPlan64| (Some(ntt.modulus_bits), ntt.reciprocal)
 );

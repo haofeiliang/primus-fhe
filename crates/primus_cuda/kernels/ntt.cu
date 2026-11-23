@@ -100,13 +100,10 @@ __device__ __forceinline__ void multiply_monomial(
 }
 
 template <class T>
-__device__ __forceinline__ void forward(
-    T* values, const T* roots, const T* roots_precon, uint32_t n, T q,
+__device__ __forceinline__ void forward_from_shared(
+    T* output, const T* roots, const T* roots_precon, uint32_t n, T q,
     T* shared) {
-    const size_t offset = static_cast<size_t>(blockIdx.x) * n;
-    for (uint32_t index = threadIdx.x; index < n; index += blockDim.x) {
-        shared[index] = values[offset + index];
-    }
+    // All threads finish filling the shared input before the first butterfly.
     __syncthreads();
 
     const T twice_q = q + q;
@@ -135,8 +132,41 @@ __device__ __forceinline__ void forward(
     }
 
     for (uint32_t index = threadIdx.x; index < n; index += blockDim.x) {
-        values[offset + index] = reduce_once(reduce_once(shared[index], twice_q), q);
+        output[index] = reduce_once(reduce_once(shared[index], twice_q), q);
     }
+}
+
+template <class T>
+__device__ __forceinline__ void forward(
+    T* values, const T* roots, const T* roots_precon, uint32_t n, T q,
+    T* shared) {
+    T* polynomial = values + static_cast<size_t>(blockIdx.x) * n;
+    for (uint32_t index = threadIdx.x; index < n; index += blockDim.x) {
+        shared[index] = polynomial[index];
+    }
+    forward_from_shared(polynomial, roots, roots_precon, n, q, shared);
+}
+
+// Each CUDA block owns one polynomial of one lane's GGSW aggregate.
+// The key block stores the selectors in coefficient form; exponents are
+// [lane][selector]. Only the final NTT representation is stored globally.
+template <class T>
+__device__ __forceinline__ void aggregate_block_forward(
+    const T* block, const uint32_t* exponents, T* aggregate,
+    const T* roots, const T* roots_precon, uint32_t n,
+    uint32_t polynomials_per_gadget, uint32_t block_width, uint32_t has_dummy,
+    T q, T* shared) {
+    const uint32_t gadget_len = polynomials_per_gadget * n;
+    const uint32_t lane = blockIdx.x / polynomials_per_gadget;
+    const size_t polynomial_offset = (blockIdx.x % polynomials_per_gadget) * n;
+    const T* key_polynomial = block + polynomial_offset;
+    const uint32_t* lane_exponents = exponents + static_cast<size_t>(lane) * block_width;
+    for (uint32_t index = threadIdx.x; index < n; index += blockDim.x) {
+        shared[index] = aggregate_block_coefficient(
+            key_polynomial, lane_exponents, index, n, gadget_len, block_width, has_dummy, q);
+    }
+    T* output = aggregate + static_cast<size_t>(blockIdx.x) * n;
+    forward_from_shared(output, roots, roots_precon, n, q, shared);
 }
 
 template <class T>
@@ -265,6 +295,28 @@ extern "C" __global__ void primus_forward_u64(
             reinterpret_cast<uint64_t*>(shared_memory));
 }
 
+extern "C" __global__ void primus_aggregate_block_forward_u32(
+    const uint32_t* block, const uint32_t* exponents, uint32_t* aggregate,
+    const uint32_t* roots, const uint32_t* roots_precon, uint32_t n,
+    uint32_t polynomials_per_gadget, uint32_t block_width, uint32_t has_dummy,
+    uint32_t q) {
+    extern __shared__ __align__(8) unsigned char shared_memory[];
+    aggregate_block_forward(block, exponents, aggregate, roots, roots_precon,
+                            n, polynomials_per_gadget, block_width, has_dummy, q,
+                            reinterpret_cast<uint32_t*>(shared_memory));
+}
+
+extern "C" __global__ void primus_aggregate_block_forward_u64(
+    const uint64_t* block, const uint32_t* exponents, uint64_t* aggregate,
+    const uint64_t* roots, const uint64_t* roots_precon, uint32_t n,
+    uint32_t polynomials_per_gadget, uint32_t block_width, uint32_t has_dummy,
+    uint64_t q) {
+    extern __shared__ __align__(8) unsigned char shared_memory[];
+    aggregate_block_forward(block, exponents, aggregate, roots, roots_precon,
+                            n, polynomials_per_gadget, block_width, has_dummy, q,
+                            reinterpret_cast<uint64_t*>(shared_memory));
+}
+
 extern "C" __global__ void primus_inverse_u32(
     uint32_t* values, const uint32_t* roots, const uint32_t* roots_precon,
     uint32_t n, uint32_t q, uint32_t inv_n, uint32_t inv_n_precon) {
@@ -283,3 +335,8 @@ extern "C" __global__ void primus_inverse_u64(
 
 #include "external_product.cuh"
 #include "clue_extraction.cuh"
+#include "omr_bridge.cuh"
+#include "key_switch.cuh"
+#include "reverse_trace.cuh"
+#include "digest_accumulation.cuh"
+#include "digest_packing.cuh"

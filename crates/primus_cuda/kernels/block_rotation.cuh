@@ -113,39 +113,25 @@ __device__ __forceinline__ void initialize_block_accumulators(
     }
 }
 
-// Host binding establishes power-of-two 2 <= n <= 2048, gadget_len divisible
-// by n, positive block_width, has_dummy in {0,1}, and count=batch*gadget_len.
-// block is [selector][gadget coefficient], followed by one complete dummy
-// only when present. Exponents are [lane][selector], and aggregate is
-// [lane][gadget coefficient]. Every key coefficient is canonical modulo q;
-// aggregate is disjoint from both inputs and is completely overwritten.
+// The pointer starts at this polynomial in selector 0. Subsequent selectors
+// and the optional dummy store the same polynomial at gadget_len strides.
+// Exponents belong to one lane and all key coefficients are canonical modulo q.
 template <class T>
-__device__ __forceinline__ void aggregate_block(
-    const T* block, const uint32_t* exponents, T* aggregate, uint32_t count,
+__device__ __forceinline__ T aggregate_block_coefficient(
+    const T* polynomial, const uint32_t* exponents, uint32_t coefficient,
     uint32_t n, uint32_t gadget_len, uint32_t block_width,
     uint32_t has_dummy, T q) {
-    const size_t stride = static_cast<size_t>(gridDim.x) * blockDim.x;
-    for (size_t index = static_cast<size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
-         index < count; index += stride) {
-        const uint32_t flat = static_cast<uint32_t>(index);
-        const uint32_t lane = flat / gadget_len;
-        const uint32_t coefficient = flat % gadget_len;
-        const uint32_t local = coefficient & (n - 1);
-        const uint32_t polynomial = coefficient - local;
-        T acc = has_dummy
-                    ? block[static_cast<size_t>(block_width) * gadget_len + coefficient]
-                    : T{0};
-        for (uint32_t selector = 0; selector < block_width; ++selector) {
-            const uint32_t degree =
-                exponents[static_cast<size_t>(lane) * block_width + selector];
-            const auto preimage = monomial_preimage(local, n, degree);
-            const T value = block[static_cast<size_t>(selector) * gadget_len +
-                                  polynomial + preimage.source];
-            acc = preimage.negate ? block_sub_canonical(acc, value, q)
-                                  : block_add_canonical(acc, value, q);
-        }
-        aggregate[index] = acc;
+    T acc = has_dummy
+                ? polynomial[static_cast<size_t>(block_width) * gadget_len + coefficient]
+                : T{0};
+    for (uint32_t selector = 0; selector < block_width; ++selector) {
+        const auto preimage = monomial_preimage(coefficient, n, exponents[selector]);
+        const T value = polynomial[static_cast<size_t>(selector) * gadget_len +
+                                   preimage.source];
+        acc = preimage.negate ? block_sub_canonical(acc, value, q)
+                              : block_add_canonical(acc, value, q);
     }
+    return acc;
 }
 
 }  // namespace
@@ -178,20 +164,4 @@ extern "C" __global__ void primus_block_initialize_u64(
     uint32_t count, uint32_t n, uint32_t glwe_len, uint64_t q) {
     initialize_block_accumulators(lut, body_exponents, accumulators, count, n,
                                   glwe_len, q);
-}
-
-extern "C" __global__ void primus_aggregate_block_u32(
-    const uint32_t* block, const uint32_t* exponents, uint32_t* aggregate,
-    uint32_t count, uint32_t n, uint32_t gadget_len, uint32_t block_width,
-    uint32_t has_dummy, uint32_t q) {
-    aggregate_block(block, exponents, aggregate, count, n, gadget_len,
-                    block_width, has_dummy, q);
-}
-
-extern "C" __global__ void primus_aggregate_block_u64(
-    const uint64_t* block, const uint32_t* exponents, uint64_t* aggregate,
-    uint32_t count, uint32_t n, uint32_t gadget_len, uint32_t block_width,
-    uint32_t has_dummy, uint64_t q) {
-    aggregate_block(block, exponents, aggregate, count, n, gadget_len,
-                    block_width, has_dummy, q);
 }

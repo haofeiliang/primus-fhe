@@ -11,10 +11,20 @@ use primus_ntt::{MonomialNttTable, NttTable, U32NttTable, U64NttTable};
 
 mod block_rotation;
 mod clue_extraction;
+mod digest_accumulation;
+mod digest_packing;
 mod external_product;
+mod key_switch;
+mod omr_bridge;
+mod reverse_trace;
 pub use block_rotation::{CudaBlockBlindRotationWorkspace32, CudaBlockBlindRotationWorkspace64};
 pub use clue_extraction::CudaPackedLweExtraction32;
+pub use digest_accumulation::CudaDigestAccumulation64;
+pub use digest_packing::CudaDigestPacking64;
 pub use external_product::{CudaExternalProductWorkspace32, CudaExternalProductWorkspace64};
+pub use key_switch::{CudaGlweKeySwitchingWorkspace32, CudaGlweKeySwitchingWorkspace64};
+pub use omr_bridge::CudaOmrBridge32;
+pub use reverse_trace::CudaReverseTraceWorkspace64;
 
 const THREADS: u32 = 256;
 const MAX_POLYNOMIAL_LENGTH: usize = 2048;
@@ -412,7 +422,7 @@ impl<T: DeviceRepr> NttPlan<T> {
 /// flat batch of complete polynomials, each of length `poly_length()`. No device
 /// allocation or host synchronization is added by the arithmetic methods.
 pub struct CudaNttPlan32 {
-    inner: NttPlan<u32>,
+    inner: Arc<NttPlan<u32>>,
 }
 
 /// A CUDA NTT plan matching one CPU `U64NttTable`'s roots and normalization.
@@ -421,7 +431,7 @@ pub struct CudaNttPlan32 {
 /// The plan retains its stream and uploaded roots; arithmetic methods add no
 /// device allocation or host synchronization.
 pub struct CudaNttPlan64 {
-    inner: NttPlan<u64>,
+    inner: Arc<NttPlan<u64>>,
     modulus_bits: u32,
     reciprocal: u64,
 }
@@ -513,7 +523,7 @@ impl CudaNttPlan32 {
     /// Returns unsupported geometry, device-limit, module-loading or upload errors.
     pub fn new(stream: &Arc<CudaStream>, table: &U32NttTable) -> Result<Self, CudaError> {
         Ok(Self {
-            inner: NttPlan::new(
+            inner: Arc::new(NttPlan::new(
                 stream,
                 table,
                 [
@@ -523,7 +533,7 @@ impl CudaNttPlan32 {
                     "primus_mul_add_u32",
                     "primus_mul_monomial_u32",
                 ],
-            )?,
+            )?),
         })
     }
 
@@ -616,7 +626,7 @@ impl CudaNttPlan64 {
         }
         let reciprocal = ((1u128 << (2 * modulus_bits)) / u128::from(modulus)) as u64;
         Ok(Self {
-            inner: NttPlan::new(
+            inner: Arc::new(NttPlan::new(
                 stream,
                 table,
                 [
@@ -626,7 +636,7 @@ impl CudaNttPlan64 {
                     "primus_mul_add_u64",
                     "primus_mul_monomial_u64",
                 ],
-            )?,
+            )?),
             modulus_bits,
             reciprocal,
         })

@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use cudarc::driver::{CudaContext, CudaSlice, CudaStream, DeviceRepr};
-use primus_cuda::{CudaError, CudaNttPlan32, CudaNttPlan64, cuda_smoke};
+use primus_cuda::{CudaError, CudaNttPlan32, CudaNttPlan64, CudaOmrBridge32, cuda_smoke};
+use primus_lattice::{GlweDimension, GlweSize, LweDimension};
 use primus_modulus::BarrettModulus;
 use primus_ntt::{MonomialNttTable, NttTable, U32NttTable, U64NttTable};
 use primus_poly::Polynomial;
@@ -18,6 +19,36 @@ fn smoke_wraps_and_covers_partial_block() {
     let expected: Vec<_> = input.iter().map(|&value| value.wrapping_add(1)).collect();
     assert_eq!(cuda_smoke(&stream, &input).unwrap(), expected);
     assert!(cuda_smoke(&stream, &[]).unwrap().is_empty());
+}
+
+#[test]
+fn omr_bridge_switch_matches_every_rounding_boundary() {
+    let stream = CudaContext::new(0).unwrap().new_stream().unwrap();
+    let n = PolyLength::new(OMR_N);
+    let table = U32NttTable::new(n, BarrettModulus::new(OMR_Q32)).unwrap();
+    let plan = CudaNttPlan32::new(&stream, &table).unwrap();
+    let size = GlweSize::new(GlweDimension::new(1), n);
+    let dimension = LweDimension::new(1380);
+    let q = u64::from(OMR_Q32);
+    let mut samples = vec![0, OMR_Q32 - 1];
+    for rounded in 1..=4096 {
+        let first = (rounded * q - q / 2).div_ceil(4096) as u32;
+        samples.extend([first - 1, first]);
+    }
+    let lwe_len = dimension.get() + 1;
+    let batch = samples.len().div_ceil(lwe_len);
+    samples.resize(batch * lwe_len, 0);
+    let bridge = CudaOmrBridge32::new(&plan, size, dimension, batch).unwrap();
+    let input = stream.clone_htod(&samples).unwrap();
+    let mut output = stream.alloc_zeros(samples.len()).unwrap();
+    bridge
+        .switch_to(input.as_view(), output.as_view_mut())
+        .unwrap();
+    let expected: Vec<_> = samples
+        .iter()
+        .map(|&value| ((u64::from(value) * 4096 + q / 2) / q) % 4096)
+        .collect();
+    compare(&download(&stream, &output), &expected, "OMR modulus switch");
 }
 
 fn inputs<T: TryFrom<u64, Error: std::fmt::Debug>>(q: u64, count: usize, seed: u64) -> Vec<T> {

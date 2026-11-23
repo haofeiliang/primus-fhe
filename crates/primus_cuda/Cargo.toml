@@ -8,6 +8,7 @@ default = []
 cuda = [
     "dep:cudarc",
     "dep:primus_decompose",
+    "dep:primus_glwe",
     "dep:primus_integer",
     "dep:primus_lattice",
     "dep:primus_modulus",
@@ -19,6 +20,7 @@ cuda = [
 [dependencies]
 cudarc = { version = "=0.19.10", default-features = false, features = ["std", "driver", "nvrtc", "dynamic-loading", "cuda-12080"], optional = true }
 primus_decompose = { path = "../primus_decompose", optional = true }
+primus_glwe = { path = "../primus_glwe", features = ["ntt"], optional = true }
 primus_integer = { path = "../primus_integer", optional = true }
 primus_lattice = { path = "../primus_lattice", optional = true }
 primus_modulus = { path = "../primus_modulus", optional = true }
@@ -28,7 +30,6 @@ thiserror = { workspace = true, optional = true }
 
 [dev-dependencies]
 primus_encoding = { path = "../primus_encoding" }
-primus_glwe = { path = "../primus_glwe", features = ["ntt"] }
 primus_lwe = { path = "../primus_lwe" }
 primus_poly = { path = "../primus_poly" }
 primus_shape = { path = "../primus_shape" }
@@ -58,4 +59,12 @@ required-features = ["cuda"]
 
 [[test]]
 name = "clue_extraction"
+required-features = ["cuda"]
+
+[[test]]
+name = "digest_accumulation"
+required-features = ["cuda"]
+
+[[test]]
+name = "digest_packing"
 required-features = ["cuda"]

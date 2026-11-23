@@ -1,5 +1,6 @@
 use cudarc::driver::{
-    CudaFunction, CudaSlice, CudaView, CudaViewMut, DeviceRepr, PushKernelArg, ValidAsZeroBits,
+    CudaFunction, CudaSlice, CudaView, CudaViewMut, DeviceRepr, LaunchConfig, PushKernelArg,
+    ValidAsZeroBits,
 };
 use primus_integer::FheUint;
 use primus_modulus::BarrettModulus;
@@ -7,63 +8,68 @@ use primus_tfhe_glwe::{BlockGlweBootstrappingKey, BlockOccupancy};
 
 use super::{
     CudaError, CudaExternalProductWorkspace32, CudaExternalProductWorkspace64, CudaNttPlan32,
-    CudaNttPlan64, check_limit, checked_count, elementwise_config,
+    CudaNttPlan64, THREADS, check_limit, checked_count, elementwise_config,
     external_product::{ExternalProduct, checked_batch_len},
     launch_grid_limit,
 };
 
-struct BlockRotation<'a, T> {
-    external: ExternalProduct<'a, T>,
+struct BlockRotation<T> {
+    external: ExternalProduct<T>,
     key: CudaSlice<T>,
-    aggregate: CudaSlice<T>,
-    aggregate_block: CudaFunction,
+    aggregate_ntt: CudaSlice<T>,
+    aggregate_forward: CudaFunction,
     blocks: usize,
     key_block_len: usize,
-    gadget_len: u32,
+    polynomials_per_gadget: u32,
     block_width: u32,
     has_dummy: u32,
 }
 
-impl<'a, T> BlockRotation<'a, T>
+impl<T> BlockRotation<T>
 where
     T: FheUint + DeviceRepr + ValidAsZeroBits,
 {
     fn new(
-        external: ExternalProduct<'a, T>,
+        external: ExternalProduct<T>,
         key: &BlockGlweBootstrappingKey<T, BarrettModulus<T>>,
         aggregate_name: &str,
     ) -> Result<Self, CudaError> {
-        let ntt = external.ntt;
+        let ntt = &external.ntt;
         let blocks = key.blocks().len();
         let key_block_len = key.as_slice().len() / blocks;
         checked_count::<T>(key.as_slice().len())?;
-        let capacity = (external.batch_capacity * external.size.ggsw_len()) as u32;
+        let gadget_len = external.size.ggsw_len();
+        let polynomials_per_gadget = (gadget_len / ntt.n as usize) as u32;
+        let capacity = external.batch_capacity * gadget_len;
         checked_batch_len::<u32>(external.batch_capacity, key.block_size())?;
-        elementwise_config(capacity, ntt.max_grid)?;
+        let aggregate_forward = ntt.module.load_function(aggregate_name)?;
+        let max_grid = launch_grid_limit(
+            &ntt.stream,
+            &[(&aggregate_forward, ntt.shared_mem_bytes as usize)],
+        )?;
         check_limit(
             "grid x dimension",
-            (capacity / ntt.n) as usize,
-            ntt.max_grid as usize,
+            capacity / ntt.n as usize,
+            max_grid as usize,
         )?;
-        let aggregate_block = ntt.module.load_function(aggregate_name)?;
-        launch_grid_limit(&ntt.stream, &[(&aggregate_block, 0)])?;
-        let aggregate = ntt.stream.alloc_zeros(capacity as usize)?;
+        let aggregate_ntt = ntt.stream.alloc_zeros(capacity)?;
+        let device_key = ntt.stream.clone_htod(key.as_slice())?;
         let has_dummy = u32::from(key.occupancy() == BlockOccupancy::AtMostOne);
         Ok(Self {
             external,
-            key: ntt.stream.clone_htod(key.as_slice())?,
-            aggregate,
-            aggregate_block,
+            key: device_key,
+            aggregate_ntt,
+            aggregate_forward,
             blocks,
             key_block_len,
-            gadget_len: key.size().ggsw_len() as u32,
+            polynomials_per_gadget,
             block_width: key.block_size() as u32,
             has_dummy,
         })
     }
 }
 
-impl<T: DeviceRepr> BlockRotation<'_, T> {
+impl<T: DeviceRepr> BlockRotation<T> {
     fn apply_block_to(
         &mut self,
         block_index: usize,
@@ -73,7 +79,7 @@ impl<T: DeviceRepr> BlockRotation<'_, T> {
     ) -> Result<(), CudaError> {
         check_limit("Block index", block_index, self.blocks - 1)?;
         let count = self.external.check_batch(&input, &output)?;
-        let ntt = self.external.ntt;
+        let ntt = &self.external.ntt;
         ntt.check_view_stream(&exponents)?;
         let lanes = count as usize / self.external.size.glwe_len();
         let exponent_count = lanes * self.block_width as usize;
@@ -97,33 +103,38 @@ impl<T: DeviceRepr> BlockRotation<'_, T> {
         output: CudaViewMut<'_, T>,
         count: u32,
     ) -> Result<(), CudaError> {
-        let ntt = self.external.ntt;
+        let ntt = &self.external.ntt;
         let start = block_index * self.key_block_len;
         let block = self.key.slice(start..start + self.key_block_len);
-        let lanes = count as usize / self.external.size.glwe_len();
-        let aggregate_count = lanes as u32 * self.gadget_len;
-        let config = elementwise_config(aggregate_count, ntt.max_grid)?;
-        let mut aggregate = self.aggregate.slice_mut(..aggregate_count as usize);
+        let lanes = count / self.external.size.glwe_len() as u32;
+        let polynomials = lanes * self.polynomials_per_gadget;
+        let aggregate_count = polynomials as usize * ntt.n as usize;
+        let mut aggregate = self.aggregate_ntt.slice_mut(..aggregate_count);
         // SAFETY: the uploaded block contains all complete selectors and the
-        // optional dummy, and the exponents match the validated batch shape.
-        // Input and output allocations are disjoint and ordered on one stream.
+        // optional dummy. Grid and shared memory were bounded at binding.
+        // Each block forms one polynomial in shared memory and writes a disjoint
+        // NTT output, using the bound plan's roots and layout.
         unsafe {
             ntt.stream
-                .launch_builder(&self.aggregate_block)
+                .launch_builder(&self.aggregate_forward)
                 .arg(&block)
                 .arg(&exponents)
                 .arg(&mut aggregate)
-                .arg(&aggregate_count)
+                .arg(&ntt.roots)
+                .arg(&ntt.root_precon)
                 .arg(&ntt.n)
-                .arg(&self.gadget_len)
+                .arg(&self.polynomials_per_gadget)
                 .arg(&self.block_width)
                 .arg(&self.has_dummy)
                 .arg(&ntt.modulus)
-                .launch(config)?;
+                .launch(LaunchConfig {
+                    grid_dim: (polynomials, 1, 1),
+                    block_dim: (THREADS, 1, 1),
+                    shared_mem_bytes: ntt.shared_mem_bytes,
+                })?;
         }
-        ntt.transform_batch(aggregate, aggregate_count / ntt.n, false)?;
         self.external.apply_checked(
-            self.aggregate.slice(..aggregate_count as usize),
+            self.aggregate_ntt.slice(..aggregate_count),
             input,
             output,
             count,
@@ -131,8 +142,8 @@ impl<T: DeviceRepr> BlockRotation<'_, T> {
     }
 }
 
-struct BlindRotation<'a, T> {
-    update: BlockRotation<'a, T>,
+struct BlindRotation<T> {
+    update: BlockRotation<T>,
     exponents: CudaSlice<u32>,
     accumulator: CudaSlice<T>,
     quantize: CudaFunction,
@@ -142,16 +153,16 @@ struct BlindRotation<'a, T> {
     rotation_bits: u32,
 }
 
-impl<'a, T> BlindRotation<'a, T>
+impl<T> BlindRotation<T>
 where
     T: FheUint + DeviceRepr + ValidAsZeroBits,
 {
     fn new(
-        external: ExternalProduct<'a, T>,
+        external: ExternalProduct<T>,
         key: &BlockGlweBootstrappingKey<T, BarrettModulus<T>>,
         [aggregate_name, quantize_name, initialize_name]: [&str; 3],
     ) -> Result<Self, CudaError> {
-        let ntt = external.ntt;
+        let ntt = &external.ntt;
         let dimension = key.input_dimension().get();
         let lwe_length = dimension + 1;
         let lwe_count = checked_batch_len::<T>(external.batch_capacity, lwe_length)?;
@@ -166,21 +177,24 @@ where
         let quantize = ntt.module.load_function(quantize_name)?;
         let initialize = ntt.module.load_function(initialize_name)?;
         launch_grid_limit(&ntt.stream, &[(&quantize, 0), (&initialize, 0)])?;
+        let exponents = ntt.stream.alloc_zeros(exponent_count as usize)?;
+        let accumulator = ntt.stream.alloc_zeros(accumulator_count)?;
+        let rotation_bits = (2 * ntt.n).ilog2();
         let update = BlockRotation::new(external, key, aggregate_name)?;
         Ok(Self {
             update,
-            exponents: ntt.stream.alloc_zeros(exponent_count as usize)?,
-            accumulator: ntt.stream.alloc_zeros(accumulator_count)?,
+            exponents,
+            accumulator,
             quantize,
             initialize,
             lwe_dimension: dimension as u32,
             input_bits,
-            rotation_bits: (2 * ntt.n).ilog2(),
+            rotation_bits,
         })
     }
 }
 
-impl<T: DeviceRepr> BlindRotation<'_, T> {
+impl<T: DeviceRepr> BlindRotation<T> {
     fn blind_rotate_lookup_table_to(
         &mut self,
         input: CudaView<'_, T>,
@@ -190,7 +204,7 @@ impl<T: DeviceRepr> BlindRotation<'_, T> {
         let input_bits = self.input_bits.ok_or(CudaError::InvalidParameters(
             "blind rotation requires a power-of-two LWE modulus",
         ))?;
-        let ntt = self.update.external.ntt;
+        let ntt = &self.update.external.ntt;
         ntt.check_view_stream(&input)?;
         ntt.check_operand_length(ntt.n as usize, &lut)?;
         ntt.check_view_stream(&output)?;
@@ -282,18 +296,18 @@ macro_rules! workspace {
     ($workspace:ident, $ext:ident, $plan:ident, $word:ty, $aggregate:literal, $quantize:literal,
      $initialize:literal) => {
         /// Uploaded Block GLWE bootstrapping key and reusable scratch for batched block updates.
-        pub struct $workspace<'a> {
-            inner: BlindRotation<'a, $word>,
+        pub struct $workspace {
+            inner: BlindRotation<$word>,
         }
 
-        impl<'a> $workspace<'a> {
+        impl $workspace {
             /// Uploads a coefficient-domain Block key and prepares scratch on `ntt.stream()`.
             ///
             /// # Errors
             /// Rejects zero capacity, dimensions or basis incompatible with the plan,
             /// excessive storage/launch requirements, and driver failures.
             pub fn new(
-                ntt: &'a $plan,
+                ntt: &$plan,
                 key: &BlockGlweBootstrappingKey<$word, BarrettModulus<$word>>,
                 batch_capacity: usize,
             ) -> Result<Self, CudaError> {
@@ -363,7 +377,7 @@ workspace!(
     CudaExternalProductWorkspace32,
     CudaNttPlan32,
     u32,
-    "primus_aggregate_block_u32",
+    "primus_aggregate_block_forward_u32",
     "primus_block_quantize_u32",
     "primus_block_initialize_u32"
 );
@@ -372,7 +386,7 @@ workspace!(
     CudaExternalProductWorkspace64,
     CudaNttPlan64,
     u64,
-    "primus_aggregate_block_u64",
+    "primus_aggregate_block_forward_u64",
     "primus_block_quantize_u64",
     "primus_block_initialize_u64"
 );

@@ -17,7 +17,8 @@ mod cuda;
 
 #[cfg(feature = "cuda")]
 pub use cuda::{
-    CudaBlockBlindRotationWorkspace32, CudaBlockBlindRotationWorkspace64, CudaError,
-    CudaExternalProductWorkspace32, CudaExternalProductWorkspace64, CudaNttPlan32, CudaNttPlan64,
-    CudaPackedLweExtraction32, cuda_smoke,
+    CudaBlockBlindRotationWorkspace32, CudaBlockBlindRotationWorkspace64, CudaDigestAccumulation64,
+    CudaDigestPacking64, CudaError, CudaExternalProductWorkspace32, CudaExternalProductWorkspace64,
+    CudaGlweKeySwitchingWorkspace32, CudaGlweKeySwitchingWorkspace64, CudaNttPlan32, CudaNttPlan64,
+    CudaOmrBridge32, CudaPackedLweExtraction32, CudaReverseTraceWorkspace64, cuda_smoke,
 };
